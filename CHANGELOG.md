@@ -7,20 +7,24 @@
   `claude-splice` held that management key. Upgrade, rotate the key, then relaunch your sessions ([Security](#security), [Upgrading from 0.3.x](#upgrading-from-03x)).
 - **`splice upgrade`** fetches, verifies and stages a release, waits for in-flight turns, restarts
   the daemon and runs doctor. `--rollback` puts the previous release back.
-- **Account pools on the ChatGPT, Grok, Kimi and Muse heads.** `splice login <head> --label <name>`
-  adds an account to one of these OAuth heads, and the head moves a session to another account when
-  a provider's limits are hit. `claude-splice` keeps several Claude logins that you switch yourself;
-  it has no pool.
+- **Account pools on the ChatGPT, Grok, Kimi, Muse and Claude heads.** OAuth heads add labelled
+  accounts through `splice login <head> --label <name>`. Claude heads add accounts from Accounts,
+  and `claude-splice` can also select plain claude’s login and claude-splice’s own login without
+  refreshing their credentials. Selection is per head and sticky per session; a pin or saved order
+  takes priority, and the default fallback prefers usable quota whose weekly reset comes soonest.
 - **Local models are first-class** on the `openai-chat` dialect. splice asks the runtime what it
   serves and refuses a model Ollama, LM Studio or vLLM does not list. With `slot_affinity = true`,
   llama-server conversations keep their own slot. Local heads
   report token usage, so Claude Code auto-compacts, and their errors say what happened.
-- **A rebuilt console.** Each session opens on its own page, its messages set as formatted text
-  and its tool calls and code as blocks. Needs you gathers current actionable issues, each with
-  its one fix. Settings you can change are typed controls under plain names, and Advanced also opens splice.toml itself under its own keys; the cards on
-  Sessions and Fleet reorder by drag. The console signs accounts in, switches, removes and
-  relabels them, and adds per-head body-capture controls, budgets, alerts, a playground and a
-  per-project view of the rules that govern a repo. splice keeps each request and reply, with sign-in headers removed, on your disk for seven UTC days,
+- **A rebuilt console.** Accounts, Requests, Sessions, Teams, Usage, Models, Playground and
+  Settings are its navigation. Each session opens on its own page, with formatted messages,
+  tool calls and code blocks. Accounts shows sign-in remedies and warns when a known carrying
+  login nears its configured limit with no other login able to take over, naming the quota window
+  and reset. Settings uses typed controls under plain names, visibly marks the selected warning
+  percentage, and opens splice.toml under Advanced. Session cards and account order can be
+  rearranged. The console signs accounts in, switches, removes and renames them, with per-head
+  capture controls, API-rate budgets, webhook alerts, a playground and per-project rules.
+  Requests and replies, with sign-in headers removed, stay on your disk for seven UTC days,
   readable only by you. Turn capture off per head and restart; deleting kept files is separate.
 - **One-command setup.** `splice add codex`, or `grok`, `kimi`, `muse`, `deepseek`, `openrouter`,
   `claude` or `local`, signs in where the service needs it, saves the head and installs its command. An optional turn checks
@@ -184,10 +188,23 @@ origin.
   splice already hosts it as one shared process, `excluded` with a reason (a different Claude
   identity's file, a plugin-owned manifest that splice never rewrites, an entry the hosting plan
   leaves as declared, or a stale copy in a head's config), or `pending` for a project or repo override the census can now see but the
-  rewrite pipeline does not yet touch. The pipeline that actually hosts a server is unchanged —
+  rewrite pipeline does not yet touch. The pipeline that actually hosts a server is unchanged:
   only the canonical home's global entries are rewritten, exactly as before.
-- **Claude head mode: wrap the default `claude` command, and several Claude logins on the
-  splice-owned head.** `GET /api/claude-head` reports which of the two modes is active
+- **Claude accounts are pooled per head.** Accounts can add a subscription through Claude Code's
+  own browser sign-in into a separate splice-owned folder. Added accounts never replace another
+  login and can join the running head when membership is published. Plain claude’s login and
+  claude-splice’s own login are separate selectable places; splice reads their live access tokens
+  but never refreshes either credential. Splice can refresh an added account's credential because
+  its folder has no other owner. Removing or renaming a Claude login requires an explicit target
+  kind and id, so a folder account and a physical login with the same visible name cannot collide.
+- **Claude login attribution follows requests.** Sessions names the login its own newest request
+  with an identified login carried, not another session's choice. Usage reads the head's carrying
+  login's quota, then the next selectable target if that reading is absent. Models names the
+  carrying login when no login is selected, retaining its count of other subscriptions.
+  An unidentified login says “Login not identified yet.” The card, warning and sign-in dialog use
+  the same remedy: “Sign in again on claude-splice in the console.” Each dialog names the login
+  it changes; missing session attribution is explained only when the daemon reported it explicitly.
+- **Claude head mode: wrap the default `claude` command.** `GET /api/claude-head` reports which of the two modes is active
   (Separate, the default: `claude-splice` stays a splice-owned head with its own config dir; Wrap:
   the operator's plain `claude` becomes a splice launcher over the vanilla `~/.claude`), what
   `claude` on PATH resolves to right now, and the shim path. `POST /api/claude-head/wrap` installs
@@ -204,8 +221,8 @@ origin.
   otherwise resolve straight back to the shim mid-launch. `splice login claude-splice --label
   <name>` keeps several of Claude Code's own logins on `claude-splice` and switches between them,
   only while no session of that head runs and only after saving the login it replaces, unless you pass `--discard`;
-  splice copies the credential file byte for byte, never parses it, and never calls Anthropic with
-  it. `splice doctor` reports the mode.
+  this labelled-copy CLI saves credentials byte for byte and is separate from per-request pool
+  selection. `splice doctor` reports the mode.
 - **Teams: sessions on different heads work one goal from one board.** In the console, Sessions grouped by Team offers New team: a name, a repo, a goal and role slots,
   exactly one of them the lead, each with a role, a head, its own instructions and a bound session or an open seat. From its next
   turn through splice, every session bound to an active team gets its team, its role, the team goal, the slot's
@@ -219,17 +236,19 @@ origin.
   (`GET /api/teams/{id}/economics`). Teams live in `teams.json` under the state dir and
   are archived, never deleted. A plain `claude` session can hold a slot, but its own messages
   don't pass through splice, so the chat shows only what it receives.
-- **Each plan's Fleet page lists its accounts for sign-in, switching, removal and relabelling.** `POST /api/auth/{head}/login` starts a device or browser login off the request that
+- **Accounts and each command's Models page list its logins for sign-in, switching, removal and renaming.** `POST /api/auth/{head}/login` starts a device or browser login off the request that
   asked for it and answers immediately with a login id; `GET /api/auth/{head}/login/{id}` polls it
   for the user code and verification link (device flow) or the browser URL (OAuth flow), through
   `signed_in` once the credential lands and `live_after_restart` once the head has restarted.
-  A newly labelled account joins its pool after `splice restart`. `DELETE`/`PATCH /api/auth/{head}/accounts/{label}` remove
-  or relabel a pooled account; the primary is refused for both, never silently accepted.
+  A newly labelled OAuth account joins its pool after `splice restart`; a Claude account can join
+  without restart when its membership is published. `DELETE`/`PATCH /api/auth/{head}/accounts/{label}`
+  remove or rename a pooled account. An OAuth primary is refused for both; a Claude edit must name
+  its target kind and stable id.
   `POST /api/auth/{head}/switch` pins an account: from the next turn splice tries it first, ahead of
   the primary, and falls back to the usual order when the pinned account later becomes unavailable. Pinning an unknown account or one with no
   credential is refused; `DELETE /api/auth/{head}/switch` drops the pin (idempotent).
   `GET /api/accounts` joins every pool's accounts across
-  every head, on the credential path — two heads sharing one login are one row, not one per head —
+  every head, on the credential path. Two heads sharing one login are one row, not one per head,
   carrying each pooled account's window length as reported by the provider,
   the operator's pin, the next target by the real selector order, and single-login heads read from
   their `/api/auth` view. The statusline now records each session's `rate_limits` object (five-hour,
@@ -244,7 +263,7 @@ origin.
   the action from the new `budgetDefaultAction` knob when a row omits one. `GET`/`PUT /api/alerts`
   holds a desktop-notification flag and one webhook URL, and `POST /api/alerts/test` posts one test to the saved webhook URL, never an unsaved draft.
   It answers 409 when no URL is saved; the desktop flag delivers nothing. `POST /api/playground` sends one prompt
-  through one head's own credential and provider — anthropic-passthrough, openai-chat or
+  through one head's own credential and provider: anthropic-passthrough, openai-chat or
   openai-responses, whichever the head is on. A head passing Claude Code's own login through,
   such as `claude-splice`, is refused. This is an independent one-shot call that never touches
   the turn pipeline, so it writes no perf row, no trace record and no economics: the request and
@@ -253,7 +272,7 @@ origin.
 - **A llama-server head keeps each conversation on its own slot.** llama-server picks a
   slot by prompt similarity measured against the new prompt, and skips empty slots while doing so,
   so a new session sharing Claude Code's ~30K preamble took an idle conversation's slot and that
-  conversation re-prefilled from zero — the model's recurrent layers cannot be rewound, so a slot's
+  conversation re-prefilled from zero. The model's recurrent layers cannot be rewound, so a slot's
   state is all or nothing. With `quirks = { slot_affinity = true }` splice sends `id_slot` per
   conversation (its session plus its opening messages, so a subagent or title request sharing the
   session id does not queue behind the main conversation), gives a new conversation the least
@@ -262,7 +281,7 @@ origin.
   the turn truly ends, detached compaction drives included.
 - **Local heads report their token usage, so Claude Code auto-compacts.** Token counts are
   opt-in on the OpenAI-compatible chat dialect (`stream_options.include_usage`), and splice asked
-  only on grok — so every other head on that dialect reported zero tokens per turn, Claude Code's
+  only on grok, so every other head on that dialect reported zero tokens per turn, Claude Code's
   context meter never moved, and a session ran into the context wall instead of compacting. A
   provider that is local (a loopback `base_url`, or `local = true`) now asks by default; hosted
   vendors are unchanged, because strict ones reject unrecognized `stream_options` members. The new
@@ -272,7 +291,7 @@ origin.
   `splice.toml` (a model's `context_window`, `extra_windows`, `window_rules`,
   `default_context_window`, a head's `context_window`) when the file changes, so running sessions
   compact at the new window through usage scaling, the next launch plants it as
-  `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, and a plan's Models tab in the console's Fleet shows it. A
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, and the command's Models page shows it. A
   local runtime is asked about a new window the way boot asks it, off the request path, and a window it refuses is
   not applied; a file that does not parse, or a head it no longer declares, keeps the windows in
   force. Each re-read writes one daemon.log line per head whose windows changed, were refused or are no longer declared, and one line when the file does not parse. `/health`'s `topologyDigest` now names the version the
@@ -280,7 +299,7 @@ origin.
   for, any other edit still reads stale until `splice restart`, and `PUT /api/topology` answers
   `restart_required: false` for a write that moved only windows.
 - **Per-head system prompt.** `system_prompt` (or `system_prompt_file`) under `[heads.<key>]` gives
-  a head standing instructions that ride on **every** turn, at that dialect's own system seam —
+  a head standing instructions that ride on **every** turn, at that dialect's own system seam:
   anthropic-passthrough, openai-chat and openai-responses each place it the way their wire expects.
   Setting both keys, or naming a file that cannot be read, is a config error at load, never a
   silently empty prompt; absent or `""` leaves the request bytes byte-identical to before, pinned
@@ -288,7 +307,7 @@ origin.
   in a system message before the first user on chat, and in a trailing developer item on Responses.
   Existing client bytes and cache breakpoints survive; `"replace"` substitutes that whole field, which
   strips the entire operating instruction set Claude Code ships there and leaves the head behaving
-  like a bare model with tools attached — `splice doctor` notes a configured replacement prompt as information.
+  like a bare model with tools attached. `splice doctor` notes a configured replacement prompt as information.
 - **`splice add <profile>` adds a second provider without editing TOML.** Nine profiles
   (`codex`, `grok`, `kimi`, `muse`, `deepseek`, `openrouter`, `claude`, `local`, `api-key`); the command authenticates with the login verb's
   own flow, takes models and context windows (`--model id:window`), always checks the candidate
@@ -415,8 +434,9 @@ origin.
   same-kind heads with different credential files do not; the first login stays the primary in the file it always
   had, so nothing migrates. Selection is per turn and sticky per session: a session keeps its account
   until its window reaches 100 %, its own credential is rejected, or a 429's `Retry-After` exceeds 15 s,
-  then the next turn goes out on the pool account with the lowest seven-day usage whose five-hour
-  window is open, and the session returns to its primary once that account can be used again, after its reset or at most 120 s after a 429. A turn
+  then the next turn tries a usable account in the saved order, or defaults to the soonest weekly
+  reset with the five-hour reset breaking ties. A manual pin comes first. With no saved order,
+  a session keeps its usable account rather than returning to the primary at every reset. A turn
   in flight finishes where it started; the first turn after a switch is accounted as cache-cold and
   its perf row names the account. When every account is out the turn fails honestly, naming the
   earliest reset. A credential is only ever used by the kind it carries; a mislabeled file is refused.
@@ -562,11 +582,38 @@ origin.
   request path, and a rate-limited mint is held rather than retried.
 
 ### Changed
+- **Trace bodies use a compressed v2 daily pack.** JSONL rows refer to deterministic chunks
+  targeting 8 KiB, stored once as zstd frames in `.jsonl.bodies2`. Identical bodies and unchanged
+  regions share chunks. The pack remains bounded to 1 GiB per head and UTC day; reaching that
+  budget records an unavailable body and logs the cause once that day. Existing v1 `.jsonl.bodies`
+  and inline rows remain readable, and retention or purge removes both pack formats with the day.
+- **Build and runtime dependency pins are updated.** Kotlin 2.3.21, Ktor 3.6.0, coroutines 1.11.0,
+  serialization 1.11.0, GraalJS 25.3.4.1, Netty 4.2.17.Final and Jackson 2.21.5 match main's
+  dependency baseline. Trace compression adds zstd-jni 1.5.7-18.
 - **Batched text and thinking are paced on every head.** When visible text or thinking arrives
   together, splice's shared client write path spreads it over a one-second pacing window.
   Each 16 ms tick releases at least four queued deltas, or all that remain, without reordering
   frames. A lone delta after a quiet stretch, or a stream slower than one delta per tick, is
   written at once.
+- **Each code-mode conversation owns its engine.** Its scripts use a GraalJS engine,
+  isolate, guest heap and collector keyed by session, conversation and model. Host JVMs start only
+  when a cell is admitted. `code_mode_workers` defaults to six hosts per head, with at most four
+  session engines in each. A new session goes to the least-loaded eligible host and stays pinned
+  there. The host heap still defaults to 512 MiB, with a separate 384 MiB guest heap per engine.
+  `code_mode_memory_mb` defaults to a 24,576 MiB head-wide admission reservation, not an
+  operating-system resident-memory limit. Including collector and native reserves, a default host
+  reserves 1,152 MiB and each engine 832 MiB: six hosts and 21 engines reserve 24,384 MiB; a 22nd
+  engine would require 25,216 MiB. Admission refuses before dispatch when the pool is full,
+  naming the memory budget, host and engine caps, and both settings in the script's interrupted
+  tool output. The model sees that output and the turn continues without a 502. Capacity pressure
+  can reclaim parked cells, even in a live session, but never executing or borrowed cells.
+  Empty engines are reclaimed least-recently-used
+  at admission and become eligible for idle eviction after one minute. An engine also closes on
+  explicit session close, whole-session state expiry, or session death after its last active
+  record. A timer can reclaim a parked cell whose session remains unknown for 30 minutes;
+  known-alive cells are not reclaimed by that idle sweep. A host that dies fails only its own
+  cells, including ones waiting for source; their next cells boot a fresh host in the same slot,
+  without rerunning lost source. `Promise.all` and `Promise.allSettled` still dispatch as one batch.
 - **Claude Code shows a code-mode script as it is written.** While a GPT model writes its `exec`
   script, Claude Code displays the source in a live thinking block. A tool call dispatched by
   the script closes and signs that block; remaining script text continues in the next client
@@ -658,6 +705,12 @@ origin.
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
+- **Interrupted code-mode history keeps the admitted exec prefix.** An unfinished streamed call
+  replays the source prefix splice actually admitted, together with completed-call evidence,
+  instead of an empty or uncertified raw input. The retained raw item is unchanged; replaying
+  history never reruns the JavaScript. The daemon logs the structural interruption cause,
+  including failure class, permanence, provider attribution or incomplete terminal shape,
+  without copying script source or upstream message text into that diagnostic.
 - **Code-mode turns chain on the WebSocket again.** On a code-mode turn every GPT tool call is `exec`, a custom tool,
   and the chaining check knew only function calls, so each round after an `exec` re-sent the whole
   conversation instead of the script's output (103 of 6,877 WebSocket rounds chained). A round now
@@ -693,7 +746,7 @@ origin.
   reset, in the machine's own time zone, and `/health` and the usage view carry the same instant.
   splice learns it from the refusal, keeps it across a restart, and also reads it from the
   provider's own quota figure at 100% before any turn has been refused. A local head whose runtime
-  does not answer reads `runtime not answering on :<port>`, and the console's Fleet shows it down.
+  does not answer reads `runtime not answering on :<port>`, and Settings under Health reports it down.
   The first turn after a restart still goes to the provider, so a plan that resets early is used
   at once.
 - **`splice doctor` gives the daemon's own fix for a splice.toml value of the wrong type.** It
@@ -870,12 +923,9 @@ origin.
   reached`: the slot came back only when the JDK's process reaper got round to the killed worker.
   The cancelled start now kills its worker and waits up to 2 seconds for it to exit,
   off the caller's thread. If it has not exited by then, the slot is released when its exit is seen.
-- **A code-mode script's deadline no longer pays for its worker's start.** Each cell runs in a
-  fresh worker JVM, and the 5 s a script has to answer (`code_mode_timeout_ms`) also covered that
-  JVM's boot and its JavaScript engine's set-up. A busy machine stretches those past 5 s, and the
-  cell then failed with `Code-mode worker timed out` before its script ran. A worker now says it is
-  ready once it is up, under a start budget of its own (30 s), and the deadline times the script
-  alone.
+- **Code-mode host startup has its own budget.** Starting an on-demand host and opening the
+  session's engine have a 30 s startup budget. `code_mode_timeout_ms` remains an accepted positive
+  compatibility setting, not a per-script deadline.
 - **An install that cannot link says so in one line.** `splice install` and `splice setup` stopped
   with a JVM stack trace when the launch shim was missing, dangling or unreadable, when two heads
   shared a wrapper command, or when a command name held a real file. Each now prints the one
@@ -906,7 +956,7 @@ origin.
   id is taken inside the bus lock, so ids reach every subscriber strictly increasing.
 - **Any head joins any session again.** A session started on one head resumed on any
   other because every head's `projects` tree was the shared `~/.claude/projects`. The
-  2026-09-17 head-isolation change read the ruling — head configuration must never leak — as
+  2026-09-17 head-isolation change read the ruling that head configuration must never leak as
   covering transcripts too, gave every head a private tree, and left cross-head resume only as an
   explicit `-r SESSION_ID` copy, while the operator's `splice.toml` still asked for `projects` in
   its share list. Transcripts are shared session state, not head configuration: a head whose
@@ -938,15 +988,15 @@ origin.
   A head or a project layer can now delete paragraphs from the client's own system field instead
   of replacing it: the layer's text is a pattern list (one regex per line, `#` comments), and
   every blank-line-separated paragraph of the client's system text that a pattern matches is
-  removed at the wire, on every dialect. Everything else — the other paragraphs, the block order,
-  the `cache_control` breakpoints — rides through byte-identical, so the prompt cache still warms
+  removed at the wire, on every dialect. The other paragraphs, block order and `cache_control`
+  breakpoints ride through byte-identical, so the prompt cache still warms
   from turn two, which `replace` could not offer. A pattern that is not a regex is a config error
   at load. Nothing is stripped unless an operator writes a strip layer, splice ships no pattern
   list, and `splice doctor` shows an information row for every strip layer, as it does for
   replace, because it changes the instructions Claude Code sends.
 - **Every head records its full request/response trace by default.**
   `[heads.KEY.overrides] trace = "false"` turns it off for that head after a restart. The files are
-  `<state>/trace/KEY-YYYY-MM-DD.jsonl` — every request it receives (method, path, headers, exact
+  `<state>/trace/KEY-YYYY-MM-DD.jsonl`, recording every request it receives (method, path, headers, exact
   body), every upstream attempt as it actually left (the body byte for byte, the headers with every
   credential-class value redacted, the status and headers that came back or the transport failure
   that ended it, the raw response text), every frame it streamed back, the outcome, the round and
@@ -966,10 +1016,10 @@ origin.
   trace = "false"
   ```
 - **See what splice sent upstream, once you ask it to keep it.** A proxy that cannot show
-  the request it sent cannot be audited — and nothing kept one: the perf row records how many bytes
+  the request it sent cannot be audited, and nothing kept one: the perf row records how many bytes
   went upstream, never which. `[heads.KEY.overrides] wireTap = "N"` now makes that head keep its last
   N upstream request bodies, in memory only, and `splice wire <head>` prints them exactly as they
-  left (every round's — a folded or re-anchored turn is several requests). It is off by default and
+  left, for every round: a folded or re-anchored turn is several requests. It is off by default and
   opt-in on purpose: a body carries the whole conversation it was sent for, so no head keeps one
   unless its operator named a count, nothing is ever written to disk, a restart forgets them, the
   route on the head's port answers only to the management key (a client-auth head's own callers
@@ -985,9 +1035,9 @@ origin.
 - **Hosted MCP servers can be reclaimed, and are capped when the host declares a place for them.** Each hosted child's `oom_score_adj` is set to -100 at spawn and read back. A hosted server used to inherit splice's own out-of-memory protection, so on a machine that shields splice from the out-of-memory killer, hosted servers were shielded too. splice sets no such protection on itself, and changes only the hosted server's value. Placement follows the same rule: a child runs inside the memory-capped slice when one is declared for it, and when none is (systemd will happily name a slice nobody defined, with no ceiling at all) splice says so once in the log instead of reporting containment it does not have.
 - **A hosted MCP server keeps working across a daemon restart, an idle reap and an eviction.** When splice did not recognise a client's `Mcp-Session-Id`, it answered 404 and the client's subsequent calls kept failing. An id it does not know is now adopted: the child is initialized under the id the client already holds, and the restart is invisible. A session the client explicitly ended still answers 404, and so does one whose notification stream overflowed, because that one must reinitialize to re-list what it missed. An adopted session keeps speaking the protocol version the client negotiated before the restart, since refusing it would only trade the 404 for a 400.
 - **A connection that failed is named for what actually failed.** The JDK client wraps every connect failure in the same `ConnectException`, so a host that does not resolve and a host with no route were both told as `connection refused … nothing is listening there` and sent the operator to start a server; each is now named from the link that says what happened (`cannot resolve the host of …`, `could not connect to …: No route to host`), and only the client's real refusal is called one. A connect timeout's detail no longer carries the request's full URL, and the per-attempt retry lines in the log use the same words as the ending instead of an empty message. A 429 whose text mentions tokens (a per-minute token quota) is a rate limit again rather than an overflow: it takes the cooldown, and Claude Code is no longer told to compact a conversation that fits. On the OpenAI chat dialect, an in-band error's own numeric code is no longer read as an HTTP status, and an error the vendor typed or gave a status, which the same bytes reproduce, is no longer advertised to Claude Code as retryable; an in-band error with neither keeps the retryable wire it had.
-- **A local model server's errors say what happened, and an in-band chat error keeps its class.** llama-server's three failures reached Claude Code as the bare text it sent, and the banner printed "API error" over them: a 503 `Loading model` now reads as the local server still loading its weights; `exceed_context_size_error` becomes `prompt is too long: N tokens > M maximum`, rather than an unclassified server failure; and the mid-decode `Context size has been exceeded.` is named as the shared KV pool being full — retried, never reported as an overflow, because the request fits and the other conversations hold the pool. The OpenAI chat dialect's in-band `error` event now goes through the same classifier as every other path instead of being treated as a generic upstream error whatever it said, so overflow and rate-limit events keep their distinct classifications; an event with no recognisable shape keeps the wire it had. In offline tests with Claude Code 2.1.285 and 2.1.286, a `prompt is too long` HTTP 400 after a tool result triggered compaction; a first-exchange refusal and the plain in-band overflow control did not. splice sends that shape for its own early refusal (the measured GPT models on a ChatGPT sign-in, and an OpenAI Responses row that sets `compaction_reserve_tokens`) and for an overflow the provider reports before both the first model frame and splice's own visible progress line; an overflow after either has opened the stream stays in-band. A failed connection names what happened and where instead of `upstream connection failed (no detail)`: the JDK client's refused connect carries no message, so a local server that was simply not running read as nothing at all; it now reads `connection refused by 127.0.0.1:8099: nothing is listening there; the server is down or still starting`, and connect timeouts, DNS failures, read timeouts, TLS failures, resets and early closes are each named with the endpoint's host and port (never its path or query). A context overflow answered with a non-429 4xx is sent upstream once rather than retried: the same bytes overflow the same window, and every re-send only delayed the compaction (on the bonsai head, with retries raised to ten, one 1.4 MB request went out ten times over 43 s). The same offline clients also compacted when a post-tool overflow arrived after splice's visible thinking progress, before any model answer text: the streamed HTTP 200 carried an in-band `invalid_request_error` containing `prompt is too long`, and the next client request was the summary, not a non-stream retry. Both clients recovered even with the fake reporting only 100 input tokens and its token-count endpoint fixed at 100; neither called that endpoint. This recovery was triggered by the overflow, not the reported usage threshold.
-- **Only failures a retry can heal are advertised as retryable.** A failure arriving before any content now reaches Claude Code as the one in-band error it retries (`overloaded_error`) instead of a terminal `api_error` it reads as the end of the session. A failure that an identical re-send reproduces exactly (a model refusal, a content-filtered turn, a vendor `invalid_parameter`, an unparseable base URL) is exempt and keeps its real type: it is not a retry but a bill, up to 300 client re-sends, each spending splice's own upstream retries, four attempts by default. A buffered (`stream:false`) failure is untouched by the rule and keeps its real status — a 429 stays 429 with its rate-limit headers, an api_error stays 502.
-- **No error class can stall a session on a rate limit or a spent account any more.** The first turn to meet a persistent 429 now reaches Claude Code as the one in-band error it retries (`overloaded_error`, rate-limit words kept) instead of a terminal `rate_limit_error`; every launched client runs in persistent retry mode (`CLAUDE_CODE_RETRY_WATCHDOG=1`, native head included) and sleeps until the reset splice already sends; and a spent account (grok `spending-limit` 403, any 402) is a 429 to every layer — cooldown, account pool, classifier and admission — rather than an `invalid_request_error`.
+- **A local model server's errors say what happened, and an in-band chat error keeps its class.** llama-server's three failures reached Claude Code as the bare text it sent, and the banner printed "API error" over them: a 503 `Loading model` now reads as the local server still loading its weights; `exceed_context_size_error` becomes `prompt is too long: N tokens > M maximum`, rather than an unclassified server failure; and the mid-decode `Context size has been exceeded.` is named as the shared KV pool being full, retried, never reported as an overflow, because the request fits and the other conversations hold the pool. The OpenAI chat dialect's in-band `error` event now goes through the same classifier as every other path instead of being treated as a generic upstream error whatever it said, so overflow and rate-limit events keep their distinct classifications; an event with no recognisable shape keeps the wire it had. In offline tests with Claude Code 2.1.285 and 2.1.286, a `prompt is too long` HTTP 400 after a tool result triggered compaction; a first-exchange refusal and the plain in-band overflow control did not. splice sends that shape for its own early refusal (the measured GPT models on a ChatGPT sign-in, and an OpenAI Responses row that sets `compaction_reserve_tokens`) and for an overflow the provider reports before both the first model frame and splice's own visible progress line; an overflow after either has opened the stream stays in-band. A failed connection names what happened and where instead of `upstream connection failed (no detail)`: the JDK client's refused connect carries no message, so a local server that was simply not running read as nothing at all; it now reads `connection refused by 127.0.0.1:8099: nothing is listening there; the server is down or still starting`, and connect timeouts, DNS failures, read timeouts, TLS failures, resets and early closes are each named with the endpoint's host and port (never its path or query). A context overflow answered with a non-429 4xx is sent upstream once rather than retried: the same bytes overflow the same window, and every re-send only delayed the compaction (on the bonsai head, with retries raised to ten, one 1.4 MB request went out ten times over 43 s). The same offline clients also compacted when a post-tool overflow arrived after splice's visible thinking progress, before any model answer text: the streamed HTTP 200 carried an in-band `invalid_request_error` containing `prompt is too long`, and the next client request was the summary, not a non-stream retry. Both clients recovered even with the fake reporting only 100 input tokens and its token-count endpoint fixed at 100; neither called that endpoint. This recovery was triggered by the overflow, not the reported usage threshold.
+- **Only failures a retry can heal are advertised as retryable.** A failure arriving before any content now reaches Claude Code as the one in-band error it retries (`overloaded_error`) instead of a terminal `api_error` it reads as the end of the session. A failure that an identical re-send reproduces exactly (a model refusal, a content-filtered turn, a vendor `invalid_parameter`, an unparseable base URL) is exempt and keeps its real type: it is not a retry but a bill, up to 300 client re-sends, each spending splice's own upstream retries, four attempts by default. A buffered (`stream:false`) failure is untouched by the rule and keeps its real status: a 429 stays 429 with its rate-limit headers, an api_error stays 502.
+- **No error class can stall a session on a rate limit or a spent account any more.** The first turn to meet a persistent 429 now reaches Claude Code as the one in-band error it retries (`overloaded_error`, rate-limit words kept) instead of a terminal `rate_limit_error`; every launched client runs in persistent retry mode (`CLAUDE_CODE_RETRY_WATCHDOG=1`, native head included) and sleeps until the reset splice already sends; and a spent account (grok `spending-limit` 403, any 402) is a 429 to every layer, including cooldown, account pool, classifier and admission, rather than an `invalid_request_error`.
 - **An empty model turn is retried with backoff.** A turn that ends with nothing for the client,
   such as Muse reasoning its whole budget away, ends as `overloaded_error` with the explanation
   kept, so the client backs off and retries instead of stalling. A model that closes an empty
@@ -1012,8 +1062,8 @@ origin.
   ChatGPT's internal marker on every turn, compaction included, and built the
   ChatGPT-internal lite input: tools as an `additional_tools` item, empty top-level `instructions`,
   plus `parallel_tool_calls`, `reasoning.context` `all_turns`, `text.verbosity` and
-  `client_metadata`. Grok heads were never affected in practice — their ids are `grok-4.7`,
-  `grok-4.6` and `grok-build-0.1`, which do not contain those substrings — but they inherited the same default and
+  `client_metadata`. Grok heads were never affected in practice: their ids are `grok-4.7`,
+  `grok-4.6` and `grok-build-0.1`, which do not contain those substrings. But they inherited the same default and
   would have the day a grok id matched. The regex and the header name are now a pair a provider
   must declare together; only the ChatGPT/codex profile sets them. A third-party endpoint no
   longer inherits the marker or the lite body. After upgrading, an OpenRouter head on

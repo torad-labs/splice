@@ -4,7 +4,7 @@
 
 **Use [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with the models and subscriptions you already use.**
 
-ChatGPT · Grok · Kimi · Muse · API backends · native Claude
+ChatGPT · Grok · Kimi · Muse · API backends · Claude
 
 [Why splice](#why-it-exists) · [Install](#install) · [Quick start](#quick-start) · [Providers](#provider-support) · [Trade-offs](#why-you-might-not-want-splice) · [Changelog](CHANGELOG.md) · [Security](.github/SECURITY.md)
 
@@ -31,11 +31,11 @@ Type `claudex` instead of `claude` to work with a ChatGPT-backed model inside Cl
 
 The gateway runs locally on your machine. Model requests go to the chosen provider, including a local runtime when you configure one. Subscription connections run on the plan you already pay for; API-key connections use ordinary pay-per-token access.
 
-Signing in happens on each company's own page: `claudex login`, `claude-grok login`, `claude-kimi login` and `claude-muse login` open the sign-in page of OpenAI, xAI, Kimi or Meta, and `claude-splice` uses Claude Code's own `/login`. What you sign in with stays on your machine: subscription logins in `~/.config/splice/auth/`, API keys in `~/.config/splice/keys.toml`, and your Claude login in Claude Code's own store, with a copy in `~/.splice/state/claude-logins/` only of a Claude login you save under a label. Your requests go from your machine to that provider, and splice also connects to a webhook URL if you save one for budget alerts, and to GitHub: to download a release when you install or upgrade, and to fetch rig's installer if you choose a local model in `splice setup` (rig then downloads the model itself). [Credential locations](#credential-locations) and [What splice keeps on your disk](#what-splice-keeps-on-your-disk) have the details.
+Signing in happens on each company's own page: `claudex login`, `claude-grok login`, `claude-kimi login` and `claude-muse login` open the sign-in page of OpenAI, xAI, Kimi or Meta. Claude uses Claude Code's own `/login` or its browser sign-in from Accounts. Credentials stay on your machine: OAuth logins in `~/.config/splice/auth/`, API keys in `~/.config/splice/keys.toml`, and plain claude’s login and claude-splice’s own login in their separate Claude Code directories. Additional Claude accounts have separate folders under `~/.splice/state/claude-accounts/<head>/`; saved copies of the commands' own logins live under `~/.splice/state/claude-logins/`. Your requests go from your machine to that provider, and splice also connects to a webhook URL if you save one for budget alerts, and to GitHub: to download a release when you install or upgrade, and to fetch rig's installer if you choose a local model in `splice setup` (rig then downloads the model itself). [Credential locations](#credential-locations) and [What splice keeps on your disk](#what-splice-keeps-on-your-disk) have the details.
 
 ## Why it exists
 
-Choosing a different model shouldn't mean rebuilding your coding workflow around a different client. splice lets you keep Claude Code while working across backends—and makes those sessions useful together.
+Choosing a different model shouldn't mean rebuilding your coding workflow around a different client. splice lets you keep Claude Code while working across backends and makes those sessions useful together.
 
 - **Use the subscriptions you already pay for.** Connect ChatGPT, Grok or Kimi through dedicated commands, or choose a pay-per-token API route. [Provider support](#provider-support) spells out the differences.
 - **Let different models work together.** A ChatGPT-backed session can find and message a Grok-backed session using Claude Code's own agent tools. [Shared session discovery](#heads-that-see-each-other) is enabled by default, with isolation available when you need it.
@@ -56,7 +56,7 @@ For example, ask one session to implement a change and the other to review it. T
 
 Each named backend connection is called a **head**. You choose which heads to configure and launch; the commands above do not configure providers for you.
 
-**In [v0.4.0](https://github.com/torad-labs/splice/releases/tag/v0.4.0):** a launched session holds a turn key, never the management key; `splice upgrade` with rollback; account pools with automatic switching on the ChatGPT, Grok, Kimi and Muse heads, while Claude logins are switched manually; first-class local models; and [code mode](#code-mode-for-chatgpt) on by default for ChatGPT. Coming from 0.3.x? Read [the upgrade notes](CHANGELOG.md#upgrading-from-03x) first.
+**In [v0.4.0](https://github.com/torad-labs/splice/releases/tag/v0.4.0):** a launched session holds a turn key, never the management key; `splice upgrade` with rollback; per-head account pools with automatic switching on ChatGPT, Grok, Kimi, Muse and Claude; first-class local models; and [code mode](#code-mode-for-chatgpt) on by default for ChatGPT. Coming from 0.3.x? Read [the upgrade notes](CHANGELOG.md#upgrading-from-03x) first.
 
 ## Install
 
@@ -77,7 +77,7 @@ The per-turn write bound still runs on macOS, without the kernel acknowledgement
 | --- | --- | --- |
 | **Java 21+** | the spliced daemon ships as a fat jar | `apt install openjdk-21-jre-headless` · `brew install --cask temurin@21` · [adoptium.net](https://adoptium.net) |
 | **Node 22.15+**, with 24 recommended | the launch shim needs `process.execve` | [nodejs.org](https://nodejs.org) or `nvm install 24` |
-| **Claude Code** | splice wraps it — `claude` must resolve on PATH | `npm install -g @anthropic-ai/claude-code` |
+| **Claude Code** | splice wraps it; `claude` must resolve on PATH | `npm install -g @anthropic-ai/claude-code` |
 | **curl** + **bash** | the installer | preinstalled almost everywhere |
 | **GitHub CLI** (optional) | signed in, it lets release installs and `splice upgrade` also verify each asset's build-provenance attestation | [cli.github.com](https://cli.github.com), then `gh auth login`; without it the install still verifies checksums and prints the command that checks provenance later |
 
@@ -129,7 +129,7 @@ cd splice
 ```text
 Install splice (https://github.com/torad-labs/splice) on this machine and verify it works:
 1. Check prerequisites: bash, curl, Java 21+, Node 22.15+ (24 recommended), and Claude Code
-   (`claude` on PATH). Install anything missing with this machine's package manager —
+   (`claude` on PATH). Install anything missing with this machine's package manager:
    show me each install command and ask before running it.
 2. Install from source: `git clone https://github.com/torad-labs/splice && cd splice
    && ./install.sh` (or use the release one-liner from the README instead).
@@ -137,7 +137,7 @@ Install splice (https://github.com/torad-labs/splice) on this machine and verify
 4. Ask me for an OpenRouter API key (I can create one at https://openrouter.ai/keys),
    store it with `splice key set OPENROUTER_API_KEY --stdin`, without printing it, then run
    `splice add openrouter --yes`. The key store also works with a systemd-managed daemon.
-5. Run `splice doctor` and fix anything it flags — every failing check prints its own
+5. Run `splice doctor` and fix anything it flags. Every failing check prints its own
    fix command. Repeat until it reports no blockers.
 6. Tell me it's ready and that `claude-openrouter` launches Claude Code through OpenRouter.
 ```
@@ -176,14 +176,14 @@ Use your existing head key and fields in place of the example. Slot names are op
 
 A model you add this way is priced from the card OpenRouter lists for it, read when the daemon starts and every hour after, so its turns read `API est.` on the status line and count against a budget. A model OpenRouter lists no price for reads `no rate card`. A `rates = { input = …, cache_read = …, output = … }` line on the row wins over the listed price.
 
-No export handy? There are two other ways to get the key in — both land in
+No export handy? There are two other ways to get the key in. Both land in
 `~/.config/splice/keys.toml` (0600), which every later daemon start reads from any shell:
 
-- `claude-openrouter login` — a masked terminal prompt (the key never hits shell history, `ps`, or a
+- `claude-openrouter login`: a masked terminal prompt (the key never hits shell history, `ps`, or a
   session transcript).
 - Inside a `claude-openrouter` session, while the key is missing, splice offers to capture it: paste the
   key as a **bare message** (nothing else in the text) and it is stored and blocked before it
-  reaches the model — it never travels upstream. The session transcript still records the paste,
+  reaches the model. It never travels upstream. The session transcript still records the paste,
   so the masked `claude-openrouter login` stays the zero-trace path.
 
 An explicit `OPENROUTER_API_KEY` in the daemon's environment always wins over the store.
@@ -195,9 +195,9 @@ Run `splice add codex`, `splice add grok`, `splice add kimi` or `splice add muse
 
 If the daemon is already running, finish pending work before a full `splice restart` to load topology changes; a `context_window` edit needs none (see [Long-session reliability](#long-session-reliability)). A head restart alone does not reload TOML. splice keeps its own credentials; you don't need to share the vendor CLI's credential file. See [credential locations](#credential-locations).
 
-### Native Claude
+### Claude
 
-For Claude itself, `claude-splice` preserves Claude Code's native Anthropic login while routing through splice. Claude Code signs in itself; its sign-in passes through splice to Anthropic untouched, and splice keeps a copy only of a login you save under a label (see [What splice keeps on your disk](#what-splice-keeps-on-your-disk)). Use Claude Code's own `/login` inside that head; `splice login claude-splice --label <name>` keeps several logins and switches between them ([More than one Claude login](#more-than-one-claude-login-on-claude-splice)).
+`claude-splice` routes Claude Code through splice and keeps its own Claude Code config directory. Sign in with `/login` inside that command or use Accounts in the console. Accounts names plain claude’s login and claude-splice’s own login separately, and a sign-in dialog names the login it changes. A Claude head can also hold additional subscriptions in separate splice-owned folders and select between its available logins per request ([More than one Claude login](#more-than-one-claude-login-on-claude-splice)). Splice reads the commands' live access tokens for selection but never refreshes their credentials. It refreshes only the added accounts whose folders it alone owns.
 
 ### The billing word in Claude Code's header
 
@@ -205,7 +205,7 @@ Claude Code's header prints a billing word beside the model. On `claude-splice` 
 
 ## Manage your sessions
 
-Use `splice dashboard` to see all heads in one place: live status, start/stop/restart controls, layered configuration with provenance, per-head usage soft-warnings, authentication and logs. These are local controls, not a hosted service.
+Use `splice dashboard` to open the local console: Accounts, Requests, Sessions, Teams, Usage, Models, Playground and Settings. Accounts shows each login's availability and sign-in remedy; Sessions opens individual conversations; Requests keeps their turn records. Models lists what each command serves, while Usage shows quota and API-rate estimates. Settings holds typed controls, storage, health checks and the advanced configuration editor. These are local controls, not a hosted service.
 
 Admin verbs go through the `splice` command:
 
@@ -219,7 +219,7 @@ splice models         # what each provider ACTUALLY serves, against your declare
 splice upgrade        # verified upgrade to the latest release (--to vX, --now, --rollback)
 splice sessions       # the Claude Code sessions on this machine, joined to their heads
 splice perf           # per-head latency, failure and cache summary (--window 1h|24h|7d)
-splice wire <head>    # the request bodies a head sent upstream — only once you opt that head in
+splice wire <head>    # the request bodies a head sent upstream; only once you opt that head in
 splice trace <head>   # a head's full request/response trace from disk (--turn ID, --purge); on for every head
 splice restart        # restart; a supervising systemd unit supplies its own environment
 splice dashboard      # open the control dashboard (loopback :3096)
@@ -240,7 +240,9 @@ The dashboard's data and control API need a secret key and answer only on this m
 
 ### Plan usage in Claude Code
 
-splice passes provider-reported usage into Claude Code's status line, including usage windows and reset times where available. Dashboard usage warnings are advisory; they do not block requests.
+splice passes provider-reported usage into Claude Code's status line, including usage windows and reset times where available. On Claude heads, Usage reads the carrying login's quota, then the next selectable login if no carrying reading is available. Models uses the carrying login's name when no login is selected, while keeping its count of other subscriptions. Sessions resolves only that session's own known login and does not borrow another session's selection.
+
+Accounts warns when the known carrying login reaches the percentage selected in Settings and no other login is reported able to take over. The warning names the quota window and its reset; the card, banner and dialog give the same sign-in remedy for an expired login. An unidentified login says “Login not identified yet.” Settings marks the current warning percentage as “Selected”. These warnings are advisory; they do not block requests.
 
 Subscription heads poll their own provider every five minutes while the daemon is running so usage can appear before the first turn. ChatGPT reads its usage endpoint, Kimi its usages endpoint, Grok its billing endpoint, and Muse the usage in its key-mint response, using that head's own credential. Heads using an API key, and heads passing Claude Code's own login through, do not poll. Set `CLAUDEX_QUOTA_POLL=off` in the daemon's environment to disable polling, then restart the daemon after pending work finishes; usage can still arrive in each turn's rate-limit headers.
 
@@ -254,7 +256,7 @@ On the first launch of each head, splice links its `sessions` directory to the s
 
 There is nothing to configure. `sessions` is in the default `[claude].share` list. Put it in a head's `isolate` list to wall that head off, or remove it from `share` to turn the feature off everywhere. Release tests check this on a clean install.
 
-In the console, open Sessions, group by Team and choose New team. Give it a repo, a goal and role slots, each with a role, a head, its own instructions and a session. On its next turn through splice, a session bound to an active team gets its role, the team goal, the slot's instructions and where to reach the lead. The board shows each seat's role, plan, session, instructions and whether it is working, with lifetime turns and estimated cost. It also shows hand-offs and sampled activity. The economics API aggregates turns, tokens and estimated cost per role and slot. A plain `claude` session can hold a slot, but its own messages don't pass through splice, so the board shows only what it receives.
+In the console, open Sessions, group by Team and choose New team. Give it a repo, a goal and role slots, each with a role, a head, its own instructions and a session. On its next turn through splice, a session bound to an active team gets its role, the team goal, the slot's instructions and where to reach the lead. The board shows each seat's role, plan, session, instructions and whether it is working, with lifetime turns and estimated cost at API rates. It also shows hand-offs and sampled activity. The economics API aggregates turns, tokens and estimated dollars at API rates per role and slot. A plain `claude` session can hold a slot, but its own messages don't pass through splice, so the board shows only what it receives.
 
 ## Troubleshooting
 
@@ -288,19 +290,19 @@ Splice signs in on its own. Each OAuth head keeps its own credential file under 
 
 | Backend / route | Auth kind | Location | Notes |
 | --- | --- | --- | --- |
-| Claude (`claude-splice`) | `client` | Claude Code's native credential store | Claude Code signs in itself; its sign-in passes through splice to Anthropic untouched, and splice keeps a copy only of a login you save under a label |
+| Claude (`claude-splice`) | `client` | Plain claude’s login and claude-splice’s own login in separate Claude Code directories; additional accounts under `~/.splice/state/claude-accounts/<head>/<label>/` | Claude Code performs sign-in; splice never refreshes the commands' own credentials and refreshes only the added folders it owns |
 | codex (ChatGPT) | `chatgpt-oauth` | `~/.config/splice/auth/codex.json` | splice's own OAuth tokens (`splice login claudex`); `~/.codex/auth.json` only by explicit `auth.file` |
 | grok (xAI) | `grok-oauth` | `~/.config/splice/auth/grok.json` | splice's own OAuth tokens (`claude-grok login`); `~/.grok/auth.json` only by explicit `auth.file` |
 | kimi (Moonshot) | `kimi-oauth` | `~/.config/splice/auth/kimi.json` (+ `device_id` beside it) | splice's own device-flow token (`claude-kimi login`); the app's file only by explicit `auth.file` |
 | muse (Meta) | `muse-oauth` | `~/.config/splice/auth/muse.json` | splice's own device-flow account token plus minted inference key (`claude-muse login`); the Muse Code CLI file only by explicit `auth.file` |
-| OpenRouter | `api-key` | `$OPENROUTER_API_KEY` (env) or `~/.config/splice/keys.toml` | API key — password-equivalent |
-| Moonshot (pay-per-token) | `api-key` | `$MOONSHOT_API_KEY` (env) or `~/.config/splice/keys.toml` | API key — password-equivalent |
-| splice api-key store | — | `~/.config/splice/keys.toml` (0600) | env wins over the store — password-equivalent |
-| splice control plane | — | `~/.splice/state/mgmt-key` (pre-0.4 installs: `~/.claude-codex/state/mgmt-key`) | dashboard/API unlock key — password-equivalent |
+| OpenRouter | `api-key` | `$OPENROUTER_API_KEY` (env) or `~/.config/splice/keys.toml` | API key; password-equivalent |
+| Moonshot (pay-per-token) | `api-key` | `$MOONSHOT_API_KEY` (env) or `~/.config/splice/keys.toml` | API key; password-equivalent |
+| splice api-key store | - | `~/.config/splice/keys.toml` (0600) | env wins over the store; password-equivalent |
+| splice control plane | - | `~/.splice/state/mgmt-key` (pre-0.4 installs: `~/.claude-codex/state/mgmt-key`) | dashboard/API unlock key; password-equivalent |
 
 ### More than one ChatGPT, Grok, Kimi or Muse account
 
-An OAuth head (ChatGPT, Grok, Kimi or Muse) can hold several accounts of its kind and switch between them when one runs out; `claude-splice` keeps several Claude logins instead, [switched by you](#more-than-one-claude-login-on-claude-splice).
+An OAuth head (ChatGPT, Grok, Kimi or Muse) can hold several accounts of its kind and switch between them when one runs out. Claude heads also have per-head pools, with different credential ownership and sign-in ([More than one Claude login](#more-than-one-claude-login-on-claude-splice)).
 `splice login <head>` without `--label` always signs in the primary account in the file above,
 so a revoked primary is replaced in place; every further `splice login <head> --label <name>` lands
 beside it under `<primary directory>/<kind>/<primary file>/<name>.json`, for the default primary
@@ -316,11 +318,12 @@ waiting for its browser cancels one started by the hook and starts over on Linux
 A pool does not lift a plan's limits: it lets a session continue on another account you hold while
 one is exhausted.
 
-Selection is sticky per session and decided only between turns. A session keeps the account it
-last used until its window is exhausted, its own sign-in is rejected, or a 429 asks for more than
-15 seconds through `Retry-After`. A console pin goes first; the next turn goes out on the pool account with the lowest
-seven-day usage whose five-hour window is open, and the session returns to its primary at the
-first turn once that account can be used again, after its window resets or its 429 hold ends. A turn already streaming finishes on the account it
+Selection is sticky per session and decided only between turns. A manual pin goes first. A saved
+order then gives explicit priority; without one, a session keeps its usable account and fallback
+prefers an available account whose weekly quota resets soonest, with the five-hour reset breaking
+ties. Missing or expired quota does not outrank a usable current reading. The session changes
+accounts when its quota is exhausted, its credential is rejected or a provider hold makes it
+unavailable; it does not return to the primary just because that account's window reset. A turn already streaming finishes on the account it
 started on. The first turn after a switch pays one cold prompt-cache read, and its perf row says
 so and names the account. When every account is out, the turn fails the way limits fail today
 and names the earliest reset across the pool. The status line names the session's account and why it switched. `splice status` and `splice doctor`
@@ -329,8 +332,25 @@ records each switch once under `[<head>]`.
 
 ### More than one Claude login on `claude-splice`
 
-`claude-splice` signs in with Claude Code's own `/login`, and its config directory holds one login
-at a time. `splice login claude-splice --label <name>` keeps several:
+A Claude head can hold multiple subscriptions. Accounts adds one through Claude Code's own
+browser sign-in into a new folder under `~/.splice/state/claude-accounts/<head>/<label>/`, never
+replacing another login. Once filed, it can join a running head through membership publication.
+The pool is per head, uses the same pin, saved order and sticky default selection described above,
+and switches only between turns. Plain claude’s login and claude-splice’s own login are separate
+selectable places on `claude-splice`: splice reads their live access tokens without refreshing
+or replacing their credentials during selection. It can refresh an added folder's credential
+because no other program uses that folder.
+
+The console names the login a sign-in will change. For an expired claude-splice login, its card,
+warning and dialog all say “Sign in again on claude-splice in the console.” Removing or renaming
+a Claude login requires its explicit target kind and stable id; a saved display name never
+chooses between a command's own login and an added account with the same name. Removing a
+command's own login is refused while its sessions are active or their state is unknown, and its
+credential is backed up before removal.
+
+The labelled-copy CLI is separate from automatic pool selection. `claude-splice` still holds one
+own login at a time in its config directory; `splice login claude-splice --label <name>` saves or
+switches copies of that login:
 
 - **Save.** With a login the label has never seen, it saves the head's live login under `<name>`
   and selects it. With the label the head already holds, it saves the newer copy over the old.
@@ -348,7 +368,7 @@ into the head, and `splice login` changes the head's login only under four rules
 2. **Never under a running session.** While any session of `claude-splice` runs, or while splice
    cannot tell, it changes nothing and names the session.
 3. **Filed by account.** Each label records its account's id and email from the head's
-   `.claude.json`, never a token; splice copies the credential file byte for byte, never parses it and never calls Anthropic with it. A login
+   `.claude.json`, never a token; this labelled-copy operation copies the credential file byte for byte and never calls Anthropic with it. A login
    is filed only under the label of its own account. A `/login` to another account inside the head
    is refused under the selected label, naming both accounts: save it under a new label, or add
    `--discard` to a switch to drop it.
@@ -387,7 +407,7 @@ a shell redirect to an unquoted or literal path, reflection, and files written b
 | File | What it holds | Who can read it | How long it stays | Written by |
 | --- | --- | --- | --- | --- |
 | `~/.splice/state/activity/activity-<day>.jsonl`, `.jsonl.lock` and `.jsonl.1` | Activity labels: the file a session read, the program it ran or the pattern it searched, 32 characters of each, about one every 30 seconds while it works; `activityStoreHeads = ""` stops new labels after restart | Only you | Today and yesterday (UTC), so the Teams page can show your whole local day: a day's file is deleted at the second UTC midnight after it (within 10 minutes of waking, if the computer slept through it), or at the next daemon start if splice was stopped. Retained rows can be deleted from the Kept page | `ActivityStores.kt` |
-| `~/.splice/state/heads/<head>/code-mode/<hash>.json` and its empty `.lock` | A Codex head's code mode, one journal per conversation (named by a hash of the conversation's key): the model's scripts, tool calls with their arguments and results, script output and reasoning summaries | Only you (0600 journal, in a 0700 directory) | A conversation expires 24 hours after its last use, checked every 5 minutes. Parked cells are reclaimed only after positive session-death evidence or expiry, not because the client is quiet. The default stored-byte budget is a quarter of the daemon's maximum heap, and known-live sessions are protected from budget eviction. There are no default record-count, call-count or round-count caps. Explicit count overrides still apply, with known-dead sessions reclaimed first. Expiry markers age out one configured record lifetime after expiry. Each save appends only changed cell snapshots. Retention deletions compact the file to remove expired payload bytes. The whole directory goes at the next daemon start once code mode is off for the head or the head leaves `splice.toml`. The older single head file is migrated on first load. | `CodeModeStateJournal.kt` |
+| `~/.splice/state/heads/<head>/code-mode/<hash>.jsonl` and its empty `.lock` | A Codex head's code mode, one journal per session, conversation and model key (named by its hash): the model's scripts, tool calls with their arguments and results, script output and reasoning summaries | Only you (0600 journal, in a 0700 directory) | A conversation expires 24 hours after its last use, checked every 5 minutes. Capacity pressure can reclaim parked cells, including a live session's, but never executing or borrowed cells. The idle sweep reclaims unknown sessions after 30 minutes and known-dead sessions, never a known-alive cell merely for being quiet. The default stored-byte budget is a quarter of the daemon's maximum heap, and known-live sessions are protected from budget eviction. There are no default record-count, call-count or round-count caps. Explicit count overrides still apply, with known-dead sessions reclaimed first. Expiry markers age out one configured record lifetime after expiry. Each save appends changed top-level conversation fields and changed cell snapshots. Retention deletions compact the file to remove expired payload bytes. Checkpoints force the replacement file before the atomic rename, then force its directory. A legacy `<hash>.json` is removed only after its `.jsonl` replacement is durable. Across downgrade, the latest cell and expiry state wins; `.jsonl` wins identical-state ties. The whole directory goes at the next daemon start once code mode is off for the head or the head leaves `splice.toml`. The older single head file is migrated on first load. | `CodeModeStateJournal.kt` |
 | `~/.splice/state/trace/<head>-<day>.jsonl`, `.jsonl.lock`, `.jsonl.1`, `.jsonl.bodies2` and, for days before 2026-10-05, `.jsonl.bodies` | Every head records requests with sign-in headers removed, upstream bodies and responses, and client frames by default. JSONL rows hold stamps and content-addressed body references. The daily binary pack stores deterministic chunks of about 8 KiB once, each compressed with zstd, sharing identical client/upstream bodies and unchanged prefixes inside a 1 GiB daily budget; a head that reaches it says so once that day in `daemon.log`. `splice trace` hydrates selected records and still reads legacy inline rows. Each body is kept whole up to `traceMaxBodyChars` (default 16 Mi characters), with longer bodies marked truncated. Trace telemetry uses page-cache writes without per-record forces. A head with `[heads.<key>.overrides] trace = "false"`, or capture switched off in the console, stops new writes after restart. | Only you (owner-only directory) | `traceRetentionDays` (default 7): whole UTC days and their packs age out at midnight or the next daemon start; `splice trace <head> --purge` or the Kept page deletes retained days and packs now. Companion-only days remain discoverable, including removed heads and heads switched off, whose days are removed on the next start. | `HeadTraceStores.kt`, `TraceBodyPack.kt` |
 | `~/.splice/state/compactions/<head>/<hash>.json` | The answer of a finished compaction whose client hung up, kept so its retry gets the same bytes | Only you (0600) | Until the retry takes it, 2 hours at most: an expired one goes at the head's next save or the next daemon start, and a head removed from `splice.toml` loses the whole directory at the next start | `CompactionRecordings.kt` |
 | `~/.splice/state/heads/<head>/reasoning/<conversation>.jsonl` (and an empty `.lock` beside each) | The provider's encrypted reasoning for each tool call plus its readable summary, on ChatGPT, OpenAI Responses and Muse heads by default. The summary is not encrypted: anyone who can read the file can read it. A restarted daemon can send the envelope back to that provider | Only you (0600, in a 0700 directory) | No inactivity expiry; survives restart. Removed when the conversation compacts, when the provider rejects it as stale, or when the head holds more than 8192 rounds or 64 MB across its conversations (the least recently used conversation goes first). Its conversations go at the next daemon start once the head's `reasoning_cache` is off, and the whole directory once the head leaves `splice.toml` | `ReasoningCacheFiles.kt` |
@@ -439,19 +459,19 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | `~/.splice/state/launch-owners/<pid>.json` | Launcher-declared PID, process birth, head, base URL, session/login kind and hook origin; no credentials | Only you (0600), in an owner-only directory | Reaped when the PID is gone, on lookup or a new launch; reused PIDs never validate | `LaunchOwners.kt` |
 | `~/.splice/state/worker-artifacts/<pid>-<birth>/<sha256>.jar` and `archive-*.tmp` | The daemon's exact worker archive, hardlinked when possible and copied otherwise; no session content | Only you, in 0700 directories | While its daemon is alive; dead or reused process identities are reaped when the next runtime boots. A live owner with an unavailable birth is retained. Copy stages are removed after publication or failure | `WorkerArtifactPins.kt` |
 | `~/.splice/state/teams.json` (and `.bak`) | Your teams: their slots, heads, bound sessions and each slot's standing instructions | Only you (0600) | Kept; an archived team is flagged, not deleted. `.bak` is the version before the last write | `TeamStore.kt` |
-| `~/.splice/state/account-order.json` and `account-order.json.bak-<epoch-millis>` | Per-head failover order, as account labels only; no credentials | Only you (0600) | Until changed; a dated backup is kept before each replacement | `AccountOrderStore.kt` |
-| `~/.splice/state/budgets.json`, `alerts.json` (and their `.bak`) | Daily spend budgets per head; alert settings, including a webhook URL, which can carry its own secret | Only you (0600) | Until changed; `.bak` is the version before | `BudgetStore.kt`, `AlertStore.kt` |
+| `~/.splice/state/account-order.json` and `account-order.json.bak-<epoch-millis>` | Per-head failover order, as stable account selector keys only; no credentials | Only you (0600) | Until changed; a dated backup is kept before each replacement | `AccountOrderStore.kt` |
+| `~/.splice/state/budgets.json`, `alerts.json` (and their `.bak`) | Daily API-rate estimate budgets per head; alert settings, including a webhook URL, which can carry its own secret | Only you (0600) | Until changed; `.bak` is the version before | `BudgetStore.kt`, `AlertStore.kt` |
 | `~/.splice/state/activity/edges-<day>.jsonl`, `.jsonl.lock` and `.jsonl.1` | Which session sent a message to which, and when; never the message's text. `messageEdges = "false"` stops new edges after restart | Only you | `activityRetentionDays` (default 90, at least 2): a day is deleted at the UTC midnight it leaves that window (within 10 minutes of waking, if the computer slept through it), or at the next daemon start if splice was stopped. Retained rows can be deleted from the Kept page | `ActivityStores.kt` |
 | `~/.splice/state/<head>-perf.jsonl`, `.jsonl.lock`, `.jsonl.1` and `perf-archive/<head>-perf.jsonl-<yyyyMMddTHHmmssZ>` | One row per turn: model, outcome, timings and token counts | Only you | Rolled at 64 MB into the archive; archived files older than `perfArchiveRetentionDays` (default 90) are deleted at the next rotation; Delete under Turn statistics on the console's Kept page removes all of it now | `PerfStats.kt` |
 | `~/.splice/<head>-compact-stats.jsonl`, `.jsonl.lock` and `.jsonl.1` (codex: `claudex-compact-stats.jsonl`; grok: `claude-grok-compact-stats.jsonl`) | One row per compaction: outcome, duration, summary length, failure type, and the custom compaction instructions in force with their source | Only you | Rolled at 64 MB, one older copy kept | `Compact.kt` |
-| `~/.splice/state/<head>-session-totals.json` | Tokens and dollars per session, by model | Only you (0600) | A session idle 30 days is dropped; 256 sessions at most; Delete under Turn statistics removes it now, and an open session's cost counts again from zero | `SessionTotals.kt` |
+| `~/.splice/state/<head>-session-totals.json` | Tokens and estimated dollars at API rates per session, by model | Only you (0600) | A session idle 30 days is dropped; 256 sessions at most; Delete under Turn statistics removes it now, and an open session's cost counts again from zero | `SessionTotals.kt` |
 | `~/.splice/state/activity/<prefix>.days.lock` and `trace/<head>.days.lock` | Empty, stable cross-process locks exclude whole day-store appends, companion publication, retention and purge | Only you | One per store; never unlinked by day deletion, so waiting processes keep the same lock inode | `DayMutationLock.kt` |
 | `~/.splice/state/activity/activity.deleted`, `activity/edges.deleted` and `trace/<head>.deleted` | Empty-store markers holding only `deleted` | Only you (0600) | Cleared at the store's next append; a removed head's trace marker can remain | `ActivityStores.kt`, `HeadTraceStores.kt` |
 | `<primary directory>/<kind>/<primary file>/<label>-quota.json` | A pooled account's latest plan usage | Only you (0600) | Replaced at each quota update; removed with the account | `QuotaTracker.kt` |
 | `~/.splice/state/claude-credential-identities/<private credential digest>.json` | The provider-verified account UUID and displayed email, or an empty identity marking a definite refused or no-account profile. No tokens, response body or error text | Only you (0600) | Retained across restarts; the same credential is not probed again after a definite refusal or no-account profile. A new credential digest gets a new attempt | `ClaudeCredentialProfiles.kt` |
 | `~/.splice/state/<head>-quota-<credential-digest>.json` | Successful native request quota windows and their observation timestamp, keyed by the actual request credential. No credential bytes or request content | Only you (0600) | Replaced when that credential is observed again; retained across restarts | `CredentialQuotaFiles.kt` |
 | `~/.splice/state/turns.deleted` | A marker that turn statistics were deleted from the console's Kept page; it holds the word `deleted` and nothing else | Only you (0600) | Until the next turn writes a statistics line | `TurnKeptRoutes.kt` |
-| `~/.splice/state/<head>-economics.json` | Tokens, bytes and dollars per hour | Only you (0600) | 8 days | `EconomicsStore.kt` |
+| `~/.splice/state/<head>-economics.json` | Tokens, bytes and estimated dollars at API rates per hour | Only you (0600) | 8 days | `EconomicsStore.kt` |
 | `~/.splice/state/<head>-usage.json`, `-ratelimit.json`, `-quota.json` (codex and grok keep `codex-*` and `grok-*`) | Output tokens per minute; the provider's latest rate-limit and quota readings | Only you (0600) | Replaced as they change; usage covers the last 5 hours | `UsageRingFile.kt`, `RateLimitFile.kt`, `QuotaTracker.kt` |
 | `~/.splice/state/<head>-provider-hold.json`, and `<head>-<account>-provider-hold.json` for each account of a pool | When the provider said it stops refusing turns: the reset instant of a spent limit and the plan window it named, as timestamps and a window name, no content | Only you (0600) | Removed once the reset passes or a turn is answered | `ProviderHoldStore.kt` |
 | `~/.splice/state/<head>-client-windows.json` and `<head>-client-windows.json.tmp` | The context window Claude Code reported for each session; the sibling stages a replacement | Only you | The 512 most recent sessions; the temporary sibling is moved into place on success and can remain after failure | `ClientWindows.kt` |
@@ -506,14 +526,14 @@ can run rig's installer.
 
 | Route | Auth | Status |
 | --- | --- | --- |
-| Claude (`claude-splice`) | `client` (Claude Code native login) | **Primary** — Anthropic passthrough; Claude Code signs in itself, and splice keeps a copy only of a login you save under a label |
-| OpenRouter | `api-key` (`OPENROUTER_API_KEY`) | **Supported** — pay-per-token, any OpenAI-compatible vendor |
-| Moonshot | `api-key` (`MOONSHOT_API_KEY`) | **Supported** — pay-per-token Anthropic base |
-| codex (ChatGPT) | `chatgpt-oauth` | **Primary** — what splice was built for |
+| Claude (`claude-splice`) | `client` (Claude Code sign-in) | **Primary**: per-head Claude account pool; Claude Code signs in, splice reads the commands' own logins without refreshing them and refreshes only added account folders |
+| OpenRouter | `api-key` (`OPENROUTER_API_KEY`) | **Supported**: pay-per-token, any OpenAI-compatible vendor |
+| Moonshot | `api-key` (`MOONSHOT_API_KEY`) | **Supported**: pay-per-token Anthropic base |
+| codex (ChatGPT) | `chatgpt-oauth` | **Primary**: what splice was built for |
 | grok (xAI) | `grok-oauth` | **Primary** |
 | kimi (Moonshot) | `kimi-oauth` | **Primary** |
 | muse (Meta) | `muse-oauth` | **Primary** |
-| Local runtimes (Ollama, LM Studio, vLLM) | `api-key` on a loopback `base_url` | **Supported** — user-managed; rows validated against what the runtime serves |
+| Local runtimes (Ollama, LM Studio, vLLM) | `api-key` on a loopback `base_url` | **Supported**: user-managed; rows validated against what the runtime serves |
 
 The **OAuth-identity** routes are the reason splice exists: they run Claude Code on the subscription you already pay for, signing in through each provider's page. The **api-key** routes are ordinary pay-per-token API access and make the best zero-config starter.
 
@@ -580,7 +600,7 @@ compaction requests only, so the cached request prefix is byte-identical with an
 
 ### Per-head system prompt
 
-`system_prompt` under `[heads.<key>]` gives that head standing instructions on **every** turn —
+`system_prompt` under `[heads.<key>]` gives that head standing instructions on **every** turn:
 inline text, or `system_prompt_file = "~/path"` (never both; both present is a config error at
 load, as is a file that cannot be read). Absent, or `""`, is exactly today's bytes.
 
@@ -613,9 +633,23 @@ off, in the provider's existing quirks section:
 code_mode = false # true or omitted enables both runner and guidance on Claudex-shaped providers
 ```
 
-When on, an eligible turn declares one tool, `exec`, the way Codex does for a model its catalog runs code-mode-only: splice's bundled JavaScript runner, whose description lists every fully declared tool as a TypeScript declaration, with deferred tools named in `ALL_TOOLS`, called in a script as `await tools.Read({...})`; orchestration guidance is appended to the caller's instructions. Eligible: every model the Codex backend marks `tool_mode = "code_mode_only"` in its own model list (splice reads it at start, keeps it for the next start, and checks the current roster on every turn, so a model the backend adds needs no edit), plus the ids in `code_mode_models` in the same quirks section, which adds to that and is the only way to name a model the backend hides from its list, such as `codex-auto-review`. With no list known at start (no answer and none kept) only `code_mode_models` runs code mode, and the head's log says so once. A cell that fails reports why (the rejected tool's error text, or a syntax error's position) together with whatever it logged before failing, and output past 64 KiB is cut behind a `[truncated N chars]` marker rather than failing the cell. Toolless turns and forced named-tool choices keep the ordinary path; a compaction is built exactly like the turn before it, so its prompt cache still hits. Every real operation runs through Claude Code's permission-checked client handlers. The runner needs no Codex or Node installation because it runs inside splice; the launch shim itself needs Node 22.15+. Each script has an independent GraalJS context in a shared worker JVM on one prewarmed engine, with a default 512 MiB host heap and no guest host or file access.
+When on, an eligible turn declares one tool, `exec`, the way Codex does for a model its catalog runs code-mode-only: splice's bundled JavaScript runner, whose description lists every fully declared tool as a TypeScript declaration, with deferred tools named in `ALL_TOOLS`, called in a script as `await tools.Read({...})`; orchestration guidance is appended to the caller's instructions. Eligible: every model the Codex backend marks `tool_mode = "code_mode_only"` in its own model list (splice reads it at start, keeps it for the next start, and checks the current roster on every turn, so a model the backend adds needs no edit), plus the ids in `code_mode_models` in the same quirks section, which adds to that and is the only way to name a model the backend hides from its list, such as `codex-auto-review`. With no list known at start (no answer and none kept) only `code_mode_models` runs code mode, and the head's log says so once. A cell that fails reports why (the rejected tool's error text, or a syntax error's position) together with whatever it logged before failing, and output past 64 KiB is cut behind a `[truncated N chars]` marker rather than failing the cell. Toolless turns and forced named-tool choices keep the ordinary path; a compaction is built exactly like the turn before it, so its prompt cache still hits. Every real operation runs through Claude Code's permission-checked client handlers. The runner needs no Codex or Node installation because it runs inside splice; the launch shim itself needs Node 22.15+. Each script has an independent GraalJS context with no guest host or file access. Scripts with the same persisted session, conversation and model key share one engine, isolate, guest heap and collector; another key gets its own. Hosts start only when a cell is admitted. A new session goes to the least-loaded eligible host and stays pinned there, with at most four session engines per host. `Promise.all` and `Promise.allSettled` calls still dispatch as one batch.
 
-Parked script contexts hold no permit or thread, and the worker setting does not limit how many can wait for client results. Quiet time does not reclaim a live session's cell: reclamation requires positive session-death evidence or conversation expiry, and known-live sessions are protected from stored-byte eviction. A closed script is never rerun; its evidence (results so far, unresolved calls, the reason) is what the model sees. That evidence is bounded only by the 1 MiB output ceiling; past it, each result is cut to an equal share behind a `[truncated N chars]` marker rather than the turn failing. A code-mode failure that no retry can change ends the turn with a readable `⚠ splice:` line instead of an API error, so the failure remains visible without starting an identical retry.
+The provider's quirks control the head's host and memory admission limits:
+
+| Setting | Default | What it limits |
+| --- | --- | --- |
+| `code_mode_workers` | 6 | On-demand host JVMs per head |
+| `code_mode_heap` | 512 MiB | Each host JVM's heap; each session's guest heap is 384 MiB at this default |
+| `code_mode_memory_mb` | 24576 MiB | The head-wide admission reservation, not an operating-system resident-memory limit |
+
+The reservation includes doubled heap allowances and native reserves. At the default heap size, each host reserves 1152 MiB and each session engine reserves 832 MiB. Six hosts and 21 engines reserve 24384 MiB; retaining a 22nd engine would need 25216 MiB, over the default budget. When no empty engine can be reclaimed, admission refuses before dispatch. The refusal names the memory budget, host cap, engines-per-host cap and both admission settings in the script's interrupted tool output. The turn continues rather than returning an HTTP 502. Capacity pressure can reclaim parked cells even in a live session, but executing or borrowed cells are never evicted to admit new work.
+
+An engine closes on explicit session close, whole-session state expiry, or session death after its last active record. Empty engines are eligible for idle eviction after one minute, and admission reclaims the least-recently-used empty engine first. Silence alone never reclaims a parked live cell. If a host dies, only its pinned cells fail, including cells waiting for script source. Their next cells use a fresh host in the same slot; lost source is not rerun.
+
+Parked script contexts hold no permit or thread, but their session's engine still counts toward the head's admission limits. A known-alive cell survives timer-based idle sweeps, but capacity pressure can close it while parked. Known-dead sessions and unknown sessions idle for 30 minutes are reclaimed; known-live persisted records remain protected from stored-byte eviction. A closed script is never rerun; its evidence (results so far, unresolved calls, the reason) is what the model sees. That evidence is bounded only by the 1 MiB output ceiling; past it, each result is cut to an equal share behind a `[truncated N chars]` marker rather than the turn failing. An admitted script's failure that no retry can change ends the turn with a readable `⚠ splice:` line instead of an API error, so the failure remains visible without starting an identical retry.
+
+When a streamed exec call is interrupted, replayed history uses its admitted source prefix and completed-call evidence rather than an uncertified raw input. The original retained call is not rewritten, and replaying history never reruns JavaScript. The daemon logs structural interruption causes without copying source text or upstream message text into that diagnostic.
 
 If splice can no longer match a completed script to the conversation (the record aged out, the session switched model, the conversation moved underneath a running script), splice sends the client's own history upstream instead, where the script's client calls are ordinary tool calls, and logs one `[code-mode]` line for the head. The conversation continues; only that script's batching is lost from the model's view.
 
@@ -716,17 +750,17 @@ The cache effect remains workload-dependent, but the reasoning-depth result was 
 ## Layout
 
 ```
-core/          :core — the shared kernel: config, topology, auth, turn, model, usage, and the
+core/          :core: the shared kernel: config, topology, auth, turn, model, usage, and the
                persistence primitives state lives in (framework-free by module law)
 integrations/  reusable adapters: claude-code/ (login, mcp, wrap, resume, transcript), upstream/
                (transport, retry, credentials), http/, mcp/ (the MCP host), topology/ (the loader),
                oauth/ (sign-in flows and account files), codemode/ (the GraalJS worker pool),
                daemon-client/ (the CLI's calls to a running daemon), terminal/ (prompts),
                dialects/ (wire contracts) and providers/ (vendor adapters)
-features/      capability projects — turns, sessions, models, heads, accounts, usage, lifecycle,
-               diagnostics, launch, configuration, events — with use-case slices as packages; one
+features/      capability projects: turns, sessions, models, heads, accounts, usage, lifecycle,
+               diagnostics, launch, configuration, events, with use-case slices as packages; one
                slice reaches another only through its public read models, ports and commands
-app/           :app — composition: the daemon, the control plane (app/control), the `splice` CLI, the
+app/           :app: composition: the daemon, the control plane (app/control), the `splice` CLI, the
                fat jar, the launch shim and the sample topology
                (src/main/dist/bin/splice-launch: every head command is an argv[0] symlink to it;
                src/main/resources/splice.example.toml: the sample multi-provider topology, shipped in the jar)

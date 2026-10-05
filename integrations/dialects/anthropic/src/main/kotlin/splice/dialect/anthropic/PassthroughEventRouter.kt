@@ -16,6 +16,10 @@ internal class PassthroughEventRouter(
     private val terminal: PassthroughTerminalState,
     private val usage: PassthroughUsage,
 ) {
+    private val shape = PassthroughOutputShape()
+
+    internal fun describeOutput(): String = "${shape.describe()} ${usage.describe()}"
+
     internal suspend fun onEvent(evt: JsonObject, sink: WireSink) {
         sink.withSourceFrame(evt) { wire -> dispatch(evt, wire) }
     }
@@ -23,9 +27,18 @@ internal class PassthroughEventRouter(
     private suspend fun dispatch(evt: JsonObject, sink: WireSink) {
         when (JsonScalars.strOrEmpty(evt["type"])) {
             "message_start" -> usage.harvestUsage((evt["message"] as? JsonObject)?.get("usage") as? JsonObject)
-            "content_block_start" -> blocks.onBlockStart(evt, sink)
+            "content_block_start" -> {
+                shape.openBlock(
+                    JsonScalars.int(evt, "index"),
+                    JsonScalars.strOrEmpty((evt["content_block"] as? JsonObject)?.get("type")),
+                )
+                blocks.onBlockStart(evt, sink)
+            }
             "content_block_delta" -> blocks.onBlockDelta(evt, sink)
-            "content_block_stop" -> blocks.onBlockStop(evt, sink)
+            "content_block_stop" -> {
+                shape.closeBlock(JsonScalars.int(evt, "index"))
+                blocks.onBlockStop(evt, sink)
+            }
             // ast-grep-ignore: kt-l3-sole-wire-terminals — reading upstream discriminator, not emitting
             "message_delta" -> onMessageDelta(evt)
             // ast-grep-ignore: kt-l3-sole-wire-terminals — reading upstream discriminator, not emitting
@@ -38,7 +51,9 @@ internal class PassthroughEventRouter(
     /** stop_reason classification first, then the turn-level usage delta — the order the pre-split
      *  onMessageDelta ran them in. */
     private fun onMessageDelta(evt: JsonObject) {
-        terminal.onStopReason(JsonScalars.strOrEmpty((evt["delta"] as? JsonObject)?.get("stop_reason")))
+        val reason = JsonScalars.strOrEmpty((evt["delta"] as? JsonObject)?.get("stop_reason"))
+        terminal.onStopReason(reason)
+        shape.onStopReason(reason)
         usage.harvestUsage(evt["usage"] as? JsonObject)
     }
 

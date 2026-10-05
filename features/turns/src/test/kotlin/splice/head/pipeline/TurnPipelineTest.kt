@@ -4,7 +4,10 @@
 // while an emitted native thinking block remains a clean success without any synthetic mirror.
 package splice.head.pipeline
 
+import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -22,6 +25,9 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.AsyncFileIo
+import splice.dialect.anthropic.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughStreamTranslator
+import splice.dialect.anthropic.PassthroughTurnContext
 import splice.head.compact.CompactStats
 import splice.head.compact.CompactStatsSummary
 import splice.head.wire.TurnTerminal
@@ -395,6 +401,35 @@ class TurnPipelineTest {
         assertEquals("terminal", rec.ending, "a closed empty message is a finished answer")
         assertEquals("empty_message", tag, "the log must still name the class")
         assertTrue(rec.texts.isEmpty(), "nothing is invented for the wire: ${rec.texts}")
+    }
+
+    @Test
+    fun `an Anthropic empty end_turn logs its shape and still sends overloaded_error`() = runTest {
+        val rec = RecTerminal()
+        val events = listOf(
+            """{"type":"message_start","message":{"usage":{"input_tokens":17}}}""",
+            """{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}""",
+            """{"type":"message_stop"}""",
+        ).map { Json.parseToJsonElement(it).jsonObject }
+        val success = PassthroughStreamTranslator(
+            PassthroughTurnContext({ false }, { null }, 180_000, 900_000),
+            PassthroughQuirks("synthetic"),
+        ).driveTurn(events.asFlow(), rec) as TurnOutcome.Success
+        val lines = mutableListOf<String>()
+        val tag = TurnPipeline(
+            compactStats = CompactStats(tmp.resolve("compact.jsonl")),
+            log = { lines.add(it) },
+            clampOutput = { it },
+        ).finishStream(rec, success, meta("thinking"), elapsedMs = 1)
+        assertEquals("empty_model", tag)
+        assertEquals("error", rec.ending)
+        assertEquals(ErrorType.OVERLOADED, rec.errorType)
+        assertEquals("overloaded_error", rec.errorType?.wireName)
+        assertTrue(rec.texts.isEmpty())
+        val shape = "opened=[] closed=[] stop_reason=end_turn " +
+            "input_tokens=17 cache_read_input_tokens=0 cache_creation_input_tokens=0 output_tokens=2"
+        assertEquals(listOf("[gateway] empty-turn shape compact=false $shape\n"), lines)
+        assertTrue(rec.errorMessage.contains(shape), rec.errorMessage)
     }
 
     @Test

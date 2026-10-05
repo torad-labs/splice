@@ -33,6 +33,11 @@ internal class PassthroughUsage {
         cacheWriteTokens = cacheCreation,
     )
 
+    /** The backend's disjoint counts, before the outcome's inclusive input normalization. */
+    internal fun describe(): String =
+        "input_tokens=$inputTokens cache_read_input_tokens=$cacheRead " +
+            "cache_creation_input_tokens=$cacheCreation output_tokens=$outputTokens"
+
     internal fun harvestUsage(u: JsonObject?) {
         u ?: return
         JsonScalars.firstLong(u, "input_tokens")?.let { inputTokens = it }

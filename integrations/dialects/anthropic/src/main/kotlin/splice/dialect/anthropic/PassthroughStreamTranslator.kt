@@ -235,6 +235,7 @@ public class PassthroughStreamTranslator(
         bodyText = channels.textBuf.toString(),
         emittedText = channels.emittedText,
         emittedThinking = channels.emittedThinking,
+        outputShape = router.describeOutput(),
     )
 }
 

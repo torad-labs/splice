@@ -59,7 +59,7 @@ export function FailoverOrder({ head, label = head, accounts, localRuntime = fal
     <section className="account-order" aria-label={`${label} ${A.failover}`}>
       <h3>{label} · {A.failover}</h3>
       <p className="why">{A.orderWhy}</p>
-      <p className="hint">{accounts.some(row => row.pinned === true) ? A.pinRule : A.nextBecause}</p>
+      {saved || accounts.some(row => row.pinned === true) ? <p className="hint">{accounts.some(row => row.pinned === true) ? A.pinRule : A.nextBecause}</p> : null}
       <p className="hint">{saved ? A.orderYours : A.orderDefault}</p>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}>
         <SortableContext items={order} strategy={verticalListSortingStrategy}>

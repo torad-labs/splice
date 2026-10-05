@@ -158,11 +158,14 @@ test('native order and switches use selector keys while rename keeps its native 
   await expect(order).toContainText('No order is saved');
   await expect(order).not.toContainText('native:claude');
   await expect(order).not.toContainText('Account ordering is unavailable');
+  await expect(order).not.toContainText('Splice tries the first available account in this order');
   await order.getByRole('button', { name: 'Move Separate login earlier', exact: true }).click();
   await expect(order).toContainText('You set this order');
+  await expect(order).toContainText('Splice tries the first available account in this order');
   expect(state.orders).toEqual([['native:claude-splice', 'native:claude']]);
   await order.getByRole('button', { name: 'Use the default order', exact: true }).click();
   await expect(order).toContainText('No order is saved');
+  await expect(order).not.toContainText('Splice tries the first available account in this order');
   expect(state.orders).toEqual([['native:claude-splice', 'native:claude'], []]);
   const separate = page.locator('.account-card').filter({ has: page.getByRole('heading', { name: 'Separate login', exact: true }) });
   await separate.getByRole('button', { name: 'Rename', exact: true }).click();

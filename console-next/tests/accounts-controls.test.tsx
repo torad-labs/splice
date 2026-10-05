@@ -73,6 +73,24 @@ test('order controls show the shared display name and only verified email, not s
   expect(html).not.toContain('unverified@example.invalid');
 });
 
+test.each([false, true])('first-available wording describes only a saved account order: saved=%s', saved => {
+  const client = new QueryClient();
+  const order = ['synthetic-first', 'synthetic-second'];
+  client.setQueryData(['account-order', 'synthetic-command'], {
+    head: 'synthetic-command', order: saved ? order : [], effective_order: order, single_account: false,
+  });
+  const html = renderToStaticMarkup(<QueryClientProvider client={client}><FailoverOrder head="synthetic-command" accounts={[]} /></QueryClientProvider>);
+  if (saved) {
+    expect(html).toContain('Splice tries the first available account in this order');
+    expect(html).toContain('You set this order.');
+    expect(html).not.toContain('No order is saved.');
+  } else {
+    expect(html).toContain('No order is saved.');
+    expect(html).toContain('Each session keeps its account while it remains available');
+    expect(html).not.toContain('Splice tries the first available account in this order');
+  }
+});
+
 test('native selector keys name the order while edit ids and visible names stay independent', () => {
   const rows: AccountRow[] = ['claude', 'claude-splice'].map(id => ({
     kind: 'client', label: id, selector_key: 'native:' + id, display_name: id === 'claude' ? 'Personal login' : 'Separate login',

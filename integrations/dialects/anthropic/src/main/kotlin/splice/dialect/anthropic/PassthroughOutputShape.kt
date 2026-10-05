@@ -1,3 +1,4 @@
+// NEW: (no Node source) a content-free description of an Anthropic stream's block and stop structure, for empty-turn diagnostics
 package splice.dialect.anthropic
 
 private val BLOCK_KINDS = setOf(

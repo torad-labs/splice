@@ -79,7 +79,8 @@ class PeerNoteSocketTest {
     @Test
     fun `a session on any version the probe proved is sent the note`(@TempDir root: Path) {
         // Installed builds that tools/probes/claude-code-peer-note.ts proved accept the frame and refuse its mutant.
-        for (version in listOf("2.1.282", "2.1.283", "2.1.284", "2.1.285", "2.1.286", "2.1.287")) {
+        val audited = listOf("2.1.282", "2.1.283", "2.1.284", "2.1.285", "2.1.286", "2.1.287", "2.1.289")
+        for (version in audited) {
             val inbox = inbox(root.resolve(version).also { Files.createDirectory(it) })
             assertEquals(NoteOutcome.Submitted("id-1"), send(record(inbox.socket, version)))
             assertEquals(PeerNoteFrame.encode("run the gate", "id-1"), inbox.received.get(5, TimeUnit.SECONDS))

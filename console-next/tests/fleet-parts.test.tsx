@@ -158,6 +158,18 @@ describe('an account row', () => {
     expect(html).not.toContain('Switch to this one');
     expect(row(acct({ available: false }))).toContain('Excluded by the pool, with no reason given.');
   });
+  test('a stale daemon quota window is marked out of date, while a fresh one reads plainly', () => {
+    const window = { seconds: 604800, used_percent: 59, reset_epoch_seconds: 1_800_100_000, observed_at_epoch_seconds: 1_799_900_000 };
+    const stale = row(acct({ windows: [{ ...window, current: false }] }));
+    expect(stale).toContain('Usage reading is out of date');
+    expect(stale).not.toContain('7d 59%');
+    const fresh = row(acct({ windows: [{ ...window, current: true }] }));
+    expect(fresh).toContain('7d 59%');
+    expect(fresh).not.toContain('Usage reading is out of date');
+    const expired = row(acct({ windows: [{ ...window, current: true, reset_epoch_seconds: 1_799_999_999 }] }));
+    expect(expired).toContain('Window reset');
+    expect(expired).not.toContain('7d 59%');
+  });
   test('an account whose login file is gone offers no Switch and says so', () => {
     const html = row(acct({ credential_present: false }));
     expect(html).not.toContain('Switch to this one');

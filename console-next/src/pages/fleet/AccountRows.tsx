@@ -2,14 +2,23 @@ import { useState } from 'react';
 import { failureText } from '../../api/client';
 import { useAccountOrder } from '../../api/account-order';
 import { isPendingRoute, useSwitchAccount, useUnpinAccount } from '../../api/auth';
-import { accountEmail, accountName, accountState, exclusionText, isExcluded, isServable, nextRuleOf, refusalText, steppedPast, windowSpan, windowUsedText } from '../../lib/accounts';
+import { accountEmail, accountName, accountState, exclusionText, isExcluded, isServable, isStale, nextRuleOf, refusalText, steppedPast, windowSpan, windowUsedText } from '../../lib/accounts';
 import type { AccountRow } from '../../types/accounts';
 import { Button } from '../../ui';
 import { AccountEdits } from '../shared/AccountEdits';
 import { D } from './copy';
+import { A } from '../accounts/copy';
+import { Q } from '../../lib/words-quota';
 
-const windowsText = (account: AccountRow): string =>
-  account.windows.map((window) => `${windowSpan(window)} ${windowUsedText(window)}`).join(' · ');
+const windowsText = (account: AccountRow, now: number): string =>
+  account.windows.map(window => {
+    const elapsed = isStale(window, now);
+    const old = window.current === false;
+    const words = `${windowSpan(window)} ${elapsed || old ? A.unreported : windowUsedText(window)}`;
+    if (!elapsed && !old) return words;
+    const observed = Q.observed(window.observed_at_epoch_seconds == null ? null : A.instant(window.observed_at_epoch_seconds));
+    return `${words} · ${elapsed ? A.reset : A.readingOld} · ${observed}`;
+  }).join(' · ');
 
 /** What a write's answer says when the daemon does not serve the route. */
 function useNote() {
@@ -52,7 +61,7 @@ export function AccountRowView({ account, now, pooled, pool }: { account: Accoun
         {shown.map((mark) => (
           <span key={mark} className="tag">{mark}</span>
         ))}
-        <span className="windows-text">{windowsText(account)}</span>
+        <span className="windows-text">{windowsText(account, now)}</span>
       </div>
       {past !== null ? <p className="hint">{D.steppedPast(name, D.windowWord(past.window.length_known === false ? null : past.window.seconds, windowSpan(past.window)), past.serving)}</p> : isExcluded(account, now) ? <p className="hint">{exclusionText(account)}</p> : null}
       {rule === null ? null : <p className="hint">{D.nextBecause(D.nextRule[rule])}</p>}

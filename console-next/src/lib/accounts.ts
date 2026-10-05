@@ -105,7 +105,7 @@ export const NOT_REREAD = W.notReread;
 export function nearestWindow(account: AccountRow, nowMs: number): AccountWindow | null {
   let best: AccountWindow | null = null;
   for (const window of account.windows) {
-    if (window.used_percent === null || isStale(window, nowMs)) continue;
+    if (window.used_percent === null || window.current === false || isStale(window, nowMs)) continue;
     if (best === null || best.used_percent === null) { best = window; continue; }
     if (window.used_percent > best.used_percent) { best = window; continue; }
     if (window.used_percent === best.used_percent && window.seconds < best.seconds) best = window;

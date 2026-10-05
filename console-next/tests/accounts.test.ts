@@ -47,6 +47,13 @@ test('a session login name uses its own label and head, never another session’
   expect(sessionAccountName([work, { ...work, display_name: 'Another place' }], 'synthetic', 'work')).toBe('work');
 });
 
+test('the daemon’s stale window verdict prevents a retained percentage from becoming current standing', () => {
+  const window = { seconds: 604800, used_percent: 94, reset_epoch_seconds: NOW / 1000 + 3600, current: false };
+  expect(nearestWindow(account({ windows: [window] }), NOW)).toBeNull();
+  expect(accountState(account({ windows: [window] }), NOW).label).toBe(NOT_REPORTED);
+  expect(accountState(account({ windows: [{ ...window, current: true }] }), NOW).label).toBe('warn 94%');
+});
+
 const HOUR_5 = 18000;
 const DAY_7 = 604800;
 const DAY_30 = 2592000;

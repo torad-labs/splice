@@ -215,6 +215,33 @@ test('an Accounts read failure stays visible while command kinds are still being
   }
 });
 
+test('Models account rows honor the daemon freshness verdict without making a retained quota current', async ({ page }) => {
+  let current = false;
+  await page.route(url => url.pathname === '/api/accounts', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as AccountsWire;
+    const base = body.accounts.find(row => row.heads.includes(STACK.oauthHead));
+    if (base === undefined) throw new Error('synthetic account fixture is missing');
+    const now = Math.floor(Date.now() / 1000);
+    const row: AccountWire = {
+      ...base, label: 'synthetic-reading', display_name: 'Synthetic reading', selected: false,
+      five_hour_used_percent: null, five_hour_reset_epoch_seconds: null,
+      seven_day_used_percent: 59, seven_day_reset_epoch_seconds: now + 3600,
+      seven_day_window_seconds: 604800, seven_day_current: current, observed_at_epoch_seconds: now - 3600,
+    };
+    await route.fulfill({ json: { accounts: [row] } });
+  });
+  const faults = await open(page, 'models/' + STACK.oauthHead);
+  const account = page.locator('li.account').filter({ has: page.getByText('Synthetic reading', { exact: true }) });
+  await expect(account).toContainText('Usage reading is out of date');
+  await expect(account).not.toContainText('7d 59%');
+  current = true;
+  await page.reload();
+  await expect(account).toContainText('7d 59%');
+  await expect(account).not.toContainText('Usage reading is out of date');
+  await assertHealthy(page, faults);
+});
+
 for (const carrying of [true, false, null, undefined]) {
   test(`Accounts marks native request carrying from the roster only: ${String(carrying)}`, async ({ page }) => {
     await page.route(url => url.pathname === '/api/accounts', async route => {

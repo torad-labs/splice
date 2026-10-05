@@ -20,8 +20,8 @@
 //
 // The arms run IN ORDER in ONE sandbox, as the script's did — several depend on what the previous
 // one left in the daemon-state file.
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { userInfo } from "node:os";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { shimMarkers } from "./shim.ts";
 import { makeSandbox, writeStub } from "./sandbox.ts";
@@ -68,7 +68,7 @@ interface Ctx {
   readonly captures: { java: string; javaArgv: string; unit: string; pwned: string; bootLog: string };
   readonly stateDir: string;
   readonly daemonState: string;
-  launch(env: Record<string, string | undefined>, argv?: readonly string[]): Promise<Run>;
+  launch(env: Record<string, string | undefined>, argv?: readonly string[], command?: string): Promise<Run>;
   cold(): void;
 }
 
@@ -386,11 +386,100 @@ const ARMS: readonly Arm[] = [
     },
   },
   {
+    name: "wrapped Claude under another HOME runs unwrapped without contacting splice",
+    run: async (ctx) => {
+      const otherHome = join(ctx.dir, "wrapped-other-home");
+      const state = join(ctx.dir, "home", ".splice", "state", "claude-head-wrap.json");
+      const binary = join(ctx.dir, "real-claude");
+      const capture = join(ctx.dir, "real-claude-capture");
+      const wrapped = join(ctx.dir, "claude");
+      symlinkSync(ctx.shim, wrapped);
+      mkdirSync(join(otherHome, ".config", "splice"), { recursive: true });
+      writeFileSync(join(otherHome, ".config", "splice", "splice.toml"), `[daemon]\ncontrol_port = ${ctx.daemon.toml}\n`);
+      writeStub(binary,
+        'import { writeFileSync } from "node:fs";\n' +
+        `writeFileSync(${JSON.stringify(capture)}, JSON.stringify({ argv: process.argv.slice(2), home: process.env.HOME, marker: process.env.SYNTHETIC_KEEP, config: process.env.CLAUDE_CONFIG_DIR }));\n` +
+        "process.exit(23);\n",
+      );
+      const argv = ["plugin", "validate", "--strict", "synthetic plugin dir", "", "line one\nline two"];
+      const launches = [[undefined, argv], [String(ctx.daemon.state), argv], [undefined, ["login", "--label", "synthetic"]]] as const;
+      for (const [port, words] of launches) {
+        writeFileSync(state, JSON.stringify({ real_binary_path: binary, shim_path: ctx.shim }));
+        const unitState = port === undefined ? undefined : join(ctx.dir, "unit selected state");
+        if (unitState !== undefined) {
+          mkdirSync(unitState, { recursive: true });
+          writeFileSync(join(unitState, "claude-head-wrap.json"), readFileSync(state));
+          writeFileSync(state, JSON.stringify({ real_binary_path: join(ctx.dir, "wrong-default") }));
+        }
+        ctx.cold();
+        const reads = ctx.daemon.healthReads;
+        const run = await ctx.launch({
+          HOME: otherHome, SPLICE_HEAD: undefined, SPLICE_CONTROL_PORT: port,
+          LAUNCHER_UNIT_STATE_DIR: unitState,
+          SYNTHETIC_KEEP: "unchanged", CLAUDE_CONFIG_DIR: join(otherHome, "synthetic-config"),
+        }, words, wrapped);
+        if (run.code !== 23) return `wrapped Claude must propagate the real binary's exit: ${run.output}`;
+        const expected = { argv: words, home: otherHome, marker: "unchanged", config: join(otherHome, "synthetic-config") };
+        if (read(capture) !== JSON.stringify(expected)) return "unwrapped argv or caller environment changed";
+        if (ctx.daemon.healthReads !== reads || ctx.daemon.lastLaunch || ctx.daemon.lastShutdown ||
+            existsSync(ctx.captures.unit) || existsSync(ctx.captures.javaArgv)) {
+          return "foreign-HOME wrapped Claude contacted or started splice";
+        }
+        if (run.stderr.trim().split("\n").length !== 1 || !run.stderr.includes("unwrapped")) {
+          return `unwrapped Claude must print only its one explanatory line: ${run.stderr}`;
+        }
+      }
+      ctx.cold();
+      const reads = ctx.daemon.healthReads;
+      const named = await ctx.launch({ HOME: otherHome, SPLICE_HEAD: "synthetic-named" });
+      if (named.code !== 1 || ctx.daemon.healthReads !== reads) return "a foreign-HOME named head must still refuse";
+      rmSync(capture, { force: true });
+      const same = await ctx.launch({ SPLICE_HEAD: undefined }, [], wrapped);
+      if (same.code !== 0 || ctx.daemon.lastLaunch?.url !== `http://127.0.0.1:${ctx.daemon.toml}/launch/claude` ||
+          existsSync(capture)) return "same-HOME wrapped Claude must still route through splice";
+      return null;
+    },
+  },
+  {
+    name: "wrapped Claude refuses missing or recursive recorded binaries before daemon contact",
+    run: async (ctx) => {
+      const otherHome = join(ctx.dir, "wrapped-other-home");
+      const state = join(ctx.dir, "home", ".splice", "state", "claude-head-wrap.json");
+      const alias = join(ctx.dir, "recursive-claude");
+      symlinkSync(ctx.shim, alias);
+      const cases: readonly (readonly [string | null, string])[] = [
+        [null, "wrap state"],
+        ["not json", "wrap state"],
+        [JSON.stringify({}), "real binary"],
+        [JSON.stringify({ real_binary_path: join(ctx.dir, "gone") }), "real binary"],
+        [JSON.stringify({ real_binary_path: ctx.dir }), "real binary"],
+        [JSON.stringify({ real_binary_path: alias }), "launcher"],
+      ];
+      for (const [body, reason] of cases) {
+        if (body === null) rmSync(state, { force: true });
+        else writeFileSync(state, body);
+        ctx.cold();
+        const reads = ctx.daemon.healthReads;
+        const run = await ctx.launch({ HOME: otherHome, SPLICE_HEAD: "claude" });
+        if (run.code !== 1 || !run.stderr.includes(reason)) return `invalid wrap state must name ${reason}: ${run.output}`;
+        if (ctx.daemon.healthReads !== reads || ctx.daemon.lastLaunch || ctx.daemon.lastShutdown ||
+            existsSync(ctx.captures.unit) || existsSync(ctx.captures.javaArgv)) {
+          return "a missing or recursive binary contacted or started splice";
+        }
+      }
+      return null;
+    },
+  },
+  {
     // Blank and whitespace-only HOME are not directories. The shim and JVM must agree on the
     // passwd fallback, including when an explicit config and jar point into a test sandbox.
     name: "V4-218 an unset or blank HOME uses the JVM's fallback home",
     run: async (ctx) => {
-      const expected = `-Duser.home=${userInfo().homedir}`;
+      // The shipped shim runs Node. Bun userInfo() can echo the sandbox HOME instead of the passwd home.
+      const fallback = execFileSync("node", ["-e", 'process.stdout.write(require("node:os").userInfo().homedir)'], {
+        env: ctx.env, encoding: "utf8",
+      });
+      const expected = `-Duser.home=${fallback}`;
       for (const home of [undefined, "", "  "]) {
         rmSync(ctx.captures.javaArgv, { force: true });
         await ctx.launch({ ...ctx.harness, SPLICE_HEAD: "splice", HOME: home }, ["status"]);
@@ -499,13 +588,13 @@ export async function launcherRehearsal(shim: string): Promise<string | null> {
       captures,
       stateDir,
       daemonState,
-      async launch(overrides, argv = []) {
+      async launch(overrides, argv = [], command = shim) {
         const env: Record<string, string> = { ...base };
         for (const [key, value] of Object.entries(overrides)) {
           if (value === undefined) delete env[key];
           else env[key] = value;
         }
-        const proc = Bun.spawn([shim, ...argv], { cwd: dir, env, stdout: "pipe", stderr: "pipe" });
+        const proc = Bun.spawn([command, ...argv], { cwd: dir, env, stdout: "pipe", stderr: "pipe" });
         const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
         await proc.exited;
         return { code: exitStatusOf(proc), stderr, output: `${stdout}${stderr}` };
@@ -639,7 +728,11 @@ function writeMocks(bin: string): void {
       "const argv = process.argv.slice(2);\n" +
       'if (argv[0] !== "--user") { process.stderr.write(`unexpected systemctl args: ${argv.join(" ")}\\n`); process.exit(2); }\n' +
       'if (argv[1] === "cat") process.exit(process.env.LAUNCHER_UNIT_PRESENT === "1" ? 0 : 1);\n' +
-      'if (argv[1] === "show-environment") { process.stdout.write(`HOME=${process.env.LAUNCHER_UNIT_HOME}\\n`); process.exit(0); }\n' +
+      'if (argv[1] === "show-environment") {\n' +
+      '  process.stdout.write(`HOME=${process.env.LAUNCHER_UNIT_HOME}\\n`);\n' +
+      '  if (process.env.LAUNCHER_UNIT_STATE_DIR) process.stdout.write(`SPLICE_STATE_DIR=${process.env.LAUNCHER_UNIT_STATE_DIR}\\n`);\n' +
+      '  process.exit(0);\n' +
+      '}\n' +
       'if (argv[1] === "start") {\n' +
       '  appendFileSync(process.env.LAUNCHER_START_CAPTURE, `${argv[2] ?? ""}\\n`);\n' +
       '  if (process.env.LAUNCHER_UNIT_BOOTS === "1") { writeFileSync(process.env.LAUNCHER_DAEMON_STATE, "new\\n"); process.exit(0); }\n' +

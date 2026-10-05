@@ -71,7 +71,7 @@ module.exports = { liveStateDir };
 
 // Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 // — bump both together whenever this shim's behavior changes. No code generation.
-const SPLICE_SHIM_VERSION = "shim-12";
+const SPLICE_SHIM_VERSION = "shim-13";
 // Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 const SPLICE_GATEWAY_VERSION = "0.4.0";
 
@@ -251,11 +251,12 @@ if (HEAD === "splice") {
 // `<command> login [--label NAME]` runs the OAuth browser flow for this head directly (no daemon
 // needed); the arguments after `login` go to the CLI unchanged (v0.4.0: --label signs in another
 // account of this head's kind).
-if (args[0] === "login") {
+function headLogin() {
   needJar();
   exec(["java", CLI_CONSOLE, USER_HOME, "-jar", JAR, "login", HEAD, ...args.slice(1)], env,
     { head: HEAD, baseUrl: "", kind: "login" });
 }
+if (args[0] === "login" && HEAD !== "claude") headLogin();
 
 /** One HTTP exchange against the control plane: the body on ANY status (curl without -f), "" on a
  *  connection failure or after [timeoutMs] (curl -m). */
@@ -550,11 +551,42 @@ async function launch() {
   exec(recipe.argv, environment, { head: HEAD, baseUrl: environment.ANTHROPIC_BASE_URL, kind: "session" });
 }
 
+// The plain wrapped command still means Claude Code in a scratch HOME. Its owning profile records
+// the real binary; PATH would find this wrapper again. Named splice heads keep their isolation rule.
+function unwrappedClaude(managed) {
+  let state;
+  try {
+    state = JSON.parse(fs.readFileSync(path.join(liveStateDir(managed.HOME, managed), "claude-head-wrap.json"), "utf8"));
+  } catch {
+    fail("splice: wrapped Claude's wrap state is missing or unreadable; no daemon was contacted");
+  }
+  const binary = state?.real_binary_path;
+  if (typeof binary !== "string" || !path.isAbsolute(binary)) {
+    fail("splice: wrapped Claude's recorded real binary is missing or invalid; no daemon was contacted");
+  }
+  let target;
+  try {
+    fs.accessSync(binary, fs.constants.X_OK);
+    target = fs.statSync(binary);
+    if (!target.isFile()) throw new Error("not a file");
+  } catch {
+    fail("splice: wrapped Claude's recorded real binary is missing or not executable; no daemon was contacted");
+  }
+  const launcher = fs.statSync(process.argv[1]);
+  if (target.dev === launcher.dev && target.ino === launcher.ino) {
+    fail("splice: wrapped Claude's recorded real binary is the launcher itself; no daemon was contacted");
+  }
+  warn("splice: another HOME's wrapped claude is running Claude Code unwrapped");
+  exec([binary, ...args], env);
+}
+
 async function main() {
   const unit = or(env.SPLICE_SUPERVISOR_UNIT, "splice.service");
   const present = unitExists(unit);
   const managed = present ? unitEnvironment() : null;
   if (present && managed === null) fail(`splice: cannot read ${unit}'s HOME; no daemon was contacted`);
+  if (managed !== null && HOME !== managed.HOME && HEAD === "claude") unwrappedClaude(managed);
+  if (args[0] === "login") headLogin();
   if (managed !== null && HOME !== managed.HOME && Number(CONTROL_PORT) === Number(controlPortFor(managed.HOME, managed))) {
     fail(`splice: ${unit} belongs to another HOME on port ${CONTROL_PORT}; set SPLICE_CONTROL_PORT to an isolated port`);
   }

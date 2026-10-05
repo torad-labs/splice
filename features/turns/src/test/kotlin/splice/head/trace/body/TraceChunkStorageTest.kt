@@ -1,7 +1,10 @@
 package splice.head.trace.body
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -73,6 +76,57 @@ class TraceChunkStorageTest {
     }
 
     @Test
+    fun `a passthrough envelope edit stores unchanged client and upstream chunks once`(@TempDir dir: Path) {
+        val messages = JsonArray(
+            (0 until 24).map { number ->
+                JsonObject(
+                    mapOf(
+                        "role" to JsonPrimitive(if (number % 2 == 0) "user" else "assistant"),
+                        "content" to JsonPrimitive(
+                            buildString {
+                                repeat(300) { line -> append("synthetic-$number-$line café 東京 λ 🧭 \" \\ \n") }
+                            },
+                        ),
+                    ),
+                )
+            },
+        )
+        val client = JsonObject(
+            linkedMapOf(
+                "model" to JsonPrimitive("claude-synthetic--model"),
+                "messages" to messages,
+                "system" to JsonPrimitive("synthetic client guidance"),
+                "tools" to JsonArray(emptyList()),
+            ),
+        ).toString()
+        val upstream = JsonObject(
+            linkedMapOf(
+                "model" to JsonPrimitive("model"),
+                "stream" to JsonPrimitive(true),
+                "system" to JsonPrimitive("synthetic client guidance with head instructions"),
+                "messages" to messages,
+                "tools" to JsonArray(listOf(JsonObject(mapOf("name" to JsonPrimitive("synthetic_tool"))))),
+            ),
+        ).toString()
+        write(store(dir), client, "synthetic answer", upstream)
+        assertTrue(AsyncFileIo.drain())
+        val raw = Files.readAllLines(dir.resolve(DAY)).map { Json.parseToJsonElement(it).jsonObject }
+        val clientParts = raw.single { it.text("kind") == "turn" }.obj("client").obj("body")
+            .getValue("parts").jsonArray
+        val requestParts = raw.single { it.text("kind") == "attempt" }.obj("request").obj("body")
+            .getValue("parts").jsonArray
+        val shared = clientParts.filter { it in requestParts }
+        val sharedBytes = shared.sumOf { it.jsonObject.getValue("bytes").jsonPrimitive.int }
+        val allBytes = clientParts.sumOf { it.jsonObject.getValue("bytes").jsonPrimitive.int }
+        assertTrue(shared.size >= clientParts.size * 3 / 4, "unchanged chunks must reuse their actual pack offsets")
+        assertTrue(sharedBytes >= allBytes * 3 / 4, "unchanged payload bytes must be stored once")
+        val hydrated = TraceRows().turns(dir, HEAD, TraceAsk(last = 1)).single()
+        assertEquals(client, hydrated.turn?.obj("client")?.text("body"), "client bytes round trip exactly")
+        assertEquals(upstream, hydrated.attempts.single().obj("request").text("body"), "upstream bytes are unchanged")
+        println("TRACE_PASSTHROUGH_STORAGE shared=${shared.size}/${clientParts.size} bytes=$sharedBytes")
+    }
+
+    @Test
     fun `legacy and chunked records mix and truncation preserves exact non ASCII code units`(@TempDir dir: Path) {
         val legacy = """{"kind":"turn","turn":"legacy","ts":$NOW,"head":"synthetic","model":"m","clientModel":"m","compact":false,"client":{"body":"old café"},"answer":{"body":"old λ"}}"""
         Files.writeString(dir.resolve(DAY), legacy + "\n")
@@ -128,7 +182,7 @@ class TraceChunkStorageTest {
         )
     }
 
-    private fun write(store: TraceStore, request: String, answer: String) {
+    private fun write(store: TraceStore, request: String, answer: String, upstream: String = request) {
         val meta = TurnMeta(
             compact = false,
             showReasoning = ReasoningDisplay.OFF,
@@ -143,7 +197,20 @@ class TraceChunkStorageTest {
         )
         val trace = store.begin(meta, ClientInbound("POST", "/v1/messages", emptyMap(), request))
         trace.responseText(answer)
-        trace.attempted(WireAttempt(1, "http://127.0.0.1:9", emptyMap(), request, null, 200, emptyMap(), null, null, 1))
+        trace.attempted(
+            WireAttempt(
+                1,
+                "http://127.0.0.1:9",
+                emptyMap(),
+                upstream,
+                null,
+                200,
+                emptyMap(),
+                null,
+                null,
+                1,
+            ),
+        )
         trace.clientFrame(answer)
         trace.finish("ok", PerfSnapshot(emptyMap(), emptyMap()))
     }

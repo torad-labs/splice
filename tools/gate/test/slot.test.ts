@@ -1,7 +1,7 @@
 // The slot's contract, and the one property that makes the port safe to land beside the shell
 // script it ports: both take flock(2) on the SAME path, so they can never both hold the slot.
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isoSeconds, lockPath, NO_TASKS_EXIT, runUnderSlot, SLOT_TIMEOUT_EXIT } from "../src/lib/slot.ts";
@@ -191,6 +191,224 @@ describe("the gradle slot", () => {
     expect(isoSeconds(now)).toBe(shell);
   });
 
+  /** The host owns a close-on-exec flock and spawns its command; memory-held builds own no lock. */
+  function admissionGate(
+    fake: ReturnType<typeof fakeBuildRoot>,
+    capable: boolean,
+    probe: { readonly usage?: string; readonly exit?: number; readonly stream?: "stdout" | "stderr" } = {},
+  ) {
+    const bin = join(fake.dir, "bin");
+    const binary = join(bin, "buildgate");
+    mkdirSync(bin);
+    symlinkSync(process.execPath, join(bin, "bun"));
+    const usage = probe.usage ?? `usage: buildgate [--nogate] [--exclusive] ${capable ? "[--joint] " : ""}CMD ARGS...\n`;
+    writeFileSync(binary, `#!${process.execPath}
+import { existsSync, writeFileSync } from "node:fs";
+import { takeExclusive } from ${JSON.stringify(join(real.repoRoot, "tools/gate/src/lib/flock.ts"))};
+const root = ${JSON.stringify(fake.dir)};
+const args = process.argv.slice(2);
+if (args.length === 0) {
+  process.${probe.stream ?? "stderr"}.write(${JSON.stringify(usage)});
+  process.exit(${probe.exit ?? 2});
+}
+const run = process.env.SLOT_FAKE_RUN;
+writeFileSync(root + "/argv-" + run, JSON.stringify(args));
+writeFileSync(root + "/lock-" + run, process.env.BUILDGATE_LOCK ?? "unset");
+writeFileSync(root + "/entered-" + run, "");
+let child;
+let signal;
+for (const name of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(name, () => { signal = name; child?.kill(name); });
+}
+if (run === "held") {
+  while (!existsSync(root + "/release-memory") && !signal) await Bun.sleep(10);
+}
+let slot;
+if (args[0] === "--exclusive" && args[1] === "--joint") {
+  args.splice(0, 2);
+  slot = takeExclusive(process.env.BUILDGATE_LOCK, 0, 1);
+  if (!slot) writeFileSync(root + "/waiting-lock-" + run, "");
+  while (!slot && !signal) {
+    await Bun.sleep(10);
+    slot = takeExclusive(process.env.BUILDGATE_LOCK, 0, 1);
+  }
+}
+try {
+  if (signal) process.exit(143);
+  child = Bun.spawn(args, { env: process.env, stdio: ["inherit", "inherit", "inherit"] });
+  const code = await child.exited;
+  process.exitCode = code;
+} finally {
+  slot?.release();
+}
+`);
+    chmodSync(binary, 0o755);
+    return { path: `${bin}:${fake.path}`, binary };
+  }
+
+  test("a joint-capable buildgate lets an admitted run pass a memory-held run (V4-426)", async () => {
+    const fake = fakeBuildRoot('printf "%s\\n" "$SLOT_FAKE_RUN"\nexit 0\n');
+    const gate = admissionGate(fake, true);
+    const lock = join(fake.dir, ".gradle-slot.lock");
+    const env = { CI: "1", PATH: gate.path, GRADLE_SLOT_WAIT_S: "0", BUILDGATE_LOCK: undefined };
+    const first = runUnderSlot({ layout: fake.layout, label: "held-memory", args: ["help"],
+      env: { ...env, SLOT_FAKE_RUN: "held" }, pollMs: 5 });
+    let code = -1;
+    let holderWhileHeld = false;
+    try {
+      await waitForFile(join(fake.dir, "entered-held"), "entered buildgate before memory admission");
+      holderWhileHeld = existsSync(`${lock}.holder`);
+      code = await runUnderSlot({ layout: fake.layout, label: "admitted", args: ["help"],
+        env: { ...env, SLOT_FAKE_RUN: "admitted" }, pollMs: 5 });
+    } finally {
+      writeFileSync(join(fake.dir, "release-memory"), "");
+      expect(await first).toBe(0);
+    }
+    expect(code, "a memory-held build must not take the caller's pre-flock").toBe(0);
+    expect(holderWhileHeld, "the held build is not a running gradle holder").toBe(false);
+    expect(JSON.parse(readFileSync(join(fake.dir, "argv-admitted"), "utf8")))
+      .toEqual(["--exclusive", "--joint", join(real.repoRoot, "tools/gate/bin/gradlew"), "--parallel", "--no-daemon", "help"]);
+    expect(readFileSync(join(fake.dir, "lock-admitted"), "utf8").trim()).toBe(lock);
+  }, 10_000);
+
+  test("jointly admitted builds still exclude each other until gradle exits (V4-426)", async () => {
+    const fake = fakeBuildRoot(
+      'touch "$(dirname "$0")/started-$SLOT_FAKE_RUN"\n' +
+      'if [[ "$SLOT_FAKE_RUN" == first ]]; then while [[ ! -e "$(dirname "$0")/release-gradle" ]]; do sleep 0.01; done; fi\nexit 0\n',
+    );
+    const gate = admissionGate(fake, true);
+    const env = { CI: "1", PATH: gate.path, GRADLE_SLOT_WAIT_S: "0", BUILDGATE_LOCK: undefined };
+    const first = runUnderSlot({ layout: fake.layout, label: "first-admitted", args: ["help"],
+      env: { ...env, SLOT_FAKE_RUN: "first" } });
+    let second: Promise<number> | undefined;
+    try {
+      await waitForFile(join(fake.dir, "started-first"), "started the first admitted gradle");
+      second = runUnderSlot({ layout: fake.layout, label: "second-admitted", args: ["help"],
+        env: { ...env, SLOT_FAKE_RUN: "second" } });
+      await waitForFile(join(fake.dir, "waiting-lock-second"), "waited inside buildgate on the joint lock");
+      expect(existsSync(join(fake.dir, "started-second")), "only one admitted gradle may run").toBe(false);
+    } finally {
+      writeFileSync(join(fake.dir, "release-gradle"), "");
+      expect(await first).toBe(0);
+      if (second) expect(await second).toBe(0);
+    }
+    expect(existsSync(join(fake.dir, "started-second"))).toBe(true);
+  }, 15_000);
+
+  for (const mode of ["unsupported", "absent", "non-token", "failed-probe", "stdout-only"] as const) {
+    test(`${mode} buildgate preserves today's argv, holder and pre-flock (V4-426)`, async () => {
+      const fake = fakeBuildRoot('printf "ARGS:%s\\n" "$*"\n' +
+        'flock -n "$LOCK" true && printf "FREE\\n" || printf "BUSY\\n"\n' +
+        'cat "$LOCK.holder"\nexit 0\n');
+      const probe = mode === "non-token" ? { usage: "usage: buildgate [--exclusive] [--jointly] CMD ARGS...\n" }
+        : mode === "failed-probe" ? { exit: 0 }
+        : mode === "stdout-only" ? { stream: "stdout" as const } : {};
+      const path = mode === "absent" ? fake.path : admissionGate(fake, mode !== "unsupported", probe).path;
+      const code = await runUnderSlot({ layout: fake.layout, label: "legacy", args: ["help"],
+        env: { CI: "1", PATH: path, SLOT_FAKE_RUN: "legacy", BUILDGATE_LOCK: undefined } });
+      expect(code).toBe(0);
+      const receipt = readFileSync(fake.receipt, "utf8");
+      expect(receipt).toContain("ARGS:--parallel --no-daemon help\nBUSY\nlegacy pid=");
+      expect(existsSync(join(fake.dir, ".gradle-slot.lock.holder"))).toBe(false);
+      if (mode !== "absent") {
+        expect(JSON.parse(readFileSync(join(fake.dir, "argv-legacy"), "utf8")))
+          .toEqual([join(fake.dir, "gradlew"), "--parallel", "--no-daemon", "help"]);
+        expect(readFileSync(join(fake.dir, "lock-legacy"), "utf8").trim()).toBe("unset");
+      }
+    });
+  }
+
+  test("a cancelled joint memory waiter never writes or deletes another build's holder (V4-426)", async () => {
+    const fake = fakeBuildRoot();
+    const gate = admissionGate(fake, true);
+    const lock = join(fake.dir, ".gradle-slot.lock");
+    const held = takeExclusive(lock, 1000, 5);
+    expect(held).not.toBeNull();
+    const holder = `${lock}.holder`;
+    const owner = "synthetic-running pid=4242 since=2026-10-05T12:00:00-05:00\n";
+    writeFileSync(holder, owner);
+    const runner = wrapperProcess(fake, "held-memory", { PATH: gate.path, SLOT_FAKE_RUN: "held" });
+    try {
+      await waitForFile(join(fake.dir, "entered-held"), "entered memory admission");
+      expect(readFileSync(holder, "utf8")).toBe(owner);
+      runner.kill("SIGTERM");
+      expect(await runner.exited).toBe(143);
+      expect(readFileSync(holder, "utf8")).toBe(owner);
+      expect(existsSync(fake.receipt)).toBe(false);
+    } finally {
+      writeFileSync(join(fake.dir, "release-memory"), "");
+      runner.kill();
+      held?.release();
+      await runner.exited;
+    }
+  }, 15_000);
+
+  test("a signalled joint build keeps its host lock until Gradle actually exits (V4-426)", async () => {
+    const fake = fakeBuildRoot(
+      'trap \'touch "$(dirname "$0")/stopping"; while [[ ! -e "$(dirname "$0")/release-stop" ]]; do sleep 0.01; done; exit 143\' TERM\n' +
+      'touch "$(dirname "$0")/started"\nwhile true; do sleep 0.01; done\n',
+    );
+    const gate = admissionGate(fake, true);
+    const lock = join(fake.dir, ".gradle-slot.lock");
+    const runner = wrapperProcess(fake, "stopping-build", { PATH: gate.path, SLOT_FAKE_RUN: "active" });
+    try {
+      await waitForFile(join(fake.dir, "started"), "started the admitted gradle");
+      runner.kill("SIGTERM");
+      await waitForFile(join(fake.dir, "stopping"), "forwarded the signal through buildgate");
+      expect(readFileSync(`${lock}.holder`, "utf8")).toContain("stopping-build pid=");
+      const premature = takeExclusive(lock, 50, 5);
+      premature?.release();
+      expect(premature, "the host must hold the slot while its child handles shutdown").toBeUndefined();
+      writeFileSync(join(fake.dir, "release-stop"), "");
+      expect(await runner.exited).toBe(143);
+      const free = takeExclusive(lock, 50, 5);
+      expect(free).toBeDefined();
+      free?.release();
+    } finally {
+      writeFileSync(join(fake.dir, "release-stop"), "");
+      runner.kill();
+      await runner.exited;
+    }
+  }, 15_000);
+
+  test("the host keeps its lock while the gradlew-named wrapper preserves every argument (V4-426)", async () => {
+    const fake = fakeBuildRoot(
+      'if flock -n "$LOCK" true; then exit 9; fi\n' +
+      'printf "%s\\0" "$@" >"$(dirname "$0")/real-argv"\ncat "$LOCK.holder"\n',
+    );
+    const gate = admissionGate(fake, true);
+    const args = ["help", "-Psynthetic=line one\nline two", ""];
+    expect(await runUnderSlot({ layout: fake.layout, label: "admitted", args,
+      env: { CI: "", PATH: gate.path, SLOT_FAKE_RUN: "admitted" } })).toBe(0);
+    expect(JSON.parse(readFileSync(join(fake.dir, "argv-admitted"), "utf8")))
+      .toEqual(["--exclusive", "--joint", join(real.repoRoot, "tools/gate/bin/gradlew"), "--offline", "--no-daemon", ...args]);
+    expect(readFileSync(join(fake.dir, "real-argv"), "utf8").split("\0").slice(0, -1))
+      .toEqual(["--offline", "--no-daemon", ...args]);
+    expect(readFileSync(fake.receipt, "utf8")).toMatch(/^admitted pid=\d+ since=/);
+  });
+
+  test("a surviving Gradle daemon inherits no host slot descriptor (V4-426)", async () => {
+    const fake = fakeBuildRoot(
+      'sleep 30 >/dev/null 2>&1 &\nprintf "%s" "$!" >"$(dirname "$0")/daemon-pid"\nexit 0\n',
+    );
+    const gate = admissionGate(fake, true);
+    const pidFile = join(fake.dir, "daemon-pid");
+    const env = { CI: "1", PATH: gate.path, SLOT_FAKE_RUN: "daemon", GRADLE_SLOT_WAIT_S: "0" };
+    try {
+      expect(await runUnderSlot({ layout: fake.layout, label: "daemon-build", args: ["help"], env })).toBe(0);
+      const pid = Number(readFileSync(pidFile, "utf8"));
+      expect(() => process.kill(pid, 0)).not.toThrow();
+      const free = takeExclusive(join(fake.dir, ".gradle-slot.lock"), 50, 5);
+      expect(free, "a daemon outliving the build cannot retain its host's slot").not.toBeNull();
+      free?.release();
+      expect(await runUnderSlot({ layout: fake.layout, label: "next-build", args: ["help"],
+        env: { ...env, SLOT_FAKE_RUN: "next" } })).toBe(0);
+    } finally {
+      // Only the descendant this synthetic fixture created is stopped.
+      if (existsSync(pidFile)) process.kill(Number(readFileSync(pidFile, "utf8")), "SIGTERM");
+    }
+  }, 15_000);
+
   test("buildgate wraps gradle when PATH has it, and is skipped when it does not", async () => {
     const fake = fakeBuildRoot();
     const binDir = mkdtempSync(join(tmpdir(), "gate-buildgate-"));
@@ -219,9 +437,13 @@ describe("the gradle slot", () => {
   // SIGTERM, held the slot for the child's whole sleep and exited 0.
 
   /** `runUnderSlot` in a process of its own, exiting with whatever it returns. */
-  function wrapperProcess(fake: ReturnType<typeof fakeBuildRoot>, label: string): Bun.Subprocess {
+  function wrapperProcess(
+    fake: ReturnType<typeof fakeBuildRoot>,
+    label: string,
+    env: Record<string, string | undefined> = {},
+  ): Bun.Subprocess {
     const runner = join(fake.dir, "runner.ts");
-    const options = { layout: fake.layout, label, args: ["check"], env: { CI: "1", PATH: fake.path } };
+    const options = { layout: fake.layout, label, args: ["check"], env: { CI: "1", PATH: fake.path, ...env } };
     writeFileSync(
       runner,
       `import { runUnderSlot } from ${JSON.stringify(join(import.meta.dir, "..", "src", "lib", "slot.ts"))};\n` +

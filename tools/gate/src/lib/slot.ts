@@ -6,7 +6,8 @@
 // like a quirk is one:
 //   - an EMPTY task list is DID NOT RUN, never PASSED (exit 2) — `./gradlew` with no task prints
 //     BUILD SUCCESSFUL having compiled nothing (gradle-slot.sh:15-23);
-//   - the holder file is written BEFORE any JVM starts and removed under a trap (:33-34);
+//   - the holder file is written BEFORE any JVM starts; legacy runs remove it under the lock (:33-34);
+//     joint runs write it only after host admission and trust it only while that host holds the lock;
 //   - `buildgate` is this MACHINE's containment wrapper, absent on CI, so it is guarded (:37-42);
 //   - `--offline` is a local nicety and a lie on CI, where the restored cache is always one
 //     dependency bump behind the tree (:43-50);
@@ -89,6 +90,13 @@ function holderOf(holderPath: string): string {
   }
 }
 
+/** A no-argument usage probe takes no admission or lock. Only the advertised token enables joint acquire. */
+function supportsJoint(buildgate: string, buildRoot: string, env: Record<string, string | undefined>): boolean {
+  const probe = Bun.spawnSync([buildgate], { cwd: buildRoot, env, stdin: "ignore", stdout: "ignore", stderr: "pipe" });
+  const usage = probe.stderr.toString().split("\n").find((line) => line.startsWith("usage: buildgate "));
+  return probe.exitCode === 2 && usage?.split(/\s+/).includes("[--joint]") === true;
+}
+
 /** Run gradle under the slot. Returns the exit code to propagate — it never calls process.exit. */
 export async function runUnderSlot(options: SlotOptions): Promise<number> {
   const env: Record<string, string | undefined> = { ...Bun.env, ...(options.env ?? {}) };
@@ -107,18 +115,24 @@ export async function runUnderSlot(options: SlotOptions): Promise<number> {
   const waitSeconds = Number(env.GRADLE_SLOT_WAIT_S ?? "3600");
   const poll = options.pollMs ?? 50;
 
-  let slot = takeExclusive(lock, FAST_PATH_MS, poll);
-  if (!slot) {
-    console.error(`gradle-slot: waiting (held by: ${holderOf(holderPath)})`);
-    slot = takeExclusive(lock, waitSeconds * 1000, Math.max(poll, 250));
+  const buildgate = Bun.which("buildgate", { PATH: env.PATH ?? "" });
+  const joint = buildgate !== null && supportsJoint(buildgate, options.layout.buildRoot, env);
+  let slot: ReturnType<typeof takeExclusive>;
+  if (!joint) {
+    slot = takeExclusive(lock, FAST_PATH_MS, poll);
     if (!slot) {
-      console.error(`gradle-slot: gave up after ${waitSeconds}s (held by: ${holderOf(holderPath)})`);
-      return SLOT_TIMEOUT_EXIT;
+      console.error(`gradle-slot: waiting (held by: ${holderOf(holderPath)})`);
+      slot = takeExclusive(lock, waitSeconds * 1000, Math.max(poll, 250));
+      if (!slot) {
+        console.error(`gradle-slot: gave up after ${waitSeconds}s (held by: ${holderOf(holderPath)})`);
+        return SLOT_TIMEOUT_EXIT;
+      }
     }
+    writeFileSync(holderPath, `${label} pid=${process.pid} since=${isoSeconds(new Date())}\n`);
   }
-
-  writeFileSync(holderPath, `${label} pid=${process.pid} since=${isoSeconds(new Date())}\n`);
   const drop = () => {
+    // The host owns the joint lock. Never erase another admitted build's holder after our host releases it.
+    if (!slot) return;
     try {
       rmSync(holderPath, { force: true });
     } catch {
@@ -153,8 +167,9 @@ export async function runUnderSlot(options: SlotOptions): Promise<number> {
   for (const [signal, forward] of handlers) process.on(signal, forward);
 
   try {
-    console.error(`gradle-slot: ${label} holds the slot — gradle busy`);
-    child = spawnGradle(options.layout.buildRoot, args, env);
+    if (joint) console.error(`gradle-slot: ${label} waits for buildgate admission`);
+    else console.error(`gradle-slot: ${label} holds the slot — gradle busy`);
+    child = spawnGradle(options.layout.buildRoot, args, env, buildgate, joint ? { lock, label } : undefined);
     if (received) child.kill(received);
     await child.exited;
     const rc = received ? exitForSignal(received) : exitStatusOf(child);
@@ -164,7 +179,7 @@ export async function runUnderSlot(options: SlotOptions): Promise<number> {
     for (const [signal, forward] of handlers) process.off(signal, forward);
     process.off("exit", drop);
     drop();
-    slot.release();
+    slot?.release();
   }
 }
 
@@ -172,6 +187,8 @@ function spawnGradle(
   buildRoot: string,
   args: readonly string[],
   env: Record<string, string | undefined>,
+  buildgate: string | null,
+  admission?: { readonly lock: string; readonly label: string },
 ): Bun.Subprocess {
   // The child inherits the caller's environment, as it does under bash — gradle needs JAVA_HOME,
   // HOME and PATH, and `buildgate` refuses without HOME. `env` is already that merge (runUnderSlot).
@@ -187,11 +204,15 @@ function spawnGradle(
   // `command -v buildgate` — resolved against the child's PATH, because buildgate is this MACHINE's
   // memory-containment wrapper and nothing in the tree provides it. Calling it unconditionally is
   // what took every gradle leg on CI down with `buildgate: command not found` (gradle-slot.sh:37-42).
-  const buildgate = Bun.which("buildgate", { PATH: childEnv.PATH ?? "" });
   const gradlew = `${buildRoot}/gradlew`;
   if (!existsSync(gradlew)) throw new Error(`gate: no gradle wrapper at ${gradlew}`);
-  const argv = buildgate
-    ? [buildgate, gradlew, ...offline, ...parallel, "--no-daemon", ...args]
-    : [gradlew, ...offline, ...parallel, "--no-daemon", ...args];
+  const gradleArgs = [...offline, ...parallel, "--no-daemon", ...args];
+  let argv = buildgate ? [buildgate, gradlew, ...gradleArgs] : [gradlew, ...gradleArgs];
+  if (buildgate && admission) {
+    childEnv.BUILDGATE_LOCK = admission.lock;
+    childEnv.SPLICE_GRADLE_REAL = gradlew;
+    childEnv.SPLICE_GRADLE_LABEL = admission.label;
+    argv = [buildgate, "--exclusive", "--joint", join(import.meta.dir, "../../bin/gradlew"), ...gradleArgs];
+  }
   return Bun.spawn(argv, { cwd: buildRoot, stdio: ["inherit", "inherit", "inherit"], env: childEnv });
 }

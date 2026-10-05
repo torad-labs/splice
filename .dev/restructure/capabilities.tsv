@@ -2193,6 +2193,8 @@ tools/gate/src/lib/routing.ts	27e2d62df531a99ec8a1c1fd1da7e5a4471e3ce2b1ddc545c0
 tools/gate/src/lib/ruledocs.ts	82ab1a1ef3feb3e8a5c54e9450c25404dacfbed0387a38360666dd7231634750	retain	tools/gate/src/lib/ruledocs.ts	Cohesive engineering tooling
 tools/gate/src/lib/rules.ts	740198230bdedbf4fbdcb860b049e3e358c3f0f11f70a2156c7cdf9da660181a	retain	tools/gate/src/lib/rules.ts	Cohesive engineering tooling
 tools/gate/src/lib/sentinel.ts	eb097376ecda4785197ae35ef5513ecbc2354f6574e2f19ce81c82355e7e1d38	retain	tools/gate/src/lib/sentinel.ts	Cohesive engineering tooling
+tools/gate/bin/gradlew	41ea9dd30d002dcbe5362b3f3ced45111218cc2768a18b328f17edba4bc42033	created		V4-426 executable alias preserves buildgate Gradle task classification during joint admission
+tools/gate/src/gradlew.ts	41ea9dd30d002dcbe5362b3f3ced45111218cc2768a18b328f17edba4bc42033	created		V4-426 writes the admitted holder then execs the real Gradle wrapper without inheriting the host lock
 tools/gate/src/lib/slot.ts	990d7cdf3923fff17b3265c6752800928a84e965e1c6b3f10e87fb3d32969a5b	retain	tools/gate/src/lib/slot.ts	Cohesive engineering tooling
 tools/gate/src/lib/sources.ts	ab87f372a7987cf4fa899122885fcf181694df636c01fbf225a24659f683bf2c	retain	tools/gate/src/lib/sources.ts	Cohesive engineering tooling
 tools/gate/src/lib/status.ts	3492e6bf711c570856ff6722267f5d4dc90129493d2dd459ad847132e526fb27	retain	tools/gate/src/lib/status.ts	Cohesive engineering tooling

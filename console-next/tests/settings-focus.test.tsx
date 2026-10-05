@@ -74,6 +74,12 @@ test('Settings retains the shared fix actions after the retired card is removed'
   expect(open).toContain('splice logs --head synthetic-command');
 });
 
+test('Storage names Requests as the page backed by retained request traces', () => {
+  const html = render('/settings/storage');
+  expect(html).toContain('The turn-by-turn record behind Requests.');
+  expect(html).not.toContain('record behind Turns');
+});
+
 test('a deep link stays a pending read, not a failure, until the initial settings arrive', () => {
   const html = render('/settings/health', false);
   expect(html).toContain('Reading the settings');

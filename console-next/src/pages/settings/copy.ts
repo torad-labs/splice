@@ -52,7 +52,7 @@ export const T = {
   history: 'Keep message history for',
   historyWhy: 'splice’s record of which session messaged which. Older days are removed from this computer; nothing is sent anywhere.',
   traces: 'Keep request traces for',
-  tracesWhy: 'The turn-by-turn record behind Turns. Older days are deleted.',
+  tracesWhy: 'The turn-by-turn record behind Requests. Older days are deleted.',
   days: (n: number): string => (n === 1 ? '1 day' : `${n} days`),
   git: 'Show git branches in',
   gitWhy: 'Folders beyond your home folder and /tmp where a session’s branch is read.',

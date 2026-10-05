@@ -3,6 +3,14 @@ import type { ConfigPayload } from '../src/types/core';
 import { open, assertHealthy } from './support';
 import { STACK } from './stack';
 
+test('Storage points to Requests rather than the retired Turns page', async ({ page }) => {
+  const faults = await open(page, 'settings/storage');
+  const storage = page.getByRole('region', { name: 'Storage', exact: true });
+  await expect(storage).toContainText('The turn-by-turn record behind Requests.');
+  await expect(storage).not.toContainText('record behind Turns');
+  await assertHealthy(page, faults);
+});
+
 test('Advanced names the key button that reveals a setting on request', async ({ page }) => {
   const faults = await open(page, 'settings/advanced');
   const advanced = page.getByRole('region', { name: 'Advanced', exact: true });

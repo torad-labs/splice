@@ -72,6 +72,7 @@ internal data class ClaudeAccount(
     val addedAtEpochMillis: Long,
     val directory: Path,
     val refusal: String? = null,
+    val displayName: String = label,
 ) {
     val credentials: Path get() = directory.resolve(CREDENTIALS_JSON)
 }
@@ -112,8 +113,12 @@ internal sealed class ClaudeAccountLanding {
 internal class ClaudeAccountFolders(
     stateDir: Path,
     private val now: WallClock = WallClock(System::currentTimeMillis),
+    private val profileRefresh: ClaudeIdentityRefresh? = null,
 ) {
-    private val facts = ClaudeLoginFactsReader()
+    private val facts = ClaudeLoginFactsReader(
+        ClaudeCredentialProfiles(stateDir, splice.core.util.LogSink { }),
+        profileRefresh,
+    )
     private val paths = ClaudeAccountPaths(stateDir)
 
     /** Every account of [head], oldest first: the order they were added, which is the pool's default. A label whose
@@ -145,6 +150,9 @@ internal class ClaudeAccountFolders(
         return ClaudePendingAccount(head, label, paths.pending(head, label))
     }
 
+    /** Proves a completed native sign-in with that pending folder's own captured credential. */
+    suspend fun verify(pending: ClaudePendingAccount) = facts.refresh(pending.directory)
+
     /** Files a finished sign-in as [ClaudePendingAccount.label], or refuses it. The pending folder is gone either
      *  way; only this label's own folder is ever written, and only once the account is proven new to this head. */
     fun land(pending: ClaudePendingAccount): ClaudeAccountLanding = try {
@@ -171,6 +179,25 @@ internal class ClaudeAccountFolders(
         return if (Files.exists(directory)) ClaudeAccountRemoval.Failed else ClaudeAccountRemoval.Removed
     }
 
+    /** Renames display metadata only. The stable id, credential, quota, pin and account order stay unchanged. */
+    fun relabel(head: String, id: String, name: String): splice.accounts.signin.AccountMutation {
+        val added = accounts(head)
+        val account = added.singleOrNull { it.label == id }
+        return when {
+            !listOf(head, id, name).all(paths::names) ->
+                splice.accounts.signin.AccountMutation.Refused("that is not a valid stored login name")
+            account == null ->
+                splice.accounts.signin.AccountMutation.Refused("this command has no stored login with that id")
+            added.any { it.label != id && it.displayName == name } ->
+                splice.accounts.signin.AccountMutation.Refused("another stored login already uses that name")
+            else -> {
+                val record = ClaudeAccountRecord(account.addedAtEpochMillis, name)
+                SecureFile.writeAtomic0600(account.directory.resolve(RECORD_FILE), record.wire())
+                splice.accounts.signin.AccountMutation.Ok
+            }
+        }
+    }
+
     /** The proven half of [land]: this head's pool either already holds [identity] under another label, or the
      *  sign-in becomes [ClaudePendingAccount.label]'s own folder. A label signed in again keeps its original time. */
     private fun file(pending: ClaudePendingAccount, identity: ClaudeAccountIdentity): ClaudeAccountLanding {
@@ -195,7 +222,8 @@ internal class ClaudeAccountFolders(
     private fun move(pending: ClaudePendingAccount, addedAt: Long) {
         val directory = paths.account(pending.head, pending.label)
         Files.createDirectories(directory)
-        SecureFile.writeAtomic0600(directory.resolve(RECORD_FILE), ClaudeAccountRecord(addedAt).wire())
+        val displayName = facts.displayName(directory.resolve(RECORD_FILE))
+        SecureFile.writeAtomic0600(directory.resolve(RECORD_FILE), ClaudeAccountRecord(addedAt, displayName).wire())
         SecureFile.writeAtomic0600(
             directory.resolve(CLAUDE_JSON),
             Files.readString(pending.directory.resolve(CLAUDE_JSON)),
@@ -223,14 +251,16 @@ internal class ClaudeAccountFolders(
 
     private fun account(label: String, under: Path): ClaudeAccount? {
         val folder = under.resolve(label)
-        val identity = facts.identity(folder) ?: return null
         if (facts.token(folder) == null) return null
-        return ClaudeAccount(label, identity, addedAt(folder), folder)
+        val identity = facts.identity(folder)
+        return ClaudeAccount(
+            label,
+            identity,
+            facts.addedAt(folder.resolve(RECORD_FILE)) ?: 0L,
+            folder,
+            displayName = facts.displayName(folder.resolve(RECORD_FILE)) ?: label,
+        )
     }
-
-    /** When splice filed this folder. A folder from before its record, or one whose record cannot be read, sorts
-     *  first: it was added before anything that carries a time. */
-    private fun addedAt(folder: Path): Long = facts.addedAt(folder.resolve(RECORD_FILE)) ?: 0L
 
     private fun discard(directory: Path) {
         Cancellables.discard(

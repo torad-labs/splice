@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.signin.AccountMutation
 import splice.accounts.signin.ConsoleAccounts
 import splice.accounts.signin.HeadRestart
@@ -21,6 +22,7 @@ import splice.accounts.signin.LoginStart
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.client.wrap.WrapStateRead
+import splice.core.auth.CredentialKey
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Files
 import java.nio.file.Path
@@ -75,6 +77,8 @@ class ClaudeAccountsArmTest {
             pending.directory.resolve(".claude.json"),
             """{"oauthAccount":{"accountUuid":"uuid-$label"}}""",
         )
+        val key = requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer synthetic-$label")))
+        ClaudeCredentialProfiles(state, {}).observed(key, ClaudeAccountIdentity("uuid-$label", null))
         assertTrue(folders().land(pending) is ClaudeAccountLanding.Added, "$label landed")
     }
 

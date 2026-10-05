@@ -48,6 +48,13 @@ internal class ClaudeAccountsArm(
     /** A Claude sign-in's id is known only to its own arm, and an OAuth id only to the generic port. */
     override fun pollLogin(id: String): LoginStatus? = claude.current()?.signIn?.poll(id) ?: generic.pollLogin(id)
 
+    /** A stored Claude login's stable id stays put; only its display alias changes. */
+    override suspend fun relabelAccount(headKey: String, label: String, newLabel: String): AccountMutation {
+        val answered = generic.relabelAccount(headKey, label, newLabel)
+        if (answered !is AccountMutation.UnsupportedAuthKind || answered.kind != CLIENT_AUTH_KIND) return answered
+        return claude.current()?.folders?.relabel(headKey, label, newLabel) ?: answered
+    }
+
     /** A Claude head's remove deletes one added account's own folder. The sentences are here rather than in the
      *  store because this is the surface a person reads, and each one says what was found rather than "failed". */
     override suspend fun removeAccount(headKey: String, label: String): AccountMutation {

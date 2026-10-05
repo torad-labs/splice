@@ -17,6 +17,9 @@ public data class ClaudeAccountIdentity(val uuid: String, val email: String?)
 /** A proved credential's own refusal. Missing evidence remains unknown rather than an invented clean standing. */
 public data class ClaudeLoginStanding(val held: Boolean?, val untilEpochSeconds: Long?)
 
+/** One display name and the explicitly addressed edits this live login supports. */
+public data class ClaudeLoginManagement(val displayName: String, val canRemove: Boolean, val canRename: Boolean)
+
 /** Secret-free facts for one command. Window figures are provider observations, not per-account dollar spend. */
 public data class ClaudeLoginPlaceView(
     val id: ClaudeLoginPlaceId,
@@ -27,6 +30,7 @@ public data class ClaudeLoginPlaceView(
     val quota: QuotaSnapshot?,
     val standing: ClaudeLoginStanding,
     val refusal: String? = null,
+    val management: ClaudeLoginManagement? = null,
 )
 
 /** The app owns native files and login processes; the feature owns HTTP presentation and validation. */

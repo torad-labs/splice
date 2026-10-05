@@ -28,11 +28,15 @@ internal class ProviderAssembly(
     private val refreshCall: TokenUrlRefreshCall,
     private val museArm: MuseResponsesArm = MuseResponsesArm(statePaths, log, probeScope),
     private val kimiArm: KimiPassthroughArm = KimiPassthroughArm(statePaths, probeScope, log),
+    private val claudeIdentities: splice.app.auth.claude.ClaudeIdentityRefresh? = null,
 ) {
     private val grokRefresh = GrokRefresh(log)
     private val passthroughAssembly = PassthroughAssembly()
     private val chatArm = ChatArm(probeScope, log, grokRefresh)
-    private val passthroughArm = PassthroughArm(passthroughAssembly, ClaudeAccountWiring(statePaths, log))
+    private val passthroughArm = PassthroughArm(
+        passthroughAssembly,
+        ClaudeAccountWiring(statePaths, log, identities = claudeIdentities),
+    )
     private val grokResponsesArm = GrokResponsesArm(probeScope, log, grokRefresh, statePaths)
     private val apiKeyResponsesArm = ApiKeyResponsesArm(statePaths)
     private val codexResponsesArm = CodexResponsesArm(statePaths, probeScope, log, refreshCall)

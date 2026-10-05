@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.claude.ClaudeAccountIdentity
+import splice.core.auth.CredentialKey
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermission
@@ -41,6 +43,8 @@ class ClaudeAccountFoldersTest {
         )
         val shown = email?.let { ""","emailAddress":"$it"""" } ?: ""
         Files.writeString(directory.resolve(".claude.json"), """{"oauthAccount":{"accountUuid":"$uuid"$shown}}""")
+        val digest = requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $token")))
+        ClaudeCredentialProfiles(state, {}).observed(digest, ClaudeAccountIdentity(uuid, email))
     }
 
     @Test

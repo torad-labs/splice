@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.client.ClaudeHead
 import splice.client.ClaudeLoginTarget
@@ -27,18 +28,24 @@ class ClaudeLoginFactsTest {
         )
     }
 
+    private fun profiles(): ClaudeCredentialProfiles = ClaudeCredentialProfiles(home.resolve("profile-state"), {})
+
+    private fun reader(): ClaudeLoginFactsReader = ClaudeLoginFactsReader(profiles())
+
     @Test
-    fun `default account identity and effective bearer join do not use the directory-local account`() {
+    fun `the provider profile identifies the bearer rather than either copied account record`() {
         val place = location()
         Files.writeString(place.credentials, """{"claudeAiOauth":{"accessToken":"synthetic-token","ignored":true}}""")
         val right = """{"oauthAccount":{"accountUuid":"right","emailAddress":"right@test"}}"""
         val wrong = """{"oauthAccount":{"accountUuid":"wrong"}}"""
         Files.writeString(place.target.accountFile, right)
         Files.writeString(place.target.head.configDir.resolve(".claude.json"), wrong)
-        val facts = ClaudeLoginFactsReader().read(place)
+        val digest = requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer synthetic-token")))
+        profiles().observed(digest, ClaudeAccountIdentity("proved", "proved@synthetic.test"))
+        val facts = reader().read(place)
         assertTrue(facts.present)
-        assertEquals("right", facts.account?.uuid)
-        assertEquals("right@test", facts.account?.email)
+        assertEquals("proved", facts.account?.uuid)
+        assertEquals("proved@synthetic.test", facts.account?.email)
         val expected = CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer synthetic-token"))
         assertEquals(expected, facts.key)
         assertNull(facts.refusal)
@@ -48,19 +55,19 @@ class ClaudeLoginFactsTest {
     fun `a missing account record does not erase a proven credentials quota join`() {
         val place = location()
         Files.writeString(place.credentials, """{"claudeAiOauth":{"accessToken":"synthetic-token"}}""")
-        val facts = ClaudeLoginFactsReader().read(place)
+        val facts = reader().read(place)
         assertTrue(facts.present)
         assertNull(facts.account)
         assertTrue(facts.key != null)
     }
 
     @Test
-    fun `credential absence preserves the native account record without claiming a quota join`() {
+    fun `credential absence never claims the account named by an unbound settings record`() {
         val place = location()
         Files.writeString(place.target.accountFile, """{"oauthAccount":{"accountUuid":"known"}}""")
-        val facts = ClaudeLoginFactsReader().read(place)
+        val facts = reader().read(place)
         assertFalse(facts.present)
-        assertEquals("known", facts.account?.uuid)
+        assertNull(facts.account)
         assertNull(facts.key)
     }
 
@@ -69,9 +76,9 @@ class ClaudeLoginFactsTest {
         val place = location()
         Files.writeString(place.credentials, "private-synthetic-invalid-json")
         Files.writeString(place.target.accountFile, """{"oauthAccount":{"accountUuid":"known"}}""")
-        val facts = ClaudeLoginFactsReader().read(place)
+        val facts = reader().read(place)
         assertTrue(facts.present)
-        assertEquals("known", facts.account?.uuid)
+        assertNull(facts.account)
         assertNull(facts.key)
         assertTrue(facts.refusal != null)
         assertFalse(facts.refusal.orEmpty().contains("private-synthetic"))

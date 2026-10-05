@@ -1,12 +1,8 @@
 // NEW: each place joins only its currently live credential to successful windows and provider refusals.
 //
-// WINDOWS AND HOLDS ARE JOINED BY ACCOUNT, NOT BY TOKEN (2026-10-04): Anthropic's 5-hour and 7-day windows belong to the
-// SUBSCRIPTION, so every credential of one account is spending the same window. A reading is FILED under the token
-// that observed it, and joining it back by that token split one account's window across its tokens: on this machine
-// both Claude places hold one account under two different tokens, and Accounts drew the same email twice, one card
-// reading 34% and 34% and the other reading "Not reported" (marlin's second pass, Oct 3).
-//
-// So a place reads the newest window filed under ANY of its account's live credentials. Two rules hold it in:
+// WINDOWS AND HOLDS JOIN ONLY PROVIDER-VERIFIED ACCOUNTS: a reading is filed under its observing credential.
+// A place may read another live credential's newest window only when both provider profiles prove the same account.
+// Copied client settings never prove that join. Two rules hold it in:
 //   - only a LIVE credential counts, so a rotated token inherits nothing from the token it replaced, and a window
 //     whose observer is gone from every place is gone from the join;
 //   - an account splice cannot identify joins with nobody and keeps its own token's reading, because without an
@@ -14,6 +10,8 @@
 package splice.app.auth.claude
 
 import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.claude.ClaudeLoginManagement
+import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginStanding
 import splice.app.head.ProviderHoldFiles
@@ -23,17 +21,26 @@ import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.head.usage.CredentialQuotaFiles
 
+/** Resolves a saved display name only against the same credential snapshot that supplied identity and windows. */
+internal fun interface ClaudeLoginNames {
+    fun name(place: ClaudeLoginPlaceId, key: String): String?
+}
+
 internal class ClaudeLoginRead(
     private val paths: StatePaths,
     private val log: LogSink,
     private val clock: WallClock,
+    private val profileRefresh: ClaudeIdentityRefresh? = null,
 ) {
-    private val facts = ClaudeLoginFactsReader()
+    private val facts = ClaudeLoginFactsReader(ClaudeCredentialProfiles(paths.stateDir, log), profileRefresh)
     private val holds = ProviderHoldFiles(paths, log)
 
     /** Every place's view. The whole set is read at once because the window join is a property of the SET: one
      *  account's reading is the newest filed under any of its live credentials, in whichever place it signed in. */
-    fun places(locations: List<ClaudeLoginLocation>): List<ClaudeLoginPlaceView> {
+    fun places(
+        locations: List<ClaudeLoginLocation>,
+        names: ClaudeLoginNames? = null,
+    ): List<ClaudeLoginPlaceView> {
         val read = locations.map { it to facts.read(it) }
         val newest = read.mapNotNull { (location, native) -> filed(location, native) }
             .groupBy({ it.first }, { it.second })
@@ -44,9 +51,15 @@ internal class ClaudeLoginRead(
         }.groupBy({ it.first }, { it.second }).mapValues { (_, resets) -> resets.max() }
         return read.map { (location, native) ->
             val account = native.account?.uuid
-            view(location, native, account?.let(newest::get), account?.let(held::get))
+            view(location, native, account?.let(newest::get), account?.let(held::get), names)
         }
     }
+
+    /** Internal saved-label proof only. The private digest never enters a view or a route payload. */
+    fun credentialKey(location: ClaudeLoginLocation): String? = facts.read(location).key
+
+    /** Product refreshes wait only for the selected place's captured credential. Other places retain their facts. */
+    suspend fun refresh(location: ClaudeLoginLocation) = facts.refresh(location.target.head.configDir)
 
     /** The account proved by the credential used for this request, not by its command or login place. */
     fun accountForCredential(locations: List<ClaudeLoginLocation>, key: String): ClaudeAccountIdentity? =
@@ -68,10 +81,12 @@ internal class ClaudeLoginRead(
         native: ClaudeLoginFacts,
         joined: QuotaSnapshot?,
         joinedUntil: Long?,
+        names: ClaudeLoginNames?,
     ): ClaudeLoginPlaceView {
         val head = location.target.head.key
         val quota = joined ?: native.key?.takeIf { native.account == null }?.let { quota(location, it) }
         val until = if (native.account == null) holdUntil(location, native) else joinedUntil
+        val name = native.key?.let { names?.name(location.id, it) }
         return ClaudeLoginPlaceView(
             id = location.id,
             head = head,
@@ -84,6 +99,9 @@ internal class ClaudeLoginRead(
                 untilEpochSeconds = until,
             ),
             refusal = native.refusal,
+            management = names?.let {
+                ClaudeLoginManagement(name ?: location.id.command, native.present, name != null)
+            },
         )
     }
 

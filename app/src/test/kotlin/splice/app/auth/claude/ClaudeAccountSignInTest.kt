@@ -16,9 +16,11 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.client.wrap.WrapStateRead
+import splice.core.auth.CredentialKey
 import splice.core.util.WallClock
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Files
@@ -61,6 +63,8 @@ class ClaudeAccountSignInTest {
             directory.resolve(".claude.json"),
             """{"oauthAccount":{"accountUuid":"$account","emailAddress":"$account@synthetic"}}""",
         )
+        val key = requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $token")))
+        ClaudeCredentialProfiles(state, {}).observed(key, ClaudeAccountIdentity(account, "$account@synthetic"))
     }
 
     /** Runs one sign-in to its end and returns its final status. */

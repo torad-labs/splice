@@ -21,6 +21,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.auth.AuthDescription
 import splice.core.auth.ClientAuthProvider
+import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.PlanLimit
@@ -64,6 +65,8 @@ internal class ClaudeFolderAuth(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val refresh: ClaudeTokenRefresh,
     private val log: LogSink = LogSink { },
+    private val profiles: ClaudeCredentialProfiles? = null,
+    private val identities: ClaudeIdentityRefresh? = null,
 ) : RefreshableAuthProvider {
     private val json = Json { ignoreUnknownKeys = true }
     private val single = SingleFlight<Credentials?>()
@@ -85,11 +88,18 @@ internal class ClaudeFolderAuth(
 
     override suspend fun describe(): AuthDescription {
         val held = read()
-        return AuthDescription(
-            present = held != null,
-            kind = CLAUDE_ACCOUNT_AUTH_KIND,
-            fields = mapOf("auth_path" to folder.resolve(CREDENTIALS_JSON).toString()),
-        )
+        val fields = mutableMapOf("auth_path" to folder.resolve(CREDENTIALS_JSON).toString())
+        fields["display_name"] = ClaudeLoginFactsReader().displayName(folder.resolve(".splice-account.json")) ?: name()
+        held?.let { credential ->
+            val key = CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer ${credential.accessToken}"))
+            val account = key?.let { profiles?.read(it) }
+            if (account == null && key != null) identities?.request(key, credential.accessToken)
+            account?.let {
+                fields["account_uuid"] = it.uuid
+                it.email?.let { email -> fields["account_email"] = email }
+            }
+        }
+        return AuthDescription(present = held != null, kind = CLAUDE_ACCOUNT_AUTH_KIND, fields = fields)
     }
 
     /** This account is a Claude subscription, answered in Anthropic's unified plan family, so its 429 names the plan

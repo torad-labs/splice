@@ -10,6 +10,7 @@ import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlaces
+import splice.accounts.signin.AccountMutation
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.client.ClaudeLoginResult
@@ -51,19 +52,28 @@ internal class ClaudeLoginOwner(
     private val logins = locations.associate { it.id to ClaudeLogins(it.storeDir) }
     private val active = mutableMapOf<ClaudeLoginPlaceId, NativeAttempt>()
     private val history = LinkedHashMap<String, AtomicReference<LoginStatus>>()
+    private val mutating = mutableSetOf<ClaudeLoginPlaceId>()
+    private val edits = ClaudeLoginEdits(reads)
 
-    override fun places(): List<ClaudeLoginPlaceView> = reads.places(locations)
+    private val names = ClaudeLoginNames { place, key -> logins[place]?.labelForCredential(key) }
+
+    override fun places(): List<ClaudeLoginPlaceView> = reads.places(locations, names)
 
     internal fun accountForCredential(key: String): ClaudeAccountIdentity? = reads.accountForCredential(locations, key)
 
     // One place is still read against ALL of them: a login's window belongs to its account, and the account's
     // other logins are where that reading may have been filed.
-    override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView =
-        reads.places(locations).single { it.id == place }
+    override suspend fun refresh(place: ClaudeLoginPlaceId): ClaudeLoginPlaceView {
+        reads.refresh(locations.single { it.id == place })
+        return places().single { it.id == place }
+    }
 
     override fun poll(id: String): LoginStatus? = synchronized(lock) { history[id]?.get() }
 
     override fun refusal(configDir: Path): String? = synchronized(lock) {
+        if (locations.any { it.id in mutating && sameDirectory(it.target.head.configDir, configDir) }) {
+            return@synchronized "this native login is being edited; launch after it finishes"
+        }
         active.values.firstOrNull { sameDirectory(it.location.target.head.configDir, configDir) }
             ?.let { "native login is replacing this command's credential; launch after it finishes" }
     }
@@ -105,6 +115,32 @@ internal class ClaudeLoginOwner(
             }
             is ClaudeNativeLoginPreparation.Ready -> NativeAttempt(location, store, prepared, cell)
                 .also { active[place] = it }
+        }
+    }
+
+    override suspend fun remove(place: ClaudeLoginPlaceId): AccountMutation = edit(place, null)
+
+    override suspend fun relabel(place: ClaudeLoginPlaceId, label: String): AccountMutation = edit(place, label)
+
+    private fun edit(place: ClaudeLoginPlaceId, label: String?): AccountMutation {
+        val location = synchronized(lock) {
+            val found = locations.singleOrNull { it.id == place }
+                ?: return AccountMutation.Refused("native login place is not configured")
+            if (refusal(found.target.head.configDir) != null) {
+                return AccountMutation.Refused("this native login is busy")
+            }
+            mutating += place
+            found
+        }
+        return try {
+            val store = logins.getValue(place)
+            if (label == null) {
+                edits.remove(location, store, sessions.read(location))
+            } else {
+                edits.relabel(location, store, label)
+            }
+        } finally {
+            synchronized(lock) { mutating -= place }
         }
     }
 

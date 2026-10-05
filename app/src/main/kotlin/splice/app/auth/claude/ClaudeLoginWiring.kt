@@ -12,6 +12,7 @@ import splice.sessions.registry.RouteOfPid
 import splice.sessions.registry.SessionRegistry
 import splice.topology.TopologyLoader
 import splice.upstream.codemode.ProcessDispatchers
+import splice.usage.quota.ClientUserAgent
 import java.nio.file.Path
 
 /** One daemon's Claude login machinery: the [owner] of each command's own login, and the [accounts] port the
@@ -26,6 +27,8 @@ internal object ClaudeLoginWiring {
         scope: CoroutineScope,
         wrap: WrapStateRead,
         log: LogSink,
+        userAgent: ClientUserAgent = ClientUserAgent { null },
+        identityRefresh: ClaudeIdentityRefresh? = null,
     ): ClaudeLoginArm {
         val home = paths.rootDir.parent ?: paths.rootDir
         val topology = topologyPath?.let(TopologyLoader::loadOrMaterialize) ?: Topology()
@@ -38,12 +41,15 @@ internal object ClaudeLoginWiring {
         )
         val dispatcher = ProcessDispatchers().io()
         val native = NativeClaudeAuth(wrap, mapOf("HOME" to home.toString()), dispatcher)
+        val profiles = ClaudeCredentialProfiles(paths.stateDir, log)
+        val identities = identityRefresh
+            ?: ClaudeIdentityRefresh(scope, dispatcher, profiles, ClaudeProfileProbe(userAgent, log), log)
         // One store for both verbs: the sign-in files an account into it, and the arm's remove deletes from it.
-        val folders = ClaudeAccountFolders(paths.stateDir)
+        val folders = ClaudeAccountFolders(paths.stateDir, profileRefresh = identities)
         return ClaudeLoginArm(
             owner = ClaudeLoginOwner(
                 ClaudeLoginLocations(home, paths).read(topology),
-                ClaudeLoginRead(paths, log, WallClock(System::currentTimeMillis)),
+                ClaudeLoginRead(paths, log, WallClock(System::currentTimeMillis), identities),
                 ClaudeLoginSessions(registry),
                 native,
                 scope,

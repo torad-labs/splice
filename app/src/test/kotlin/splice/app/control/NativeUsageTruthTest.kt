@@ -22,10 +22,12 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlaces
 import splice.accounts.signin.LoginStatus
+import splice.app.auth.claude.ClaudeCredentialProfiles
 import splice.app.auth.claude.ClaudeLoginLocation
 import splice.app.auth.claude.ClaudeLoginRead
 import splice.client.ClaudeHead
@@ -134,6 +136,13 @@ class NativeUsageTruthTest {
         val record = folder.resolve(".claude.json")
         val identity = account?.let { """"accountUuid":"$it","emailAddress":"proved@example.invalid"""" } ?: ""
         Files.writeString(record, """{"oauthAccount":{$identity}}""")
+        if (account != null) {
+            val key = requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer synthetic-${id.wire}")))
+            ClaudeCredentialProfiles(paths.stateDir, {}).observed(
+                key,
+                ClaudeAccountIdentity(account, "proved@example.invalid"),
+            )
+        }
         return ClaudeLoginLocation(id, ClaudeLoginTarget(ClaudeHead(HEAD, folder), record), home)
     }
 

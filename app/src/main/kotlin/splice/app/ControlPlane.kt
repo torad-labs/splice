@@ -112,7 +112,23 @@ internal class ControlPlane(
     internal val signInPlanner = SignInPlanner()
     internal val buildInputs = HeadBuildInputs(config, signInPlanner, modelRosters)
     internal val probeScope = LifecycleScope(ProcessDispatchers().background())
-    internal val providerAssembly = ProviderAssembly(statePaths, probeScope, log, refreshCall)
+    private val claudeIdentities = splice.app.auth.claude.ClaudeIdentityRefresh(
+        probeScope,
+        ProcessDispatchers().io(),
+        splice.app.auth.claude.ClaudeCredentialProfiles(statePaths.stateDir, log),
+        splice.app.auth.claude.ClaudeProfileProbe(
+            splice.usage.quota.ClientUserAgent(clientVersions::newestClaudeCodeUserAgent),
+            log,
+        ),
+        log,
+    )
+    internal val providerAssembly = ProviderAssembly(
+        statePaths,
+        probeScope,
+        log,
+        refreshCall,
+        claudeIdentities = claudeIdentities,
+    )
 
     /** V4-131: the daemon's ONE team store: the routes edit it and every head's slot resolver reads it. */
     internal val teams = ConsoleWiring.teamStore(statePaths)
@@ -160,7 +176,15 @@ internal class ControlPlane(
         val materializer = materializer(home, sharing, controlPort)
         val rewriter = TranscriptModelRewrite(originals = TranscriptOriginals(statePaths))
         val wrap = WrappedHead(home)
-        val arm = ClaudeLoginWiring.create(statePaths, topology.path, probeScope, wrap, log)
+        val arm = ClaudeLoginWiring.create(
+            statePaths,
+            topology.path,
+            probeScope,
+            wrap,
+            log,
+            splice.usage.quota.ClientUserAgent(clientVersions::newestClaudeCodeUserAgent),
+            claudeIdentities,
+        )
         val owner = arm.owner
         claudeLoginOwner = owner
         claudeAccounts = arm.accounts

@@ -17,10 +17,14 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeLoginPlaceId
+import splice.accounts.signin.AccountMutation
 import splice.accounts.signin.LoginState
 import splice.client.ClaudeHead
 import splice.client.ClaudeLoginTarget
+import splice.client.ClaudeLogins
+import splice.client.HeadSessions
 import splice.client.wrap.WrapStateRead
+import splice.core.auth.CredentialKey
 import splice.core.config.StatePaths
 import splice.core.util.WallClock
 import splice.sessions.registry.SessionListing
@@ -79,6 +83,69 @@ class ClaudeLoginOwnerTest {
             start,
         )
         return ClaudeLoginOwner(places, ClaudeLoginRead(paths, {}, WallClock { 1000 }), sessions, auth, scope)
+    }
+
+    private fun editable(location: ClaudeLoginLocation, token: String): Pair<ClaudeLoginEdits, ClaudeLogins> {
+        val bytes = """{"claudeAiOauth":{"accessToken":"$token"}}"""
+        Files.writeString(location.credentials, bytes)
+        Files.createDirectories(location.storeDir)
+        Files.writeString(location.storeDir.resolve("work.credentials.json"), bytes)
+        val paths = StatePaths(baseOverride = home.resolve("state"))
+        return ClaudeLoginEdits(ClaudeLoginRead(paths, {}, WallClock { 1000 })) to ClaudeLogins(location.storeDir)
+    }
+
+    @Test
+    fun `native removal backs up only its addressed credential and leaves sibling and pool logins intact`() {
+        val native = location()
+        val sibling = other()
+        val (edits, logins) = editable(native, "synthetic-native")
+        editable(sibling, "synthetic-sibling")
+        val pool = Files.createDirectories(home.resolve("pool/work")).resolve(".credentials.json")
+        Files.writeString(pool, "synthetic-pool")
+        val bytes = Files.readString(native.credentials)
+
+        assertEquals(AccountMutation.Ok, edits.remove(native, logins, HeadSessions.Read(emptyList())))
+
+        assertFalse(Files.exists(native.credentials))
+        assertFalse(Files.exists(native.storeDir.resolve("work.credentials.json")))
+        assertTrue(Files.exists(sibling.credentials))
+        assertTrue(Files.exists(sibling.storeDir.resolve("work.credentials.json")))
+        assertEquals("synthetic-pool", Files.readString(pool))
+        val backup = Files.list(native.storeDir.resolve("removed")).use { it.toList().single() }
+        assertEquals(bytes, Files.readString(backup))
+        assertEquals(
+            "rw-------",
+            java.nio.file.attribute.PosixFilePermissions.toString(Files.getPosixFilePermissions(backup)),
+        )
+    }
+
+    @Test
+    fun `unknown or active native sessions refuse removal before any credential file changes`() {
+        val native = location()
+        val (edits, logins) = editable(native, "synthetic-native")
+        val bytes = Files.readString(native.credentials)
+        for (sessions in listOf(HeadSessions.Unreadable("synthetic"), HeadSessions.Read(listOf("synthetic active")))) {
+            assertTrue(edits.remove(native, logins, sessions) is AccountMutation.Refused)
+            assertEquals(bytes, Files.readString(native.credentials))
+            assertTrue(Files.exists(native.storeDir.resolve("work.credentials.json")))
+            assertFalse(Files.exists(native.storeDir.resolve("removed")))
+        }
+    }
+
+    @Test
+    fun `native rename needs credential proof and never changes the live login bytes or place id`() {
+        val native = location()
+        val (edits, logins) = editable(native, "synthetic-native")
+        val bytes = Files.readString(native.credentials)
+        assertEquals(AccountMutation.Ok, edits.relabel(native, logins, "office"))
+        assertEquals(bytes, Files.readString(native.credentials))
+        val key = requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer synthetic-native")))
+        assertEquals("office", logins.labelForCredential(key))
+        Files.writeString(native.credentials, """{"claudeAiOauth":{"accessToken":"synthetic-rotated"}}""")
+        assertTrue(edits.relabel(native, logins, "wrong") is AccountMutation.Refused)
+        assertTrue(Files.exists(native.storeDir.resolve("office.credentials.json")))
+        assertFalse(Files.exists(native.storeDir.resolve("wrong.credentials.json")))
+        assertEquals(ClaudeLoginPlaceId.NATIVE, native.id)
     }
 
     @Test

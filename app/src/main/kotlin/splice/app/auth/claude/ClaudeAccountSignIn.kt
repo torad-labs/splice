@@ -128,6 +128,7 @@ internal class ClaudeAccountSignIn(
         cell: AtomicReference<LoginStatus>,
         restart: HeadRestart?,
     ) {
+        folders.verify(pending)
         when (val landed = folders.land(pending)) {
             is ClaudeAccountLanding.Added -> {
                 cell.updateAndGet { it.copy(state = LoginState.SIGNED_IN, label = landed.label) }

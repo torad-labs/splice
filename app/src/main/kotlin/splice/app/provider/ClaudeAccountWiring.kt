@@ -26,6 +26,7 @@ internal class ClaudeAccountWiring(
     private val log: LogSink,
     private val folders: ClaudeAccountFolders = ClaudeAccountFolders(statePaths.stateDir),
     private val refresh: ClaudeTokenRefresh = ClaudeTokenRefresh(ClaudeOAuthRefresh(log)::rotate),
+    private val identities: splice.app.auth.claude.ClaudeIdentityRefresh? = null,
 ) {
     /** [head]'s pool entries, or none when nobody has added an account to it. [caller] is the head's own forwarding
      *  credential, which stays the primary: a pool whose primary were an added account would send someone else's
@@ -44,9 +45,14 @@ internal class ClaudeAccountWiring(
             WiredAccount(
                 label = account.label,
                 primary = false,
-                auth = ClaudeFolderAuth(account.directory, refresh = refresh),
+                auth = ClaudeFolderAuth(
+                    account.directory,
+                    refresh = refresh,
+                    profiles = splice.app.auth.claude.ClaudeCredentialProfiles(statePaths.stateDir, log),
+                    identities = identities,
+                ),
                 quotaFile = account.directory.resolve(QUOTA_FILE),
-                credentialPresent = account.identity != null,
+                credentialPresent = account.refusal == null,
                 refusal = account.refusal,
             )
         }

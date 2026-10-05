@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.app.head.ProviderHoldFiles
@@ -29,12 +30,20 @@ class ClaudeLoginReadTest {
 
     /** [account] is the subscription the folder's record names: the two places hold ONE account when it is equal,
      *  which is what a person signing the same login into both commands has, and null when splice cannot read one. */
-    private fun place(id: ClaudeLoginPlaceId, token: String, account: String? = null): ClaudeLoginLocation {
+    private fun place(
+        id: ClaudeLoginPlaceId,
+        token: String,
+        account: String? = null,
+        verified: Boolean = true,
+    ): ClaudeLoginLocation {
         val folder = Files.createDirectories(home.resolve(id.wire))
         val record = folder.resolve(".claude.json")
         val uuid = account?.let { """"accountUuid":"$it"""" } ?: ""
         Files.writeString(folder.resolve(".credentials.json"), """{"claudeAiOauth":{"accessToken":"$token"}}""")
         Files.writeString(record, """{"oauthAccount":{$uuid}}""")
+        if (account != null && verified) {
+            ClaudeCredentialProfiles(paths().stateDir, {}).observed(key(token), ClaudeAccountIdentity(account, null))
+        }
         return ClaudeLoginLocation(id, ClaudeLoginTarget(ClaudeHead("claude-splice", folder), record), home)
     }
 
@@ -59,7 +68,7 @@ class ClaudeLoginReadTest {
     }
 
     @Test
-    fun `account attribution uses only a currently matching credential and refuses conflicting identities`() {
+    fun `account attribution uses verified matching credentials rather than conflicting copied identities`() {
         val first = place(ClaudeLoginPlaceId.NATIVE, "first-synthetic", account = "first-account")
         val second = place(ClaudeLoginPlaceId.SPLICE, "second-synthetic", account = "second-account")
         val reader = ClaudeLoginRead(paths(), {}, WallClock { 100_000 })
@@ -69,9 +78,18 @@ class ClaudeLoginReadTest {
         assertNull(reader.accountForCredential(locations, key("unproved-synthetic")))
         Files.writeString(first.credentials, """{"claudeAiOauth":{"accessToken":"rotated-synthetic"}}""")
         assertNull(reader.accountForCredential(locations, key("first-synthetic")), "a stale token proves no account")
+        assertNull(reader.accountForCredential(locations, key("rotated-synthetic")), "a new credential is unverified")
+        ClaudeCredentialProfiles(paths().stateDir, {}).observed(
+            key("rotated-synthetic"),
+            ClaudeAccountIdentity("first-account", null),
+        )
         assertEquals("first-account", reader.accountForCredential(locations, key("rotated-synthetic"))?.uuid)
         Files.writeString(second.credentials, """{"claudeAiOauth":{"accessToken":"rotated-synthetic"}}""")
-        assertNull(reader.accountForCredential(locations, key("rotated-synthetic")), "conflicting UUIDs prove no name")
+        assertEquals(
+            "first-account",
+            reader.accountForCredential(locations, key("rotated-synthetic"))?.uuid,
+            "copied UUIDs cannot contradict the credential's verified profile",
+        )
     }
 
     @Test
@@ -114,6 +132,49 @@ class ClaudeLoginReadTest {
 
         assertEquals(41.0, used(later, ClaudeLoginPlaceId.NATIVE), "the account's newest reading, whoever filed it")
         assertEquals(41.0, used(later, ClaudeLoginPlaceId.SPLICE))
+    }
+
+    @Test
+    fun `copied account metadata cannot merge two different credentials quotas`() {
+        val paths = paths()
+        val native = place(
+            ClaudeLoginPlaceId.NATIVE,
+            "first-account-token",
+            account = "copied-stale-account",
+            verified = false,
+        )
+        val separate = place(
+            ClaudeLoginPlaceId.SPLICE,
+            "second-account-token",
+            account = "copied-stale-account",
+            verified = false,
+        )
+        observations(paths).observed(key("first-account-token"), window(11.0, 90_000))
+        observations(paths).observed(key("second-account-token"), window(77.0, 95_000))
+
+        val places = read(native, separate)
+
+        assertEquals(11.0, used(places, ClaudeLoginPlaceId.NATIVE), "an unbound config UUID proves no shared account")
+        assertEquals(77.0, used(places, ClaudeLoginPlaceId.SPLICE))
+    }
+
+    @Test
+    fun `different verified profiles stay independent despite equal stale config UUIDs`() {
+        val paths = paths()
+        val native = place(ClaudeLoginPlaceId.NATIVE, "first-profile-token", "stale", verified = false)
+        val separate = place(ClaudeLoginPlaceId.SPLICE, "second-profile-token", "stale", verified = false)
+        val profiles = ClaudeCredentialProfiles(paths.stateDir, {})
+        profiles.observed(key("first-profile-token"), ClaudeAccountIdentity("first-account", "first@synthetic.test"))
+        profiles.observed(key("second-profile-token"), ClaudeAccountIdentity("second-account", "second@synthetic.test"))
+        observations(paths).observed(key("first-profile-token"), window(11.0, 90_000))
+        observations(paths).observed(key("second-profile-token"), window(77.0, 95_000))
+
+        val places = read(native, separate)
+
+        assertEquals("first-account", places.getValue(ClaudeLoginPlaceId.NATIVE).account?.uuid)
+        assertEquals("second-account", places.getValue(ClaudeLoginPlaceId.SPLICE).account?.uuid)
+        assertEquals(11.0, used(places, ClaudeLoginPlaceId.NATIVE))
+        assertEquals(77.0, used(places, ClaudeLoginPlaceId.SPLICE))
     }
 
     @Test

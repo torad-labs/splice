@@ -23,14 +23,6 @@ private data class NativeCredentialDocument(val claudeAiOauth: NativeToken? = nu
 @JsonIgnoreUnknownKeys
 private data class NativeToken(val accessToken: String? = null)
 
-@Serializable
-@JsonIgnoreUnknownKeys
-private data class NativeAccountDocument(val oauthAccount: NativeAccount? = null)
-
-@Serializable
-@JsonIgnoreUnknownKeys
-private data class NativeAccount(val accountUuid: String? = null, val emailAddress: String? = null)
-
 /** The digest is an internal join only. The account route receives identity and windows, never this key. */
 internal data class ClaudeLoginFacts(
     val present: Boolean,
@@ -40,7 +32,10 @@ internal data class ClaudeLoginFacts(
 )
 
 /** Streaming typed reads skip unrelated settings and project histories instead of retaining their JSON trees. */
-internal class ClaudeLoginFactsReader {
+internal class ClaudeLoginFactsReader(
+    private val profiles: ClaudeCredentialProfiles? = null,
+    private val profileRefresh: ClaudeIdentityRefresh? = null,
+) {
     private val json = Json
 
     fun read(location: ClaudeLoginLocation): ClaudeLoginFacts {
@@ -48,9 +43,8 @@ internal class ClaudeLoginFactsReader {
         val credential = Cancellables.runCatchingCancellable {
             Files.newInputStream(location.credentials).use { json.decodeFromStream<NativeCredentialDocument>(it) }
         }.onFailure { failures += it }.getOrNull()
-        val identity = Cancellables.runCatchingCancellable { account(location.target.accountFile) }
-            .onFailure { failures += it }.getOrNull()
         val token = credential?.claudeAiOauth?.accessToken?.takeIf { it.isNotBlank() }
+        val identity = token?.let(::identified)
         val failure = failures.firstOrNull { it !is NoSuchFileException }
         return ClaudeLoginFacts(
             present = credential != null || Files.exists(location.credentials, java.nio.file.LinkOption.NOFOLLOW_LINKS),
@@ -60,13 +54,22 @@ internal class ClaudeLoginFactsReader {
         )
     }
 
-    /** The account a CONFIG DIR records, or null when it holds none that splice can read. The folder form of
-     *  [read]'s identity half, for the per-account folders a Claude head's pool is built from. A folder whose record
-     *  is absent or unreadable is not dropped in silence: ClaudeAccountFolders.unreadable() lists its label, and
-     *  Accounts says so in words, which is why the failure is not logged here. */
-    fun identity(configDir: Path): ClaudeAccountIdentity? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- unreadable() names such a folder; it is never dropped
-        Cancellables.runCatchingCancellable { account(configDir.resolve(CLAUDE_JSON)) }.getOrNull()
+    /** Only a profile verified for this folder's actual token proves its account. Copied settings prove nothing. */
+    fun identity(configDir: Path): ClaudeAccountIdentity? = token(configDir)?.let(::identified)
+
+    private fun identified(token: String): ClaudeAccountIdentity? {
+        val key = CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $token")) ?: return null
+        val account = profiles?.read(key)
+        if (account == null) profileRefresh?.request(key, token)
+        return account
+    }
+
+    /** An explicit product refresh awaits the same captured credential's profile, never a later file's token. */
+    suspend fun refresh(configDir: Path) {
+        val token = token(configDir) ?: return
+        val key = CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $token")) ?: return
+        profileRefresh?.request(key, token)?.await()
+    }
 
     /** The access token a CONFIG DIR's credential file holds, or null when it holds none that splice can read.
      *  Read at send and probe time only; the value never enters a log, a view or another type. */
@@ -78,6 +81,14 @@ internal class ClaudeLoginFactsReader {
             }.claudeAiOauth?.accessToken?.takeIf { it.isNotBlank() }
         }.getOrNull()
 
+    /** A stored display alias is metadata only; neither credential files nor stable pool ids are renamed. */
+    fun displayName(record: Path): String? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- absent or unreadable alias uses the login's own stable id
+        Cancellables.runCatchingCancellable {
+            Files.newInputStream(record).use { json.decodeFromStream<ClaudeAccountRecord>(it) }.displayName
+                ?.takeIf(String::isNotBlank)
+        }.getOrNull()
+
     /** When splice filed the folder [record] sits in, or null when there is no readable record: a folder from before
      *  the record existed, which sorts first for exactly that reason. */
     fun addedAt(record: Path): Long? =
@@ -85,12 +96,6 @@ internal class ClaudeLoginFactsReader {
         Cancellables.runCatchingCancellable {
             Files.newInputStream(record).use { json.decodeFromStream<ClaudeAccountRecord>(it) }.addedAtEpochMillis
         }.getOrNull()
-
-    private fun account(file: Path): ClaudeAccountIdentity? {
-        val record = Files.newInputStream(file).use { json.decodeFromStream<NativeAccountDocument>(it) }.oauthAccount
-        val uuid = record?.accountUuid?.takeIf { it.isNotBlank() } ?: return null
-        return ClaudeAccountIdentity(uuid, record.emailAddress)
-    }
 }
 
 // why: the two file names Claude Code itself reads in a config dir. internal, not private: this package's folder
@@ -101,8 +106,11 @@ internal const val CLAUDE_JSON = ".claude.json"
 /** splice's own record in a per-account folder: when the account was added, which is the pool's default order.
  *  Claude Code neither writes nor reads it, so it carries nothing of the account itself. */
 @Serializable
-internal data class ClaudeAccountRecord(@SerialName(ADDED_AT) val addedAtEpochMillis: Long) {
-    fun wire(): String = """{"$ADDED_AT":$addedAtEpochMillis}"""
+internal data class ClaudeAccountRecord(
+    @SerialName(ADDED_AT) val addedAtEpochMillis: Long,
+    @SerialName("display_name") val displayName: String? = null,
+) {
+    fun wire(): String = Json.encodeToString(serializer(), this)
 }
 
 // why: the field name in the file, snake_case like the Claude Code documents it sits beside.

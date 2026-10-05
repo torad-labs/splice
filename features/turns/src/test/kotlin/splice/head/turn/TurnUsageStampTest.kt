@@ -13,10 +13,18 @@
 // here at the seam where it is written rather than only where it is priced.
 package splice.head.turn
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -29,12 +37,14 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
+import splice.head.round.ObservedRoundPost
 import splice.head.round.RunnerSignals
 import splice.head.usage.OutputClamp
 import splice.head.usage.UsageStore
@@ -42,9 +52,13 @@ import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.UsagePayloadBuilder
+import splice.upstream.RoundBody
+import splice.upstream.RoundInterceptor
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
+import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
@@ -67,7 +81,7 @@ class TurnUsageStampTest {
         val usageStore = UsageStore(tmp.resolve("u-$tag.json"), tmp.resolve("rl-$tag.json"))
         val stamp = TurnUsageStamp(usageStore, log, telemetry)
 
-        suspend fun drive(): TurnDrive = TurnDrive(
+        suspend fun drive(interceptor: RoundInterceptor? = null): TurnDrive = TurnDrive(
             requestBody = buildJsonObject { },
             meta = TurnMeta(
                 compact = false,
@@ -99,11 +113,197 @@ class TurnUsageStampTest {
                 AtomicBoolean(false),
             ),
             toolSearch = null,
+            roundInterceptor = interceptor,
         )
     }
 
     private fun success(usage: Usage) =
         TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = usage)
+
+    @Test
+    fun `a successful zero usage step cannot erase the raw round its turn posted`() = runBlocking {
+        val rig = Rig(tmp, "owned-claim-refused")
+        val drive = rig.drive()
+        try {
+            val raw = rig.stamp.stampIndependent(success(Usage(inputTokens = 100, outputTokens = 7, cachedTokens = 40)))
+            drive.recordRawRound(raw)
+            rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
+            val counters = drive.perf.snapshot().counters
+            assertEquals(100L, counters[PerfKeys.IN_TOKENS], "the durable source claim cannot own the posted bill")
+            assertEquals(7L, counters[PerfKeys.OUT_TOKENS])
+            assertEquals(40L, counters[PerfKeys.CACHED_TOKENS])
+            assertEquals(7L, rig.usageStore.readState().outputTokens5h, "independent output is counted once")
+        } finally {
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
+
+    @Test
+    fun `a later successful turn cannot bill a source round another turn posted`() = runBlocking {
+        val rig = Rig(tmp, "owned-continuation")
+        val drive = rig.drive()
+        try {
+            val source = rig.stamp.stampIndependent(success(Usage(inputTokens = 100, outputTokens = 7)))
+                as TurnOutcome.Success
+            val own = Usage(inputTokens = 11, outputTokens = 3)
+            drive.recordRawRound(success(own))
+            val generated = splice.head.round.RoundUsage().plusRound(source.usage).plusRound(own).toUsage()
+            rig.stamp.stampSuccess(drive, success(generated.copy(cutRounds = 1)))
+            val counters = drive.perf.snapshot().counters
+            assertEquals(11L, counters[PerfKeys.IN_TOKENS])
+            assertEquals(3L, counters[PerfKeys.OUT_TOKENS], "the earlier source is billed only on its posting row")
+            assertTrue(PerfKeys.ABSORBED_ROUNDS !in counters, "a carried source is not this turn's hidden round")
+            assertEquals(1L, counters[PerfKeys.CUT_SOURCE_ROUNDS], "the turn's cut remains observable")
+            assertEquals(10L, rig.usageStore.readState().outputTokens5h)
+        } finally {
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
+
+    @Test
+    fun `a held posting row keeps its completed raw usage when a source claim releases with none`() = runBlocking {
+        val rig = Rig(tmp, "owned-held-claim-refused")
+        val drive = rig.drive()
+        val held = drive.sourceRow.hold()
+        try {
+            rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
+            rig.telemetry.recordPerf(drive, "ok")
+            val raw = rig.stamp.stampIndependent(success(Usage(inputTokens = 100, outputTokens = 7, cachedTokens = 40)))
+            drive.recordRawRound(raw)
+            held.release(null)
+            assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+            val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
+            assertEquals(100L, row.getValue(PerfKeys.IN_TOKENS).jsonPrimitive.long)
+            assertEquals(7L, row.getValue(PerfKeys.OUT_TOKENS).jsonPrimitive.long)
+            assertEquals(40L, row.getValue(PerfKeys.CACHED_TOKENS).jsonPrimitive.long)
+            assertEquals(7L, rig.usageStore.readState().outputTokens5h, "the independent source's output stays once")
+        } finally {
+            held.release(null)
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
+
+    @Test
+    fun `a posted source with no terminal usage is unreported rather than a zero bill`() = runBlocking {
+        val rig = Rig(tmp, "owned-unreported-source")
+        val drive = rig.drive(RoundInterceptor { _, _, _ -> error("no source is executed by this fixture") })
+        try {
+            drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, 123)
+            rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
+            rig.telemetry.recordPerf(drive, "ok")
+            assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+            val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
+            assertNull(row[PerfKeys.IN_TOKENS], "the cut source never reported its input")
+            assertNull(row[PerfKeys.OUT_TOKENS], "absence is not a measured zero")
+            assertNull(row[PerfKeys.CACHED_TOKENS])
+            assertNull(row[PerfKeys.CACHE_WRITE_TOKENS])
+        } finally {
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
+
+    @Test
+    fun `a successful content step whose raw post unwound before reporting has no invented zero bill`() = runBlocking {
+        val endings = listOf(IOException("synthetic source threw"), CancellationException("synthetic source cancelled"))
+        for ((index, ending) in endings.withIndex()) {
+            val rig = Rig(tmp, "owned-unwound-source-$index")
+            val drive = rig.drive(RoundInterceptor { _, _, _ -> error("the fixture dispatches only its raw post") })
+            var frames = 0
+            val observed = ObservedRoundPost(
+                dispatch = { body, sink ->
+                    drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, body.byteSize())
+                    val block = sink.openText()
+                    repeat(58) {
+                        sink.textDelta(block, "synthetic content")
+                        frames++
+                    }
+                    sink.closeBlock(block)
+                    throw ending
+                },
+                ordinary = { error("the fixture uses redirected dispatch") },
+                observation = drive::recordRawRound,
+                perf = drive.perf,
+                postingRow = drive.sourceRow,
+            )
+            try {
+                val thrown = assertThrows(ending::class.java) {
+                    runBlocking { observed.postInto(RoundBody.Text("{}"), drive.emitter) }
+                }
+                assertSame(ending, thrown)
+                assertEquals(58, frames, "content left before the raw call unwound")
+                assertNull(drive.rawRoundUsage(), "the observation runs only after raw dispatch reports")
+                rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
+                rig.telemetry.recordPerf(drive, "ok")
+                assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+                val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
+                assertEquals("ok", row.getValue("outcome").jsonPrimitive.content)
+                assertNull(row[PerfKeys.IN_TOKENS], "unwound content without usage is unreported")
+                assertNull(row[PerfKeys.OUT_TOKENS])
+                assertNull(row[PerfKeys.CACHED_TOKENS])
+                assertNull(row[PerfKeys.LOCAL_STEP], "this successful step posted before its raw source unwound")
+                assertEquals(0L, rig.usageStore.readState().outputTokens5h, "unknown output is never invented")
+            } finally {
+                drive.slot.release()
+                rig.usageStore.flushNow()
+            }
+        }
+    }
+
+    @Test
+    fun `a local step with no post keeps its explicit zero bill`() = runBlocking {
+        val rig = Rig(tmp, "owned-no-source")
+        val drive = rig.drive(RoundInterceptor { _, _, _ -> error("a local step must not post") })
+        try {
+            rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
+            rig.telemetry.recordPerf(drive, "ok")
+            assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+            val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
+            assertEquals(0L, row.getValue(PerfKeys.IN_TOKENS).jsonPrimitive.long)
+            assertEquals(0L, row.getValue(PerfKeys.OUT_TOKENS).jsonPrimitive.long)
+        } finally {
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
+
+    @Test
+    fun `a posting row keeps reported raw salvage when its source ends after the successful step`() = runBlocking {
+        val failure = TurnOutcome.Failure(
+            "synthetic source ended",
+            cause = splice.core.turn.FailureCause.UPSTREAM_TRUNCATED,
+            phase = splice.core.turn.FailurePhase.MID_OUTPUT,
+            salvagedUsage = Usage(inputTokens = 50, outputTokens = 7),
+        )
+        val split = failure.copy(
+            partial = TurnOutcome.PartialRound(usage = Usage(inputTokens = 40, outputTokens = 3)),
+            salvagedUsage = Usage(inputTokens = 10, outputTokens = 4),
+        )
+        val endings = listOf(failure, split, TurnOutcome.ClientAbandoned(Usage(inputTokens = 50, outputTokens = 7)))
+        for ((index, ending) in endings.withIndex()) {
+            val rig = Rig(tmp, "owned-raw-salvage-$index")
+            val drive = rig.drive()
+            val held = drive.sourceRow.hold()
+            try {
+                rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
+                rig.telemetry.recordPerf(drive, "ok")
+                drive.recordRawRound(rig.stamp.stampIndependent(ending))
+                held.release(null)
+                assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+                val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
+                assertEquals(50L, row.getValue(PerfKeys.IN_TOKENS).jsonPrimitive.long)
+                assertEquals(7L, row.getValue(PerfKeys.OUT_TOKENS).jsonPrimitive.long)
+                assertEquals(7L, rig.usageStore.readState().outputTokens5h)
+            } finally {
+                held.release(null)
+                drive.slot.release()
+                rig.usageStore.flushNow()
+            }
+        }
+    }
 
     @Test
     fun `raw completion after a local step bills once and a later continuation bills only new output`() =

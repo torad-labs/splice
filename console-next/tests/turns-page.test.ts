@@ -79,7 +79,7 @@ describe('a record splice answered itself', () => {
     expect(localStepsOf([])).toBe(0);
   });
   test('its page says the plan was not asked', () => {
-    expect(turnLede(local, [])).toBe('The model was not asked. splice answered this step itself, from a script the model had already written.');
+    expect(turnLede(local, [])).toBe('This step sent no request to the model. Splice answered from the existing script, so its input and output token counts are zero.');
   });
 });
 

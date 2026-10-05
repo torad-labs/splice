@@ -37,6 +37,18 @@ import splice.upstream.retry.WatchdogHeld
 // was the one KEPT because it is what FailureText.kt and TurnKnownEnd.kt use for text the client
 // can SEE, and those bytes are oracle-pinned; the two log-only surfaces widened to match.
 
+/** A posted round without a token report must not persist an invented zero in any billing bucket. */
+private val UNREPORTED_TOKEN_FIELDS = setOf(
+    PerfKeys.IN_TOKENS,
+    PerfKeys.OUT_TOKENS,
+    PerfKeys.CACHED_TOKENS,
+    PerfKeys.CACHE_WRITE_TOKENS,
+    PerfKeys.ABSORBED_IN_TOKENS,
+    PerfKeys.ABSORBED_OUT_TOKENS,
+    PerfKeys.ABSORBED_CACHED_TOKENS,
+    PerfKeys.ABSORBED_CACHE_WRITE_TOKENS,
+)
+
 /** Renders the per-turn observability: the turn line, error lines, the perf row+line, and the
  *  cache log line. Split out so the driver stays drive-only (the audit's god-file finding). */
 internal class TurnTelemetry(
@@ -110,8 +122,10 @@ internal class TurnTelemetry(
     /** [usage] is the turn's whole usage once a source round it held settled; its counters replace the turn's. */
     private fun writeRow(drive: TurnDrive, ending: RowEnding, usage: Usage?) {
         val outcomeTag = ending.outcomeTag
-        usage?.let { TurnBill.counters(it).forEach { (key, value) -> drive.perf.setCount(key, value) } }
-        val snap = drive.perf.snapshot()
+        // A held row may carry an interceptor's assembled step, not the raw rounds this drive posted.
+        val billed = drive.rawRoundUsage() ?: usage
+        billed?.let { TurnBill.counters(it).forEach { (key, value) -> drive.perf.setCount(key, value) } }
+        val snap = billingSnapshot(drive)
         // V4-174: the turn record closes on the same snapshot the perf row carries — every ending
         // of a drive goes through here, so the trace never has a turn without its outcome.
         closeTrace(drive.trace, outcomeTag, snap)
@@ -151,6 +165,19 @@ internal class TurnTelemetry(
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
         recordEconomics(snap, drive.upstreamModel, ending.rateLimited)
         recordSpend(rowTs, drive.upstreamModel, snap.counters)
+    }
+
+    private fun billingSnapshot(drive: TurnDrive): PerfSnapshot {
+        val snap = drive.perf.snapshot()
+        val posted = drive.roundInterceptor != null &&
+            (snap.counters[PerfKeys.UPSTREAM_REQ_BYTES] ?: 0L) > 0L
+        if (!posted) return snap
+        val counters = snap.counters - PerfKeys.LOCAL_STEP
+        return if (TurnBill.isEmpty(counters)) {
+            snap.copy(counters = counters.filterKeys { it !in UNREPORTED_TOKEN_FIELDS })
+        } else {
+            snap.copy(counters = counters)
+        }
     }
 
     /** V4-404: the one place a turn's trace is closed, from both endings (a drive's perf row and a local

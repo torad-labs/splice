@@ -97,6 +97,54 @@ private const val GATE_POLL_MS = 10L
 class CodeModeRoundBillingTest {
     @Test
     @Timeout(BILLING_TEST_SECONDS)
+    fun `a completed content stream reports its known bill or leaves unreported tokens absent`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        for (reply in listOf(BillingReply.CONTENT, BillingReply.CONTENT_WITHOUT_USAGE)) {
+            val directory = tmp.resolve(reply.name)
+            val upstream = BillingUpstream(firstReply = reply)
+            val runtime = StatementGatewayRuntime()
+            val bridge = CodexCodeModeBridge(
+                CodeModeBridgeConfig(
+                    runtimes = { runtime },
+                    state = CodeModeStateLocation(directory.resolve("records"), directory.resolve("legacy.json")),
+                ),
+            )
+            val head = HeadServer(provider(upstream.url, bridge), 0, headDeps(directory))
+            val client = HttpClient(CIO)
+            try {
+                head.start()
+                val history = listOf(message("user", JsonPrimitive("answer without calling a tool")))
+                val answer = withTimeout(TURN_BOUND_MS) {
+                    send(client, "http://127.0.0.1:${head.port}/v1/messages", history)
+                }
+                assertTrue(answer.contains("fixture read"), answer)
+                assertTrue(answer.contains("message_stop"), answer)
+                assertEquals(1, upstream.posts.get(), "a completed content stream is never rerun")
+                val row = rows(directory, 1).single()
+                assertTrue(checkNotNull(row.count(PerfKeys.UPSTREAM_REQ_BYTES)) > 0, "$row")
+                assertEquals("ok", row.getValue("outcome").jsonPrimitive.content, "$row")
+                assertNull(row[PerfKeys.LOCAL_STEP], "a completed content stream actually posted: $row")
+                if (reply == BillingReply.CONTENT) {
+                    assertEquals(SOURCE_INPUT, row.count(PerfKeys.IN_TOKENS), "$row")
+                    assertEquals(SOURCE_OUTPUT, row.count(PerfKeys.OUT_TOKENS), "$row")
+                    assertEquals(SOURCE_CACHED, row.count(PerfKeys.CACHED_TOKENS), "$row")
+                } else {
+                    assertNull(row[PerfKeys.IN_TOKENS], "completed content without usage is unreported: $row")
+                    assertNull(row[PerfKeys.OUT_TOKENS], "$row")
+                    assertNull(row[PerfKeys.CACHED_TOKENS], "$row")
+                }
+            } finally {
+                head.stop()
+                runtime.close()
+                client.close()
+                upstream.close()
+            }
+        }
+    }
+
+    @Test
+    @Timeout(BILLING_TEST_SECONDS)
     fun `a round that finished before its tool call left is billed on the turn that posted it, and only there`(
         @TempDir tmp: Path,
     ) = runBlocking {
@@ -232,7 +280,9 @@ class CodeModeRoundBillingTest {
 
             val (posting, steering) = rows(tmp, 2).sortedBy { it.count("ts") }
             assertNull(posting[PerfKeys.CUT_SOURCE_ROUNDS], "the posting turn cut nothing: $posting")
-            assertEquals(0L, posting.count(PerfKeys.IN_TOKENS), "$posting")
+            assertNull(posting[PerfKeys.IN_TOKENS], "a posted source without terminal usage is unreported: $posting")
+            assertNull(posting[PerfKeys.OUT_TOKENS], "the source was cut before its output was reported: $posting")
+            assertNull(posting[PerfKeys.LOCAL_STEP], "the source turn actually posted upstream: $posting")
             assertEquals(1L, steering.count(PerfKeys.CUT_SOURCE_ROUNDS), "the steering turn cut the round: $steering")
             assertEquals(ANSWER_INPUT, steering.count(PerfKeys.IN_TOKENS), "$steering")
             assertNull(steering[PerfKeys.ABSORBED_ROUNDS], "$steering")
@@ -401,9 +451,17 @@ class CodeModeRoundBillingTest {
 // why: the perf row lands as the turn finishes; a short poll keeps the test from racing it.
 private const val ROW_POLL_MS = 20L
 
+private enum class BillingReply { SOURCE, CONTENT, CONTENT_WITHOUT_USAGE }
+
+// The completed-content attack uses the observed frame count, without a live response or timing-dependent sleeps.
+private const val COMPLETED_CONTENT_FRAMES = 58
+
 /** A loopback Responses backend. Its source round ends on its one statement, so the round's terminal, and its
  *  usage, arrive before the script's tool call can leave: the call is certified only at the end of the source. */
-private class BillingUpstream(private val held: Boolean = false) {
+private class BillingUpstream(
+    private val held: Boolean = false,
+    private val firstReply: BillingReply = BillingReply.SOURCE,
+) {
     val posts = AtomicInteger()
     private val source = "await tools.Read({});\n"
     private val ended = CountDownLatch(1)
@@ -422,7 +480,13 @@ private class BillingUpstream(private val held: Boolean = false) {
         exchange.requestBody.use { it.readAllBytes() }
         exchange.responseHeaders.add("Content-Type", "text/event-stream")
         exchange.sendResponseHeaders(200, 0)
-        exchange.responseBody.use { output -> if (attempt == 1) source(output) else answer(output) }
+        exchange.responseBody.use { output ->
+            when {
+                attempt > 1 -> answer(output)
+                firstReply == BillingReply.SOURCE -> source(output)
+                else -> completedContent(output)
+            }
+        }
     }
 
     /** Lets a held source round reach its terminal. */
@@ -452,6 +516,34 @@ private class BillingUpstream(private val held: Boolean = false) {
                 "input_tokens_details":{"cached_tokens":$SOURCE_CACHED}},"output":[{
                 "type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec",
                 "input":${JsonPrimitive(input)}}]}}""",
+        )
+    }
+
+    private fun completedContent(output: java.io.OutputStream) {
+        event(
+            output,
+            """{"type":"response.output_item.added","output_index":0,"item":{
+                "type":"message","id":"content-item","role":"assistant","content":[]}}""",
+        )
+        repeat(COMPLETED_CONTENT_FRAMES) {
+            event(
+                output,
+                """{"type":"response.output_text.delta","output_index":0,"content_index":0,
+                    "item_id":"content-item","delta":"fixture read"}""",
+            )
+        }
+        val usage = if (firstReply == BillingReply.CONTENT) {
+            """"usage":{"input_tokens":$SOURCE_INPUT,"output_tokens":$SOURCE_OUTPUT,
+                "input_tokens_details":{"cached_tokens":$SOURCE_CACHED}},"""
+        } else {
+            ""
+        }
+        val text = JsonPrimitive("fixture read".repeat(COMPLETED_CONTENT_FRAMES))
+        event(
+            output,
+            """{"type":"response.completed","response":{"id":"content-response","status":"completed",
+                $usage"output":[{"type":"message","id":"content-item","role":"assistant",
+                "content":[{"type":"output_text","text":$text}]}]}}""",
         )
     }
 

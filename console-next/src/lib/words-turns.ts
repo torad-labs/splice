@@ -52,7 +52,7 @@ export const T = {
   between: (from: string, to: string) => `from ${from} to ${to}`,
   sinceTime: (from: string) => `since ${from}`,
   failedOf: (count: number, command: string) => `${count.toLocaleString('en-US')} failed requests on ${command}`,
-  servedLocallyLede: 'The model was not asked. splice answered this step itself, from a script the model had already written.',
+  servedLocallyLede: 'This step sent no request to the model. Splice answered from the existing script, so its input and output token counts are zero.',
   servedLocallyTag: 'Answered by splice',
   localLeftOut: (count: number) => `${count.toLocaleString('en-US')} ${count === 1 ? 'step' : 'steps'} splice answered itself, without asking the model, ${count === 1 ? 'is' : 'are'} left out of this list.`,
   shownOf: (shown: number, total: number) => `Showing the newest ${shown.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}. Narrow the window or filter to see the rest.`,

@@ -218,6 +218,7 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
     ) : CodeModeRuntime {
         val delivered = mutableListOf<List<CodeModeResult>>()
         val firstReads = mutableListOf<CodeModeSourcePart>()
+        val firstRead = CompletableDeferred<Unit>()
         var starts = 0
         override suspend fun start(
             source: String,
@@ -232,6 +233,7 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
         ): CodeModeCell {
             starts++
             val first = source.read().also(firstReads::add)
+            firstRead.complete(Unit)
             if (failFirst && starts == 1) throw CodeModeStartException(IOException("boot failed before dispatch"))
             return object : CodeModeCell {
                 private var initial: CodeModeSourcePart? = first

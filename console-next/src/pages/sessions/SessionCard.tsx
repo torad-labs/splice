@@ -20,6 +20,8 @@ export interface CardFacts {
   /** The head's command (`claude-grok`), or null for a session splice did not start. */
   head: string | null;
   hand: Handoff;
+  /** The shared display name of this session's own attributed login, not its head's last selection. */
+  login?: string | null;
   /** How long it has been in its state (ms), when the registry gave a time. */
   since: number | null;
   /** A busy session with no live turn is running a tool: how long it has been quiet, else null. */
@@ -58,7 +60,7 @@ export function SessionCard({ facts, sortable = true }: { facts: CardFacts; sort
   const { line, note, agent } = cardLine(row, state, since, quiet);
   const asks = state === 'waiting' ? waitingAsks(row) : [];
   const where = needs ? answerWhere(row) : null;
-  const meta = [note, repoName(row), handText(hand)].filter((part): part is string => part !== null);
+  const meta = [note, head === null ? null : row.account == null ? P.loginUnknown : P.login(facts.login ?? row.account), repoName(row), handText(hand)].filter((part): part is string => part !== null);
   return (
     <Window
       as="li"

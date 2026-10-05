@@ -5,9 +5,10 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { failureText } from '../../api/client';
 import { useProjects } from '../../api/projects';
-import { useHeads, useSessions, useStatus, useTeams } from '../../api/queries';
+import { useAccounts, useHeads, useSessions, useStatus, useTeams } from '../../api/queries';
 import { useBoardEdges, useSessionHistory, useTurnOf } from '../../api/sessions';
 import { colourFromRegistry } from '../../lib/model';
+import { sessionAccountName } from '../../lib/accounts';
 import { moveKey, setOrder, sortByOrder, useOrder } from '../../lib/order';
 import { repoNameOf } from '../../lib/repo';
 import type { GroupBy } from '../../lib/sessions';
@@ -41,6 +42,7 @@ export function SessionsPage() {
   const teams = useTeams();
   const projects = useProjects();
   const sessions = useSessions();
+  const accounts = useAccounts();
   const heads = useHeads();
   const status = useStatus();
   const edges = useBoardEdges();
@@ -68,6 +70,7 @@ export function SessionsPage() {
     ...timingOf(row, state, turn, now),
     colour: row.head === UNKNOWN_HEAD ? 'none' : colourOf(row.head),
     head: row.head === UNKNOWN_HEAD ? null : (headOf(row)?.label ?? row.head),
+    login: sessionAccountName(accounts.data?.accounts ?? [], row.head, row.account),
     hand: handoffOf(sessions.data?.sessions ?? [], row.session_id === null ? [] : (edges.data?.sessions[row.session_id] ?? [])),
     };
   };

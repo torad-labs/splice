@@ -284,6 +284,15 @@ describe('a session card', () => {
     expect(html).toContain('<span class="model m-grok">claude-grok</span>');
     expect(html).not.toContain('attn');
   });
+  test('the session card shows its own attributed login and never borrows another session’s login', () => {
+    expect(render(facts({ row: row({ account: 'synthetic-work' }) }))).toContain('Login: synthetic-work');
+    const named = render(facts({ row: row({ account: 'synthetic-work' }), login: 'Work login' }));
+    expect(named).toContain('Login: Work login');
+    expect(named).not.toContain('Login: synthetic-work');
+    const unknown = render(facts({ row: row({ account: null }) }));
+    expect(unknown).toContain('Login not reported');
+    expect(unknown).not.toContain('Login:');
+  });
   test('a hand-off line says what happened: the last message to a session, or the sessions a lead messaged', () => {
     expect(render(facts({ hand: { kind: 'to', peer: 'claude-muse' } }))).toContain('last message to claude-muse');
     expect(render(facts({ hand: { kind: 'lead', peers: 50 } }))).toContain('messaged 50 sessions');

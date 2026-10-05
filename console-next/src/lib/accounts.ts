@@ -15,6 +15,14 @@ import { W } from './words';
 
 /** One name across every login surface; older replies use the same stable-label fallback. */
 export const accountName = (account: AccountRow): string => account.display_name ?? account.label ?? account.login_place?.command ?? account.heads[0] ?? account.kind;
+/** A session's own attributed label, never the account selected for another session on its head. */
+export function sessionAccountName(rows: readonly AccountRow[], head: string, label: string | null | undefined): string | null {
+  if (label == null) return null;
+  const matching = rows.filter(row => row.heads.includes(head) && row.label === label);
+  const account = matching[0];
+  return matching.length === 1 && account !== undefined ? accountName(account) : label;
+}
+
 export const accountEmail = (account: AccountRow): string | null => account.identity_verified === true ? account.account?.email ?? null : null;
 export const accountIdentity = (account: AccountRow): string => account.login_place?.id ?? account.credential_path ?? `${account.edit_target?.kind ?? account.kind}:${account.edit_target?.id ?? account.label ?? account.heads.join(',')}`;
 

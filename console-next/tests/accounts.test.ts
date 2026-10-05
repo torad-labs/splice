@@ -15,6 +15,7 @@ import {
   COCK_AT_PERCENT,
   NOT_REPORTED,
   accountState,
+  sessionAccountName,
   accountsFromWire,
   canRefresh,
   exclusionText,
@@ -36,6 +37,15 @@ import {
 } from '../src/lib/accounts';
 import type { AccountRow, AccountWindow, AccountWire } from '../src/types/accounts';
 import { A } from '../src/pages/accounts/copy';
+
+test('a session login name uses its own label and head, never another session’s last selection', () => {
+  const work = account({ label: 'work', display_name: 'Work login', heads: ['synthetic'], selected: false });
+  const home = account({ label: 'home', display_name: 'Home login', heads: ['synthetic'], selected: true });
+  expect(sessionAccountName([work, home], 'synthetic', 'work')).toBe('Work login');
+  expect(sessionAccountName([work, home], 'synthetic', null)).toBeNull();
+  expect(sessionAccountName([work, home], 'other', 'work')).toBe('work');
+  expect(sessionAccountName([work, { ...work, display_name: 'Another place' }], 'synthetic', 'work')).toBe('work');
+});
 
 const HOUR_5 = 18000;
 const DAY_7 = 604800;

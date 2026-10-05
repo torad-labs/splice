@@ -32,4 +32,6 @@ export const P = {
   lastTo: 'last message to',
   messaged: (peers: number): string => `messaged ${peers} sessions`,
   needsAnswer: 'Waiting for your answer',
+  login: (name: string): string => `Login: ${name}`,
+  loginUnknown: 'Login not reported',
 } as const;

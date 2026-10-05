@@ -305,18 +305,28 @@ internal class SseEmitter(
  *  place an error frame can be written ([SseEmitter.emitError]); it sits beside that class so the
  *  rule and its only caller are one file, and so no caller has to remember to consult it.
  *
- *  Claude Code 2.1.257 retries an IN-BAND error event only when its body carries overloaded_error
- *  (a real 429/529 is retried by STATUS, and neither is ours to send once the 200 is committed).
- *  So before any content has reached the client, a failure whose type the client would treat as
- *  terminal — RATE_LIMIT, and API_ERROR — is wired as OVERLOADED instead. Nothing the client has
- *  read is at stake at that point, and the turn is indistinguishable from a transient overload.
+ *  The rule was written on the premise that Claude Code 2.1.257 retries an IN-BAND error event only
+ *  when its body carries overloaded_error (a real 429/529 is retried by STATUS, and neither is ours
+ *  to send once the 200 is committed). MEASURED 2026-10-04, that premise is false for api_error. In
+ *  the perf rows of the claudex, claude-splice and claude-muse heads, Sep 15 to Oct 4, the same
+ *  session sent a request of identical size within 2 s of the turn's end after 7 of 12 api_error
+ *  turns, 86 of 171 overloaded_error turns, 3 of 50 invalid_request_error turns and 5 of 232,628 ok
+ *  turns, before content and after it. The client re-sends an api_error about as readily as an
+ *  overloaded_error; invalid_request_error is the in-band class it rarely re-sends. Those rows hold
+ *  no in-band rate_limit_error, so for RATE_LIMIT the premise is unmeasured, not disproved.
+ *  Behaviour this premise justified, unchanged here: before content a failure typed RATE_LIMIT or
+ *  API_ERROR is wired as OVERLOADED; for API_ERROR that now moves the label, not whether a retry
+ *  happens. Nothing the client has read is at stake at that point either way.
  *
  *  THE OPERATOR LAW THIS IMPLEMENTS — "always a retry armed" — IS ABOUT FAILURES A RETRY CAN HEAL.
- *  A [permanent] failure is not one of those: the identical bytes produce the identical verdict, so
- *  a retry is not a heal but a bill. RetryPolicy arms a cooldown only for RATE_LIMITED, so with
- *  CLAUDE_CODE_RETRY_WATCHDOG=1 a relabelled permanent failure costs up to 300 client re-sends at
- *  four upstream attempts each (the upstreamRetries default). A permanent failure therefore KEEPS ITS
- *  REAL TYPE and the client ends the session on the honest verdict instead of grinding.
+ *  A [permanent] failure is not one of those: the identical bytes are expected to produce the
+ *  identical verdict, so a retry is not a heal but a bill. RetryPolicy arms a cooldown only for
+ *  RATE_LIMITED, so with CLAUDE_CODE_RETRY_WATCHDOG=1 a relabelled permanent failure costs up to 300
+ *  client re-sends at four upstream attempts each (the upstreamRetries default). A permanent failure
+ *  therefore KEEPS ITS REAL TYPE. The same rows show that does not end the session when the real
+ *  type is api_error: three permanent cyber_policy refusals kept api_error and were each re-sent
+ *  within 2 s, and one of those re-sends was served. Behaviour this justified, unchanged here: the
+ *  permanent exemption in rule 3. Only a type the client rarely re-sends, INVALID_REQUEST, stops it.
  *
  *  THE BOUNDS, all four deliberate: after content the type is left ALONE (the client finalizes
  *  whatever it holds, and relabelling would misdescribe what it is reading); [permanent] failures

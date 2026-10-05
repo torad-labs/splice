@@ -9,9 +9,12 @@
 // a second copy that could drift.
 //
 // THE PHASE EARNS ITS PLACE IN THE SIGNATURE, and this is the one case where it changes the answer:
-// the pre-content rule. Claude Code's own handling diverges on whether content has already reached
-// the user, so a failure whose base class is api_error is wired as overloaded_error whenever it
-// arrives before the client has seen a byte — which is V4-78, relocated. It used to live in the
+// the pre-content rule. A failure whose base class is api_error is wired as overloaded_error
+// whenever it arrives before the client has seen a byte, which is V4-78, relocated. It rested on
+// the premise that the client re-sends an api_error only once it reads as overloaded; the
+// 2026-10-04 measurement in the RETRY DEFAULT note below shows the client re-sends an api_error
+// before content and after it, so the rule stands unchanged but now moves the label, not the
+// retry. It used to live in the
 // emitter as a relabel of one type into another, which meant the type had a second author at the
 // boundary and the failure itself still claimed api_error. Here the boundary corrects the PHASE
 // (it alone knows whether a frame went out) and the type follows from the pair, so the failure and
@@ -60,12 +63,16 @@ public object WireType {
         // the honest one, and it is what the codex module predominantly passed before.
         FailureCause.CODE_MODE_PROTOCOL to ErrorType.INVALID_REQUEST,
         // RETRY DEFAULT IS TOTAL, and this line is where the law is enforced rather than described:
-        // a failure splice could not attribute is wired OVERLOADED — the one class Claude Code
-        // retries on its own — not API_ERROR. API_ERROR is only retryable PRE-content (see the
-        // pre-content rule below), so an unattributable failure at MID_OUTPUT would have reached the
-        // client as a non-retried ending. A dialect's generic path caught this: it is exactly the
-        // case where splice cannot name the cause, and the whole point of the default is that such a
-        // failure is still offered to the client rather than written off.
+        // a failure splice could not attribute is wired OVERLOADED, a class Claude Code re-sends on
+        // its own, and never INVALID_REQUEST, the in-band class it rarely re-sends. This note used to say
+        // API_ERROR is retried only before content. MEASURED 2026-10-04, it is retried before and
+        // after: in the perf rows of the claudex, claude-splice and claude-muse heads, Sep 15 to
+        // Oct 4, the same session sent a request of identical size within 2 s of the turn's end after
+        // 7 of 12 api_error turns, 86 of 171 overloaded_error turns, 3 of 50 invalid_request_error
+        // turns and 5 of 232,628 ok turns. That premise is why INTERNAL is OVERLOADED rather than
+        // API_ERROR; the choice stands unchanged, and the client would re-send either. A dialect's
+        // generic path caught the original case: it is exactly where splice cannot name the cause,
+        // and the whole point of the default is that such a failure is still offered to the client.
         FailureCause.INTERNAL to ErrorType.OVERLOADED,
         FailureCause.VENDOR_RATE_LIMITED to ErrorType.RATE_LIMIT,
         FailureCause.VENDOR_QUOTA_EXHAUSTED to ErrorType.RATE_LIMIT,
@@ -78,5 +85,6 @@ public object WireType {
 }
 
 // Nothing the client can see has happened yet, so a generic failure is advertised the way a
-// capacity problem is — the one class Claude Code retries on its own.
+// capacity problem is. The client re-sends an api_error too (MEASURED 2026-10-04, the RETRY
+// DEFAULT note above), so this set moves the label, not whether a retry happens.
 private val PRE_CONTENT: Set<FailurePhase> = setOf(FailurePhase.CONNECT, FailurePhase.FIRST_BYTE)

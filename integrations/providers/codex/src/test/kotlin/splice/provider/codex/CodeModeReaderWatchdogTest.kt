@@ -1,4 +1,4 @@
-// NEW: the real idle watchdog and head stop both reap disposed readers and cut their original posting rows.
+// NEW: idle watchdog and head stop cut an unreported source on its original row when no client step disposes it.
 package splice.provider.codex
 
 import kotlinx.coroutines.CompletableDeferred
@@ -7,11 +7,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -21,14 +16,11 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
-import splice.provider.codex.stream.CodeModeExecutionDisposed
-import splice.provider.codex.stream.CodeModeSwitchingSink
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.PostingTurnRow
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RowRelease
 import splice.upstream.Ticker
-import splice.upstream.codemode.CodeModeLimits
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
@@ -38,29 +30,17 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
-internal class CodeModeDrainWatchdogTest : CodeModeStatementStreamSupport() {
+internal class CodeModeReaderWatchdogTest : CodeModeStatementStreamSupport() {
     @Test
     @Timeout(20)
-    fun `the existing idle watchdog cuts a stalled drain on the original posting row`() = runBlocking {
-        cutDrain(headStop = false)
+    fun `the idle watchdog cuts an unreported active source on its original posting row`() = runBlocking {
+        cutSource(headStop = false)
     }
 
     @Test
     @Timeout(20)
-    fun `real head stop still cancels a drained reader and releases its original posting row`() = runBlocking {
-        cutDrain(headStop = true)
-    }
-
-    @Test
-    fun `disposed wire output is discarded rather than filling the detached buffer`() = runBlocking {
-        val sink = CodeModeSwitchingSink(RecordingSink(), CodeModeExecutionDisposed { true }) {}
-        sink.detach()
-        val fragment = "synthetic".repeat(8_192)
-        repeat(CodeModeLimits.MAX_FRAME_BYTES / fragment.length + 2) {
-            val index = sink.openText()
-            sink.textDelta(index, fragment)
-            sink.closeBlock(index)
-        }
+    fun `head stop cancels an unreported source and releases its original posting row`() = runBlocking {
+        cutSource(headStop = true)
     }
 
     private class IdlePost(private val target: RedirectableRoundPost) : RedirectableRoundPost by target {
@@ -99,7 +79,7 @@ internal class CodeModeDrainWatchdogTest : CodeModeStatementStreamSupport() {
         }
     }
 
-    private suspend fun cutDrain(headStop: Boolean) {
+    private suspend fun cutSource(headStop: Boolean) {
         val runtime = IncrementalRuntime()
         val manager = bridge(runtime)
         val sink = StepSink()
@@ -108,28 +88,17 @@ internal class CodeModeDrainWatchdogTest : CodeModeStatementStreamSupport() {
         try {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, posting)
             withTimeout(1_500) { sink.callback.await() }
-            val input = Json.parseToJsonElement(BASE_REQUEST).jsonObject.getValue("input").jsonArray +
-                Json.parseToJsonElement("""{"role":"user","content":"synthetic superseding request"}""")
-            val next = withTimeout(1_500) {
-                manager.interceptor(turn(), disableParallel = false).intercept(
-                    JsonObject(mapOf("input" to JsonArray(input))).toString(),
-                    RecordingSink(),
-                    source,
-                )
-            } as TurnOutcome.Success
-            assertTrue(logLines.any { "parked program was superseded" in it })
-            assertFalse(source.stopped.isCompleted, "the response is still draining after the client step returned")
+            assertFalse(source.stopped.isCompleted)
             assertFalse(posting.released.isCompleted)
             if (headStop) manager.onHeadStop() else posting.tick.complete(Unit)
             withTimeout(1_500) { source.stopped.await() }
             val usage = withTimeout(1_500) { posting.released.await() }
-            assertEquals(1, checkNotNull(usage).cutRounds, "the original row must record the unfinished response")
-            assertEquals(0L, usage.outputTokens)
+            assertEquals(1, checkNotNull(usage).cutRounds)
+            assertEquals(0L, usage.outputTokens, "unreported tokens are never invented")
             assertEquals(1, posting.releases.get())
-            assertEquals(5L, next.usage.outputTokens, "the next step cannot absorb the old drain")
             assertEquals(1, runtime.starts)
             assertEquals(1, runtime.delivered.size)
-            if (!headStop) assertTrue(posting.dog.fired is WatchdogFired.Idle, "the actual idle poller must fire")
+            if (!headStop) assertTrue(posting.dog.fired is WatchdogFired.Idle)
         } finally {
             manager.onHeadStop()
         }

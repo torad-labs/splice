@@ -59,7 +59,7 @@ internal class CodeModeOwedRound(private val release: RowRelease, private val st
     }
 }
 
-/** A record leases execution; the separately owned response reader survives execution disposal. */
+/** Ending an execution lease cancels its response reader and releases its upstream slot. */
 internal class CodeModeSourceLease(
     private val id: String,
     private val round: CodeModeLiveRound,
@@ -108,13 +108,13 @@ internal class CodeModeStreams(
     suspend fun takeOutcome(record: CodeModeRecord): TurnOutcome? {
         val round = rounds[record.id]
         val raw = try {
-            round?.takeUnless(CodeModeLiveRound::drainingUsage)?.outcome()
+            round?.outcome()
         } catch (error: CancellationException) {
             currentCoroutineContext().ensureActive()
             if (record.phase != splice.provider.codex.CodeModePhase.COMPLETED) throw error
             null
         }
-        val usage = sourceUsage(record, round, raw)
+        val usage = registry.source.consume(record)
         if (round != null) rounds.remove(record.id, round)
         record.sourceEnd = null
         round?.switching?.detach()
@@ -125,13 +125,22 @@ internal class CodeModeStreams(
         }
     }
 
-    /** The finishing step consumes unclaimed source usage once. Disposed execution never waits on its response:
-     *  the original posting row remains owed its terminal usage, or its cut when the watchdog ends the reader. */
-    private fun sourceUsage(record: CodeModeRecord, round: CodeModeLiveRound?, raw: TurnOutcome?): Usage? {
-        val usage = registry.source.consume(record)
-        val ended = round?.drainingUsage == false && raw == null
-        val cut = ended && record.sourceState?.complete != true
-        return usage ?: Usage(cutRounds = 1).takeIf { cut }
+    /** Capture live sources before this turn's reconciliation can supersede or abandon their records. */
+    fun watchCuts(key: String): Map<String, CodeModeLiveRound> = rounds.filterValues { it.key == key }
+
+    /** Only the client step that cancelled an actual posted reader consumes its cut, once. */
+    fun takeCuts(watched: Map<String, CodeModeLiveRound>): Long {
+        val cut = watched.filterValues(CodeModeLiveRound::takeCut)
+        cut.forEach { (id, round) -> rounds.remove(id, round) }
+        return cut.size.toLong()
+    }
+
+    fun billCuts(watched: Map<String, CodeModeLiveRound>, outcome: TurnOutcome): TurnOutcome {
+        val cut = takeCuts(watched)
+        if (cut == 0L) return outcome
+        val accumulated = CodeModeOutcomeAccumulator()
+        accumulated.absorb(TurnOutcome.Success(false, false, Usage(cutRounds = cut)))
+        return accumulated.finish(outcome)
     }
 
     /** A source round is billed on the client step that posted it. One that finished before the step ended is merged

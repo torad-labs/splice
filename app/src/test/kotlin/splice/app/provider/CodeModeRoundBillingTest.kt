@@ -420,6 +420,18 @@ class CodeModeRoundBillingTest {
     fun `a source round cut by steering is counted on the turn that cut it, and its tokens on none`(
         @TempDir tmp: Path,
     ) = runBlocking {
+        cutPostedSource(tmp, steering = true)
+    }
+
+    @Test
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `a superseding request frees the held source and counts its cut exactly once`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        cutPostedSource(tmp, steering = false)
+    }
+
+    private suspend fun cutPostedSource(tmp: Path, steering: Boolean) {
         val upstream = BillingUpstream(held = true)
         val runtime = StatementGatewayRuntime()
         val bridge = CodexCodeModeBridge(
@@ -438,21 +450,26 @@ class CodeModeRoundBillingTest {
             val history = mutableListOf(message("user", JsonPrimitive("read the fixture twice")))
             val parked = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
             assertTrue(parked.contains("\"name\":\"Read\""), parked)
-
-            history += message("assistant", JsonArray(toolUses(parked)))
-            history += message("user", JsonArray(toolUses(parked).map(::result) + text("never mind, stop")))
-            val steered = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
-            assertTrue(steered.contains("fixture read"), steered)
-            assertEquals(2, upstream.posts.get(), "one source round, cut, and one continuation")
-
-            val (posting, steering) = rows(tmp, 2).sortedBy { it.count("ts") }
+            if (steering) {
+                history += message("assistant", JsonArray(toolUses(parked)))
+                history += message("user", JsonArray(toolUses(parked).map(::result) + text("never mind, stop")))
+            } else {
+                history += message("user", JsonPrimitive("never mind, stop"))
+            }
+            val answer = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+            assertTrue(answer.contains("fixture read"), answer)
+            assertEquals(2, upstream.posts.get(), "one cancelled source and one continuation")
+            val (posting, cutting) = rows(tmp, 2).sortedBy { it.count("ts") }
             assertNull(posting[PerfKeys.CUT_SOURCE_ROUNDS], "the posting turn cut nothing: $posting")
-            assertNull(posting[PerfKeys.IN_TOKENS], "a posted source without terminal usage is unreported: $posting")
-            assertNull(posting[PerfKeys.OUT_TOKENS], "the source was cut before its output was reported: $posting")
+            assertNull(posting[PerfKeys.IN_TOKENS], "source tokens were never reported: $posting")
+            assertNull(posting[PerfKeys.OUT_TOKENS], "source tokens were never reported: $posting")
             assertNull(posting[PerfKeys.LOCAL_STEP], "the source turn actually posted upstream: $posting")
-            assertEquals(1L, steering.count(PerfKeys.CUT_SOURCE_ROUNDS), "the steering turn cut the round: $steering")
-            assertEquals(ANSWER_INPUT, steering.count(PerfKeys.IN_TOKENS), "$steering")
-            assertNull(steering[PerfKeys.ABSORBED_ROUNDS], "$steering")
+            assertEquals(1L, cutting.count(PerfKeys.CUT_SOURCE_ROUNDS), "only the cutting turn owns the cut: $cutting")
+            assertEquals(ANSWER_INPUT, cutting.count(PerfKeys.IN_TOKENS), "$cutting")
+            assertNull(cutting[PerfKeys.ABSORBED_ROUNDS], "$cutting")
+            assertTrue(withTimeout(TURN_BOUND_MS) { send(client, url, history) }.contains("fixture read"))
+            val totalCuts = rows(tmp, 3).sumOf { it.count(PerfKeys.CUT_SOURCE_ROUNDS) ?: 0L }
+            assertEquals(1L, totalCuts, "a retry cannot recount the cut")
         } finally {
             head.stop()
             runtime.close()
@@ -814,7 +831,10 @@ class CodeModeNativeSourceTest {
     private suspend fun assertRejectedNative(tmp: Path, ws: BillingWsRunner, answer: String) {
         assertEquals(1, ws.aborts.get(), "an edited or foreign native envelope must cut the source")
         assertTrue(answer.contains("fixture read"), "the client history continues upstream after interruption")
-        val cut = rows(tmp, 2).single { it.count(PerfKeys.CUT_SOURCE_ROUNDS) == 1L }
+        val reported = rows(tmp, 2)
+        val cut = reported.single { it.count(PerfKeys.CUT_SOURCE_ROUNDS) == 1L }
+        val totalCuts = reported.sumOf { it.count(PerfKeys.CUT_SOURCE_ROUNDS) ?: 0L }
+        assertEquals(1L, totalCuts, "the native cut is counted once")
         assertEquals(ANSWER_INPUT, cut.count(PerfKeys.IN_TOKENS), "the cutting request keeps only its own usage")
     }
 

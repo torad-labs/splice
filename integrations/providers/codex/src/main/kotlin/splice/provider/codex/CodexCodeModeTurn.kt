@@ -1,6 +1,7 @@
 // NEW: serializes each conversation's code-mode replay, resume, and fresh-turn decisions.
 package splice.provider.codex
 
+import splice.core.perf.PerfKeys
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
@@ -70,6 +71,7 @@ internal class CodexCodeModeTurn(
             input.post,
         )
         val held = locks.acquire(key)
+        val watched = driver.streams.watchCuts(key)
         return try {
             val outcome = try {
                 // An identical request is served before retention can trim its recorded step.
@@ -84,9 +86,15 @@ internal class CodexCodeModeTurn(
                 error.outcome()
             }
             // The one exit every client-facing step takes, so none tells Claude Code its context is zero.
-            registry.contexts.report(key, outcome)
+            registry.contexts.report(key, driver.streams.billCuts(watched, outcome))
         } finally {
-            locks.release(key, held)
+            // A refusal or cancellation has no returned outcome, but the cutting turn still owns its perf row.
+            try {
+                val cuts = driver.streams.takeCuts(watched)
+                input.post.perf?.add(PerfKeys.CUT_SOURCE_ROUNDS, cuts)
+            } finally {
+                locks.release(key, held)
+            }
         }
     }
 

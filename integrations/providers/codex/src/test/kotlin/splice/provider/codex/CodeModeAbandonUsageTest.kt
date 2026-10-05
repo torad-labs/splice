@@ -1,6 +1,7 @@
-// NEW: disposing execution must not cancel the already-posted reader before its terminal usage arrives.
+// NEW: disposing a posted source frees its reader and counts its cut once on the disposing client step.
 package splice.provider.codex
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -10,20 +11,23 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.provider.codex.stream.CodeModeLiveRound
+import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import splice.upstream.PostingTurnRow
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RowRelease
+import splice.upstream.transport.UpstreamFailed
 import java.util.concurrent.atomic.AtomicInteger
 
 private enum class SourceDisposition { NATIVE, STEERING, SUPERSEDED }
@@ -31,59 +35,99 @@ private enum class SourceDisposition { NATIVE, STEERING, SUPERSEDED }
 internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
     @Test
     @Timeout(20)
-    fun `native abandonment drains terminal usage without executing the remaining source`() = runBlocking {
+    fun `native abandonment cancels its reader and counts the cut on the abandoning step`() = runBlocking {
         disposeAfterSource(SourceDisposition.NATIVE, reportedBeforeDispose = false)
     }
 
     @Test
     @Timeout(20)
-    fun `native abandonment preserves usage the source already reported`() = runBlocking {
+    fun `native abandonment preserves already reported usage without inventing a cut`() = runBlocking {
         disposeAfterSource(SourceDisposition.NATIVE, reportedBeforeDispose = true)
     }
 
     @Test
     @Timeout(20)
-    fun `real steering drains terminal usage without executing the remaining source`() = runBlocking {
+    fun `real steering cancels its reader and counts the cut on the steering step`() = runBlocking {
         disposeAfterSource(SourceDisposition.STEERING, reportedBeforeDispose = false)
     }
 
     @Test
     @Timeout(20)
-    fun `superseded execution drains terminal usage without executing the remaining source`() = runBlocking {
+    fun `supersession cancels its reader and counts the cut on the superseding step`() = runBlocking {
         disposeAfterSource(SourceDisposition.SUPERSEDED, reportedBeforeDispose = false)
     }
 
-    private class PostingRows(generated: RedirectableRoundPost) {
+    @Test
+    @Timeout(20)
+    fun `an upstream refusal after abandonment still counts the cut on the failing client step`() = runBlocking {
+        cutWithFailedContinuation(UpstreamFailed("synthetic refusal", status = 400))
+    }
+
+    @Test
+    @Timeout(20)
+    fun `cancellation after abandonment still counts the cut on the cancelled client step`() = runBlocking {
+        cutWithFailedContinuation(CancellationException("synthetic client cancellation"))
+    }
+
+    private suspend fun cutWithFailedContinuation(refusal: RuntimeException) {
+        val runtime = IncrementalRuntime()
+        val manager = bridge(runtime)
+        val sink = StepSink()
+        val source = GatedPost(sink)
+        val row = PostingRow(source)
+        val user = Json.parseToJsonElement("""{"role":"user","content":"synthetic request"}""")
+        val input = Json.parseToJsonElement(BASE_REQUEST).jsonObject.getValue("input").jsonArray + user
+        val perf = TurnPerf(ElapsedClock { 0 }, WallClock { 0 })
+        val refusing = object : RedirectableRoundPost by source {
+            override val perf = perf
+            override suspend fun into(bodyJson: String, sink: splice.upstream.sse.WireSink): TurnOutcome = throw refusal
+        }
+        try {
+            manager.interceptor(turn(), disableParallel = false)
+                .intercept(JsonObject(mapOf("input" to JsonArray(input))).toString(), sink, row.original)
+            val callback = withTimeout(1_500) { sink.callback.await() }
+            val callbacks = Json.parseToJsonElement(history(listOf(callback))).jsonObject
+                .getValue("input").jsonArray.drop(1)
+            val items = changedHistory(input, callbacks, SourceDisposition.NATIVE)
+            val changed = JsonObject(mapOf("input" to JsonArray(items)))
+            val failure = assertThrows(refusal::class.java) {
+                runBlocking {
+                    manager.interceptor(turn(callback.id, "result-0"), disableParallel = false)
+                        .intercept(changed.toString(), RecordingSink(), refusing)
+                }
+            }
+            if (refusal is UpstreamFailed) assertTrue(failure === refusal, "the upstream refusal propagates unchanged")
+            withTimeout(1_500) { source.stopped.await() }
+            row.assertOriginal(reported = false)
+            val cuts = perf.snapshot().counters[PerfKeys.CUT_SOURCE_ROUNDS]
+            assertEquals(1L, cuts, "the failed cutting turn owns the cut")
+            assertFalse(source.sent[1].isCompleted)
+        } finally {
+            manager.onHeadStop()
+        }
+    }
+
+    private class PostingRow(generated: RedirectableRoundPost) {
         val released = CompletableDeferred<Usage?>()
         private val releases = AtomicInteger()
-        private val holds = AtomicInteger()
-        private val laterHolds = AtomicInteger()
         val original = object : RedirectableRoundPost by generated {
             override val postingRow = PostingTurnRow {
-                holds.incrementAndGet()
                 RowRelease {
                     releases.incrementAndGet()
                     released.complete(it)
                 }
             }
         }
-        val later = object : RedirectableRoundPost by generated {
-            override val postingRow = PostingTurnRow {
-                laterHolds.incrementAndGet()
-                RowRelease { error("the later posting row cannot own the old response") }
-            }
-        }
 
-        suspend fun assertBilledOnce(next: TurnOutcome.Success) {
+        suspend fun assertOriginal(reported: Boolean) {
             val usage = withTimeout(1_500) { released.await() }
-            assertNotNull(usage, "the already-posted source must reach its usage terminal")
-            assertEquals(7L, checkNotNull(usage).outputTokens)
-            assertEquals(100L, usage.inputTokens)
-            assertEquals(5L, next.usage.outputTokens, "the later step bills only its own response")
-            assertEquals(0L, next.usage.absorbed.outputTokens, "the later step must not absorb drained usage")
-            assertEquals(1, holds.get())
-            assertEquals(1, releases.get(), "the original posting row receives terminal usage exactly once")
-            assertEquals(0, laterHolds.get(), "no later posting row owns this source")
+            if (reported) {
+                assertEquals(7L, checkNotNull(usage).outputTokens)
+                assertEquals(0, usage.cutRounds)
+            } else {
+                assertNull(usage, "the posting step neither reported tokens nor cut its source")
+            }
+            assertEquals(1, releases.get(), "the original row releases exactly once")
         }
     }
 
@@ -91,18 +135,17 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
         val runtime = IncrementalRuntime()
         val manager = bridge(runtime)
         val sink = StepSink()
-        val generated = GatedPost(sink)
-        val rows = PostingRows(generated)
+        val source = GatedPost(sink)
+        val row = PostingRow(source)
         val user = Json.parseToJsonElement("""{"role":"user","content":"synthetic request"}""")
         val input = Json.parseToJsonElement(BASE_REQUEST).jsonObject.getValue("input").jsonArray + user
         try {
             manager.interceptor(turn(), disableParallel = false)
-                .intercept(JsonObject(mapOf("input" to JsonArray(input))).toString(), sink, rows.original)
+                .intercept(JsonObject(mapOf("input" to JsonArray(input))).toString(), sink, row.original)
             val callback = withTimeout(1_500) { sink.callback.await() }
-            val round = retainedRound(manager)
             if (reportedBeforeDispose) {
-                finishSource(generated)
-                withTimeout(1_500) { rows.released.await() }
+                finishSource(source)
+                withTimeout(1_500) { row.released.await() }
             }
             val callbackItems = Json.parseToJsonElement(history(listOf(callback))).jsonObject
                 .getValue("input").jsonArray.drop(1)
@@ -110,32 +153,29 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
             val answering = if (disposition == SourceDisposition.SUPERSEDED) turn() else turn(callback.id, "result-0")
             val next = withTimeout(1_500) {
                 manager.interceptor(answering, disableParallel = false)
-                    .intercept(changed.toString(), RecordingSink(), rows.later)
+                    .intercept(changed.toString(), RecordingSink(), source)
             } as TurnOutcome.Success
-            if (!reportedBeforeDispose) {
-                assertFalse(generated.stopped.isCompleted, "the next step must finish while the old reader is open")
-                assertFalse(rows.released.isCompleted, "the original posting row remains owed its open response")
-            }
-            val disposed = stateFiles.records().single()
-            val captured = round.source.text
+            withTimeout(1_500) { source.stopped.await() }
             assertDisposition(disposition)
-            if (!reportedBeforeDispose) finishSource(generated)
-            rows.assertBilledOnce(next)
-            assertEquals(captured, round.source.text, "disposed capture must not retain even unstaged source fragments")
-            assertNull(round.localFailure, "skipped capture must not turn a disposed response into an internal failure")
-            assertDrained(disposed, runtime, generated)
+            row.assertOriginal(reportedBeforeDispose)
+            assertCut(next, if (reportedBeforeDispose) 0 else 1)
+            if (!reportedBeforeDispose) assertFalse(source.sent[1].isCompleted, "no unread source may be generated")
+            assertEquals(1, runtime.starts)
+            assertEquals(1, runtime.delivered.size, "no remaining statement may execute")
+            assertEquals(2, source.posts)
+            val retry = manager.interceptor(answering, disableParallel = false)
+                .intercept(changed.toString(), RecordingSink(), source) as TurnOutcome.Success
+            assertCut(retry, 0)
         } finally {
             manager.onHeadStop()
         }
     }
 
-    /** Observe the real retained reader, including in-memory capture that has not crossed a durable boundary. */
-    private fun retainedRound(manager: CodexCodeModeBridge): CodeModeLiveRound {
-        val field = CodexCodeModeBridge::class.java.getDeclaredField("registry").apply { isAccessible = true }
-        val registry = field.get(manager) as CodexCodeModeRegistry
-        val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
-        val lease = checkNotNull(registry.recordsFor(key).single().sourceEnd)
-        return lease.javaClass.getDeclaredField("round").apply { isAccessible = true }.get(lease) as CodeModeLiveRound
+    private fun assertCut(outcome: TurnOutcome.Success, cuts: Long) {
+        assertEquals(cuts, outcome.usage.cutRounds)
+        assertEquals(150L, outcome.usage.inputTokens)
+        assertEquals(5L, outcome.usage.outputTokens, "the disposing step bills only its own response")
+        assertEquals(0L, outcome.usage.absorbed.outputTokens, "unreported source tokens are never invented")
     }
 
     private fun assertDisposition(disposition: SourceDisposition) {
@@ -144,18 +184,7 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
             SourceDisposition.STEERING -> "interrupted extra=STEERING"
             SourceDisposition.SUPERSEDED -> "parked program was superseded"
         }
-        assertTrue(logLines.any { expected in it }, "the intended source disposition must be exercised")
-    }
-
-    private fun assertDrained(disposed: JsonObject, runtime: IncrementalRuntime, generated: GatedPost) {
-        val drained = stateFiles.records().single()
-        assertEquals(disposed["source"], drained["source"], "disposed capture must skip every remaining fragment")
-        assertEquals(disposed["outer"], drained["outer"], "disposed capture must not install the terminal call")
-        assertEquals(disposed["error"], drained["error"], "draining must not replace the execution disposition")
-        assertEquals(disposed["phase"], drained["phase"])
-        assertEquals(1, runtime.starts, "disposed execution must never rerun source")
-        assertEquals(1, runtime.delivered.size, "only the first exposed statement executed")
-        assertEquals(2, generated.posts, "only the original source and replacement history were posted")
+        assertTrue(logLines.any { expected in it }, "the intended disposition must be exercised")
     }
 
     private fun changedHistory(

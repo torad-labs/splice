@@ -1,4 +1,4 @@
-// NEW: disposed execution drains its response and releases terminal usage only to the original posting row.
+// NEW: terminal source usage belongs to its posting row; an intentional cut belongs to the cutting client step.
 package splice.provider.codex.stream
 
 import splice.core.turn.TurnOutcome
@@ -14,12 +14,8 @@ internal fun interface CodeModeRoundRecord {
     operator fun invoke(): CodeModeRecord?
 }
 
-internal fun interface CodeModeExecutionDisposed {
-    operator fun invoke(): Boolean
-}
-
-/** Shares the round's lifecycle monitor so posting claims cannot race its usage terminal. */
-internal class CodeModeRoundDrain(
+/** Shares the round's lifecycle monitor so its posting claim cannot race the usage terminal. */
+internal class CodeModeRoundBilling(
     private val lifecycle: Any,
     private val registry: CodexCodeModeRegistry,
     private val record: CodeModeRoundRecord,
@@ -28,25 +24,11 @@ internal class CodeModeRoundDrain(
     private var postingRow: PostingTurnRow? = null
     private var owed: CodeModeOwedRound? = null
     private var readerEnded = false
-    private var reported: Usage? = null
-
-    @Volatile private var executionDisposed = false
-
-    /** Completion, loss and lease eviction dispose execution independently of response lifetime. */
-    val disposed: Boolean get() = executionDisposed || record()?.terminal() == true
-
-    fun dispose() {
-        executionDisposed = true
-    }
 
     fun start(row: PostingTurnRow?) = synchronized(lifecycle) { postingRow = row }
 
-    fun reported(outcome: TurnOutcome) = synchronized(lifecycle) {
-        reported = (outcome as? TurnOutcome.Success)?.usage
-    }
-
     fun claim(current: CodeModeRecord, step: TurnOutcome): Usage? = synchronized(lifecycle) {
-        consume(current) ?: run {
+        registry.source.consume(current) ?: run {
             if (step is TurnOutcome.Success && !readerEnded) {
                 postingRow?.takeIf { owed == null }?.let { owed = CodeModeOwedRound(it.hold(), step) }
             }
@@ -54,25 +36,21 @@ internal class CodeModeRoundDrain(
         }
     }
 
-    /** A disposed record cannot accept capture, but its response still reports independently owned usage. */
-    private fun consume(current: CodeModeRecord): Usage? =
-        (registry.source.consume(current) ?: reported)?.also { reported = null }
-
-    /** Releases outside the monitor. A reader with no usage ended as a cut, never as an empty billed row. */
-    fun settle(readerEnd: Boolean) {
+    /** A client's intentional cut is never charged to this row. An autonomous reader cut has no newer owner. */
+    fun settle(readerEnd: Boolean, clientCut: Boolean) {
         val (due, usage) = synchronized(lifecycle) {
             if (readerEnd) readerEnded = true
             val due = owed ?: return
             val current = record() ?: return
             val usage = try {
-                consume(current)
+                registry.source.consume(current)
             } catch (error: CodeModePersistenceException) {
                 log("[code-mode] source round billed later: its claim was not saved (${error::class.simpleName})")
                 null
             }
             if (usage == null && !readerEnd) return
             owed = null
-            due to (usage ?: Usage(cutRounds = 1))
+            due to (usage ?: Usage(cutRounds = 1).takeUnless { clientCut })
         }
         Cancellables.runCatchingBestEffort { due.settle(usage) }.onFailure { failure ->
             log("[code-mode] the posting turn's row was not released (${failure::class.simpleName})")

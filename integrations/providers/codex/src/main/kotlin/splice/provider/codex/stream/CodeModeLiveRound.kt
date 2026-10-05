@@ -25,6 +25,7 @@ import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamFailed
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal class CodeModeLiveRound(
     private val config: CodeModeBridgeConfig,
@@ -38,12 +39,11 @@ internal class CodeModeLiveRound(
     val ready = capture.ready
     private val record: CodeModeRecord? get() = capture.record
     private val lifecycle = Any()
-    private val drain = CodeModeRoundDrain(lifecycle, registry, CodeModeRoundRecord { record }, config.log)
-    val switching = CodeModeSwitchingSink(
-        sink,
-        CodeModeExecutionDisposed { drain.disposed },
-        CodeModeSourceObserver(::observe),
-    )
+    private val billing = CodeModeRoundBilling(lifecycle, registry, CodeModeRoundRecord { record }, config.log)
+    val switching = CodeModeSwitchingSink(sink, CodeModeSourceObserver(::observe))
+    private val clientCut = AtomicBoolean()
+    private val cutCounted = AtomicBoolean()
+    val key: String? get() = record?.key
     private var finished: Deferred<TurnOutcome>? = null
     private val settled = CompletableDeferred<Unit>()
     private val completion = CodeModeRoundCompletion(
@@ -53,7 +53,7 @@ internal class CodeModeLiveRound(
             try {
                 died(cause)
             } finally {
-                settle(readerEnd = true)
+                billing.settle(readerEnd = true, clientCut = clientCut.get())
             }
         },
     )
@@ -86,19 +86,16 @@ internal class CodeModeLiveRound(
     @Volatile var permanentEnding: TurnOutcome.Failure? = null
         private set
 
-    /** A disposed script cannot make its client step wait for a response that still owes the posting row. */
-    val drainingUsage: Boolean get() = drain.disposed && !upstreamEnded && !headStopped
-
     fun start(scope: CoroutineScope, post: CodeModeRedirectablePost, body: CodeModeBody, end: TurnEnd) {
         check(finished == null)
-        drain.start(post.postingRow)
+        billing.start(post.postingRow)
         finished = scope.async(start = CoroutineStart.UNDISPATCHED) {
             switching.ownedBy(this)
             try {
                 val outcome = post.into(body, switching)
                 upstreamEnded = true
                 val ended = finish(outcome)
-                settle(readerEnd = false)
+                billing.settle(readerEnd = false, clientCut = clientCut.get())
                 ended
             } catch (error: CancellationException) {
                 cancelled(error)
@@ -143,9 +140,8 @@ internal class CodeModeLiveRound(
 
     private fun finish(outcome: TurnOutcome) = synchronized(lifecycle) {
         if (headStopped) throw CancellationException(HEAD_STOPPED)
-        drain.reported(outcome)
         localFailure?.let { return@synchronized it }
-        if (drain.disposed) return@synchronized outcome
+        if (record?.terminal() == true) return@synchronized outcome
         sourceInterrupted = record != null && (outcome as? TurnOutcome.Failure)?.cause in SOURCE_TEAR_CAUSES
         // The capture loses a source its terminal does not certify, which closes the cell a client step may still be
         // advancing. Set first, so that step ends as a torn source's step does, or with a permanent failure as it is.
@@ -240,22 +236,21 @@ internal class CodeModeLiveRound(
         return TurnOutcome.Failure(SOURCE_FAILED, cause = FailureCause.INTERNAL, phase = FailurePhase.MID_OUTPUT)
     }
 
-    /** Execution disposal drains the existing response; only a real head stop cancels its reader. */
+    /** Disposal cancels the already-posted reader so its stream and admission slot are freed. */
     fun cancel() {
         if (upstreamEnded) return
-        if (headStopped) {
-            finished?.cancel()
-        } else {
-            drain.dispose()
-            sourceLost = true
-            source.fail(SOURCE_DISPOSED)
-        }
+        val reader = finished
+        if (!headStopped && reader?.isActive == true) clientCut.set(true)
+        sourceLost = true
+        source.fail(SOURCE_DISPOSED)
+        reader?.cancel()
     }
 
-    /** The original posting row owns a source round even after execution has been disposed. */
-    fun claim(record: CodeModeRecord, step: TurnOutcome): Usage? = drain.claim(record, step)
+    /** A cut can be consumed by one client step only, even after the record's execution lease was removed. */
+    fun takeCut(): Boolean = clientCut.get() && cutCounted.compareAndSet(false, true)
 
-    private fun settle(readerEnd: Boolean) = drain.settle(readerEnd)
+    /** Successful terminal usage still belongs to the original posting row. */
+    fun claim(record: CodeModeRecord, step: TurnOutcome): Usage? = billing.claim(record, step)
 
     /** The synchronous registry stop owns persistence; a cancelled old reader cannot overwrite the next head. */
     fun stop() {
@@ -266,7 +261,7 @@ internal class CodeModeLiveRound(
     /** Observer faults belong to splice. They never unwind through a transport's generic stream catch. */
     private fun observe(event: CustomToolSource) = synchronized(lifecycle) {
         if (headStopped) throw CancellationException(HEAD_STOPPED)
-        if (localFailure != null || drain.disposed) return@synchronized
+        if (localFailure != null || record?.terminal() == true) return@synchronized
         Cancellables.runCatchingBestEffort { capture.observe(event) }.onFailure(::reject)
     }
 
@@ -285,7 +280,7 @@ internal class CodeModeLiveRound(
     }
 }
 
-// why: every disposed execution wakes its source cursor while the already-posted response drains for billing.
+// why: a disposed execution cannot retain its response reader or dispatch unread source.
 private const val SOURCE_DISPOSED = "code-mode execution disposed; source was not rerun"
 private const val SOURCE_FAILED = "upstream source failed; source was not rerun"
 private const val HEAD_STOPPED = "code-mode head stopped"

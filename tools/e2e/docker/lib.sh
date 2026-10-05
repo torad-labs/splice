@@ -23,11 +23,17 @@ resolve_state_dir() {
   # and warns. Believe "absent" only when the parent is traversable, or absent itself.
   # `-e`, not `-d`: a REGULAR FILE at the current root is not proven absence either, and `[ ! -d ]`
   # called it adoptable while StatePaths declines and reports it as a fault.
-  if [ ! -e "$HOME/.splice/state" ] && { [ ! -e "$HOME/.splice" ] || [ -x "$HOME/.splice" ]; } &&
-     [ -d "$HOME/.claude-codex/state" ]; then
-    printf '%s\n' "$HOME/.claude-codex/state"
+  # A directory is not state (StatePaths, 2026-10-04): once both state dirs exist, the mgmt-key
+  # decides. A current dir proven to hold none beside a pre-0.4 one holding it is passed over.
+  # `[ ! -e ]` is true for a key that cannot be stat-ed, so the dir must be traversable (`-x`) first.
+  local cur="$HOME/.splice/state" old="$HOME/.claude-codex/state"
+  if [ -d "$old" ] && {
+       { [ ! -e "$cur" ] && { [ ! -e "$HOME/.splice" ] || [ -x "$HOME/.splice" ]; }; } ||
+       { [ -d "$cur" ] && [ -x "$cur" ] && [ ! -e "$cur/mgmt-key" ] && [ -f "$old/mgmt-key" ]; }
+     }; then
+    printf '%s\n' "$old"
   else
-    printf '%s\n' "$HOME/.splice/state"
+    printf '%s\n' "$cur"
   fi
 }
 

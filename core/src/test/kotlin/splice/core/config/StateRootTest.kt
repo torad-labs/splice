@@ -234,6 +234,73 @@ class StateRootTest {
         assertNull(StatePaths(envReader = envOf(STATE_DIR_ENV to home.toString()), homeDir = home).rootProbeFault)
     }
 
+    // THE EVIDENCE-OF-STATE ARMS (2026-10-04). A sandboxed process that could not see the pre-0.4 root
+    // created an empty current state dir at 7:16 PM CT; the 7:27 PM CT restart found it, took it as
+    // DEFAULT, minted a fresh mgmt-key, and every head's history read as empty. A directory is not
+    // state; the mgmt-key is the install's. So once both state dirs exist, the keys decide.
+    @Test
+    fun `an empty current state dir beside a pre-0_4 one holding the mgmt-key reads the pre-0_4 one`(
+        @TempDir home: Path,
+    ) {
+        val legacy = makeState(home, LEGACY_STATE_HOME)
+        Files.writeString(legacy.resolve("mgmt-key"), "synthetic-key\n")
+        val empty = makeState(home, SPLICE_STATE_HOME)
+
+        val paths = StatePaths(envReader = NO_ENV, homeDir = home)
+
+        assertEquals(legacy, paths.stateDir)
+        assertEquals(StateDirOrigin.ADOPTED_LEGACY, paths.origin)
+        assertEquals(legacy.resolve("mgmt-key"), paths.mgmtKeyFile)
+        assertEquals(empty, paths.passedOverDir, "doctor must be able to name the empty root it passed over")
+        assertNull(paths.unmigratedLegacyDir, "the pre-0.4 root is IN USE here, so it is not unmigrated")
+        assertNull(paths.rootProbeFault)
+    }
+
+    // Mutant: adopt on the legacy key alone. Once the current root holds its own mgmt-key, it IS the
+    // install, and the pre-0.4 one is the leftover doctor warns about.
+    @Test
+    fun `a current state dir holding its own mgmt-key stays live beside a keyed pre-0_4 one`(@TempDir home: Path) {
+        val legacy = makeState(home, LEGACY_STATE_HOME)
+        Files.writeString(legacy.resolve("mgmt-key"), "synthetic-old\n")
+        val current = makeState(home, SPLICE_STATE_HOME)
+        Files.writeString(current.resolve("mgmt-key"), "synthetic-new\n")
+
+        val paths = StatePaths(envReader = NO_ENV, homeDir = home)
+
+        assertEquals(current, paths.stateDir)
+        assertEquals(StateDirOrigin.DEFAULT, paths.origin)
+        assertEquals(legacy, paths.unmigratedLegacyDir)
+        assertNull(paths.passedOverDir)
+    }
+
+    // The proven-absence law, applied to the key: a current state dir that cannot be listed may hold a
+    // mgmt-key nobody can see, so it is not adopted past, and the fault names the key's path.
+    @Test
+    fun `an unreadable current mgmt-key is never read as absent`(@TempDir home: Path) {
+        val legacy = makeState(home, LEGACY_STATE_HOME)
+        Files.writeString(legacy.resolve("mgmt-key"), "synthetic-key\n")
+        val current = makeState(home, SPLICE_STATE_HOME)
+        current.toFile().setExecutable(false, false)
+        assumeTrue(
+            !Files.notExists(current.resolve("mgmt-key")),
+            "running as a user that ignores permission bits (root); this shape is unobservable here",
+        )
+
+        try {
+            val paths = StatePaths(envReader = NO_ENV, homeDir = home)
+
+            assertEquals(current, paths.stateDir)
+            assertEquals(StateDirOrigin.DEFAULT, paths.origin)
+            assertNull(paths.passedOverDir)
+            assertTrue(
+                current.resolve("mgmt-key").toString() in paths.rootProbeFault.orEmpty(),
+                "the fault must name the key that could not be ruled out: ${paths.rootProbeFault}",
+            )
+        } finally {
+            current.toFile().setExecutable(true, false)
+        }
+    }
+
     // Adoption is a WHOLE-ROOT decision, not a stateDir-only one. logsDir and compactStatsFile hang
     // off rootDir (the parent), so an adoption that moved only stateDir would read the mgmt-key from
     // the old root and write daemon.log and the compact history into a brand-new one — history split

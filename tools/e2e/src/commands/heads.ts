@@ -124,7 +124,23 @@ export function liveStateDir(home: string = homedir(), env: Record<string, strin
   };
   const current = join(home, ".splice", "state");
   const legacy = join(home, ".claude-codex", "state");
-  return probe(current) === "absent" && probe(legacy) === "dir" ? legacy : current;
+  // A directory is not state (StatePaths, 2026-10-04): once both state dirs exist, the mgmt-key
+  // decides. A current dir proven to hold none, beside a pre-0.4 one proven to hold it, is passed
+  // over. Same three answers for the key: EACCES on an untraversable dir is not absence.
+  const key = (file: string): "file" | "absent" | "unusable" => {
+    try {
+      return statSync(file).isFile() ? "file" : "unusable";
+    } catch (failure) {
+      return (failure as NodeJS.ErrnoException).code === "ENOENT" ? "absent" : "unusable";
+    }
+  };
+  const currentRoot = probe(current);
+  const legacyRoot = probe(legacy);
+  if (legacyRoot !== "dir") return current;
+  if (currentRoot === "absent") return legacy;
+  const passedOver =
+    currentRoot === "dir" && key(join(current, "mgmt-key")) === "absent" && key(join(legacy, "mgmt-key")) === "file";
+  return passedOver ? legacy : current;
 }
 
 // ── the run report ───────────────────────────────────────────────────────────

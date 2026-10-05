@@ -144,8 +144,19 @@ internal class DoctorStateLayout {
         )
     }
 
+    /** An adopted root beside a current state dir that holds no mgmt-key is a WARN naming that dir: it
+     *  is what a process that cannot see the pre-0.4 root writes into, and a key minted there moves the
+     *  next start onto an empty root (2026-10-04, 7:27 PM CT). */
     private fun layout(statePaths: StatePaths): DoctorCheck? = when (statePaths.origin) {
-        StateDirOrigin.ADOPTED_LEGACY -> DoctorCheck(
+        StateDirOrigin.ADOPTED_LEGACY -> statePaths.passedOverDir?.let { empty ->
+            DoctorCheck(
+                CHECK_STATE_LAYOUT,
+                CheckStatus.WARN,
+                "reading the pre-0.4 root ${statePaths.stateDir} in place: it holds this install's mgmt-key; " +
+                    "$empty exists but holds no mgmt-key, so it was passed over",
+                "remove $empty if nothing in it is yours; a mgmt-key minted there would make it the live root",
+            )
+        } ?: DoctorCheck(
             CHECK_STATE_LAYOUT,
             CheckStatus.INFO,
             "reading the pre-0.4 root ${statePaths.stateDir} in place: it holds this install's " +

@@ -17,7 +17,12 @@
 // daemon.lock, config.json, every head's perf/usage/economics files and V4-174's owner-only trace
 // dir. Defaulting to the new root and starting empty would look, to the operator, exactly like a
 // daemon that lost every head's history — so when the new root has no state dir and the old one
-// does, the old one IS the state dir, unmoved. Nothing is copied, nothing is deleted, and no upgrade
+// does, the old one IS the state dir, unmoved. A DIRECTORY IS NOT STATE (2026-10-04): a sandboxed
+// process that could not see the old root created an empty `.splice/state` at 7:16 PM CT, and the
+// 7:27 PM CT restart took it, minted a fresh mgmt-key and read every head's history as empty — the
+// outcome this paragraph predicts. So when BOTH state dirs exist, the mgmt-key decides: a current
+// one proven to hold none, beside an old one proven to hold it, is passed over, and doctor names it
+// ([passedOverDir]). Nothing is copied, nothing is deleted, and no upgrade
 // can half-finish: the decision is re-derived from the filesystem on every construction, so it is
 // the same answer for the daemon, the CLI and `splice-launch` without any of them coordinating.
 // [origin] and [unmigratedLegacyDir] are that decision made READABLE, because an operator who cannot
@@ -61,6 +66,13 @@ public const val CODE_MODE_STATE_SUFFIX: String = "-code-mode.json"
 public const val CODE_MODE_DIR: String = "code-mode"
 
 private const val STATE_LEAF: String = "state"
+
+/** The daemon's management key, the one file only an install that has run holds: the evidence of state. */
+private const val MGMT_KEY: String = "mgmt-key"
+
+/** The basic attribute a probe asks for: a root must be a directory, the mgmt-key a regular file. */
+private const val DIRECTORY: String = "isDirectory"
+private const val FILE: String = "isRegularFile"
 
 // WHY THESE FOUR ARE internal AND NOT public (V4-177, the public-surface ratchet, 2026-09-20).
 // Nothing outside :core resolves a state root — that is this file's whole reason to exist and the
@@ -109,10 +121,13 @@ public enum class StateDirOrigin {
  *
  * [Unusable] also covers a NON-DIRECTORY at a root path, which `Files.exists` called true and the
  * shell copies' `[ -d ]` called false — a divergence with no arm in any table until it had one.
+ *
+ * The same three answers probe the mgmt-key inside a state dir (2026-10-04), where [Found] means a
+ * regular file: a key that cannot be stat-ed may be there, so it is no more absent than a root is.
  */
 internal sealed class RootProbe {
-    /** A real directory: usable as a state root. */
-    data object Directory : RootProbe()
+    /** The kind asked for: a real directory for a root, a regular file for the mgmt-key. */
+    data object Found : RootProbe()
 
     /** Proven absent. The only answer that may trigger adoption or a clean start. */
     data object Absent : RootProbe()
@@ -138,15 +153,31 @@ public class StatePaths(
      *  the root without touching the filesystem, which is what keeps hermetic callers at zero stats. */
     private val probed: Boolean = baseOverride == null && fromEnv == null
 
-    private val defaultProbe: RootProbe? = if (probed) probeRoot(defaultDir) else null
+    private val defaultProbe: RootProbe? = if (probed) probe(defaultDir, DIRECTORY) else null
 
-    private val legacyProbe: RootProbe? = if (probed) probeRoot(legacyDir) else null
+    private val legacyProbe: RootProbe? = if (probed) probe(legacyDir, DIRECTORY) else null
+
+    /** The keys are read only in the one shape the directories cannot settle, both state dirs present,
+     *  and the pre-0.4 key only once the current one is proven absent: a healthy box stats no key. */
+    private val defaultKeyProbe: RootProbe? = if (defaultProbe is RootProbe.Found && legacyProbe is RootProbe.Found) {
+        probe(defaultDir.resolve(MGMT_KEY), FILE)
+    } else {
+        null
+    }
+
+    private val legacyKeyProbe: RootProbe? =
+        if (defaultKeyProbe is RootProbe.Absent) probe(legacyDir.resolve(MGMT_KEY), FILE) else null
 
     /** Adoption needs POSITIVE evidence on both sides: the current root proven absent, and the
      *  pre-0.4 one proven to be a directory. An unreadable or non-directory root satisfies neither,
      *  so it can no longer be silently treated as "not there" — it surfaces as [rootProbeFault]. */
-    private val adoptLegacy: Boolean =
-        defaultProbe is RootProbe.Absent && legacyProbe is RootProbe.Directory
+    private val onlyLegacy: Boolean = defaultProbe is RootProbe.Absent && legacyProbe is RootProbe.Found
+
+    /** The same law with the mgmt-key as the evidence: the current state dir proven to hold none (so
+     *  [legacyKeyProbe] was read at all), the pre-0.4 one proven to hold it. */
+    private val emptyBesideKeyed: Boolean = legacyKeyProbe is RootProbe.Found
+
+    private val adoptLegacy: Boolean = onlyLegacy || emptyBesideKeyed
 
     public val origin: StateDirOrigin = when {
         baseOverride != null -> StateDirOrigin.OVERRIDE
@@ -162,8 +193,13 @@ public class StatePaths(
      *  one ([origin] says so), or a caller pointed the state dir somewhere explicitly, in which case
      *  the old root is not "unmigrated", it is simply not theirs. */
     public val unmigratedLegacyDir: Path? = legacyDir.takeIf {
-        origin == StateDirOrigin.DEFAULT && legacyProbe is RootProbe.Directory
+        origin == StateDirOrigin.DEFAULT && legacyProbe is RootProbe.Found
     }
+
+    /** The current layout's state dir when it exists, holds no mgmt-key, and was passed over for the
+     *  pre-0.4 one that does. Doctor names it: a key minted in it, by a process that cannot see the
+     *  pre-0.4 root, is the one thing that would move the next start onto it. */
+    public val passedOverDir: Path? = defaultDir.takeIf { emptyBesideKeyed }
 
     /** V4-177: a candidate root that could not be RULED OUT, as a sentence naming the path and what
      *  was wrong — null when both roots gave a definite answer, and null whenever a caller named the
@@ -173,10 +209,13 @@ public class StatePaths(
      *  pre-0.4 root looks exactly like a daemon on a fresh box, and the remedy an operator reaches
      *  for when history appears lost is to delete and re-init, which destroys what was never gone.
      *  Doctor turns this into a WARN naming the path. */
-    public val rootProbeFault: String? = listOfNotNull(
-        (defaultProbe as? RootProbe.Unusable)?.let { "$defaultDir ${it.reason}" },
-        (legacyProbe as? RootProbe.Unusable)?.let { "$legacyDir ${it.reason}" },
-    ).joinToString("; ").takeIf { it.isNotEmpty() }
+    public val rootProbeFault: String? = listOf(
+        defaultDir to defaultProbe,
+        legacyDir to legacyProbe,
+        defaultDir.resolve(MGMT_KEY) to defaultKeyProbe,
+        legacyDir.resolve(MGMT_KEY) to legacyKeyProbe,
+    ).mapNotNull { (path, probe) -> (probe as? RootProbe.Unusable)?.let { "$path ${it.reason}" } }
+        .joinToString("; ").takeIf { it.isNotEmpty() }
 
     public val rootDir: Path = stateDir.parent ?: stateDir
 
@@ -193,7 +232,7 @@ public class StatePaths(
 
     public val configFile: Path = stateDir.resolve("config.json")
 
-    public val mgmtKeyFile: Path = stateDir.resolve("mgmt-key")
+    public val mgmtKeyFile: Path = stateDir.resolve(MGMT_KEY)
 
     public val daemonLockFile: Path = stateDir.resolve("daemon.lock")
 
@@ -288,13 +327,15 @@ public class StatePaths(
     private fun pathOrNull(raw: String?): Path? = raw?.takeIf { it.isNotBlank() }?.let { Paths.get(it) }
 
     /** One stat, three answers. A typed catch rather than `runCatching(...).getOrNull()` precisely
-     *  because the whole point is to KEEP the distinction the collapse would throw away. */
-    private fun probeRoot(dir: Path): RootProbe = try {
+     *  because the whole point is to KEEP the distinction the collapse would throw away. [kind] is
+     *  the attribute that makes the path [RootProbe.Found]: [DIRECTORY] for a root, [FILE] for a key. */
+    private fun probe(path: Path, kind: String): RootProbe = try {
         // The ATTRIBUTE-NAME overload, not `BasicFileAttributes::class.java`: a class literal is
         // reflection to kt-no-reflection-in-production, and the string form is the same single stat
         // with the same typed failures — which are the whole point of this function.
-        val isDirectory = Files.readAttributes(dir, "basic:isDirectory")["isDirectory"] == true
-        if (isDirectory) RootProbe.Directory else RootProbe.Unusable("is not a directory")
+        val found = Files.readAttributes(path, "basic:$kind")[kind] == true
+        val wrongKind = if (kind == FILE) "is not a file" else "is not a directory"
+        if (found) RootProbe.Found else RootProbe.Unusable(wrongKind)
     } catch (_: NoSuchFileException) {
         RootProbe.Absent
     } catch (failure: IOException) {

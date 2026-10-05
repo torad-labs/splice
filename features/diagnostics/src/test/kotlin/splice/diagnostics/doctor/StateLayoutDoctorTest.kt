@@ -67,6 +67,11 @@ private val CASES: List<Pair<String, Map<String, String>>> = listOf(
     "current-root-is-a-file" to emptyMap(),
     // `[ ! -d ]` is true for "cannot stat" exactly as for "absent" — the proven-absence law.
     "current-root-unreadable" to emptyMap(),
+    // 2026-10-04: a directory is not state. Both state dirs present, and the mgmt-key decides.
+    "current-empty-beside-keyed-legacy" to emptyMap(),
+    "both-keyed" to emptyMap(),
+    // `[ ! -e ]` is true for a key in a dir that cannot be traversed, exactly as for an absent one.
+    "current-untraversable-beside-keyed-legacy" to emptyMap(),
 )
 
 private fun makeState(home: Path, root: String): Path = Files.createDirectories(home.resolve(root).resolve("state"))
@@ -93,6 +98,25 @@ class StateLayoutDoctorTest {
         assertTrue(legacy.toString() in check.detail, check.detail)
         assertTrue("nothing was copied, moved or deleted" in check.detail, check.detail)
         assertNull(check.fix, "adoption is the working state, not something to repair")
+    }
+
+    // The 2026-10-04 shape: an empty current state dir passed over for the keyed pre-0.4 one. WARN, and
+    // the row names the empty dir, since a key minted in it would move the next start onto it.
+    @Test
+    fun `an empty current state dir passed over for the keyed pre-0_4 one is a WARN that names it`(
+        @TempDir home: Path,
+    ) {
+        val legacy = makeState(home, LEGACY_ROOT)
+        Files.writeString(legacy.resolve("mgmt-key"), "synthetic-key\n")
+        val empty = makeState(home, SPLICE_ROOT)
+
+        val check = DoctorStateLayout().checks(StatePaths(envReader = NO_ENV, homeDir = home)).singleOrNull()
+
+        assertNotNull(check)
+        assertEquals(CheckStatus.WARN, check!!.status)
+        assertTrue(legacy.toString() in check.detail && empty.toString() in check.detail, check.detail)
+        assertTrue("$empty exists but holds no mgmt-key" in check.detail, "not the passed-over row: ${check.detail}")
+        assertTrue(empty.toString() in check.fix.orEmpty(), "the fix must name the empty dir: ${check.fix}")
     }
 
     // The half-migrated box. WARN, not INFO: the numbers on screen are genuinely incomplete, and the
@@ -309,6 +333,29 @@ class StateDirAgreementTest {
                     "running as a user that ignores the permission bits (root); this shape is unobservable here",
                 )
             }
+            else -> keyedShape(name, home)
+        }
+    }
+
+    /** The 2026-10-04 shapes, where both state dirs exist and the mgmt-key decides. */
+    private fun keyedShape(name: String, home: Path) {
+        when (name) {
+            "current-empty-beside-keyed-legacy" -> {
+                Files.writeString(makeState(home, LEGACY_ROOT).resolve("mgmt-key"), "synthetic-key\n")
+                makeState(home, SPLICE_ROOT)
+            }
+            "both-keyed" -> {
+                Files.writeString(makeState(home, LEGACY_ROOT).resolve("mgmt-key"), "synthetic-old\n")
+                Files.writeString(makeState(home, SPLICE_ROOT).resolve("mgmt-key"), "synthetic-new\n")
+            }
+            "current-untraversable-beside-keyed-legacy" -> {
+                Files.writeString(makeState(home, LEGACY_ROOT).resolve("mgmt-key"), "synthetic-key\n")
+                makeState(home, SPLICE_ROOT).toFile().setExecutable(false, false)
+                assumeTrue(
+                    !Files.notExists(home.resolve(SPLICE_ROOT).resolve("state").resolve("mgmt-key")),
+                    "running as a user that ignores the permission bits (root); this shape is unobservable here",
+                )
+            }
             else -> Unit
         }
     }
@@ -317,6 +364,9 @@ class StateDirAgreementTest {
         if (name == "current-root-unreadable") {
             home.resolve(SPLICE_ROOT).toFile().setReadable(true, false)
             home.resolve(SPLICE_ROOT).toFile().setExecutable(true, false)
+        }
+        if (name == "current-untraversable-beside-keyed-legacy") {
+            home.resolve(SPLICE_ROOT).resolve("state").toFile().setExecutable(true, false)
         }
     }
 

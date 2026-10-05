@@ -62,10 +62,13 @@ internal class ClaudeLoginOwner(
 
     internal fun accountForCredential(key: String): ClaudeAccountIdentity? = reads.accountForCredential(locations, key)
 
-    /** The digest of a credential [head] just sent, never the token: it decides which place carries that head. */
-    internal fun sent(head: String, key: String) = carried.sent(head, key)
+    /** The digest of a credential [head] just sent for [session], never the token: it decides which place carries
+     *  that head, and which carries that session. */
+    internal fun sent(head: String, session: String?, key: String) = carried.sent(head, session, key)
 
     override fun carrying(head: String): ClaudeLoginPlaceId? = carried.carrying(head)
+
+    override fun carrying(head: String, session: String): ClaudeLoginPlaceId? = carried.carrying(head, session)
 
     // One place is still read against ALL of them: a login's window belongs to its account, and the account's
     // other logins are where that reading may have been filed.

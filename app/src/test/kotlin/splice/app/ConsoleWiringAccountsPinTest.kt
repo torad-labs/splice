@@ -61,21 +61,28 @@ class ConsoleWiringAccountsPinTest {
         )
         assertTrue(
             source("app/src/main/kotlin/splice/app/ControlPlane.kt")
-                .contains("claudeLoginOwner?.sent(head, key)"),
+                .contains("claudeLoginOwner?.sent(head, session, key)"),
             "the sink must reach the wired owner at send time, not capture an unwired null",
         )
     }
 
     @Test
     fun `a head's credential names report each sent digest under that head's key and name through the daemon`() {
-        val heard = mutableListOf<Pair<String, String>>()
+        val heard = mutableListOf<Triple<String, String?, String>>()
         val names = HeadCredentialNames(
             "synthetic-head",
             HeadDeps.CredentialAccountNames { key -> "proved@example.invalid".takeIf { key == "synthetic-digest" } },
-            HeadSentCredentials { head, key -> heard += head to key },
+            HeadSentCredentials { head, session, key -> heard += Triple(head, session, key) },
         )
-        names.sent("synthetic-digest")
-        assertEquals(listOf("synthetic-head" to "synthetic-digest"), heard)
+        names.sent("synthetic-digest", "synthetic-session")
+        names.sent("synthetic-digest", null)
+        assertEquals(
+            listOf(
+                Triple("synthetic-head", "synthetic-session", "synthetic-digest"),
+                Triple("synthetic-head", null, "synthetic-digest"),
+            ),
+            heard,
+        )
         assertEquals("proved@example.invalid", names.forCredential("synthetic-digest"))
         assertEquals(null, names.forCredential("another-digest"))
     }

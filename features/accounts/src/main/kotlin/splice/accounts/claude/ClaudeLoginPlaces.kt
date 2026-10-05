@@ -55,6 +55,10 @@ public interface ClaudeLoginPlaces {
      *  started, or null before any did. Both commands send through one head, so this, not the command's own
      *  place, is the login whose windows that head is spending. */
     public fun carrying(head: String): ClaudeLoginPlaceId? = null
+
+    /** The place whose live credential carried [session]'s own newest request on [head] that matched a place, or
+     *  null before one did. Every session on a head forwards its own login, so this is never the head's answer. */
+    public fun carrying(head: String, session: String): ClaudeLoginPlaceId? = null
 }
 
 /** Read after composition assigns the native login owner, never capture an unwired null at server construction. */

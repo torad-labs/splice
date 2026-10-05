@@ -98,8 +98,11 @@ internal class ControlPlane(
         }
     }
 
-    /** Each head's sent credential digest, read by the same late-wired owner: which login carries that head. */
-    internal val sentCredentials = HeadSentCredentials { head, key -> claudeLoginOwner?.sent(head, key) }
+    /** Each head's sent credential digest, read by the same late-wired owner: which login carries that head, and
+     *  which carries each session the request named. */
+    internal val sentCredentials = HeadSentCredentials { head, session, key ->
+        claudeLoginOwner?.sent(head, session, key)
+    }
 
     // V4-410 follow-on: the add and remove of a Claude head's subscriptions, read by the accounts port's
     // `client` arm (ClaudeAccountsArm). Null until a Claude head's login machinery is built.

@@ -144,9 +144,10 @@ public data class HeadDeps(
     public fun interface CredentialAccountNames {
         public fun forCredential(key: String): String?
 
-        /** The digest of a credential this head just sent on an attempt, never the credential. A resolver that only
-         *  names ignores it; the daemon's per-head one tells the native login owner which login carries the head. */
-        public fun sent(key: String): Unit = Unit
+        /** The digest of a credential this head just sent on an attempt for [session], never the credential; [session]
+         *  is null for a request that named none. A resolver that only names ignores it; the daemon's per-head one
+         *  tells the native login owner which login carries the head and that session. */
+        public fun sent(key: String, session: String?): Unit = Unit
     }
 
     /** The substitutable runtime seams. A test drives these instead of sleeping or reading a clock,

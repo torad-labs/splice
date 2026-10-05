@@ -51,8 +51,9 @@ internal class HeadServerFactory(
     /** Assigned before any head is assembled; the callback reads the login owner at request time. */
     internal var credentialAccountNames: HeadDeps.CredentialAccountNames = HeadDeps.CredentialAccountNames { null }
 
-    /** Assigned beside [credentialAccountNames]: hears each head's sent credential digests under that head's key. */
-    internal var sentCredentials: HeadSentCredentials = HeadSentCredentials { _, _ -> }
+    /** Assigned beside [credentialAccountNames]: hears each head's sent credential digests under that head's key and
+     *  the session each request named. */
+    internal var sentCredentials: HeadSentCredentials = HeadSentCredentials { _, _, _ -> }
 
     // v0.4.0: what a launched session holds, derived from the management key (see [TurnKey]).
     private val turnKey = TurnKey(mgmtKey)
@@ -180,7 +181,7 @@ internal class HeadCredentialNames(
 ) : HeadDeps.CredentialAccountNames {
     override fun forCredential(key: String): String? = names.forCredential(key)
 
-    override fun sent(key: String) = heard.sent(head, key)
+    override fun sent(key: String, session: String?) = heard.sent(head, session, key)
 }
 
 /** What a head's system-prompt layers resolve from, one bundle because the three are read together

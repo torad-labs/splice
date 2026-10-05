@@ -12,6 +12,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeAccountIdentity
@@ -54,6 +56,12 @@ import splice.head.compact.HeadCompactSource
 import splice.head.usage.CredentialQuotaFiles
 import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
+import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionListing
+import splice.sessions.registry.SessionRecord
+import splice.sessions.registry.SessionRoute
+import splice.sessions.registry.SessionSource
+import splice.sessions.registry.SessionStatus
 import splice.usage.perf.PerfProjectionRead
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsProjection
@@ -173,6 +181,7 @@ class NativeUsageTruthTest {
         override fun poll(id: String): LoginStatus? = null
         override suspend fun submit(id: String, code: String): Boolean = false
         override fun carrying(head: String): ClaudeLoginPlaceId? = carried?.carrying(head)
+        override fun carrying(head: String, session: String): ClaudeLoginPlaceId? = carried?.carrying(head, session)
     }
 
     private fun digest(token: String): String =
@@ -227,6 +236,7 @@ class NativeUsageTruthTest {
         kind: String = "client",
         usageSource: HeadUsageSource? = null,
         family: String? = null,
+        sessions: SessionSource? = null,
         check: suspend (suspend (String, Boolean) -> JsonObject) -> Unit,
     ) = runBlocking {
         withTimeout(TIMEOUT_MS) {
@@ -242,6 +252,7 @@ class NativeUsageTruthTest {
                 mgmtKey = key,
                 dashboardHtml = { "<!doctype html>" },
                 log = {},
+                sessions = sessions,
             )
             // Late binding is intentional: UsageMount must not capture the construction-time null.
             server.ports.claudeLogins = port
@@ -341,16 +352,16 @@ class NativeUsageTruthTest {
                 .getValue("used_pct").jsonPrimitive.content
             assertEquals("59", fiveHour(), "before any request the head reads its command's own folder")
 
-            carried.sent(HEAD, digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}"))
+            carried.sent(HEAD, null, digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}"))
             assertEquals("91", fiveHour(), "a request carrying the ~/.claude login moves the head to that login")
             val warn = headUsage().getValue("warn").jsonObject
             assertEquals("quota_5h", warn.getValue("source").jsonPrimitive.content, "the near-limit warning: $warn")
             assertEquals("91", warn.getValue("pct").jsonPrimitive.content, "the near-limit warning: $warn")
 
-            carried.sent(HEAD, digest("synthetic-unknown-login"))
+            carried.sent(HEAD, null, digest("synthetic-unknown-login"))
             assertEquals("91", fiveHour(), "a credential no place holds leaves the last match standing")
 
-            carried.sent(HEAD, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
+            carried.sent(HEAD, null, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
             assertEquals("59", fiveHour(), "the newest matched request decides, in either direction")
         }
     }
@@ -372,14 +383,14 @@ class NativeUsageTruthTest {
                 }
             assertEquals(mapOf("claude" to "null", "claude-splice" to "null"), flags(), "no request has matched yet")
 
-            carried.sent(HEAD, digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}"))
+            carried.sent(HEAD, null, digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}"))
             val nativeCarries = mapOf("claude" to "true", "claude-splice" to "false")
             assertEquals(nativeCarries, flags(), "a request carrying the ~/.claude login marks that place")
 
-            carried.sent(HEAD, digest("synthetic-unknown-login"))
+            carried.sent(HEAD, null, digest("synthetic-unknown-login"))
             assertEquals(nativeCarries, flags(), "a credential no place holds leaves the last match standing")
 
-            carried.sent(HEAD, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
+            carried.sent(HEAD, null, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
             assertEquals(mapOf("claude" to "false", "claude-splice" to "true"), flags(), "the newest match decides")
         }
     }
@@ -456,6 +467,94 @@ class NativeUsageTruthTest {
             assertEquals(3, block.getValue("usage").jsonObject.getValue("accounts").jsonArray.size)
             val five = usage(read("/api/usage", false)).getValue("quota").jsonObject.getValue("five_hour").jsonObject
             assertEquals("99", five.getValue("used_pct").jsonPrimitive.content)
+        }
+    }
+
+    /** What /api/sessions names as each session's login (2026-10-04: all 19 claude-splice sessions read "Login not
+     *  reported" while 25 of their requests were filed under an account). Every session on a client head forwards its
+     *  own login through the one head, so the head's newest match is another session's answer, never this one's. */
+    @Nested
+    inner class SessionAccounts {
+        private val sessionIds = listOf("synthetic-session-a", "synthetic-session-b", "synthetic-session-c")
+
+        private fun registry(ids: List<String>): SessionSource = object : SessionSource {
+            override fun read(): List<SessionRecord> = ids.mapIndexed { pid, id ->
+                SessionRecord(
+                    pid = pid + 1L,
+                    sessionId = id,
+                    cwd = null,
+                    name = null,
+                    kind = null,
+                    version = null,
+                    status = SessionStatus(),
+                    startedAt = null,
+                    updatedAt = null,
+                    messagingSocketPath = null,
+                    route = SessionRoute.Head(HEAD),
+                    availability = SessionAvailability.LIVE,
+                )
+            }
+
+            override fun list(): SessionListing = SessionListing(read())
+        }
+
+        private suspend fun accounts(read: suspend (String, Boolean) -> JsonObject): Map<String, String?> =
+            read("/api/sessions", false).getValue("sessions").jsonArray.map { it.jsonObject }.associate { row ->
+                row.getValue("session_id").jsonPrimitive.content to row.getValue("account").jsonPrimitive.contentOrNull
+            }
+
+        @Test
+        fun `each session on a client head reads the place its own requests carried, and null before one matched`() {
+            val places = listOf(
+                location(ClaudeLoginPlaceId.NATIVE, "native-subscription"),
+                location(ClaudeLoginPlaceId.SPLICE, "folder-subscription"),
+            )
+            val carried = ClaudeCarryingPlaces(places, ClaudeLoginRead(paths, {}, WallClock { now }))
+            val (first, second, idle) = sessionIds
+            serve(native(places, carried), sessions = registry(sessionIds)) { read ->
+                assertEquals(sessionIds.associateWith { null }, accounts(read), "no session has a matched request yet")
+
+                carried.sent(HEAD, first, digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}"))
+                carried.sent(HEAD, second, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
+                val own = mapOf(first to "claude", second to "claude-splice", idle to null)
+                assertEquals(own, accounts(read), "each session reads its own place, never the head's newest")
+
+                carried.sent(HEAD, first, digest("synthetic-unknown-login"))
+                carried.sent(HEAD, null, digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}"))
+                assertEquals(own, accounts(read), "an unknown login and a request naming no session move no session")
+
+                carried.sent(HEAD, first, digest("synthetic-${ClaudeLoginPlaceId.SPLICE.wire}"))
+                assertEquals(own + (first to "claude-splice"), accounts(read), "a session's newest match decides")
+            }
+        }
+
+        /** The record is bounded by recency: past its bound the session that sent least recently is forgotten and reads
+         *  null again, while a session that sent again since is kept. */
+        @Test
+        fun `the per-session record forgets the least recently sending session past its bound`() {
+            val places = listOf(location(ClaudeLoginPlaceId.NATIVE, "native-subscription"))
+            val carried = ClaudeCarryingPlaces(places, ClaudeLoginRead(paths, {}, WallClock { now }))
+            val key = digest("synthetic-${ClaudeLoginPlaceId.NATIVE.wire}")
+            val bound = 4096 // ClaudeCarryingPlaces' REMEMBERED_CARRYING_SESSIONS
+            carried.sent(HEAD, "synthetic-refreshed", key)
+            carried.sent(HEAD, "synthetic-oldest", key)
+            repeat(bound - 2) { carried.sent(HEAD, "synthetic-filler-$it", key) }
+            carried.sent(HEAD, "synthetic-refreshed", key)
+            assertEquals(ClaudeLoginPlaceId.NATIVE, carried.carrying(HEAD, "synthetic-oldest"), "at the bound")
+
+            carried.sent(HEAD, "synthetic-newest", key)
+            assertNull(carried.carrying(HEAD, "synthetic-oldest"), "past the bound the least recent sender goes")
+            assertEquals(ClaudeLoginPlaceId.NATIVE, carried.carrying(HEAD, "synthetic-refreshed"), "sent again, kept")
+            assertEquals(ClaudeLoginPlaceId.NATIVE, carried.carrying(HEAD, "synthetic-newest"))
+        }
+
+        /** The label the Accounts roster's single-login row stands for, and the one that head's requests are filed
+         *  under; the console names it from the head plus that label. */
+        @Test
+        fun `a single-login OAuth head's sessions read the login's stable label, never a sentence`() {
+            serve(null, kind = "chatgpt-oauth", sessions = registry(sessionIds.take(1))) { read ->
+                assertEquals(mapOf(sessionIds.first() to "primary"), accounts(read))
+            }
         }
     }
 }

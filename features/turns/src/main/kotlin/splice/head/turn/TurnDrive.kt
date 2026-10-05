@@ -145,14 +145,14 @@ internal data class TurnDrive(
         private set
 
     /** Refresh and failover replace this request's observation using the headers of each actual attempt, and each
-     *  attempt reports its credential's digest as the head's newest sent one. */
+     *  attempt reports its credential's digest as the newest one sent by the head and by this request's session. */
     fun observeAccount(credentials: Credentials, extra: Map<String, String>) {
         val key = CredentialKey.fromHeaders(
             CredentialKey.headers(credentials, extra),
             (credentials as? Credentials.ApiKey)?.header,
         )
         val names = credentialAccountNames
-        if (key != null) names?.sent(key)
+        if (key != null) names?.sent(key, meta.sessionId)
         observedAccountLabel = key?.let { names?.forCredential(it) }
     }
 

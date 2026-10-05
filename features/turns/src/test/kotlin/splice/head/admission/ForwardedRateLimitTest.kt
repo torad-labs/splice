@@ -37,6 +37,7 @@ import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.headDeps
 import splice.head.noQuota
+import splice.head.turn.SESSION_HEADER
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.InflightGate
@@ -118,24 +119,30 @@ class ForwardedRateLimitTest {
 
     /** The console names the login a head's requests carry from these reports (2026-10-04: claude-splice's usage
      *  read its command's folder while its requests carried the ~/.claude login). Each attempt reports the digest of
-     *  the credential it actually sent, so a second login on the same head is heard as itself. */
+     *  the credential it actually sent and the session the request named, so a second login on the same head, and a
+     *  second session on it, are each heard as themselves. */
     @Test
     fun `every forwarded attempt reports the digest of the credential it sent, never the credential`() = runBlocking {
-        val sent = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val sent = java.util.concurrent.CopyOnWriteArrayList<Pair<String, String?>>()
         val names = object : HeadDeps.CredentialAccountNames {
             override fun forCredential(key: String): String? = null
-            override fun sent(key: String) {
-                sent += key
+            override fun sent(key: String, session: String?) {
+                sent += key to session
             }
         }
         val rig = LimitRig(directory, limits = false, names = names)
         rig.head.start()
         try {
-            for (token in listOf("synthetic-first-login", "synthetic-second-login")) {
-                assertEquals(HttpStatusCode.OK, rig.turn(token).first)
-            }
-            assertEquals(listOf(key("synthetic-first-login"), key("synthetic-second-login")), sent.toList())
-            assertTrue(sent.none { it.contains("synthetic") }, "a report carries the digest, never the token: $sent")
+            assertEquals(HttpStatusCode.OK, rig.turn("synthetic-first-login", session = "synthetic-session").first)
+            assertEquals(HttpStatusCode.OK, rig.turn("synthetic-second-login").first)
+            assertEquals(
+                listOf(key("synthetic-first-login") to "synthetic-session", key("synthetic-second-login") to null),
+                sent.toList(),
+            )
+            assertTrue(
+                sent.none { (digest, _) -> digest.contains("synthetic") },
+                "a report carries the digest, never the token: $sent",
+            )
         } finally {
             rig.close()
         }
@@ -355,9 +362,14 @@ private class LimitRig(
         ),
     )
 
-    suspend fun turn(credential: String, stream: Boolean = true): Triple<HttpStatusCode, String, Headers> {
+    suspend fun turn(
+        credential: String,
+        stream: Boolean = true,
+        session: String? = null,
+    ): Triple<HttpStatusCode, String, Headers> {
         val response = client.post("http://127.0.0.1:${head.port}/v1/messages") {
             header("Authorization", "Bearer $credential")
+            if (session != null) header(SESSION_HEADER, session)
             header("Content-Type", "application/json")
             setBody(
                 """{"model":"synthetic--model","stream":$stream,"max_tokens":16,"messages":[{"role":"user","content":"synthetic"}]}""",

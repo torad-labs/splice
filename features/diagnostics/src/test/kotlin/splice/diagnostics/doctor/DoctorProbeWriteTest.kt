@@ -10,11 +10,13 @@ package splice.diagnostics.doctor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.diagnostics.doctor.report.ProbeWrite
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 // The name production resolved before DR-171. Kept here deliberately: once the fix lands, this
 // string exists ONLY in the test, and that is the point — it is the attacker's chosen path, not a
@@ -141,5 +143,25 @@ class DoctorProbeWriteTest {
         // returns FAIL without cleaning up leaves a temp behind on every full-disk doctor run.
         val left = Files.list(dir).use { stream -> stream.toList() }
         assertTrue(left.isEmpty(), "the created temp must be removed on the failure path, found: $left")
+    }
+
+    // A missing dir is probed through its nearest existing ancestor, so an ancestor the daemon could
+    // not create it under is the answer: not writable, the chmod on THAT ancestor, and nothing made.
+    @Test
+    fun `a missing dir under an unwritable ancestor is not writable, and is not created`(@TempDir tmp: Path) {
+        assumeFalse(System.getProperty("user.name") == "root", "chmod is advisory for uid 0")
+        val locked = Files.createDirectories(tmp.resolve("locked"))
+        val dir = locked.resolve("splice-root").resolve("state")
+        Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("r-x------"))
+        try {
+            val check = DoctorProbeWrite().writableProbe("state dir", dir)
+
+            assertEquals(CheckStatus.FAIL, check.status, check.detail)
+            assertTrue("not writable" in check.detail, check.detail)
+            assertEquals("chmod u+rwx $locked", check.fix, "the fix must name the ancestor that refused")
+            assertFalse(Files.exists(locked.resolve("splice-root")), "the probe created part of the path")
+        } finally {
+            Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("rwx------"))
+        }
     }
 }

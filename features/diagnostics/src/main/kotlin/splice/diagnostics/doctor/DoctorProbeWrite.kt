@@ -17,6 +17,7 @@ import splice.diagnostics.doctor.report.DoctorReportFiles
 import splice.diagnostics.doctor.report.FileProbeWrite
 import splice.diagnostics.doctor.report.ProbeWrite
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 private val OUTCOME_TAG = Regex("^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
@@ -30,11 +31,17 @@ internal class DoctorProbeWrite(
         DoctorReportFiles(DoctorRedaction(UserHome.dir())),
 ) {
 
-    /** JW-17: write-and-delete a dot-prefixed probe in [dir] (created first, as the daemon would).
-     *  OK carries [okDetail] (the path, or a richer label); a failure is a FAIL whose fix is chosen
-     *  by cause — AccessDenied wants chmod, anything else (typically no space) wants df. Non-mutating
-     *  in spirit: the probe is removed in a finally. */
+    /** JW-17: write-and-delete a dot-prefixed probe in [dir]. OK carries [okDetail] (the path, or a
+     *  richer label); a failure is a FAIL whose fix is chosen by cause — AccessDenied wants chmod,
+     *  anything else (typically no space) wants df. Non-mutating: the probe is removed in a finally.
+     *
+     *  A [dir] PROVEN ABSENT is probed through its nearest existing ancestor and never created
+     *  (2026-10-04). This used to create it "as the daemon would" and then delete its own file, so
+     *  doctor on a home with no state root left an empty state dir behind, the artifact that took over
+     *  the operator's root at the 7:27 PM CT restart. A dir that cannot be stat-ed is not absent: it
+     *  is probed where it is, and the probe's own failure answers. */
     internal fun writableProbe(name: String, dir: Path, okDetail: String? = null): DoctorCheck {
+        var into = dir
         // DR-171: this resolved the FIXED name ".splice-doctor-write-probe" and wrote to it, so a
         // local peer could pre-plant that name as a symlink — the write FOLLOWED it and truncated
         // the victim to the five bytes below, the finally then removed only the link, and doctor
@@ -47,10 +54,12 @@ internal class DoctorProbeWrite(
         // actually created, which is why this is a nullable var and not a val.
         var probe: Path? = null
         return try {
-            Files.createDirectories(dir)
-            probe = Files.createTempFile(dir, ".splice-doctor-write-probe.", ".tmp")
+            if (provenAbsent(dir)) into = nearestExisting(dir)
+            probe = Files.createTempFile(into, ".splice-doctor-write-probe.", ".tmp")
             write(probe, "probe")
-            DoctorCheck(name, CheckStatus.INFO, okDetail ?: dir.toString())
+            val detail = okDetail ?: dir.toString()
+            val absent = " (not created yet: the daemon creates it on its first start, and $into is writable)"
+            DoctorCheck(name, CheckStatus.INFO, if (into == dir) detail else detail + absent)
         } catch (_: java.nio.file.AccessDeniedException) {
             // The label is read off the BRANCH, not off the caught throwable's runtime class: this
             // clause only ever stands in for AccessDeniedException, so naming it is a compile-time
@@ -58,17 +67,37 @@ internal class DoctorProbeWrite(
             DoctorCheck(
                 name,
                 CheckStatus.FAIL,
-                "$dir is not writable (AccessDeniedException)",
-                "chmod u+rwx $dir",
+                "${subject(dir, into)} is not writable (AccessDeniedException)",
+                "chmod u+rwx $into",
                 fixKind = FixKind.COMMAND,
             )
         } catch (e: java.io.IOException) {
-            val why = "$dir is not writable (${SafeFailureText.render(e)})"
-            DoctorCheck(name, CheckStatus.FAIL, why, "check free space: df -h $dir")
+            val why = "${subject(dir, into)} is not writable (${SafeFailureText.render(e)})"
+            DoctorCheck(name, CheckStatus.FAIL, why, "check free space: df -h $into")
         } finally {
             probe?.let { p -> Cancellables.runCatchingCancellable { Files.deleteIfExists(p) } }
         }
     }
+
+    /** Only [NoSuchFileException] is absence; any other failure to stat propagates to the probe's own
+     *  FAIL arms, because a path that cannot be read may exist. */
+    private fun provenAbsent(path: Path): Boolean = try {
+        val _ = Files.readAttributes(path, "basic:isDirectory")
+        false
+    } catch (_: NoSuchFileException) {
+        true
+    }
+
+    /** The closest ancestor of a proven-absent [dir] that exists: where the daemon's first start would
+     *  create it, and so the directory whose writability decides whether it can. */
+    private fun nearestExisting(dir: Path): Path {
+        var ancestor = dir.toAbsolutePath().parent ?: return dir
+        while (provenAbsent(ancestor)) ancestor = ancestor.parent ?: return dir
+        return ancestor
+    }
+
+    /** What a FAIL names: the dir itself, or the dir and the ancestor that refused it. */
+    private fun subject(dir: Path, into: Path): String = if (into == dir) "$dir" else "$dir cannot be created: $into"
 
     /** Last-N turn outcomes from the per-head perf JSONL — "last failure: 4m ago (upstream_failed)"
      *  is the sentence doctor exists to say. Read as a bounded tail of BOTH generations (a failure

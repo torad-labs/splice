@@ -541,6 +541,30 @@ class DoctorWritableDirsTest {
             Files.setPosixFilePermissions(logs, PosixFilePermissions.fromString("rwx------"))
         }
     }
+
+    // 2026-10-04: the probe made a missing dir "as the daemon would", then deleted its own file, so a
+    // doctor run on a home with no state root left exactly the empty state dir that took over the
+    // operator's root at the 7:27 PM CT restart. Doctor answers writability and creates nothing.
+    @Test
+    fun `a missing state root is answered writable and doctor leaves it missing`(@TempDir tmp: Path) {
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        fakeBinaries(bin, "claude", "node", "curl", "bash")
+        val home = Files.createDirectories(tmp.resolve("home"))
+        val root = home.resolve("splice-root")
+        val extra = mapOf(
+            "CLAUDEX_STATE_DIR" to root.resolve("state").toString(),
+            "SPLICE_CONTROL_PORT" to TestPorts.reserve().toString(),
+            "OPENROUTER_API_KEY" to "k",
+        )
+
+        val (_, out) = runDoctor(env(tmp, bin, share, extra))
+
+        assertFalse(Files.exists(root.resolve("state")), "doctor created the state dir:\n$out")
+        assertFalse(Files.exists(root.resolve("logs")), "doctor created the logs dir:\n$out")
+        assertTrue(Files.list(home).use { it.toList() }.isEmpty(), "doctor left something in the home:\n$out")
+        assertTrue(out.contains("state dir") && out.contains("creates it on its first start"), out)
+    }
 }
 
 // DR-92 (codex adjudication under the DR-65 law): splice.toml legally carries credential-like

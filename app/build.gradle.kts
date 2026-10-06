@@ -12,6 +12,18 @@ import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 import java.util.zip.ZipFile
 
+// TRANSITIVE CVE FLOOR — Jackson (2026-10-05). cyclonedx-core-java 13.1.0 brings
+// core/databind 2.22.1 onto this plugin classpath. GHSA-7hhh-6rmp-j9qf and
+// GHSA-p6pp-m3f8-5c89 are fixed in 2.22.3; subproject dependencies cannot floor this classpath.
+buildscript {
+    dependencies {
+        constraints {
+            classpath("com.fasterxml.jackson.core:jackson-core:${libs.versions.jackson.get()}")
+            classpath("com.fasterxml.jackson.core:jackson-databind:${libs.versions.jackson.get()}")
+        }
+    }
+}
+
 plugins {
     id("splice.kotlin-common")
     id("splice.module-law")

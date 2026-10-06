@@ -23,11 +23,10 @@ slf4j = "2.0.18"
 # Dependabot a line to bump next time. Raise, never lower; drop it once ktor's own netty clears it.
 #
 netty = "4.2.17.Final"          # 4.2.16.Final resolved; GHSA-8c42-7qj2-3j46 (CORS Vary cache poisoning) in netty-codec-http
-# jackson rides in on the PLUGIN classpath via detekt's jackson-dataformat-xml, which subproject
-# constraints cannot reach — so the floor is applied in build-logic/build.gradle.kts, the one build
-# that owns that classpath (see the reasoning there). The Usage source also ships jackson-core's streaming parser.
-# A detekt bump would be the cleaner fix but is unavailable: 1.23.8 is the latest release.
-jackson = "2.21.5"              # 2.20.1 resolved; advisories in jackson-core/databind
+# Jackson core ships in the Usage and Claude Code transcript streaming parsers.
+# Plugin classpaths need separate floors: build-logic keeps the detekt floor, and app/build.gradle.kts
+# floors CycloneDX's jackson-core/databind from this version because project dependencies cannot reach it.
+jackson = "2.22.3"              # Security floor for shipped parsers and plugin classpaths; GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89
 # freemarker rides in on the ROOT script classpath under kover (kover-gradle-plugin -> kover-features-jvm
 # -> intellij-coverage-reporter -> coverage-report), floored by a buildscript classpath constraint in
 # the root build.gradle.kts. Build-time only, never in the shipped jar. No bump reaches it: kover

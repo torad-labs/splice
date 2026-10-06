@@ -1,6 +1,7 @@
 // NEW: native rejection reasons and request-local placement evidence cannot claim edits or leak wire data.
 package splice.provider.codex
 
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -10,14 +11,19 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.core.perf.InputDigest
 import splice.provider.codex.state.CodeModeHistoryIndex
+import splice.provider.codex.state.CodeModeNativeChain
+import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.state.diagnostics.CodeModeHistoryLog
 import splice.provider.codex.state.diagnostics.CodeModeNativeBranch
 import splice.provider.codex.state.diagnostics.CodeModeNativeEvidenceCapture
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
 import splice.upstream.RoundBody
 import splice.upstream.codemode.CodeModeResult
+import java.nio.file.Files
+import java.nio.file.Path
 
 internal class CodeModeNativeDiagnosticsTest {
     private val history = CodexCodeModeHistory(Json)
@@ -97,6 +103,44 @@ internal class CodeModeNativeDiagnosticsTest {
         )
         assertTrue(line.contains("native_witness_kind=other native_witness_resolved=true"))
         assertTrue(privateKind !in line && "private bytes" !in line && "private-record" !in line)
+    }
+
+    @Test
+    fun `a missing restored ancestor cannot turn unchanged native occurrences into an edit`(@TempDir dir: Path) {
+        val middle = item("""{"role":"user","content":"synthetic middle"}""")
+        val latest = item("""{"role":"user","content":"synthetic latest"}""")
+        val baseline = listOf(first) + native + middle + native + latest
+        val captured = record(baseline, "survivor")
+        val delta = captured.copy(nativeSegments = captured.nativeSegments.drop(1)).also {
+            it.replayAnchors = captured.replayAnchors
+            it.nativeBaseId = "missing-parent"
+        }
+        val file = dir.resolve("partial-chain.jsonl")
+        val saved = CodeModePersistedState(records = listOf(delta.snapshot()))
+        Files.writeString(file, Json.encodeToString(saved) + "\n")
+        val loaded = CodeModeStateJournal.read(file, Json).records.single().restore()
+        CodeModeNativeChain.link(listOf(loaded))
+        assertEquals(null, loaded.nativeParent)
+        assertEquals("missing-parent", loaded.nativeBaseId)
+        val client = baseline + callbacks(captured)
+        val restored = history.restoreBaseline(body(client), loaded)
+        assertEquals(CodeModeNativeBranch.UNEXPECTED, restored.nativeRejection?.branch)
+        assertEquals(
+            "code-mode native discovery history conflicts with its captured position: unexpected-offset",
+            restored.error,
+            "partial record retention cannot prove that the byte-unchanged client edited native history",
+        )
+    }
+
+    @Test
+    fun `a genuine extra occurrence inside a complete captured slot still reports an edit`() {
+        val latest = item("""{"role":"user","content":"synthetic latest"}""")
+        val baseline = listOf(first) + native + latest
+        val active = record(baseline, "complete")
+        val client = listOf(first) + native + native.first() + latest + callbacks(active)
+        val restored = history.restoreBaseline(body(client), active)
+        assertEquals(CodeModeNativeBranch.NATIVE_ORDER, restored.nativeRejection?.branch)
+        assertEquals("code-mode native discovery history was edited: nativeOrder", restored.error)
     }
 
     private fun unplaceable(): Pair<CodeModeRecord, CodeModeRewrite> {

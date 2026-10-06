@@ -86,12 +86,8 @@ internal class CodeModeNativeReplay(
         val actual = replay.filterKeys { it < boundary }.values.sumOf { items -> items.count { it in segment.items } }
         val evidence = matched.map(NativeClaim::evidence).distinct().singleOrNull()
             ?.copy(expectedOccurrences = expected, actualOccurrences = actual)
-        val branch = if (matched.isNotEmpty() && actual > expected) {
-            CodeModeNativeBranch.NATIVE_ORDER
-        } else {
-            CodeModeNativeBranch.UNEXPECTED
-        }
-        return CodeModeNativeRejection(witness, branch, evidence)
+        // A restored parent may be missing; surviving claims are not a complete history denominator.
+        return CodeModeNativeRejection(witness, CodeModeNativeBranch.UNEXPECTED, evidence)
     }
 
     private fun unexpectedOffset(records: List<CodeModeRecord>, claims: List<NativeClaim>): ResponsesCodeModeReplay? {

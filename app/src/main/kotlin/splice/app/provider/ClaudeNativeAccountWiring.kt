@@ -59,7 +59,6 @@ internal class ClaudeNativeAccountWiring(
             quotaRead = ClaudeNativeQuota(
                 auth,
                 CredentialQuotaFiles(paths.quotaFile(view.head), log),
-                view.quota,
                 object : AccountQuotaSource {
                     private fun current(): ClaudeLoginPlaceView? =
                         places()?.places()?.singleOrNull { it.head == view.head && it.id == view.id }

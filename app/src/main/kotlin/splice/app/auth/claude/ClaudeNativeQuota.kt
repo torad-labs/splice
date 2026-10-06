@@ -17,11 +17,12 @@ import java.util.concurrent.atomic.AtomicReference
 internal class ClaudeNativeQuota(
     private val auth: ClaudeNativeAuth,
     private val files: CredentialQuotaFiles,
-    initial: QuotaSnapshot?,
     private val live: AccountQuotaSource? = null,
 ) : AccountQuotaSource, CredentialQuotaListener {
     private data class Observation(val key: String, val snapshot: QuotaSnapshot)
-    private val latest = AtomicReference(auth.credentialKey?.let { key -> initial?.let { Observation(key, it) } })
+
+    // A display snapshot has no credential stamp. Seed only from keyed observations, never a captured place view.
+    private val latest = AtomicReference<Observation?>(null)
 
     override val held: Boolean get() = live?.held == true
 
@@ -29,6 +30,7 @@ internal class ClaudeNativeQuota(
         val key = auth.credentialKey ?: return null
         val observed = latest.get()?.takeIf { it.key == key }?.snapshot ?: files.read(key)
         return listOfNotNull(observed, live?.snapshot()).maxByOrNull(QuotaSnapshot::updatedAt)
+            ?.takeIf { auth.credentialKey == key }
     }
 
     override fun observed(key: String, snapshot: QuotaSnapshot) {

@@ -279,8 +279,8 @@ private class Rig(root: Path) {
     }
 
     fun exhaustAll() {
-        primaryQuota.record(quota(100.0))
-        backupQuota.record(quota(100.0))
+        // Only an explicit provider pushback refuses admission; percentages are ordering hints.
+        pool.members.forEach { it.cooldown.markUnavailable(60_000L) }
     }
 
     fun selectedAccount(): String? = pool.view(SESSION).selectedLabel

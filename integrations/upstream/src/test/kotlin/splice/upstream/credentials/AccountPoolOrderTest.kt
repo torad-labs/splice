@@ -76,6 +76,17 @@ class AccountPoolOrderTest {
     }
 
     @Test
+    fun `the earliest usable reset wins even when the weekly reset is later`() {
+        val fixture = Fixture()
+        fixture.quota("primary", fiveReset = 1_100L, sevenReset = 9_000L)
+        fixture.quota("higher", fiveReset = 1_800L, sevenReset = 2_000L)
+        fixture.quota("lower", fiveReset = 1_900L, sevenReset = 3_000L)
+
+        assertEquals("primary", fixture.pool.nextTargetLabel())
+        assertEquals("primary", (fixture.pool.select("synthetic-session") as Selection.Chosen).account.account.label)
+    }
+
+    @Test
     fun `default mode keeps a free current account after primary resets`() {
         val fixture = Fixture()
         fixture.quota("primary", five = 100.0, fiveReset = 1_100L, sevenReset = 1_500L)
@@ -91,7 +102,7 @@ class AccountPoolOrderTest {
         assertEquals("primary", fixture.pool.nextTargetLabel("session"))
         val moved = (fixture.pool.select("session") as Selection.Chosen).account
         assertEquals("primary", moved.account.label)
-        assertEquals("5-hour quota exhausted", moved.switch?.reason)
+        assertEquals("quota usage reading full", moved.switch?.reason)
     }
 
     @Test

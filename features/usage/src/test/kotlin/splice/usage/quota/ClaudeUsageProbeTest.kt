@@ -21,6 +21,7 @@ import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
 import splice.core.usage.FIVE_HOURS_SECONDS
 import splice.core.usage.SEVEN_DAYS_SECONDS
+import splice.core.util.Cancellables
 import splice.core.util.WallClock
 
 private const val NOW_MS = 1_788_000_000_000L
@@ -119,6 +120,26 @@ class ClaudeUsageProbeTest {
     }
 
     @Test
+    fun `probe refusals cannot be decoded as full windows even when the body contains them`() = runTest {
+        val full = """{"five_hour":{"utilization":100},"seven_day":{"utilization":100}}"""
+        val statuses = listOf(
+            HttpStatusCode.Forbidden,
+            HttpStatusCode.TooManyRequests,
+            HttpStatusCode.InternalServerError,
+        )
+        for (status in statuses) {
+            val probe = probe(mutableListOf(), status = status, body = full)
+            val refused = Cancellables.runCatchingCancellable { probe.probe() }.exceptionOrNull()
+            assertTrue(refused is QuotaEndpointRefused, "a refusal is not a usage observation")
+            assertEquals(status.value, (refused as QuotaEndpointRefused).status)
+        }
+        assertNull(
+            probe(mutableListOf(), body = """{"error":{"utilization":100,"type":"rate_limit_error"}}""").probe(),
+            "an error-only 200 body has no quota windows",
+        )
+    }
+
+    @Test
     fun `the caller's own forwarded sign-in is never probed`() = runTest {
         val sent = mutableListOf<Map<String, String>>()
 
@@ -133,11 +154,12 @@ class ClaudeUsageProbeTest {
         userAgent: String? = null,
         status: HttpStatusCode = HttpStatusCode.OK,
         credentials: Credentials? = Credentials.Bearer("added-account-token"),
+        body: String = MAX_PLAN_BODY,
     ): QuotaProbe {
         val engine = MockEngine { request ->
             sent += request.headers.entries().associate { it.key to it.value.joinToString(", ") }
             assertEquals(USAGE_URL, request.url.toString())
-            respond(MAX_PLAN_BODY, status, headersOf("Content-Type", "application/json"))
+            respond(body, status, headersOf("Content-Type", "application/json"))
         }
         return ClaudeUsageProbe(
             client = HttpClient(engine),

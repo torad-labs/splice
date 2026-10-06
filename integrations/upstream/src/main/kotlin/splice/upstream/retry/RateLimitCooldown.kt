@@ -122,6 +122,8 @@ public class RateLimitCooldown public constructor(
     /** V4-412: an ANSWERED turn is the provider saying it serves again (a top-up, or a reset that
      *  came early), so it ends both statements, in memory and on disk. */
     public fun answered() {
+        rateLimitedUntilMs.set(0L)
+        unavailableUntilMs.set(0L)
         providerUnavailableUntilMs.set(0L)
         holds.providerReset(null)
         planHold.clear()

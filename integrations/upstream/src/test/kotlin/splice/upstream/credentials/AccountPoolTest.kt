@@ -55,7 +55,7 @@ class AccountPoolTest {
 
         val switched = pool.chosen("session-a")
         assertSame(quieter, switched.account)
-        assertEquals("5-hour quota exhausted", switched.switch?.reason)
+        assertEquals("quota usage reading full", switched.switch?.reason)
         assertTrue(switched.cacheCold)
         assertEquals("primary", pool.view("session-b").selectedLabel)
     }
@@ -208,8 +208,8 @@ class AccountPoolTest {
     @Test
     fun `all exhausted reports the earliest account reset`() {
         val fixture = Fixture()
-        val primary = fixture.account("primary", primary = true, five = 100.0, reset = 3_000L)
-        val backup = fixture.account("plus-a", weekly = 100.0, reset = 2_000L)
+        val primary = fixture.account("primary", primary = true, five = 100.0, reset = 3_000L, heldUntil = 3_000L)
+        val backup = fixture.account("plus-a", weekly = 100.0, reset = 2_000L, heldUntil = 2_000L)
         val pool = fixture.pool(primary, backup)
 
         val failure = pool.exhausted("session")
@@ -408,28 +408,6 @@ class AccountPoolTest {
     }
 
     @Test
-    fun `published horizons use only exhausted windows and wait for the last active reset`() {
-        for ((used, reset) in listOf(10.0 to 8200L, 100.0 to 999L, 100.0 to 8200L)) {
-            val fixture = Fixture()
-            val account = fixture.account("primary", primary = true)
-            fixture.setQuota(
-                account,
-                QuotaSnapshot(
-                    fiveHour = QuotaWindow(used, reset, 18000L),
-                    sevenDay = QuotaWindow(100.0, 433000L, 604800L),
-                ),
-            )
-            val pool = fixture.pool(account)
-            assertEquals(433000L, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
-            val published = pool.view(null).blockedUntilEpochSecondsByLabel["primary"]
-            assertEquals(pool.exhausted(null).earliestResetEpochSeconds, published)
-            fixture.advanceWall(433000000L)
-            assertEquals(emptyMap<String, Long>(), pool.view(null).blockedUntilEpochSecondsByLabel)
-            assertTrue(pool.view(null).accounts.single().available)
-        }
-    }
-
-    @Test
     fun `published horizons include credential exclusion and provider cooldown without a second calculation`() {
         val fixture = Fixture()
         val account = fixture.account("primary", primary = true)
@@ -439,37 +417,11 @@ class AccountPoolTest {
         val authSeconds = excluded / 1000 + if (excluded % 1000 == 0L) 0 else 1
         assertEquals(authSeconds, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
         fixture.setQuota(account, fixture.quota(five = 100.0, reset = 2000L))
-        assertEquals(2000L, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
+        assertEquals(authSeconds, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
         account.cooldown.markUnavailable(2000000L)
         assertEquals(3000L, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
         val published = pool.view(null).blockedUntilEpochSecondsByLabel["primary"]
         assertEquals(pool.exhausted(null).earliestResetEpochSeconds, published)
-    }
-
-    @Test
-    fun `pool reset is the earliest published account horizon not the earliest window`() {
-        val fixture = Fixture()
-        val primary = fixture.account("primary", primary = true, five = 100.0, weekly = 100.0, reset = 5000L)
-        val backup = fixture.account("backup", five = 100.0, reset = 2000L)
-        val pool = fixture.pool(primary, backup)
-        val published = pool.view(null).blockedUntilEpochSecondsByLabel
-        assertEquals(mapOf("primary" to 5000L, "backup" to 2000L), published)
-        assertEquals(published.values.minOrNull(), pool.exhausted(null).earliestResetEpochSeconds)
-    }
-
-    @Test
-    fun `credentialless accounts cannot shorten the published pool horizon`() {
-        val fixture = Fixture()
-        val primary = fixture.account("primary", primary = true, weekly = 100.0, reset = 433000L)
-        val backup = fixture.account("backup", five = 100.0, reset = 8200L, credentialPresent = false)
-        val pool = fixture.pool(primary, backup)
-        assertFalse(pool.view(null).accounts.single { it.label == "backup" }.credentialPresent)
-        assertEquals(mapOf("primary" to 433000L), pool.view(null).blockedUntilEpochSecondsByLabel)
-        assertEquals(433000L, pool.exhausted(null).earliestResetEpochSeconds)
-        fixture.rotateCredential(backup)
-        backup.refreshCredentialEvidence()
-        assertEquals(mapOf("primary" to 433000L, "backup" to 8200L), pool.view(null).blockedUntilEpochSecondsByLabel)
-        assertEquals(8200L, pool.exhausted(null).earliestResetEpochSeconds)
     }
 
     @Test
@@ -526,6 +478,7 @@ class AccountPoolTest {
             reset: Long? = 2_000L,
             credentialPresent: Boolean = true,
             credentialIdentityKnown: Boolean = true,
+            heldUntil: Long? = null,
         ): PoolAccount {
             val quota = AtomicReference(quota(five, weekly, reset))
             val rev = revision++
@@ -553,7 +506,10 @@ class AccountPoolTest {
                 label = label,
                 primary = primary,
                 auth = auth,
-                quota = AccountQuotaSource(quota::get),
+                quota = object : AccountQuotaSource {
+                    override fun snapshot(): QuotaSnapshot = quota.get()
+                    override val held: Boolean get() = heldUntil?.let { it > now.get() / 1_000L } == true
+                },
                 cooldown = RateLimitCooldown(ElapsedClock { elapsed }),
                 credentialPresent = credentialPresent,
             ).also {
@@ -599,6 +555,103 @@ class AccountPoolTest {
 }
 
 class AccountPoolTestAuthOnly {
+    @Test
+    fun `provider-held horizons use only exhausted windows and wait for the last active reset`() {
+        for ((used, reset) in listOf(10.0 to 8200L, 100.0 to 999L, 100.0 to 8200L)) {
+            val fixture = AccountPoolTest.Fixture()
+            val account = fixture.account("primary", primary = true, heldUntil = 433000L)
+            fixture.setQuota(
+                account,
+                QuotaSnapshot(
+                    fiveHour = QuotaWindow(used, reset, 18000L),
+                    sevenDay = QuotaWindow(100.0, 433000L, 604800L),
+                ),
+            )
+            val pool = fixture.pool(account)
+            assertEquals(433000L, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
+            val published = pool.view(null).blockedUntilEpochSecondsByLabel["primary"]
+            assertEquals((pool.select(null) as Selection.Exhausted).earliestResetEpochSeconds, published)
+            fixture.advanceWall(433000000L)
+            assertEquals(emptyMap<String, Long>(), pool.view(null).blockedUntilEpochSecondsByLabel)
+            assertTrue(pool.view(null).accounts.single().available)
+        }
+    }
+
+    @Test
+    fun `pool reset is the earliest published account horizon not the earliest window`() {
+        val fixture = AccountPoolTest.Fixture()
+        val primary = fixture.account(
+            "primary",
+            primary = true,
+            five = 100.0,
+            weekly = 100.0,
+            reset = 5000L,
+            heldUntil = 5000L,
+        )
+        val backup = fixture.account("backup", five = 100.0, reset = 2000L, heldUntil = 2000L)
+        val pool = fixture.pool(primary, backup)
+        val published = pool.view(null).blockedUntilEpochSecondsByLabel
+        assertEquals(mapOf("primary" to 5000L, "backup" to 2000L), published)
+        assertEquals(published.values.minOrNull(), (pool.select(null) as Selection.Exhausted).earliestResetEpochSeconds)
+    }
+
+    @Test
+    fun `credentialless accounts cannot shorten the published pool horizon`() {
+        val fixture = AccountPoolTest.Fixture()
+        val primary = fixture.account("primary", primary = true, weekly = 100.0, reset = 433000L, heldUntil = 433000L)
+        val backup = fixture.account(
+            "backup",
+            five = 100.0,
+            reset = 8200L,
+            credentialPresent = false,
+            heldUntil = 8200L,
+        )
+        val pool = fixture.pool(primary, backup)
+        assertFalse(pool.view(null).accounts.single { it.label == "backup" }.credentialPresent)
+        assertEquals(mapOf("primary" to 433000L), pool.view(null).blockedUntilEpochSecondsByLabel)
+        assertEquals(433000L, (pool.select(null) as Selection.Exhausted).earliestResetEpochSeconds)
+        fixture.rotateCredential(backup)
+        backup.refreshCredentialEvidence()
+        assertEquals(mapOf("primary" to 433000L, "backup" to 8200L), pool.view(null).blockedUntilEpochSecondsByLabel)
+        assertEquals(8200L, (pool.select(null) as Selection.Exhausted).earliestResetEpochSeconds)
+    }
+
+    @Test
+    fun `a usage-only full snapshot cannot exhaust a valid login beside an expired primary`() {
+        val fixture = AccountPoolTest.Fixture()
+        val expired = fixture.account("primary", primary = true, credentialPresent = false)
+        val usable = fixture.account("plain", five = 100.0, weekly = 100.0, reset = 3_000L)
+        val pool = fixture.pool(expired, usable)
+
+        val selected = (pool.select("synthetic-session") as Selection.Chosen).account
+
+        assertSame(usable, selected.account, "a percentage reading is not a provider refusal")
+        assertEquals(0L, usable.cooldown.providerUnavailableForMs(), "no provider answered quota exhausted")
+    }
+
+    @Test
+    fun `a newer provider success clears exhaustion even while an older full reading remains`() {
+        val fixture = AccountPoolTest.Fixture()
+        val login = fixture.account("primary", primary = true)
+        val pool = fixture.pool(login)
+        pool.select("synthetic-session")
+        fixture.setQuota(login, fixture.quota(five = 100.0, weekly = 100.0, reset = 3_000L))
+        login.cooldown.markUnavailable(86_400_000L)
+        login.cooldown.arm(60_000L)
+
+        login.cooldown.answered()
+
+        assertEquals(0L, login.cooldown.unavailableForMs(), "a newer success ends local account exclusion")
+        assertEquals(0L, login.cooldown.remainingMs(), "a newer success ends follower fail-fast")
+        assertEquals(0L, login.cooldown.providerUnavailableForMs(), "a newer success ends the reported reset")
+        assertEquals(emptyMap<String, Long>(), pool.view(null).blockedUntilEpochSecondsByLabel)
+        assertSame(
+            login,
+            (pool.select("synthetic-session") as Selection.Chosen).account.account,
+            "old readings cannot outlive acceptance",
+        )
+    }
+
     @Test
     fun `authentication holds alone do not report provider quota exhaustion`() {
         for (count in listOf(1, 2)) {

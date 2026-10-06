@@ -3,7 +3,6 @@ package splice.app.head
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -25,6 +24,7 @@ import splice.core.usage.PlanLimit
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
+import splice.core.util.JsonScalars
 import splice.core.util.WallClock
 import splice.dialect.chat.ChatQuirks
 import splice.head.usage.QuotaTracker
@@ -74,24 +74,30 @@ class AccountPoolWiringTest {
     }
 
     @Test
-    fun `the auth projection carries the pool's blocking horizon rather than either raw window`() {
-        val account = PoolAccount(
-            label = "primary",
-            primary = true,
-            auth = TestAuth("test"),
-            quota = AccountQuotaSource {
-                QuotaSnapshot(
-                    fiveHour = QuotaWindow(10.0, 8200L, 18000L),
-                    sevenDay = QuotaWindow(100.0, 433000L, 604800L),
-                )
-            },
-            cooldown = RateLimitCooldown(ElapsedClock { 0 }),
-        )
-        val pool = AccountPool(listOf(account), WallClock { 1000000L })
-        val view = requireNotNull(HeadAccountPools().source(pool)).view(null)
-        val json = buildJsonObject { AccountPoolJson().write(this, view) }
-        val projected = json["account_pool"]?.jsonObject?.get("accounts")?.jsonArray?.single()?.jsonObject
-        assertEquals("433000", projected?.get("blocked_until_epoch_seconds")?.jsonPrimitive?.content)
+    fun `the auth projection carries a provider-held horizon but never a usage-only full window`() {
+        for (providerHeld in listOf(false, true)) {
+            val account = PoolAccount(
+                label = "primary",
+                primary = true,
+                auth = TestAuth("test"),
+                quota = object : AccountQuotaSource {
+                    override val held: Boolean = providerHeld
+                    override fun snapshot(): QuotaSnapshot = QuotaSnapshot(
+                        fiveHour = QuotaWindow(10.0, 8200L, 18000L),
+                        sevenDay = QuotaWindow(100.0, 433000L, 604800L),
+                    )
+                },
+                cooldown = RateLimitCooldown(ElapsedClock { 0 }),
+            )
+            val pool = AccountPool(listOf(account), WallClock { 1000000L })
+            val view = requireNotNull(HeadAccountPools().source(pool)).view(null)
+            val json = buildJsonObject { AccountPoolJson().write(this, view) }
+            val projected = json["account_pool"]?.jsonObject?.get("accounts")?.jsonArray?.single()?.jsonObject
+            assertEquals(
+                "433000".takeIf { providerHeld },
+                projected?.let { JsonScalars.str(it, "blocked_until_epoch_seconds") },
+            )
+        }
     }
 
     @Test

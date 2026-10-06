@@ -232,7 +232,7 @@ public class AccountPool(
         val current = membership.get()
         current.accounts.forEach { it.refreshCredentialEvidence() }
         val order = candidates(previousLabel, current)
-        val free = order.firstOrNull { AccountAvailability.available(it, at) }
+        val free = AccountAvailability.preferredFree(order, at).firstOrNull()
         return (free ?: AccountAvailability.nearestHeld(order, at).firstOrNull())?.label
     }
 
@@ -263,7 +263,7 @@ public class AccountPool(
         current: AccountMembership,
     ): ChosenAccount? {
         val order = candidates(previousLabel, current).filter { it.label !in excluded }
-        val free = order.filter { AccountAvailability.available(it, at) }
+        val free = AccountAvailability.preferredFree(order, at)
         val eligible = if (excluded.isEmpty()) free.ifEmpty { AccountAvailability.nearestHeld(order, at) } else free
         return eligible.firstNotNullOfOrNull { acquire(it, at) }
     }
@@ -286,7 +286,8 @@ public class AccountPool(
             chosen.label == pinnedLabel.get() -> AccountSwitchReason.PINNED
             chosen.label in orderedLabels.get() && AccountAvailability.available(previous, at) ->
                 AccountSwitchReason.ORDERED
-            !AccountAvailability.available(previous, at) -> AccountAvailability.limitReason(previous, at)
+            !AccountAvailability.available(previous, at) -> AccountAvailability.limitReason(previous)
+            AccountAvailability.fullReading(previous, at) -> AccountSwitchReason.USAGE_READING_FULL
             chosen.primary -> AccountSwitchReason.PRIMARY_RESET
             else -> AccountSwitchReason.RESET_SOONER
         }
@@ -347,24 +348,27 @@ private object AccountAvailability {
             held && account.credentialStatus(at).selectable && account.cooldown.unavailableForMs() <= 0L
         }.sortedBy { maxOf(it.cooldown.providerUnavailableForMs(), it.cooldown.remainingMs()) }
 
-    private fun selectable(account: PoolAccount, at: Long): Boolean {
-        val runtimeUnavailable = account.cooldown.unavailableForMs() > 0L
-        if (!account.credentialStatus(at).selectable || runtimeUnavailable) return false
-        val snapshot = account.quotaSnapshot ?: return true
-        return !exhausted(snapshot.fiveHour, at) && !exhausted(snapshot.sevenDay, at)
+    private fun selectable(account: PoolAccount, at: Long): Boolean =
+        account.credentialStatus(at).selectable && account.cooldown.unavailableForMs() <= 0L
+
+    /** Full readings guide spending, never synthesize a refusal that the provider did not make. */
+    fun preferredFree(order: List<PoolAccount>, at: Long): List<PoolAccount> {
+        val free = order.filter { available(it, at) }
+        return free.filterNot { fullReading(it, at) }.ifEmpty { free }
     }
 
+    fun fullReading(account: PoolAccount, at: Long): Boolean = account.quotaSnapshot?.let {
+        exhausted(it.fiveHour, at) || exhausted(it.sevenDay, at)
+    } == true
+
     /** Why [account] stopped serving, the plan the provider named spent first. */
-    fun limitReason(account: PoolAccount, at: Long): String {
-        val quota = account.quotaSnapshot
+    fun limitReason(account: PoolAccount): String {
         val plan = account.cooldown.planHold.live()
         return when {
             plan != null -> AccountSwitchReason.planLimit(plan.windowWords)
             account.cooldown.rateLimitReply != null && account.cooldown.remainingMs() > 0L ->
                 AccountSwitchReason.PROVIDER_LIMIT
             account.cooldown.unavailableForMs() > 0L -> AccountSwitchReason.WAIT_BUDGET
-            exhausted(quota?.fiveHour, at) -> AccountSwitchReason.FIVE_HOUR_QUOTA
-            exhausted(quota?.sevenDay, at) -> AccountSwitchReason.SEVEN_DAY_QUOTA
             else -> AccountSwitchReason.ACCOUNT_UNAVAILABLE_REASON
         }
     }
@@ -374,6 +378,12 @@ private object AccountAvailability {
             val quota = account.quotaSnapshot
             rankingWindow(account, quota?.sevenDay, at) == null && rankingWindow(account, quota?.fiveHour, at) == null
         }.thenBy { !available(it, at) }
+            .thenBy { account ->
+                listOfNotNull(
+                    rankingWindow(account, account.quotaSnapshot?.fiveHour, at)?.resetsAt,
+                    rankingWindow(account, account.quotaSnapshot?.sevenDay, at)?.resetsAt,
+                ).minOrNull() ?: Long.MAX_VALUE
+            }
             .thenBy { rankingWindow(it, it.quotaSnapshot?.sevenDay, at)?.resetsAt ?: Long.MAX_VALUE }
             .thenBy { rankingWindow(it, it.quotaSnapshot?.fiveHour, at)?.resetsAt ?: Long.MAX_VALUE }
             .thenByDescending { it.primary }
@@ -399,7 +409,7 @@ private object AccountAvailability {
         if (!credential.credentialPresent) return null
         val snapshot = account.quotaSnapshot
         val blocked = listOfNotNull(snapshot?.fiveHour, snapshot?.sevenDay).filter { exhausted(it, at) }
-        val quotaReset = blocked.mapNotNull(QuotaWindow::resetsAt).maxOrNull()
+        val quotaReset = blocked.takeIf { account.quotaHeld }?.mapNotNull(QuotaWindow::resetsAt)?.maxOrNull()
         val remaining = account.cooldown.providerUnavailableForMs()
         val extraSecond = if (remaining % MS_PER_SECOND == 0L) 0L else 1L
         val cooldownSeconds = remaining / MS_PER_SECOND + extraSecond
@@ -424,6 +434,7 @@ public object AccountSwitchReason {
     internal const val WAIT_BUDGET = "rate limit exceeds turn wait budget"
     internal const val FIVE_HOUR_QUOTA = "5-hour quota exhausted"
     internal const val SEVEN_DAY_QUOTA = "7-day quota exhausted"
+    internal const val USAGE_READING_FULL = "quota usage reading full"
     internal const val ACCOUNT_UNAVAILABLE_REASON = "account unavailable"
 
     private val reasons = setOf(
@@ -435,6 +446,7 @@ public object AccountSwitchReason {
         WAIT_BUDGET,
         FIVE_HOUR_QUOTA,
         SEVEN_DAY_QUOTA,
+        USAGE_READING_FULL,
         ACCOUNT_UNAVAILABLE_REASON,
         planLimit("5-hour"),
         planLimit("7-day"),

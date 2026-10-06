@@ -57,6 +57,7 @@ import java.time.format.DateTimeFormatter
 import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
@@ -103,7 +104,7 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
             assertEquals("0.1000", first.headers["anthropic-ratelimit-unified-5h-utilization"])
             assertEquals("0.3700", second.headers["anthropic-ratelimit-unified-5h-utilization"])
             assertEquals("backup", rig.poolView().selectedLabel)
-            assertEquals("5-hour quota exhausted", rig.poolView().lastSwitch?.reason)
+            assertEquals("quota usage reading full", rig.poolView().lastSwitch?.reason)
         } finally {
             rig.close()
         }
@@ -209,7 +210,7 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
      *  primary's. deps.quota is ONE tracker per label — the primary's — so a pooled head whose
      *  session is sticky to backup shipped primary's bars on the 429, and the client's utilization
      *  jumped to the other account's number. The window is identified by its RESET here rather than
-     *  its utilization, because both accounts must read 100% to be unselectable and only the reset
+     *  its utilization, because the provider holds both accounts and only the reset
      *  can then tell the two trackers apart. Mutation: restoring deps.quota returns the primary's
      *  reset and this fails. */
     @Test
@@ -353,6 +354,7 @@ private class AccountTurnRig(root: Path, private val credentialPresent: Boolean 
     private val logs = CopyOnWriteArrayList<String>()
     private val primaryAuth = AccountAuth("primary-token", "primary-id")
     private val backupAuth = AccountAuth("backup-token", "backup-id")
+    private val providerHeld = AtomicBoolean()
     private val primaryCooldown = RateLimitCooldown(ProcessElapsedNow())
     private val backupCooldown = RateLimitCooldown(ProcessElapsedNow())
     private val accountNow = AtomicLong(System.currentTimeMillis())
@@ -411,6 +413,7 @@ private class AccountTurnRig(root: Path, private val credentialPresent: Boolean 
 
     fun exhaustAll(resetEpochSeconds: Long): Long {
         val exhausted = quota(100.0, resetEpochSeconds)
+        providerHeld.set(true)
         primaryQuota.record(exhausted)
         backupQuota.record(exhausted)
         return checkNotNull(checkNotNull(exhausted.fiveHour).resetsAt)
@@ -418,9 +421,10 @@ private class AccountTurnRig(root: Path, private val credentialPresent: Boolean 
 
     /** V4-84 (4): exhaust BOTH accounts so selection fails, while keeping their windows
      *  DISTINGUISHABLE. [exhaustAll] records one snapshot into both trackers, so primary and backup
-     *  look identical at refusal time and no assertion could say which tracker answered. Same
-     *  utilization — both must still block — but different RESETS is what separates them. */
+     *  look identical at refusal time and no assertion could say which tracker answered. An explicit
+     *  provider hold blocks both; different RESETS distinguish their reporting. */
     fun exhaustAllWithDistinctWindows(primaryReset: Long, backupReset: Long) {
+        providerHeld.set(true)
         primaryQuota.record(quota(100.0, primaryReset))
         backupQuota.record(quota(100.0, backupReset))
     }
@@ -486,7 +490,10 @@ private class AccountTurnRig(root: Path, private val credentialPresent: Boolean 
         label = label,
         primary = primary,
         auth = auth,
-        quota = AccountQuotaSource(tracker::snapshot),
+        quota = object : AccountQuotaSource {
+            override fun snapshot(): QuotaSnapshot? = tracker.snapshot()
+            override val held: Boolean get() = providerHeld.get()
+        },
         cooldown = cooldown,
         credentialPresent = credentialPresent,
     )

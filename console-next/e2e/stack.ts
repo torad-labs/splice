@@ -193,6 +193,7 @@ function config(ports: { control: number; mock: number; oauth: number; solo: num
     // Claude Code's local transcript and the capture switch are exercised on a real turn.
     `[heads.${STACK.oauthHead}.overrides]`,
     'trace = "false"',
+    'wireTap = "4"',
     '',
     '[providers.codexsolo]',
     'dialect = "openai-responses"',

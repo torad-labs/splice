@@ -131,6 +131,8 @@ export interface TurnRow {
   cache_cold?: boolean;
   /** The trace turn that recorded this turn's exact request and answer when capture was on. */
   turn?: string;
+  /** The request owner of tapped upstream bodies, separate from the live stop id and trace availability. */
+  turn_id?: string;
   /** The full client session id, for locating its own local transcript. The short `session` tag
    *  remains the visible column and filter; neither id is a request body or credential. */
   session_id?: string;
@@ -188,11 +190,13 @@ export interface TurnRow {
 
 /** One row exactly as PerfRoutes.rowJson writes it: the numeric bag, then the named facts, each of
  *  which is null (never absent) when the row did not carry it. */
-export type TurnRowWire = Omit<TurnRow, 'head' | 'session' | 'account' | 'cache_cold' | 'turn' | 'session_id' | 'response_message_id'> & {
+export type TurnRowWire = Omit<TurnRow, 'head' | 'session' | 'account' | 'cache_cold' | 'turn' | 'turn_id' | 'session_id' | 'response_message_id'> & {
   session: string | null;
   account: string | null;
   cache_cold: boolean | null;
   turn: string | null;
+  /** Older producers omit request ownership; an uncaptured request can still carry it. */
+  turn_id?: string | null;
   session_id: string | null;
   response_message_id: string | null;
 };
@@ -413,6 +417,8 @@ export type TranscriptConversationWire =
 
 /** One upstream request body a head sent, as its wire tap kept it (WireTap.json). */
 export interface WireRecordWire {
+  /** The exact perf turn_id owning this post, omitted when the producer cannot attribute it. */
+  turn_id?: string;
   ts: number;
   session?: string;
   model: string;
@@ -448,6 +454,8 @@ export interface CaptureState {
 /** One in-flight turn, read off a head's gate snapshot (GateLive on GET /api/heads, FEATURES 2.4).
  *  camelCase because it is NOT a wire row: the derivation builds it from the payload. */
 export interface InflightTurn {
+  /** The gate slot's opaque live stop id, not its perf request id. */
+  turnId?: string;
   head: string;
   label: string;
   compact: boolean;

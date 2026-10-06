@@ -17,7 +17,7 @@ export function TurnPage() {
   const { head = '', ts = '' } = useParams();
   const [params] = useSearchParams();
   const at = Number(ts);
-  const turns = usePerfTurns({ head, n: 1, since: Number.isFinite(at) ? at : 0, until: Number.isFinite(at) ? at + 1 : 0 }, false);
+  const turns = usePerfTurns({ head, n: 2000, since: Number.isFinite(at) ? at : 0, until: Number.isFinite(at) ? at + 1 : 0 }, false);
   const heads = useHeads();
   const status = useStatus();
   const sessions = useSessions();
@@ -26,8 +26,12 @@ export function TurnPage() {
   if (turns.isError && turns.data === undefined) return <>{crumb}<Fault message={failureText(turns.error)} onRetry={() => void turns.refetch()} /></>;
   if (turns.isPending) return <>{crumb}<PageHead title={T.title} lede={T.reading} /></>;
   const slice = turns.data;
-  const row = 'landed' in slice ? slice.landed.find((candidate) => candidate.ts === at) : undefined;
-  if (row === undefined) return <>{crumb}<PageHead title={T.title} /><Empty title={P.gone} why={P.goneWhy} /></>;
+  const owner = params.get('turn_id');
+  const candidates = 'landed' in slice ? slice.landed.filter(candidate => candidate.head === head && candidate.ts === at && (owner === null || candidate.turn_id === owner)) : [];
+  const collision = candidates.length > 1 || owner === null && 'landed' in slice && ((slice.matched ?? candidates.length) > 1 || slice.truncated.length > 0);
+  if (collision) return <>{crumb}<PageHead title={T.title} /><Empty title={P.ambiguous} why={P.ambiguousWhy} /></>;
+  const row = candidates.length === 1 ? candidates[0] : undefined;
+  if (row === undefined) return <>{crumb}<PageHead title={T.title} /><Empty title={owner === null ? P.gone : P.ownerUnavailable} why={owner === null ? P.goneWhy : P.ownerUnavailableWhy} /></>;
 
   const headRow = heads.data?.heads.find((candidate) => candidate.key === head);
   const plan = headRow?.label ?? head;

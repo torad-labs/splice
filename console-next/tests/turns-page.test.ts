@@ -126,6 +126,15 @@ describe('plan rows', () => {
 
 describe('running turns', () => {
   const live = (idleMs: number) => ({ head: 'kimi', label: 'Migrate', compact: false, phase: 'streaming', ageMs: 900_000, idleMs });
+  test('gate stop ids stay exact and keep card identity through reordered snapshots', () => {
+    const a = { ...live(1000), turnId: 'synthetic-live-a' };
+    const b = { ...live(1000), turnId: 'synthetic-live-b' };
+    const forward = runningOf([a, b], h => h, none);
+    const reversed = runningOf([b, a], h => h, none);
+    expect(forward.map(line => line.turnId)).toEqual(['synthetic-live-a', 'synthetic-live-b']);
+    expect(forward.map(line => line.key)).toEqual(reversed.map(line => line.key).reverse());
+    expect(runningOf([live(1000)], h => h, none)[0]).not.toHaveProperty('turnId');
+  });
   test('long-quiet turns come first for inspection, without claiming they failed', () => {
     const lines = runningOf([live(4 * 60_000), { ...live(6 * 60_000), label: 'Old' }], (h) => h, none);
     expect(lines.map((l) => [l.label, l.longQuiet])).toEqual([['Old', true], ['Migrate', false]]);

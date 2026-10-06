@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 import { open, assertHealthy, env } from './support';
 import { STACK } from './stack';
 import type { AccountWire, AccountsWire } from '../src/types/accounts';
@@ -6,8 +6,27 @@ import type { HeadStatus } from '../src/types/core';
 import type { HeadCatalog } from '../src/types/models';
 import type { SessionAccountState, SessionsPayload } from '../src/types/sessions';
 
-// Drain polling handlers before the page's request context disposes their response bodies.
+const nativeReads = new WeakMap<Page, Set<Promise<void>>>();
+
+async function nativeRoute(page: Page, match: Parameters<Page['route']>[0], handler: (route: Route) => Promise<void>): Promise<void> {
+  const pending = nativeReads.get(page) ?? new Set<Promise<void>>();
+  nativeReads.set(page, pending);
+  await page.route(match, route => {
+    const reading = handler(route);
+    pending.add(reading);
+    return reading.finally(() => pending.delete(reading));
+  });
+}
+
+async function drainNativeReads(page: Page): Promise<void> {
+  const pending = nativeReads.get(page);
+  while (pending !== undefined && pending.size > 0) await Promise.all([...pending]);
+}
+
+// Keep interception registered while concurrent native reads finish. Removing it first lets an
+// earlier handler's completion continue a later route before that route can fulfill its body.
 test.afterEach(async ({ page }) => {
+  await drainNativeReads(page);
   await page.unrouteAll({ behavior: 'wait' });
 });
 
@@ -82,7 +101,7 @@ function nativeLogin(rows: readonly AccountWire[], place: 'claude' | 'claude-spl
 
 async function nativePool(page: Page) {
   const state = { rows: [] as AccountWire[], order: [] as string[], orders: [] as string[][], pins: [] as string[], edits: [] as string[], warnPct: 80 };
-  await page.route(url => url.pathname === '/api/accounts', async route => {
+  await nativeRoute(page, url => url.pathname === '/api/accounts', async route => {
     if (state.rows.length === 0) {
       const response = await route.fetch();
       const body = await response.json() as AccountsWire;
@@ -103,12 +122,12 @@ async function nativePool(page: Page) {
     }
     await route.fulfill({ json: { accounts: state.rows } });
   });
-  await page.route(url => url.pathname === '/api/usage' || url.pathname === '/api/usage/probe', async route => {
+  await nativeRoute(page, url => url.pathname === '/api/usage' || url.pathname === '/api/usage/probe', async route => {
     const response = await route.fetch();
     await route.fulfill({ response, json: { ...await response.json(), warn_pct: state.warnPct } });
   });
   for (const path of ['/api/status', '/api/heads', '/api/models']) {
-    await page.route(url => url.pathname === path, async route => {
+    await nativeRoute(page, url => url.pathname === path, async route => {
       const response = await route.fetch();
       const body = await response.json();
       const rows = path === '/api/status' ? body.registry : body.heads;
@@ -343,6 +362,8 @@ test('native order and switches use selector keys while rename keeps its native 
   await page.getByRole('menuitem', { name: 'Separate renamed', exact: true }).click();
   await expect.poll(() => state.pins.length).toBe(2);
   expect(state.pins).toEqual(['native:claude-splice', 'native:claude-splice']);
+  // The POST is observed before its awaited refreshes finish. Keep the page alive until the act settles.
+  await expect(page.getByRole('button', { name: 'Switch account', exact: true })).toBeEnabled();
   await assertHealthy(page, faults);
 });
 

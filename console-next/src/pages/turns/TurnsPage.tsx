@@ -2,7 +2,7 @@ import { Link, useSearchParams } from 'react-router';
 import { Fragment } from 'react';
 import type { ReactNode } from 'react';
 import { failureText } from '../../api/client';
-import { useHeads, useSessions, useStatus } from '../../api/queries';
+import { useHeads, useLiveTurns, useSessions, useStatus, useStopTurn } from '../../api/queries';
 import { isPendingRoute } from '../../api/auth';
 import { SUMMARY_POLL_MS, TURNS_POLL_MS, usePerfSummary, usePerfTurns } from '../../api/turns';
 import { ABSENT, fmtInt, fmtTokens } from '../../lib/format';
@@ -14,14 +14,16 @@ import { barMax, cacheText, linesOf, newestFirst, pageLede, planRows, runningOf,
 import type { TurnLine, PlanRow, RunningLine } from '../../lib/turns-page';
 import { T } from '../../lib/words-turns';
 import type { PerfWindowLabel } from '../../types/perf';
-import { Close, Empty, Fault, PageHead, Segmented, State, Window, WindowBar } from '../../ui';
+import { Button, Close, Empty, Fault, PageHead, Segmented, State, Window, WindowBar } from '../../ui';
+import { S } from '../shared/copy';
 import './turns.css';
 
 /** The most finished requests the list draws, newest first across every command; the count says how many matched. */
 const LIST_CAP = 200;
 
-export function turnPath(line: Pick<TurnLine, 'head' | 'ts'>): string {
-  return `/requests/${encodeURIComponent(line.head)}/${line.ts}`;
+export function turnPath(line: Pick<TurnLine, 'head' | 'ts' | 'requestId'>): string {
+  const owner = line.requestId === undefined ? '' : `?${new URLSearchParams({ turn_id: line.requestId }).toString()}`;
+  return `/requests/${encodeURIComponent(line.head)}/${line.ts}${owner}`;
 }
 
 export function RunningCard({ turn, act }: { turn: RunningLine; act?: ReactNode }) {
@@ -36,6 +38,18 @@ export function RunningCard({ turn, act }: { turn: RunningLine; act?: ReactNode 
       {act}
     </Window>
   );
+}
+
+/** A gate id can stop only the exact id still listed by that head's live registry. */
+function StopRunning({ turn }: { turn: RunningLine }) {
+  const live = useLiveTurns(turn.head);
+  const stop = useStopTurn();
+  const target = live.data?.head === turn.head ? live.data.turns.find(candidate => candidate.id === turn.turnId && !candidate.stopped) : undefined;
+  if (target === undefined) return <p className="hint">{T.stopUnavailable}</p>;
+  return <>
+    <Button kind="go" small disabled={stop.isPending} onClick={() => stop.mutate({ head: turn.head, id: target.id })}>{stop.isPending ? S.stopping : S.stopTurn}</Button>
+    {stop.isError ? <span className="hint" role="alert">{S.stopFailed} {failureText(stop.error)}</span> : null}
+  </>;
 }
 
 function PlanLine({ row, max, failedHref }: { row: PlanRow; max: number; failedHref: string }) {
@@ -168,7 +182,7 @@ export function TurnsPage() {
         <section className="section" aria-labelledby="turns-running">
           <h2 id="turns-running">{T.runningTitle}</h2>
           <p className="why">{turns.isPending ? T.reading : running.length === 0 ? T.runningNone : `${T.runningWhy}${longestQuiet === undefined || longestQuiet.quiet === null ? '' : ` ${T.runningQuiet(quiet.length, longestQuiet.quiet)}`}`}</p>
-          {running.length === 0 ? null : <ul className="running-list">{running.map((turn) => <RunningCard key={turn.key} turn={turn} act={<p className="hint">{T.stopUnavailable}</p>} />)}</ul>}
+          {running.length === 0 ? null : <ul className="running-list">{running.map((turn) => <RunningCard key={turn.key} turn={turn} act={turn.turnId === undefined ? <p className="hint">{T.stopUnavailable}</p> : <StopRunning turn={turn} />} />)}</ul>}
         </section>
       )}
       {window === null ? null : (

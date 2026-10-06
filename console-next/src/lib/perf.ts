@@ -180,6 +180,7 @@ export function inflightFrom(heads: readonly HeadStatus[]): InflightTurn[] {
       inflight.push({
         head: head.key,
         label: live.label,
+        ...(live.turn_id === undefined ? {} : { turnId: live.turn_id }),
         compact: live.compact,
         phase: live.phase,
         ageMs: live.age_ms,

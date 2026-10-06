@@ -18,6 +18,8 @@ export interface ControlStatusPayload {
 }
 
 export interface GateLive {
+  /** The opaque live stop id, absent for a slot the live-turn registry does not own. */
+  turn_id?: string;
   label: string;
   compact: boolean;
   phase: 'connect' | 'streaming' | string;

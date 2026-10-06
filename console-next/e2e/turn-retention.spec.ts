@@ -2,9 +2,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { PerfTurnsWire, TurnRowWire } from '../src/types/perf';
+import type { PerfTurnsWire, TurnRowWire, WireTapWire } from '../src/types/perf';
 import type { SessionRow } from '../src/types/sessions';
-import { env, open, read } from './support';
+import { assertHealthy, env, open, read } from './support';
 import { driveOneTurn, saveTranscript, STACK, TURN_PROMPT } from './stack';
 
 /** The daemon's two logs, from the stack's own config path (<home>/.config/splice/splice.toml): the boot output, where the
@@ -35,10 +35,10 @@ async function newest(page: Page, head: string): Promise<number> {
 async function openTurn(page: Page, head: string, at: number): Promise<void> {
   const href = '#/requests/' + head + '/' + at;
   // A turn's link is named for its session, not necessarily for its plan.
-  const link = page.locator('a[href="' + href + '"]');
+  const link = page.locator('a[href="' + href + '"], a[href^="' + href + '?"]');
   await expect(link).toBeVisible({ timeout: 15_000 });
   await link.click();
-  await expect.poll(() => new URL(page.url()).hash).toBe(href);
+  await expect.poll(() => new URL(page.url()).hash.split('?')[0]).toBe(href);
 }
 
 for (const width of [1440, 390]) {
@@ -121,6 +121,212 @@ for (const width of [1440, 390]) {
       await expect(main).not.toContainText('SYNTHETIC_UNOWNED_SENT_BODY');
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.locator('.kept').screenshot({ path: test.info().outputPath('sent-ownership-' + scenario + '-' + width + '.png') });
+      await page.unrouteAll({ behavior: 'wait' });
+    });
+  }
+}
+
+for (const width of [1440, 390]) {
+  for (const evicted of [false, true]) {
+    test('exact sent ids preserve tap-on capture-off at ' + width + (evicted ? ' after eviction' : ' with identical sibling metadata'), async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      const at = Date.now() - 60_000;
+      const row: TurnRowWire = {
+        ts: at, model: STACK.soloModel, outcome: 'error:conn-reset', compact: false,
+        session: 'd00d0000', account: null, cache_cold: null, turn: null, turn_id: 'synthetic-request-a',
+        session_id: 'd00d0000-0000-4000-8000-000000000001', response_message_id: null, total: 500,
+      };
+      await page.route('**/api/perf/turns?*', route => route.fulfill({ json: {
+        since: at, n: 1, heads: [{ key: STACK.soloHead, label: STACK.soloHead, count: 1, returned: 1, truncated: false, oldest_held_ts: at, rows: [row] }],
+      } }));
+      await page.route('**/api/heads/' + STACK.soloHead + '/capture', route => route.fulfill({ json: { head: STACK.soloHead, enabled: false, retention_days: 7, max_body_chars: 1000, restart_required: true } }));
+      const record = { ts: at, session: row.session_id, model: STACK.soloModel, compact: false };
+      await page.route('**/api/heads/' + STACK.soloHead + '/wire', route => route.fulfill({ json: {
+        key: STACK.soloHead, keep: evicted ? 1 : 3,
+        records: evicted ? [{ ...record, ts: at + 1000, turn_id: 'synthetic-request-b', body: 'SYNTHETIC_LATER_SENT_BODY' }]
+          : [{ ...record, turn_id: 'synthetic-request-b', body: 'SYNTHETIC_FOREIGN_SENT_BODY' }, { ...record, turn_id: row.turn_id, body: 'SYNTHETIC_OWN_SENT_BODY' }, { ...record, turn_id: row.turn_id, body: 'SYNTHETIC_OWN_SECOND_ROUND' }],
+      } }));
+      const traceReads: string[] = [];
+      page.on('request', request => { if (new URL(request.url()).pathname.endsWith('/trace')) traceReads.push(request.url()); });
+      const faults = await open(page, 'requests/' + STACK.soloHead + '/' + at);
+      await page.getByRole('link', { name: 'Request and answer', exact: true }).click();
+      await expect(page.getByRole('main')).toContainText('Request capture is off for ' + STACK.soloHead);
+      expect(traceReads).toEqual([]);
+      await page.getByRole('link', { name: 'Sent to the model', exact: true }).click();
+      const kept = page.locator('.kept');
+      if (evicted) {
+        await expect(kept).toContainText('The sent record cannot be matched to this request.');
+        await expect(kept).not.toContainText('SYNTHETIC_LATER_SENT_BODY');
+      } else {
+        await expect(kept.getByRole('button', { name: 'Sent', exact: true })).toHaveCount(0);
+        await expect(kept.locator('details')).toHaveCount(2);
+        for (const details of await kept.locator('details').all()) await details.locator('summary').click();
+        await expect(kept).toContainText('SYNTHETIC_OWN_SENT_BODY');
+        await expect(kept).toContainText('SYNTHETIC_OWN_SECOND_ROUND');
+        await expect(kept).not.toContainText('SYNTHETIC_FOREIGN_SENT_BODY');
+      }
+      expect(traceReads).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await kept.screenshot({ path: test.info().outputPath('exact-sent-' + width + '-' + evicted + '.png') });
+      await assertHealthy(page, faults);
+      await page.unrouteAll({ behavior: 'wait' });
+    });
+  }
+}
+
+for (const width of [1440, 390]) {
+  test('real tapped request has ownership but no trace at ' + width, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    const faults = await open(page, 'requests');
+    const traceReads: string[] = [];
+    page.on('request', request => { if (new URL(request.url()).pathname.endsWith('/trace')) traceReads.push(request.url()); });
+    const responseId = await driveOneTurn(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), STACK.sender.id);
+    const rows = async () => (await read<PerfTurnsWire>(page, '/api/perf/turns?head=' + STACK.oauthHead)).heads.flatMap(head => head.rows ?? []);
+    await expect.poll(async () => (await rows()).some(row => row.response_message_id === responseId)).toBe(true);
+    const row = (await rows()).find(row => row.response_message_id === responseId);
+    if (row === undefined) throw new Error('synthetic request row did not land');
+    expect(row.turn).toBeNull();
+    expect(typeof row.turn_id).toBe('string');
+    if (row.turn_id == null) throw new Error('tap-only request has no producer ownership id');
+    const tap = await read<WireTapWire>(page, '/api/heads/' + STACK.oauthHead + '/wire');
+    const posts = tap.records.filter(record => record.turn_id === row.turn_id);
+    expect(posts.length).toBeGreaterThan(0);
+    expect(posts.every(record => record.body.includes(TURN_PROMPT))).toBe(true);
+    await openTurn(page, STACK.oauthHead, row.ts);
+    await page.getByRole('link', { name: 'Request and answer', exact: true }).click();
+    await expect(page.getByRole('main')).toContainText('Request capture is off');
+    expect(traceReads).toEqual([]);
+    await page.getByRole('link', { name: 'Sent to the model', exact: true }).click();
+    await expect(page.locator('.kept details')).toHaveCount(posts.length);
+    for (const details of await page.locator('.kept details').all()) await details.locator('summary').click();
+    await expect(page.locator('.kept pre')).toHaveText(posts.map(record => record.body));
+    expect(traceReads).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.locator('.kept').screenshot({ path: test.info().outputPath('real-tap-no-trace-' + width + '.png') });
+    await assertHealthy(page, faults);
+  });
+}
+
+for (const width of [1440, 390]) {
+  for (const siblingOwned of [false, true]) {
+    test('same timestamp request links preserve ownership at ' + width + (siblingOwned ? ' with two owners' : ' beside a legacy row'), async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      const at = Date.now() - 60_000;
+      const base: TurnRowWire = { ts: at, model: STACK.soloModel, outcome: 'ok', compact: false, session: null, account: null, cache_cold: null, turn: null, session_id: null, response_message_id: null, total: 500 };
+      const owned = { ...base, turn_id: 'synthetic-owner-a' };
+      const sibling = { ...base, turn_id: siblingOwned ? 'synthetic-owner-b' : null };
+      await page.route('**/api/perf/turns?*', route => {
+        const n = Number(new URL(route.request().url()).searchParams.get('n'));
+        const rows = n === 1 ? [sibling] : [owned, sibling];
+        return route.fulfill({ json: { since: at, n, heads: [{ key: STACK.soloHead, label: STACK.soloHead, count: 2, returned: rows.length, truncated: rows.length < 2, oldest_held_ts: at, rows }] } });
+      });
+      await page.route('**/api/heads/' + STACK.soloHead + '/capture', route => route.fulfill({ json: { head: STACK.soloHead, enabled: false, retention_days: 7, max_body_chars: 1000, restart_required: true } }));
+      let wireReads = 0;
+      await page.route('**/api/heads/' + STACK.soloHead + '/wire', route => {
+        wireReads++;
+        return route.fulfill({ json: { key: STACK.soloHead, keep: 2, records: [
+          { ts: at, turn_id: 'synthetic-owner-a', model: STACK.soloModel, compact: false, body: 'SYNTHETIC_OWNER_A_BODY' },
+          { ts: at, turn_id: 'synthetic-owner-b', model: STACK.soloModel, compact: false, body: 'SYNTHETIC_OWNER_B_BODY' },
+        ] } });
+      });
+      const faults = await open(page, 'requests');
+      const ownedHref = '#/requests/' + STACK.soloHead + '/' + at + '?turn_id=synthetic-owner-a';
+      await page.locator('a[href="' + ownedHref + '"]').click();
+      await page.getByRole('link', { name: 'Sent to the model', exact: true }).click();
+      expect(new URLSearchParams(new URL(page.url()).hash.split('?')[1]).get('turn_id')).toBe('synthetic-owner-a');
+      await page.locator('.kept summary').click();
+      await expect(page.locator('.kept')).toContainText('SYNTHETIC_OWNER_A_BODY');
+      await expect(page.locator('.kept')).not.toContainText('SYNTHETIC_OWNER_B_BODY');
+      await page.getByRole('link', { name: 'Request and answer', exact: true }).click();
+      expect(new URLSearchParams(new URL(page.url()).hash.split('?')[1]).get('turn_id')).toBe('synthetic-owner-a');
+      await expect(page.getByRole('main')).toContainText('Request capture is off');
+      await page.locator('.crumb a').click();
+      if (siblingOwned) {
+        await page.locator('a[href="#/requests/' + STACK.soloHead + '/' + at + '?turn_id=synthetic-owner-b"]').click();
+        await page.getByRole('link', { name: 'Sent to the model', exact: true }).click();
+        await page.locator('.kept summary').click();
+        await expect(page.locator('.kept')).toContainText('SYNTHETIC_OWNER_B_BODY');
+        await expect(page.locator('.kept')).not.toContainText('SYNTHETIC_OWNER_A_BODY');
+      } else {
+        const readsBefore = wireReads;
+        await page.locator('a[href="#/requests/' + STACK.soloHead + '/' + at + '"]').click();
+        await expect(page.getByRole('main')).toContainText('Several requests share this timestamp.');
+        await expect(page.locator('.kept')).toHaveCount(0);
+        expect(wireReads).toBe(readsBefore);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.getByRole('main').screenshot({ path: test.info().outputPath('timestamp-owner-' + width + '-' + siblingOwned + '.png') });
+      await assertHealthy(page, faults);
+      await page.unrouteAll({ behavior: 'wait' });
+    });
+  }
+}
+
+for (const width of [1440, 390]) {
+  for (const owned of [false, true]) {
+    test('restart cut siblings recover only their owner at ' + width + (owned ? ' with request ids' : ' without request ids'), async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+      const at = Date.now() - 60_000;
+      const sessions: SessionRow[] = [1, 2, 3].map(index => ({
+        pid: null, session_id: 'bd020000-0000-4000-8000-00000000000' + index, name: 'Synthetic restart session ' + index,
+        kind: 'interactive', version: '2.1.289', cwd: '/synthetic/restart', status: 'waiting',
+        status_updated_at: at, started_at: at, updated_at: at, address: null, head: STACK.soloHead, availability: 'gone', resumable: true,
+      }));
+      const rows: TurnRowWire[] = sessions.map((session, index) => ({
+        ts: at, model: STACK.soloModel, outcome: 'error:restarted', compact: false, session: 'bd020000',
+        account: null, cache_cold: null, turn: null, turn_id: owned ? 'synthetic-restart-' + index : null,
+        session_id: session.session_id, response_message_id: null, total: 20,
+      }));
+      await page.route(url => url.pathname === '/api/sessions', route => route.fulfill({ json: { sessions } }));
+      await page.route('**/api/perf/turns?*', route => {
+        const n = Number(new URL(route.request().url()).searchParams.get('n'));
+        const shown = n === 1 ? rows.slice(-1) : rows;
+        return route.fulfill({ json: { since: at, n, heads: [{ key: STACK.soloHead, label: STACK.soloHead, count: 3, returned: shown.length, truncated: shown.length < 3, oldest_held_ts: at, rows: shown }] } });
+      });
+      const recipes: string[] = [];
+      const writes: string[] = [];
+      page.on('request', request => {
+        if (new URL(request.url()).pathname.startsWith('/api/') && request.method() !== 'GET') writes.push(request.method());
+      });
+      await page.route(url => url.pathname.startsWith('/api/sessions/') && url.pathname.endsWith('/resume'), route => {
+        const url = new URL(route.request().url());
+        const id = decodeURIComponent(url.pathname.split('/')[3] ?? '');
+        expect(route.request().method()).toBe('GET');
+        expect(url.searchParams.get('head')).toBe(STACK.soloHead);
+        expect(sessions.some(session => session.session_id === id)).toBe(true);
+        recipes.push(id);
+        return route.fulfill({ json: { session_id: id, head: STACK.soloHead, argv: ['synthetic-command', '-r', id], from: '/synthetic/restart.jsonl', to_tree: '/synthetic', copies: false, model: STACK.soloModel, live: false } });
+      });
+      const faults = await open(page, 'requests');
+      const links = page.locator('.turn h3 a');
+      await expect(links).toHaveCount(3);
+      const href = '#/requests/' + STACK.soloHead + '/' + at;
+      if (owned) {
+        expect(await links.evaluateAll(elements => elements.map(element => element.getAttribute('href')))).toEqual(rows.map((_row, index) => href + '?turn_id=synthetic-restart-' + index));
+        for (const [index, session] of sessions.entries()) {
+          await page.locator('a[href="' + href + '?turn_id=synthetic-restart-' + index + '"]').click();
+          await expect(page.locator('.hero h1')).toHaveText(session.name ?? '');
+          await expect(page.getByRole('link', { name: 'Open the session', exact: true })).toHaveAttribute('href', '#/sessions/' + session.session_id);
+          await page.getByRole('button', { name: 'Copy resume command', exact: true }).click();
+          await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('synthetic-command -r ' + session.session_id);
+          expect(recipes.at(-1)).toBe(session.session_id);
+          await page.locator('.crumb a').click();
+        }
+        expect(recipes).toEqual(sessions.map(session => session.session_id));
+      } else {
+        expect(await links.evaluateAll(elements => elements.map(element => element.getAttribute('href')))).toEqual([href, href, href]);
+        await links.first().click();
+        await expect(page.getByRole('button', { name: 'Copy resume command', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('link', { name: 'Open the session', exact: true })).toHaveCount(0);
+        await expect(page.locator('.hero h1')).toHaveCount(0);
+        await expect(page.getByRole('main')).toContainText('Several requests share this timestamp.');
+        expect(recipes).toEqual([]);
+      }
+      expect(writes).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.getByRole('main').screenshot({ path: test.info().outputPath('restart-recovery-' + width + '-' + owned + '.png') });
+      await assertHealthy(page, faults);
       await page.unrouteAll({ behavior: 'wait' });
     });
   }
@@ -308,9 +514,12 @@ test('a late trace for the previous turn cannot replace the current whole failur
   await page.route('**/api/perf/turns?*', (route) => {
     const query = new URL(route.request().url()).searchParams;
     if (query.get('head') !== STACK.soloHead) return route.fallback();
+    const since = Number(query.get('since'));
+    const until = query.has('until') ? Number(query.get('until')) : Infinity;
+    const matching = rows.filter(row => row.ts >= since && row.ts < until);
     return route.fulfill({ json: {
-      since: at - 86_400_000, n: 200,
-      heads: [{ key: STACK.soloHead, label: STACK.soloHead, count: 2, returned: 2, truncated: false, oldest_held_ts: at - 1, rows }],
+      since, n: Number(query.get('n')),
+      heads: [{ key: STACK.soloHead, label: STACK.soloHead, count: matching.length, returned: matching.length, truncated: false, oldest_held_ts: at - 1, rows: matching }],
     } });
   });
   const reads: string[] = [];

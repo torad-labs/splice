@@ -87,8 +87,11 @@ test('stops stay out of failure counts and have a separate reloadable view with 
   await page.route(url => url.pathname === '/api/perf/turns', route => {
     const query = new URL(route.request().url()).searchParams;
     const key = query.get('head') ?? '';
-    const matching = key !== STACK.soloHead ? [] : query.get('outcome') === 'stopped'
+    const filtered = key !== STACK.soloHead ? [] : query.get('outcome') === 'stopped'
       ? [rows[2], rows[4]] : query.get('outcome') === 'failed' ? [rows[3], rows[5]] : rows;
+    const since = Number(query.get('since'));
+    const until = query.has('until') ? Number(query.get('until')) : Infinity;
+    const matching = filtered.filter((row): row is typeof rows[number] => row !== undefined && row.ts >= since && row.ts < until);
     return route.fulfill({ json: { since: Number(query.get('since')), n: 200,
       heads: [{ key, label: key, count: matching.length, rows: matching }],
     } });

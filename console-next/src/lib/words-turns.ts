@@ -83,6 +83,10 @@ export const P = {
   back: 'Requests',
   gone: 'This request is no longer held.',
   goneWhy: 'The daemon keeps a window of requests; this one has aged out of it.',
+  ambiguous: 'Several requests share this timestamp.',
+  ambiguousWhy: 'This link does not identify one request. Open its own link from Requests.',
+  ownerUnavailable: 'This request could not be selected.',
+  ownerUnavailableWhy: 'Its exact identity is not in the returned rows. No other request is shown.',
   resumeWhy: 'To continue the session, copy a resume command and run it in your terminal.',
   stagesTitle: 'Where the time went',
   stagesWhy: 'splice cannot say why the model was slow, only where the time sat.',
@@ -116,6 +120,7 @@ export const P = {
   tabSent: 'Sent to the model',
   readingConversation: 'Reading the conversation…',
   readingRequest: 'Reading the kept request and answer…',
+  readingSent: 'Reading what was sent to the model…',
   conversationOff: 'The conversation is not shown.',
   conversationNoId: 'This request carries no session, so its conversation cannot be found.',
   conversationNoReply: 'No response message was recorded for this request, so its conversation cannot be selected. Open the session to read its transcript.',
@@ -140,6 +145,7 @@ export const P = {
   truncated: 'Cut at the size limit.',
   bodyUnavailable: 'Body unavailable.',
   wireNone: 'The sent record cannot be matched to this request.',
+  wireOff: 'Sent bodies are not kept for this command.',
   close: 'Close',
 } as const;
 

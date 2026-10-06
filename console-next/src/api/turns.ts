@@ -100,7 +100,7 @@ export const instructionsPath = (head: string): string => `/api/compaction/instr
 /** A wire row as a page row. The daemon writes an absent session, account, cache tag or trace turn as null; the
  *  page model spells the same absence by leaving the field out, which is what its readers test. */
 export function rowFromWire(head: string, wire: TurnRowWire): TurnRow {
-  const { session, account, cache_cold: cacheCold, turn, session_id: sessionId, response_message_id: responseId, ...rest } = wire;
+  const { session, account, cache_cold: cacheCold, turn, turn_id: turnId, session_id: sessionId, response_message_id: responseId, ...rest } = wire;
   return {
     ...rest,
     head,
@@ -108,6 +108,7 @@ export function rowFromWire(head: string, wire: TurnRowWire): TurnRow {
     ...(account !== null ? { account } : {}),
     ...(cacheCold !== null ? { cache_cold: cacheCold } : {}),
     ...(turn !== null ? { turn } : {}),
+    ...(turnId != null ? { turn_id: turnId } : {}),
     ...(sessionId !== null ? { session_id: sessionId } : {}),
     ...(responseId !== null ? { response_message_id: responseId } : {}),
   };
@@ -427,6 +428,10 @@ export async function readWire(head: string): Promise<WireRead> {
     throw err;
   }
 }
+
+/** Observe the tap only when the selected perf row carries exact request ownership. */
+export const useWire = (head: string, enabled: boolean) =>
+  useQuery({ queryKey: ['wire', head], queryFn: () => readWire(head), enabled, ...asked });
 
 // ── capture ──────────────────────────────────────────────────────────────────────────────────────
 

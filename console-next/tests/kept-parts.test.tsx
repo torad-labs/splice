@@ -123,6 +123,58 @@ describe('a failed turn\'s sentence', () => {
   });
 });
 
+test.each([undefined, 'different-trace'])('Sent selects its request id independently of trace %s and retains every matching round', trace => {
+  const tapped = { head: 'claude-solo', ts: 1_000_000, model: 'm', outcome: 'ok', compact: false, turn_id: 'request-a', ...(trace === undefined ? {} : { turn: trace }) };
+  const record = { ts: tapped.ts, session: 'same-session', model: 'm', compact: false };
+  const html = page(<KeptTabs row={tapped} plan="Solo" tab="sent" />, client => client.setQueryData(['wire', 'claude-solo'], { tap: {
+    key: 'claude-solo', keep: 4, records: [
+      { ...record, turn_id: 'request-b', body: 'SYNTHETIC_FOREIGN_REQUEST' },
+      { ...record, turn_id: 'request-a', body: 'SYNTHETIC_FIRST_ROUND' },
+      { ...record, body: 'SYNTHETIC_UNOWNED_REQUEST' },
+      { ...record, turn_id: 'request-a', body: 'SYNTHETIC_SECOND_ROUND' },
+    ],
+  } }));
+  expect(html).toContain('SYNTHETIC_FIRST_ROUND');
+  expect(html).toContain('SYNTHETIC_SECOND_ROUND');
+  expect(html).not.toContain('SYNTHETIC_FOREIGN_REQUEST');
+  expect(html).not.toContain('SYNTHETIC_UNOWNED_REQUEST');
+});
+
+test.each([
+  ['reading', undefined, 'Reading what was sent to the model…'],
+  ['off', { off: 'synthetic tap advice' }, 'Sent bodies are not kept for this command.'],
+  ['missing', { tap: { key: 'claude-solo', keep: 1, records: [{ ts: 1_000_000, turn_id: 'other-request', model: 'm', compact: false, body: 'SYNTHETIC_FOREIGN_BODY' }] } }, 'The sent record cannot be matched to this request.'],
+  ['wrong-head', { tap: { key: 'other-head', keep: 1, records: [{ ts: 1_000_000, turn_id: 'request-a', model: 'm', compact: false, body: 'SYNTHETIC_FOREIGN_BODY' }] } }, 'The sent record cannot be matched to this request.'],
+])('an owned Sent read names its %s state without showing foreign bytes', (_state, cached, sentence) => {
+  const tapped = { head: 'claude-solo', ts: 1_000_000, model: 'm', outcome: 'ok', compact: false, turn_id: 'request-a' };
+  const html = page(<KeptTabs row={tapped} plan="Solo" tab="sent" />, client => { if (cached !== undefined) client.setQueryData(['wire', tapped.head], cached); });
+  expect(html).toContain(sentence);
+  expect(html).not.toContain('SYNTHETIC_FOREIGN_BODY');
+});
+
+test('an owned Sent read keeps a wire error as an observed error', () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } });
+  const queryKey = ['wire', 'claude-solo'];
+  client.setQueryData(queryKey, { tap: { key: 'claude-solo', keep: 1, records: [] } });
+  const query = client.getQueryCache().find({ queryKey });
+  if (query === undefined) throw new Error('seeded wire query must exist');
+  query.setState({ data: undefined, status: 'error', fetchStatus: 'idle', error: new Error('Synthetic owned wire read failed') });
+  const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><KeptTabs row={{ ...row('synthetic'), turn_id: 'request-a' }} plan="Solo" tab="sent" /></MemoryRouter></QueryClientProvider>);
+  expect(html).toContain('<p class="kept-note" role="alert">Synthetic owned wire read failed</p>');
+  expect(html).not.toContain('Sent bodies are not kept');
+});
+
+test('tap-on capture-off keeps Request off and never uses the request id as a trace id', () => {
+  const tapped = { head: 'claude-solo', ts: 1_000_000, model: 'm', outcome: 'error:conn-reset', compact: false, turn_id: 'request-a' };
+  const client = new QueryClient();
+  client.setQueryData(['capture', tapped.head], capture(false));
+  client.setQueryData(['trace', tapped.head, tapped.turn_id], kept(tapped.turn_id, 'SYNTHETIC_FOREIGN_TRACE_REASON'));
+  const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><Failure row={tapped} /><KeptTabs row={tapped} plan="Solo" tab="request" /></MemoryRouter></QueryClientProvider>);
+  expect(html).toContain('Request capture is off for Solo');
+  expect(html).not.toContain('SYNTHETIC_FOREIGN_TRACE_REASON');
+  expect(client.getQueryCache().find({ queryKey: ['trace', tapped.head, tapped.turn_id] })?.getObserversCount()).toBe(0);
+});
+
 test.each([
   undefined,
   { off: 'synthetic cached tap advice' },

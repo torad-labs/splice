@@ -120,6 +120,8 @@ export function pageLede(view: RequestsView, plans: readonly PlanRow[] | null, m
 // ── the finished turns ──────────────────────────────────────────────────────────────────────────
 
 export interface TurnLine {
+  /** The perf request owner carried by the detail link, absent on legacy rows. */
+  requestId?: string;
   key: string;
   head: string;
   plan: string;
@@ -153,6 +155,7 @@ export function lineOf(row: TurnRow, planLabel: (head: string) => string, colour
   const outcome = outcomeOf(row.outcome, row.refused_runtime_port, row.cause);
   return {
     key: turnKey(row),
+    ...(row.turn_id === undefined ? {} : { requestId: row.turn_id }),
     head: row.head,
     plan: planLabel(row.head),
     colour: colourOf(row.head),
@@ -197,6 +200,8 @@ export const tookText = (ms: number | null): string => (ms === null ? ABSENT : s
 // ── the running turns ───────────────────────────────────────────────────────────────────────────
 
 export interface RunningLine {
+  /** The exact live registry id the gate slot carries, absent on legacy or unlisted slots. */
+  turnId?: string;
   key: string;
   head: string;
   plan: string;
@@ -228,7 +233,8 @@ const LONG_QUIET_MS = 5 * 60_000;
 export function runningOf(turns: readonly InflightTurn[], planLabel: (head: string) => string, colourOf: ColourOf, nameOf: (prefix: string) => string | null = () => null): RunningLine[] {
   return turns
     .map((turn, index) => ({
-      key: `${turn.head}/${index}`,
+      key: turn.turnId === undefined ? `${turn.head}/${index}` : `${turn.head}/live/${turn.turnId}`,
+      ...(turn.turnId === undefined ? {} : { turnId: turn.turnId }),
       head: turn.head,
       plan: planLabel(turn.head),
       colour: colourOf(turn.head),

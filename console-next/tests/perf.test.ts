@@ -211,7 +211,7 @@ describe('inflightFrom', () => {
 describe('request token tiles', () => {
   const page = (row: TurnRow): string => {
     const client = new QueryClient();
-    client.setQueryData(['perf-window', row.head, 1, row.ts, null, row.ts + 1, {}], { landed: [row] });
+    client.setQueryData(['perf-window', row.head, 2000, row.ts, null, row.ts + 1, {}], { landed: [row], matched: 1, truncated: [] });
     client.setQueryData(['heads', '/api/heads'], { heads: [] });
     client.setQueryData(['status', '/api/status'], { registry: [] });
     client.setQueryData(['sessions', '/api/sessions'], { sessions: [] });

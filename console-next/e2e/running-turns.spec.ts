@@ -51,6 +51,50 @@ for (const width of [1440, 390]) {
   }
 }
 
+for (const width of [1440, 390]) {
+  for (const staggered of [false, true]) {
+    test('exact gate ids target only their own live request at ' + width + (staggered ? ' with staggered snapshots' : ' with colliding labels'), async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      await page.route('**/api/heads', async route => {
+        const response = await route.fetch();
+        const body = await response.json() as HeadsPayload;
+        for (const entry of body.heads) if (entry.gate !== null) { entry.gate.live = []; entry.gate.inflight = 0; }
+        const head = body.heads.find(entry => entry.key === STACK.oauthHead);
+        if (head?.gate == null) throw new Error('synthetic running gate missing');
+        head.gate.live = ['synthetic-live-a', 'synthetic-live-b'].map(turn_id => ({ turn_id, label: 'd00d0000 ' + STACK.model, compact: false, phase: 'streaming', age_ms: 5000, idle_ms: 50 }));
+        head.gate.inflight = 2;
+        await route.fulfill({ response, json: body });
+      });
+      await page.route('**/api/heads/' + STACK.oauthHead + '/turns/live', route => route.fulfill({ json: {
+        head: STACK.oauthHead,
+        turns: (staggered ? ['synthetic-live-a'] : ['synthetic-live-a', 'synthetic-live-b']).map(id => ({ id, session: 'd00d0000-0000-4000-8000-000000000001', model: STACK.model, compact: false, age_ms: 5000, stopped: false })),
+      } }));
+      const stops: string[] = [];
+      await page.route('**/turns/*/stop', route => {
+        expect(route.request().method()).toBe('POST');
+        stops.push(new URL(route.request().url()).pathname);
+        return route.fulfill({ json: { stopped: true, head: STACK.oauthHead, session: null } });
+      });
+      const faults = await open(page, 'requests');
+      const cards = page.locator('.running-list > li');
+      await expect(cards).toHaveCount(2);
+      await expect(cards.first().getByRole('button', { name: 'Stop the turn', exact: true })).toBeVisible();
+      if (staggered) {
+        await expect(cards.nth(1)).toContainText('This request cannot be matched to a live turn, so Stop is unavailable.');
+        await expect(cards.nth(1).getByRole('button', { name: 'Stop the turn', exact: true })).toHaveCount(0);
+      } else {
+        await cards.nth(1).getByRole('button', { name: 'Stop the turn', exact: true }).click();
+        await expect.poll(() => stops.length).toBe(1);
+        expect(stops).toEqual(['/api/heads/' + STACK.oauthHead + '/turns/synthetic-live-b/stop']);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.locator('.running-list').screenshot({ path: test.info().outputPath('exact-stop-' + width + '-' + staggered + '.png') });
+      await assertHealthy(page, faults);
+      await page.unrouteAll({ behavior: 'wait' });
+    });
+  }
+}
+
 test('in-flight Requests cards stay inside their list at both exact widths', async ({ page }) => {
   await page.route('**/api/heads', async route => {
     const response = await route.fetch();

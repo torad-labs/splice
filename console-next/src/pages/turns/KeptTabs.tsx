@@ -1,6 +1,6 @@
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { failureText } from '../../api/client';
-import { useCapture, useConversation, useKeptTurn } from '../../api/turns';
+import { useCapture, useConversation, useKeptTurn, useWire } from '../../api/turns';
 import { foldTranscript } from '../../lib/conversation';
 import { fmtMs } from '../../lib/format';
 import { readable } from '../../lib/message';
@@ -103,18 +103,31 @@ function Request({ row, plan }: { row: TurnRow; plan: string }) {
   );
 }
 
+/** Request ownership joins all retained posts of this request, never a session or timing window. */
+function Sent({ head, turnId }: { head: string; turnId: string }) {
+  const read = useWire(head, true);
+  if (read.isError) return <p className="kept-note" role="alert">{failureText(read.error)}</p>;
+  if (read.data === undefined) return <p className="kept-note" role="status">{P.readingSent}</p>;
+  if ('off' in read.data) return <div className="kept-note"><p>{P.wireOff}</p><p className="sub">{read.data.off}</p></div>;
+  const records = read.data.tap.key === head ? read.data.tap.records.filter(record => record.turn_id === turnId) : [];
+  if (records.length === 0) return <p className="kept-note">{P.wireNone}</p>;
+  return <ul className="attempts">{records.map((record, index) => <li key={index}><details><summary>{P.sentRequest}</summary><pre>{record.body}</pre></details></li>)}</ul>;
+}
+
 /** What splice kept of a turn, one place per kind: the conversation, the request and answer, the bodies sent to the plan. */
 export function KeptTabs({ row, plan, tab }: { row: TurnRow; plan: string; tab: string | null }) {
   const current = tabOf(tab);
+  const [params] = useSearchParams();
+  const tabHref = (id: Tab): string => { const next = new URLSearchParams(params); next.set('tab', id); return `?${next.toString()}`; };
   return (
     <section className="kept" aria-label={P.tabsLabel}>
       <CaptureControl head={row.head} plan={plan} />
       <nav className="tabs" aria-label={P.tabsLabel}>
         {TABS.map(([id, label]) => (
-          <Link key={id} to={`?tab=${id}`} replace aria-current={id === current ? 'page' : undefined}>{label}</Link>
+          <Link key={id} to={tabHref(id)} replace aria-current={id === current ? 'page' : undefined}>{label}</Link>
         ))}
       </nav>
-      {current === 'conversation' ? <Conversation row={row} plan={plan} /> : current === 'request' ? <Request row={row} plan={plan} /> : <p className="kept-note">{P.wireNone}</p>}
+      {current === 'conversation' ? <Conversation row={row} plan={plan} /> : current === 'request' ? <Request row={row} plan={plan} /> : row.turn_id === undefined ? <p className="kept-note">{P.wireNone}</p> : <Sent head={row.head} turnId={row.turn_id} />}
     </section>
   );
 }

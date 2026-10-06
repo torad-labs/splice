@@ -1,7 +1,7 @@
 // V4-444: the turns read carries the Requests filters to every head, and hands back the daemon's own count of the rows
 // they match. Usage and Requests read that one count; neither rebuilds it from the clamped rows.
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { fetchTurns, mergeTurns, perfTurnsPath } from '../src/api/turns';
+import { fetchTurns, mergeTurns, perfTurnsPath, rowFromWire } from '../src/api/turns';
 import type { TurnsState, TurnUsageWire } from '../src/types/perf';
 
 const json = (body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -24,6 +24,14 @@ function daemon(urls: string[], countB: number | null = 3) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('the filtered read', () => {
+  test.each([undefined, null, 'synthetic-request'])('request ownership %s never creates trace availability', turn_id => {
+    const wire = { ts: 100, model: 'm', outcome: 'ok', compact: false, session: null, account: null, cache_cold: null, turn: null, session_id: null, response_message_id: null, ...(turn_id === undefined ? {} : { turn_id }) };
+    const row = rowFromWire('synthetic', wire);
+    expect(row).not.toHaveProperty('turn');
+    if (turn_id == null) expect(row).not.toHaveProperty('turn_id');
+    else expect(row.turn_id).toBe(turn_id);
+  });
+
   test('unread records remain explicit even when the available aggregates are complete', () => {
     const merged = mergeTurns([{ since: 100, n: 1, heads: [{ key: 'a', label: 'a', count: 2362, rows: [], skipped_lines: 2 }] }]);
     expect(merged.unread).toEqual([{ head: 'a', reason: '2 request records could not be read.' }]);

@@ -146,8 +146,16 @@ internal class CodeModeRoundAllocationTest : CodeModeBridgeTestSupport() {
             val next = completeOneScript(manager)
             val wire = CodexCodeModeWire(Json) {}
             val size = JsonWire.byteSize(next)
-            reporter.publishEntry("codemode_rewritten_body_bytes", size.toString())
             val tree = Json.parseToJsonElement(next).jsonObject
+            assertEquals(next, JsonWire.string(tree), "the measured input preserves every wire byte")
+            assertEquals(next, tree.toString(), "the independent legacy render preserves the same input")
+            reporter.publishEntry(
+                mapOf(
+                    "codemode_rewritten_body_bytes" to size.toString(),
+                    "codemode_rewritten_body_sha256" to InputDigest.hex(next),
+                    "legacy_rewritten_body_sha256" to InputDigest.hex(tree.toString()),
+                ),
+            )
             val body = wire.body(RoundBody.Tree(tree))
             val records = completed(manager)
             val rewritten = checkNotNull(wire.canonicalize(body, records).bodyJson)

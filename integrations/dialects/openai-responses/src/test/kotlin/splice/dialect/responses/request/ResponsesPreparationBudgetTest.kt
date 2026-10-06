@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestReporter
+import splice.core.perf.InputDigest
 import splice.core.turn.ReasoningDisplay
 import splice.core.util.JsonWire
 import splice.core.wire.AnthropicMessage
@@ -46,8 +47,7 @@ class ResponsesPreparationBudgetTest {
         val wire = measure { check(JsonWire.string(builder.build(body, raw, options).req).isNotEmpty()) }
         reporter.publishEntry("legacy_seed_allocated_bytes", legacy.first.toString())
         reporter.publishEntry("legacy_seed_thread_cpu_ns", legacy.second.toString())
-        reporter.publishEntry("build_and_wire_allocated_bytes", wire.first.toString())
-        reporter.publishEntry("build_and_wire_thread_cpu_ns", wire.second.toString())
+        reportWireProof(builder.build(body, raw, options), text, wire, reporter)
         reporter.publishEntry("seed_utf8_bytes", JsonWire.byteSize(text).toString())
         reporter.publishEntry("key_allocated_bytes", key.first.toString())
         reporter.publishEntry("key_thread_cpu_ns", key.second.toString())
@@ -113,6 +113,22 @@ class ResponsesPreparationBudgetTest {
             }
             calls.forEach { it.get(10, TimeUnit.SECONDS) }
         }
+    }
+
+    private fun reportWireProof(built: BuiltRequest, text: String, measured: Pair<Long, Long>, reporter: TestReporter) {
+        val expected = built.req.toString()
+        val actual = JsonWire.string(built.req)
+        assertEquals(expected, actual, "the allocation saving must preserve every wire byte")
+        assertEquals(legacyKey(listOf(text)), built.meta.conversationKey, "the prompt-cache identity stays unchanged")
+        reporter.publishEntry(
+            mapOf(
+                "build_and_wire_allocated_bytes" to measured.first.toString(),
+                "build_and_wire_thread_cpu_ns" to measured.second.toString(),
+                "build_and_wire_body_bytes" to JsonWire.byteSize(actual).toString(),
+                "build_and_wire_body_sha256" to InputDigest.hex(actual),
+                "legacy_wire_body_sha256" to InputDigest.hex(expected),
+            ),
+        )
     }
 
     private fun legacyKey(text: List<String>): String? {

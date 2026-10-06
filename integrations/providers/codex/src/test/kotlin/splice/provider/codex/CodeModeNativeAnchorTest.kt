@@ -16,6 +16,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.upstream.RoundBody
+import splice.upstream.codemode.CodeModeResult
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -207,6 +208,85 @@ internal class CodeModeNativeAnchorTest {
                 "code-mode native discovery history was edited",
                 history.restoreBaseline(body(client), active).error,
             )
+        }
+    }
+
+    @Test
+    fun `an owned opaque successor witnesses an absent native across an older callback expansion`(@TempDir dir: Path) {
+        val retired = record(listOf(first), emptyList(), "retired").apply {
+            phase = CodeModePhase.COMPLETED
+            output = "done"
+        }
+        val baseline = listOf(first, outer("retired"), output("retired"), native, outer("old"), output("old"), latest)
+        val old = record(baseline.take(4), listOf(retired), "old").apply {
+            phase = CodeModePhase.COMPLETED
+            output = "done"
+        }
+        val active = record(baseline, listOf(retired, old), "active")
+        val prefix = listOf(first) + callbacks("retired", 2)
+        val suffix = listOf(outer("old"), output("old"), latest) + callbacks("active", 1)
+
+        for (owner in listOf(active, active.snapshot().restore())) {
+            val restored = history.restoreBaseline(body(prefix + suffix), owner)
+            assertNull(restored.error)
+            assertEquals(prefix + native + suffix, input(checkNotNull(restored.bodyJson)))
+            assertEquals(
+                "code-mode native discovery history was edited",
+                history.restoreBaseline(body(prefix + listOf(latest) + callbacks("active", 1)), owner).error,
+                "a later stable item cannot replace the missing owned successor",
+            )
+            val invalid = listOf(
+                listOf(outer("wrong"), output("old"), latest),
+                listOf(output("old"), latest),
+                listOf(outer("old"), outer("old"), output("old"), latest),
+            )
+            invalid.forEach { changed ->
+                assertEquals(
+                    "code-mode native discovery history was edited",
+                    history.restoreBaseline(body(prefix + changed + callbacks("active", 1)), owner).error,
+                    "wrong kind, wrong identity, and duplicated identities prove no adjacent witness",
+                )
+            }
+        }
+        val saved = active.snapshot().apply { replayAnchors = replayAnchors?.copy(nativeFollowing = emptyMap()) }
+        val file = dir.resolve("owned-legacy.jsonl")
+        Files.writeString(file, Json.encodeToString(CodeModePersistedState(records = listOf(saved))) + "\n")
+        val legacy = CodeModeStateJournal.read(file, Json).records.single().restore()
+        assertTrue(legacy.replayAnchors?.nativeFollowing?.isEmpty() == true)
+        assertNull(history.restoreBaseline(body(prefix + native + suffix), legacy).error)
+    }
+
+    @Test
+    fun `an owned successor places native history after the real next turn rewrite`() {
+        val retired = record(listOf(first), emptyList(), "retired").apply {
+            phase = CodeModePhase.COMPLETED
+            output = "done"
+        }
+        retired.accepted.accept(
+            (0 until 2).associate { at -> "callback-retired-$at" to CodeModeResult("callback-retired-$at", "synthetic result") },
+            emptyMap(),
+        )
+        val oldBaseline = history.canonicalize(body(listOf(first) + callbacks("retired", 2)), listOf(retired))
+        val old = record(input(checkNotNull(oldBaseline.bodyJson)), listOf(retired), "old").apply {
+            phase = CodeModePhase.COMPLETED
+            output = "done"
+            continuityReplay = listOf(CodeModeNativeSegment(0, listOf(native)))
+        }
+        old.accepted.accept(mapOf("callback-old-0" to CodeModeResult("callback-old-0", "synthetic result")), emptyMap())
+        val completed = listOf(retired, old)
+        val raw = listOf(first) + callbacks("retired", 2) + callbacks("old", 1) + latest
+        val capture = history.canonicalize(body(raw), completed)
+        assertTrue(capture.omitted.isEmpty())
+        val active = record(input(checkNotNull(capture.bodyJson)), completed, "active")
+        old.source = "return 'changed synthetic source';"
+        old.outer = JsonObject(old.outer + ("input" to item("\"changed synthetic source\"")))
+        val next = history.canonicalize(body(raw + native + callbacks("active", 1)), completed)
+        assertTrue(next.omitted.isEmpty())
+
+        for (owner in listOf(active, active.snapshot().restore())) {
+            val restored = history.restoreBaseline(checkNotNull(next.body), owner)
+            assertNull(restored.error)
+            assertEquals(input(checkNotNull(next.bodyJson)), input(checkNotNull(restored.bodyJson)))
         }
     }
 

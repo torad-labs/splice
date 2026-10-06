@@ -6,6 +6,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.InputDigest
+import splice.provider.codex.CODE_MODE_FIELD_CALL_ID
+import splice.provider.codex.CODE_MODE_FIELD_TYPE
 import splice.provider.codex.CodeModeInputBoundary
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
@@ -57,16 +59,20 @@ internal object CodeModeAnchorCapture {
         val owned = completed.flatMap { it.clientIds() + it.outerCallId }.toSet()
         val continuity = completed.flatMap(CodeModeRecord::continuity).toSet()
         val fingerprints = InputDigest.hexItems(items).toList()
-        val eligible = items.indices.filter { codec.callId(items[it]) !in owned && items[it] !in continuity }
+        val eligible = items.indices.filter { codec.callId(items[it]) !in owned && items[it] !in continuity }.toSet()
         fun at(boundary: Int): CodeModeHistoryAnchor {
             val prior = eligible.lastOrNull { it < boundary } ?: return CodeModeHistoryAnchor(null, 0, boundary)
             val digest = fingerprints[prior]
             return CodeModeHistoryAnchor(digest, fingerprints.take(prior).count { it == digest }, boundary - prior - 1)
         }
+        // Owned opaque items are unstable baseline text, but their kind and call id survive canonicalization.
+        val followingKeys = items.mapIndexed { at, item ->
+            if (at in eligible) fingerprints[at] else opaqueKey(item, codec).takeIf { codec.callId(item) in owned }
+        }
         val following = natives.mapNotNull { segment ->
-            val next = segment.logicalOffset.takeIf { it in eligible } ?: return@mapNotNull null
-            val digest = fingerprints[next]
-            segment.logicalOffset to CodeModeHistoryAnchor(digest, fingerprints.take(next).count { it == digest })
+            val next = segment.logicalOffset.takeIf { it in items.indices } ?: return@mapNotNull null
+            val digest = followingKeys[next] ?: return@mapNotNull null
+            segment.logicalOffset to CodeModeHistoryAnchor(digest, followingKeys.take(next).count { it == digest })
         }.toMap()
         return CodeModeReplayAnchors(
             at(items.size),
@@ -74,10 +80,25 @@ internal object CodeModeAnchorCapture {
             following,
         )
     }
+
+    /** A following opaque witness names the item, not source or output bytes a later round can grow. */
+    fun opaqueKey(item: JsonElement, codec: CodexCodeModeHistoryCodec): String? {
+        val value = item as? JsonObject ?: return null
+        if (codec.string(value, CODE_MODE_FIELD_TYPE) !in OPAQUE_TYPES || codec.callId(item) == null) return null
+        return InputDigest.hex(
+            JsonObject(
+                mapOf(
+                    CODE_MODE_FIELD_TYPE to value.getValue(CODE_MODE_FIELD_TYPE),
+                    CODE_MODE_FIELD_CALL_ID to value.getValue(CODE_MODE_FIELD_CALL_ID),
+                ),
+            ),
+        )
+    }
 }
 
 /** One index over client items is shared by all v5 record placements in a rewrite. */
 private val OWNED_TYPES = setOf("function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output")
+private val OPAQUE_TYPES = setOf("custom_tool_call", "custom_tool_call_output")
 
 internal class CodeModeHistoryIndex(
     val items: List<JsonElement>,
@@ -87,12 +108,18 @@ internal class CodeModeHistoryIndex(
     private val anchors = mutableMapOf<String, MutableList<Int>>()
 
     init {
+        val opaque = mutableSetOf<String>()
         InputDigest.hexItems(items).forEachIndexed { index, digest ->
             val item = items[index]
             val type = codec.string(item as? JsonObject, "type")
             if (type in OWNED_TYPES) codec.callId(item)?.let { ids.getOrPut(it) { mutableListOf() } += index }
             anchors.getOrPut(digest) { mutableListOf() } += index
+            CodeModeAnchorCapture.opaqueKey(item, codec)?.let { key ->
+                opaque += key
+                if (key != digest) anchors.getOrPut(key) { mutableListOf() } += index
+            }
         }
+        opaque.filter { anchors[it]?.size != 1 }.forEach(anchors::remove)
     }
 
     fun resolve(anchor: CodeModeHistoryAnchor, before: Int = items.size): Int? {

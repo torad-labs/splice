@@ -11,7 +11,7 @@ import { controlOf, headOverrideOf, otherKnobs, textOf, withHeadOverride } from 
 import { GROUP_LABELS, KNOB_HELP, KNOB_LABELS } from '../../lib/words-knobs';
 import type { KnobDisposition } from '../../types/config';
 import type { ConfigValue } from '../../types/core';
-import { Button, NumberInput, QuantityInput, Select, Switch, TextInput } from '../../ui';
+import { Button, NumberInput, QuantityInput, Select, Switch, TextInput, UrlInput } from '../../ui';
 import { ModelSelect } from '../../ui/ModelSelect';
 import { AS } from './copy';
 import { Row, SaveNote, useSetting } from './Row';
@@ -106,6 +106,7 @@ function KnobRow({ knob, head, topology, topologyPending, inherited, masked }: {
           ? <QuantityInput label={nameOf(knob.key)} value={typeof knob.value === 'number' ? knob.value : 0} unit={meta.unit} onCommit={save} />
           : <NumberInput label={nameOf(knob.key)} value={typeof knob.value === 'number' ? knob.value : 0} suffix={number.suffix} onCommit={save} />;
       case 'text':
+        if (['chatgptApiBase', 'xaiApiBase'].includes(knob.key)) return <UrlInput label={nameOf(knob.key)} value={textOf(knob.value)} onCommit={next => save(next === '' ? null : next)} />;
         return ['pinnedModel', 'grokModel', 'foldReasoningModels'].includes(knob.key)
           ? <ModelKnob knob={knob} value={scoped ? override ?? textOf(inherited) : textOf(knob.value)} scoped={scoped} masked={scoped && override !== null && masked} save={save} />
           : <TextInput label={nameOf(knob.key)} value={textOf(knob.value)} onCommit={(next) => save(next === '' ? null : next)} />;

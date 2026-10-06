@@ -122,6 +122,29 @@ export function QuantityInput({ value, onCommit, label, unit }: { value: number;
   </span>;
 }
 
+/** A single URL that wraps visually without adding newlines to the value sent on blur or Enter. */
+export function UrlInput({ value, onCommit, label }: { value: string; onCommit: (next: string) => void; label: string }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  return <textarea
+    className="input wide"
+    aria-label={label}
+    inputMode="url"
+    spellCheck={false}
+    rows={2}
+    style={{ fieldSizing: 'content', height: 'auto', maxWidth: '100%' }}
+    value={text}
+    onChange={event => setText(event.currentTarget.value.replace(/[\r\n]/g, ''))}
+    onBlur={() => text !== value && onCommit(text)}
+    onKeyDown={event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        event.currentTarget.blur();
+      }
+    }}
+  />;
+}
+
 /** A text value typed in, saved when the field is left or Enter is pressed. */
 export function TextInput({ value, onCommit, label }: { value: string; onCommit: (next: string) => void; label: string }) {
   const [text, setText] = useState(value);

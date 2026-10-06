@@ -33,6 +33,62 @@ async function topologyWrites(page: Page) {
   return writes;
 }
 
+test('API URL controls show whole addresses and commit the exact single-line value', async ({ page }, testInfo) => {
+  const initial = 'https://synthetic.example.invalid/v1';
+  const changed = 'https://synthetic.example.invalid/v2?literal=%0A&mode=synthetic#fragment';
+  let current = initial;
+  const writes: Record<string, unknown>[] = [];
+  await page.route(url => url.pathname === '/api/config', async route => {
+    if (route.request().method() === 'PATCH') {
+      const patch = route.request().postDataJSON() as Record<string, unknown>;
+      writes.push(patch);
+      if (typeof patch.chatgptApiBase === 'string') current = patch.chatgptApiBase;
+      return route.fulfill({ json: { applied: patch, rejected: {}, restart_required: [], targets: [], persisted: '/synthetic/state/config.json' } });
+    }
+    const response = await route.fetch();
+    const body = await response.json();
+    body.effective.chatgptApiBase = current;
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'settings/advanced');
+  await page.getByRole('button', { name: 'Open the full list', exact: true }).click();
+  const input = page.getByRole('textbox', { name: 'ChatGPT API URL', exact: true });
+  await expect(input).toHaveValue(initial);
+  const whole = async () => expect(await input.evaluate(element => {
+    const field = element as HTMLInputElement | HTMLTextAreaElement;
+    if (field instanceof HTMLTextAreaElement) return field.scrollWidth <= field.clientWidth + 1 && field.scrollHeight <= field.clientHeight + 1;
+    const style = getComputedStyle(field);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (context === null) throw new Error('browser needs a canvas text measurement');
+    context.font = style.font;
+    const needed = context.measureText(field.value).width + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 4;
+    return field.getBoundingClientRect().width >= needed;
+  })).toBe(true);
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    await page.evaluate(() => document.fonts.ready);
+    await whole();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.locator('.row').filter({ has: input }).screenshot({ path: testInfo.outputPath('whole-api-url-' + width + '.png') });
+  }
+  const pasted = changed.slice(0, 8) + '\r\n' + changed.slice(8);
+  const nativeValue = await page.evaluate(value => {
+    const reference = document.createElement('input');
+    reference.value = value;
+    return reference.value;
+  }, pasted);
+  expect(nativeValue).toBe(changed);
+  await input.fill(pasted);
+  await expect(input).toHaveValue(nativeValue);
+  await whole();
+  await input.press('Enter');
+  await expect.poll(() => writes).toEqual([{ chatgptApiBase: changed }]);
+  await expect(input).toHaveValue(changed);
+  await whole();
+  await assertHealthy(page, faults);
+});
+
 test('Storage aligns the Turn statistics title with its retention input', async ({ page }, testInfo) => {
   await page.route(url => url.pathname === '/api/kept/turns', route => route.fulfill({ json: {
     store: 'turns', state: 'on', days: 12, rows: 1200, oldest: '2026-09-01', ages_out: '2026-12-01',

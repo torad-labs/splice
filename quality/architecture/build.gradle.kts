@@ -106,11 +106,16 @@ tasks.withType<Test>().configureEach {
     ).withPropertyName("scannedProductionSources")
     // The census: production Kotlin ANYWHERE under the root. A file that appears in a tree the
     // map does not claim changes this fingerprint, so the sweep that names that tree actually runs.
+    // Resolve lazily to leaf files: registering the root FileTree also makes unrelated task
+    // outputs under the repository look like census inputs to Gradle's dependency validation.
+    // Keep the same sweep, including unmapped sources, without claiming its parent directory.
     inputs.files(
-        repoRoot.asFileTree.matching {
-            include("**/src/main/kotlin/**/*.kt")
-            censusNotSwept.forEach { name -> exclude("**/$name/**") }
-            nestedRepositories.forEach { dir -> exclude("$dir/**") }
+        providers.provider {
+            repoRoot.asFileTree.matching {
+                include("**/src/main/kotlin/**/*.kt")
+                censusNotSwept.forEach { name -> exclude("**/$name/**") }
+                nestedRepositories.forEach { dir -> exclude("$dir/**") }
+            }.files
         },
     ).withPropertyName("productionSourceCensus")
     // Same lesson, second input set (HD-11): the module-dependency-direction law reads the BUILD

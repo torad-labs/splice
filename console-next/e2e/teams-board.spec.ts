@@ -23,6 +23,30 @@ test('Teams groups real registry seats without saved membership and reads a mess
   expect(requestedMessages).toEqual([]);
   await expect(project.getByRole('region', { name: 'Messages and handoffs', exact: true })).toContainText('Recorded messages between these sessions, newest first.');
   await expect(project).not.toContainText('Recent messages');
+  const newTeam = page.getByRole('button', { name: 'New team', exact: true });
+  const projectSettings = project.getByRole('link', { name: 'Project settings', exact: true });
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 980 });
+    for (const action of [newTeam, projectSettings]) {
+      const appearance = await action.evaluate(node => {
+        const style = getComputedStyle(node);
+        return {
+          edge: parseFloat(style.borderTopWidth) > 0 && style.borderTopColor !== 'rgba(0, 0, 0, 0)',
+          ground: style.backgroundColor !== 'rgba(0, 0, 0, 0)',
+          decoration: style.textDecorationLine,
+        };
+      });
+      expect(appearance).toEqual({ edge: true, ground: true, decoration: 'none' });
+      const bounds = await action.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect((bounds?.x ?? Infinity) + (bounds?.width ?? Infinity)).toBeLessThanOrEqual(width);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.locator('.teams-page').screenshot({ path: test.info().outputPath('team-actions-' + width + '.png') });
+  }
+  await newTeam.click();
+  await expect(page.getByRole('dialog', { name: 'New team', exact: true })).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
   const call = 'toolu_synthetic_project_team_' + Date.now();
   const dir = join(env('CONSOLE_E2E_TRANSCRIPT_ROOT'), 'projects', 'console-e2e');
   mkdirSync(dir, { recursive: true, mode: 0o700 });

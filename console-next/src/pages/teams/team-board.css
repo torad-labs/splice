@@ -5,6 +5,8 @@
 .project-team-head { display: flex; justify-content: space-between; align-items: start; gap: var(--space-8); }
 .project-team-head h2 { font: 550 2rem/1.15 var(--display); overflow-wrap: anywhere; }
 .project-team-head p { margin-top: var(--space-4); font: 500 0.96rem/1.5 var(--meta); color: var(--mute); }
+.teams-page .page-head .tools .btn, .project-team-head > .btn { padding: var(--space-3) var(--space-6); background: var(--obj); border-color: var(--hair); text-decoration: none; }
+.teams-page .page-head .tools .btn:hover, .project-team-head > .btn:hover { border-color: var(--ink); }
 .project-team-usage { margin: var(--space-8) 0; }
 .project-team-usage dl { display: flex; flex-wrap: wrap; gap: var(--space-11); }
 .project-team-usage dt { color: var(--mute); font: 400 var(--text-1)/1.5 var(--read); }

@@ -1,7 +1,7 @@
+import { Link } from 'react-router';
 import { failureText } from '../../api/client';
 import { useAccounts } from '../../api/queries';
 import { accountEmail, accountIdentity, accountName } from '../../lib/accounts';
-import { AccountEdits } from '../shared/AccountEdits';
 import { useClaudeHead, useUnwrapClaudeHead, useWrapClaudeHead } from '../../api/claude-head';
 import { proseOf } from '../../lib/settings';
 import { C } from '../../lib/words-claude';
@@ -45,11 +45,11 @@ export function ClaudeHead() {
           : live.length === 0 ? <span>{C.noLiveLogins}</span>
           : <ul className="accounts">{live.map(account => <li className="account" key={accountIdentity(account)}>
               <div className="account-main"><b>{accountName(account)}</b>{accountEmail(account) === null ? null : <span className="hint">{accountEmail(account)}</span>}</div>
-              <div className="account-acts"><AccountEdits account={account} /></div>
             </li>)}</ul>
-      } />
-      <Row title={C.logins} why={`${C.loginsWhy} ${proseOf(logins.constraint)}`} control={<span>{logins.count === 0 ? C.noLogins : logins.labels.join(', ')}</span>} />
-      <Row title={C.selected} why={C.selectedWhy} control={<span>{logins.selected ?? C.noneSelected}</span>} />
+      } note={accounts.isError || live === undefined || live.length === 0 ? null : <Link className="btn sm" to="/accounts">{C.openAccounts}</Link>} />
+      <Row title={C.logins} why={C.loginsWhy} control={<span>{logins.count === 0 ? C.noLogins : logins.labels.map(C.savedCopy).join(', ')}</span>}
+        note={logins.constraint === '' ? null : <details className="on-request"><summary>{C.copiesChoice}</summary><p>{proseOf(logins.constraint)}</p></details>} />
+      <Row title={C.selected} why={C.selectedWhy} control={<span>{logins.selected == null ? C.noneSelected : C.savedCopy(logins.selected)}</span>} />
       {backups.map((path) => <Row key={path} title={C.backups} why="" control={<Path>{path}</Path>} />)}
     </>
   );

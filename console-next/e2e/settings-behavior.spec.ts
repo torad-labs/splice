@@ -118,9 +118,9 @@ test('Storage aligns the Turn statistics title with its retention input', async 
 });
 
 for (const variant of [
-  { name: 'remove only', rename: false, remove: true, target: true, heads: ['claude-splice'], why: 'Remove the exact login shown here.' },
-  { name: 'rename only', rename: true, remove: false, target: true, heads: ['claude-splice'], why: 'Rename the exact login shown here.' },
-  { name: 'both', rename: true, remove: true, target: true, heads: ['claude-splice'], why: 'Rename or remove the exact login shown here.' },
+  { name: 'remove only', rename: false, remove: true, target: true, heads: ['claude-splice'], why: 'Remove the exact login on Accounts.' },
+  { name: 'rename only', rename: true, remove: false, target: true, heads: ['claude-splice'], why: 'Rename the exact login on Accounts.' },
+  { name: 'both', rename: true, remove: true, target: true, heads: ['claude-splice'], why: 'Rename or remove the exact login on Accounts.' },
   { name: 'neither', rename: false, remove: false, target: true, heads: ['claude-splice'], why: 'Live logins reported by Claude Code.' },
   { name: 'no target', rename: true, remove: true, target: false, heads: ['claude-splice'], why: 'Live logins reported by Claude Code.' },
   { name: 'no command', rename: true, remove: true, target: true, heads: [], why: 'Live logins reported by Claude Code.' },
@@ -136,8 +136,9 @@ for (const variant of [
     for (const width of [1536, 393]) {
       await page.setViewportSize({ width, height: 1024 });
       await expect(row).toContainText(variant.why);
-      await expect(row.getByRole('button', { name: 'Rename', exact: true })).toHaveCount(variant.rename && variant.target && variant.heads.length > 0 ? 1 : 0);
-      await expect(row.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(variant.remove && variant.target && variant.heads.length > 0 ? 1 : 0);
+      await expect(row.getByRole('button', { name: 'Rename', exact: true })).toHaveCount(0);
+      await expect(row.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
+      await expect(row.getByRole('link', { name: 'Open Accounts', exact: true })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       if (variant.name === 'remove only') await row.screenshot({ path: testInfo.outputPath('live-login-actions-' + width + '.png') });
     }
@@ -250,7 +251,7 @@ test('saved login copies remain listed when their last selection is not recorded
   });
   const faults = await open(page, 'settings/tools');
   const copies = page.locator('.row').filter({ has: page.getByRole('heading', { name: 'Saved Claude login copies', exact: true }) });
-  await expect(copies).toContainText('synthetic-saved, second-synthetic');
+  await expect(copies.locator('.ctl')).toHaveText('Saved as synthetic-saved, Saved as second-synthetic');
   const choice = page.locator('.row').filter({ has: page.getByRole('heading', { name: 'Last saved copy selection', exact: true }) });
   await expect(choice).toContainText('No selection recorded');
   await expect(page.getByRole('main')).not.toContainText('No label recorded');
@@ -261,9 +262,9 @@ test('saved login copies remain listed when their last selection is not recorded
   }
   selected = 'second-synthetic';
   await page.reload();
-  await expect(choice).toContainText('second-synthetic');
+  await expect(choice.locator('.ctl')).toHaveText('Saved as second-synthetic');
   await expect(choice).not.toContainText('No selection recorded');
-  await expect(copies).toContainText('synthetic-saved, second-synthetic');
+  await expect(copies.locator('.ctl')).toHaveText('Saved as synthetic-saved, Saved as second-synthetic');
   await assertHealthy(page, faults);
 });
 

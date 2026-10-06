@@ -59,7 +59,7 @@ describe('the claude command row', () => {
     expect(html).not.toContain('None chosen');
   });
 
-  test('live logins remain separate editable locations, with names and only verified email', () => {
+  test('Tools reports live locations and delegates their edits to Accounts', () => {
     const common = { kind: 'claude-account', provider: 'anthropic', label: 'claude', credential_path: null, single_login: false, primary: false, selected: false, available: true, pinned: false, next_target: false, credential_present: true, windows: [], heads: ['claude-splice'] };
     const accounts = [
       { ...common, display_name: 'Personal login', identity_verified: true, account: { uuid: 'synthetic-shared', email: 'verified@example.invalid' }, can_remove: true, can_rename: true, edit_target: { kind: 'native', id: 'claude' } },
@@ -73,19 +73,21 @@ describe('the claude command row', () => {
     expect(html).toContain('<b>Work login</b>');
     expect(html).toContain('verified@example.invalid');
     expect(html).not.toContain('unverified@example.invalid');
-    expect(html.match(/>Remove<\/button>/g)).toHaveLength(2);
-    expect(html.match(/>Rename<\/button>/g)).toHaveLength(1);
+    expect(html.match(/>Remove<\/button>/g) ?? []).toHaveLength(0);
+    expect(html.match(/>Rename<\/button>/g) ?? []).toHaveLength(0);
+    expect(html).toContain('href="/accounts"');
+    expect(html).toContain('Open Accounts');
     expect(html).toContain('Saved Claude login copies');
   });
 
   test.each([
-    { name: 'remove only', rename: false, remove: true, target: true, heads: ['claude-splice'], why: 'Remove the exact login shown here.', buttons: ['Remove'] },
-    { name: 'rename only', rename: true, remove: false, target: true, heads: ['claude-splice'], why: 'Rename the exact login shown here.', buttons: ['Rename'] },
-    { name: 'both', rename: true, remove: true, target: true, heads: ['claude-splice'], why: 'Rename or remove the exact login shown here.', buttons: ['Rename', 'Remove'] },
-    { name: 'neither', rename: false, remove: false, target: true, heads: ['claude-splice'], why: 'Live logins reported by Claude Code.', buttons: [] },
-    { name: 'no edit target', rename: true, remove: true, target: false, heads: ['claude-splice'], why: 'Live logins reported by Claude Code.', buttons: [] },
-    { name: 'no command', rename: true, remove: true, target: true, heads: [], why: 'Live logins reported by Claude Code.', buttons: [] },
-  ])('live-login explanation matches the rendered actions: $name', ({ rename, remove, target, heads, why, buttons }) => {
+    { name: 'remove only', rename: false, remove: true, target: true, heads: ['claude-splice'], why: 'Remove the exact login on Accounts.' },
+    { name: 'rename only', rename: true, remove: false, target: true, heads: ['claude-splice'], why: 'Rename the exact login on Accounts.' },
+    { name: 'both', rename: true, remove: true, target: true, heads: ['claude-splice'], why: 'Rename or remove the exact login on Accounts.' },
+    { name: 'neither', rename: false, remove: false, target: true, heads: ['claude-splice'], why: 'Live logins reported by Claude Code.' },
+    { name: 'no edit target', rename: true, remove: true, target: false, heads: ['claude-splice'], why: 'Live logins reported by Claude Code.' },
+    { name: 'no command', rename: true, remove: true, target: true, heads: [], why: 'Live logins reported by Claude Code.' },
+  ])('live-login explanation matches the rendered actions: $name', ({ rename, remove, target, heads, why }) => {
     const html = render(<ClaudeHead />, client => {
       seedCard(card())(client);
       client.setQueryData(['accounts', '/api/accounts'], { accounts: [{
@@ -96,8 +98,17 @@ describe('the claude command row', () => {
     });
     expect(html).toContain(why);
     for (const action of ['Rename', 'Remove']) {
-      expect(html.includes('>' + action + '</button>')).toBe(buttons.includes(action));
+      expect(html.includes('>' + action + '</button>')).toBe(false);
     }
+  });
+
+  test('saved labels have context and the selection algorithm is prose behind a disclosure', () => {
+    const constraint = 'Splice uses the account with quota whose weekly reset comes soonest.';
+    const html = render(<ClaudeHead />, seedCard(card({ claude_logins: { count: 1, selected: 'max', labels: ['max'], constraint } })));
+    expect(html).toContain('Saved as max');
+    expect(html).toContain('<summary>How saved copies are chosen</summary>');
+    expect(html).toContain('<p>' + constraint + '</p>');
+    expect(html).not.toContain('<span>max</span>');
   });
 
   test('unread live logins do not promise an unavailable action', () => {

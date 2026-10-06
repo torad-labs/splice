@@ -643,6 +643,48 @@ for (const carrying of [true, false, null, undefined]) {
   });
 }
 
+test('Tools gives saved copies context and sends live-login edits to Accounts', async ({ page }, testInfo) => {
+  const constraint = 'Splice uses the account with quota whose weekly reset comes soonest.';
+  await page.route(url => url.pathname === '/api/auth/claude-splice/order', route => route.fulfill({ json: {
+    head: 'claude-splice', order: [], effective_order: ['synthetic-login'], single_account: true,
+  } }));
+  await page.route(url => url.pathname === '/api/accounts', route => route.fulfill({ json: { accounts: [{
+    kind: 'claude-account', provider: 'anthropic', label: 'synthetic-login', display_name: 'Synthetic live login',
+    credential_present: true, heads: ['claude-splice'], can_rename: true, can_remove: true,
+    edit_target: { kind: 'native', id: 'claude' },
+  }] } }));
+  await page.route(url => url.pathname === '/api/claude-head', route => route.fulfill({ json: {
+    mode: 'separate', resolves_to: null, shim_path: '/synthetic/splice-launch', real_binary_path: null,
+    claude_logins: { count: 1, selected: 'max', labels: ['max'], constraint },
+  } }));
+  const faults = await open(page, 'settings/tools');
+  const live = page.locator('.row').filter({ has: page.getByRole('heading', { name: 'Live Claude logins', exact: true }) });
+  const saved = page.locator('.row').filter({ has: page.getByRole('heading', { name: 'Saved Claude login copies', exact: true }) });
+  const selected = page.locator('.row').filter({ has: page.getByRole('heading', { name: 'Last saved copy selection', exact: true }) });
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    await expect(live).toContainText('Synthetic live login');
+    await expect(live.getByRole('button', { name: 'Rename', exact: true })).toHaveCount(0);
+    await expect(live.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
+    await expect(live.getByRole('link', { name: 'Open Accounts', exact: true })).toBeVisible();
+    await expect(saved.locator('.ctl')).toHaveText('Saved as max');
+    await expect(selected.locator('.ctl')).toHaveText('Saved as max');
+    const disclosure = saved.locator('details');
+    await expect(disclosure).not.toHaveAttribute('open');
+    await expect(disclosure.locator('p')).not.toBeVisible();
+    await disclosure.locator('summary').click();
+    await expect(disclosure.locator('p')).toHaveText(constraint);
+    await expect(disclosure.locator('code')).toHaveCount(0);
+    await disclosure.locator('summary').click();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.getByRole('main').screenshot({ path: testInfo.outputPath('tools-login-management-' + width + '.png') });
+  }
+  await live.getByRole('link', { name: 'Open Accounts', exact: true }).click();
+  await expect(page).toHaveURL(/#\/accounts$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Accounts', exact: true })).toBeVisible();
+  await assertHealthy(page, faults);
+});
+
 for (const path of ['accounts', 'models/claude-splice', 'settings/tools']) {
   test(path + ' edits colliding native and pool labels by explicit location, even for one subscription', async ({ page }) => {
     let logins: AccountWire[] = [];
@@ -715,7 +757,14 @@ for (const path of ['accounts', 'models/claude-splice', 'settings/tools']) {
       await route.fulfill({ json: { ok: true } });
     });
     const faults = await open(page, path);
-    const item = (name: string) => page.locator(path === 'accounts' ? 'li.account-card' : 'li.account').filter({ has: page.getByText(name, { exact: true }) });
+    const item = (name: string) => page.locator(path === 'models/claude-splice' ? 'li.account' : 'li.account-card').filter({ has: page.getByText(name, { exact: true }) });
+    if (path === 'settings/tools') {
+      await expect(page.getByRole('main')).toContainText('Saved Claude login copies');
+      await expect(page.getByRole('main').getByRole('button', { name: 'Rename', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('main').getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
+      await page.getByRole('link', { name: 'Open Accounts', exact: true }).click();
+      await expect(page).toHaveURL(/#\/accounts$/);
+    }
     await expect(item('Personal login')).toBeVisible();
     await expect(item('Work login')).toBeVisible();
     await expect(item('Personal login')).toContainText('verified@example.invalid');
@@ -726,7 +775,6 @@ for (const path of ['accounts', 'models/claude-splice', 'settings/tools']) {
       // Same UUID collapses subscription facts, never physical management rows.
       await expect(page.getByRole('main')).not.toContainText('Pool · 2 accounts');
     }
-    if (path === 'settings/tools') await expect(page.getByRole('main')).toContainText('Saved Claude login copies');
     for (const [kind, name] of [['native', 'Personal login'], ['pool', 'Work login']] as const) {
       const next = name + ' renamed';
       await item(name ?? '').getByRole('button', { name: 'Rename', exact: true }).click();

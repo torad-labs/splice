@@ -25,7 +25,6 @@ describe('a kept panel still being read', () => {
   test.each([
     ['conversation', 'Reading the conversation…'],
     ['request', 'Reading the kept request and answer…'],
-    ['sent', 'Reading what was sent to the model…'],
   ])('%s says what is being read rather than leaving a blank panel', (tab, sentence) => {
     const pending = { ...row('a'), session_id: 'session-a', response_message_id: 'response-a' };
     const html = page(<KeptTabs row={pending} plan="Solo" tab={tab} />, () => undefined);
@@ -124,15 +123,20 @@ describe('a failed turn\'s sentence', () => {
   });
 });
 
-test('Sent leads with the plain off state and keeps the daemon configuration advice secondary', () => {
-  const advice = 'wire tap is off for head claude-solo: set [heads.claude-solo.overrides] wireTap = N (bodies to keep) and restart';
-  const html = page(<KeptTabs row={row('synthetic')} plan="Solo" tab="sent" />, client => client.setQueryData(['wire', 'claude-solo'], { off: advice }));
-  expect(html).toContain('<p class="kept-note">Sent bodies are not kept for this command.</p>');
-  expect(html).toContain('<p class="sub">' + advice + '</p>');
-  expect(html.indexOf('Sent bodies are not kept')).toBeLessThan(html.indexOf('wireTap'));
+test.each([
+  undefined,
+  { off: 'synthetic cached tap advice' },
+  { tap: { key: 'claude-solo', keep: 1, records: [{ ts: 1_001_000, session: 'session-a', model: 'm', compact: false, body: 'SYNTHETIC_LATER_REQUEST_BODY' }] } },
+])('Sent withholds records without request ownership regardless of cached tap state %j', cached => {
+  const html = page(<KeptTabs row={{ ...row('synthetic'), session_id: 'session-a' }} plan="Solo" tab="sent" />, client => {
+    if (cached !== undefined) client.setQueryData(['wire', 'claude-solo'], cached);
+  });
+  expect(html).toContain('<p class="kept-note">The sent record cannot be matched to this request.</p>');
+  expect(html).not.toContain('SYNTHETIC_LATER_REQUEST_BODY');
+  expect(html).not.toContain('synthetic cached tap advice');
 });
 
-test('Sent keeps a wire read failure as a failure, never an off state', () => {
+test('Sent cannot mistake an unobserved cached wire error for a read of this request', () => {
   const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } });
   const queryKey = ['wire', 'claude-solo'];
   client.setQueryData(queryKey, { tap: { key: 'claude-solo', keep: 1, records: [] } });
@@ -140,8 +144,9 @@ test('Sent keeps a wire read failure as a failure, never an off state', () => {
   if (query === undefined) throw new Error('seeded wire query must exist');
   query.setState({ data: undefined, status: 'error', fetchStatus: 'idle', error: new Error('Synthetic wire read failed') });
   const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><KeptTabs row={row('synthetic')} plan="Solo" tab="sent" /></MemoryRouter></QueryClientProvider>);
-  expect(html).toContain('<p class="kept-note" role="alert">Synthetic wire read failed</p>');
-  expect(html).not.toContain('Sent bodies are not kept');
+  expect(html).toContain('<p class="kept-note">The sent record cannot be matched to this request.</p>');
+  expect(html).not.toContain('Synthetic wire read failed');
+  expect(query.getObserversCount()).toBe(0);
 });
 
 describe('the body capture control', () => {

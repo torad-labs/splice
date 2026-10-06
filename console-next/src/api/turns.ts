@@ -428,9 +428,6 @@ export async function readWire(head: string): Promise<WireRead> {
   }
 }
 
-export const useWire = (head: string | null, enabled = true) =>
-  useQuery({ queryKey: ['wire', head ?? ''], queryFn: () => readWire(head ?? ''), enabled: enabled && head !== null, ...asked });
-
 // ── capture ──────────────────────────────────────────────────────────────────────────────────────
 
 /** What one PUT came back with: the daemon's answer, or its refusal in its own words. */

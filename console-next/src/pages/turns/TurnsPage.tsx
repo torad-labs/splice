@@ -2,20 +2,19 @@ import { Link, useSearchParams } from 'react-router';
 import { Fragment } from 'react';
 import type { ReactNode } from 'react';
 import { failureText } from '../../api/client';
-import { useHeads, useLiveTurns, useSessions, useStatus, useStopTurn } from '../../api/queries';
+import { useHeads, useSessions, useStatus } from '../../api/queries';
 import { isPendingRoute } from '../../api/auth';
 import { SUMMARY_POLL_MS, TURNS_POLL_MS, usePerfSummary, usePerfTurns } from '../../api/turns';
 import { ABSENT, fmtInt, fmtTokens } from '../../lib/format';
-import { sessionLabel } from '../../lib/sessions';
+import { sessionForTurn, sessionLabel } from '../../lib/sessions';
 import { colourFromRegistry } from '../../lib/model';
 import { askOf, narrowed, requestsHref, searchOf, SELECTORS, viewOf } from '../../lib/requests-view';
 import type { RequestsView, Selector } from '../../lib/requests-view';
-import { barMax, cacheText, liveTurnFor, linesOf, newestFirst, pageLede, planRows, runningOf, secondsText, localStepsOf, tookText } from '../../lib/turns-page';
+import { barMax, cacheText, linesOf, newestFirst, pageLede, planRows, runningOf, secondsText, localStepsOf, tookText } from '../../lib/turns-page';
 import type { TurnLine, PlanRow, RunningLine } from '../../lib/turns-page';
 import { T } from '../../lib/words-turns';
 import type { PerfWindowLabel } from '../../types/perf';
-import { Button, Close, Empty, Fault, PageHead, Segmented, State, Window, WindowBar } from '../../ui';
-import { S } from '../shared/copy';
+import { Close, Empty, Fault, PageHead, Segmented, State, Window, WindowBar } from '../../ui';
 import './turns.css';
 
 /** The most finished requests the list draws, newest first across every command; the count says how many matched. */
@@ -23,20 +22,6 @@ const LIST_CAP = 200;
 
 export function turnPath(line: Pick<TurnLine, 'head' | 'ts'>): string {
   return `/requests/${encodeURIComponent(line.head)}/${line.ts}`;
-}
-
-/** Stops the turn a running card stands for. A card whose turn the daemon no longer lists has nothing to stop, so it offers nothing. */
-function StopRunning({ turn }: { turn: RunningLine }) {
-  const live = useLiveTurns(turn.head);
-  const stop = useStopTurn();
-  const target = liveTurnFor(turn, live.data?.turns ?? []);
-  if (target === null) return null;
-  return (
-    <div className="acts">
-      <Button small disabled={stop.isPending} onClick={() => stop.mutate({ head: turn.head, id: target.id })}>{stop.isPending ? S.stopping : S.stopTurn}</Button>
-      {stop.isError ? <span className="hint" role="alert">{S.stopFailed} {failureText(stop.error)}</span> : null}
-    </div>
-  );
 }
 
 export function RunningCard({ turn, act }: { turn: RunningLine; act?: ReactNode }) {
@@ -156,7 +141,7 @@ export function TurnsPage() {
   const colourOf = colourFromRegistry(status.data);
   const sessionRows = sessions.data?.sessions ?? [];
   const titleOf = (sessionId: string | undefined, short: string | undefined): string | null => {
-    const row = sessionRows.find((candidate) => (sessionId !== undefined && candidate.session_id === sessionId) || (short !== undefined && candidate.session_id?.startsWith(short) === true));
+    const row = sessionForTurn(sessionRows, { ...(sessionId === undefined ? {} : { session_id: sessionId }), ...(short === undefined ? {} : { session: short }) });
     return row === undefined ? null : sessionLabel(row);
   };
 
@@ -183,7 +168,7 @@ export function TurnsPage() {
         <section className="section" aria-labelledby="turns-running">
           <h2 id="turns-running">{T.runningTitle}</h2>
           <p className="why">{turns.isPending ? T.reading : running.length === 0 ? T.runningNone : `${T.runningWhy}${longestQuiet === undefined || longestQuiet.quiet === null ? '' : ` ${T.runningQuiet(quiet.length, longestQuiet.quiet)}`}`}</p>
-          {running.length === 0 ? null : <ul className="running-list">{running.map((turn) => <RunningCard key={turn.key} turn={turn} act={<StopRunning turn={turn} />} />)}</ul>}
+          {running.length === 0 ? null : <ul className="running-list">{running.map((turn) => <RunningCard key={turn.key} turn={turn} act={<p className="hint">{T.stopUnavailable}</p>} />)}</ul>}
         </section>
       )}
       {window === null ? null : (

@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { PerfTurnsWire, TurnRowWire } from '../src/types/perf';
+import type { SessionRow } from '../src/types/sessions';
 import { env, open, read } from './support';
 import { driveOneTurn, saveTranscript, STACK, TURN_PROMPT } from './stack';
 
@@ -74,6 +75,111 @@ for (const width of [1440, 390]) {
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await stages.screenshot({ path: test.info().outputPath('zero-stage-' + width + '-' + allZero + '.png') });
+      await page.unrouteAll({ behavior: 'wait' });
+    });
+  }
+}
+
+for (const width of [1440, 390]) {
+  for (const scenario of ['exact', 'ambiguous', 'unmatched', 'unowned', 'legacy-unique', 'legacy-ambiguous', 'evicted'] as const) {
+    test('Sent never guesses request ownership for ' + scenario + ' records at ' + width, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      const at = Date.now() - 60_000;
+      const session = 'd00d0000-0000-4000-8000-000000000001';
+      const other = 'd00d0000-0000-4000-8000-000000000002';
+      const row: TurnRowWire = {
+        ts: at, model: STACK.soloModel, outcome: 'ok', compact: false, session: scenario.startsWith('legacy-') ? 'd00d0000' : null,
+        account: null, cache_cold: null, turn: null, session_id: scenario.startsWith('legacy-') ? null : session, response_message_id: null, total: 500,
+      };
+      const owned = { ts: at - 100, session, model: STACK.soloModel, compact: false, body: 'SYNTHETIC_EXACT_SENT_BODY' };
+      const foreign = { ...owned, ts: at - 50, session: other, body: 'SYNTHETIC_FOREIGN_SENT_BODY' };
+      const unknown = { ts: at - 50, model: STACK.soloModel, compact: false, body: 'SYNTHETIC_UNOWNED_SENT_BODY' };
+      const records = scenario === 'exact' ? [owned, foreign, unknown]
+        : scenario === 'ambiguous' ? [owned, { ...owned, ts: at - 50, body: 'SYNTHETIC_SECOND_SENT_BODY' }]
+          : scenario === 'unmatched' ? [foreign] : scenario === 'unowned' ? [unknown]
+            : scenario === 'evicted' ? [{ ...owned, ts: at + 1000, body: 'SYNTHETIC_SECOND_SENT_BODY' }]
+              : scenario === 'legacy-unique' ? [owned] : [owned, foreign];
+      await page.route('**/api/perf/turns?*', route => route.fulfill({ json: {
+        since: at, n: 1, heads: [{ key: STACK.soloHead, label: STACK.soloHead, count: 1, returned: 1, truncated: false, oldest_held_ts: at, rows: [row] }],
+      } }));
+      let wireReads = 0;
+      await page.route(url => url.pathname === '/api/heads/' + STACK.soloHead + '/wire', route => {
+        wireReads += 1;
+        return route.fulfill({ json: { key: STACK.soloHead, keep: scenario === 'evicted' ? 1 : 10, records } });
+      });
+      await open(page, 'requests/' + STACK.soloHead + '/' + at);
+      await page.getByRole('link', { name: 'Sent to the model', exact: true }).click();
+      const main = page.getByRole('main');
+      await expect(main).toContainText('The sent record cannot be matched to this request.');
+      await expect(main).not.toContainText('SYNTHETIC_EXACT_SENT_BODY');
+      await expect(main).not.toContainText('SYNTHETIC_SECOND_SENT_BODY');
+      await expect(main.locator('.attempts > li')).toHaveCount(0);
+      expect(wireReads).toBe(0);
+      await expect(main).not.toContainText('SYNTHETIC_FOREIGN_SENT_BODY');
+      await expect(main).not.toContainText('SYNTHETIC_UNOWNED_SENT_BODY');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.locator('.kept').screenshot({ path: test.info().outputPath('sent-ownership-' + scenario + '-' + width + '.png') });
+      await page.unrouteAll({ behavior: 'wait' });
+    });
+  }
+}
+
+const RECOVERY_SESSION = 'bd020000-0000-4000-8000-000000000042';
+for (const width of [1440, 390]) {
+  for (const scenario of ['restarted', 'quota', 'completed', 'unresumable', 'other-client', 'absent', 'mismatched', 'legacy-unique', 'legacy-ambiguous', 'full-first', 'full-second'] as const) {
+    test('request recovery copies only a supported session recipe for ' + scenario + ' at ' + width, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+      const at = Date.now() - 60_000;
+      const session: SessionRow = {
+        pid: null, session_id: RECOVERY_SESSION, name: 'Synthetic request session', kind: 'interactive',
+        version: scenario === 'other-client' ? 'synthetic-client/1' : '2.1.289', cwd: '/synthetic/recovery', status: 'waiting',
+        status_updated_at: at, started_at: at, updated_at: at, address: null, head: STACK.soloHead,
+        availability: 'gone', resumable: scenario !== 'unresumable',
+      };
+      const target = scenario === 'full-second' ? RECOVERY_SESSION.slice(0, -1) + '3' : RECOVERY_SESSION;
+      const row: TurnRowWire = {
+        ts: at, model: STACK.soloModel, outcome: scenario === 'completed' ? 'ok' : scenario === 'quota' ? 'error:rate-limited' : 'error:restarted',
+        compact: false, session: RECOVERY_SESSION.slice(0, 8), account: null, cache_cold: null, turn: null,
+        session_id: scenario.startsWith('legacy-') ? null : target, response_message_id: null, total: 20,
+      };
+      const recipes: { method: string; head: string | null }[] = [];
+      const writes: string[] = [];
+      page.on('request', request => {
+        if (new URL(request.url()).pathname.startsWith('/api/') && request.method() !== 'GET') writes.push(request.method() + ' ' + new URL(request.url()).pathname);
+      });
+      const lookalike = { ...session, session_id: RECOVERY_SESSION.slice(0, -1) + '3', name: 'Different synthetic session' };
+      const sessions = scenario === 'absent' ? [] : scenario === 'mismatched' ? [lookalike] : scenario === 'legacy-ambiguous' || scenario.startsWith('full-') ? [session, lookalike] : [session];
+      await page.route(url => url.pathname === '/api/sessions', route => route.fulfill({ json: { sessions } }));
+      await page.route('**/api/perf/turns?*', route => route.fulfill({ json: {
+        since: at, n: 1, heads: [{ key: STACK.soloHead, label: STACK.soloHead, count: 1, returned: 1, truncated: false, oldest_held_ts: at, rows: [row] }],
+      } }));
+      await page.route(url => url.pathname === '/api/sessions/' + target + '/resume', route => {
+        recipes.push({ method: route.request().method(), head: new URL(route.request().url()).searchParams.get('head') });
+        return route.fulfill({ json: {
+          session_id: target, head: STACK.soloHead, argv: ['synthetic-command', '-r', target],
+          from: '/synthetic/session.jsonl', to_tree: '/synthetic', copies: false, model: STACK.soloModel, live: false,
+        } });
+      });
+      await open(page, 'requests/' + STACK.soloHead + '/' + at);
+      await expect(page.getByRole('heading', { name: 'Where the time went', exact: true })).toBeVisible();
+      const copy = page.getByRole('button', { name: 'Copy resume command', exact: true });
+      if (scenario === 'mismatched' || scenario === 'legacy-ambiguous') await expect(page.locator('.hero h1')).toHaveText(STACK.soloHead);
+      if (scenario.startsWith('full-')) await expect(page.locator('.hero h1')).toHaveText(scenario === 'full-second' ? 'Different synthetic session' : 'Synthetic request session');
+      if (scenario === 'restarted' || scenario === 'quota' || scenario === 'legacy-unique' || scenario.startsWith('full-')) {
+        await expect(copy).toBeVisible();
+        await expect(page.getByRole('main')).toContainText('To continue the session, copy a resume command and run it in your terminal.');
+        await copy.click();
+        await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('synthetic-command -r ' + target);
+        expect(recipes).toEqual([{ method: 'GET', head: STACK.soloHead }]);
+        await expect(page.getByRole('button', { name: 'Resume on another command', exact: true })).toBeVisible();
+      } else {
+        await expect(copy).toHaveCount(0);
+        expect(recipes).toEqual([]);
+      }
+      expect(writes).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.locator('.hero').screenshot({ path: test.info().outputPath('request-recovery-' + scenario + '-' + width + '.png') });
       await page.unrouteAll({ behavior: 'wait' });
     });
   }

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { SessionLast, SessionRow } from '../src/types/sessions';
 import type { LiveTurn } from '../src/types/turns';
 import { answerWhere, cardSays, waitingAsks } from '../src/lib/session-says';
-import { activityText, cardLine, groupSessions, timingOf, handoffOf, matchesQuery, noConversation, sessionsLede, peerLabel, repoName, sessionKey, sessionLabel, sinceOf, spanText, stateOf, stateTone, stateWord, sessionStatus } from '../src/lib/sessions';
+import { activityText, cardLine, groupSessions, timingOf, handoffOf, matchesQuery, noConversation, sessionsLede, peerLabel, repoName, sessionForTurn, sessionKey, sessionLabel, sinceOf, spanText, stateOf, stateTone, stateWord, sessionStatus } from '../src/lib/sessions';
 
 const NOW = 1_790_000_000_000;
 const row = (over: Partial<SessionRow> = {}): SessionRow => ({
@@ -12,6 +12,29 @@ const row = (over: Partial<SessionRow> = {}): SessionRow => ({
 });
 
 const quietTurnOf = (session: SessionRow): LiveTurn => ({ id: 'quiet-provider', session: session.session_id, model: 'model', compact: false, age_ms: 40 * 60_000, idle_ms: 7 * 60_000, stopped: false });
+
+describe('request-owned session identity', () => {
+  const first = row({ session_id: 'aaaaaaaa-1111', name: 'First session' });
+  const second = row({ session_id: 'aaaaaaaa-2222', name: 'Second session' });
+  test.each([[first, second], [second, first]])('a full id selects its own session even when another row shares its prefix', (a, b) => {
+    expect(sessionForTurn([a, b], { session_id: 'aaaaaaaa-1111', session: 'aaaaaaaa' })).toBe(first);
+    expect(sessionForTurn([a, b], { session_id: 'aaaaaaaa-2222', session: 'aaaaaaaa' })).toBe(second);
+  });
+  test('an unmatched full id never falls back to another session with its prefix', () => {
+    expect(sessionForTurn([first, second], { session_id: 'aaaaaaaa-3333', session: 'aaaaaaaa' })).toBeUndefined();
+  });
+  test('a legacy row with one matching prefix identifies that one session', () => {
+    expect(sessionForTurn([row({ session_id: null }), first], { session: 'aaaaaaaa' })).toBe(first);
+  });
+  test('an ambiguous legacy prefix identifies no session', () => {
+    expect(sessionForTurn([first, second], { session: 'aaaaaaaa' })).toBeUndefined();
+  });
+  test('an absent or unmatched identity never picks an arbitrary session', () => {
+    expect(sessionForTurn([first, second], {})).toBeUndefined();
+    expect(sessionForTurn([first, second], { session: 'bbbbbbbb' })).toBeUndefined();
+    expect(sessionForTurn([], { session_id: 'aaaaaaaa-1111' })).toBeUndefined();
+  });
+});
 
 describe('a session\'s state', () => {
   test('waiting is the client\'s own word', () => expect(stateOf(row({ status: 'waiting' }))).toBe('waiting'));

@@ -8,7 +8,6 @@ import { U } from './words-usage';
 import { LEGACY_RESTART_SENTENCE, OUTCOME_WORD, P, STAGE_PHRASE, T } from './words-turns';
 import type { RequestsRange, RequestsView } from './requests-view';
 import type { TopologyState } from '../types/topology';
-import type { LiveTurn } from '../types/turns';
 import type { InflightTurn, PerfStats, PerfSummaryHead, PerfWindowLabel, TurnRow } from '../types/perf';
 
 export const WINDOW_MS: Record<PerfWindowLabel, number> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000 };
@@ -210,8 +209,6 @@ export interface RunningLine {
   /** Long silence worth explaining, not a daemon failure signal. */
   longQuiet: boolean;
   age: string;
-  /** The age the card's figure was made from, to tell a session's turns apart. */
-  ageMs: number;
   quiet: string | null;
   phase: 'connect' | 'streaming';
 }
@@ -239,22 +236,10 @@ export function runningOf(turns: readonly InflightTurn[], planLabel: (head: stri
       ...liveTitle(turn.label, nameOf),
       longQuiet: turn.idleMs > LONG_QUIET_MS,
       age: spanText(turn.ageMs),
-      ageMs: turn.ageMs,
       quiet: turn.idleMs >= 30_000 ? spanText(turn.idleMs) : null,
       phase: turn.phase === 'streaming' ? ('streaming' as const) : ('connect' as const),
     }))
     .sort((left, right) => Number(right.longQuiet) - Number(left.longQuiet));
-}
-
-/** The live turn a running card stands for. The card is read off the gate, which labels a turn with the first eight of its session id
- *  and its model; the stop names the daemon's own id, so the two are joined on those, and on the age when a session runs two at once
- *  (a compaction beside its turn). A card whose label is no session's names nothing. */
-export function liveTurnFor(line: Pick<RunningLine, 'label' | 'ageMs'>, turns: readonly LiveTurn[]): LiveTurn | null {
-  const coded = GATE_LABEL.exec(line.label);
-  if (coded?.[1] === undefined) return null;
-  const [, prefix, model] = coded;
-  const match = turns.filter((turn) => !turn.stopped && turn.session?.startsWith(prefix) === true && turn.model === model);
-  return match.reduce<LiveTurn | null>((best, turn) => (best === null || Math.abs(turn.age_ms - line.ageMs) < Math.abs(best.age_ms - line.ageMs) ? turn : best), null);
 }
 
 // ── one turn's stages ───────────────────────────────────────────────────────────────────────────
@@ -328,15 +313,6 @@ export function askAndAnswer<M extends { role: string }>(messages: readonly M[])
   });
   if (last < 0) return { ask: null, reply: [...messages], earlier: 0 };
   return { ask: messages[last] ?? null, reply: messages.slice(last + 1), earlier: last };
-}
-
-/** The wire tap's bodies that belong to a turn: sent inside the turn's own span (a few seconds of slack either side)
- *  and, where both name one, from the same session. */
-export function wireFor<W extends { ts: number; session?: string | undefined }>(records: readonly W[], row: TurnRow): W[] {
-  const slack = 5000;
-  const from = row.ts - (row.total ?? 0) - slack;
-  const to = row.ts + slack;
-  return records.filter((record) => record.ts >= from && record.ts <= to && (row.session === undefined || record.session === undefined || record.session === row.session));
 }
 
 /** A request and Usage use the same words for the daemon's shared cost classification. */

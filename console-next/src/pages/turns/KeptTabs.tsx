@@ -1,10 +1,10 @@
 import { Link } from 'react-router';
 import { failureText } from '../../api/client';
-import { useCapture, useConversation, useKeptTurn, useWire } from '../../api/turns';
+import { useCapture, useConversation, useKeptTurn } from '../../api/turns';
 import { foldTranscript } from '../../lib/conversation';
 import { fmtMs } from '../../lib/format';
 import { readable } from '../../lib/message';
-import { askAndAnswer, isClean, isStopped, outcomeOf, spokenFailure, wireFor } from '../../lib/turns-page';
+import { askAndAnswer, isClean, isStopped, outcomeOf, spokenFailure } from '../../lib/turns-page';
 import { P } from '../../lib/words-turns';
 import type { TraceRecord, TraceSide, TurnRow } from '../../types/perf';
 import { Markdown } from '../../ui';
@@ -103,27 +103,6 @@ function Request({ row, plan }: { row: TurnRow; plan: string }) {
   );
 }
 
-function Sent({ row }: { row: TurnRow }) {
-  const wire = useWire(row.head);
-  if (wire.isError) return <p className="kept-note" role="alert">{failureText(wire.error)}</p>;
-  if (wire.data === undefined) return <p className="kept-note" role="status">{P.readingSent}</p>;
-  if ('off' in wire.data) return <><p className="kept-note">{P.wireOff}</p><p className="sub">{wire.data.off}</p></>;
-  const records = wireFor(wire.data.tap.records, row);
-  if (records.length === 0) return <p className="kept-note">{P.wireNone}</p>;
-  return (
-    <ul className="attempts">
-      {records.map((record) => (
-        <li key={record.ts}>
-          <details open>
-            <summary>{P.wireBody}</summary>
-            <pre>{record.body}</pre>
-          </details>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 /** What splice kept of a turn, one place per kind: the conversation, the request and answer, the bodies sent to the plan. */
 export function KeptTabs({ row, plan, tab }: { row: TurnRow; plan: string; tab: string | null }) {
   const current = tabOf(tab);
@@ -135,7 +114,7 @@ export function KeptTabs({ row, plan, tab }: { row: TurnRow; plan: string; tab: 
           <Link key={id} to={`?tab=${id}`} replace aria-current={id === current ? 'page' : undefined}>{label}</Link>
         ))}
       </nav>
-      {current === 'conversation' ? <Conversation row={row} plan={plan} /> : current === 'request' ? <Request row={row} plan={plan} /> : <Sent row={row} />}
+      {current === 'conversation' ? <Conversation row={row} plan={plan} /> : current === 'request' ? <Request row={row} plan={plan} /> : <p className="kept-note">{P.wireNone}</p>}
     </section>
   );
 }

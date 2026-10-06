@@ -3,12 +3,12 @@ import { failureText } from '../../api/client';
 import { useHeads, useSessions, useStatus } from '../../api/queries';
 import { usePerfTurns } from '../../api/turns';
 import { ABSENT, fmtInt, fmtUsd } from '../../lib/format';
-import { sessionLabel } from '../../lib/sessions';
+import { canResumeSession, sessionForTurn, sessionLabel } from '../../lib/sessions';
 import { colourFromRegistry } from '../../lib/model';
 import { STAGE_ORDER, movedOf, outcomeOf, servedLocally, stagesOf, secondsText, turnCostWhy, turnLede } from '../../lib/turns-page';
 import { P, T } from '../../lib/words-turns';
 import { Empty, Fault, PageHead, State } from '../../ui';
-import { sessionPath } from '../shared/SessionActions';
+import { ResumeCopy, sessionPath } from '../shared/SessionActions';
 import { Failure, KeptTabs } from './KeptTabs';
 import './turn.css';
 
@@ -32,9 +32,10 @@ export function TurnPage() {
   const headRow = heads.data?.heads.find((candidate) => candidate.key === head);
   const plan = headRow?.label ?? head;
   const colour = colourFromRegistry(status.data)(head);
-  const session = (sessions.data?.sessions ?? []).find((candidate) => candidate.session_id !== null && (candidate.session_id === row.session_id || (row.session !== undefined && candidate.session_id.startsWith(row.session))));
+  const session = sessionForTurn(sessions.data?.sessions ?? [], row);
   const title = session === undefined ? plan : sessionLabel(session);
   const outcome = outcomeOf(row.outcome, row.refused_runtime_port, row.cause);
+  const resumable = session !== undefined && outcome.failed && canResumeSession(session);
   const stages = stagesOf(row);
   const painted = stages.filter(stage => stage.ms > 0);
   const moved = movedOf(row);
@@ -56,7 +57,10 @@ export function TurnPage() {
             {row.account === undefined ? null : <span>{row.account}</span>}
             {row.compact === true ? <span className="tag">{T.compacted}</span> : null}
           </div>
-          {session === undefined ? null : <div className="session-link"><Link className="btn go" to={sessionPath(session)}>{P.openSession}</Link></div>}
+          {session === undefined ? null : <>
+            <div className="session-link"><Link className="btn go" to={sessionPath(session)}>{P.openSession}</Link>{resumable ? <ResumeCopy row={session} /> : null}</div>
+            {resumable ? <p className="hint recovery-why">{P.resumeWhy}</p> : null}
+          </>}
         </div>
       </header>
 

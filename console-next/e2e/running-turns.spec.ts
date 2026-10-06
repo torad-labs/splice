@@ -9,6 +9,48 @@ import { assertHealthy, open } from './support';
 import { STACK } from './stack';
 
 
+for (const width of [1440, 390]) {
+  for (const staggered of [false, true]) {
+  test('legacy request rows never guess Stop at ' + width + (staggered ? ' with a staggered live snapshot' : ' with two matching live turns'), async ({ page }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    await page.route('**/api/heads', async route => {
+      const response = await route.fetch();
+      const body = await response.json() as HeadsPayload;
+      for (const entry of body.heads) if (entry.gate !== null) { entry.gate.live = []; entry.gate.inflight = 0; }
+      const head = body.heads.find(entry => entry.key === STACK.oauthHead);
+      if (head?.gate == null) throw new Error('synthetic running gate missing');
+      head.gate.live = [5000, 900000].map(age_ms => ({ label: 'd00d0000 ' + STACK.model, compact: false, phase: 'streaming', age_ms, idle_ms: 50 }));
+      head.gate.inflight = 2;
+      await route.fulfill({ response, json: body });
+    });
+    await page.route('**/api/heads/' + STACK.oauthHead + '/turns/live', route => route.fulfill({ json: {
+      head: STACK.oauthHead,
+      turns: (staggered ? [5000] : [5000, 900000]).map((age_ms, index) => ({ id: 'synthetic-ambiguous-' + index, session: 'd00d0000-0000-4000-8000-00000000000' + index, model: STACK.model, compact: false, age_ms, stopped: false })),
+    } }));
+    const liveReads: string[] = [];
+    page.on('request', request => { if (new URL(request.url()).pathname.endsWith('/turns/live')) liveReads.push(request.url()); });
+    const stops: string[] = [];
+    await page.route('**/turns/*/stop', route => {
+      stops.push(new URL(route.request().url()).pathname);
+      return route.fulfill({ json: { stopped: true, head: STACK.oauthHead, session: null } });
+    });
+    const faults = await open(page, 'requests');
+    const cards = page.locator('.running-list > li');
+    await expect(cards).toHaveCount(2);
+    for (const card of await cards.all()) {
+      await expect(card).toContainText('This request cannot be matched to a live turn, so Stop is unavailable.');
+      await expect(card.getByRole('button', { name: 'Stop the turn', exact: true })).toHaveCount(0);
+    }
+    expect(stops).toEqual([]);
+    expect(liveReads).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.locator('.running-list').screenshot({ path: test.info().outputPath('legacy-stop-' + width + '-' + staggered + '.png') });
+    await assertHealthy(page, faults);
+    await page.unrouteAll({ behavior: 'wait' });
+  });
+  }
+}
+
 test('in-flight Requests cards stay inside their list at both exact widths', async ({ page }) => {
   await page.route('**/api/heads', async route => {
     const response = await route.fetch();
@@ -70,7 +112,7 @@ test('same-label same-age live siblings do not collapse and one removal leaves i
 
 for (const status of ['busy', 'shell']) {
   for (const phase of ['connect', 'streaming']) {
-    test(`a quiet ${status} session stays Working during provider ${phase}, never needs intervention and still offers Stop`, async ({ page }) => {
+    test(`a quiet ${status} session stays Working during provider ${phase}, never needs intervention and keeps session-scoped Stop`, async ({ page }) => {
       const age = 40 * 60_000;
       const idle = 7 * 60_000;
       await page.route('**/api/sessions', async (route) => {
@@ -114,7 +156,8 @@ for (const status of ['busy', 'shell']) {
       await expect(running).toContainText('Working');
       await expect(running).not.toContainText('Stuck');
       await expect(running).not.toHaveClass(/attn/);
-      await expect(running.getByRole('button', { name: 'Stop the turn', exact: true })).toBeVisible();
+      await expect(running.getByRole('button', { name: 'Stop the turn', exact: true })).toHaveCount(0);
+      await expect(running).toContainText('This request cannot be matched to a live turn, so Stop is unavailable.');
       await assertHealthy(page, faults);
       await page.unrouteAll({ behavior: 'wait' });
     });

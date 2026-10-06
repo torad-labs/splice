@@ -2,6 +2,7 @@
 // list of them groups. No rendering, no store; the clock is passed in.
 import type { SessionEdge, SessionRow } from '../types/sessions';
 import type { LiveTurn } from '../types/turns';
+import type { TurnRow } from '../types/perf';
 import { UNKNOWN_HEAD } from '../types/sessions';
 import { projectRoot } from './project-teams';
 import { repoNameOf } from './repo';
@@ -14,6 +15,16 @@ export const isNonClaudeClient = (version: string | null): boolean => version?.i
 /** A Claude Code resume recipe needs an id and no measured refusal from the transcript census. */
 export const canResumeSession = (row: SessionRow): boolean =>
   row.session_id !== null && row.resumable !== false && !isNonClaudeClient(row.version);
+
+/** A full request-owned id is authoritative. A legacy prefix identifies a session only when it is unique. */
+export function sessionForTurn(rows: readonly SessionRow[], turn: Pick<TurnRow, 'session_id' | 'session'>): SessionRow | undefined {
+  const id = turn.session_id;
+  if (id !== undefined) return rows.find(row => row.session_id === id);
+  const prefix = turn.session;
+  if (prefix === undefined) return undefined;
+  const matches = rows.filter(row => row.session_id?.startsWith(prefix) === true);
+  return matches.length === 1 ? matches[0] : undefined;
+}
 
 /** A session's key: its session id, else its pid. A registration with no session id still has to be
  *  openable, and its key must not collide with "nothing is open". */

@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router';
 import { RunningCard, TurnRowView, TurnsPage } from '../src/pages/turns/TurnsPage';
 import { describe, expect, test } from 'vitest';
 import {
-  askAndAnswer, failedCount, lineOf, linesOf, outcomeOf, pageLede, planRows, localStepsOf, liveTurnFor, runningOf, servedLocally, spokenFailure, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
+  askAndAnswer, failedCount, lineOf, linesOf, outcomeOf, pageLede, planRows, localStepsOf, runningOf, servedLocally, spokenFailure, stagesOf, turnLede, turnsLede, WINDOW_MS,
 } from '../src/lib/turns-page';
 import type { RunningLine } from '../src/lib/turns-page';
 import { colourFromRegistry } from '../src/lib/model';
@@ -137,14 +137,6 @@ describe('running turns', () => {
     const unknown = runningOf([coded], (h) => h, none)[0];
     expect([unknown?.title, unknown?.model]).toEqual(['gpt-6-sol', null]);
     expect(runningOf([live(1000)], (h) => h, none)[0]?.title).toBe('Migrate');
-  });
-  test('a running card finds the daemon turn a stop must name, by the gate label and its age', () => {
-    const turn = (id: string, session: string | null, model: string, age_ms: number, stopped = false) => ({ id, session, model, compact: false, age_ms, stopped });
-    const turns = [turn('a', '544af4b6-0000', 'gpt-6-sol', 900_000), turn('b', '544af4b6-0000', 'gpt-6-sol', 4_000), turn('c', '99999999-0000', 'gpt-6-sol', 900_000), turn('d', '544af4b6-0000', 'gpt-6-sol', 900_000, true)];
-    expect(liveTurnFor({ label: '544af4b6 gpt-6-sol', ageMs: 5_000 }, turns)?.id).toBe('b');
-    expect(liveTurnFor({ label: '544af4b6 gpt-6-sol', ageMs: 899_000 }, turns)?.id).toBe('a');
-    expect(liveTurnFor({ label: '544af4b6 other-model', ageMs: 5_000 }, turns)).toBeNull();
-    expect(liveTurnFor({ label: 'Migrate', ageMs: 5_000 }, turns)).toBeNull();
   });
   test('a running card draws the act it is given beside what the turn is doing', () => {
     const line = { ...runningOf([live(1000)], (h) => h, none)[0] } as RunningLine;
@@ -378,11 +370,6 @@ describe('what was kept', () => {
   });
   test('a conversation with no ask keeps every message', () => {
     expect(askAndAnswer([{ role: 'assistant' }]).ask).toBeNull();
-  });
-  test('the wire keeps bodies sent inside the turn\'s span, from the same session', () => {
-    const r = row({ ts: 100_000, total: 10_000, session: 'abc' });
-    const got = wireFor([{ ts: 95_000, session: 'abc' }, { ts: 50_000, session: 'abc' }, { ts: 96_000, session: 'zzz' }, { ts: 97_000 }], r);
-    expect(got.map((w) => w.ts)).toEqual([95_000, 97_000]);
   });
   test('the windows are an hour, a day and a week', () => {
     expect(WINDOW_MS['7d'] / WINDOW_MS['24h']).toBe(7);

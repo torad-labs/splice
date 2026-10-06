@@ -15,6 +15,7 @@ import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.state.diagnostics.CodeModeNativeBranch
 import splice.provider.codex.state.diagnostics.CodeModeNativeEvidenceCapture
 import splice.provider.codex.state.diagnostics.CodeModeNativePosition
+import splice.provider.codex.state.native.CodeModeNativeScope
 
 @Serializable
 internal data class CodeModeHistoryAnchor(val itemDigest: String?, val occurrence: Int, val logicalTail: Int = 0)
@@ -103,30 +104,6 @@ internal object CodeModeAnchorCapture {
 private val OWNED_TYPES = setOf("function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output")
 private val OPAQUE_TYPES = setOf("custom_tool_call", "custom_tool_call_output")
 
-/** Captured positions and raw callback bounds share an owner, never a numeric coordinate system. */
-private class CodeModeNativeScope(source: CodeModeRecord, private val bounds: IntRange, index: CodeModeHistoryIndex) {
-    private val owner = generateSequence(source) { it.nativeParent }
-        .firstOrNull { index.owned(it).firstOrNull() == bounds.last } ?: source
-    private val lower = source.replayAnchors?.native.orEmpty().entries.filter { (_, anchor) ->
-        index.resolve(anchor.copy(logicalTail = 0)) == bounds.first
-    }.minOfOrNull { (offset, anchor) -> offset - anchor.logicalTail } ?: 0
-    private val terminal = owner.baselineLogicalCount + owner.continuity.size
-    val expected: List<CodeModeNativeSegment> = CodeModeNativeChain.normalized(
-        CodeModeNativeChain.replay(owner) +
-            if (owner === source) emptyList() else CodeModeNativeChain.continuity(owner),
-    ).filter { it.logicalOffset in lower..terminal }
-
-    fun actual(
-        replay: Map<Int, List<JsonElement>>,
-        nativeReplay: Map<Int, List<JsonElement>>,
-    ): Map<Int, List<JsonElement>> = if (expected.any { it.logicalOffset == terminal }) {
-        replay
-    } else {
-        // The callback alias is post-capture. Native fragments at that same raw slot still belong.
-        replay + (bounds.last to nativeReplay[bounds.last].orEmpty())
-    }
-}
-
 internal class CodeModeHistoryIndex(
     val items: List<JsonElement>,
     private val codec: CodexCodeModeHistoryCodec,
@@ -185,9 +162,16 @@ internal class CodeModeHistoryIndex(
             actualOccurrences = actualItems.count { it in expectedItems },
         )
         if (!nativeOrder(expectedItems, actualItems)) {
-            return CodeModeNativePosition(null, following, CodeModeNativeBranch.NATIVE_ORDER, evidence)
+            return CodeModeNativePosition(null, following, scope.orderFailure, evidence)
         }
-        val adjacent = adjacentNativeOffset(record, source, segment, scope.expected, historical)
+        val adjacent = adjacentNativeOffset(
+            record,
+            source,
+            segment,
+            scope.expected,
+            historical,
+            scope.orderFailure,
+        )
         if (adjacent != null) return adjacent
         val actual = historical.filter { (offset, items) ->
             offset in bounds && containsNative(items, segment.items)
@@ -216,6 +200,7 @@ internal class CodeModeHistoryIndex(
         segment: CodeModeNativeSegment,
         expected: List<CodeModeNativeSegment>,
         replay: Map<Int, List<JsonElement>>,
+        orderFailure: CodeModeNativeBranch = CodeModeNativeBranch.NATIVE_ORDER,
     ): CodeModeNativePosition? {
         val offset = segment.logicalOffset
         val before = nativeAnchor(record, source, offset)
@@ -236,7 +221,7 @@ internal class CodeModeHistoryIndex(
         return CodeModeNativePosition(
             at.takeIf { valid },
             after != null,
-            CodeModeNativeBranch.NATIVE_ORDER.takeUnless { valid },
+            orderFailure.takeUnless { valid },
             evidence,
         )
     }

@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -141,6 +142,33 @@ internal class CodeModeNativeDiagnosticsTest {
         val restored = history.restoreBaseline(body(client), active)
         assertEquals(CodeModeNativeBranch.NATIVE_ORDER, restored.nativeRejection?.branch)
         assertEquals("code-mode native discovery history was edited: nativeOrder", restored.error)
+    }
+
+    @Test
+    fun `missing ancestry cannot prove an order edit across an unresolved opaque witness`(@TempDir dir: Path) {
+        val latest = item("""{"role":"user","content":"synthetic latest"}""")
+        val older = record(listOf(first), "older")
+        val oldOutput = item("""{"type":"custom_tool_call_output","call_id":"older","output":"done"}""")
+        val baseline = listOf(first) + native + older.outer + oldOutput + native + latest
+        val captured = record(baseline, "survivor")
+        val delta = captured.copy(nativeSegments = captured.nativeSegments.drop(1)).also {
+            it.replayAnchors = captured.replayAnchors
+            it.nativeBaseId = "missing-parent"
+        }
+        val file = dir.resolve("partial-opaque-chain.jsonl")
+        val saved = Json.encodeToString(CodeModePersistedState(records = listOf(delta.snapshot())))
+        Files.writeString(file, saved + "\n")
+        val loaded = CodeModeStateJournal.read(file, Json).records.single().restore()
+        CodeModeNativeChain.link(listOf(loaded))
+        val client = listOf(first) + native + callbacks(older) + native + latest + callbacks(captured)
+        val restored = history.restoreBaseline(body(client), loaded)
+        assertNull(restored.bodyJson, "incomplete placement must remain rejected")
+        assertEquals(CodeModeNativeBranch.COUNT, restored.nativeRejection?.branch)
+        assertEquals(
+            "code-mode native discovery history could not be placed: counted",
+            restored.error,
+            "ordinary callbacks and missing parent state cannot certify an edited complete sequence",
+        )
     }
 
     private fun unplaceable(): Pair<CodeModeRecord, CodeModeRewrite> {

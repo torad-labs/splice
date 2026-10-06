@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.storage.DayFiles
 import splice.core.util.Cancellables
@@ -32,6 +33,7 @@ import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
 import splice.head.wire.BAD_LAST
 import splice.http.JsonReply
+import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
 
 internal const val TRACE_UNWIRED = "the daemon wired no trace directory; /api/heads/{head}/trace cannot read it"
@@ -54,8 +56,9 @@ public class TraceRoute(
     private val dir: TraceDirPort,
     private val io: CoroutineDispatcher,
     private val cause: TraceFailureCause = TraceFailureCause { _, _, _ -> null },
+    heap: HeapBudget = JvmHeap.budget,
 ) {
-    private val rows = TraceRows()
+    private val rows = TraceRows(heap = heap)
 
     public suspend fun read(head: String, query: TraceQuery): JsonReply {
         val found = heads.byName(head).firstOrNull()

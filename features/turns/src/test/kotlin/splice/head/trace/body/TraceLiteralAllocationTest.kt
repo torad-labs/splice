@@ -21,9 +21,9 @@ class TraceLiteralAllocationTest {
         val thread = Thread.currentThread().threadId()
         val hash = MessageDigest.getInstance("SHA-256")
         val sink = DigestOutputStream(OutputStream.nullOutputStream(), hash)
-        TraceLiteral.encode("warm", OutputStream.nullOutputStream())
+        TraceLiteral.encode("warm", OutputStream.nullOutputStream(), heap = splice.head.syntheticHeapBudget())
         val before = allocations.getThreadAllocatedBytes(thread)
-        TraceLiteral.encode(text, sink)
+        TraceLiteral.encode(text, sink, heap = splice.head.syntheticHeapBudget())
         val allocated = allocations.getThreadAllocatedBytes(thread) - before
         assertArrayEquals(expected, hash.digest())
         assertTrue(allocated < 128 * 1024, "literal span allocated $allocated bytes")
@@ -34,7 +34,7 @@ class TraceLiteralAllocationTest {
         val text = "x".repeat(4095) + "🧭\"\\\n\r\t\b\u000c\u0000\uD800Ω東京"
         val expected = "\"" + "x".repeat(4095) + "🧭\\\"\\\\\\n\\r\\t\\b\\f\\u0000\\ud800Ω東京\""
         val sink = ByteArrayOutputStream()
-        TraceLiteral.encode(text, sink)
+        TraceLiteral.encode(text, sink, heap = splice.head.syntheticHeapBudget())
         assertArrayEquals(expected.toByteArray(), sink.toByteArray())
     }
 }

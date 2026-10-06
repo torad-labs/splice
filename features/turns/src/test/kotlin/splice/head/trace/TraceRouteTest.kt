@@ -104,7 +104,12 @@ class TraceRouteTest {
         assertTrue(AsyncFileIo.drain(), "the file lane drained")
     }
 
-    private fun route(dir: Path?) = TraceRoute(heads, { dir }, Dispatchers.Unconfined)
+    private fun route(dir: Path?) = TraceRoute(
+        heads,
+        { dir },
+        Dispatchers.Unconfined,
+        heap = splice.head.syntheticHeapBudget(),
+    )
 
     private fun read(
         dir: Path?,

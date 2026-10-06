@@ -217,7 +217,7 @@ class TraceHeapShareTest {
     }
 
     private fun write(dir: Path, oneTurn: Boolean) {
-        val bodies = TraceBodies()
+        val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
         val records = if (oneTurn) SHARE_REPLY_RECORDS else SHARE_RECORDS
         repeat(records) { number ->
             val day = if (oneTurn || number < SHARE_RECORDS / 2) "18" else "19"

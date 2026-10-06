@@ -56,7 +56,7 @@ class TraceDayFitTest {
     fun `a day of bodies edited in several places fits the daily budget with every body readable`(@TempDir dir: Path) {
         val day = dir.resolve(FIT_DAY)
         val rows = SyntheticDay().records()
-        val bodies = TraceBodies(FIT_BUDGET)
+        val bodies = TraceBodies(FIT_BUDGET, heap = splice.head.syntheticHeapBudget())
         val encoded = rows.map { bodies.encode(it, day) }
         val stored = packs(dir).sumOf { Files.size(it) }
         val unavailable = encoded.count { "\"body_unavailable\":true" in it.decodeToString() }
@@ -69,11 +69,12 @@ class TraceDayFitTest {
     fun `every body reads back byte identical through the trace API from the v2 store`(@TempDir dir: Path) {
         val day = dir.resolve(FIT_DAY)
         val records = SyntheticDay(steps = 8).records()
-        val bodies = TraceBodies()
+        val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
         Files.write(day, lines(records.map { bodies.encode(it, day) }))
         assertTrue(Files.exists(dir.resolve("$FIT_DAY.bodies2")), "new bodies go to the v2 store")
         assertFalse(Files.exists(dir.resolve("$FIT_DAY.bodies")), "nothing new is written to the v1 store")
-        val read = TraceRows().turns(dir, FIT_HEAD, TraceAsk(last = records.size))
+        val rows = TraceRows(heap = splice.head.syntheticHeapBudget())
+        val read = rows.turns(dir, FIT_HEAD, TraceAsk(last = records.size))
         val back = read.flatMap { it.attempts + listOfNotNull(it.turn) }
         assertEquals(records.map(::digests), back.map(::digests))
     }
@@ -84,7 +85,7 @@ class TraceDayFitTest {
             val fixture = checkNotNull(javaClass.getResourceAsStream("v1/$name")) { "fixture $name" }
             fixture.use { Files.copy(it, dir.resolve(name)) }
         }
-        val read = TraceRows().read(dir, FIT_HEAD, TraceAsk(last = 2))
+        val read = TraceRows(heap = splice.head.syntheticHeapBudget()).read(dir, FIT_HEAD, TraceAsk(last = 2))
         assertEquals(0, read.unavailableRecords)
         assertEquals(
             listOf(
@@ -98,7 +99,7 @@ class TraceDayFitTest {
     @Test
     fun `a missing v2 pack fails by name`(@TempDir dir: Path) {
         val day = dir.resolve(FIT_DAY)
-        val bodies = TraceBodies()
+        val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
         val encoded = parsed(bodies.encode(SyntheticDay(steps = 1).records().last(), day))
         Files.delete(dir.resolve("$FIT_DAY.bodies2"))
         val failure = assertThrows(IOException::class.java) { bodies.hydrate(encoded, day) }
@@ -108,7 +109,7 @@ class TraceDayFitTest {
     @Test
     fun `a corrupt v2 entry fails by name and costs only its own body`(@TempDir dir: Path) {
         val day = dir.resolve(FIT_DAY)
-        val bodies = TraceBodies()
+        val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
         val record = SyntheticDay(steps = 1).records().last()
         val encoded = parsed(bodies.encode(record, day))
         Files.write(day, lines(listOf(encoded.toString().toByteArray() + '\n'.code.toByte())))
@@ -121,7 +122,7 @@ class TraceDayFitTest {
         Files.write(pack, bytes)
         val failure = assertThrows(IOException::class.java) { bodies.hydrate(encoded, day) }
         assertTrue(failure.message.orEmpty().startsWith("corrupt trace body chunk at byte"), failure.message)
-        val read = TraceRows().read(dir, FIT_HEAD, TraceAsk(last = 1))
+        val read = TraceRows(heap = splice.head.syntheticHeapBudget()).read(dir, FIT_HEAD, TraceAsk(last = 1))
         val turn = checkNotNull(read.turns.single().turn)
         assertEquals(1, read.unavailableRecords)
         val client = turn["client"]?.jsonObject?.get("body")?.jsonObject
@@ -132,7 +133,7 @@ class TraceDayFitTest {
     @Test
     fun `a torn v2 tail heals before the next append and a reference into it fails by name`(@TempDir root: Path) {
         val control = Files.createDirectory(root.resolve("control"))
-        TraceBodies().run {
+        TraceBodies(heap = splice.head.syntheticHeapBudget()).run {
             encode(record("first", "synthetic first"), control.resolve(FIT_DAY))
             encode(record("later", "synthetic later"), control.resolve(FIT_DAY))
         }
@@ -142,7 +143,7 @@ class TraceDayFitTest {
         (tails + listOf(interrupted)).forEachIndexed { case, torn ->
             val dir = Files.createDirectory(root.resolve("torn-$case"))
             val day = dir.resolve(FIT_DAY)
-            val bodies = TraceBodies()
+            val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
             val first = bodies.encode(record("first", "synthetic first"), day)
             val pack = dir.resolve("$FIT_DAY.bodies2")
             val intact = Files.size(pack)
@@ -151,7 +152,7 @@ class TraceDayFitTest {
             val later = bodies.encode(record("later", "synthetic later"), day)
             Files.write(day, lines(listOf(first, later)))
             assertEquals(healed, Files.size(pack), "the torn tail is cut before the next entry, never kept beside it")
-            val turns = TraceRows().turns(dir, FIT_HEAD, TraceAsk(last = 2))
+            val turns = TraceRows(heap = splice.head.syntheticHeapBudget()).turns(dir, FIT_HEAD, TraceAsk(last = 2))
             assertEquals(listOf("synthetic first", "synthetic later"), turns.map { client(checkNotNull(it.turn)) })
             val failure = assertThrows(IOException::class.java) { bodies.hydrate(forged, day) }
             assertTrue(failure.message.orEmpty().startsWith("invalid trace body chunk"), failure.message)
@@ -161,7 +162,7 @@ class TraceDayFitTest {
     @Test
     fun `a full pack is logged once per head and day`(@TempDir dir: Path) {
         val log = ArrayList<String>()
-        val bodies = TraceBodies(V2_HEADER + 1L, log = LogSink { log += it })
+        val bodies = TraceBodies(V2_HEADER + 1L, log = LogSink { log += it }, heap = splice.head.syntheticHeapBudget())
         listOf("first", "second", "third").forEach { bodies.encode(record(it, "synthetic $it"), dir.resolve(FIT_DAY)) }
         bodies.encode(record("next", "synthetic next"), dir.resolve("$FIT_HEAD-2026-10-06.jsonl"))
         assertEquals(2, log.size, log.joinToString("\n"))

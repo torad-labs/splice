@@ -188,6 +188,7 @@ object CensusHeapProbe {
         errors = TerminalOutput(System.err::println),
         heads = { TraceHeads.Configured("splice.toml", setOf(HEAD)) },
         traceDirs = { traceDir },
+        heap = splice.head.syntheticHeapBudget(),
     ).trace(listOf(HEAD, "--last", "2"), EnvReader { null })
 
     private fun route(traceDir: Path): Boolean {
@@ -195,7 +196,7 @@ object CensusHeapProbe {
             override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
         }
         val heads = TurnsHeadLookup { name -> if (name == HEAD) listOf(TurnsHead(HEAD, noCompaction)) else emptyList() }
-        val route = TraceRoute(heads, { traceDir }, Dispatchers.IO)
+        val route = TraceRoute(heads, { traceDir }, Dispatchers.IO, heap = splice.head.syntheticHeapBudget())
         val reply = runBlocking { route.read(HEAD, TraceQuery("2", null, null)) }
         println(reply.status.value)
         println(reply.body)

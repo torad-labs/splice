@@ -71,7 +71,7 @@ class TraceCensusFlightTest {
                 return super.read(days, file, visit)
             }
         }
-        val census = TraceCensus(json, fileRead = fileRead)
+        val census = TraceCensus(json, fileRead = fileRead, heap = splice.head.syntheticHeapBudget())
         val days = DayFiles(dir, HEAD)
         val answers = arrayOfNulls<TraceCensus.Count>(2)
         val first = thread(name = "first page") { answers[0] = census.count(days) }

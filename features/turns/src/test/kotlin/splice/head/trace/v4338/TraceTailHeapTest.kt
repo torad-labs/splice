@@ -193,7 +193,8 @@ class TraceTailHeapTest {
         write(traceDir, DAY_ONE, ids, bodyChars = 2 * BODY_CHARS)
         val ask = TraceAsk(last = ids.size)
         val expected = ids.map { id ->
-            TraceTurnSummary.of(TraceRows().turns(traceDir, HEAD, TraceAsk(last = 1, turn = id)).single()).toString()
+            val rows = TraceRows(heap = splice.head.syntheticHeapBudget())
+            TraceTurnSummary.of(rows.turns(traceDir, HEAD, TraceAsk(last = 1, turn = id)).single()).toString()
         }
         val heap = HeapBudget(heapLimitBytes = 1L shl 30, budgetBytes = 64L shl 20)
         assertEquals(64L shl 20, heap.limitBytes)
@@ -229,7 +230,7 @@ class TraceTailHeapTest {
         val invalid = listOf("false", "\"unfinished", "\"bad\\q\"", "\"first\" \"second\"")
         val records = TraceBodyPack(
             day.resolveSibling("${day.fileName}.bodies2"),
-            TracePackIndex(),
+            TracePackIndex(heap = splice.head.syntheticHeapBudget()),
             budget = DayBodyBudget(1L shl 20, minFreeBytes = 0),
         ).use { pack ->
             invalid.mapIndexed { index, literal ->
@@ -249,10 +250,10 @@ class TraceTailHeapTest {
         }
         Files.writeString(day, records.joinToString("\n", postfix = "\n"))
         val ask = TraceAsk(last = invalid.size)
-        val original = TraceRows().read(tmp, HEAD, ask)
+        val original = TraceRows(heap = splice.head.syntheticHeapBudget()).read(tmp, HEAD, ask)
         assertEquals(invalid.size, original.unavailableRecords)
 
-        val listed = TraceRows().summaries(tmp, HEAD, ask)
+        val listed = TraceRows(heap = splice.head.syntheticHeapBudget()).summaries(tmp, HEAD, ask)
 
         assertEquals(original.unavailableRecords, listed.unavailableRecords)
         assertEquals(
@@ -290,7 +291,7 @@ class TraceTailHeapTest {
             }
         }
         val ask = TraceAsk(last = 20)
-        val original = TraceRows().read(tmp, HEAD, ask)
+        val original = TraceRows(heap = splice.head.syntheticHeapBudget()).read(tmp, HEAD, ask)
         val heap = HeapBudget(heapLimitBytes = 1L shl 30, budgetBytes = 64L shl 20)
 
         val listed = TraceRows(heap = heap).summaries(tmp, HEAD, ask)
@@ -309,7 +310,8 @@ class TraceTailHeapTest {
         val ids = (0 until 64).map { "wide-%02d".format(it) }
         write(traceDir, DAY_ONE, ids, bodyChars = 2 * BODY_CHARS)
         val expected = ids.map { id ->
-            TraceTurnSummary.of(TraceRows().turns(traceDir, HEAD, TraceAsk(last = 1, turn = id)).single()).toString()
+            val rows = TraceRows(heap = splice.head.syntheticHeapBudget())
+            TraceTurnSummary.of(rows.turns(traceDir, HEAD, TraceAsk(last = 1, turn = id)).single()).toString()
         }
         val heap = HeapBudget(heapLimitBytes = 1L shl 30, budgetBytes = 64L shl 20)
 
@@ -348,6 +350,7 @@ object TraceTailProbe {
         errors = TerminalOutput(System.err::println),
         heads = { TraceHeads.Configured("splice.toml", setOf(HEAD)) },
         traceDirs = { traceDir },
+        heap = splice.head.syntheticHeapBudget(),
     ).trace(listOf(HEAD, "--last", "3", "--json"), EnvReader { null })
 
     private fun route(traceDir: Path): Boolean {
@@ -355,7 +358,7 @@ object TraceTailProbe {
             override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
         }
         val heads = TurnsHeadLookup { name -> if (name == HEAD) listOf(TurnsHead(HEAD, noCompaction)) else emptyList() }
-        val route = TraceRoute(heads, { traceDir }, Dispatchers.IO)
+        val route = TraceRoute(heads, { traceDir }, Dispatchers.IO, heap = splice.head.syntheticHeapBudget())
         val reply = runBlocking { route.read(HEAD, TraceQuery("3", null, null)) }
         println(reply.status.value)
         println(reply.body)

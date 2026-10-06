@@ -49,7 +49,7 @@ class TraceChunkStorageTest {
             prefix to answer
         }
         assertTrue(AsyncFileIo.drain())
-        val turns = TraceRows().turns(dir, HEAD, TraceAsk(last = 3))
+        val turns = TraceRows(heap = splice.head.syntheticHeapBudget()).turns(dir, HEAD, TraceAsk(last = 3))
         assertEquals(3, turns.size)
         turns.zip(expected).forEach { (turn, bodies) ->
             assertEquals(bodies.first, turn.attempts.single().obj("request").text("body"))
@@ -120,7 +120,7 @@ class TraceChunkStorageTest {
         val allBytes = clientParts.sumOf { it.jsonObject.getValue("bytes").jsonPrimitive.int }
         assertTrue(shared.size >= clientParts.size * 3 / 4, "unchanged chunks must reuse their actual pack offsets")
         assertTrue(sharedBytes >= allBytes * 3 / 4, "unchanged payload bytes must be stored once")
-        val hydrated = TraceRows().turns(dir, HEAD, TraceAsk(last = 1)).single()
+        val hydrated = TraceRows(heap = splice.head.syntheticHeapBudget()).turns(dir, HEAD, TraceAsk(last = 1)).single()
         assertEquals(client, hydrated.turn?.obj("client")?.text("body"), "client bytes round trip exactly")
         assertEquals(upstream, hydrated.attempts.single().obj("request").text("body"), "upstream bytes are unchanged")
         println("TRACE_PASSTHROUGH_STORAGE shared=${shared.size}/${clientParts.size} bytes=$sharedBytes")
@@ -133,7 +133,7 @@ class TraceChunkStorageTest {
         val text = "a😀🚀東京"
         write(store(dir, 4), text, text)
         assertTrue(AsyncFileIo.drain())
-        val turns = TraceRows().turns(dir, HEAD, TraceAsk(last = 2))
+        val turns = TraceRows(heap = splice.head.syntheticHeapBudget()).turns(dir, HEAD, TraceAsk(last = 2))
         assertEquals("old café", turns.first().turn?.obj("client")?.text("body"))
         val recent = checkNotNull(turns.last().turn)
         assertEquals(text.take(4), recent.obj("client").text("body"))
@@ -148,7 +148,7 @@ class TraceChunkStorageTest {
         assertTrue(AsyncFileIo.drain())
         assertTrue(Files.exists(dir.resolve("$DAY.bodies2")))
         Files.delete(dir.resolve("$DAY.bodies2"))
-        val read = TraceRows().read(dir, HEAD, TraceAsk(last = 1))
+        val read = TraceRows(heap = splice.head.syntheticHeapBudget()).read(dir, HEAD, TraceAsk(last = 1))
         assertEquals(2, read.unavailableRecords)
         val body = read.turns.single().turn?.obj("client")?.obj("body")
         assertEquals("true", body?.text("unavailable"))
@@ -164,7 +164,7 @@ class TraceChunkStorageTest {
         val bytes = Files.readAllBytes(pack)
         bytes[bytes.lastIndex - 1] = 'S'.code.toByte()
         Files.write(pack, bytes)
-        val read = TraceRows().read(dir, HEAD, TraceAsk(last = 1))
+        val read = TraceRows(heap = splice.head.syntheticHeapBudget()).read(dir, HEAD, TraceAsk(last = 1))
         assertEquals(2, read.unavailableRecords)
         val body = read.turns.single().turn?.obj("answer")?.obj("body")
         assertEquals("true", body?.text("unavailable"))

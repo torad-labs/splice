@@ -38,7 +38,7 @@ class TraceRecoveryTest {
     @Test
     fun `one corrupt body keeps the other records readable and reports its unavailable count`(@TempDir dir: Path) {
         val day = dir.resolve(RECOVERY_DAY)
-        val bodies = TraceBodies()
+        val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
         val good = bodies.encode(record("good", "synthetic good"), day)
         val bad = bodies.encode(record("bad", "synthetic damaged"), day)
         Files.write(day, good + bad)
@@ -53,7 +53,7 @@ class TraceRecoveryTest {
         val reply = runBlocking { route(dir).read(RECOVERY_HEAD, TraceQuery("2", null, null)) }
         assertEquals(HttpStatusCode.OK, reply.status, reply.body)
         assertEquals("1", Json.parseToJsonElement(reply.body).jsonObject["unavailable_records"]?.jsonPrimitive?.content)
-        val turns = TraceRows().turns(dir, RECOVERY_HEAD, TraceAsk(last = 2))
+        val turns = TraceRows(heap = splice.head.syntheticHeapBudget()).turns(dir, RECOVERY_HEAD, TraceAsk(last = 2))
         assertEquals(listOf("good", "bad"), turns.map { it.id })
         assertEquals(
             "synthetic good",
@@ -67,11 +67,12 @@ class TraceRecoveryTest {
     fun `a missing pack leaves legacy bodies and selected record metadata available`(@TempDir dir: Path) {
         val day = dir.resolve(RECOVERY_DAY)
         val old = record("legacy", "synthetic legacy").toString() + "\n"
-        val packed = TraceBodies().encode(record("packed", "synthetic packed"), day)
+        val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
+        val packed = bodies.encode(record("packed", "synthetic packed"), day)
         Files.write(day, old.toByteArray() + packed)
         Files.delete(dir.resolve("$RECOVERY_DAY.bodies2"))
 
-        val turns = TraceRows().turns(dir, RECOVERY_HEAD, TraceAsk(last = 2))
+        val turns = TraceRows(heap = splice.head.syntheticHeapBudget()).turns(dir, RECOVERY_HEAD, TraceAsk(last = 2))
         assertEquals(listOf("legacy", "packed"), turns.map { it.id })
         assertEquals(
             "synthetic legacy",
@@ -90,7 +91,7 @@ class TraceRecoveryTest {
         listOf(0, CHUNK_MAX + 1).forEach { length ->
             val dir = Files.createDirectory(root.resolve("length-$length"))
             val day = dir.resolve(RECOVERY_DAY)
-            val bodies = TraceBodies()
+            val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
             val first = bodies.encode(record("first", "synthetic first"), day)
             val pack = dir.resolve("$RECOVERY_DAY.bodies2")
             val intact = Files.size(pack)
@@ -99,7 +100,8 @@ class TraceRecoveryTest {
             val later = bodies.encode(record("later", "synthetic later"), day)
             Files.write(day, first + later)
             assertTrue(Files.size(pack) > intact, "the new entry is appended after recovery")
-            val turns = TraceRows().turns(dir, RECOVERY_HEAD, TraceAsk(last = 2))
+            val rows = TraceRows(heap = splice.head.syntheticHeapBudget())
+            val turns = rows.turns(dir, RECOVERY_HEAD, TraceAsk(last = 2))
             assertEquals(listOf("first", "later"), turns.map { it.id })
             assertEquals(
                 "synthetic first",
@@ -115,7 +117,7 @@ class TraceRecoveryTest {
     @Test
     fun `a corrupt incarnation header lets new appends proceed without substituting old bodies`(@TempDir dir: Path) {
         val day = dir.resolve(RECOVERY_DAY)
-        val bodies = TraceBodies()
+        val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
         val first = bodies.encode(record("first", "synthetic first"), day)
         val pack = dir.resolve("$RECOVERY_DAY.bodies2")
         val bytes = Files.readAllBytes(pack)
@@ -123,7 +125,7 @@ class TraceRecoveryTest {
         Files.write(pack, bytes)
         val later = bodies.encode(record("later", "synthetic later"), day)
         Files.write(day, first + later)
-        val read = TraceRows().read(dir, RECOVERY_HEAD, TraceAsk(last = 2))
+        val read = TraceRows(heap = splice.head.syntheticHeapBudget()).read(dir, RECOVERY_HEAD, TraceAsk(last = 2))
         assertEquals(1, read.unavailableRecords)
         assertEquals(
             "true",
@@ -141,7 +143,7 @@ class TraceRecoveryTest {
         val day = dir.resolve(RECOVERY_DAY)
         val answer = buildJsonObject { put("body", "synthetic answer") }
         val record = JsonObject(record("mixed", "synthetic client") + ("answer" to answer))
-        val encoded = TraceBodies().encode(record, day)
+        val encoded = TraceBodies(heap = splice.head.syntheticHeapBudget()).encode(record, day)
         Files.write(day, encoded)
         val indexed = Json.parseToJsonElement(encoded.decodeToString()).jsonObject
         val offset = indexed.getValue("answer").jsonObject.getValue("body").jsonObject
@@ -150,7 +152,7 @@ class TraceRecoveryTest {
         val bytes = Files.readAllBytes(pack)
         bytes[offset + 1] = 'S'.code.toByte()
         Files.write(pack, bytes)
-        val read = TraceRows().read(dir, RECOVERY_HEAD, TraceAsk(last = 1))
+        val read = TraceRows(heap = splice.head.syntheticHeapBudget()).read(dir, RECOVERY_HEAD, TraceAsk(last = 1))
         val selected = checkNotNull(read.turns.single().turn)
         assertEquals(1, read.unavailableRecords)
         assertEquals("synthetic client", selected["client"]?.jsonObject?.get("body")?.jsonPrimitive?.content)
@@ -177,6 +179,7 @@ class TraceRecoveryTest {
             TurnsHeadLookup { listOf(TurnsHead(RECOVERY_HEAD, compact)) },
             TraceDirPort { dir },
             Dispatchers.Unconfined,
+            heap = splice.head.syntheticHeapBudget(),
         )
     }
 }

@@ -5,11 +5,13 @@
 // these files (LAYOUT-01): app supplies the topology read and the two terminal streams.
 package splice.head.trace
 
+import splice.core.memory.HeapBudget
 import splice.core.storage.DayPurge
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
 
 internal const val TRACE_USAGE =
@@ -34,8 +36,9 @@ public class TraceCommand(
     private val errors: TerminalOutput,
     private val heads: TraceHeadSource,
     private val traceDirs: TraceDirSource,
+    heap: HeapBudget = JvmHeap.budget,
 ) {
-    private val rows = TraceRows()
+    private val rows = TraceRows(heap = heap)
     private val view = TraceView(output)
 
     public fun trace(args: List<String>, envReader: EnvReader): Boolean {

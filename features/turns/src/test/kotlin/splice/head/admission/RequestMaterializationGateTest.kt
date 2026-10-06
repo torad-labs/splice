@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import splice.core.memory.HeapBudget
+import splice.core.memory.HeapWeights
 import splice.upstream.TurnEnd
 import splice.upstream.memory.JvmHeap
 
@@ -119,24 +120,32 @@ class RequestMaterializationGateTest {
     @Test
     fun `sixteen full bodies stay bounded by spare heap not request count`() = runTest(UnconfinedTestDispatcher()) {
         val gate = RequestMaterializationGate(heap = HeapBudget(DAEMON_HEAP))
+        assertEquals(1024 * MIB, gate.limitBytes)
+        val bodyBytes = 32 * MIB
+        assertEquals(208 * MIB, HeapWeights.request(bodyBytes))
         val release = CompletableDeferred<Unit>()
         var entered = 0
         val requests = List(16) {
             async {
-                gate.withLease(32 * MIB) {
+                gate.withLease(bodyBytes) {
                     entered++
                     release.await()
                 }
             }
         }
+        val rounding = requireNotNull(gate.heap.reserve(gate.heap.available.value))
         try {
-            assertEquals(8, entered, "1664 MiB admits eight 208 MiB materializations")
+            // why: 4 x 208 = 832 MiB fits the 1024 MiB ledger; 5 x 208 = 1040 MiB does not.
+            assertEquals(4, entered, "admissions are bounded by spare heap, not request count")
+            assertEquals(0L, gate.heap.available.value, "materializations and rounding fill the ledger exactly")
             assertNull(gate.tryWithLease(1) { "no spare bytes" })
         } finally {
             release.complete(Unit)
             requests.forEach { it.await() }
+            rounding.close()
         }
         assertEquals(16, entered, "queued full bodies eventually enter")
+        assertEquals(gate.limitBytes, gate.heap.available.value)
     }
 
     @Test
@@ -280,14 +289,31 @@ class RequestMaterializationGateTest {
             heapBudgetBytes = Long.MAX_VALUE,
             heap = HeapBudget(DAEMON_HEAP, Long.MAX_VALUE),
         )
+        assertEquals(1024 * MIB, gate.limitBytes)
+        val bodyBytes = largestFittingBody(gate.limitBytes, DAEMON_HEAP)
+        val rounding = requireNotNull(gate.heap.reserve(gate.limitBytes - HeapWeights.request(bodyBytes)))
         val release = CompletableDeferred<Unit>()
-        val full = async { gate.withLease(256 * MIB) { release.await() } }
+        val full = async { gate.withLease(bodyBytes) { release.await() } }
         try {
+            assertEquals(0L, gate.heap.available.value, "the exact helper weight and rounding fill the spare heap")
             assertNull(gate.tryWithLease(1) { "the spare heap is fully reserved" })
         } finally {
             release.complete(Unit)
             full.await()
+            rounding.close()
         }
-        assertEquals("fits", gate.tryWithLease(256 * MIB) { "fits" })
+        assertEquals("fits", gate.tryWithLease(bodyBytes) { "fits" })
+        assertEquals("tiny fits", gate.tryWithLease(1) { "tiny fits" })
+        assertEquals(gate.limitBytes, gate.heap.available.value)
+    }
+
+    private fun largestFittingBody(limit: Long, maximum: Long): Long {
+        var lower = 0L
+        var upper = maximum
+        while (lower < upper) {
+            val candidate = lower + (upper - lower + 1) / 2
+            if (HeapWeights.request(candidate) <= limit) lower = candidate else upper = candidate - 1
+        }
+        return lower
     }
 }

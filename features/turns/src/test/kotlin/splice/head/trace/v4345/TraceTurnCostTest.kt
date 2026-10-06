@@ -105,7 +105,8 @@ class TraceTurnCostTest {
     }
 
     private fun read(dir: Path, turn: String?): JsonObject = runBlocking {
-        val reply = TraceRoute(heads, { dir }, Dispatchers.Unconfined).read(HEAD, TraceQuery(null, null, turn))
+        val route = TraceRoute(heads, { dir }, Dispatchers.Unconfined, heap = splice.head.syntheticHeapBudget())
+        val reply = route.read(HEAD, TraceQuery(null, null, turn))
         Json.parseToJsonElement(reply.body).jsonObject
     }
 

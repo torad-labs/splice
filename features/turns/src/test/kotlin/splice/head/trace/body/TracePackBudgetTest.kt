@@ -28,7 +28,7 @@ class TracePackBudgetTest {
         val text = "synthetic first"
         val stored = TracePackFormat.V2.encode("\"$text\"".toByteArray(), ByteArray(DIGEST_BYTES)).second.size
         val capacity = TRACE_PACK_START_BYTES + TRACE_PACK_V2_HEADER_BYTES + stored.toLong()
-        val bodies = TraceBodies(capacity)
+        val bodies = TraceBodies(capacity, heap = splice.head.syntheticHeapBudget())
         val first = encoded(bodies, day, text)
         val full = Files.size(dir.resolve("${day.fileName}.bodies2"))
         assertEquals(capacity, full, "the positive control fills the pack exactly")
@@ -47,7 +47,7 @@ class TracePackBudgetTest {
     fun `a multi chunk body cannot cross the daily cap or return a successful partial literal`(@TempDir dir: Path) {
         val day = dir.resolve("synthetic-2026-09-18.jsonl")
         val capacity = TRACE_PACK_START_BYTES + TRACE_PACK_V2_HEADER_BYTES + CHUNK_MAX.toLong()
-        val bodies = TraceBodies(capacity)
+        val bodies = TraceBodies(capacity, heap = splice.head.syntheticHeapBudget())
         // Seeded random Base64 stays about three quarters of its size through zstd, so it crosses the cap.
         val noise = ByteArray(CHUNK_MAX * 3).also { Random(SEED).nextBytes(it) }
         val text = Base64.getEncoder().encodeToString(noise) + "λ"

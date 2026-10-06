@@ -105,14 +105,18 @@ class TraceCensusIncrementalTest {
     fun `a kept read counts only the bytes appended since the last`(@TempDir dir: Path) {
         val file = day(dir)
         append(file, turns("t1", "t2", "mid", "t4", "t5"))
-        val kept = TraceRows()
+        val kept = TraceRows(heap = splice.head.syntheticHeapBudget())
         assertEquals(5, read(kept, dir).onDisk)
         breakInPlace(file, "mid")
         append(file, turns("t6"))
 
         val again = read(kept, dir)
 
-        assertEquals(1, read(TraceRows(), dir).skippedLines, "a fresh read reads every byte, mid's attempt too")
+        assertEquals(
+            1,
+            read(TraceRows(heap = splice.head.syntheticHeapBudget()), dir).skippedLines,
+            "a fresh read reads every byte, mid's attempt too",
+        )
         assertEquals(0, again.skippedLines, "the kept read went back over bytes it had counted")
         assertEquals(6, again.onDisk)
     }
@@ -121,7 +125,7 @@ class TraceCensusIncrementalTest {
     fun `a rolled half is known again under its new name`(@TempDir dir: Path) {
         val file = day(dir)
         append(file, turns("t1", "t2", "mid", "t4", "t5"))
-        val kept = TraceRows()
+        val kept = TraceRows(heap = splice.head.syntheticHeapBudget())
         assertEquals(5, read(kept, dir).onDisk)
         rotate(file)
         breakInPlace(rolled(file), "mid")
@@ -129,14 +133,18 @@ class TraceCensusIncrementalTest {
 
         val again = read(kept, dir)
 
-        assertEquals(1, read(TraceRows(), dir).skippedLines, "a fresh read reads every byte, mid's attempt too")
+        assertEquals(
+            1,
+            read(TraceRows(heap = splice.head.syntheticHeapBudget()), dir).skippedLines,
+            "a fresh read reads every byte, mid's attempt too",
+        )
         assertEquals(0, again.skippedLines, "the kept read counted the rolled half again under its new name")
         assertEquals(6, again.onDisk)
     }
 
     @Test
     fun `a kept read answers what a fresh read answers at every step a day file takes`(@TempDir dir: Path) {
-        val kept = TraceRows()
+        val kept = TraceRows(heap = splice.head.syntheticHeapBudget())
         val file = day(dir)
         val steps = listOf<Pair<String, () -> Unit>>(
             "no file yet" to {},
@@ -169,7 +177,7 @@ class TraceCensusIncrementalTest {
         )
         steps.forEach { (step, change) ->
             change()
-            assertEquals(read(TraceRows(), dir), read(kept, dir), step)
+            assertEquals(read(TraceRows(heap = splice.head.syntheticHeapBudget()), dir), read(kept, dir), step)
         }
     }
 
@@ -189,10 +197,18 @@ class TraceCensusIncrementalTest {
         val days = DayFiles(dir, HEAD)
         val none = DayFiles(Files.createDirectory(dir.resolve("empty")), HEAD)
 
-        val calling = TraceCensus(json, processors = 1).count(days)
+        val calling = TraceCensus(json, processors = 1, heap = splice.head.syntheticHeapBudget()).count(days)
 
         assertEquals(TraceCensus.Count(LANE_DAYS * TURNS_PER_DAY, LANE_DAYS), calling)
-        assertEquals(calling, TraceCensus(json, processors = LANE_CORES).count(days), "four lanes")
-        assertEquals(TraceCensus.Count(0, 0), TraceCensus(json, processors = LANE_CORES).count(none), "no days")
+        assertEquals(
+            calling,
+            TraceCensus(json, processors = LANE_CORES, heap = splice.head.syntheticHeapBudget()).count(days),
+            "four lanes",
+        )
+        assertEquals(
+            TraceCensus.Count(0, 0),
+            TraceCensus(json, processors = LANE_CORES, heap = splice.head.syntheticHeapBudget()).count(none),
+            "no days",
+        )
     }
 }

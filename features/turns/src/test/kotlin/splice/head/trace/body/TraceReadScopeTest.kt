@@ -28,7 +28,7 @@ class TraceReadScopeTest {
     fun `one selected read scans each pack header once and closes its pack descriptors`(@TempDir dir: Path) {
         val day = dir.resolve("synthetic-2026-09-18.jsonl")
         val pack = dir.resolve("${day.fileName}.bodies2")
-        val bodies = TraceBodies()
+        val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
         val lines = (1..SCOPE_RECORDS).flatMap { number ->
             bodies.encode(record(number), day).asIterable()
         }.toByteArray()
@@ -38,7 +38,8 @@ class TraceReadScopeTest {
         Recording().use { recording ->
             recording.enable("jdk.FileRead").withThreshold(Duration.ZERO).withoutStackTrace()
             recording.start()
-            val turns = TraceRows().turns(dir, "synthetic", TraceAsk(last = SCOPE_RECORDS))
+            val rows = TraceRows(heap = splice.head.syntheticHeapBudget())
+            val turns = rows.turns(dir, "synthetic", TraceAsk(last = SCOPE_RECORDS))
             assertEquals(SCOPE_RECORDS, turns.size)
             assertEquals(baseline, descriptors(pack), "every selected-read pack descriptor closes")
             recording.stop()
@@ -59,7 +60,8 @@ class TraceReadScopeTest {
         val day = dir.resolve("synthetic-2026-09-18.jsonl")
         val text = "x".repeat(16 * 1024)
         val record = buildJsonObject { put("client", buildJsonObject { put("body", text) }) }
-        val reference = Json.parseToJsonElement(TraceBodies().encode(record, day).decodeToString()).jsonObject
+        val writer = TraceBodies(heap = splice.head.syntheticHeapBudget())
+        val reference = Json.parseToJsonElement(writer.encode(record, day).decodeToString()).jsonObject
         val heap = HeapBudget(Long.MAX_VALUE, budgetBytes = 1024 * 1024)
         val bodies = TraceBodies(heap = heap)
         val selected = bodies.hydrate(reference, day)
@@ -77,7 +79,8 @@ class TraceReadScopeTest {
         val day = dir.resolve("synthetic-2026-09-18.jsonl")
         val text = "x".repeat(16 * 1024)
         val record = buildJsonObject { put("client", buildJsonObject { put("body", text) }) }
-        val reference = Json.parseToJsonElement(TraceBodies().encode(record, day).decodeToString()).jsonObject
+        val writer = TraceBodies(heap = splice.head.syntheticHeapBudget())
+        val reference = Json.parseToJsonElement(writer.encode(record, day).decodeToString()).jsonObject
         val heap = HeapBudget(Long.MAX_VALUE, budgetBytes = 1024 * 1024)
         val bodies = TraceBodies(heap = heap)
         TraceBodyReaders(heap).use { readers ->

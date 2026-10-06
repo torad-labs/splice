@@ -43,7 +43,7 @@ class TraceTailTest {
 
     private var now = DAY_ONE
     private val ids = ArrayDeque<String>()
-    private val rows = TraceRows()
+    private val rows = TraceRows(heap = splice.head.syntheticHeapBudget())
 
     private fun store(dir: Path) = splice.head.syntheticTraceStore(
         ActivityDays(dir, HEAD, 30, WallClock { now }, true),

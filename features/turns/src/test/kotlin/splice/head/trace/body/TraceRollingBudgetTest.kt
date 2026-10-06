@@ -31,7 +31,11 @@ class TraceRollingBudgetTest {
         val day = dir.resolve("synthetic-2026-10-05.jsonl")
         val budget = budget(ROLLING_FIXTURE_BYTES)
         // The old per-head bound is intentionally smaller than a single synthetic body.
-        val bodies = TraceBodies(TRACE_PACK_START_BYTES.toLong(), budget = budget)
+        val bodies = TraceBodies(
+            TRACE_PACK_START_BYTES.toLong(),
+            budget = budget,
+            heap = splice.head.syntheticHeapBudget(),
+        )
         val encoded = encoded(bodies, day, "synthetic body retained by shared capacity")
         assertFalse(body(encoded)["unavailable"]?.jsonPrimitive?.content == "true")
         assertEquals(record("synthetic body retained by shared capacity"), bodies.hydrate(encoded, day))
@@ -47,7 +51,7 @@ class TraceRollingBudgetTest {
             WallClock { ROLLING_NOW },
         )
         val day = dir.resolve("synthetic-2026-10-05.jsonl")
-        val bodies = TraceBodies(budget = policy)
+        val bodies = TraceBodies(budget = policy, heap = splice.head.syntheticHeapBudget())
         val first = encoded(bodies, day, "synthetic first")
         free = ROLLING_FIXTURE_FLOOR
         val refused = encoded(bodies, day, "synthetic other")
@@ -63,7 +67,7 @@ class TraceRollingBudgetTest {
         val other = dir.resolve("b-2026-10-03.jsonl")
         val yesterday = dir.resolve("c-2026-10-04.jsonl")
         val today = dir.resolve("a-2026-10-05.jsonl")
-        val writer = TraceBodies(budget = budget(Long.MAX_VALUE))
+        val writer = TraceBodies(budget = budget(Long.MAX_VALUE), heap = splice.head.syntheticHeapBudget())
         val old = encoded(writer, oldest, "synthetic old")
         Files.writeString(oldest, old.toString() + "\n")
         Files.write(other.resolveSibling("${other.fileName}$DAY_BODY_SUFFIX"), ByteArray(ROLLING_FIXTURE_BYTES.toInt()))
@@ -73,7 +77,7 @@ class TraceRollingBudgetTest {
         val packs = listOf(oldest, yesterday, today).map(TracePackFormat.V2::pack)
         val size = packs.sumOf(Files::size) + ROLLING_FIXTURE_BYTES
         val policy = budget(size)
-        val bodies = TraceBodies(budget = policy)
+        val bodies = TraceBodies(budget = policy, heap = splice.head.syntheticHeapBudget())
         val next = encoded(bodies, today, "synthetic new current body")
         assertFalse(Files.exists(TracePackFormat.V2.pack(oldest)))
         assertFalse(Files.exists(other.resolveSibling("${other.fileName}$DAY_BODY_SUFFIX")))

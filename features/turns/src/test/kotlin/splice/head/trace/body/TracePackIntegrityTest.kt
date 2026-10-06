@@ -29,12 +29,12 @@ class TracePackIntegrityTest {
     fun `same inode truncate and equal size regrowth invalidate both literal and chunk caches`(@TempDir dir: Path) {
         val day = dir.resolve("synthetic-2026-09-18.jsonl")
         val pack = dir.resolve("${day.fileName}.bodies2")
-        val first = TraceBodies()
+        val first = TraceBodies(heap = splice.head.syntheticHeapBudget())
         first.encode(record("alpha"), day)
         first.encode(record("omega"), day)
         val size = Files.size(pack)
         FileChannel.open(pack, StandardOpenOption.WRITE).use { it.truncate(0) }
-        val second = TraceBodies()
+        val second = TraceBodies(heap = splice.head.syntheticHeapBudget())
         second.encode(record("bravo"), day)
         second.encode(record("omega"), day)
         assertEquals(size, Files.size(pack))
@@ -49,7 +49,7 @@ class TracePackIntegrityTest {
     @Test
     fun `a valid digest of interior bytes is not a valid pack entry`(@TempDir dir: Path) {
         val day = dir.resolve("synthetic-2026-09-18.jsonl")
-        val bodies = TraceBodies()
+        val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
         bodies.encode(record("abc\"def"), day)
         val fragment = "\"def\"".toByteArray()
         val hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(fragment))
@@ -70,7 +70,7 @@ class TracePackIntegrityTest {
     @Test
     fun `parseable interior payload corruption is rejected by its digest rather than JSON parsing`(@TempDir dir: Path) {
         val day = dir.resolve("synthetic-2026-09-18.jsonl")
-        val bodies = TraceBodies()
+        val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
         val bytesOfRecord = bodies.encode(record("synthetic answer"), day)
         val encoded = Json.parseToJsonElement(bytesOfRecord.decodeToString()).jsonObject
         val part = encoded.getValue("client").jsonObject.getValue("body").jsonObject
@@ -95,7 +95,7 @@ class TracePackIntegrityTest {
     @Test
     fun `strict hydration names missing packs while retaining inline compatibility`(@TempDir dir: Path) {
         val day = dir.resolve("synthetic-2026-09-18.jsonl")
-        val bodies = TraceBodies()
+        val bodies = TraceBodies(heap = splice.head.syntheticHeapBudget())
         val encoded = Json.parseToJsonElement(bodies.encode(record("synthetic body"), day).decodeToString()).jsonObject
         Files.delete(dir.resolve("${day.fileName}.bodies2"))
         val failure = assertThrows(IOException::class.java) { bodies.hydrate(encoded, day) }
@@ -107,10 +107,10 @@ class TracePackIntegrityTest {
     fun `header preserving truncate regrow resets a stale writer tail before appending`(@TempDir dir: Path) {
         val day = dir.resolve("synthetic-2026-09-18.jsonl")
         val pack = dir.resolve("${day.fileName}.bodies2")
-        val first = TraceBodies()
+        val first = TraceBodies(heap = splice.head.syntheticHeapBudget())
         first.encode(record("alpha"), day)
         FileChannel.open(pack, StandardOpenOption.WRITE).use { it.truncate(TRACE_PACK_START_BYTES.toLong()) }
-        val fresh = TraceBodies()
+        val fresh = TraceBodies(heap = splice.head.syntheticHeapBudget())
         val grown = Json.parseToJsonElement(fresh.encode(record("alphabet"), day).decodeToString()).jsonObject
         val later = Json.parseToJsonElement(first.encode(record("gamma"), day).decodeToString()).jsonObject
         assertEquals(record("alphabet"), first.hydrate(grown, day))

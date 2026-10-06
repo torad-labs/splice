@@ -81,7 +81,10 @@ private data class FuzzStamp(
 
 class JsonLineShapeFuzzTest {
     private val json = Json { ignoreUnknownKeys = true }
-    private val shape = JsonLineShape(FuzzStamp.serializer().descriptor.elementNames.toSet())
+    private val shape = JsonLineShape(
+        FuzzStamp.serializer().descriptor.elementNames.toSet(),
+        heap = splice.head.syntheticHeapBudget(),
+    )
 
     @Test
     fun `a line the shape counts is a line kotlinx parses whole, with the same stamp`() {

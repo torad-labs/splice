@@ -81,6 +81,12 @@ test('stops stay out of failure counts and have a separate reloadable view with 
   await expect(page.locator('.turn .state')).toHaveText(['Ended by splice', 'Rate limited']);
   await page.locator('.turn').filter({ hasText: 'Rate limited' }).locator('h3 a').click();
   await expect(page.locator('.failure-sentence')).toHaveText('Rate limit reached; retry after the named reset, with the same session.');
+  await expect(page.locator('.page-head .failure-sentence')).toHaveText('Rate limit reached; retry after the named reset, with the same session.');
+  const failure = await page.locator('.failure-sentence').boundingBox();
+  const timing = await page.getByRole('heading', { name: 'Where the time went', exact: true }).boundingBox();
+  expect(failure).not.toBeNull();
+  expect(timing).not.toBeNull();
+  expect((failure?.y ?? Infinity) + (failure?.height ?? 0)).toBeLessThan(timing?.y ?? 0);
   await assertHealthy(page, faults);
 });
 

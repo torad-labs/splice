@@ -9,7 +9,7 @@ import { STAGE_ORDER, movedOf, outcomeOf, servedLocally, stagesOf, secondsText, 
 import { P, T } from '../../lib/words-turns';
 import { Empty, Fault, PageHead, State } from '../../ui';
 import { sessionPath } from '../shared/SessionActions';
-import { KeptTabs } from './KeptTabs';
+import { Failure, KeptTabs } from './KeptTabs';
 import './turn.css';
 
 /** One turn on its own page: where its time went, what it moved, and what was kept of it. */
@@ -47,6 +47,7 @@ export function TurnPage() {
         <div>
           <h1>{title}</h1>
           <p className="lede">{turnLede(row, stages)}</p>
+          <Failure row={row} />
           <div className="facts">
             {servedLocally(row) ? <span className="tag">{T.servedLocallyTag}</span> : <State tone={outcome.tone}>{outcome.word}</State>}
             <span>{plan}</span>

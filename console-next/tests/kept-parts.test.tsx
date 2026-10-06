@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, test } from 'vitest';
 import { captureState, savedCapture } from '../src/lib/turns-page';
 import { CaptureControl } from '../src/pages/turns/CaptureControl';
-import { KeptTabs } from '../src/pages/turns/KeptTabs';
+import { Failure, KeptTabs } from '../src/pages/turns/KeptTabs';
 import { PlansKept } from '../src/pages/settings/Kept';
 import type { CaptureWire, KeptTurn, TurnRow } from '../src/types/perf';
 import type { TopologyState } from '../src/types/topology';
@@ -46,10 +46,10 @@ describe('a failed turn\'s sentence', () => {
     client.setQueryData(['trace', 'claude-solo', 'b'], kept('b', 'the connection for b closed mid-request; retry'));
   };
   test('is printed whole, and each turn prints the one its own read holds, whichever read answered last', () => {
-    const b = page(<KeptTabs row={row('b')} plan="Solo" tab={null} />, seed);
+    const b = page(<Failure row={row('b')} />, seed);
     expect(b).toContain('<p class="failure-sentence">The connection for b closed mid-request; retry</p>');
     expect(b).not.toContain('the connection for a');
-    const a = page(<KeptTabs row={row('a')} plan="Solo" tab={null} />, seed);
+    const a = page(<Failure row={row('a')} />, seed);
     expect(a).toContain('The connection for a closed mid-request; retry');
     expect(a).not.toContain('the connection for b');
   });
@@ -57,7 +57,7 @@ describe('a failed turn\'s sentence', () => {
     const sentence = 'rate limit reached; retry after the named reset, with the same session.';
     const limited = { ...row('limited'), outcome: 'error:rate-limited' };
     const data = kept('limited', sentence);
-    const html = page(<KeptTabs row={limited} plan="Solo" tab={null} />, client => client.setQueryData(['trace', 'claude-solo', 'limited'], data));
+    const html = page(<Failure row={limited} />, client => client.setQueryData(['trace', 'claude-solo', 'limited'], data));
     expect(html).toContain('<p class="failure-sentence">Rate limit reached; retry after the named reset, with the same session.</p>');
     expect(data.read.turn.failure_sentence).toBe(sentence);
   });
@@ -69,7 +69,7 @@ describe('a failed turn\'s sentence', () => {
   ])('decoded policy cause overrides stale or absent kept wording: %s', sentence => {
     const refused = { ...row('policy'), outcome: 'failure:api_error', cause: 'CONTENT_FILTERED' };
     const data = kept('policy', sentence);
-    const html = page(<KeptTabs row={refused} plan="Solo" tab={null} />, client => client.setQueryData(['trace', 'claude-solo', 'policy'], data));
+    const html = page(<Failure row={refused} />, client => client.setQueryData(['trace', 'claude-solo', 'policy'], data));
     expect(html).toContain('The provider stopped the answer under its content check; ask for a different task');
     if (sentence !== null) expect(html).not.toContain(sentence);
     expect(html).not.toContain('cybersecurity');
@@ -81,7 +81,7 @@ describe('a failed turn\'s sentence', () => {
     const sentence = 'OpenAI refused the request under its cybersecurity check. This synthetic request was flagged. Try rephrasing.';
     const data = kept('policy', sentence);
     data.read.turn.cause = refused.cause;
-    const html = page(<KeptTabs row={refused} plan="Solo" tab={null} />, client => client.setQueryData(['trace', 'claude-solo', 'policy'], data));
+    const html = page(<Failure row={refused} />, client => client.setQueryData(['trace', 'claude-solo', 'policy'], data));
     expect(html).toContain(sentence);
     expect(data.read.turn.failure_sentence).toBe(sentence);
   });
@@ -90,7 +90,7 @@ describe('a failed turn\'s sentence', () => {
     const refused = { ...row('policy'), outcome: 'failure:api_error', cause: 'CONTENT_FILTERED' };
     const data = kept('policy', 'an obsolete synthetic outage');
     data.read.turn.cause = 'UPSTREAM_STATUS_5XX';
-    const html = page(<KeptTabs row={refused} plan="Solo" tab={null} />, client => client.setQueryData(['trace', 'claude-solo', 'policy'], data));
+    const html = page(<Failure row={refused} />, client => client.setQueryData(['trace', 'claude-solo', 'policy'], data));
     expect(html).toContain('The provider stopped the answer under its content check; ask for a different task');
     expect(html).not.toContain('obsolete synthetic outage');
   });
@@ -98,28 +98,28 @@ describe('a failed turn\'s sentence', () => {
   test('a model refusal without kept bodies overrides arbitrary older wording', () => {
     const refused = { ...row('model'), outcome: 'failure:api_error', cause: 'MODEL_REFUSED' };
     const data = kept('model', 'a synthetic obsolete server failure');
-    const html = page(<KeptTabs row={refused} plan="Solo" tab={null} />, client => client.setQueryData(['trace', 'claude-solo', 'model'], data));
+    const html = page(<Failure row={refused} />, client => client.setQueryData(['trace', 'claude-solo', 'model'], data));
     expect(html).toContain('The model declined to answer; ask for a different task');
     expect(html).not.toContain('obsolete server failure');
   });
 
   test.each(['client_abort', 'error:stopped'])('names a missing explanation without inventing the cause of %s', outcome => {
     const stopped = { ...row('a'), outcome };
-    const none = page(<KeptTabs row={stopped} plan="Solo" tab={null} />, (client) => client.setQueryData(['trace', 'claude-solo', 'a'], kept('a', null)));
+    const none = page(<Failure row={stopped} />, (client) => client.setQueryData(['trace', 'claude-solo', 'a'], kept('a', null)));
     expect(none).toContain('This answer stopped before it completed. No detailed stop reason was kept.');
     expect(none).not.toContain('the client disconnected');
-    const gone = page(<KeptTabs row={stopped} plan="Solo" tab={null} />, (client) => client.setQueryData(['trace', 'claude-solo', 'a'], { gone: 'no such turn' }));
+    const gone = page(<Failure row={stopped} />, (client) => client.setQueryData(['trace', 'claude-solo', 'a'], { gone: 'no such turn' }));
     expect(gone).toContain('This answer stopped before it completed. No detailed stop reason was kept.');
     expect(gone).toContain('no such turn');
   });
 
   test('an unavailable trace does not hide the recorded outcome, and a success needs no explanation', () => {
     const noTrace = { head: 'claude-solo', ts: 1, model: 'm', outcome: 'error:rate-limited', compact: false };
-    const failed = page(<KeptTabs row={noTrace} plan="Solo" tab={null} />, () => undefined);
+    const failed = page(<Failure row={noTrace} />, () => undefined);
     expect(failed).toContain('This request ended: Rate limited. No detailed failure reason was kept.');
-    const done = page(<KeptTabs row={{ ...noTrace, outcome: 'ok' }} plan="Solo" tab={null} />, () => undefined);
+    const done = page(<Failure row={{ ...noTrace, outcome: 'ok' }} />, () => undefined);
     expect(done).not.toContain('failure-sentence');
-    const empty = page(<KeptTabs row={{ ...noTrace, outcome: 'empty_message' }} plan="Solo" tab={null} />, () => undefined);
+    const empty = page(<Failure row={{ ...noTrace, outcome: 'empty_message' }} />, () => undefined);
     expect(empty).not.toContain('failure-sentence');
   });
 });

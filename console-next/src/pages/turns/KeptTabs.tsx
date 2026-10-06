@@ -69,7 +69,7 @@ function Attempt({ record }: { record: TraceRecord }) {
 }
 
 /** The sentence the daemon recorded for a failed turn, whole, under this turn's own read: a late answer for another turn lands in that turn's cache. */
-function Failure({ row }: { row: TurnRow }) {
+export function Failure({ row }: { row: TurnRow }) {
   const kept = useKeptTurn(row.head, row.turn ?? null, row.turn !== undefined);
   if (isClean(row.outcome) || row.outcome === '?') return null;
   if (row.turn !== undefined && kept.data === undefined && !kept.isError) return <p className="failure-sentence" role="status">{P.readingFailure}</p>;
@@ -129,7 +129,6 @@ export function KeptTabs({ row, plan, tab }: { row: TurnRow; plan: string; tab: 
   const current = tabOf(tab);
   return (
     <section className="kept" aria-label={P.tabsLabel}>
-      <Failure row={row} />
       <CaptureControl head={row.head} plan={plan} />
       <nav className="tabs" aria-label={P.tabsLabel}>
         {TABS.map(([id, label]) => (

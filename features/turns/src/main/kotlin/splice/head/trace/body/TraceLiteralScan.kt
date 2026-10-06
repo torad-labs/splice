@@ -11,6 +11,17 @@ internal class TraceLiteralScan {
     var ended = false
         private set
 
+    /** A certificate carries the existing lexer's state, not a separately implemented grammar. */
+    fun copy(): TraceLiteralScan = TraceLiteralScan().also {
+        it.token = token?.copy()
+        it.ended = ended
+    }
+
+    fun sameState(other: TraceLiteralScan): Boolean = ended == other.ended && when (val reading = token) {
+        null -> other.token == null
+        else -> other.token?.let(reading::sameState) == true
+    }
+
     fun feed(bytes: ByteArray): Boolean = bytes.all(::feed)
 
     private fun feed(byte: Byte): Boolean {

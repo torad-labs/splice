@@ -21,6 +21,9 @@ import splice.core.util.JsonScalars
 import splice.head.trace.body.TraceBodies
 import splice.head.trace.body.TraceBodyReaders
 import splice.head.trace.body.TraceBodySelection
+import splice.head.trace.body.TraceBodyValidation
+import splice.head.trace.body.TraceChunkDecoder
+import splice.head.trace.body.TracePackFormat
 import splice.upstream.memory.JvmHeap
 
 // why: how far before a turn's first attempt its turn record can lie when the attempt was written late. A
@@ -34,6 +37,8 @@ internal class TraceTail(
     private val json: Json,
     private val heap: HeapBudget = JvmHeap.budget,
     private val selection: TraceBodySelection = TraceBodySelection.RECORDS,
+    decoder: TraceChunkDecoder = TraceChunkDecoder(TracePackFormat::decode),
+    validation: TraceBodyValidation? = null,
 ) : LineVisit, AutoCloseable {
     private val taken = LinkedHashMap<String, HeldTurn>()
     private val unopened = HashSet<String>()
@@ -43,7 +48,7 @@ internal class TraceTail(
      *  file lane, V4-174) and lies a little further back. */
     private val unended = HashMap<String, Long>()
     private val stamps = TraceStamps(json, heap)
-    private val bodies = TraceBodies(heap = heap)
+    private val bodies = TraceBodies(heap = heap, decoder = decoder, validation = validation)
     private val readers = TraceBodyReaders(heap)
 
     override fun close() = readers.close()

@@ -48,6 +48,15 @@ internal sealed class Token {
         private var escaping = false
         private var hexLeft = 0
 
+        /** Snapshots contain only lexical state, never the bytes a token consumed. */
+        fun copy(): Text = Text(escapes).also {
+            it.escaping = escaping
+            it.hexLeft = hexLeft
+        }
+
+        fun sameState(other: Text): Boolean =
+            escapes == other.escapes && escaping == other.escaping && hexLeft == other.hexLeft
+
         /** Not inside an escape, so its next bytes matter only when one is a quote, a backslash or a control. */
         val plain: Boolean get() = !escaping && hexLeft == 0
 

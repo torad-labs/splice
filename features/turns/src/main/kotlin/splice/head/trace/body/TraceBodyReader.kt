@@ -8,27 +8,19 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.longOrNull
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapOwners
 import splice.core.memory.HeapWeights
 import splice.core.util.Cancellables
-import splice.core.util.JsonScalars
 import splice.upstream.memory.JvmHeap
 import java.io.ByteArrayOutputStream
 import java.io.IOException
-import java.nio.channels.FileChannel
-import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.nio.file.StandardOpenOption
 
 // why: growing output bytes, UTF-16 decode buffers and the returned literal coexist during hydration.
 private const val TRACE_LITERAL_HEAP_FACTOR = 12L
-
-// why: boxed long, hash-set node and table growth for one validated entry boundary.
-private const val TRACE_BOUNDARY_HEAP_BYTES = 96L
 
 /** Reads only selected body references; missing and corrupt content is never read as empty. */
 internal class TraceBodyReader(
@@ -36,23 +28,9 @@ internal class TraceBodyReader(
     private val format: TracePackFormat,
     private val heap: HeapBudget = JvmHeap.budget,
 ) : AutoCloseable {
-    private val channel = Cancellables.runCatchingCancellable {
-        FileChannel.open(file, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)
-    }.getOrElse { failure -> throw IOException("trace body chunk pack missing or unreadable: $file", failure) }
-
-    private val boundaries = HashSet<Long>()
-    private val boundaryLease = HeapOwners.charge(boundaries, heap, 0L)
+    private val chunks = TraceChunkRead(file, format, heap)
     private val literals = HashMap<JsonArray, JsonPrimitive>()
     private val literalLease = HeapOwners.charge(literals, heap, 0L)
-    private var scanned = TRACE_PACK_START_BYTES.toLong()
-
-    init {
-        var ready = false
-        Cancellables.withCleanup({ if (!ready) close() }) {
-            TracePackBytes.generation(channel, format)
-            ready = true
-        }
-    }
 
     fun literal(parts: JsonArray): JsonPrimitive {
         literals[parts]?.let { return it }
@@ -61,7 +39,7 @@ internal class TraceBodyReader(
         val peak = heap.reserve(weight) ?: throw HeapCapacityException()
         peak.use {
             val literal = ByteArrayOutputStream()
-            parts.forEach { literal.write(chunk(it)) }
+            parts.forEach { literal.write(chunks.decoded(it)) }
             val decoded = decodedLiteral(literal)
             // Copy even empty content: an interned singleton must never retain a per-read reservation.
             val value = JsonPrimitive(String(decoded.content.toCharArray()))
@@ -74,13 +52,31 @@ internal class TraceBodyReader(
     }
 
     /** Check each bounded chunk without building or caching the multi-megabyte literal. */
-    fun validate(parts: JsonArray) {
+    fun validate(
+        parts: JsonArray,
+        decoder: TraceChunkDecoder = TraceChunkDecoder(TracePackFormat::decode),
+        validation: TraceBodyValidation? = null,
+    ) {
         val peak = heap.reserve(format.maxStored.toLong() + CHUNK_MAX) ?: throw HeapCapacityException()
         peak.use {
-            val literal = TraceLiteralScan()
-            val valid = parts.all { literal.feed(chunk(it)) }
-            if (!valid || !literal.ended) throw invalidLiteral()
+            if (!validLiteral(parts, decoder, validation)) throw invalidLiteral()
         }
+    }
+
+    private fun validLiteral(
+        parts: JsonArray,
+        decoder: TraceChunkDecoder,
+        validation: TraceBodyValidation?,
+    ): Boolean {
+        var literal = TraceLiteralScan()
+        parts.forEach { part ->
+            if (validation == null) {
+                if (!literal.feed(chunks.decoded(part, decoder))) return false
+            } else {
+                literal = chunks.certificate(part, validation).after(literal) ?: return false
+            }
+        }
+        return literal.ended
     }
 
     private fun invalidLiteral(): IOException = IOException("invalid trace body chunk literal: $file")
@@ -99,47 +95,11 @@ internal class TraceBodyReader(
         return length.toLong()
     }
 
-    private fun chunk(element: JsonElement): ByteArray {
-        val part = required(element as? JsonObject)
-        val hash = required(JsonScalars.str(part["hash"]))
-        val offset = required((part["offset"] as? JsonPrimitive)?.longOrNull)
-        val length = required((part["bytes"] as? JsonPrimitive)?.intOrNull)
-        bounds(offset, length)
-        val header = (if (entry(offset)) format.entry(channel, offset) else null)
-            ?.takeIf { it.raw == length && it.hash == hash }
-            ?: throw IOException("invalid trace body chunk entry at byte $offset: $file")
-        val bytes = format.decode(TracePackBytes.read(channel, offset, header.stored), length)
-        if (bytes == null || TracePackBytes.hashOf(bytes) != hash) {
-            throw IOException("corrupt trace body chunk at byte $offset: $file")
-        }
-        return bytes
-    }
-
-    private fun bounds(offset: Long, length: Int) {
-        val first = TRACE_PACK_START_BYTES + format.headerBytes
-        val inside = offset >= first && offset < channel.size()
-        if (!inside || length !in 1..CHUNK_MAX) throw IOException("invalid trace body chunk bounds: $file")
-    }
-
-    /** Scan headers, never unselected payloads, to reject references starting inside an entry. */
-    private fun entry(offset: Long): Boolean {
-        while (scanned < offset) {
-            val payload = scanned + format.headerBytes
-            val header = format.entry(channel, payload)
-                ?: throw IOException("invalid trace body chunk header at byte $scanned: $file")
-            val needed = (boundaries.size + 1L) * TRACE_BOUNDARY_HEAP_BYTES
-            if (!boundaryLease.resize(needed)) throw HeapCapacityException()
-            boundaries.add(payload)
-            scanned = payload + header.stored
-        }
-        return offset in boundaries
-    }
-
     private fun <T : Any> required(value: T?): T =
         value ?: throw IOException("invalid trace body chunk reference: $file")
 
     override fun close() {
         literals.clear()
-        channel.close()
+        chunks.close()
     }
 }

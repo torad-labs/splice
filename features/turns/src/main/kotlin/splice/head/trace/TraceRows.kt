@@ -27,6 +27,9 @@ import splice.core.memory.HeapOwners
 import splice.core.storage.DayFiles
 import splice.core.util.JsonScalars
 import splice.head.trace.body.TraceBodySelection
+import splice.head.trace.body.TraceBodyValidation
+import splice.head.trace.body.TraceChunkDecoder
+import splice.head.trace.body.TracePackFormat
 import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.file.Path
@@ -57,9 +60,11 @@ internal data class TraceRead(val turns: List<TracedTurn>, val onDisk: Int, val 
 internal class TraceRows(
     private val json: Json = Json { ignoreUnknownKeys = true },
     heap: HeapBudget = JvmHeap.budget,
+    private val decoder: TraceChunkDecoder = TraceChunkDecoder(TracePackFormat::decode),
 ) {
     // The persistent census and every in-flight read together stay within this family's share.
     private val heap = heap.readShare()
+    private val validation = TraceBodyValidation(this.heap, decoder)
 
     /** One read owns one admission view through projection; escaped records retain their root charges. */
     internal inline fun <T> withRead(block: (HeapBudget) -> T): T {
@@ -118,7 +123,8 @@ internal class TraceRows(
         selection: TraceBodySelection,
         share: HeapBudget,
     ): List<TracedTurn> {
-        return TraceTail(ask, json, share, selection).use { tail ->
+        if (selection == TraceBodySelection.SUMMARY) validation.prune()
+        return TraceTail(ask, json, share, selection, decoder, validation).use { tail ->
             days(traceDir, head).newestFirst(tail)
             tail.turns()
         }

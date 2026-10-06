@@ -599,7 +599,8 @@ origin.
 - **Trace lists retain metadata, not whole conversations.** Trace API lists and `splice trace`
   tables validate compressed body references in bounded chunks without assembling
   their body text. A single-turn view still reads the stored bodies. Body literals and retained
-  metadata keep their heap charges while held.
+  metadata keep their heap charges while held. The daemon bounds tracked heap use to half its maximum
+  heap, with a separate share for trace reads. A capacity refusal is retryable.
 - **Build and runtime dependency pins are updated.** Kotlin 2.3.21, Ktor 3.6.0, coroutines 1.11.0,
   serialization 1.11.0, GraalJS 25.3.4.1, Netty 4.2.17.Final and Jackson 2.21.5 match main's
   dependency baseline. Trace compression adds zstd-jni 1.5.7-18.

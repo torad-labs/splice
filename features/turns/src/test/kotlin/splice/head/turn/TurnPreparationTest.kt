@@ -54,7 +54,6 @@ import splice.head.admission.AdmissionResponses
 import splice.head.compaction.SessionProjectLookup
 import splice.head.headDeps
 import splice.head.wire.ClientInbound
-import splice.head.wire.TraceStore
 import splice.head.wire.TurnTrace
 import splice.upstream.BuiltTurn
 import splice.upstream.ProviderTuning
@@ -103,7 +102,7 @@ class TurnPreparationTest {
             null,
             hasPriorExchange = false,
         )
-        val trace = TraceStore(
+        val trace = splice.head.syntheticTraceStore(
             ActivityDays(tmp.resolve("trace"), "kimi", retentionDays = 7, clock = WallClock { 1_000 }),
             head = "kimi",
             maxBodyChars = 128,

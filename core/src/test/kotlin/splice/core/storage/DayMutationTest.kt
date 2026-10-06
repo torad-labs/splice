@@ -48,6 +48,30 @@ class DayMutationTest {
     }
 
     @Test
+    fun `a foreign directory fence excludes mutations from every head`(@TempDir dir: Path) {
+        val index = Files.writeString(dir.resolve("synthetic-2026-09-18.jsonl"), "{}\n")
+        val child = ProcessBuilder(
+            ProcessHandle.current().info().command().orElse("java"),
+            "-cp",
+            System.getProperty("java.class.path"),
+            ForeignDayLockHolder::class.java.name,
+            dir.resolve("directory.days.lock").toString(),
+        ).redirectErrorStream(true).start()
+        try {
+            assertEquals("locked", child.inputStream.bufferedReader().readLine())
+            val refused = DayFiles(dir, "synthetic").purge()
+            assertTrue(refused is DayPurge.Unlisted, "a different head cannot pass the shared body-budget fence")
+            assertTrue(Files.exists(index), "the directory fence preserves the other head's day")
+        } finally {
+            child.outputStream.close()
+            child.waitFor(5, TimeUnit.SECONDS)
+            child.destroyForcibly()
+        }
+        assertEquals(0, child.exitValue())
+        assertTrue(DayFiles(dir, "synthetic").purge() is DayPurge.Listed)
+    }
+
+    @Test
     fun `purge cannot unlink a companion between record encoding and index publication`(@TempDir dir: Path) {
         val days = ActivityDays(dir, "synthetic", 7, WallClock { 1_789_725_600_000L })
         val encoded = CountDownLatch(1)

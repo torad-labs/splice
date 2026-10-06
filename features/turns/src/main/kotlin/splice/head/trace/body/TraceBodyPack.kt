@@ -10,7 +10,9 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
-import splice.core.storage.DAY_BODY_MAX_BYTES
+import splice.core.storage.DayBodyBudget
+import splice.core.storage.DayBodyCapacityException
+import splice.core.storage.TRACE_BODY_MAX_BYTES
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
@@ -36,18 +38,20 @@ private const val TRACE_PACK_LOCK_POLL_MS = 10L
 private val HEX = HexFormat.of()
 
 /** Capacity is a stored omission marker, not an I/O failure or a successful partial literal. */
-internal class TracePackFull : IOException("daily trace body budget exhausted")
+internal class TracePackFull(
+    val reason: String = "shared rolling trace body budget exhausted",
+    cause: Throwable? = null,
+) : IOException(reason, cause)
 
-/** Says once per pack file that it reached its daily budget, so a day that stops recording bodies is never silent. */
+/** Says once per pack file why new bodies were refused, while already stored bodies remain reusable. */
 internal class TracePackFullLog(private val log: LogSink, private val maxBytes: Long) {
     private var logged: Path? = null
 
-    fun full(file: Path) {
+    fun full(file: Path, reason: String) {
         if (file == logged) return
         logged = file
         log(
-            "[trace] $file reached its daily body budget of ${maxBytes}B; " +
-                "new bodies are unavailable until the day ends\n",
+            "[trace] $file: $reason; shared body budget ${maxBytes}B, stored bodies remain reusable\n",
         )
     }
 }
@@ -56,7 +60,8 @@ internal class TracePackFullLog(private val log: LogSink, private val maxBytes: 
 internal class TraceBodyPack(
     val file: Path,
     private val index: TracePackIndex,
-    private val maxBytes: Long = DAY_BODY_MAX_BYTES,
+    maxBytes: Long = TRACE_BODY_MAX_BYTES,
+    private val budget: DayBodyBudget = DayBodyBudget(maxBytes),
 ) : AutoCloseable {
     private val channel = FileChannel.open(
         file,
@@ -94,7 +99,11 @@ internal class TraceBodyPack(
         index.offset(hash)?.let { offset -> reference(hash, offset, bytes.size).takeIf(::current)?.let { return it } }
         val (header, stored) = FORMAT.encode(bytes, digest)
         val offset = index.end + HEADER_BYTES
-        if (offset > maxBytes - stored.size) throw TracePackFull()
+        try {
+            budget.admit(file, HEADER_BYTES + stored.size.toLong())
+        } catch (capacity: DayBodyCapacityException) {
+            throw TracePackFull(capacity.reason, capacity)
+        }
         index.admit()
         channel.position(index.end)
         TracePackBytes.write(channel, header)
@@ -102,7 +111,7 @@ internal class TraceBodyPack(
         val part = reference(hash, offset, bytes.size)
         index.end = offset + stored.size
         index.tail = part
-        index.put(hash, offset)
+        if (!index.full) index.put(hash, offset)
         return part
     }
 

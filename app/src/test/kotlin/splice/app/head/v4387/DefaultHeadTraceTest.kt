@@ -13,6 +13,8 @@ import splice.app.head.HeadTraceStores
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.perf.PerfSnapshot
+import splice.core.storage.DayBodyBudget
+import splice.core.storage.DayVolumeSpace
 import splice.core.terminal.TerminalOutput
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -79,7 +81,7 @@ class DefaultHeadTraceTest {
         )
         val paths = StatePaths(baseOverride = root.resolve("state"))
         val config = ConfigService(paths, perHeadOverrides = topology.heads.mapValues { it.value.overrides })
-        val factory = HeadTraceStores(paths)
+        val factory = HeadTraceStores(paths, DayBodyBudget(space = DayVolumeSpace { Long.MAX_VALUE }))
         val traced = requireNotNull(factory.forHead("traced", config.getConfig("traced")))
         assertNull(factory.forHead("untraced", config.getConfig("untraced")))
         traced.begin(meta(), ClientInbound("POST", "/v1/messages", emptyMap(), "synthetic request"))

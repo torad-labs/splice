@@ -332,15 +332,16 @@ null means — while its non-null "infinity" is a present value that the caller 
 of a cap, the inverse of every lookup here. Merging it into a config lookup would put a value that \
 decides whether hosted MCP servers are contained where an unset environment variable is expected."""
 
-# ── 2 names, () -> T ──────────────────────────────────────────────────────────────────────────────
+# ── 3 names, () -> T ──────────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->#1"
-dated = "2026-09-17"
+dated = "2026-10-05"
 names = [
+    "DayDirectoryAction",
     "RawBlock",
     "StoreEdit",
 ]
-reason = """RawBlock is "the work done while the terminal is in raw mode — run exactly once, raw or not"; it is the BODY the raw-mode bracket wraps, and the bracket's own ShutdownHookAdd / ShutdownHookRemove pair is what guarantees the restore. StoreEdit is "one read-modify-write of `keys.toml`, performed while the sibling `.lock` is held", and its KDoc is explicit that the type IS the boundary of the lost-update fix rather than a formatting of braces: a `set` that read outside the section and wrote inside it would still lose an update. It is also `private`, because the lock is KeyStore's own and nothing outside that file may claim to run under it. Two scoped bodies whose resources are a TTY and a file lock, and whose confusion would put a store edit outside the lock."""
+reason = """RawBlock is "the work done while the terminal is in raw mode — run exactly once, raw or not"; it is the BODY the raw-mode bracket wraps, and the bracket's own ShutdownHookAdd / ShutdownHookRemove pair is what guarantees the restore. StoreEdit is "one read-modify-write of `keys.toml`, performed while the sibling `.lock` is held", and its KDoc is explicit that the type IS the boundary of the lost-update fix rather than a formatting of braces: a `set` that read outside the section and wrote inside it would still lose an update. It is also `private`, because the lock is KeyStore's own and nothing outside that file may claim to run under it. DayDirectoryAction is "one operation under the directory-wide day mutation fence", held before a head's lock through body admission, eviction and index publication. Confusing it with a store edit would allow cross-head eviction between a trace body's append and its metadata publication. The three scoped bodies protect a TTY, one key store and the shared trace directory, respectively."""
 
 # ── 2 names, () -> String? ────────────────────────────────────────────────────────────────────────
 [[groups]]

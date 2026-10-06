@@ -14,7 +14,10 @@ import java.time.format.DateTimeParseException
 /** Source-derived inventory of real day files; neither sizes nor lines follow a symlink target. */
 internal class DayFileInventory(prefix: String) {
     private val namePattern =
-        Regex("${Regex.escape(prefix)}-(\\d{4}-\\d{2}-\\d{2})\\.jsonl(?:\\.lock|\\.1|\\.bodies2?)?")
+        Regex(
+            "${Regex.escape(prefix)}-(\\d{4}-\\d{2}-\\d{2})\\.jsonl" +
+                "(?:\\.lock|\\.1|\\.bodies2?|\\.bodies-evicted(?:\\.tmp)?)?",
+        )
     private val packs = listOf(DAY_BODY_SUFFIX, DAY_BODY_V2_SUFFIX)
 
     fun inventory(days: List<Pair<LocalDate, Path>>, retentionDays: Int): DayInventory {

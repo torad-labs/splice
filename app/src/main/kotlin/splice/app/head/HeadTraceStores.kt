@@ -7,14 +7,18 @@ package splice.app.head
 import splice.core.config.SpliceConfig
 import splice.core.config.StatePaths
 import splice.core.storage.ActivityDays
+import splice.core.storage.DayBodyBudget
 import splice.head.wire.TraceStore
 
-internal class HeadTraceStores(private val statePaths: StatePaths) {
+internal class HeadTraceStores(
+    private val statePaths: StatePaths,
+    private val bodyBudget: DayBodyBudget = DayBodyBudget(),
+) {
 
     /** Null only for a head that opted out; the default keeps owner-only trace days. */
     fun forHead(key: String, cfg: SpliceConfig): TraceStore? {
         if (!cfg.trace) return null
         val days = ActivityDays(statePaths.traceDir, key, cfg.traceRetentionDays, ownerOnly = true)
-        return TraceStore(days, key, cfg.traceMaxBodyChars)
+        return TraceStore(days, key, cfg.traceMaxBodyChars, bodyBudget = bodyBudget)
     }
 }

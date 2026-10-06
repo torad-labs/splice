@@ -45,7 +45,7 @@ class TraceTailTest {
     private val ids = ArrayDeque<String>()
     private val rows = TraceRows()
 
-    private fun store(dir: Path) = TraceStore(
+    private fun store(dir: Path) = splice.head.syntheticTraceStore(
         ActivityDays(dir, HEAD, 30, WallClock { now }, true),
         HEAD,
         maxBodyChars = 1 shl 20,

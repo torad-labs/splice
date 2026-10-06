@@ -28,7 +28,6 @@ import splice.core.util.AsyncFileIo
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.usage.EconomicsStore
-import splice.head.wire.TraceStore
 import splice.upstream.ProviderTuning
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -154,7 +153,11 @@ class HeadServerLivenessProbeTest {
             PassthroughQuirks(providerTag = "synthetic"),
         )
         val economics = EconomicsStore(tmp.resolve("economics.json"), TurnPrice(catalog))
-        val trace = TraceStore(ActivityDays(tmp.resolve("trace"), "synthetic", 7), "synthetic", 1000)
+        val trace = splice.head.syntheticTraceStore(
+            ActivityDays(tmp.resolve("trace"), "synthetic", 7),
+            "synthetic",
+            1000,
+        )
         val deps = headDeps(
             tmp,
             policy = HeadDeps.HeadPolicy(forwardClientAuth = forward),

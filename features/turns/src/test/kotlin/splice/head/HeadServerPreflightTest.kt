@@ -40,7 +40,6 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.head.perf.PerfRowMeta
 import splice.head.perf.PerfStats
-import splice.head.wire.TraceStore
 import splice.upstream.ProviderTuning
 import java.nio.file.Files
 import java.nio.file.Path
@@ -96,7 +95,11 @@ class HeadServerPreflightTest {
             configEffort = "high",
             configSummary = "detailed",
         )
-        val trace = TraceStore(ActivityDays(root.resolve("trace"), "codex", 7, ownerOnly = true), "codex", 4_096)
+        val trace = splice.head.syntheticTraceStore(
+            ActivityDays(root.resolve("trace"), "codex", 7, ownerOnly = true),
+            "codex",
+            4_096,
+        )
         val stores = headStores(root, suffix = "-preflight").copy(trace = trace, perfStats = stats)
         return HeadServer(provider, 0, headDeps(root).copy(stores = stores))
     }

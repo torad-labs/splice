@@ -69,7 +69,6 @@ import splice.head.usage.OutputClamp
 import splice.head.wire.ClientChannel
 import splice.head.wire.ClientInbound
 import splice.head.wire.ImmediateSseWriter
-import splice.head.wire.TraceStore
 import splice.head.wire.TurnTerminal
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
@@ -341,7 +340,7 @@ class OutcomeSentenceTest {
             summary = "detailed",
             budgetTokens = null,
         )
-        val trace = TraceStore(
+        val trace = splice.head.syntheticTraceStore(
             ActivityDays(
                 traceDir,
                 "codex",

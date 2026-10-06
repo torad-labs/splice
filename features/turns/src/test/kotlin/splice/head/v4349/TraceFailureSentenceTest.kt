@@ -30,7 +30,6 @@ import splice.head.trace.TraceFailureCause
 import splice.head.trace.TraceQuery
 import splice.head.trace.TraceRoute
 import splice.head.wire.ClientInbound
-import splice.head.wire.TraceStore
 import splice.head.wire.TurnIdMint
 import java.nio.file.Files
 import java.nio.file.Path
@@ -128,7 +127,7 @@ class TraceFailureSentenceTest {
 
     @Test
     fun `one failed turn serves its spoken failure under the outcome`(@TempDir root: Path) = runBlocking {
-        val store = TraceStore(
+        val store = splice.head.syntheticTraceStore(
             ActivityDays(root, "codex", 7, WallClock { TRACE_DAY }, ownerOnly = true),
             "codex",
             maxBodyChars = 8, // body limits must not cut the human failure sentence

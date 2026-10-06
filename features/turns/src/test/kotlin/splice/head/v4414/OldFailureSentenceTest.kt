@@ -69,7 +69,7 @@ class OldFailureSentenceTest {
 
     private fun store(root: Path): TraceStore {
         val ids = AtomicInteger()
-        return TraceStore(
+        return splice.head.syntheticTraceStore(
             ActivityDays(root, "codex", 7, WallClock { DAY }, ownerOnly = true),
             "codex",
             maxBodyChars = 8,

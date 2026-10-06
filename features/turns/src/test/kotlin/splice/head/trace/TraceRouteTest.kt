@@ -31,7 +31,6 @@ import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.head.wire.BAD_LAST
 import splice.head.wire.ClientInbound
-import splice.head.wire.TraceStore
 import splice.head.wire.TurnIdMint
 import splice.http.JsonReply
 import splice.upstream.sse.WireAttempt
@@ -81,7 +80,7 @@ class TraceRouteTest {
      *  turn-3 (session gamma) with one attempt and no ending when [open] is true. */
     private fun writeTrace(dir: Path, open: Boolean = false) {
         val ids = ArrayDeque(listOf("turn-1", "turn-2", "turn-3"))
-        val store = TraceStore(
+        val store = splice.head.syntheticTraceStore(
             ActivityDays(dir, HEAD, 7, WallClock { DAY_ONE }, true),
             HEAD,
             maxBodyChars = 1 shl 20,

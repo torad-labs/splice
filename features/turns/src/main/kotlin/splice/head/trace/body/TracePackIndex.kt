@@ -52,7 +52,7 @@ internal class TracePackIndex(val heap: HeapBudget = JvmHeap.budget) {
     var size: Int = 0
         private set
 
-    /** Past this, the pack takes no new entry, however many bytes are left. */
+    /** Past this, new chunks still store, but no new entry grows the resident index. */
     val full: Boolean get() = size >= TRACE_PACK_MAX_ENTRIES
 
     /** Where the entry for [hash] lay when it was written or scanned, or null for a digest the table never met. */
@@ -67,9 +67,9 @@ internal class TracePackIndex(val heap: HeapBudget = JvmHeap.budget) {
         return null
     }
 
-    /** Room for one more entry: a full pack refuses it, and a table past half full doubles inside the budget. */
+    /** A full resident index stops growing, never the pack; a smaller table grows within its heap charge. */
     fun admit() {
-        if (full) throw TracePackFull()
+        if (full) return
         if ((size + 1L) * 2 <= keys.size) return
         val slots = maxOf(TRACE_INDEX_FIRST_SLOTS, keys.size * 2)
         if (!tableLease.resize(slots * TRACE_INDEX_SLOT_BYTES)) throw HeapCapacityException()

@@ -35,7 +35,6 @@ import splice.head.compact.HeadCompactSource
 import splice.head.trace.TraceQuery
 import splice.head.trace.TraceRoute
 import splice.head.wire.ClientInbound
-import splice.head.wire.TraceStore
 import splice.head.wire.TurnIdMint
 import java.nio.file.Path
 
@@ -88,7 +87,13 @@ class TraceTurnCostTest {
     private fun writeTrace(dir: Path) {
         val ids = ArrayDeque(listOf("turn-1", "turn-2", "turn-3", "turn-4"))
         val days = ActivityDays(dir, HEAD, 7, WallClock { DAY }, true)
-        val store = TraceStore(days, HEAD, 1 shl 20, now = WallClock { DAY }, ids = TurnIdMint { ids.removeFirst() })
+        val store = splice.head.syntheticTraceStore(
+            days,
+            HEAD,
+            1 shl 20,
+            now = WallClock { DAY },
+            ids = TurnIdMint { ids.removeFirst() },
+        )
         listOf("kimi-k3", "unlisted-model").forEach { model ->
             store.begin(meta(model), ClientInbound("POST", "/v1/messages", emptyMap(), "{}"))
                 .finish("ok", PerfSnapshot(mapOf("total" to 900L), COUNTERS))

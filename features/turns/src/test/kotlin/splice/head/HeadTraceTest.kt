@@ -40,7 +40,6 @@ import splice.core.util.AsyncFileIo
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.trace.body.TraceBodies
-import splice.head.wire.TraceStore
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -134,7 +133,7 @@ class HeadTraceTest {
             quirks = PassthroughQuirks(providerTag = "claude-splice"),
         )
         val trace = if (traced) {
-            TraceStore(ActivityDays(dir, "anthropic", 7, ownerOnly = true), "anthropic", 1 shl 20)
+            splice.head.syntheticTraceStore(ActivityDays(dir, "anthropic", 7, ownerOnly = true), "anthropic", 1 shl 20)
         } else {
             null
         }

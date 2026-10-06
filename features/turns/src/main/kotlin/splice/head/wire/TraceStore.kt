@@ -21,6 +21,7 @@ import splice.core.memory.HeapJson
 import splice.core.memory.HeapOwners
 import splice.core.memory.HeapWeights
 import splice.core.storage.ActivityDays
+import splice.core.storage.DayBodyBudget
 import splice.core.storage.DayRecord
 import splice.core.turn.TurnMeta
 import splice.core.util.JsonWire
@@ -63,8 +64,9 @@ public class TraceStore(
     private val now: WallClock = WallClock(System::currentTimeMillis),
     private val ids: TurnIdMint = randomTurnIds,
     public val heap: HeapBudget = JvmHeap.budget,
+    private val bodyBudget: DayBodyBudget = DayBodyBudget(clock = now),
 ) {
-    private val bodies = TraceBodies(heap = heap)
+    private val bodies = TraceBodies(heap = heap, budget = bodyBudget)
 
     init {
         require(maxBodyChars > 0) { "a trace keeps at least one character of a body; maxBodyChars=$maxBodyChars" }

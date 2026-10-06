@@ -23,7 +23,6 @@ import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.head.wire.ClientInbound
-import splice.head.wire.TraceStore
 import splice.head.wire.TurnIdMint
 import splice.upstream.sse.WireAttempt
 import java.io.IOException
@@ -59,7 +58,7 @@ class TraceCommandTest {
     /** Two turns as the daemon would write them: ids turn-1 and turn-2, sessions alpha and beta. */
     private fun writeTrace(env: EnvReader) {
         val ids = ArrayDeque(listOf("turn-1", "turn-2"))
-        val store = TraceStore(
+        val store = splice.head.syntheticTraceStore(
             ActivityDays(StatePaths(envReader = env).traceDir, "openrouter", 7, WallClock { DAY_ONE }, true),
             "openrouter",
             maxBodyChars = 1 shl 20,

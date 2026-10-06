@@ -80,13 +80,18 @@ public const val DAY_BODY_V2_SUFFIX: String = ".bodies2"
 // above states the contract: JsonlSink rolls ONE generation away when a day file passes this.
 private const val DAY_MAX_BYTES = 512L shl 20
 
-/** A trace body's daily budget derives from the live JSONL and its one retained rolled generation. */
-public const val DAY_BODY_MAX_BYTES: Long = DAY_MAX_BYTES * 2
-
 /** A day file's own name, then JsonlSink's lock and its one rolled generation beside it. */
 /** JsonlSink's rotated generation of a day file: that day's OLDER rows, once it passed DAY_MAX_BYTES. */
 private const val ROLLED_SUFFIX = ".1"
-private val DAY_SIBLINGS = listOf("", ".lock", ROLLED_SUFFIX, DAY_BODY_SUFFIX, DAY_BODY_V2_SUFFIX)
+private val DAY_SIBLINGS = listOf(
+    "",
+    ".lock",
+    ROLLED_SUFFIX,
+    DAY_BODY_SUFFIX,
+    DAY_BODY_V2_SUFFIX,
+    DAY_BODY_EVICTED_SUFFIX,
+    "$DAY_BODY_EVICTED_SUFFIX.tmp",
+)
 
 // why: a floor under the wait for the next midnight sweep. A run that starts a moment before
 // midnight (the wait is monotonic, the day is wall time) re-arms for the few ms left; a clock that
@@ -453,7 +458,9 @@ public sealed class DayPurge {
 }
 
 /** A day file's name: its store's prefix, then the UTC day. */
-private val DAY_FILE = Regex("(.+)-\\d{4}-\\d{2}-\\d{2}\\.jsonl(?:\\.1|\\.lock|\\.bodies2?)?")
+private val DAY_FILE = Regex(
+    "(.+)-\\d{4}-\\d{2}-\\d{2}\\.jsonl(?:\\.1|\\.lock|\\.bodies2?|\\.bodies-evicted(?:\\.tmp)?)?",
+)
 
 /** V4-260: the [ActivityDays] stores that have day files in [dir], by prefix. For the trace dir that
  *  is every head with trace days on disk, so the days of a head splice.toml no longer names can go. */

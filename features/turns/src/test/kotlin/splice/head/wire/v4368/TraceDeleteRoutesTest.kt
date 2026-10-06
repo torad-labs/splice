@@ -54,7 +54,7 @@ class TraceDeleteRoutesTest {
 
     private fun writer(dir: Path, head: String): TraceStore {
         var id = 0
-        return TraceStore(
+        return splice.head.syntheticTraceStore(
             ActivityDays(dir, head, 7, WallClock { DAY_ONE }, ownerOnly = true),
             head,
             maxBodyChars = 4096,

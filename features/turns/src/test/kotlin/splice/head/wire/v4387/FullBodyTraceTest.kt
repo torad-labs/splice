@@ -17,7 +17,6 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.head.trace.body.TraceBodies
 import splice.head.wire.ClientInbound
-import splice.head.wire.TraceStore
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -31,7 +30,7 @@ class FullBodyTraceTest {
         val config = ConfigService(paths).getConfig("muse")
         assertTrue(config.trace, "no override should build a trace writer")
         val body = "x".repeat(BODY_CHARS)
-        val trace = TraceStore(
+        val trace = splice.head.syntheticTraceStore(
             ActivityDays(paths.traceDir, "muse", 7, WallClock { TRACE_DAY }, ownerOnly = true),
             "muse",
             config.traceMaxBodyChars,

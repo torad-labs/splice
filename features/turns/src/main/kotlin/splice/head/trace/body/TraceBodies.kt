@@ -12,7 +12,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
-import splice.core.storage.DAY_BODY_MAX_BYTES
+import splice.core.storage.BODY_BUDGET_EVICTED_REASON
+import splice.core.storage.DayBodyBudget
+import splice.core.storage.DayBodyCapacityException
+import splice.core.storage.TRACE_BODY_MAX_BYTES
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
@@ -20,6 +23,8 @@ import splice.core.util.LogSink
 import splice.upstream.memory.JvmHeap
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
 private const val UNAVAILABLE_TAG = "unavailable"
@@ -27,9 +32,11 @@ private val BODY_FIELDS = mapOf("request" to "body", "response" to "text", "clie
 
 /** JSONL stamps stay inline. Only body literals enter a daily pack, once, directly through the Gear encoder. */
 internal class TraceBodies(
-    private val maxPackBytes: Long = DAY_BODY_MAX_BYTES,
+    private val maxPackBytes: Long = TRACE_BODY_MAX_BYTES,
     private val heap: HeapBudget = JvmHeap.budget,
     log: LogSink = LogSink(DaemonLog::write),
+    // Host free-space policy is injected by TraceStore; standalone codecs only enforce their byte budget.
+    private val budget: DayBodyBudget = DayBodyBudget(maxPackBytes, minFreeBytes = 0),
 ) {
     private var activeFile: Path? = null
     private var activeIndex = TracePackIndex(heap)
@@ -42,16 +49,31 @@ internal class TraceBodies(
             activeFile = file
             activeIndex = TracePackIndex(heap)
         }
-        return TraceBodyPack(file, activeIndex, maxPackBytes).use { pack ->
-            val references = replace(record) { value ->
-                val text = JsonScalars.str(value) ?: throw IOException("trace body is not a literal")
-                literal(text, pack)
+        return budget.withLock(day.parent) {
+            if (budget.evicted(day)) {
+                return@withLock encodeReferences(replace(record) { unavailable(BODY_BUDGET_EVICTED_REASON) })
             }
-            val encoded = ByteArrayOutputStream()
-            JsonWire.write(withAvailability(references), encoded)
-            encoded.write('\n'.code)
-            encoded.toByteArray()
+            try {
+                if (!Files.exists(file, NOFOLLOW_LINKS)) budget.admit(file, TRACE_PACK_START_BYTES.toLong())
+                TraceBodyPack(file, activeIndex, maxPackBytes, budget).use { pack ->
+                    val references = replace(record) { value ->
+                        val text = JsonScalars.str(value) ?: throw IOException("trace body is not a literal")
+                        literal(text, pack)
+                    }
+                    encodeReferences(references)
+                }
+            } catch (capacity: DayBodyCapacityException) {
+                fullLog.full(file, capacity.reason)
+                encodeReferences(replace(record) { unavailable(capacity.reason) })
+            }
         }
+    }
+
+    private fun encodeReferences(references: JsonObject): ByteArray {
+        val encoded = ByteArrayOutputStream()
+        JsonWire.write(withAvailability(references), encoded)
+        encoded.write('\n'.code)
+        return encoded.toByteArray()
     }
 
     /** Old inline rows require no companion. New references resolve against the actual selected line's day. */
@@ -83,8 +105,21 @@ internal class TraceBodies(
         val format = TracePackFormat.entries.firstOrNull { it.names(value) }
             ?: throw IOException("invalid trace body chunk version")
         if (JsonScalars.str(value, UNAVAILABLE_TAG) == "true") return value
+        if (budget.evicted(day)) return unavailable(BODY_BUDGET_EVICTED_REASON)
         val parts = value["parts"] as? JsonArray ?: throw IOException("invalid trace body chunk parts")
-        return readers.of(format.pack(day), format).literal(parts)
+        return resolveParts(day, readers, format, parts)
+    }
+
+    private fun resolveParts(
+        day: Path,
+        readers: TraceBodyReaders,
+        format: TracePackFormat,
+        parts: JsonArray,
+    ): JsonElement = try {
+        readers.of(format.pack(day), format).literal(parts)
+    } catch (failure: IOException) {
+        if (!budget.evicted(day)) throw failure
+        unavailable(BODY_BUDGET_EVICTED_REASON)
     }
 
     private fun withAvailability(record: JsonObject): JsonObject {
@@ -105,14 +140,16 @@ internal class TraceBodies(
             put(TRACE_REFERENCE_TAG, TracePackFormat.V2.version)
             put("parts", parts)
         }
-    } catch (_: TracePackFull) {
-        fullLog.full(pack.file)
-        buildJsonObject {
-            put(TRACE_REFERENCE_TAG, TracePackFormat.V2.version)
-            put(UNAVAILABLE_TAG, true)
-            put("truncated", true)
-            put("reason", "daily trace body budget exhausted")
-        }
+    } catch (capacity: TracePackFull) {
+        fullLog.full(pack.file, capacity.reason)
+        unavailable(capacity.reason)
+    }
+
+    private fun unavailable(reason: String): JsonObject = buildJsonObject {
+        put(TRACE_REFERENCE_TAG, TracePackFormat.V2.version)
+        put(UNAVAILABLE_TAG, true)
+        put("truncated", true)
+        put("reason", reason)
     }
 
     private inline fun replace(record: JsonObject, body: (JsonElement) -> JsonElement): JsonObject {

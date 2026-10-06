@@ -321,7 +321,13 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     "features/turns/src/main/kotlin/splice/head/perf/SessionTotals.kt" to mapOf("writeAtomic0600(" to 1),
     "features/turns/src/main/kotlin/splice/head/perf/TurnKeptRoutes.kt" to mapOf("writeAtomic0600(" to 1),
-    // V4-457: the stable store lock excludes encoding, index publication, purge and retention across processes.
+    // Body eviction persists its reason before removing packs; the day's trace metadata stays.
+    "core/src/main/kotlin/splice/core/storage/DayBodyBudget.kt" to mapOf(
+        "writeAtomic0600(" to 1,
+        "FileChannel.open(" to 1,
+        "Files.move(" to 1,
+    ),
+    // V4-457: stable directory and store locks exclude publication, eviction, purge and retention.
     "core/src/main/kotlin/splice/core/storage/DayMutationLock.kt" to mapOf("FileChannel.open(" to 1),
     // V4-457: one content-addressed binary body pack accompanies both JSONL generations of a UTC trace day.
     "features/turns/src/main/kotlin/splice/head/trace/body/TraceBodyPack.kt" to mapOf("FileChannel.open(" to 1),

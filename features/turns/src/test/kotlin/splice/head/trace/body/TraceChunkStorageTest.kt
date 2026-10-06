@@ -173,7 +173,7 @@ class TraceChunkStorageTest {
 
     private fun store(dir: Path, max: Int = 1 shl 20): TraceStore {
         var id = 0
-        return TraceStore(
+        return splice.head.syntheticTraceStore(
             ActivityDays(dir, HEAD, 7, WallClock { NOW }, true),
             HEAD,
             max,

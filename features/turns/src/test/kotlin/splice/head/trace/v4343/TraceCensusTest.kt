@@ -75,7 +75,7 @@ class TraceCensusTest {
     private val rows = TraceRows()
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun traceStore(dir: Path) = TraceStore(
+    private fun traceStore(dir: Path) = splice.head.syntheticTraceStore(
         ActivityDays(dir, HEAD, 30, WallClock { now }, true),
         HEAD,
         maxBodyChars = 1 shl 20,

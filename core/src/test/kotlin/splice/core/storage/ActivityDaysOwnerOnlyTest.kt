@@ -79,8 +79,8 @@ class ActivityDaysOwnerOnlyTest {
         assertEquals(DayPurge.Listed(both, emptyMap()), gone)
         assertEquals(0, days.lines().count())
         assertEquals(
-            listOf(dir.resolve("kimi.days.lock")),
-            Files.list(dir).use { it.toList() },
+            setOf(dir.resolve("kimi.days.lock"), dir.resolve("directory.days.lock")),
+            Files.list(dir).use { it.toList().toSet() },
             "day siblings went with the files, while the store mutation lock keeps its stable inode",
         )
         assertEquals(DayPurge.Listed(emptyList(), emptyMap()), DayFiles(dir, "kimi").purge(), "a second has nothing")

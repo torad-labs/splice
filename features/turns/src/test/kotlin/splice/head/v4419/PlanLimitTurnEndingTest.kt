@@ -44,7 +44,6 @@ import splice.head.TestResponsesProvider
 import splice.head.headDeps
 import splice.head.headStores
 import splice.head.turn.OutcomeSentences
-import splice.head.wire.TraceStore
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -94,7 +93,7 @@ private class LimitedHead(tmp: Path, upstreamBody: String) {
     }
     val traceDir: Path = tmp.resolve("trace")
     private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
-    private val trace = TraceStore(
+    private val trace = splice.head.syntheticTraceStore(
         splice.core.storage.ActivityDays(traceDir, "codex", 7, WallClock { TRACE_DAY_EPOCH_MS }, ownerOnly = true),
         "codex",
         maxBodyChars = 4096,

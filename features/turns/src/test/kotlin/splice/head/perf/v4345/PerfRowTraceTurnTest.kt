@@ -44,7 +44,6 @@ import splice.head.HeadServer
 import splice.head.headDeps
 import splice.head.headStores
 import splice.head.quotaFor
-import splice.head.wire.TraceStore
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -134,7 +133,7 @@ class PerfRowTraceTurnTest {
             quirks = PassthroughQuirks(providerTag = "claude-splice"),
         )
         val days = ActivityDays(traceDir, "anthropic", 7, ownerOnly = true)
-        val trace = if (traced) TraceStore(days, "anthropic", BODY_CAP) else null
+        val trace = if (traced) splice.head.syntheticTraceStore(days, "anthropic", BODY_CAP) else null
         val server = HeadServer(
             provider = provider,
             listenPort = 0,

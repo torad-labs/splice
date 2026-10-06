@@ -79,7 +79,7 @@ class TurnTraceTest {
     private fun store(
         maxBodyChars: Int = 1 shl 20,
         heap: HeapBudget = HeapBudget(Long.MAX_VALUE),
-    ): TraceStore = TraceStore(
+    ): TraceStore = splice.head.syntheticTraceStore(
         ActivityDays(tmp.resolve("trace"), "kimi", retentionDays = 7, clock = WallClock { DAY_ONE }, ownerOnly = true),
         head = "kimi",
         maxBodyChars = maxBodyChars,

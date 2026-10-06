@@ -36,7 +36,6 @@ import splice.head.trace.TraceHeads
 import splice.head.trace.TraceQuery
 import splice.head.trace.TraceRoute
 import splice.head.wire.ClientInbound
-import splice.head.wire.TraceStore
 import splice.head.wire.TurnIdMint
 import splice.upstream.sse.WireAttempt
 import java.nio.file.Files
@@ -76,7 +75,7 @@ class TraceTailHeapTest {
     /** Writes [ids] as the daemon would, one attempt and one turn record each, on the day [at] falls in. */
     private fun write(traceDir: Path, at: Long, ids: List<String>) {
         val queue = ArrayDeque(ids)
-        val store = TraceStore(
+        val store = splice.head.syntheticTraceStore(
             ActivityDays(traceDir, HEAD, 30, WallClock { at }, true),
             HEAD,
             maxBodyChars = 2 * BODY_CHARS,

@@ -482,8 +482,9 @@ origin.
   rows keyed by absolute directory (optionally per model). The most specific scope replaces the
   less specific ones (project+model, project, model, global); `instructions = ""` opts out. The
   text rides after Claude Code's own summarizer prompt on compaction requests only, so the cached
-  request prefix is byte-identical with and without it. `/api/compact` shows the effective text and
-  its source.
+  request prefix is byte-identical with and without it. Each compaction row in `/api/compact` shows
+  the effective text and its source; `/api/compaction/instructions` lists the rules in effect by
+  scope, source and length, never the text.
   A `[[compaction.project]]` path may start with `~/`, and a relative one resolves under the
   topology directory, exactly like `file =`; a tilde no longer stops the daemon at boot. A session
   whose project cannot be resolved is not looked up again for 5 seconds (a hit is never cached as

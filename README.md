@@ -595,8 +595,9 @@ messageEdges = "false"
 globally, per upstream model (`[[compaction.model]]`) or per project directory
 (`[[compaction.project]]`, optionally per model). The most specific scope replaces the others;
 `instructions = ""` opts a scope out. The text rides after Claude Code's own summarizer prompt on
-compaction requests only, so the cached request prefix is byte-identical with and without it, and
-`/api/compact` shows the effective text and where it came from.
+compaction requests only, so the cached request prefix is byte-identical with and without it. Each
+compaction row in `/api/compact` shows the effective text and where it came from;
+`/api/compaction/instructions` lists the rules in effect by scope, source and length, never the text.
 
 ### Per-head system prompt
 

@@ -82,7 +82,9 @@ internal class TurnTelemetry(
         rateLimited: Boolean = false,
         cause: String? = null,
         layers: Int = 0,
+        permanent: Boolean? = null,
     ) = withContext(NonCancellable) {
+        permanent?.let { drive.perf.setCount(PerfKeys.FAILURE_PERMANENT, if (it) 1L else 0L) }
         // Cancellation still owes its row, even if a paced socket write itself throws cancellation.
         try {
             drive.channel.finishPacing(clock = clock)

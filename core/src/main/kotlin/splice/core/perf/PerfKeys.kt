@@ -165,6 +165,9 @@ public object PerfKeys {
      *  billed upstream and never reported here. Written only when the turn cut one, so an absent key reads as none. */
     public const val CUT_SOURCE_ROUNDS: String = "cut_source_rounds"
 
+    /** The classified failure's retry decision: 1 is permanent, 0 retryable; absent when no decision was observed. */
+    public const val FAILURE_PERMANENT: String = "failure_permanent"
+
     /** Concurrent turns in flight on this head at admission — the live-concurrency gauge. */
     public const val INFLIGHT: String = "inflight"
 

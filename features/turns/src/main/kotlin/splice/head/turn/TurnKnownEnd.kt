@@ -82,6 +82,7 @@ internal class TurnKnownEnd(
                     failure.type == ErrorType.RATE_LIMIT,
                     cause = failure.cause.name,
                     layers = e.layers,
+                    permanent = !failure.transient,
                 )
             }
             true

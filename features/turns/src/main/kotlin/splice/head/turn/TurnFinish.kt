@@ -23,6 +23,8 @@ internal class TurnFinish(
     private val telemetry: TurnTelemetry,
 ) {
     suspend fun finishTurn(drive: TurnDrive, outcome: TurnOutcome) {
+        val failure = outcome as? TurnOutcome.Failure
+        markPermanence(drive, failure)
         val latencyMs = clock() - drive.t0
         log(
             telemetry.turnLine(
@@ -79,7 +81,6 @@ internal class TurnFinish(
         // V4-117: the failing outcome is in scope here, so the perf row gets its cause and the
         // attempt count the retry loop stamped on it. A Success carries neither, and both default to
         // absent — the row for a healthy turn is byte-identical to what it was before this field.
-        val failure = outcome as? TurnOutcome.Failure
         failure?.let { drive.trace?.failureSentenceUnlessSpoken(OutcomeSentences.of(it)) }
         telemetry.recordPerf(
             drive,
@@ -87,6 +88,11 @@ internal class TurnFinish(
             cause = failure?.cause?.name,
             layers = failure?.layers ?: 0,
         )
+    }
+
+    /** The classified decision survives a terminal write that escapes to the conn-reset recorder. */
+    private fun markPermanence(drive: TurnDrive, failure: TurnOutcome.Failure?) {
+        failure?.let { drive.perf.setCount(PerfKeys.FAILURE_PERMANENT, if (it.permanent) 1L else 0L) }
     }
 
     private fun markCodeMode(drive: TurnDrive, outcome: TurnOutcome) {

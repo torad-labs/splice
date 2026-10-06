@@ -27,6 +27,8 @@ import splice.core.model.ModelEntry
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ErrorType
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -212,7 +214,7 @@ class TurnEndingAccountingTest {
     @Test
     fun `accepted or committed work cannot move to another login`() = runBlocking {
         val fixture = HandoffFixture("committed")
-        val drive = Rig("committed").drive(clientGone = false).also { it.account = fixture.initial }
+        val drive = EndingRig("committed").drive(clientGone = false).also { it.account = fixture.initial }
         try {
             fixture.hold(0)
             fixture.route.commit()
@@ -227,7 +229,7 @@ class TurnEndingAccountingTest {
     @Test
     fun `handoff changes quota together and never revisits a refused login even after its hold lifts`() = runBlocking {
         val fixture = HandoffFixture("visited")
-        val drive = Rig("visited").drive(clientGone = false).also { it.account = fixture.initial }
+        val drive = EndingRig("visited").drive(clientGone = false).also { it.account = fixture.initial }
         try {
             fixture.hold(0)
             assertTrue(fixture.route.move(drive))
@@ -264,103 +266,7 @@ class TurnEndingAccountingTest {
         }
     }
 
-    private fun provider(): Provider = TestResponsesProvider(
-        tuning = ProviderTuning(
-            key = "codex",
-            label = "claudex",
-            catalog = ModelCatalog(
-                discoveryPrefix = "claude-codex--",
-                models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
-                defaultContextWindow = 272_000,
-            ),
-            pinnedModel = "gpt-5.6-sol",
-            auth = BranchlessFakeAuth(),
-            baseUrl = "http://127.0.0.1:1",
-            watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
-            loginCommand = "claudex login",
-        ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
-        configSummary = "detailed",
-    )
-
-    /** One ending surface with observable instruments; [tag] isolates each test's perf file. */
-    private inner class Rig(tag: String) {
-        val logs = mutableListOf<String>()
-        val log = LogSink { logs.add(it) }
-        val health = HeadHealthCounters()
-        val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
-        val telemetry = TurnTelemetry("codex", PerfStats(perfFile), log, ElapsedClock { 5L })
-        val ending: TurnEnding
-        init {
-            val p = provider()
-            val failures = TurnFailures(p)
-            ending = TurnEnding(
-                log,
-                telemetry,
-                health,
-                TurnConnEnd(p, log, telemetry, failures, health),
-                TurnKnownEnd(p, log, telemetry, failures, health),
-            )
-        }
-
-        suspend fun drive(
-            emitter: TurnTerminal = DeadClientTerminal(),
-            clientGone: Boolean = true,
-        ): TurnDrive = TurnDrive(
-            requestBody = buildJsonObject { },
-            meta = TurnMeta(
-                compact = false,
-                showReasoning = ReasoningDisplay.TEXT,
-                stream = true,
-                originalModel = "claude-codex--gpt-5.6-sol",
-                upstreamModel = "gpt-5.6-sol",
-                clientMaxTokens = 100,
-                effort = "high",
-                summary = "detailed",
-                budgetTokens = null,
-            ),
-            emitter = emitter,
-            watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
-            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
-            pipeline = TurnPipeline(
-                CompactStats(perfFile.resolveSibling("compact-dr128.jsonl")),
-                log = log,
-                clampOutput = OutputClamp { it },
-            ),
-            t0 = 0,
-            trace = null,
-            perf = TurnPerf(),
-            turnHeaders = emptyMap(),
-            signals = RunnerSignals(),
-            channel = ClientChannel(
-                ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
-                Mutex(),
-                AtomicBoolean(clientGone),
-            ),
-            toolSearch = null,
-        )
-
-        fun assertRecorded(tag: String) {
-            AsyncFileIo.drain() // perf rows append asynchronously
-            assertTrue(
-                Files.readString(perfFile).contains(tag),
-                "the perf row must survive a dead-client emit; file=${Files.readString(perfFile)}",
-            )
-        }
-    }
-
-    private fun emitExpectingDeadClient(rig: Rig, e: Throwable) = runBlocking {
-        val drive = rig.drive()
-        try {
-            assertThrows<IOException>("the dead-client write still propagates (status quo at the driver)") {
-                runBlocking { rig.ending.emitFailure(drive, e) }
-            }
-        } finally {
-            drive.slot.release()
-        }
-    }
+    private fun EndingRig(tag: String): EndingRig = EndingRig(tag, tmp, accountingProvider())
 
     // DR-129: finishTurn ran finishStream before the stamps, and a dead client's IOException out
     // of the SUCCESS terminal skipped stampSuccess — the only production writer of
@@ -369,7 +275,7 @@ class TurnEndingAccountingTest {
     // conn-reset surface that catches the rethrow (status quo, no double count).
     @Test
     fun `a Success whose terminal write fails still stamps its known usage - DR-129`() {
-        val rig = Rig("dr129-success")
+        val rig = EndingRig("dr129-success")
         val store = UsageStore(tmp.resolve("usage-dr129.json"), tmp.resolve("rl-dr129.json")).also(usageStores::add)
         val finish = TurnFinish(
             clock = ElapsedClock { 5L },
@@ -408,7 +314,7 @@ class TurnEndingAccountingTest {
     // closed for Success, one outcome over. This drives the real finish path.
     @Test
     fun `a ClientAbandoned turn stamps its salvaged usage - DR-125`() {
-        val rig = Rig("dr125-abandoned")
+        val rig = EndingRig("dr125-abandoned")
         val store = UsageStore(tmp.resolve("usage-dr125.json"), tmp.resolve("rl-dr125.json")).also(usageStores::add)
         val finish = TurnFinish(
             clock = ElapsedClock { 5L },
@@ -440,7 +346,7 @@ class TurnEndingAccountingTest {
 
     @Test
     fun `upstream-failed records perf + provider health despite a dead client - DR-128`() {
-        val rig = Rig("dr128-upstream")
+        val rig = EndingRig("dr128-upstream")
         emitExpectingDeadClient(rig, UpstreamFailed("""{"error":{"type":"api_error"}}""", 500))
         rig.assertRecorded("error:upstream-failed")
         assertEquals(1L, rig.health.snapshot().providerError, "G20 must still see the upstream failure")
@@ -448,7 +354,7 @@ class TurnEndingAccountingTest {
 
     @Test
     fun `conn-reset records perf + local health despite a dead client - DR-128`() {
-        val rig = Rig("dr128-connreset")
+        val rig = EndingRig("dr128-connreset")
         emitExpectingDeadClient(rig, IOException("upstream socket tore"))
         rig.assertRecorded("error:conn-reset")
         assertEquals(1L, rig.health.snapshot().localOrigin)
@@ -456,7 +362,7 @@ class TurnEndingAccountingTest {
 
     @Test
     fun `auth-missing records perf + local health despite a dead client - DR-128`() {
-        val rig = Rig("dr128-auth")
+        val rig = EndingRig("dr128-auth")
         emitExpectingDeadClient(rig, UpstreamAuthMissing())
         rig.assertRecorded("error:auth-missing")
         assertEquals(1L, rig.health.snapshot().localOrigin)
@@ -464,7 +370,7 @@ class TurnEndingAccountingTest {
 
     @Test
     fun `oversized-frame records perf + provider health despite a dead client - DR-128`() {
-        val rig = Rig("dr128-frame")
+        val rig = EndingRig("dr128-frame")
         emitExpectingDeadClient(rig, SseFrameTooLargeException("data", 1))
         rig.assertRecorded("error:upstream-frame-too-large")
         assertEquals(1L, rig.health.snapshot().providerError)
@@ -472,7 +378,7 @@ class TurnEndingAccountingTest {
 
     @Test
     fun `unexpected runtime failure records perf + local health despite a dead client - DR-128`() {
-        val rig = Rig("dr128-unexpected")
+        val rig = EndingRig("dr128-unexpected")
         emitExpectingDeadClient(rig, IllegalStateException("synthetic gateway bug"))
         rig.assertRecorded("error:unexpected")
         assertEquals(1L, rig.health.snapshot().localOrigin)
@@ -487,11 +393,11 @@ class TurnEndingAccountingTest {
         )
         cases.forEach { (case, emitter) ->
             val (name, sealRequested, clientGone) = case
-            val rig = Rig("usage-cancel-$name")
+            val rig = EndingRig("usage-cancel-$name")
             val store = UsageStore(tmp.resolve("usage-cancel-$name.json"), tmp.resolve("rl-cancel-$name.json"))
                 .also(usageStores::add)
             val stamp = TurnUsageStamp(store, rig.log, rig.telemetry)
-            val seal = CancellationSeal(provider(), rig.log, rig.telemetry, rig.health, stamp)
+            val seal = CancellationSeal(accountingProvider(), rig.log, rig.telemetry, rig.health, stamp)
             val drive = rig.drive(emitter, clientGone)
             try {
                 drive.recordRawRound(
@@ -520,11 +426,11 @@ class TurnEndingAccountingTest {
             SealCase("restart", ConnectedTerminal(), false, HeadRestart(), "error:restarted"),
         )
         cases.forEach { case ->
-            val rig = Rig("row-cancel-${case.name}")
+            val rig = EndingRig("row-cancel-${case.name}")
             val store = UsageStore(tmp.resolve("row-${case.name}.json"), tmp.resolve("rl-row-${case.name}.json"))
                 .also(usageStores::add)
             val stamp = TurnUsageStamp(store, rig.log, rig.telemetry)
-            val seal = CancellationSeal(provider(), rig.log, rig.telemetry, rig.health, stamp)
+            val seal = CancellationSeal(accountingProvider(), rig.log, rig.telemetry, rig.health, stamp)
             val drive = rig.drive(case.emitter, case.clientGone)
             try {
                 drive.recordRawRound(
@@ -538,9 +444,9 @@ class TurnEndingAccountingTest {
                 AsyncFileIo.drain() // perf rows append asynchronously
                 val row = Files.readAllLines(rig.perfFile).single()
                 assertTrue(row.contains("\"outcome\":\"${case.outcome}\""), "${case.name}: $row")
-                assertEquals(50L, counter(row, "in_tokens"), "${case.name}: $row")
-                assertEquals(5L, counter(row, "cached_tokens"), "${case.name}: $row")
-                assertEquals(4L, counter(row, "out_tokens"), "${case.name}: $row")
+                assertEquals(50L, rowCount(row, "in_tokens"), "${case.name}: $row")
+                assertEquals(5L, rowCount(row, "cached_tokens"), "${case.name}: $row")
+                assertEquals(4L, rowCount(row, "out_tokens"), "${case.name}: $row")
                 assertEquals(4, store.readState().outputTokens5h, "${case.name} must still stamp the store once")
             } finally {
                 drive.slot.release()
@@ -556,14 +462,11 @@ class TurnEndingAccountingTest {
         val outcome: String,
     )
 
-    private fun counter(row: String, key: String): Long? =
-        Regex("\"$key\":(\\d+)").find(row)?.groupValues?.get(1)?.toLong()
-
     /** Oct 4: a code-mode turn that parks while the round writing its script still streams wrote 0 in, 0 out, and a
      *  later turn absorbed that round. Its row now waits for the round and keeps the time its turn ended. */
     @Test
     fun `a row held for a streaming round lands with that round's usage at the time its turn ended`() = runBlocking {
-        val rig = Rig("held-row")
+        val rig = EndingRig("held-row")
         var now = HELD_TURN_END
         val telemetry = TurnTelemetry("codex", PerfStats(rig.perfFile, WallClock { now }), rig.log, ElapsedClock { 5L })
         val drive = rig.drive()
@@ -576,21 +479,22 @@ class TurnEndingAccountingTest {
         release.release(Usage(inputTokens = 999))
         AsyncFileIo.drain()
         val row = Files.readAllLines(rig.perfFile).single()
-        assertEquals(HELD_TURN_END, counter(row, "ts"), row)
-        assertEquals(listOf(50L, 5L, 4L), listOf(IN, CACHED, OUT).map { counter(row, it) }, row)
-        assertEquals(null, counter(row, PerfKeys.ABSORBED_ROUNDS), row)
+        assertEquals(HELD_TURN_END, rowCount(row, "ts"), row)
+        assertEquals(listOf(50L, 5L, 4L), listOf(IN, CACHED, OUT).map { rowCount(row, it) }, row)
+        assertEquals(null, rowCount(row, PerfKeys.ABSORBED_ROUNDS), row)
+        assertEquals(null, rowCount(row, "failure_permanent"), "a healthy row must not invent a failure decision")
 
         val early = rig.drive()
         early.sourceRow.hold().release(Usage(inputTokens = 7, outputTokens = 1))
         telemetry.recordPerf(early, "ok")
         AsyncFileIo.drain()
-        assertEquals(7L, counter(Files.readAllLines(rig.perfFile).last(), IN), "a round that settled first is carried")
+        assertEquals(7L, rowCount(Files.readAllLines(rig.perfFile).last(), IN), "a round that settled first is carried")
     }
 
     @Test
     fun `a head stop writes a held row with what is known, and the round settling afterwards changes nothing`() =
         runBlocking {
-            val rig = Rig("held-stop")
+            val rig = EndingRig("held-stop")
             val drive = rig.drive()
             drive.perf.setCount(IN, 3L)
             val release = drive.sourceRow.hold()
@@ -602,19 +506,19 @@ class TurnEndingAccountingTest {
             AsyncFileIo.drain()
             val rows = Files.readAllLines(rig.perfFile)
             assertEquals(2, rows.size, "$rows")
-            assertEquals(3L, counter(rows.first(), IN), "the stop writes what the turn knew: ${rows.first()}")
-            assertEquals(null, counter(rows.last(), IN), "a cut round releases with nothing: ${rows.last()}")
+            assertEquals(3L, rowCount(rows.first(), IN), "the stop writes what the turn knew: ${rows.first()}")
+            assertEquals(null, rowCount(rows.last(), IN), "a cut round releases with nothing: ${rows.last()}")
         }
 
     /** Blocker #5: terminal emission can itself cancel. The original cancellation remains the one
      *  the driver rethrows, while known completed raw rounds are synchronously stamped once. */
     @Test
     fun `cancellation during terminal emission preserves the original cancellation and stamps usage`() = runBlocking {
-        val rig = Rig("usage-cancel-during-seal")
+        val rig = EndingRig("usage-cancel-during-seal")
         val store = UsageStore(tmp.resolve("usage-cancel-during-seal.json"), tmp.resolve("rl-cancel-during-seal.json"))
             .also(usageStores::add)
         val stamp = TurnUsageStamp(store, rig.log, rig.telemetry)
-        val seal = CancellationSeal(provider(), rig.log, rig.telemetry, rig.health, stamp)
+        val seal = CancellationSeal(accountingProvider(), rig.log, rig.telemetry, rig.health, stamp)
         val original = CancellationException("original turn cancellation")
         val duringEmission = CancellationException("terminal emission cancellation")
         val drive = rig.drive(CancellationDuringSealTerminal(duringEmission), clientGone = false)
@@ -653,6 +557,222 @@ class TurnEndingAccountingTest {
         } finally {
             drive.slot.release()
         }
+    }
+}
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class TurnFailurePermanenceTest {
+    private lateinit var tmp: Path
+    private val usageStores = mutableListOf<UsageStore>()
+
+    @BeforeAll
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
+    }
+
+    @AfterAll
+    fun tearDown() {
+        usageStores.forEach(UsageStore::flushNow)
+        assertTrue(AsyncFileIo.drain(), "accepted perf writes must finish before temporary paths are deleted")
+    }
+
+    @Test
+    fun `a reported failure retains permanence when its terminal write falls back to conn-reset`() = runBlocking {
+        for ((permanent, expected) in listOf(false to 0L, true to 1L)) {
+            val rig = EndingRig("dead-permanence-$permanent", tmp, accountingProvider())
+            val store = UsageStore(tmp.resolve("dead-$permanent.json"), tmp.resolve("dead-rl-$permanent.json"))
+                .also(usageStores::add)
+            val finish = TurnFinish(
+                ElapsedClock { 5L },
+                rig.log,
+                TurnUsageStamp(store, rig.log, rig.telemetry),
+                rig.health,
+                rig.telemetry,
+            )
+            val drive = rig.drive(DeadClientSuccessTerminal(), clientGone = false)
+            try {
+                val outcome = TurnOutcome.Failure(
+                    "synthetic upstream verdict",
+                    FailureCause.UPSTREAM_REPORTED,
+                    FailurePhase.MID_OUTPUT,
+                    permanent = permanent,
+                )
+                val torn = assertThrows<IOException> { runBlocking { finish.finishTurn(drive, outcome) } }
+                assertThrows<IOException> { runBlocking { rig.ending.emitFailure(drive, torn) } }
+                AsyncFileIo.drain()
+                val row = Files.readAllLines(rig.perfFile).single()
+                assertTrue(row.contains("\"outcome\":\"error:conn-reset\""), row)
+                assertEquals(expected, rowCount(row, "failure_permanent"), row)
+            } finally {
+                drive.slot.release()
+            }
+        }
+    }
+
+    @Test
+    fun `held rows retain observed false true and absent permanence decisions`() = runBlocking {
+        for (permanent in listOf(null, false, true)) {
+            val rig = EndingRig("held-permanence-$permanent", tmp, accountingProvider())
+            val drive = rig.drive(ConnectedTerminal(), clientGone = false)
+            val release = drive.sourceRow.hold()
+            try {
+                rig.telemetry.recordPerf(drive, "ok", permanent = permanent)
+                AsyncFileIo.drain()
+                assertFalse(Files.exists(rig.perfFile))
+                release.release(Usage(inputTokens = 7, outputTokens = 1))
+                AsyncFileIo.drain()
+                val row = Files.readAllLines(rig.perfFile).single()
+                val expected = permanent?.let { if (it) 1L else 0L }
+                assertEquals(expected, rowCount(row, "failure_permanent"), row)
+                assertEquals(7L, rowCount(row, IN), row)
+            } finally {
+                drive.slot.release()
+            }
+        }
+    }
+
+    @Test
+    fun `reported failures retain both permanence decisions in their encoded perf rows`() = runBlocking {
+        for ((permanent, expected) in listOf(false to 0L, true to 1L)) {
+            val rig = EndingRig("permanence-$permanent", tmp, accountingProvider())
+            val store = UsageStore(tmp.resolve("usage-$permanent.json"), tmp.resolve("rl-$permanent.json"))
+                .also(usageStores::add)
+            val finish = TurnFinish(
+                ElapsedClock { 5L },
+                rig.log,
+                TurnUsageStamp(store, rig.log, rig.telemetry),
+                rig.health,
+                rig.telemetry,
+            )
+            val drive = rig.drive(ConnectedTerminal(), clientGone = false)
+            try {
+                finish.finishTurn(
+                    drive,
+                    TurnOutcome.Failure(
+                        "synthetic upstream verdict",
+                        FailureCause.UPSTREAM_REPORTED,
+                        FailurePhase.MID_OUTPUT,
+                        permanent = permanent,
+                    ),
+                )
+                AsyncFileIo.drain()
+                val row = Files.readAllLines(rig.perfFile).single()
+                assertTrue(row.contains("\"cause\":\"UPSTREAM_REPORTED\""), row)
+                assertEquals(expected, rowCount(row, "failure_permanent"), row)
+            } finally {
+                drive.slot.release()
+            }
+        }
+    }
+
+    @Test
+    fun `classified http permanence survives a dead client's error write`() {
+        for ((status, expected) in listOf(500 to 0L, 400 to 1L)) {
+            val rig = EndingRig("http-permanence-$status", tmp, accountingProvider())
+            emitExpectingDeadClient(rig, UpstreamFailed("""{"error":{"type":"api_error"}}""", status))
+            AsyncFileIo.drain()
+            assertEquals(expected, rowCount(Files.readAllLines(rig.perfFile).single(), "failure_permanent"))
+        }
+    }
+}
+
+private fun accountingProvider(): Provider = TestResponsesProvider(
+    tuning = ProviderTuning(
+        key = "codex",
+        label = "claudex",
+        catalog = ModelCatalog(
+            discoveryPrefix = "claude-codex--",
+            models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+            defaultContextWindow = 272_000,
+        ),
+        pinnedModel = "gpt-5.6-sol",
+        auth = BranchlessFakeAuth(),
+        baseUrl = "http://127.0.0.1:1",
+        watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+        loginCommand = "claudex login",
+    ),
+    showReasoning = ReasoningDisplay.TEXT,
+    replayReasoning = false,
+    configEffort = "high",
+    configSummary = "detailed",
+)
+
+private fun emitExpectingDeadClient(rig: EndingRig, e: Throwable) = runBlocking {
+    val drive = rig.drive()
+    try {
+        assertThrows<IOException>("the dead-client write still propagates (status quo at the driver)") {
+            runBlocking { rig.ending.emitFailure(drive, e) }
+        }
+    } finally {
+        drive.slot.release()
+    }
+}
+
+private fun rowCount(row: String, key: String): Long? =
+    Regex("\"$key\":(\\d+)").find(row)?.groupValues?.get(1)?.toLong()
+
+/** One ending surface with observable instruments; [tag] isolates each test's perf file. */
+private class EndingRig(tag: String, tmp: Path, p: Provider) {
+    val logs = mutableListOf<String>()
+    val log = LogSink { logs.add(it) }
+    val health = HeadHealthCounters()
+    val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
+    val telemetry = TurnTelemetry("codex", PerfStats(perfFile), log, ElapsedClock { 5L })
+    val ending: TurnEnding
+    init {
+        val failures = TurnFailures(p)
+        ending = TurnEnding(
+            log,
+            telemetry,
+            health,
+            TurnConnEnd(p, log, telemetry, failures, health),
+            TurnKnownEnd(p, log, telemetry, failures, health),
+        )
+    }
+
+    suspend fun drive(
+        emitter: TurnTerminal = DeadClientTerminal(),
+        clientGone: Boolean = true,
+    ): TurnDrive = TurnDrive(
+        requestBody = buildJsonObject { },
+        meta = TurnMeta(
+            compact = false,
+            showReasoning = ReasoningDisplay.TEXT,
+            stream = true,
+            originalModel = "claude-codex--gpt-5.6-sol",
+            upstreamModel = "gpt-5.6-sol",
+            clientMaxTokens = 100,
+            effort = "high",
+            summary = "detailed",
+            budgetTokens = null,
+        ),
+        emitter = emitter,
+        watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
+        slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+        pipeline = TurnPipeline(
+            CompactStats(perfFile.resolveSibling("compact-dr128.jsonl")),
+            log = log,
+            clampOutput = OutputClamp { it },
+        ),
+        t0 = 0,
+        trace = null,
+        perf = TurnPerf(),
+        turnHeaders = emptyMap(),
+        signals = RunnerSignals(),
+        channel = ClientChannel(
+            ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
+            Mutex(),
+            AtomicBoolean(clientGone),
+        ),
+        toolSearch = null,
+    )
+
+    fun assertRecorded(tag: String) {
+        AsyncFileIo.drain() // perf rows append asynchronously
+        assertTrue(
+            Files.readString(perfFile).contains(tag),
+            "the perf row must survive a dead-client emit; file=${Files.readString(perfFile)}",
+        )
     }
 }
 

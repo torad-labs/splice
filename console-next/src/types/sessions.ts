@@ -26,6 +26,9 @@ export interface SessionAsk {
 
 export type SessionAvailability = 'live' | 'stale' | 'gone';
 
+/** Request-owned account attribution; limited history is not a session-listing failure. */
+export type SessionAccountState = 'known' | 'none' | 'history_limited';
+
 /**
  * The git root a session groups under, resolved by the daemon inside the trusted
  * root set ($HOME, /tmp, statuslineGitRoots) through a cached resolver, with worktrees folded into

@@ -40,4 +40,6 @@ export const P = {
   login: (name: string): string => `Login: ${name}`,
   loginUnknown: 'Login not reported',
   loginUnidentified: 'No request with a known login is recorded for this session.',
+  loginUnattributed: 'No known login is attributed to this session.',
+  loginHistoryLimited: 'The request history is incomplete, so this session’s login is unknown.',
 } as const;

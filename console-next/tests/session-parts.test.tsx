@@ -306,6 +306,23 @@ describe('a session card', () => {
     expect(unknown).toContain('Login not reported');
     expect(unknown).not.toContain('Login:');
   });
+  test.each([
+    ['known', 'synthetic-work', 'Login: Work login'],
+    ['none', null, 'Login not reported. No known login is attributed to this session.'],
+    ['history_limited', null, 'Login not reported. The request history is incomplete, so this session’s login is unknown.'],
+  ] as const)('the closed %s attribution state names only what the request source proves', (loginState, account, expected) => {
+    const html = render(facts({ row: row({ account }), login: 'Work login', loginState, loginUnidentified: loginState === 'history_limited' }));
+    expect(html).toContain(expected);
+    expect(html).not.toContain('role="alert"');
+    if (loginState === 'history_limited') {
+      expect(html).not.toContain('No request with a known login is recorded');
+      expect(html).not.toContain('Login: Work login');
+    }
+    if (loginState === 'none') {
+      expect(html).not.toContain('request history is incomplete');
+      expect(html).not.toContain('No request with a known login is recorded');
+    }
+  });
   test('only an explicitly unidentified session login explains the missing request attribution', () => {
     const why = 'No request with a known login is recorded for this session.';
     expect(render(facts({ row: row({ account: null }), loginUnidentified: true }))).toContain(why);

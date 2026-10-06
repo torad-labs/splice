@@ -6,7 +6,7 @@ import type { Handoff, SessionState } from '../../lib/sessions';
 import { answerWhere, waitingAsks } from '../../lib/session-says';
 import { canResumeSession, cardLine, needsPerson, sessionKey, sessionLabel, stateTone, stateWord, repoName } from '../../lib/sessions';
 import { SW } from '../../lib/words-sessions';
-import type { SessionAsk, SessionRow } from '../../types/sessions';
+import type { SessionAccountState, SessionAsk, SessionRow } from '../../types/sessions';
 import { Button, ModelMark, State, Window } from '../../ui';
 import { S } from '../shared/copy';
 import { OpenLink, ResumeCopy, sessionPath } from '../shared/SessionActions';
@@ -22,6 +22,8 @@ export interface CardFacts {
   hand: Handoff;
   /** The shared display name of this session's own attributed login, not its head's last selection. */
   login?: string | null;
+  /** The request source's closed attribution verdict, separate from session-listing errors. */
+  loginState?: SessionAccountState;
   /** Explicitly null attribution on a client head, not an absent legacy field or a direct command. */
   loginUnidentified?: boolean;
   /** How long it has been in its state (ms), when the registry gave a time. */
@@ -62,7 +64,11 @@ export function SessionCard({ facts, sortable = true, ordering }: { facts: CardF
   const { line, note, agent } = cardLine(row, state, since, quiet);
   const asks = state === 'waiting' ? waitingAsks(row) : [];
   const where = needs ? answerWhere(row) : null;
-  const meta = [note, head === null ? null : row.account == null ? row.account === null && facts.loginUnidentified === true ? `${P.loginUnknown}. ${P.loginUnidentified}` : P.loginUnknown : P.login(facts.login ?? row.account), repoName(row), handText(hand)].filter((part): part is string => part !== null);
+  const login = head === null ? null : row.account != null ? P.login(facts.login ?? row.account)
+    : facts.loginState === 'history_limited' ? `${P.loginUnknown}. ${P.loginHistoryLimited}`
+      : facts.loginState === 'none' ? `${P.loginUnknown}. ${P.loginUnattributed}`
+        : row.account === null && facts.loginUnidentified === true ? `${P.loginUnknown}. ${P.loginUnidentified}` : P.loginUnknown;
+  const meta = [note, login, repoName(row), handText(hand)].filter((part): part is string => part !== null);
   return (
     <Window
       as="li"

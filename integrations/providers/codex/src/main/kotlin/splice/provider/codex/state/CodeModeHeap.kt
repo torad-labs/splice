@@ -115,7 +115,7 @@ internal enum class CodeModeWeight {
             text(id) + text(result.output) + record.accepted.media(id).orEmpty().sumOf(::json)
         } + text(record.output.orEmpty()) + text(record.error.orEmpty()) +
         record.nativeSegments.sumOf(::segment) + record.continuity.sumOf(::json) +
-        record.continuityReplay.sumOf(::segment) + record.issued.sumOf(::issued)
+        record.continuityReplay.sumOf(::segment) + record.issued.sumOf(::issued) + anchors(record.replayAnchors)
 
     fun snapshot(record: CodeModeRecordSnapshot): Long = RECORD_METADATA_BYTES +
         json(record.outer) + text(record.source) + record.pending.sumOf(::call) +
@@ -123,7 +123,17 @@ internal enum class CodeModeWeight {
             text(id) + text(result.output) + result.media.orEmpty().sumOf(::json)
         } + text(record.output.orEmpty()) + text(record.error.orEmpty()) +
         record.nativeSegments.sumOf(::segment) + record.continuity.sumOf(::json) +
-        record.continuityReplay.sumOf(::segment) + record.issued.sumOf(::issued)
+        record.continuityReplay.sumOf(::segment) + record.issued.sumOf(::issued) + anchors(record.replayAnchors)
+
+    /** Placement maps escape with both live records and snapshots, after raw decoding trees close. */
+    private fun anchors(value: CodeModeReplayAnchors?): Long = value?.let {
+        SNAPSHOT_ENTRY_BYTES + anchor(it.baseline) +
+            it.native.values.sumOf { placed -> SNAPSHOT_ENTRY_BYTES + anchor(placed) } +
+            it.nativeFollowing.values.sumOf { placed -> SNAPSHOT_ENTRY_BYTES + anchor(placed) }
+    } ?: 0L
+
+    private fun anchor(value: CodeModeHistoryAnchor): Long =
+        SNAPSHOT_ENTRY_BYTES + (value.itemDigest?.let(::text) ?: 0L)
 
     /** A step's own payload: its digest, its calls and what [delivered] weighs. */
     fun issued(step: CodeModeIssuedStep): Long = text(step.requestDigest) + step.calls.sumOf(::call) + delivered(step)

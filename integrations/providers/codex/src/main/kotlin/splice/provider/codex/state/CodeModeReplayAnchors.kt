@@ -18,6 +18,7 @@ internal data class CodeModeHistoryAnchor(val itemDigest: String?, val occurrenc
 internal data class CodeModeReplayAnchors(
     val baseline: CodeModeHistoryAnchor,
     val native: Map<Int, CodeModeHistoryAnchor>,
+    val nativeFollowing: Map<Int, CodeModeHistoryAnchor> = emptyMap(),
 )
 
 internal object CodeModeAnchorCapture {
@@ -62,7 +63,16 @@ internal object CodeModeAnchorCapture {
             val digest = fingerprints[prior]
             return CodeModeHistoryAnchor(digest, fingerprints.take(prior).count { it == digest }, boundary - prior - 1)
         }
-        return CodeModeReplayAnchors(at(items.size), natives.associate { it.logicalOffset to at(it.logicalOffset) })
+        val following = natives.mapNotNull { segment ->
+            val next = segment.logicalOffset.takeIf { it in eligible } ?: return@mapNotNull null
+            val digest = fingerprints[next]
+            segment.logicalOffset to CodeModeHistoryAnchor(digest, fingerprints.take(next).count { it == digest })
+        }.toMap()
+        return CodeModeReplayAnchors(
+            at(items.size),
+            natives.associate { it.logicalOffset to at(it.logicalOffset) },
+            following,
+        )
     }
 }
 
@@ -107,7 +117,7 @@ internal class CodeModeHistoryIndex(
         origins: List<CodeModeNativeOrigin>,
     ): Int? {
         val anchor = nativeAnchor(record, source, segment.logicalOffset)
-        val adjacent = anchor?.takeIf { it.logicalTail == 0 }?.let { resolve(it) }
+        val adjacent = adjacentNativeOffset(record, source, segment.logicalOffset)
         if (adjacent != null) return adjacent
         val bounds = nativeBounds(record, source, anchor)
         if (!nativeOrder(source, replay, bounds)) return null
@@ -129,6 +139,14 @@ internal class CodeModeHistoryIndex(
         .mapNotNull { origin ->
             boundary(origin.record)?.plus(origin.segment.logicalOffset)?.takeIf { it in bounds }
         }.distinct().singleOrNull()
+
+    private fun adjacentNativeOffset(record: CodeModeRecord, source: CodeModeRecord, offset: Int): Int? {
+        val before = nativeAnchor(record, source, offset)
+        val after = source.replayAnchors?.nativeFollowing?.get(offset)
+            ?: record.replayAnchors?.nativeFollowing?.get(offset)
+        return before?.takeIf { it.logicalTail == 0 }?.let { resolve(it) }
+            ?: after?.let { resolve(it)?.minus(1) }
+    }
 
     private fun nativeAnchor(record: CodeModeRecord, source: CodeModeRecord, offset: Int): CodeModeHistoryAnchor? =
         source.replayAnchors?.native?.get(offset) ?: record.replayAnchors?.native?.get(offset)
@@ -171,7 +189,10 @@ internal class CodeModeHistoryIndex(
         val lower = source.replayAnchors?.native.orEmpty().entries.filter { (_, anchor) ->
             resolve(anchor.copy(logicalTail = 0)) == bounds.first
         }.minOfOrNull { (offset, anchor) -> offset - anchor.logicalTail } ?: 0
-        return CodeModeNativeChain.replay(source).filter { it.logicalOffset >= lower }
+        val owner = generateSequence(source) { it.nativeParent }
+            .firstOrNull { owned(it).firstOrNull() == bounds.last } ?: source
+        val upper = owner.baselineLogicalCount + owner.continuity.size
+        return CodeModeNativeChain.replay(source).filter { it.logicalOffset in lower..upper }
     }
 
     /** Exact identities keep the source's order even when opaque-to-callback expansion moves their slots. */

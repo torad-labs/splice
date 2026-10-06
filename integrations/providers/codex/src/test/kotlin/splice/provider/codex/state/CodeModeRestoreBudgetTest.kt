@@ -11,6 +11,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.provider.codex.CodeModePersistedState
+import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecords
 import java.nio.file.Files
 import java.nio.file.Path
@@ -82,6 +83,43 @@ class CodeModeRestoreBudgetTest(@param:TempDir private val dir: Path) {
         val restored = CodeModeStateJournal.read(file, json, heap)
         assertEquals(record.output, restored.records.single().output)
         assertTrue(heap.available.value <= heap.limitBytes - checkNotNull(record.output).length * 2L)
+    }
+
+    @Test
+    fun `native following witnesses remain charged on an owned live record`() {
+        val record = anchoredRecord()
+        val heap = HeapBudget(Long.MAX_VALUE, 4 * 1024 * 1024)
+
+        CodeModeHeap.own(record, heap)
+
+        assertTrue(
+            heap.limitBytes - heap.available.value >= 2048L * 64L,
+            "the digests alone exceed the fixed metadata allowance and must remain charged",
+        )
+    }
+
+    @Test
+    fun `native following witnesses remain charged after journal decode stages close`() {
+        val record = anchoredRecord().snapshot()
+        val file = dir.resolve("anchored.jsonl")
+        Files.writeString(file, json.encodeToString(CodeModePersistedState(records = listOf(record))) + "\n")
+        val heap = HeapBudget(Long.MAX_VALUE, 16 * 1024 * 1024)
+
+        val restored = CodeModeStateJournal.read(file, json, heap)
+
+        assertEquals(2048, restored.records.single().replayAnchors?.nativeFollowing?.size)
+        assertTrue(
+            heap.limitBytes - heap.available.value >= 2048L * 64L,
+            "escaped placement metadata must not be refunded with the raw decoding trees",
+        )
+    }
+
+    private fun anchoredRecord(): CodeModeRecord = CodeModeRecords.of("synthetic", 1).apply {
+        replayAnchors = CodeModeReplayAnchors(
+            CodeModeHistoryAnchor(null, 0),
+            emptyMap(),
+            (0 until 2048).associateWith { CodeModeHistoryAnchor(it.toString().padStart(64, '0'), 0) },
+        )
     }
 
     private fun hash(file: Path): String = java.util.HexFormat.of().formatHex(

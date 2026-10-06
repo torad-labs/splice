@@ -41,5 +41,6 @@
 @media (max-width: 900px) { .legend, .figs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .failure-sentence { margin-top: var(--space-8); max-width: 62ch; font: 500 1.0625rem/1.6 var(--read); color: var(--ink); }
 .capture-control { margin-top: var(--space-8); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-5) var(--space-7); }
+.capture-control + .tabs { margin-top: var(--space-8); }
 .capture-switch { display: inline-flex; align-items: center; gap: var(--space-5); font: 500 0.96rem var(--meta); color: var(--body); }
 @media (min-width: 2400px) { .turn-section.wide { max-width: none; } }

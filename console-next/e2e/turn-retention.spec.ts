@@ -272,6 +272,15 @@ test('capture writes reread running state, keep new bodies absent until restart 
     const toggle = page.getByRole('switch', { name: /^Keep full requests and replies for .* \(\d+ days?, only you can read them\)$/ });
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await expect(page.getByRole('main')).toContainText('Request capture is off');
+    for (const width of [1536, 393]) {
+      await page.setViewportSize({ width, height: 980 });
+      const [captureBox, tabsBox] = await Promise.all([page.locator('.capture-control').boundingBox(), page.locator('.tabs').boundingBox()]);
+      expect(captureBox).not.toBeNull();
+      expect(tabsBox).not.toBeNull();
+      expect((tabsBox?.y ?? 0) - ((captureBox?.y ?? Infinity) + (captureBox?.height ?? 0))).toBeGreaterThanOrEqual(12);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: test.info().outputPath('capture-spacing-' + width + '.png'), fullPage: true });
+    }
     await toggle.click();
     await expect.poll(() => wroteThenRead(true)).toBe(true);
     await expect(toggle).toHaveAttribute('aria-checked', 'true');

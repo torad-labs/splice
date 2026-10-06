@@ -32,6 +32,8 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import org.junit.jupiter.api.assertThrows
+import org.opentest4j.AssertionFailedError
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.upstream.RetryNotice
@@ -193,6 +195,79 @@ class RefusedThreadStartPostTest {
             assertEquals(1, upstream.accepted.get(), "the retry reused the connection the refused attempt made")
         }
     }
+}
+
+/** The same reuse oracle must fail when the refused call's socket is closed before its retry. Own JVM. */
+class RefusedConnectionReuseMutationTest {
+
+    @Test
+    @Timeout(CAPS_BACKSTOP_S)
+    fun `the connection reuse oracle detects a refused retry forced onto a second connection`() {
+        LoopbackUpstream().use { upstream ->
+            val sockets = CapturedRefusalSockets()
+            val client = UpstreamClient(
+                totalTimeoutMs = REFUSAL_TOTAL_MS,
+                maxRetries = 2,
+                client = UpstreamTransport().client(
+                    REFUSAL_TOTAL_MS,
+                    log = LogSink {},
+                    noDelayGuard = AtomicBoolean(true),
+                    requestWriteTimeoutMs = REFUSAL_TOTAL_MS,
+                    sockets = UpstreamSockets(factory = sockets),
+                ),
+                waiter = RecordingWaiter(),
+                clock = ElapsedClock { 0L },
+            )
+            val retries = CopyOnWriteArrayList<String>()
+            val context = upstream.context().copy(
+                onRetry = RetryNotice { reason ->
+                    retries += reason
+                    check(reason == "transport IOException attempt 1/2: $REFUSED_REASON")
+                    sockets.closeRefusedConnection()
+                },
+            )
+            val restore = refuseTaskRunnerThreads()
+            val answer = try {
+                runCatching { runBlocking { client.posted(context, "{}") { "ok" } } }
+            } finally {
+                restore()
+            }
+
+            assertEquals(listOf("transport IOException attempt 1/2: $REFUSED_REASON"), retries)
+            assertEquals("ok", answer.getOrThrow())
+            assertEquals(2, sockets.created.get(), "the retry really connected again")
+            assertEquals(1, upstream.requests.get(), "the refused attempt still sent no request")
+            val rejected = assertThrows<AssertionFailedError> {
+                assertEquals(1, upstream.accepted.get(), "the retry reused the connection the refused attempt made")
+            }
+            assertEquals(1, rejected.expected.value)
+            assertEquals(2, rejected.actual.value)
+        }
+    }
+}
+
+/** Captures only the synthetic transport's sockets; closing at onRetry precedes pool reuse planning. */
+private class CapturedRefusalSockets : SocketFactory() {
+    private var first: Socket? = null
+    val created = AtomicInteger()
+
+    override fun createSocket(): Socket = Socket().also { socket ->
+        if (created.incrementAndGet() == 1) first = socket
+    }
+
+    fun closeRefusedConnection() {
+        check(created.get() == 1) { "the mutation must run before the retry opens a socket" }
+        checkNotNull(first).close()
+    }
+
+    override fun createSocket(host: String, port: Int): Socket = unconnectedOnly()
+    override fun createSocket(host: String, port: Int, localHost: InetAddress, localPort: Int): Socket =
+        unconnectedOnly()
+    override fun createSocket(host: InetAddress, port: Int): Socket = unconnectedOnly()
+    override fun createSocket(host: InetAddress, port: Int, localAddress: InetAddress, localPort: Int): Socket =
+        unconnectedOnly()
+
+    private fun unconnectedOnly(): Nothing = throw UnsupportedOperationException("OkHttp asks for unconnected sockets")
 }
 
 // V4-307: the posts after a real refusal. Its own JVM (see the file header).

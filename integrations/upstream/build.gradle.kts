@@ -31,6 +31,7 @@ tasks.withType<Test>().configureEach {
 // JVM of its own and `test` never runs them. check carries the task, so the gate does.
 val threadRefusalClasses = listOf(
     "splice.upstream.transport.RefusedThreadStartPostTest",
+    "splice.upstream.transport.RefusedConnectionReuseMutationTest",
     "splice.upstream.transport.AfterRefusedThreadStartTest",
     "splice.upstream.transport.OkioTimeoutsRefusedTest",
 )

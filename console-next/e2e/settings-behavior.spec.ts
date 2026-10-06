@@ -241,7 +241,7 @@ test('Compaction report labels stand above complete single-line recent records',
 });
 
 test('saved login copies remain listed when their last selection is not recorded', async ({ page }, testInfo) => {
-  let selected: string | null = null;
+  let selected: string | null | undefined = null;
   await page.route(url => url.pathname === '/api/claude-head', async route => {
     const response = await route.fetch();
     const body = await response.json();
@@ -253,13 +253,17 @@ test('saved login copies remain listed when their last selection is not recorded
   const copies = page.locator('.row').filter({ has: page.getByRole('heading', { name: 'Saved Claude login copies', exact: true }) });
   await expect(copies.locator('.ctl')).toHaveText('Saved as synthetic-saved, Saved as second-synthetic');
   const choice = page.locator('.row').filter({ has: page.getByRole('heading', { name: 'Last saved copy selection', exact: true }) });
-  await expect(choice).toContainText('No selection recorded');
+  await expect(choice).toHaveCount(0);
   await expect(page.getByRole('main')).not.toContainText('No label recorded');
   for (const width of [1536, 393]) {
     await page.setViewportSize({ width, height: 1024 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('saved-copy-selection-' + width + '.png'), fullPage: true });
   }
+  selected = undefined;
+  await page.reload();
+  await expect(choice).toHaveCount(0);
+  await expect(copies.locator('.ctl')).toHaveText('Saved as synthetic-saved, Saved as second-synthetic');
   selected = 'second-synthetic';
   await page.reload();
   await expect(choice.locator('.ctl')).toHaveText('Saved as second-synthetic');

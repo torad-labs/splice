@@ -49,7 +49,7 @@ export function ClaudeHead() {
       } note={accounts.isError || live === undefined || live.length === 0 ? null : <Link className="btn sm" to="/accounts">{C.openAccounts}</Link>} />
       <Row title={C.logins} why={C.loginsWhy} control={<span>{logins.count === 0 ? C.noLogins : logins.labels.map(C.savedCopy).join(', ')}</span>}
         note={logins.constraint === '' ? null : <details className="on-request"><summary>{C.copiesChoice}</summary><p>{proseOf(logins.constraint)}</p></details>} />
-      <Row title={C.selected} why={C.selectedWhy} control={<span>{logins.selected == null ? C.noneSelected : C.savedCopy(logins.selected)}</span>} />
+      {logins.selected == null ? null : <Row title={C.selected} why={C.selectedWhy} control={<span>{C.savedCopy(logins.selected)}</span>} />}
       {backups.map((path) => <Row key={path} title={C.backups} why="" control={<Path>{path}</Path>} />)}
     </>
   );

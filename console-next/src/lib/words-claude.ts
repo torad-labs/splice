@@ -23,7 +23,6 @@ export const C = {
   noLogins: 'None stored',
   selected: 'Last saved copy selection',
   selectedWhy: 'This records the last label saved or switched to. Launching does not restore a saved copy; Claude Code uses its live login.',
-  noneSelected: 'No selection recorded',
   backups: 'Backed up to',
   wrap: 'Wrap',
   wrapTitle: 'Wrap the claude command?',

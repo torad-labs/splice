@@ -52,11 +52,20 @@ describe('the claude command row', () => {
     expect(html).toContain('Saved Claude login copies');
     expect(html).toContain('synthetic-saved');
     expect(html).toContain('Accounts shows the identities of the live logins');
-    expect(html).toContain('Last saved copy selection');
-    expect(html).toContain('No selection recorded');
+    expect(html).not.toContain('Last saved copy selection');
+    expect(html).not.toContain('No selection recorded');
     expect(html).not.toContain('No label recorded');
     expect(html).not.toContain('Launches with');
     expect(html).not.toContain('None chosen');
+  });
+
+  test('an absent selection field omits its row without hiding saved copies', () => {
+    const html = render(<ClaudeHead />, client => client.setQueryData(['claude-head', '/api/claude-head'], {
+      ...card(), claude_logins: { count: 1, labels: ['synthetic-saved'], constraint: '' },
+    }));
+    expect(html).not.toContain('Last saved copy selection');
+    expect(html).not.toContain('No selection recorded');
+    expect(html).toContain('Saved as synthetic-saved');
   });
 
   test('Tools reports live locations and delegates their edits to Accounts', () => {
@@ -106,6 +115,7 @@ describe('the claude command row', () => {
     const constraint = 'Splice uses the account with quota whose weekly reset comes soonest.';
     const html = render(<ClaudeHead />, seedCard(card({ claude_logins: { count: 1, selected: 'max', labels: ['max'], constraint } })));
     expect(html).toContain('Saved as max');
+    expect(html).toContain('Last saved copy selection');
     expect(html).toContain('<summary>How saved copies are chosen</summary>');
     expect(html).toContain('<p>' + constraint + '</p>');
     expect(html).not.toContain('<span>max</span>');

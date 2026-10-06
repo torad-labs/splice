@@ -7,7 +7,7 @@ export const INSTRUCTION_NOTE = {
 } as const;
 
 export const I = {
-  title: 'Instructions for a command',
+  title: 'System prompt for a command',
   why: 'Text splice puts in front of a command’s sessions, and how it meets Claude Code’s own instructions. It applies after splice restarts, at each session’s next turn.',
   plan: 'Command',
   how: 'How it meets Claude Code’s own',

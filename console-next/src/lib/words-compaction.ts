@@ -13,7 +13,7 @@ export const W = {
   took: 'Typical time',
   chars: 'Typical summary length',
   charsUnit: (n: string): string => `${n} characters`,
-  rules: 'Instructions in effect',
+  rules: 'Compaction instructions in effect',
   rulesNone: 'No rule is set, so Claude Code’s own instructions apply.',
   rulesWhy: 'The most specific rule that matches a session wins.',
   rulePlans: (plans: string): string => `On ${plans}.`,

@@ -109,6 +109,13 @@ test('plan instruction modes preview isolated writes and preserve an unrelated u
   const writes = await topologyWrites(page);
   await open(page, 'settings/conversation');
   const conversation = page.getByRole('region', { name: 'Conversation', exact: true });
+  await expect(conversation.getByRole('heading', { name: 'System prompt for a command', exact: true })).toBeVisible();
+  await expect(conversation.getByRole('heading', { name: 'Compaction instructions in effect', exact: true })).toBeVisible();
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 980 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await conversation.screenshot({ path: test.info().outputPath('instruction-purposes-' + width + '.png') });
+  }
   await pick(page, conversation, 'Command', STACK.oauthHead);
   await page.getByRole('navigation', { name: 'Settings sections', exact: true }).getByRole('link', { name: 'Advanced', exact: true }).click();
   await page.getByRole('button', { name: 'Open the file', exact: true }).click();

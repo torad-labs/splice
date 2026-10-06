@@ -139,6 +139,10 @@ origin.
   the header names that plan. An Anthropic Console API-key login is billed through that API.
 
 ### Added
+- **Foreground tools keep their session live between model calls.** Claude Code's tool-start and
+  tool-end hooks tell splice when the session is still active, so a long tool does not make it
+  stale just because no request reached the model. Completion, session end or process exit ends
+  that activity; a missing completion expires after 12 hours.
 - **`splice setup` can hand an NVIDIA card to rig.** On Linux x86_64 with a card nvidia-smi can
   name, an interactive setup asks (default no) whether to run a local model through
   [rig](https://github.com/torad-labs/rig): rig installs into `~/.local/share/rig`, downloads
@@ -203,9 +207,11 @@ origin.
   carried, an added account included, never another session's choice. Usage reads the head's carrying
   login's quota, then the next selectable target if that reading is absent. Models names the
   carrying login when no login is selected, retaining its count of other subscriptions.
-  An unidentified login says “Login not identified yet.” The card, warning and sign-in dialog use
-  the same remedy: “Sign in again on claude-splice in the console.” Each dialog names the login
-  it changes; missing session attribution is explained only when the daemon reported it explicitly.
+  An unidentified native login says whether its current token's profile read is pending or was
+  refused, instead of reporting every missing identity as “not identified yet.” The card, warning
+  and sign-in dialog use the same remedy: “Sign in again on claude-splice in the console.” Each
+  dialog names the login it changes; missing session attribution is explained only when the
+  daemon reported it explicitly.
 - **Claude head mode: wrap the default `claude` command.** `GET /api/claude-head` reports which of the two modes is active
   (Separate, the default: `claude-splice` stays a splice-owned head with its own config dir; Wrap:
   the operator's plain `claude` becomes a splice launcher over the vanilla `~/.claude`), what
@@ -588,6 +594,10 @@ origin.
   request path, and a rate-limited mint is held rather than retried.
 
 ### Changed
+- **Responses WebSockets retire at 35 minutes before their next round.** Age is measured from
+  when the socket opened, not from its last use. Retirement replaces an idle connection before
+  reuse, never cutting a round already running. The first round on the replacement sends the
+  full conversation once, then chaining can resume.
 - **Trace bodies use compressed daily packs with one shared rolling budget.** JSONL rows refer to
   deterministic chunks targeting 8 KiB, stored once as zstd frames in `.jsonl.bodies2`. Identical
   bodies and unchanged regions share chunks. Body packs across all heads share a 32 GiB budget.
@@ -723,6 +733,30 @@ origin.
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
+- **Requests keeps each request's identity through its links and tabs.** Requests that finish on
+  the same head in the same millisecond no longer open one another's details. Stop acts only on
+  the exact live turn, and Sent lists only that request's retained upstream posts, even when body
+  capture is off. Without exact ownership, those actions say they cannot select the request
+  rather than guessing from its session or time.
+- **A request cut by a restart points back to its own session.** Its page can offer a copy-only
+  resume command when splice identifies the session and reports it resumable. It neither starts
+  a session nor resends the request. An older link shared by several requests withholds their
+  details and recovery commands and says to find the session in Sessions.
+- **The request timing bar paints only time that was measured.** A stage with zero time has no
+  colored segment, an all-zero request has no bar, and a tiny positive stage stays visible.
+  The legend keeps the reported measurements.
+- **Sessions keeps same-named repositories apart.** Grouping uses each repository's root, not
+  its remote or folder name. When names collide, the group title adds the root, and Open project
+  goes to that group's repository.
+- **Models names the configured key file and the command being signed in.** An API-key command's
+  page shows its configured file path beside the key source. A sign-in opened there uses the
+  command's visible name rather than its internal head key.
+- **Playground keeps the command and model pickers aligned.** Extra model notes no longer stretch
+  the adjacent command picker.
+- **Incomplete code-mode history is not treated as proof of an edit.** An occurrence-count
+  mismatch in partly retained history, or an order conflict with missing saved ancestors, names
+  a placement problem instead of asserting that the client edited its history. Missing native
+  history and conflicts with a captured position have distinct reasons.
 - **Interrupted code-mode history keeps the admitted exec prefix.** An unfinished streamed call
   replays the source prefix splice actually admitted, together with completed-call evidence,
   instead of an empty or uncertified raw input. The retained raw item is unchanged; replaying
@@ -961,7 +995,8 @@ origin.
   operator once per day and per limit through the saved webhook (the test send's `{"text"}` body)
   and a `[head][budget]` log line, and serves the turn. A turn on a model with no rate card is not
   counted and is named in the log. The `desktop` alert flag still delivers nothing: the daemon has
-  no desktop and the console shows no notification.
+  no desktop and the console shows no notification. Accounts shows the next daily reset in the
+  viewer's time zone, as Usage does.
 - **A wrapped `claude` launches.** Wrap symlinks `claude` to the launch shim, the
   shim asks for the head named `claude`, and no head carries that name, so every wrapped `claude`
   got a 404 and exited until unwrap. While the wrap is in place `claude` launches the splice-owned

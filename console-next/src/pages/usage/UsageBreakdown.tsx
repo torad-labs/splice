@@ -5,11 +5,16 @@ import { failureText } from '../../api/client';
 import { usePerfTurns } from '../../api/turns';
 import { fmtTokens, fmtUsd } from '../../lib/format';
 import { cutLines, fullUsageBreakdown, fullWindowUsage, priceGapLines } from '../../lib/usage-breakdown';
+import { sessionAccountName } from '../../lib/accounts';
 import type { UsageBreakdown as Breakdown, UsageDimension } from '../../lib/usage-breakdown';
+import type { AccountRow } from '../../types/accounts';
+import type { HeadCatalog } from '../../types/models';
 import type { TurnsState } from '../../types/perf';
 import { Button, Empty, Fault, Segmented } from '../../ui';
 import { B } from './copy';
 import './usage-breakdown.css';
+
+type UsageNames = { accounts?: readonly AccountRow[]; catalogs?: readonly HeadCatalog[] };
 
 const dimensions = [['model', B.model], ['account', B.account], ['day', B.day]] as const;
 
@@ -28,17 +33,23 @@ export function requestsFor(item: Breakdown, by: UsageDimension, since: number, 
   return '/requests?' + query.toString();
 }
 
-const titleOf = (item: Breakdown, by: UsageDimension): string =>
-  item.key ?? (by === 'account' ? B.unreportedAccount : B.unreportedModel);
+function titleOf(item: Breakdown, by: UsageDimension, accounts: readonly AccountRow[], catalogs: readonly HeadCatalog[]): string {
+  if (item.key === null) return by === 'account' ? B.unreportedAccount : B.unreportedModel;
+  if (by === 'account' && item.head !== null) return sessionAccountName(accounts, item.head, item.key) ?? item.key;
+  if (by !== 'model') return item.key;
+  // Model groups span commands. A conflicting catalog label cannot rename a historical group.
+  const labels = [...new Set(catalogs.flatMap(head => head.models.filter(model => model.id === item.key && model.label !== '').map(model => model.label)))];
+  return labels.length === 1 ? labels[0] ?? item.key : item.key;
+}
 const amount = (item: Breakdown): string => item.cost === null ? priceGapLines(item.gaps).join(' ') || B.unknown : item.unpriced === 0 ? fmtUsd(item.cost) : B.atLeast(fmtUsd(item.cost));
 const tokens = (value: number | null, missing: number): string => value === null ? B.unknown : missing === 0 ? fmtTokens(value) : B.atLeast(fmtTokens(value));
 
-export function UsageValues({ items, by, since, until, labelOf }: { items: readonly Breakdown[]; by: UsageDimension; since: number; until: number; labelOf: (head: string) => string }) {
+export function UsageValues({ items, by, since, until, labelOf, accounts = [], catalogs = [] }: { items: readonly Breakdown[]; by: UsageDimension; since: number; until: number; labelOf: (head: string) => string } & UsageNames) {
   const [table, setTable] = useState(false);
   const maximum = Math.max(...items.map(item => item.cost ?? 0), 0) || 1;
   if (items.length === 0) return <Empty title={B.none} />;
   const entries = items.map(item => {
-    const title = titleOf(item, by);
+    const title = titleOf(item, by, accounts, catalogs);
     const name = by === 'account' && item.head !== null ? `${title} · ${labelOf(item.head)}` : title;
     const href = requestsFor(item, by, since, until);
     return {
@@ -77,9 +88,9 @@ function Coverage({ data, labelOf }: { data: TurnsState; labelOf: (head: string)
   return <div className="usage-coverage" role="status"><b>{B.partial}</b>{data.unread.map(row => <p key={row.head}>{labelOf(row.head)}: {row.reason}</p>)}</div>;
 }
 
-export function UsageBreakdown({ labelOf, read }: {
+export function UsageBreakdown({ labelOf, read, accounts = [], catalogs = [] }: {
   labelOf: (head: string) => string; read: ReturnType<typeof usePerfTurns>;
-}) {
+} & UsageNames) {
   const [by, setBy] = useState<UsageDimension>('model');
   const data = read.data === undefined || isPendingRoute(read.data) ? null : read.data;
   const window = data?.window;
@@ -93,7 +104,7 @@ export function UsageBreakdown({ labelOf, read }: {
         : data === null || window === undefined || window.until === null ? <p className="hint">{B.unavailable}</p> : <>
           <Coverage data={data} labelOf={labelOf} />
           {(data.pendingHeads?.length ?? 0) > 0 ? <p className="hint">{B.reading}</p> : null}
-          {items === null ? <p className="hint">{B.unavailable}</p> : items.length === 0 && fullWindowUsage(data) === null ? null : <UsageValues items={items} by={by} since={window.since} until={window.until} labelOf={labelOf} />}
+          {items === null ? <p className="hint">{B.unavailable}</p> : items.length === 0 && fullWindowUsage(data) === null ? null : <UsageValues items={items} by={by} since={window.since} until={window.until} labelOf={labelOf} accounts={accounts} catalogs={catalogs} />}
         </>}
     </section>
   );

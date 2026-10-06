@@ -31,6 +31,13 @@ test('Usage counts refused requests, keeps exact drill-down bounds, and offers a
     windows.set(head, { since, until });
     return route.fulfill({ json: { since, n: 10_000, heads: [{ key: head, label: head, count: head === STACK.oauthHead ? 2502 : 0, truncated: head === STACK.oauthHead, usage: head === STACK.oauthHead ? fullUsage : emptyUsage, rows: head === STACK.oauthHead ? [wire(until - 1, false)] : [] }] } });
   });
+  await page.route(url => url.pathname === '/api/models', route => route.fulfill({ json: { heads: [{ head: STACK.oauthHead, provider: 'synthetic', pinned_model: '', models: [{ id: 'earlier synthetic model', label: 'Synthetic readable model' }] }] } }));
+  await page.route(url => url.pathname === '/api/accounts', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as { accounts: Record<string, unknown>[] };
+    body.accounts = [...body.accounts, { kind: 'synthetic', label: 'synthetic & account', display_name: 'Synthetic saved login', selector_key: 'synthetic & account', credential_present: true, heads: [STACK.oauthHead] }];
+    await route.fulfill({ response, json: body });
+  });
   const faults = await open(page, 'usage');
   const total = page.getByRole('region', { name: 'Usage', exact: true });
   await expect(total.getByRole('heading', { name: 'Requests', exact: true }).locator('..')).toContainText('2,502');
@@ -38,6 +45,9 @@ test('Usage counts refused requests, keeps exact drill-down bounds, and offers a
   expect((idle?.split(' on ')[1] ?? '').replace(/\.$/, '').split(', ')).not.toContain(STACK.oauthHead);
   const chart = page.getByRole('region', { name: 'Spend and tokens', exact: true });
   await expect(chart).toContainText('2,502 requests');
+  await expect(chart).toContainText('Synthetic readable model');
+  const modelHref = await chart.getByRole('link', { name: /Open Requests for Synthetic readable model/ }).getAttribute('href');
+  expect(new URLSearchParams(modelHref?.split('?')[1]).get('model')).toBe('earlier synthetic model');
   await expect(chart).toContainText('At least $1.48');
   await expect(chart.locator('.usage-spend-track')).toBeVisible();
   await expect(chart).toContainText('A bar opens the matching Requests.');
@@ -47,7 +57,8 @@ test('Usage counts refused requests, keeps exact drill-down bounds, and offers a
   await expect(command).toHaveCount(1);
   await expect(command).toContainText('90% cached');
   await chart.getByRole('button', { name: 'Account', exact: true }).click();
-  const href = await chart.getByRole('link', { name: /Open Requests for synthetic & account/ }).getAttribute('href');
+  await expect(chart).toContainText('Synthetic saved login');
+  const href = await chart.getByRole('link', { name: /Open Requests for Synthetic saved login/ }).getAttribute('href');
   const bounds = windows.get(STACK.oauthHead);
   expect(bounds).toBeDefined();
   const query = new URLSearchParams(href?.split('?')[1]);

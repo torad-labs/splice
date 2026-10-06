@@ -14,6 +14,39 @@ const complete: TurnUsageWire = {
 const row: TurnRow = { head: 'synthetic', ts: 100, model: 'model / a', account: 'work & spare', compact: false, outcome: 'ok', cost_usd: 0.25, in_tokens: 200, out_tokens: 50 };
 const item = { id: 'synthetic', head: 'synthetic', key: row.model, turns: 1, cost: 0.25, input: 200, output: 50, unpriced: 0, missingInput: 0, missingOutput: 0, gaps: { uncounted: 0, plan: 0, undeclared: 0, unknown: 0 }, cut: 0 };
 const items = [item];
+const namedCatalog = { head: 'synthetic', provider: 'synthetic', pinned_model: '', models: [{ id: 'model / a', label: 'Synthetic readable model', description: '', slot: null, context_window: 1000, context_window_source: 'synthetic', pinned: false, resolved: true }] };
+const savedLogin = { kind: 'synthetic', label: 'work & spare', display_name: 'Synthetic saved login', selector_key: 'stable-synthetic-login', single_login: false, credential_path: null, primary: false, selected: false, available: true, pinned: false, next_target: false, credential_present: true, windows: [], heads: ['synthetic'] };
+
+test('Usage resolves the recorded login on its own command without changing the account drill-down identity', () => {
+  const metadata = { accounts: [{ ...savedLogin, display_name: 'Wrong command login', heads: ['other'] }, savedLogin], catalogs: [] };
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'stable-synthetic-login' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} {...metadata} /></MemoryRouter>);
+  expect(html).toContain('Synthetic saved login · Synthetic command');
+  expect(html).not.toContain('Wrong command login');
+  expect(html).toContain('account=stable-synthetic-login');
+  expect(html).toContain('head=synthetic');
+});
+
+test('Usage uses an unambiguous catalog label without changing the model drill-down ID', () => {
+  const metadata = { accounts: [], catalogs: [namedCatalog] };
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} {...metadata} /></MemoryRouter>);
+  expect(html).toContain('Synthetic readable model');
+  expect(html).toContain('model=model+%2F+a');
+});
+
+test('historical IDs and conflicting catalog names remain literal instead of being attributed to a different model', () => {
+  const conflicting = { ...namedCatalog, head: 'other', models: namedCatalog.models.map(model => ({ ...model, label: 'Different provider model' })) };
+  const metadata = { accounts: [], catalogs: [namedCatalog, conflicting] };
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} {...metadata} /></MemoryRouter>);
+  expect(html).toContain('model / a');
+  expect(html).not.toContain('Synthetic readable model');
+  expect(html).not.toContain('Different provider model');
+  const historical = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'synthetic-removed-model' }]} by="model" since={0} until={200} labelOf={key => key} {...metadata} /></MemoryRouter>);
+  expect(historical).toContain('synthetic-removed-model');
+  expect(historical).not.toContain('Synthetic readable model');
+  const unknownLogin = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'synthetic-removed-login' }]} by="account" since={0} until={200} labelOf={key => key} accounts={[savedLogin]} /></MemoryRouter>);
+  expect(unknownLogin).toContain('synthetic-removed-login');
+  expect(unknownLogin).not.toContain('Synthetic saved login');
+});
 const reading = (over: Partial<TurnsState> = {}) => ({
   isError: false, isPending: false,
   data: { landed: [row], inflight: [], unread: [], truncated: [], matched: 2502, matchedBy: { synthetic: 2502 }, usageBy: { synthetic: complete }, window: { since: 100, until: 200 }, ...over },

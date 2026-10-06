@@ -1,7 +1,8 @@
 import { useSearchParams } from 'react-router';
 import { failureText } from '../../api/client';
-import { useHeads, useStatus, useUsage } from '../../api/queries';
+import { useAccounts, useHeads, useStatus, useUsage } from '../../api/queries';
 import { useEconomics } from '../../api/usage';
+import { useModels } from '../../api/models';
 import { useUsageTurns } from '../../api/turns';
 import { isPendingRoute } from '../../api/auth';
 import { ABSENT, fmtInt, fmtShare } from '../../lib/format';
@@ -58,6 +59,8 @@ export function UsagePage() {
   const [params, setParams] = useSearchParams();
   const economics = useEconomics();
   const heads = useHeads();
+  const accounts = useAccounts();
+  const models = useModels();
   const status = useStatus();
   const usage = useUsage();
   const asked = params.get('window') ?? '24';
@@ -122,7 +125,7 @@ export function UsagePage() {
             {active.length === 0 ? null : <ul className="uplans">{active.map((plan) => <PlanRow key={plan.key} plan={plan} />)}</ul>}
             {idle.length === 0 ? null : <p className="idle-plans">{U.idlePlans(idle.map((plan) => plan.label).join(", "), spanWords(hours))}</p>}
           </section>
-          <UsageBreakdown key={hours} labelOf={label} read={requests} />
+          <UsageBreakdown key={hours} labelOf={label} read={requests} accounts={accounts.data?.accounts ?? []} catalogs={models.data === undefined || isPendingRoute(models.data) ? [] : models.data.heads} />
           <UsagePricing heads={headRows} recorded={recorded} />
           <Budgets plans={plans} />
           <Alerts />

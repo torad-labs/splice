@@ -11,7 +11,7 @@
 .card .acts { position: relative; z-index: 1; align-items: center; flex-wrap: wrap; }
 .card .on-request { position: relative; z-index: 1; }
 .card .glass.one { padding: var(--space-6) var(--space-7); margin-bottom: var(--space-4); }
-.card .glass.one p { color: var(--glass-ink); }
+.card .glass.one p { color: var(--glass-ink); white-space: normal; overflow-wrap: anywhere; }
 .card[tabindex="0"] .card-link::after { cursor: grab; }
 .card.dragging .card-link::after { cursor: grabbing; }
 /* A reading wears the command's colour; only a held refusal wears the quota red and hatch. */

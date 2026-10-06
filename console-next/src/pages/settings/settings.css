@@ -39,7 +39,7 @@
 .row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(13.75rem, 22rem); gap: var(--space-11); align-items: center; padding: var(--space-10) 0; }
 .row h3 { font: 600 1.1875rem/1.25 var(--read); color: var(--ink); overflow-wrap: anywhere; }
 .row p { margin-top: var(--space-2); font: 400 1rem/1.5 var(--read); color: var(--body); max-width: 56ch; }
-.row .ctl { justify-self: end; display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-7); }
+.row .ctl { justify-self: end; min-width: 0; max-width: 100%; display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-7); }
 .row-note { padding: var(--space-7) 0; }
 .key { display: inline-flex; align-items: center; gap: var(--space-3); margin: var(--space-6) var(--space-6) 0 0; padding: 0; border: 0; background: transparent; font: 500 0.8125rem var(--meta); color: var(--mute); cursor: pointer; }
 .key.hid { opacity: .55; }

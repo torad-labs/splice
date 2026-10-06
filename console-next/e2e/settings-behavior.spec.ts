@@ -3,7 +3,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { STACK } from './stack';
-import { assertHealthy, env, open, read } from './support';
+import { assertHealthy, env, expectWholeValue, open, read } from './support';
 
 // Writes start background refetches. Keep their fetched bodies alive until every handler settles.
 test.afterEach(async ({ page }) => {
@@ -31,20 +31,6 @@ async function topologyWrites(page: Page) {
     return route.fulfill({ response, json: body });
   });
   return writes;
-}
-
-async function expectWholeValue(input: Locator) {
-  expect(await input.evaluate(element => {
-    const field = element as HTMLInputElement | HTMLTextAreaElement;
-    if (field instanceof HTMLTextAreaElement) return field.scrollWidth <= field.clientWidth + 1 && field.scrollHeight <= field.clientHeight + 1;
-    const style = getComputedStyle(field);
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    if (context === null) throw new Error('browser needs a canvas text measurement');
-    context.font = style.font;
-    const needed = context.measureText(field.value).width + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 4;
-    return field.getBoundingClientRect().width >= needed;
-  })).toBe(true);
 }
 
 test('API URL controls show whole addresses and commit the exact single-line value', async ({ page }, testInfo) => {

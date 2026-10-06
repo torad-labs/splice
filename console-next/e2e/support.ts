@@ -1,5 +1,5 @@
 // NEW: V4-444 — browser failure observations and page census derived from the router's source.
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { STACK } from './stack';
@@ -56,6 +56,21 @@ export function env(name: string): string {
   const value = process.env[name];
   if (value === undefined || value === '') throw new Error(name + ' is unset: shared stack did not start');
   return value;
+}
+
+/** The whole-value check also fails fixed-width native inputs, not just hidden overflow on textareas. */
+export async function expectWholeValue(input: Locator): Promise<void> {
+  expect(await input.evaluate(element => {
+    const field = element as HTMLInputElement | HTMLTextAreaElement;
+    if (field instanceof HTMLTextAreaElement) return field.scrollWidth <= field.clientWidth + 1 && field.scrollHeight <= field.clientHeight + 1;
+    const style = getComputedStyle(field);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (context === null) throw new Error('browser needs a canvas text measurement');
+    context.font = style.font;
+    const needed = context.measureText(field.value).width + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 4;
+    return field.getBoundingClientRect().width >= needed;
+  })).toBe(true);
 }
 
 export function watch(page: Page) {

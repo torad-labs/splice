@@ -13,6 +13,7 @@ body {
   background-image: var(--grain);
   background-blend-mode: soft-light;
   min-height: 100vh;
+  overflow-wrap: anywhere;
   -webkit-font-smoothing: antialiased;
 }
 h1, h2, h3, p { margin: 0; }

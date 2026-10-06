@@ -27,7 +27,8 @@ public data class AccountHead(
      *  the exact same fallback ([splice.usage.quota.UsagePayloads]'s `pool?.selectedQuota() ?:
      *  usage.quota`) for the same head. Null only for a test double that wires neither source. */
     val quota: HeadQuotaSource? = null,
-    /** Actual current credential answers from the same store Models reads. Never probes credentials. */
+    /** Current credential answers from Models' store. Single-login heads also expose an unattributed
+     *  retained head observation when no keyed answers exist. Reading never attributes or probes a credential. */
     val answers: HeadAccountAnswerSource? = null,
 ) {
     /** Membership is live even when this head was adapted before its first stored account landed. */
@@ -40,7 +41,8 @@ public fun interface HeadQuotaSource {
     public fun quota(): QuotaView?
 }
 
-/** Null [account] names the single login; a pool label names its current captured credential owner. */
+/** Null [account] names a single-login head's observation; a pool label names its captured credential owner.
+ *  An unkeyed legacy head observation is never an answer attributed to the current credential. */
 public fun interface HeadAccountAnswerSource {
     public fun answer(account: String?): ProviderAnswer?
 }

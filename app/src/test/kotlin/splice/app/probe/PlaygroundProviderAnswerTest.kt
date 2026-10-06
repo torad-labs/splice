@@ -60,6 +60,7 @@ import splice.head.usage.ProviderReplyObserver
 import splice.heads.HeadStatus
 import splice.oauth.OAuthAccountFiles
 import splice.upstream.Provider
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64
 import kotlin.time.Duration.Companion.seconds
@@ -128,6 +129,73 @@ class PlaygroundProviderAnswerTest {
             assertEquals(JsonNull, cleared.jsonObject.getValue("last_refusal"))
         }
         fixture.first.head.stop()
+    }
+
+    @Test
+    fun `a single-login Kimi head retains a legacy refusal on Models and Accounts after restart`() = runTest {
+        SecureFile.writeAtomic0600(
+            root.resolve("absent-auth.json"),
+            """{"access_token":"synthetic-kimi","refresh_token":"synthetic-refresh","expires_at":4102444800}""",
+        )
+        val paths = StatePaths(baseOverride = root.resolve("state"))
+        val first = fixture(backgroundScope, "kimi", "kimi-oauth")
+        first.first.head.stop()
+        val answers = paths.ratelimitFile("kimi").resolveSibling(
+            "${paths.ratelimitFile("kimi").fileName}.provider-answer",
+        )
+        SecureFile.writeAtomic0600(
+            answers,
+            """{"status":403,"observed_at_epoch_ms":1000,"accepted":false,"credentials":{}}""",
+        )
+        val restarted = fixture(backgroundScope, "kimi", "kimi-oauth")
+        try {
+            assertEquals("kimi-oauth", restarted.first.auth.describe().kind)
+            assertEquals(403, restarted.first.head.providerAnswer()?.status)
+            val route = AccountsRoute(AccountHeadAdapter.adapt(mapOf("kimi" to restarted.first)))
+            val row = Json.parseToJsonElement(route.accountsJson()).jsonObject.getValue("accounts").jsonArray.single()
+            val refusal = row.jsonObject.getValue("last_refusal")
+            assertTrue(refusal is kotlinx.serialization.json.JsonObject, "the last head refusal is not Signed in")
+            assertEquals("403", refusal.jsonObject.getValue("status").jsonPrimitive.content)
+            assertEquals(
+                "1000",
+                refusal.jsonObject.getValue("at_ms").jsonPrimitive.content,
+            )
+            assertTrue(
+                Json.parseToJsonElement(Files.readString(answers)).jsonObject
+                    .getValue("credentials").jsonObject.isEmpty(),
+                "a read must not stamp an unanswered credential onto a legacy observation",
+            )
+        } finally {
+            restarted.first.head.stop()
+        }
+    }
+
+    @Test
+    fun `a keyed refusal cannot become a legacy fallback for an unanswered replacement`() = runTest {
+        val first = fixture(backgroundScope)
+        HttpClient(MockEngine { respond("{}", HttpStatusCode.Forbidden) }).use { client ->
+            UpstreamPlaygroundProbe(first.second, client).run(playgroundHead("claudex"), "synthetic prompt", null)
+        }
+        first.first.head.stop()
+        val replacement = login("replacement").toMutableMap()
+        val tokens = replacement.getValue("tokens").jsonObject.toMutableMap()
+        tokens["access_token"] = kotlinx.serialization.json.JsonPrimitive(
+            tokens.getValue("access_token").jsonPrimitive.content + "-replacement",
+        )
+        replacement["tokens"] = kotlinx.serialization.json.JsonObject(tokens)
+        SecureFile.writeAtomic0600(
+            root.resolve("absent-auth.json"),
+            kotlinx.serialization.json.JsonObject(replacement).toString(),
+        )
+        val restarted = fixture(backgroundScope)
+        try {
+            assertEquals(403, restarted.first.head.providerAnswer()?.status, "the head still retains its history")
+            val route = AccountsRoute(AccountHeadAdapter.adapt(mapOf("claudex" to restarted.first)))
+            val row = Json.parseToJsonElement(route.accountsJson()).jsonObject.getValue("accounts").jsonArray.single()
+            assertEquals(JsonNull, row.jsonObject.getValue("last_refusal"), "the new credential has never answered")
+        } finally {
+            restarted.first.head.stop()
+        }
     }
 
     @Test
@@ -338,7 +406,11 @@ class PlaygroundProviderAnswerTest {
         }
     }
 
-    private fun fixture(scope: CoroutineScope): Pair<splice.app.control.ManagedHead, PlaygroundProviders> {
+    private fun fixture(
+        scope: CoroutineScope,
+        keyName: String = "claudex",
+        authKind: String = "chatgpt-oauth",
+    ): Pair<splice.app.control.ManagedHead, PlaygroundProviders> {
         val primary = root.resolve("absent-auth.json")
         if (!java.nio.file.Files.exists(primary)) SecureFile.writeAtomic0600(primary, login("primary").toString())
         val paths = StatePaths(baseOverride = root.resolve("state"))
@@ -367,19 +439,20 @@ class PlaygroundProviderAnswerTest {
             playgroundProviders = registry,
         )
         val model = ModelEntry("synthetic-model", contextWindow = 4_000)
-        val head = HeadConfig("synthetic", 3099, "synthetic--", model.id)
+        val kimi = authKind == "kimi-oauth"
+        val head = HeadConfig(if (kimi) "kimi" else "synthetic", 3099, "synthetic--", model.id)
         val provider = ProviderConfig(
-            dialect = Dialect.OPENAI_RESPONSES,
+            dialect = if (kimi) Dialect.ANTHROPIC_PASSTHROUGH else Dialect.OPENAI_RESPONSES,
             baseUrl = "https://synthetic.example/responses",
-            auth = AuthConfig("chatgpt-oauth", file = root.resolve("absent-auth.json").toString()),
+            auth = AuthConfig(authKind, file = root.resolve("absent-auth.json").toString()),
         )
         val build = ProviderBuild(
-            key = "claudex",
+            key = keyName,
             head = head,
             providerCfg = provider,
             catalog = ModelCatalog("synthetic--", listOf(model), defaultContextWindow = model.contextWindow),
             watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
-            cfg = config.getConfig("claudex"),
+            cfg = config.getConfig(keyName),
             loginCommand = "synthetic login",
         )
         return factory.assembleHead(build, 3098) to registry

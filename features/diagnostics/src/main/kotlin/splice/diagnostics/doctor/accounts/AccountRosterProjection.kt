@@ -14,6 +14,7 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
 import splice.diagnostics.doctor.AccountPoolProjection
+import splice.diagnostics.doctor.AccountPoolText
 import splice.diagnostics.doctor.AccountPoolsRead
 import splice.diagnostics.doctor.CheckStatus
 import splice.diagnostics.doctor.DoctorCheck
@@ -57,19 +58,27 @@ internal class AccountRosterProjection {
 
     private fun view(head: String, rows: List<JsonObject>, metadata: HeadAccountPoolView?): HeadAccountPoolView {
         val accounts = rows.mapNotNull { account(head, it, metadata) }.distinctBy { it.label }
-        val selected = metadata?.selectedLabel ?: accounts.firstOrNull { it.selected }?.label
+        val carrying = rows.filter { JsonScalars.str(it, "carrying_request") == "true" }
+        val selected = carrying.singleOrNull()?.let { selector(head, it) }
+            ?: metadata?.selectedLabel ?: accounts.firstOrNull { it.selected }?.label
         return HeadAccountPoolView(
             selected,
-            accounts,
+            accounts.map { it.copy(selected = it.label == selected) },
             metadata?.lastSwitch,
-            selectionUnknown = metadata?.selectionUnknown == true ||
-                rows.any { JsonScalars.str(it, "selected") == "true" && selector(head, it) == null } ||
+            selectionUnknown = (carrying.isEmpty() && metadata?.selectionUnknown == true) ||
+                unsafeSelection(head, rows) ||
                 (selected != null && accounts.none { it.label == selected }),
             pinnedLabel = metadata?.pinnedLabel,
             nextTargetLabel = metadata?.nextTargetLabel,
             blockedUntilEpochSecondsByLabel = metadata?.blockedUntilEpochSecondsByLabel.orEmpty(),
         )
     }
+
+    private fun unsafeSelection(head: String, rows: List<JsonObject>): Boolean =
+        rows.count { JsonScalars.str(it, "carrying_request") == "true" } > 1 || rows.any {
+            selector(head, it) == null &&
+                (JsonScalars.str(it, "selected") == "true" || JsonScalars.str(it, "carrying_request") == "true")
+        }
 
     private fun account(head: String, row: JsonObject, metadata: HeadAccountPoolView?): HeadAccountView? {
         val label = selector(head, row) ?: return null
@@ -82,7 +91,25 @@ internal class AccountRosterProjection {
             "selected" to JsonPrimitive(single || JsonScalars.str(row, "selected") == "true"),
         )
         return pools.account(JsonObject(fields))?.let { account ->
-            metadata?.accounts?.singleOrNull { it.label == account.label } ?: account
+            val pooled = metadata?.accounts?.singleOrNull { it.label == account.label } ?: account
+            if (row["login_place"] is JsonObject) {
+                // Native presence and windows belong to Accounts' command-local reading, not the pool's usable-token cache.
+                pooled.copy(
+                    credentialPresent = account.credentialPresent,
+                    plan = account.plan,
+                    fiveHourUsedPercent = account.fiveHourUsedPercent.takeUnless {
+                        JsonScalars.str(row, "five_hour_current") == "false"
+                    },
+                    fiveHourResetEpochSeconds = account.fiveHourResetEpochSeconds,
+                    sevenDayUsedPercent = account.sevenDayUsedPercent.takeUnless {
+                        JsonScalars.str(row, "seven_day_current") == "false"
+                    },
+                    sevenDayResetEpochSeconds = account.sevenDayResetEpochSeconds,
+                    quotaObservedAtEpochSeconds = account.quotaObservedAtEpochSeconds,
+                )
+            } else {
+                pooled.copy(credentialPresent = account.credentialPresent)
+            }
         }
     }
 
@@ -126,20 +153,29 @@ internal object AccountHealthChecks {
     private val date = DateTimeFormatter.ofPattern("MMM d, h:mm a 'CT'", Locale.US)
         .withZone(ZoneId.of("America/Chicago"))
 
-    fun checks(read: AccountPoolsRead.Read): List<DoctorCheck> = read.nativeLogins.filter { !it.present }.map { login ->
-        DoctorCheck(
-            "native login ${login.place.command}",
-            CheckStatus.WARN,
-            "${login.place.command} native login place: " +
-                if (login.expired) "access token expired" else "no usable access token",
-            "Sign in again on ${login.place.command} in the console.",
-        )
-    } + read.lastRefusals.map { (head, answer) -> refusal(head, answer) }
+    fun checks(read: AccountPoolsRead.Read): List<DoctorCheck> =
+        read.nativeLogins.filter { it.expired || !it.present }.map { login ->
+            val current = read.pools[login.head]?.let { AccountPoolText().summary(it) }
+            val standing = if (login.expired) {
+                "has an expired access token and cannot take over"
+            } else {
+                "has no access token"
+            }
+            DoctorCheck(
+                "native login ${login.place.command}",
+                CheckStatus.WARN,
+                listOfNotNull(
+                    current?.let { "${login.head} is $it" },
+                    "${login.place.command}'s login $standing",
+                ).joinToString(". "),
+                "Sign in again on ${login.place.command} in the console.",
+            )
+        } + read.lastRefusals.map { (head, answer) -> refusal(head, answer) }
 
     fun refusal(head: String, answer: ProviderAnswer): DoctorCheck = DoctorCheck(
         head,
         CheckStatus.WARN,
-        "$head's newest retained credential refusal was HTTP ${answer.status} " +
+        "$head's newest retained provider refusal was HTTP ${answer.status} " +
             "at ${date.format(Instant.ofEpochMilli(answer.observedAtEpochMs))}",
         if (answer.status == HttpStatus.FORBIDDEN) {
             "Check the provider's permissions and subscription for $head."

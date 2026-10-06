@@ -67,7 +67,7 @@ class AccountStatusTest {
         val view = AccountPoolProjection().parse(body).getValue("claudex")
         val text = AccountPoolText { 1_000_000L + 3 * 60_000L }
         assertEquals(
-            "on work (1 of 2 open) · 5h 12% · 7d 40%; switched primary -> work 3m ago: 7d window exhausted",
+            "on work (1 of 2 open) · 5h 12% · 7d 40%; switched from primary to work 3m ago: 7d window exhausted",
             text.summary(view),
         )
         assertEquals(CheckStatus.OK, text.check("claudex", view).status)
@@ -76,14 +76,29 @@ class AccountStatusTest {
     @Test
     fun `status names the selected native login and counts its real roster`() {
         val view = nativeView()
-        assertEquals("on native:claude (1 of 2 open)", AccountPoolText { 0L }.summary(view))
+        assertEquals("on claude's login (1 of 2 open)", AccountPoolText { 0L }.summary(view))
+    }
+
+    @Test
+    fun `native switches read as login names without selectors or arrows`() {
+        val view = nativeView().copy(
+            lastSwitch = HeadAccountSwitchView(
+                "native:claude-splice",
+                "native:claude",
+                "7d window exhausted",
+                0L,
+            ),
+        )
+        val detail = AccountPoolText { 0L }.summary(view)
+        assertTrue(detail.contains("switched from claude-splice's login to claude's login"), detail)
+        assertFalse(detail.contains("native:") || detail.contains("->"), detail)
     }
 
     @Test
     fun `doctor does not erase the native logins that Accounts offers`() {
         val check = AccountPoolText { 0L }.check("claude-splice", nativeView())
         assertEquals(CheckStatus.OK, check.status)
-        assertEquals("on native:claude (1 of 2 open)", check.detail)
+        assertEquals("on claude's login (1 of 2 open)", check.detail)
     }
 
     @Test
@@ -382,6 +397,7 @@ class AccountSwitchReasonBoundaryTest {
             "5-hour quota exhausted",
             "7-day quota exhausted",
             "account unavailable",
+            "quota usage reading full",
             "7d window exhausted",
         )
         for (reason in reasons) {
@@ -389,7 +405,7 @@ class AccountSwitchReasonBoundaryTest {
             val projected = decoded("\"reason\":${JsonPrimitive(reason)},")
             assertEquals(switched, projected.lastSwitch)
             for (view in listOf(projected, HeadAccountPoolView("work", listOf(account), switched))) {
-                val expected = "on work (1 of 1 open); switched primary -> work 0s ago: $reason"
+                val expected = "on work (1 of 1 open); switched from primary to work 0s ago: $reason"
                 assertEquals(expected, text.summary(view))
                 assertEquals(expected, text.check("head", view).detail)
             }
@@ -413,8 +429,8 @@ class AccountSwitchVocabularyTest {
             override suspend fun refresh(): Credentials = credentials()
             override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
         }
-        // AccountPool.switchReason: missing credential, local unavailability, each quota window,
-        // and the return to primary after recovery. No expected reason wording is copied here.
+        // Missing credential, local unavailability, both full-reading windows, and recovery.
+        // The two full windows share one usage-reading reason, never a synthesized provider refusal.
         for (block in Block.entries) {
             var now = 1_000_000L
             val quota = QuotaSnapshot(
@@ -444,7 +460,7 @@ class AccountSwitchVocabularyTest {
                 reasons += requireNotNull((pool.select(null) as Selection.Chosen).account.switch).reason
             }
         }
-        assertEquals(5, reasons.size, "all five current switchReason branches must be exercised")
+        assertEquals(4, reasons.size, "credential absence, cooldown, full reading and recovery are all exercised")
         reasons.forEach { reason ->
             assertTrue(AccountSwitchReason.isSafe(reason), "pool produced a reason the CLI drops: $reason")
         }

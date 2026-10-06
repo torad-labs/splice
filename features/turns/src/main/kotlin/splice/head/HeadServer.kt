@@ -152,7 +152,10 @@ public class HeadServer(
         } else {
             deps.quotaBundle.activePool?.members?.singleOrNull { it.label == account }?.auth
         }
-        return auth?.let(deps.stores.usageStore::providerAnswer)
+        val scoped = auth?.let(deps.stores.usageStore::providerAnswer)
+        return scoped ?: deps.stores.usageStore.unscopedProviderAnswer().takeIf {
+            account == null && deps.quotaBundle.activePool == null
+        }
     }
 
     /** Independent sends report through this head's same retained answer and credential-specific hold. */

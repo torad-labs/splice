@@ -68,6 +68,33 @@ class UsageTest {
     }
 
     @Test
+    fun `an unattributed head answer never becomes a credential observation on a read`(@TempDir tmp: Path) {
+        val usage = tmp.resolve("usage.json")
+        val rates = tmp.resolve("rates.json")
+        val before = UsageStore(usage, rates)
+        before.observeProviderAnswer(403, 100L)
+        before.flushNow()
+        val restored = UsageStore(usage, rates)
+        val token = "synthetic unanswered login"
+        val auth = object : RefreshableAuthProvider {
+            override suspend fun credentials(): Credentials = error("a read cannot acquire credentials")
+            override suspend fun refresh(): Credentials = error("a read cannot refresh credentials")
+            override suspend fun describe(): AuthDescription = AuthDescription(true, "synthetic")
+            override fun observedCredentialKey(): String? = CredentialKey.fromCredentials(Credentials.Bearer(token))
+        }
+
+        assertNull(restored.providerAnswer(auth), "the legacy head answer has no proved credential owner")
+        assertEquals(ProviderAnswer(403, 100L), restored.unscopedProviderAnswer())
+        val file = rates.resolveSibling("${rates.fileName}.provider-answer")
+        val serialized = Files.readString(file)
+        assertTrue(!serialized.contains(token) && !serialized.contains(requireNotNull(auth.observedCredentialKey())))
+        assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(file))
+        restored.observeProviderAnswer(auth, 200, 200L)
+        assertNull(restored.unscopedProviderAnswer(), "a proved answer retires the unattributed fallback")
+        assertEquals(200, restored.providerAnswer(auth)?.status)
+    }
+
+    @Test
     fun `a credential refusal survives restart but never follows a replacement file`(@TempDir tmp: Path) {
         val file = tmp.resolve("synthetic-login.json")
         Files.writeString(file, "synthetic first login")

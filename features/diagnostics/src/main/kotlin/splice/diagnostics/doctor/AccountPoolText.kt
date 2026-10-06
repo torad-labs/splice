@@ -4,6 +4,7 @@
 // reasons are splice's own text; nothing else from the pool is rendered.
 package splice.diagnostics.doctor
 
+import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountView
 import splice.core.util.WallClock
@@ -16,19 +17,22 @@ import kotlin.time.Duration.Companion.seconds
 
 public class AccountPoolText(private val now: WallClock = WallClock { System.currentTimeMillis() }) {
 
-    /** `on work (1 of 2 open) · 5h 12% · 7d 40%; switched primary -> work 3m ago: 7d window exhausted` */
+    /** `on work (1 of 2 open) · 5h 12% · 7d 40%; switched from primary to work 3m ago: 7d window exhausted` */
     public fun summary(view: HeadAccountPoolView): String {
         val safe = safeView(view)
         val selected = if (safe.selectionUnknown) null else safe.selectedAccount()
         val open = safe.accounts.count { it.available && it.credentialPresent }
-        val selection = if (safe.selectionUnknown) "selection unknown" else "on ${selected?.label ?: "no account"}"
+        val choice = selected?.label?.let(::name) ?: "no account"
+        val selection = if (safe.selectionUnknown) "selection unknown" else "on $choice"
         val head = "$selection ($open of ${safe.accounts.size} open)"
         val missing = if (safe.accounts.any { it.primary && !it.credentialPresent }) {
             "primary credential missing"
         } else {
             null
         }
-        val switch = safe.lastSwitch?.let { "; switched ${it.from} -> ${it.to} ${ago(it.atEpochMillis)}: ${it.reason}" }
+        val switch = safe.lastSwitch?.let {
+            "; switched from ${name(it.from)} to ${name(it.to)} ${ago(it.atEpochMillis)}: ${it.reason}"
+        }
         return listOfNotNull(head, missing, selected?.let(::windows)).joinToString(" · ") + switch.orEmpty()
     }
 
@@ -75,6 +79,9 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
             selectionUnknown = view.selectionUnknown || missingSelection || droppedSelected,
         )
     }
+
+    private fun name(label: String): String = ClaudeLoginPlaceId.entries
+        .singleOrNull { label == "native:${it.wire}" }?.let { "${it.command}'s login" } ?: label
 
     private fun windows(a: HeadAccountView): String? = listOfNotNull(
         a.fiveHourUsedPercent?.let { "5h ${it.roundToInt()}%" },

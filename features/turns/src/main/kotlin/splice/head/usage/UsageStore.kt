@@ -77,6 +77,9 @@ public class UsageStore(
 
     public fun providerAnswer(): ProviderAnswer? = answers.snapshot()
 
+    /** A retained head observation with no credential attribution; never a current login verdict. */
+    public fun unscopedProviderAnswer(): ProviderAnswer? = answers.unscopedSnapshot()
+
     /** The captured credential owner is never read, refreshed or serialized by observation. */
     public fun observeProviderAnswer(
         auth: AuthProvider,
@@ -152,6 +155,8 @@ internal class ProviderAnswers(
     private var failureLogged = false
 
     fun snapshot(): ProviderAnswer? = latest.get()
+
+    fun unscopedSnapshot(): ProviderAnswer? = latest.get().takeIf { byCredential.isEmpty() }
 
     fun key(auth: AuthProvider): String? = auth.observedCredentialKey()
 

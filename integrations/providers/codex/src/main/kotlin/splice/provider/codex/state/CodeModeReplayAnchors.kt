@@ -12,6 +12,8 @@ import splice.provider.codex.CodeModeInputBoundary
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.state.diagnostics.CodeModeNativeBranch
+import splice.provider.codex.state.diagnostics.CodeModeNativePosition
 
 @Serializable
 internal data class CodeModeHistoryAnchor(val itemDigest: String?, val occurrence: Int, val logicalTail: Int = 0)
@@ -142,19 +144,26 @@ internal class CodeModeHistoryIndex(
         segment: CodeModeNativeSegment,
         replay: Map<Int, List<JsonElement>>,
         origins: List<CodeModeNativeOrigin>,
-    ): Int? {
+    ): CodeModeNativePosition {
+        val witness = source.replayAnchors?.nativeFollowing?.get(segment.logicalOffset)
+            ?: record.replayAnchors?.nativeFollowing?.get(segment.logicalOffset)
+        val following = witness != null
         val anchor = nativeAnchor(record, source, segment.logicalOffset)
         val adjacent = adjacentNativeOffset(record, source, segment.logicalOffset)
-        if (adjacent != null) return adjacent
+        if (adjacent != null) return CodeModeNativePosition(adjacent, following)
         val bounds = nativeBounds(record, source, anchor)
-        if (!nativeOrder(source, replay, bounds)) return null
+        if (!nativeOrder(source, replay, bounds)) {
+            return CodeModeNativePosition(null, following, CodeModeNativeBranch.NATIVE_ORDER)
+        }
         val actual = replay.filter { (offset, items) ->
             offset in bounds && containsNative(items, segment.items)
         }.keys.sorted()
         val expected = nativeExpected(source, bounds).filter { containsNative(it.items, segment.items) }
             .map(CodeModeNativeSegment::logicalOffset).distinct().sorted()
         val absent = if (actual.isEmpty()) nativeOwner(segment, origins, bounds) else null
-        return countedNative(record, source, segment, expected, actual) ?: absent
+        val at = countedNative(record, source, segment, expected, actual) ?: absent
+        val branch = if (actual.isEmpty()) CodeModeNativeBranch.ABSENT else CodeModeNativeBranch.COUNT
+        return CodeModeNativePosition(at, following, branch.takeIf { at == null })
     }
 
     /** An absent native can be placed by the earlier script that produced it, never by a canonical tail. */

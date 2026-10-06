@@ -15,6 +15,8 @@ import splice.dialect.responses.ResponsesFunctionNamespace
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesCodeModeProjection
+import splice.provider.codex.state.diagnostics.CodeModeHistoryLog
+import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
 import splice.upstream.RoundBody
 import splice.upstream.codemode.CodeModeManual
 import java.util.concurrent.ConcurrentHashMap
@@ -132,7 +134,8 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
             log(
                 "[code-mode] history rewrite skipped record ${omission.record.id.take(RECORD_ID_LOG_CHARS)} " +
                     "(outer ${omission.record.outerCallId}): ${omission.reason}; its client calls stay in " +
-                    "the history as ordinary tool calls",
+                    "the history as ordinary tool calls; " +
+                    CodeModeHistoryLog.context(omission.record, omission.nativeRejection),
             )
         }
         return rewrite
@@ -194,13 +197,18 @@ internal data class CodeModeRewrite(
     val body: CodeModeBody?,
     val error: String? = null,
     val omitted: List<CodeModeOmission> = emptyList(),
+    val nativeRejection: CodeModeNativeRejection? = null,
 ) {
     /** The rewritten request as text, rendered when read. Rounds post [body] and never read this. */
     val bodyJson: String? get() = body?.round?.text
 }
 
 /** A completed record the rewrite could not place; the reason is what the digest check reported. */
-internal data class CodeModeOmission(val record: CodeModeRecord, val reason: String)
+internal data class CodeModeOmission(
+    val record: CodeModeRecord,
+    val reason: String,
+    val nativeRejection: CodeModeNativeRejection? = null,
+)
 
 internal const val CODE_MODE_TOOL_NAME = CodeModeManual.TOOL_NAME
 

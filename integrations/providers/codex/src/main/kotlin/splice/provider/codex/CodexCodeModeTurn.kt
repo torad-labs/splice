@@ -14,6 +14,8 @@ import splice.provider.codex.branch.CodexCodeModeBranch
 import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.provider.codex.state.CodeModeTurnLocks
 import splice.provider.codex.state.CodeModeTurnNotes
+import splice.provider.codex.state.diagnostics.CodeModeHistoryLog
+import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeUpstreamPost
 import splice.upstream.codemode.CodeModeResult
@@ -163,7 +165,7 @@ internal class CodexCodeModeTurn(
         val owner = registry.owner(context.key, context.digest, resultIds, callbackIds, conflicts) ?: return null
         val restored = wire.restoreBaseline(canonicalBody, owner)
         val error = restored.error ?: return PlacedOwner(owner, checkNotNull(restored.body))
-        abandon(owner, error)
+        abandon(owner, error, restored.nativeRejection)
         return null
     }
 
@@ -177,7 +179,7 @@ internal class CodexCodeModeTurn(
 
     /** A running script whose history moved underneath it is abandoned: cell closed, evidence kept
      *  on the LOST record, and the turn continues upstream on the client's own history. */
-    private fun abandon(owner: CodeModeRecord, error: String) {
+    private fun abandon(owner: CodeModeRecord, error: String, rejection: CodeModeNativeRejection?) {
         val detail = "$CODE_MODE_ABANDONED: $error; source was not rerun"
         registry.lose(owner, detail)
         // History only grows, so a record that no longer places never will again: it retires with its
@@ -186,7 +188,7 @@ internal class CodexCodeModeTurn(
         machine.interrupt(owner, detail)
         log(
             "[code-mode] abandoned record ${owner.id.take(CODE_MODE_RECORD_LOG_CHARS)} (outer ${owner.outerCallId}): " +
-                "$error; continuing upstream on the client's history",
+                "$error; continuing upstream on the client's history; ${CodeModeHistoryLog.context(owner, rejection)}",
         )
     }
 

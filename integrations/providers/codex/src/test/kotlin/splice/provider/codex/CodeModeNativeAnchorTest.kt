@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -63,8 +64,9 @@ internal class CodeModeNativeAnchorTest {
         val edited = item("""{"type":"reasoning","id":"reason-between","encrypted_content":"edited synthetic"}""")
         val client = listOf(first) + callbacks("old", 2) + edited + latest + callbacks("active", 1)
 
-        val error = history.restoreBaseline(body(client), active).error
-        assertEquals("code-mode native discovery history was edited", error)
+        val restored = history.restoreBaseline(body(client), active)
+        assertEquals("code-mode native discovery history was edited", restored.error)
+        assertEquals("native_following=present native_branch=payload", restored.nativeRejection?.logFields())
     }
 
     @Test
@@ -73,8 +75,9 @@ internal class CodeModeNativeAnchorTest {
         val active = record(baseline, emptyList(), "active")
         val client = listOf(native, first, latest) + callbacks("active", 1)
 
-        val error = history.restoreBaseline(body(client), active).error
-        assertEquals("code-mode native discovery history was edited", error)
+        val restored = history.restoreBaseline(body(client), active)
+        assertEquals("code-mode native discovery history was edited", restored.error)
+        assertEquals("native_following=present native_branch=unexpected-offset", restored.nativeRejection?.logFields())
         assertTrue(active.replayAnchors?.native?.values?.all { it.logicalTail == 0 } == true)
     }
 
@@ -160,6 +163,12 @@ internal class CodeModeNativeAnchorTest {
         val restored = history.restoreBaseline(request, active)
         assertNull(restored.error)
         assertEquals(client, input(checkNotNull(restored.bodyJson)))
+
+        val missingParent = listOf(first) + callbacks("retired", 2) + callbacks("parent", 1) +
+            latest + callbacks("active", 1)
+        val rejected = history.restoreBaseline(body(missingParent), active)
+        assertEquals("code-mode native discovery history was edited", rejected.error)
+        assertEquals("native_following=absent native_branch=absent", rejected.nativeRejection?.logFields())
     }
 
     @Test
@@ -313,6 +322,93 @@ internal class CodeModeNativeAnchorTest {
         assertNull(placed.error)
         assertEquals(client, input(checkNotNull(placed.bodyJson)))
     }
+
+    @Test
+    fun `an uncaptured native does not borrow the witness of an allowed item at its offset`() {
+        val owner = record(listOf(first, native, latest), emptyList(), "active")
+        val uncaptured = item("""{"type":"reasoning","id":"uncaptured","encrypted_content":"synthetic extra"}""")
+        val client = listOf(first, native, uncaptured, latest) + callbacks("active", 1)
+
+        val restored = history.restoreBaseline(body(client), owner)
+
+        assertEquals("code-mode native discovery history was edited", restored.error)
+        assertEquals("native_following=unknown native_branch=unexpected-offset", restored.nativeRejection?.logFields())
+    }
+
+    @Test
+    fun `native rejection logs identify the session witness and actual placement branch`(@TempDir dir: Path) {
+        for (branch in listOf("absent", "nativeOrder")) {
+            for (following in listOf(false, true)) {
+                logRejection(dir.resolve("$branch-$following"), branch, following)
+            }
+        }
+    }
+
+    private fun logRejection(dir: Path, branch: String, following: Boolean) {
+        val middle = item("""{"role":"user","content":"middle synthetic request"}""")
+        val baseline = listOf(first, outer("retired"), output("retired"), native, middle) +
+            if (branch == "nativeOrder") listOf(outer("older"), output("older"), native, latest) else listOf(latest)
+        val owner = record(baseline, emptyList(), "active").apply {
+            sessionId = "synthetic-session-hidden"
+            if (!following) replayAnchors = replayAnchors?.copy(nativeFollowing = emptyMap())
+        }
+        val repetitions = if (branch == "nativeOrder") listOf(native, native, native) else emptyList()
+        val client = listOf(first) + callbacks("retired", 2) + repetitions + latest + callbacks("active", 1)
+        val request = body(client)
+        val restored = history.restoreBaseline(request, owner)
+        val error = checkNotNull(restored.error)
+        assertEquals("code-mode native discovery history was edited", error)
+        val lines = mutableListOf<String>()
+        CodexCodeModeWire(Json, { lines += it }).canonicalize(request, listOf(owner))
+        val marker = "session syntheti native_following=${if (following) "present" else "absent"} native_branch=$branch"
+        assertEquals(
+            "[code-mode] history rewrite skipped record active (outer active): $error; " +
+                "its client calls stay in the history as ordinary tool calls; $marker",
+            lines.single(),
+        )
+        abandonedLog(dir, owner, restored, lines, marker)
+    }
+
+    private fun abandonedLog(
+        dir: Path,
+        owner: CodeModeRecord,
+        restored: CodeModeRewrite,
+        lines: MutableList<String>,
+        marker: String,
+    ) {
+        val error = checkNotNull(restored.error)
+        val bridge = CodexCodeModeBridge(
+            CodeModeBridgeConfig(
+                runtimes = { error("this log control never opens a runtime") },
+                state = CodeModeStateLocation(dir.resolve("records"), dir.resolve("legacy.json")),
+                log = { lines += it },
+            ),
+        )
+        try {
+            val registry = privateField(bridge, "registry") as CodexCodeModeRegistry
+            assertTrue(registry.add(owner))
+            val controller = privateField(bridge, "controller")
+            val abandon = controller.javaClass.declaredMethods.single { it.name == "abandon" }
+                .apply { isAccessible = true }
+            val rejection = restored.javaClass.methods.firstOrNull { it.name == "getNativeRejection" }?.invoke(restored)
+            val arguments = if (abandon.parameterCount == 3) arrayOf(owner, error, rejection) else arrayOf(owner, error)
+            abandon.invoke(controller, *arguments)
+            assertEquals(
+                "[code-mode] abandoned record active (outer active): $error; " +
+                    "continuing upstream on the client's history; $marker",
+                lines.last(),
+            )
+            assertFalse(lines.any { "synthetic-session-hidden" in it || "reason-between" in it })
+            assertEquals("$CODE_MODE_ABANDONED: $error; source was not rerun", owner.error)
+            val saved = Json.encodeToString(CodeModePersistedState(records = listOf(owner.snapshot())))
+            assertFalse("nativeRejection" in saved || "native_branch" in saved)
+        } finally {
+            bridge.onHeadStop()
+        }
+    }
+
+    private fun privateField(owner: Any, name: String): Any =
+        owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner)
 
     private fun record(items: List<JsonElement>, completed: List<CodeModeRecord>, id: String): CodeModeRecord {
         val baseline = checkNotNull(history.anchoredBoundary(body(items), completed))

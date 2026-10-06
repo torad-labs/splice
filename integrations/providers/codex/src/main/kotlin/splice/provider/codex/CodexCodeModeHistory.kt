@@ -14,6 +14,7 @@ import splice.provider.codex.state.CodeModeMetadataValidator
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeNativeReplay
 import splice.upstream.RoundBody
+import splice.provider.codex.state.diagnostics.CodeModeProjectedRewrite as ProjectedRewrite
 
 internal class CodexCodeModeHistory(private val json: Json) {
     private val codec = CodexCodeModeHistoryCodec(json)
@@ -92,7 +93,7 @@ internal class CodexCodeModeHistory(private val json: Json) {
             ?: return CodeModeRewrite(null, "code mode requires a Responses input array")
         val conversation = codec.conversation(codec.projection.project(root.second))
         val restored = restoreProjected(conversation.body, record)
-        return restored.error?.let { CodeModeRewrite(null, it) }
+        return restored.error?.let { CodeModeRewrite(null, it, nativeRejection = restored.nativeRejection) }
             ?: codec.rebuilt(root.first, conversation, checkNotNull(restored.input), body)
     }
 
@@ -113,7 +114,8 @@ internal class CodexCodeModeHistory(private val json: Json) {
                 checkNotNull(index),
                 listOf(record),
             )
-            native.problem(record)?.let { ProjectedRewrite(null, it) } ?: ProjectedRewrite(native.restore(record))
+            native.problem(record)?.let { ProjectedRewrite(null, it, native.rejection(record, it)) }
+                ?: ProjectedRewrite(native.restore(record))
         } else {
             val replay = mergeNative(input.replayItems, record)
             replay.error?.let { ProjectedRewrite(null, it) }
@@ -333,7 +335,6 @@ private class NativeReplayValidator {
     }
 }
 
-private data class ProjectedRewrite(val input: ResponsesCodeModeInput?, val error: String? = null)
 private data class ReplayRewrite(val items: List<ResponsesCodeModeReplay>?, val error: String? = null)
 private val CUSTOM_TYPES = setOf("custom_tool_call", TYPE_CUSTOM_OUTPUT)
 private const val TYPE_FUNCTION_OUTPUT = "function_call_output"

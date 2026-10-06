@@ -8,8 +8,15 @@ import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.state.diagnostics.CodeModeNativeBranch
+import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
 
-private data class NativeClaim(val recordId: String, val offset: Int, val items: List<JsonElement>)
+private data class NativeClaim(
+    val recordId: String,
+    val offset: Int,
+    val items: List<JsonElement>,
+    val following: Boolean,
+)
 
 internal data class CodeModeNativeOrigin(val record: CodeModeRecord, val segment: CodeModeNativeSegment)
 
@@ -19,7 +26,7 @@ internal class CodeModeNativeReplay(
     private val index: CodeModeHistoryIndex,
     records: List<CodeModeRecord>,
 ) {
-    private val bad = mutableSetOf<String>()
+    private val bad = mutableMapOf<String, CodeModeNativeRejection>()
     private val origins = ancestors(records).flatMap { record ->
         record.continuityReplay.map { CodeModeNativeOrigin(record, it) }
     }
@@ -33,24 +40,34 @@ internal class CodeModeNativeReplay(
         claims.forEach { claim ->
             claim.items.forEach { expected ->
                 val actual = replayed[claim.offset]?.get(identity(expected))
-                if (actual?.any { it != expected } == true) bad += claim.recordId
+                if (actual?.any { it != expected } == true) {
+                    bad.putIfAbsent(
+                        claim.recordId,
+                        CodeModeNativeRejection(claim.following, CodeModeNativeBranch.PAYLOAD),
+                    )
+                }
             }
         }
         val unexpected = unexpectedOffset(records, claims)
-        unexpected?.let { at ->
-            records.filter { (index.boundary(it) ?: 0) > at }.forEach { bad += it.id }
+        unexpected?.let { segment ->
+            val witness = claims.filter { claim -> claim.items.any { it in segment.items } }
+                .map(NativeClaim::following).distinct().singleOrNull()
+            records.filter { (index.boundary(it) ?: 0) > segment.logicalOffset }.forEach {
+                bad.putIfAbsent(it.id, CodeModeNativeRejection(witness, CodeModeNativeBranch.UNEXPECTED))
+            }
         }
         val nodes = ancestors(records)
         val children = nodes.groupBy { it.nativeParent?.id }
-        val pending = ArrayDeque(bad)
+        val pending = ArrayDeque(bad.keys)
         while (pending.isNotEmpty()) {
-            children[pending.removeFirst()].orEmpty().forEach { child ->
-                if (bad.add(child.id)) pending += child.id
+            val parent = pending.removeFirst()
+            children[parent].orEmpty().forEach { child ->
+                if (bad.putIfAbsent(child.id, bad.getValue(parent)) == null) pending += child.id
             }
         }
     }
 
-    private fun unexpectedOffset(records: List<CodeModeRecord>, claims: List<NativeClaim>): Int? {
+    private fun unexpectedOffset(records: List<CodeModeRecord>, claims: List<NativeClaim>): ResponsesCodeModeReplay? {
         val allowed = mutableMapOf<Int, MutableSet<JsonElement>>()
         claims.forEach { allowed.getOrPut(it.offset) { mutableSetOf() } += it.items }
         records.forEach { record ->
@@ -61,10 +78,14 @@ internal class CodeModeNativeReplay(
                 }
             }
         }
-        return input.nativeSegments.firstOrNull { segment ->
-            segment.items.any { it !in allowed[segment.logicalOffset].orEmpty() }
-        }?.logicalOffset
+        return input.nativeSegments.firstNotNullOfOrNull { segment ->
+            segment.items.firstOrNull { it !in allowed[segment.logicalOffset].orEmpty() }
+                ?.let { segment.copy(items = listOf(it)) }
+        }
     }
+
+    fun rejection(record: CodeModeRecord, reason: String): CodeModeNativeRejection? =
+        bad[record.id]?.takeIf { reason == problem(record) }
 
     fun problem(record: CodeModeRecord): String? =
         "code-mode native discovery history was edited".takeIf { record.id in bad }
@@ -140,12 +161,13 @@ internal class CodeModeNativeReplay(
     }
 
     private fun claim(record: CodeModeRecord, source: CodeModeRecord, segment: CodeModeNativeSegment): NativeClaim? {
-        val at = index.nativeOffset(record, source, segment, replay, origins)
+        val placement = index.nativeOffset(record, source, segment, replay, origins)
+        val at = placement.offset
         if (at == null) {
-            bad += record.id
+            bad.putIfAbsent(record.id, CodeModeNativeRejection(placement.following, checkNotNull(placement.branch)))
             return null
         }
-        return NativeClaim(record.id, at, segment.items)
+        return NativeClaim(record.id, at, segment.items, placement.following)
     }
 
     private fun ancestors(records: List<CodeModeRecord>): List<CodeModeRecord> {

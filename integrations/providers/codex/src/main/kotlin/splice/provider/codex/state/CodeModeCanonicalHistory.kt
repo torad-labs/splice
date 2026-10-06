@@ -54,7 +54,7 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
                 metadataProblem(record) ?: replayProblem(index, record, media) ?: natives.problem(record)
             }
             if (error != null) {
-                omitted += CodeModeOmission(record, error)
+                omitted += CodeModeOmission(record, error, natives.rejection(record, error))
                 null
             } else {
                 placement(index, record, checkNotNull(boundary))

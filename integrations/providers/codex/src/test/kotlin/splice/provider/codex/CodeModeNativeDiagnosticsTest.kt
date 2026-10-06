@@ -171,6 +171,46 @@ internal class CodeModeNativeDiagnosticsTest {
         )
     }
 
+    @Test
+    fun `a captured tail permutation is rejected despite uncaptured response commentary`() {
+        val baseline = listOf(first) + native
+        val active = record(baseline, "captured-tail")
+        for (width in listOf(0, 1, 3)) {
+            active.continuity = List(width) { at ->
+                item("""{"role":"assistant","content":"synthetic commentary $at"}""")
+            }
+            assertNull(history.restoreBaseline(body(baseline + callbacks(active)), active).error)
+            val reordered = listOf(first) + native.drop(1) + native.first() + callbacks(active)
+            val rejected = history.restoreBaseline(body(reordered), active)
+            assertNull(rejected.body)
+            assertEquals(CodeModeNativeBranch.NATIVE_ORDER, rejected.nativeRejection?.branch)
+        }
+    }
+
+    @Test
+    fun `captured native continuity at a shortened raw callback bound still places`() {
+        val codec = CodexCodeModeHistoryCodec(Json)
+        val earlier = retainedRecord(listOf(first), "prefix-first", emptyList())
+        val prefix = listOf(first, earlier.outer, codec.customOutput(earlier))
+        val second = retainedRecord(prefix, "prefix-second", listOf(earlier))
+        val between = item("""{"type":"reasoning","id":"synthetic-between","encrypted_content":"synthetic between"}""")
+        val captured = listOf(first, native.first()) + prefix.drop(1) +
+            listOf(between, native.first(), second.outer, codec.customOutput(second))
+        val response = item("""{"type":"reasoning","id":"synthetic-tail","encrypted_content":"synthetic tail"}""")
+        val carrier = retainedRecord(captured, "omitted-carrier", listOf(earlier, second), 0).apply {
+            continuityReplay = listOf(CodeModeNativeSegment(0, listOf(response)))
+        }
+        val completed = listOf(earlier, second, carrier)
+        val source = captured + listOf(response, carrier.outer, codec.customOutput(carrier))
+        val linked = retainedRecord(source, "shortened-tail", completed).apply { phase = CodeModePhase.ACTIVE }
+        val active = CodeModeNativeChain.snapshot(linked, setOf(linked.id)).restore()
+        val client = listOf(first, native.first()) + callbacks(earlier) + between +
+            callbacks(second) + callbacks(active)
+        val rewrite = history.canonicalize(body(client), completed, emptyMap(), active)
+        assertNull(active.nativeParent)
+        assertNull(history.restoreBaseline(checkNotNull(rewrite.body), active).error)
+    }
+
     private fun unplaceable(): Pair<CodeModeRecord, CodeModeRewrite> {
         val middle = item("""{"role":"user","content":"synthetic private middle"}""")
         val latest = item("""{"role":"user","content":"synthetic latest"}""")
@@ -182,7 +222,25 @@ internal class CodeModeNativeDiagnosticsTest {
         return active to history.restoreBaseline(body(client), active)
     }
 
-    private fun record(items: List<JsonElement>, id: String): CodeModeRecord {
+    private fun retainedRecord(
+        items: List<JsonElement>,
+        id: String,
+        completed: List<CodeModeRecord>,
+        callbacks: Int = 1,
+    ): CodeModeRecord {
+        val boundary = checkNotNull(history.anchoredBoundary(body(items), completed))
+        val capture = CodeModeNativeChain.capture(boundary.nativeSegments, completed.lastOrNull())
+        return record(items, id, callbacks).also {
+            it.replayAnchors = boundary.replayAnchors
+            it.nativeSegments = capture.segments
+            it.nativeParent = capture.parent
+            it.nativeBaseId = capture.parent?.id
+            it.phase = CodeModePhase.COMPLETED
+            it.output = "synthetic result"
+        }
+    }
+
+    private fun record(items: List<JsonElement>, id: String, callbacks: Int = 1): CodeModeRecord {
         val boundary = checkNotNull(history.anchoredBoundary(body(items), emptyList()))
         val outer = item(
             """{"type":"custom_tool_call","call_id":"$id","name":"exec","input":"return 'synthetic';"}""",
@@ -206,8 +264,13 @@ internal class CodeModeNativeDiagnosticsTest {
             continuityReplay = emptyList(),
         ).also {
             it.replayAnchors = boundary.replayAnchors
-            it.pending += CodeModePending("runtime-$id", "callback-$id", "Read", JsonObject(emptyMap()), true)
-            it.accepted.accept(mapOf("callback-$id" to CodeModeResult("callback-$id", "synthetic result")), emptyMap())
+            repeat(callbacks) { _ ->
+                it.pending += CodeModePending("runtime-$id", "callback-$id", "Read", JsonObject(emptyMap()), true)
+                it.accepted.accept(
+                    mapOf("callback-$id" to CodeModeResult("callback-$id", "synthetic result")),
+                    emptyMap(),
+                )
+            }
         }
     }
 

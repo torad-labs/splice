@@ -15,7 +15,16 @@ internal class CodeModeNativeScope(source: CodeModeRecord, private val bounds: I
     private val lower = source.replayAnchors?.native.orEmpty().entries.filter { (_, anchor) ->
         index.resolve(anchor.copy(logicalTail = 0)) == bounds.first
     }.minOfOrNull { (offset, anchor) -> offset - anchor.logicalTail } ?: 0
-    private val terminal = owner.baselineLogicalCount + owner.continuity.size
+    private val captured = CodeModeNativeChain.normalized(
+        CodeModeNativeChain.replay(owner) +
+            if (owner === source) emptyList() else CodeModeNativeChain.continuity(owner),
+    )
+    private val terminal = owner.baselineLogicalCount + if (owner === source) 0 else owner.continuity.size
+    private val shortened = owner.replayAnchors?.baseline?.let { anchor ->
+        index.resolve(anchor.copy(logicalTail = 0), bounds.last)?.let { prior ->
+            prior + anchor.logicalTail > bounds.last
+        }
+    } == true
     val orderFailure: CodeModeNativeBranch = if (
         generateSequence(owner) { it.nativeParent }.any { it.nativeBaseId != null && it.nativeParent == null }
     ) {
@@ -23,18 +32,16 @@ internal class CodeModeNativeScope(source: CodeModeRecord, private val bounds: I
     } else {
         CodeModeNativeBranch.NATIVE_ORDER
     }
-    val expected: List<CodeModeNativeSegment> = CodeModeNativeChain.normalized(
-        CodeModeNativeChain.replay(owner) +
-            if (owner === source) emptyList() else CodeModeNativeChain.continuity(owner),
-    ).filter { it.logicalOffset in lower..terminal }
+    val expected: List<CodeModeNativeSegment> = captured.filter { it.logicalOffset in lower..terminal }
 
     fun actual(
         replay: Map<Int, List<JsonElement>>,
         nativeReplay: Map<Int, List<JsonElement>>,
-    ): Map<Int, List<JsonElement>> = if (expected.any { it.logicalOffset == terminal }) {
+    ): Map<Int, List<JsonElement>> = if (shortened || expected.any { it.logicalOffset == terminal }) {
         replay
     } else {
-        // The callback alias is post-capture. Native fragments at that same raw slot still belong.
+        // Only a witnessed complete tail makes this callback alias post-capture.
+        // A shortened owned tail can carry captured natives at the callback's raw position.
         replay + (bounds.last to nativeReplay[bounds.last].orEmpty())
     }
 }

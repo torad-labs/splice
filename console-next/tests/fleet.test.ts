@@ -155,18 +155,31 @@ describe('a fleet card', () => {
     expect(card.meta.at(-1)).toBe('2 sessions');
   });
 
-  test('a head near its warn share says so, without needing a person', () => {
-    const card = fleetCard(head(), inputs({ usage: usage(90) }));
+  test.each([80, 90, 97.99])('a warning %s percent reading says so, without needing a person', pct => {
+    const card = fleetCard(head(), inputs({ usage: usage(pct) }));
     expect(card).toMatchObject({ state: 'Ready', standing: 'ready', tone: 'work', attention: false });
-    expect(card.line).toMatchObject({ kind: 'gauge', note: `near its limit · 90%, resets ${localZonedInstantText(NOW / 1000 + 3600)}` });
+    expect(card.line).toMatchObject({ kind: 'gauge', note: `near its limit · ${Math.round(pct)}%, resets ${localZonedInstantText(NOW / 1000 + 3600)}` });
     expect(fleetLede([card])).toContain('one ready');
   });
-  test.each([100, 105])('a %s percent reading without a held refusal stays ready in the command colour', (pct) => {
+  test.each([98, 99.9, 100, 105])('a critical %s percent reading is distinct from Ready without inventing a held refusal', (pct) => {
     const card = fleetCard(head(), inputs({ usage: usage(pct) }));
-    expect(card).toMatchObject({ state: 'Ready', standing: 'ready', tone: 'work', colour: 'grok', attention: false, fix: 'copy-launch' });
-    expect(card.line).toMatchObject({ kind: 'gauge', pct, full: false, note: `near its limit · ${pct}%, resets ${localZonedInstantText(NOW / 1000 + 3600)}` });
-    expect(fleetLede([card])).toContain('one ready');
+    expect(card).toMatchObject({ state: pct >= 100 ? 'At reported limit' : 'Quota nearly used', standing: 'limited', tone: 'quota', colour: 'grok', attention: false, fix: 'copy-launch' });
+    expect(card.line).toMatchObject({ kind: 'gauge', pct: Math.round(pct), full: false, note: `${pct >= 100 ? 'at its reported limit' : 'almost at its reported limit'} · ${Math.round(pct)}%, resets ${localZonedInstantText(NOW / 1000 + 3600)}` });
+    expect(fleetLede([card])).toContain('one with high quota use');
+    expect(fleetLede([card])).not.toContain('ready');
     expect(fleetLede([card])).not.toContain('out of quota');
+  });
+  test.each([
+    [head({ running: false }), 'Stopped'],
+    [head({ healthy: false }), 'Failing'],
+    [head({ last_provider_answer: null }), 'Readiness unknown'],
+    [head({ last_provider_answer: { status: 403, observed_at_epoch_ms: NOW, accepted: false } }), 'Access refused'],
+    [head({ quotaResetAtEpochSeconds: NOW / 1000 + 60 }), `Out of quota until ${localZonedInstantText(NOW / 1000 + 60)}`],
+  ] as const)('a critical reading never replaces a stronger %s state', (command, state) => {
+    expect(fleetCard(command, inputs({ usage: usage(100) })).state).toBe(state);
+  });
+  test('a critical reading never replaces a missing sign-in', () => {
+    expect(fleetCard(head(), inputs({ usage: usage(100), auth: { 'claude-grok': { kind: 'grok-oauth', login: '', present: false } } })).state).toBe('Signed out');
   });
   test('a provider refusal is out of quota with its reset, and a pool offers to switch account', () => {
     const until = NOW / 1000 + 7200;
@@ -241,8 +254,8 @@ describe('a fleet card', () => {
 describe('the fleet sentence', () => {
   const stand = (...standings: FleetStanding[]): FleetCard[] => standings.map((standing) => ({ standing }) as FleetCard);
   test('counts each standing in order and ends with how to arrange the cards', () => {
-    expect(fleetLede(stand('ready', 'quota', 'ready', 'off', 'ready', 'signed-out'))).toBe(
-      'Six commands: three ready, one out of quota, one needs a sign-in or a key, one switched off. Drag a card to put it where you want it; Sessions follows.',
+    expect(fleetLede(stand('ready', 'quota', 'ready', 'off', 'ready', 'signed-out', 'limited'))).toBe(
+      'Seven commands: three ready, one with high quota use, one out of quota, one needs a sign-in or a key, one switched off. Drag a card to put it where you want it; Sessions follows.',
     );
   });
   test('one command is singular and a standing nobody has is left out', () => {

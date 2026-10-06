@@ -15,7 +15,7 @@ import { FL } from './words-fleet';
 import { Q } from './words-quota';
 
 /** Where a plan stands, in the few ways the page's one sentence counts them. */
-export type FleetStanding = 'ready' | 'quota' | 'signed-out' | 'off' | 'other';
+export type FleetStanding = 'ready' | 'limited' | 'quota' | 'signed-out' | 'off' | 'other';
 
 export type FleetTone = 'work' | 'wait' | 'stuck' | 'idle' | 'quota';
 
@@ -98,19 +98,22 @@ function noWindowText(kind: string, keys: KeysPayload | null, usage: UsagePayloa
   return FL.lastReading(when, Math.round(last.pct), WINDOW_NAME[last.window], last.resetsAt !== null && last.resetsAt * 1000 <= now);
 }
 
-function tightest(head: HeadStatus, usage: UsagePayload | null, now: number): Extract<FleetLine, { kind: 'gauge' }> | null {
+function tightest(head: HeadStatus, usage: UsagePayload | null, now: number): { gauge: Extract<FleetLine, { kind: 'gauge' }>; pct: number } | null {
   const entry = usage?.heads.find((row) => row.key === head.key)?.usage ?? null;
   const live = planWindows(entry, now).filter((window) => !window.stale);
   const best = live.reduce<(typeof live)[number] | null>((a, b) => (a === null || b.pct >= a.pct ? b : a), null);
   if (best === null) return null;
   const pct = Math.round(best.pct);
   return {
-    kind: 'gauge',
-    name: WINDOW_NAME[best.window],
-    pct,
-    note: `${pct}%${best.resetsAt === null ? '' : ` · resets ${localZonedInstantText(best.resetsAt)}`}`,
-    full: false,
-    ...(best.observedAt === null ? {} : { observedAt: best.observedAt }),
+    pct: best.pct,
+    gauge: {
+      kind: 'gauge',
+      name: WINDOW_NAME[best.window],
+      pct,
+      note: `${pct}%${best.resetsAt === null ? '' : ` · resets ${localZonedInstantText(best.resetsAt)}`}`,
+      full: false,
+      ...(best.observedAt === null ? {} : { observedAt: best.observedAt }),
+    },
   };
 }
 
@@ -130,7 +133,8 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
   };
   const attention = headAttention(head, signals, now);
   const until = quotaRefusedUntil(head, now);
-  const gauge = tightest(head, usage, now);
+  const reading = tightest(head, usage, now);
+  const gauge = reading?.gauge ?? null;
   const count = sessions.get(head.key) ?? 0;
   const said = new Set<string>();
   const kind = kindOf(head, inputs.family);
@@ -193,14 +197,17 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
         line: { kind: 'note', text: access ? FL.accessRefused : limited ? FL.rateRefused : FL.providerRefused }, fix: null };
     }
     case 'ok': {
-      const level = gauge === null || usage === null ? 'ok' : planLevel(gauge.pct, usage.warn_pct);
-      const line = level !== 'ok' && gauge !== null ? { ...gauge, note: `near its limit · ${gauge.note.replace(' · resets ', ', resets ')}` } : gauge;
-      return { ...base, tone: 'work', standing: 'ready', state: 'Ready', attention: false, line, fix: 'copy-launch' };
+      const level = reading === null || usage === null ? 'ok' : planLevel(reading.pct, usage.warn_pct);
+      const critical = level === 'critical';
+      const atLimit = reading !== null && reading.pct >= 100;
+      const prefix = critical ? atLimit ? FL.fullReading : FL.criticalReading : FL.warnReading;
+      const line = level !== 'ok' && gauge !== null ? { ...gauge, note: `${prefix} · ${gauge.note.replace(' · resets ', ', resets ')}` } : gauge;
+      return { ...base, tone: critical ? 'quota' : 'work', standing: critical ? 'limited' : 'ready', state: critical ? atLimit ? FL.atReportedLimit : FL.quotaNearlyUsed : 'Ready', attention: false, line, fix: 'copy-launch' };
     }
   }
 }
 
-const STANDING_ORDER: readonly FleetStanding[] = ['ready', 'quota', 'signed-out', 'off', 'other'];
+const STANDING_ORDER: readonly FleetStanding[] = ['ready', 'limited', 'quota', 'signed-out', 'off', 'other'];
 
 /** The page's one sentence: how many plans, and how many stand each way, then how to arrange them. */
 export function fleetLede(cards: readonly FleetCard[]): string {

@@ -183,7 +183,7 @@ test('a silent runtime is off on its card and detail while unmarked plans remain
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('rig up ' + STACK.oauthHead);
 });
 
-test('a full reading stays Ready in command colour, reads as usage, and still serves without a required act', async ({ page }, testInfo) => {
+test('critical and warning readings differ on Models and detail without inventing a refused turn', async ({ page }, testInfo) => {
   await page.route('**/api/status', async (route) => {
     const response = await route.fetch();
     const body = await response.json() as ControlStatusPayload;
@@ -220,39 +220,60 @@ test('a full reading stays Ready in command colour, reads as usage, and still se
   });
   const faults = await open(page, 'models');
   const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.oauthHead, exact: true }) });
-  await expect(card.getByText('Ready', { exact: true })).toBeVisible();
+  await expect(card.getByText('At reported limit', { exact: true })).toBeVisible();
+  await expect(card.getByText('Ready', { exact: true })).toHaveCount(0);
+  await expect(card).not.toContainText('Out of quota');
+  await expect(card).toContainText('Last request accepted');
   await expect(card.locator('.track')).not.toHaveClass(/full/);
   await expect(card.locator('.track i')).toHaveCSS('width', await card.locator('.track').evaluate((node) => getComputedStyle(node).width));
   const local = await page.evaluate((seconds) => new Intl.DateTimeFormat('en-US', {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
   }).format(new Date(seconds * 1000)), reset);
-  await expect(card.locator('.gl small')).toHaveText('near its limit · 100%, resets ' + local);
+  await expect(card.locator('.gl small')).toHaveText('at its reported limit · 100%, resets ' + local);
+  await expect(page.locator('main .lede')).toContainText('one with high quota use');
+  await card.getByRole('link', { name: STACK.oauthHead, exact: true }).click();
+  await expect(page.locator('header.top')).toContainText('At reported limit');
+  await expect(page.getByRole('main')).not.toContainText('Out of quota');
+  pct = 98;
+  await open(page, 'models');
+  await page.reload();
+  await expect(card.getByText('Quota nearly used', { exact: true })).toBeVisible();
+  await expect(card.locator('.gl small')).toHaveText('almost at its reported limit · 98%, resets ' + local);
+  await expect(card.locator('.track')).not.toHaveClass(/full/);
+  await card.getByRole('link', { name: STACK.oauthHead, exact: true }).click();
+  await expect(page.locator('header.top')).toContainText('Quota nearly used');
   pct = 85;
+  await open(page, 'models');
   await page.reload();
   await expect(card.getByText('Ready', { exact: true })).toBeVisible();
   await expect(card.locator('.gl small')).toHaveText('near its limit · 85%, resets ' + local);
-  await expect(page.locator('main .lede')).not.toContainText('near its limit');
+  await expect(page.locator('main .lede')).not.toContainText('with high quota use');
   pct = 100;
   await page.reload();
-  await expect(card.locator('.gl small')).toHaveText('near its limit · 100%, resets ' + local);
+  await expect(card.getByText('At reported limit', { exact: true })).toBeVisible();
+  await expect(card.locator('.gl small')).toHaveText('at its reported limit · 100%, resets ' + local);
   expect((await card.locator('.gl').innerText()).match(/100%/g)).toHaveLength(1);
-  for (const theme of ['Day', 'Night']) {
-    await page.getByRole('button', { name: theme, exact: true }).click();
-    const colours = await card.locator('.track i').evaluate((node) => {
-      const style = getComputedStyle(node);
-      const probe = document.createElement('i');
-      node.append(probe);
-      probe.style.color = 'var(--gpt)';
-      const command = getComputedStyle(probe).color;
-      probe.style.color = 'var(--stuck)';
-      const refusal = getComputedStyle(probe).color;
-      probe.remove();
-      return { fill: style.backgroundColor, image: style.backgroundImage, command, refusal };
-    });
-    expect(colours.fill).toBe(colours.command);
-    expect(colours.fill).not.toBe(colours.refusal);
-    expect(colours.image).toBe('none');
-    await card.screenshot({ path: testInfo.outputPath('full-reading-' + theme.toLowerCase() + '.png') });
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    for (const theme of ['Day', 'Night']) {
+      await page.getByRole('button', { name: theme, exact: true }).click();
+      const colours = await card.locator('.track i').evaluate((node) => {
+        const style = getComputedStyle(node);
+        const probe = document.createElement('i');
+        node.append(probe);
+        probe.style.color = 'var(--gpt)';
+        const command = getComputedStyle(probe).color;
+        probe.style.color = 'var(--stuck)';
+        const refusal = getComputedStyle(probe).color;
+        probe.remove();
+        return { fill: style.backgroundColor, image: style.backgroundImage, command, refusal };
+      });
+      expect(colours.fill).toBe(colours.command);
+      expect(colours.fill).not.toBe(colours.refusal);
+      expect(colours.image).toBe('none');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await card.screenshot({ path: testInfo.outputPath('critical-reading-' + width + '-' + theme.toLowerCase() + '.png') });
+    }
   }
   await page.getByRole('link', { name: 'Usage', exact: true }).click();
   await expect(page.locator('main .lede')).toContainText(STACK.oauthHead + ' is at 100% of its 5-hour limit.');

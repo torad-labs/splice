@@ -1,5 +1,10 @@
 // What the plan-card derivation says: each state's one line and its note. Copy lives in modules like this one, never inline in logic.
 export const FL = {
+  quotaNearlyUsed: 'Quota nearly used',
+  atReportedLimit: 'At reported limit',
+  warnReading: 'near its limit',
+  criticalReading: 'almost at its reported limit',
+  fullReading: 'at its reported limit',
   stopped: 'This command is not running.',
   unhealthy: 'Its health check is failing.',
   signedOut: 'Its next turn will fail until you sign in.',
@@ -22,5 +27,5 @@ export const FL = {
   onePlan: 'One command',
   manyPlans: 'commands',
   drag: 'Drag a card to put it where you want it; Sessions follows.',
-  standing: { ready: 'ready', quota: 'out of quota', 'signed-out': 'needs a sign-in or a key', off: 'switched off', other: 'in need of a look' },
+  standing: { ready: 'ready', limited: 'with high quota use', quota: 'out of quota', 'signed-out': 'needs a sign-in or a key', off: 'switched off', other: 'in need of a look' },
 } as const;

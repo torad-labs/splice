@@ -109,7 +109,7 @@ export const KNOB_HELP: Record<string, string> = {
   replayReasoning: 'Resend earlier encrypted reasoning each turn; it shortens new reasoning.',
   mirrorReasoning: 'Always off; splice never writes its own reasoning summary.',
   progressLine: 'While a turn is silent, show how long splice has waited.',
-  foldReasoningModels: 'Models asked to keep thinking when they cut reasoning short, comma-separated.',
+  foldReasoningModels: 'Models asked to keep thinking when they cut reasoning short.',
   foldMaxContinue: 'Most times per turn splice asks a fold model to keep thinking.',
   foldMarkerText: 'The text splice sends to ask a model to keep thinking.',
   foldMaxTier: 'Largest n for which stopping at 518n − 2 tokens means cut.',

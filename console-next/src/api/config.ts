@@ -14,7 +14,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { pendingOf } from './auth';
 import { request } from './client';
 import { keys } from './queries';
-import { refetch } from './refetch';
+import { awaitRefetch, refetch } from './refetch';
 import { recordSaved } from '../lib/restart-pending';
 import { PENDING_TOPOLOGY } from '../types/topology';
 import type { ConfigValue, PatchResult } from '../types/core';
@@ -44,8 +44,7 @@ export function useConfigWrite() {
   });
 }
 
-/** Save knobs as Settings does: the daemon's `restart_required` keys are recorded under the boot the write reached, so the
- *  page can say a change waits and Needs you can say splice must restart. Every config view is read again after. */
+/** Hold another edit until the configuration includes this write; unrelated health reads do not hold the control. */
 export function useKnobSave() {
   const client = useQueryClient();
   return useMutation({
@@ -54,7 +53,10 @@ export function useKnobSave() {
       if (result.restart_required.length > 0) recordSaved(result.restart_required, await readBootedAt().catch(() => null));
       return result;
     },
-    onSettled: () => refetch(client, [keys.config, keys.health]),
+    onSettled: () => {
+      refetch(client, [keys.health]);
+      return awaitRefetch(client, [keys.config]);
+    },
   });
 }
 
@@ -93,8 +95,12 @@ export const saveTopology = (topology: Record<string, unknown>): Promise<Topolog
 export function useTopologyWrite() {
   const client = useQueryClient();
   return useMutation({
+    mutationKey: [...topologyKey],
     mutationFn: saveTopology,
-    onSettled: () => refetch(client, [topologyKey, keys.health]),
+    onSettled: () => {
+      refetch(client, [keys.health]);
+      return awaitRefetch(client, [topologyKey]);
+    },
   });
 }
 
@@ -103,12 +109,16 @@ export function useTopologyWrite() {
 export function useTopologyEdit() {
   const client = useQueryClient();
   return useMutation({
+    mutationKey: [...topologyKey],
     mutationFn: async ({ topology, keys: touched }: { topology: Record<string, unknown>; keys: readonly string[] }): Promise<TopologyWriteResult> => {
       const result = await saveTopology(topology);
       if (result.ok && result.restart_required) recordSaved(touched, await readBootedAt().catch(() => null));
       return result;
     },
-    onSettled: () => refetch(client, [topologyKey, keys.health, mcpKey]),
+    onSettled: () => {
+      refetch(client, [keys.health, mcpKey]);
+      return awaitRefetch(client, [topologyKey]);
+    },
   });
 }
 

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, expect, test, vi } from 'vitest';
 import { SettingsPage } from '../src/pages/settings/SettingsPage';
+import { AllSettings } from '../src/pages/settings/AllSettings';
 import type { ConfigPayload } from '../src/types/core';
 import type { Fix } from '../src/types/needs';
 import { NeedFix } from '../src/pages/needs/NeedFix';
@@ -18,12 +19,16 @@ const config: ConfigPayload = {
 };
 afterEach(() => vi.unstubAllGlobals());
 
-function render(path: string, ready = true): string {
+function render(path: string, ready = true, effective: ConfigPayload['effective'] = config.effective, fullList = false): string {
   vi.stubGlobal('location', { host: 'synthetic.invalid' });
   const client = new QueryClient();
-  if (ready) client.setQueryData(['config', '/api/config'], config);
-  client.setQueryData(['heads', '/api/heads'], { heads: [{ key: 'synthetic-command', label: 'Synthetic command' }] });
-  return renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><Routes><Route path="/settings/:section?" element={<SettingsPage />} /></Routes></MemoryRouter></QueryClientProvider>);
+  if (ready) client.setQueryData(['config', '/api/config'], { ...config, effective });
+  client.setQueryData(['models'], { heads: [
+    { head: 'synthetic-codex-command', provider: 'synthetic-codex-provider', pinned_model: '', models: [{ id: 'synthetic-codex', label: 'Synthetic ChatGPT model' }] },
+    { head: 'synthetic-grok-command', provider: 'grok', pinned_model: '', models: [{ id: 'synthetic-grok', label: 'Synthetic Grok model' }] },
+  ] });
+  client.setQueryData(['heads', '/api/heads'], { heads: [{ key: 'synthetic-command', label: 'Synthetic command' }, { key: 'synthetic-codex-command', label: 'Synthetic ChatGPT command', authKind: 'chatgpt-oauth' }] });
+  return renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}><Routes><Route path="/settings/:section?" element={fullList ? <AllSettings /> : <SettingsPage />} /></Routes></MemoryRouter></QueryClientProvider>);
 }
 
 test('opening one Settings section does not mount every other section and control', () => {
@@ -51,6 +56,17 @@ test('Advanced explains the real key-icon button rather than a nonexistent code 
   const html = render('/settings/advanced');
   expect(html).toContain('use the key button on a row');
   expect(html).not.toContain('&lt;&gt;');
+});
+
+test('Advanced model settings use catalog labels and keep unlisted fold selections reachable', () => {
+  const html = render('/settings/advanced', true, { pinnedModel: 'synthetic-codex', grokModel: 'synthetic-grok', foldReasoningModels: 'synthetic-codex,synthetic-unlisted' }, true);
+  expect(html).toMatch(/<button[^>]*aria-label="ChatGPT model"/);
+  expect(html).toMatch(/<button[^>]*aria-label="Grok model"/);
+  expect(html).toContain('Synthetic ChatGPT model');
+  expect(html).toContain('Synthetic Grok model');
+  expect(html).toContain('synthetic-unlisted');
+  expect(html).toContain('Add a fold model');
+  expect(html).not.toContain('value="synthetic-codex,synthetic-unlisted"');
 });
 
 test('Settings retains the shared fix actions after the retired card is removed', () => {

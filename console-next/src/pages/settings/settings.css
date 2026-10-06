@@ -90,6 +90,14 @@
 .number .input { width: 9rem; text-align: right; font-family: var(--meta); }
 .quantity { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--space-5); max-width: 100%; }
 .quantity .select { min-width: 0; }
+.setting-controls { border: 0; padding: 0; margin: 0; min-width: 0; max-width: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-7); }
+.setting-controls:disabled { opacity: .65; }
+.setting-model, .setting-model .model-choice { display: grid; gap: var(--space-5); min-width: 0; max-width: 100%; }
+.setting-model .select { min-width: 0; height: auto; min-height: 2.625rem; overflow-wrap: anywhere; }
+.setting-model .btn { justify-self: start; }
+.fold-models { display: grid; gap: var(--space-5); list-style: none; margin: 0; padding: 0; }
+.fold-models li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-5); }
+.fold-models li span { overflow-wrap: anywhere; min-width: 0; }
 .number small { font: 500 var(--text-1) var(--meta); color: var(--mute); }
 .input.wide { min-width: 16rem; font-family: var(--mono); }
 .kept-block { margin-top: var(--space-16); }

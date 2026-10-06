@@ -103,6 +103,13 @@ export const T = {
 } as const;
 
 export const AS = {
+  modelDefault: 'Use the model default',
+  reportedModel: (name: string): string => `Current configuration: ${name}.`,
+  modelMasked: 'The all-command setting takes precedence over this command’s saved choice.',
+  addFoldModel: 'Add a fold model',
+  noFoldModels: 'No models are folded.',
+  removeModel: (name: string): string => `Remove ${name} from fold models`,
+  remove: 'Remove',
   scope: 'Which command',
   scopeAll: 'All commands',
   scopeWhy: 'A value set for all commands; a command can override it with its own.',

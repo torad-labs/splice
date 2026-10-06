@@ -213,11 +213,11 @@ describe('a command page\'s plan windows', () => {
     expect(html).not.toContain('has reset');
     expect(html).toContain('width:0%');
   });
-  test('a reset reads in the viewer\'s own zone, the clock style Accounts and Usage use', () => {
+  test.each([{ offset: 3600, stale: false, tense: 'resets' }, { offset: -3600, stale: true, tense: 'reset' }])('a $tense deadline reads in the viewer\'s own zone, the clock style Accounts and Usage use', ({ offset, stale, tense }) => {
     const now = Date.UTC(2026, 9, 5, 18, 0) ;
-    const at = now / 1000 + 3600;
-    const html = renderToStaticMarkup(<WindowBars windows={[{ window: '5h', pct: 41, resetsAt: at, observedAt: null, stale: false }]} now={now} />);
-    expect(html).toContain(`resets ${localZonedInstantText(at)}`);
+    const at = now / 1000 + offset;
+    const html = renderToStaticMarkup(<WindowBars windows={[{ window: '5h', pct: 41, resetsAt: at, observedAt: null, stale }]} now={now} />);
+    expect(html).toContain(`${tense} ${localZonedInstantText(at)}`);
     expect(localZonedInstantText(at)).not.toBe(localInstantText(at));
   });
 });

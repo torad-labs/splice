@@ -38,6 +38,35 @@ test('each quota surface calls probe-now on open and Usage prints the retained o
   await expect(page.getByText('Week · 50% · resets ' + observedText(observed + 86_400).slice('Observed '.length) + ' · ' + observedText(observed), { exact: true })).toBeVisible();
 });
 
+test('retained quota readings distinguish an expired deadline from a stale future reset on every display', async ({ page }) => {
+  const now = Math.floor(Date.now() / 1000);
+  const payload = await read<UsagePayload>(page, '/api/usage');
+  const head = payload.heads.find(entry => entry.key === STACK.oauthHead);
+  if (head?.usage == null) throw new Error('isolated quota fixture has no subscription head');
+  const expired = now - 3600;
+  const future = now + 86400;
+  const observed = now - 7200;
+  head.usage.quota = {
+    five_hour: { used_pct: 25, resets_at: expired, observed_at: observed, current: false },
+    seven_day: { used_pct: 50, resets_at: future, observed_at: observed, current: false },
+    plan: 'synthetic-plan',
+  };
+  await page.route('**/api/usage', route => route.fulfill({ json: payload }));
+  await page.route('**/api/usage/probe', route => route.fulfill({ json: payload }));
+  const past = observedText(expired).slice('Observed '.length);
+  const ahead = observedText(future).slice('Observed '.length);
+  for (const path of ['models', 'models/' + STACK.oauthHead, 'usage']) {
+    const faults = await open(page, path);
+    await expect(page.getByRole('main')).toContainText('5 hours · Last reading 25% · reset ' + past + ' · Not current');
+    await expect(page.getByRole('main')).not.toContainText('5 hours · Last reading 25% · resets ' + past);
+    await expect(page.getByRole('main')).toContainText('Week · Last reading 50% · resets ' + ahead + ' · Not current');
+    await expect(page.getByRole('main')).toContainText(observedText(observed));
+    expect(faults.pageErrors).toEqual([]);
+    expect(faults.failedReads).toEqual([]);
+  }
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
 test('a late pre-probe usage read cannot replace the refreshed observation', async ({ page }) => {
   const observed = Math.floor(Date.now() / 1000) - 60;
   const payload = await read<UsagePayload>(page, '/api/usage');

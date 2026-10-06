@@ -136,7 +136,7 @@ export function fleetCard(head: HeadStatus, inputs: FleetInputs): FleetCard {
   const kind = kindOf(head, inputs.family);
   const entry = usage?.heads.find((row) => row.key === head.key)?.usage ?? null;
   const otherWindows = planWindows(entry, now).filter(window => WINDOW_NAME[window.window] !== gauge?.name).map(window =>
-    `${Q.window(WINDOW_NAME[window.window], window.pct, window.resetsAt === null ? null : localZonedInstantText(window.resetsAt), !window.stale)} · ${Q.observed(window.observedAt === null ? null : localZonedInstantText(window.observedAt))}`);
+    `${Q.window(WINDOW_NAME[window.window], window.pct, window.resetsAt === null ? null : localZonedInstantText(window.resetsAt), !window.stale, window.resetsAt !== null && window.resetsAt * 1000 <= now)} · ${Q.observed(window.observedAt === null ? null : localZonedInstantText(window.observedAt))}`);
   const email = pool.length === 1 && pool[0] !== undefined ? accountEmail(pool[0]) : null;
   const meta = [familyName(kind), accountLine(pool, kind), ...(email === null ? [] : [email]), ...otherWindows, `${count === 0 ? 'no' : count} ${noun(count, 'session', 'sessions')}`].filter((part) => {
     const key = part.toLowerCase();

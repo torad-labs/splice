@@ -8,10 +8,10 @@ import { localZonedInstantText } from '../src/lib/heads';
 import { UsagePage } from '../src/pages/usage/UsagePage';
 
 const now = Math.floor(Date.now() / 1000);
-const fiveReset = now + 3600;
 const weekReset = now + 86400;
 
-test('the Usage plan shows both readings and resets when the week is the fullest window', () => {
+test.each([3600, -3600])('the Usage plan keeps both readings and gives a reset offset of %s the correct tense', offset => {
+  const fiveReset = now + offset;
   const client = new QueryClient();
   client.setQueryData([...economicsKey, '/api/economics'], { retention_hours: 24, heads: [{ key: 'synthetic', label: 'Synthetic', ceiling_tokens: null, buckets: [] }] });
   client.setQueryData([...keys.heads, '/api/heads'], { heads: [] });
@@ -20,6 +20,6 @@ test('the Usage plan shows both readings and resets when the week is the fullest
     quota: { five_hour: { used_pct: 12, resets_at: fiveReset, observed_at: now - 60 }, seven_day: { used_pct: 65, resets_at: weekReset, observed_at: now - 60 } },
   } }] });
   const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><UsagePage /></MemoryRouter></QueryClientProvider>);
-  expect(html).toContain(`5 hours · 12% · resets ${localZonedInstantText(fiveReset)}`);
+  expect(html).toContain(offset > 0 ? `5 hours · 12% · resets ${localZonedInstantText(fiveReset)}` : `5 hours · Last reading 12% · reset ${localZonedInstantText(fiveReset)} · Not current`);
   expect(html).toContain(`Week · 65% · resets ${localZonedInstantText(weekReset)}`);
 });

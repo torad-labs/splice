@@ -214,6 +214,8 @@ describe('a fleet card', () => {
   test('a window that reset since it was read is not the tightest', () => {
     const card = fleetCard(head(), inputs({ usage: usage(99, NOW / 1000 - 60) }));
     expect(card.line).toBeNull();
+    expect(card.meta.join(' ')).toContain(`Last reading 99% · reset ${localZonedInstantText(NOW / 1000 - 60)} · Not current`);
+    expect(card.meta.join(' ')).not.toContain(`resets ${localZonedInstantText(NOW / 1000 - 60)}`);
   });
   test('an aged reading before its reset stays visible and is not called reset or current', () => {
     const reading = usage(41);

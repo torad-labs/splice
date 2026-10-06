@@ -33,7 +33,7 @@ function Spark({ values }: { values: readonly number[] }) {
   );
 }
 
-function PlanRow({ plan }: { plan: PlanUsage }) {
+function PlanRow({ plan, now }: { plan: PlanUsage; now: number }) {
   const words = plan.pct === null
     ? [plan.full ? U.refused : plan.reading ?? (plan.turns === 0 ? U.idle : U.noLimit)]
     : [plan.reset === null ? null : U.resets(plan.reset), plan.pace, plan.reading].filter((part): part is string => part !== null);
@@ -45,7 +45,7 @@ function PlanRow({ plan }: { plan: PlanUsage }) {
           <div className={`track${plan.full ? ' full' : ''}`} role="img" aria-label={U.ofLimit(Math.round(plan.pct), plan.limitWindow)}><i style={{ width: `${Math.min(100, plan.pct)}%` }} /></div>
         )}
         <span>{plan.pct === null ? null : <b>{U.ofLimit(Math.round(plan.pct), plan.limitWindow)}</b>}{plan.pct === null || words.length === 0 ? '' : ' · '}{words.join(' · ')}</span>
-        {plan.observations?.map(window => <small key={window.window}>{Q.window(window.window === '5h' ? '5 hours' : 'Week', window.pct, window.resetsAt === null ? null : localZonedInstantText(window.resetsAt), !window.stale)} · {Q.observed(window.observedAt === null ? null : localZonedInstantText(window.observedAt))}</small>)}
+        {plan.observations?.map(window => <small key={window.window}>{Q.window(window.window === '5h' ? '5 hours' : 'Week', window.pct, window.resetsAt === null ? null : localZonedInstantText(window.resetsAt), !window.stale, window.resetsAt !== null && window.resetsAt * 1000 <= now)} · {Q.observed(window.observedAt === null ? null : localZonedInstantText(window.observedAt))}</small>)}
       </div>
       <div className="tok">{plan.requestState === 'loading' ? <span role="status">{U.readingRequests}</span> : plan.turns === null ? <span>{U.requestsUnavailable}</span> : plan.turns === 0 ? <span>{U.idle}</span> : <><strong>{plan.partial && plan.inTokens !== null ? B.atLeast(tokensText(plan.inTokens)) : tokensText(plan.inTokens)}</strong>{U.readIn}</>}{plan.requestReason === undefined ? null : <small>{plan.requestReason}</small>}</div>
       {plan.spark.length === 0 ? <span className="hint">{plan.hourlyReason ?? B.unknown}</span> : <Spark values={plan.spark} />}
@@ -122,7 +122,7 @@ export function UsagePage() {
           <section className="section" aria-labelledby="usage-plans">
             <h2 id="usage-plans">{U.plansTitle}</h2>
             <p className="why">{U.plansWhy}</p>
-            {active.length === 0 ? null : <ul className="uplans">{active.map((plan) => <PlanRow key={plan.key} plan={plan} />)}</ul>}
+            {active.length === 0 ? null : <ul className="uplans">{active.map((plan) => <PlanRow key={plan.key} plan={plan} now={now} />)}</ul>}
             {idle.length === 0 ? null : <p className="idle-plans">{U.idlePlans(idle.map((plan) => plan.label).join(", "), spanWords(hours))}</p>}
           </section>
           <UsageBreakdown key={hours} labelOf={label} read={requests} accounts={accounts.data?.accounts ?? []} catalogs={models.data === undefined || isPendingRoute(models.data) ? [] : models.data.heads} />

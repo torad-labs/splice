@@ -110,6 +110,8 @@ data class Disposition(val reason: String, val expectedCount: Int)
 // CodexCodeModeInfrastructureTest do extend CodeModeBridgeTestSupport, but that base declares no
 // tests, and their declared count matches their own annotations exactly.)
 val DISPOSITIONS: Map<String, Disposition> = mapOf(
+    // Completed and cancelled queue waits both charge the serving turn; canonical success/refusal is one plain test.
+    "CodeModePerfTimingTest" to Disposition("1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)", 3),
     // Retryable share refusal runs with a fresh view and with retained output still occupying the domain.
     "TraceHeapShareTest" to Disposition("1 @ParameterizedTest expands to 2 cases (6 @Test + 2 = 8)", 8),
     // The production-builder parity covers four providers; Responses input shape covers two of them.

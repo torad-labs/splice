@@ -42,7 +42,8 @@ internal class TurnEnding(
                 // DR-128: account BEFORE the emit — a dead-client write makes emitError rethrow
                 // after sealing, and the turn must not vanish from the perf JSONL and G20
                 // counters. Same law on every failure surface (TurnConnEnd, TurnKnownEnd).
-                telemetry.recordPerf(drive, OutcomeTag.UNEXPECTED.wire)
+                val permanent = e is URLParserException
+                telemetry.recordPerf(drive, OutcomeTag.UNEXPECTED.wire, permanent = permanent)
                 health.local() // internal gateway bug (e.g. bad base_url parse)
                 // V4-81, NARROWED BY THE ORCHESTRATOR'S RULING. This arm catches EVERY non-Error
                 // RuntimeException at the turn boundary, and the operator law (V4-62) is retry on
@@ -63,7 +64,6 @@ internal class TurnEnding(
                 // fault non-retryable. If some other config failure reaches this arm as a different
                 // type it stays RETRYABLE, which is the pre-V4-81 behaviour and never worse than it;
                 // widening the set is a deliberate act that needs its own named entry here.
-                val permanent = e is URLParserException
                 drive.emitter.emitError(
                     ErrorType.API_ERROR,
                     "splice: internal gateway error; retry",

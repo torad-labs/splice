@@ -7,6 +7,7 @@
 // still propagates (status quo at the driver), but the instruments must have recorded first.
 package splice.head.turn
 
+import io.ktor.http.URLParserException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -662,6 +663,33 @@ class TurnFailurePermanenceTest {
             } finally {
                 drive.slot.release()
             }
+        }
+    }
+
+    @Test
+    fun `an oversized response frame retains its retryable decision despite a dead client`() {
+        val rig = EndingRig("frame-permanence", tmp, accountingProvider())
+        emitExpectingDeadClient(rig, SseFrameTooLargeException("data", 1))
+        AsyncFileIo.drain()
+        val row = Files.readAllLines(rig.perfFile).single()
+        assertTrue(row.contains("\"outcome\":\"error:upstream-frame-too-large\""), row)
+        assertEquals(0L, rowCount(row, "failure_permanent"), row)
+    }
+
+    @Test
+    fun `local runtime permanence survives a dead client's error write without broadening the config rule`() {
+        val cases = listOf(
+            URLParserException("synthetic invalid URL", IllegalArgumentException("synthetic")) to 1L,
+            IllegalStateException("synthetic runtime fault") to 0L,
+            IllegalArgumentException("synthetic non-URL argument fault") to 0L,
+        )
+        for ((failure, expected) in cases) {
+            val rig = EndingRig("runtime-permanence-${failure.javaClass.simpleName}", tmp, accountingProvider())
+            emitExpectingDeadClient(rig, failure)
+            AsyncFileIo.drain()
+            val row = Files.readAllLines(rig.perfFile).single()
+            assertTrue(row.contains("\"outcome\":\"error:unexpected\""), row)
+            assertEquals(expected, rowCount(row, "failure_permanent"), row)
         }
     }
 

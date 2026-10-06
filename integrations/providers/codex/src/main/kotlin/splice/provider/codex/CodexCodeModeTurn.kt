@@ -47,6 +47,9 @@ internal data class CodeModeRunContext(
 
     /** Sources posted by this step can be cut before it ever parks or holds a billing row. */
     val postedSources: MutableList<CodeModeLiveRound> = mutableListOf()
+
+    /** Placement rejection removes execution, not the abandoning step's ownership of its source bill. */
+    val abandonedSources: MutableList<CodeModeRecord> = mutableListOf()
     var scripts: Int = 0
 }
 
@@ -100,8 +103,11 @@ internal class CodexCodeModeTurn(
             } catch (error: CodeModePersistenceException) {
                 error.outcome()
             }
+            val billed = context.abandonedSources.fold(outcome) { step, record ->
+                driver.streams.billFinished(record, step, watched[record.id])
+            }
             // The one exit every client-facing step takes, so none tells Claude Code its context is zero.
-            registry.contexts.report(key, driver.streams.billCuts(watched, context.postedSources, outcome))
+            registry.contexts.report(key, driver.streams.billCuts(watched, context.postedSources, billed))
         } finally {
             // A refusal or cancellation has no returned outcome, but the cutting turn still owns its perf row.
             try {
@@ -169,6 +175,7 @@ internal class CodexCodeModeTurn(
         val owner = registry.owner(context.key, context.digest, resultIds, callbackIds, conflicts) ?: return null
         val restored = wire.restoreBaseline(canonicalBody, owner)
         val error = restored.error ?: return PlacedOwner(owner, checkNotNull(restored.body))
+        context.abandonedSources += owner
         abandon(owner, error, restored.nativeRejection)
         return null
     }

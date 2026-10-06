@@ -178,9 +178,13 @@ internal class CodeModeStreams(
      *  into the step here. One still streaming then is owed to the step's row, which waits for the round's terminal
      *  ([CodeModeRoundBilling.claim]); the client never waits for it. [CodeModeSourceRecords.consume] hands a round's
      *  usage out once, so the step that finishes the script ([takeOutcome]) finds nothing left to absorb. A claim that
-     *  cannot be saved leaves the round to that later step rather than failing a step whose calls already left. */
-    fun billFinished(record: CodeModeRecord, step: TurnOutcome): TurnOutcome {
-        val round = rounds[record.id]
+     *  cannot be saved leaves the round to that later step rather than failing a step whose calls already left.
+     *  Abandonment supplies its captured round so disposal cannot erase an unheld terminal before this claim. */
+    fun billFinished(
+        record: CodeModeRecord,
+        step: TurnOutcome,
+        round: CodeModeLiveRound? = rounds[record.id],
+    ): TurnOutcome {
         val usage = try {
             if (round != null) round.billing.claim(record, step) else registry.source.consume(record)
         } catch (error: CodeModePersistenceException) {

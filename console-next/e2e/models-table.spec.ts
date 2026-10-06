@@ -1,5 +1,5 @@
-// NEW: V4-444 — /models opens on one table of every model the commands serve, searched and sorted in place, with the command cards
-// below it. The persona walk of 36218a37c found the prices behind each command's second tab, and "No price declared" beside "$0.000".
+// NEW: V4-444 — /models puts command ordering before the model table, which searches and sorts every served model in place.
+// Prices stay visible, and an undeclared price remains distinct from a declared zero.
 import { expect, test, type Page } from '@playwright/test';
 import { assertHealthy, open } from './support';
 import { STACK } from './stack';
@@ -22,7 +22,7 @@ async function priced(page: Page): Promise<void> {
 
 const hash = (page: Page): string => decodeURIComponent(new URL(page.url()).hash);
 
-test('the table leads the page, says an undeclared price in words, and keeps the command cards below it', async ({ page }) => {
+test('command ordering leads the model table, which keeps undeclared prices distinct from zero', async ({ page }) => {
   await priced(page);
   const faults = await open(page, 'models');
   const table = page.getByRole('region', { name: 'Models table', exact: true });
@@ -33,7 +33,7 @@ test('the table leads the page, says an undeclared price in words, and keeps the
   await expect(page.getByRole('main')).not.toContainText('$0.000');
   const commands = page.getByRole('region', { name: 'Commands', exact: true });
   await expect(commands.locator('li.card')).toHaveCount(3);
-  const [above, below] = await Promise.all([table.boundingBox(), commands.boundingBox()]);
+  const [above, below] = await Promise.all([commands.boundingBox(), table.boundingBox()]);
   expect(above !== null && below !== null && above.y < below.y).toBe(true);
   await expect(page.getByRole('button', { name: 'Add a command', exact: true })).toBeVisible();
   await assertHealthy(page, faults);

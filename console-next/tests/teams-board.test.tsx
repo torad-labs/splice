@@ -47,6 +47,18 @@ describe('the project teams board', () => {
     expect(html).not.toContain('No teams');
     expect(html).not.toContain('Reading the message');
   });
+  test('the registry developer note is not presented as Teams guidance', () => {
+    const note = 'headless `claude -p` runs never register; gone = the process exited; stale = alive but no registry update inside the stale window';
+    const html = render(client => {
+      const payload = client.getQueryData<{ sessions: SessionRow[] }>(['sessions', '/api/sessions']);
+      client.setQueryData(['sessions', '/api/sessions'], { ...payload, note });
+    });
+    expect(html).not.toContain(note);
+    expect(html).not.toContain('teams-registry-note');
+    expect(html).toContain('Assigning the API work.');
+    expect(html).toContain('last status update is old');
+    expect(html).toContain('Saved teams');
+  });
   test.each(['transport', 'envelope'])('registry %s failure never looks like an empty team list', kind => {
     const html = render(client => {
       if (kind === 'envelope') client.setQueryData(['sessions', '/api/sessions'], { error: 'Synthetic registry refused.', note: '', sessions: [] });

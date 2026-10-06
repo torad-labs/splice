@@ -43,7 +43,6 @@ export function TeamsPage() {
             {unresolved.length === 0 ? null : <section className="project-team-unresolved"><h2>{T.unresolved}</h2><p className="hint">{T.unresolvedWhy}</p><ul>{unresolved.map(row => <ProjectSeat key={sessionKey(row)} row={row} />)}</ul></section>}
           </>
         )}
-      {sessions.data?.note ? <p className="teams-registry-note">{sessions.data.note}</p> : null}
       <section className="saved-teams">
         <h2>{T.saved}</h2><p className="hint">{T.savedWhy}</p>
         {teams.isError ? <Fault message={failureText(teams.error)} onRetry={() => void teams.refetch()} />

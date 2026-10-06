@@ -5,6 +5,25 @@ import type { SessionsPayload } from '../src/types/sessions';
 import { env, open, read } from './support';
 import { sendHandOff, STACK } from './stack';
 
+test('Teams keeps membership and saved teams without the raw registry developer note', async ({ page }, testInfo) => {
+  const note = 'headless `claude -p` runs never register; gone = the process exited; stale = alive but no registry update inside the stale window';
+  await page.route(url => url.pathname === '/api/sessions', async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: { ...body, note } });
+  });
+  await open(page, 'teams');
+  await expect(page.locator('.project-seat')).not.toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Saved teams', exact: true })).toBeVisible();
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 980 });
+    await expect(page.getByRole('main')).not.toContainText(note);
+    await expect(page.getByRole('main')).not.toContainText('headless `claude -p`');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.locator('.teams-page').screenshot({ path: testInfo.outputPath('teams-registry-note-' + width + '.png') });
+  }
+});
+
 test('Teams groups real registry seats without saved membership and reads a message only when opened', async ({ page }) => {
   const requestedMessages: string[] = [];
   page.on('request', request => {

@@ -1,3 +1,4 @@
+// NEW: V4-444 bounded packed-literal validation, reusing the existing JSON string lexer across chunks.
 package splice.head.trace.body
 
 import splice.head.trace.ByteKinds

@@ -166,11 +166,6 @@ internal class UpstreamRequest(
         val timing = ctx.perf?.let(::UpstreamAttemptTiming)
         val bridge = client.attributes.getOrNull(upstreamTimingBridgeKey)
         val token = timing?.let { bridge?.register(it) }
-        val accepted = StreamStart {
-            // Acceptance is newer than the body completion of any already-open stream.
-            auth.cooldown.answered()
-            onStreamStart()
-        }
         try {
             val statement = prepare(
                 ctx.url,
@@ -182,6 +177,11 @@ internal class UpstreamRequest(
             )
             val handler = UpstreamHandler<T> { response ->
                 block(response.also { it.postedAtMs = postedAtMs })
+            }
+            val acceptance = auth.cooldown.acceptance()
+            val accepted = StreamStart {
+                acceptance()
+                onStreamStart()
             }
             return statement.execute { response ->
                 timing?.headersDelivered()

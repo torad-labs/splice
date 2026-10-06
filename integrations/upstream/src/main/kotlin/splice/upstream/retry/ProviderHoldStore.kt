@@ -127,6 +127,11 @@ private const val REPLY = "rate_limit_reply"
 // why: SHA-256 has 32 digest bytes and two hexadecimal characters per byte.
 private const val CREDENTIAL_KEY_HEX_CHARS = 64
 
+/** One atomic hold mutation, under the same owner as a posting receipt's acceptance. */
+internal fun interface HoldChange {
+    operator fun invoke()
+}
+
 /** The two halves of one [ProviderHold], held together so either can change and the file always
  *  carries both. [RateLimitCooldown] writes the provider's reset and [PlanHold] the plan window;
  *  neither knows the other or the file. With no store it only remembers, as before V4-412. */
@@ -134,12 +139,30 @@ internal class ProviderHolds(private val store: ProviderHoldStore?) {
     private var resetAt: Long? = null
     private var plan: PlanLimit? = null
     private var reply: RateLimitReply? = null
+    private var generation = 0L
+
+    /** Posting and acceptance share the refusal writers' monitor, never a clock comparison. */
+    @Synchronized
+    fun posted(): Long = generation
+
+    @Synchronized
+    fun accepted(posted: Long, clear: HoldChange) {
+        if (posted == generation) clear()
+    }
+
+    @Synchronized
+    fun refusing(write: HoldChange) {
+        generation++
+        write()
+    }
 
     var rateLimitReply: RateLimitReply?
+        @Synchronized
         get() = reply
 
         @Synchronized
         set(value) {
+            if (value != null) generation++
             reply = value
             store?.save(snapshot())
         }
@@ -152,6 +175,7 @@ internal class ProviderHolds(private val store: ProviderHoldStore?) {
     /** Records the provider's reset (null when it ended) beside the plan window and writes both. */
     @Synchronized
     fun providerReset(epochSeconds: Long?) {
+        if (epochSeconds != null) generation++
         if (resetAt == epochSeconds) return
         resetAt = epochSeconds
         store?.save(snapshot())
@@ -160,6 +184,7 @@ internal class ProviderHolds(private val store: ProviderHoldStore?) {
     /** Records the plan window (null when it ended) beside the provider's reset and writes both. */
     @Synchronized
     fun plan(limit: PlanLimit?) {
+        if (limit != null) generation++
         if (plan == limit) return
         plan = limit
         store?.save(snapshot())

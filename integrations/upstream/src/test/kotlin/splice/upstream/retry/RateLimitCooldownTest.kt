@@ -16,6 +16,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
@@ -663,6 +664,66 @@ class RateLimitCooldownBudgetTest {
 }
 
 class RateLimitCooldownOuterTurnTest {
+    @Test
+    fun `every refusal writer protects its state from an earlier posting receipt`() {
+        for (writer in 0..4) {
+            val cooldown = RateLimitCooldown(ElapsedClock { 0L }, WallClock { 1_000L })
+            val accepted = cooldown.acceptance()
+            when (writer) {
+                0 -> cooldown.arm(60_000L)
+                1 -> cooldown.markUnavailable(60_000L)
+                2 -> cooldown.captureProviderReset("""{"resets_in_seconds":60}""")
+                3 -> cooldown.planHold.hold(PlanLimit("seven_day", 61L), RetryNotice { })
+                4 -> cooldown.rateLimitReply = RateLimitReply("synthetic refusal", emptyMap())
+            }
+            val horizon = cooldown.remainingMs()
+            val selection = cooldown.unavailableForMs()
+            val reset = cooldown.providerUnavailableForMs()
+            val plan = cooldown.planHold.live()
+            val reply = cooldown.rateLimitReply
+
+            accepted()
+
+            assertEquals(horizon, cooldown.remainingMs(), "writer $writer retains its horizon")
+            assertEquals(selection, cooldown.unavailableForMs(), "writer $writer retains account exclusion")
+            assertEquals(reset, cooldown.providerUnavailableForMs(), "writer $writer retains its reset")
+            assertEquals(plan, cooldown.planHold.live(), "writer $writer retains its plan")
+            assertEquals(reply, cooldown.rateLimitReply, "writer $writer retains its provider reply")
+        }
+    }
+
+    @Test
+    fun `a posting after all holds clears them even without advancing either clock`() {
+        val cooldown = RateLimitCooldown(ElapsedClock { 0L }, WallClock { 1_000L })
+        cooldown.arm(60_000L)
+        cooldown.markUnavailable(60_000L)
+        cooldown.captureProviderReset("""{"resets_in_seconds":60}""")
+        cooldown.planHold.hold(PlanLimit("seven_day", 61L), RetryNotice { })
+        cooldown.rateLimitReply = RateLimitReply("synthetic refusal", emptyMap())
+        val accepted = cooldown.acceptance()
+
+        accepted()
+
+        assertEquals(0L, cooldown.remainingMs())
+        assertEquals(0L, cooldown.unavailableForMs())
+        assertEquals(0L, cooldown.providerUnavailableForMs())
+        assertEquals(null, cooldown.planHold.live())
+        assertEquals(null, cooldown.rateLimitReply)
+    }
+
+    @Test
+    fun `a repeated refusal with unchanged facts is still newer than a posting`() {
+        val cooldown = RateLimitCooldown(ElapsedClock { 0L }, WallClock { 1_000L })
+        val plan = PlanLimit("seven_day", 61L)
+        cooldown.planHold.hold(plan, RetryNotice { })
+        val accepted = cooldown.acceptance()
+        cooldown.planHold.hold(plan, RetryNotice { })
+
+        accepted()
+
+        assertEquals(plan, cooldown.planHold.live(), "an equal reset is a new refusal observation")
+    }
+
     @Test
     fun `a native hold armed during the cooldown check remains a pooled refusal value`() = runTest {
         lateinit var cooldown: RateLimitCooldown

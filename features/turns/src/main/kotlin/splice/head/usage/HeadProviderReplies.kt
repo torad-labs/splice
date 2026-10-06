@@ -10,6 +10,7 @@ import splice.core.wire.HttpStatus
 import splice.head.HeadDeps
 import splice.head.transport.StreamAnswerObserver
 import splice.upstream.RetryNotice
+import splice.upstream.StreamStart
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.ProviderAnswerObserver
@@ -22,6 +23,10 @@ internal class HeadProviderReplies(
     private val deps: HeadDeps,
     private val head: RefreshableAuthProvider,
 ) : ProviderReplyObserver {
+    override fun posted(sender: ProviderReplySender) {
+        sender.acceptance = cooldown(sender)?.acceptance()
+    }
+
     override fun observed(reply: ProviderReply, sender: ProviderReplySender) {
         val auth = sender.auth as? RefreshableAuthProvider
         val plan = plan(reply, auth)
@@ -37,7 +42,7 @@ internal class HeadProviderReplies(
         }
         val cooldown = cooldown(sender) ?: return
         when {
-            reply.status in HttpStatus.OK..HttpStatus.MAX_SUCCESS -> cooldown.answered()
+            reply.status in HttpStatus.OK..HttpStatus.MAX_SUCCESS -> sender.acceptance?.invoke()
             reply.status == HttpStatus.TOO_MANY_REQUESTS ||
                 auth?.isQuotaExhausted(reply.status, reply.body.orEmpty()) == true -> {
                 refused(reply, sender, cooldown, plan)
@@ -136,10 +141,16 @@ public data class ProviderReplySender(
     /** Same private join key as credential quota readings, captured from this send's effective headers. */
     public val credentialKey: String? = null,
 ) {
+    /** Local posting receipt; absent observation evidence never clears a hold. */
+    internal var acceptance: StreamStart? = null
+
     override fun toString(): String = "ProviderReplySender(account=$account, requestHeaders=<redacted>)"
 }
 
 /** Borrows the head's existing stores and holds; it never sends, retries, or alters the request. */
 public fun interface ProviderReplyObserver {
+    /** Captures the hold state immediately before this sender posts, without altering its wire. */
+    public fun posted(sender: ProviderReplySender) { }
+
     public fun observed(reply: ProviderReply, sender: ProviderReplySender)
 }

@@ -171,11 +171,13 @@ internal class UpstreamPlaygroundProbe(
             CredentialKey.fromHeaders(headers, (creds as? Credentials.ApiKey)?.header),
         )
         return Cancellables.runCatchingCancellable {
-            client.preparePost(url) {
+            val statement = client.preparePost(url) {
                 headers { headers.forEach { (name, value) -> append(name, value) } }
                 contentType(ContentType.Application.Json)
                 setBody(turn.requestBody.toString())
-            }.execute { sent ->
+            }
+            sender.observer?.posted(replySender)
+            statement.execute { sent ->
                 response(sender, turn, replySender, url, sent)
             }
         }.getOrElse { PlaygroundFailure("upstream call to $url failed: ${SafeFailureText.render(it)}") }

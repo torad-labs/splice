@@ -10,6 +10,7 @@ import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.core.wire.RateLimitReply
 import splice.upstream.RetryNotice
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.RateLimitCooldown
@@ -117,6 +118,27 @@ class ProviderHoldRestartTest {
     }
 
     @Test
+    fun `an earlier posting cannot erase newer persisted provider facts`(@TempDir dir: Path) {
+        val first = boot(dir)
+        val accepted = first.acceptance()
+        val resetAt = wall / MS + SIX_DAYS_S
+        val plan = PlanLimit("seven_day", resetAt)
+        val reply = RateLimitReply("synthetic refusal", emptyMap())
+        first.refused(weeklyBody(resetAt))
+        first.planHold.hold(plan, RetryNotice { })
+        first.rateLimitReply = reply
+
+        accepted()
+
+        assertTrue(Files.exists(dir.resolve("hold.json")))
+        val restarted = boot(dir)
+        assertEquals(resetAt * MS - wall, restarted.providerUnavailableForMs())
+        assertEquals(plan, restarted.planHold.live())
+        assertEquals(reply, restarted.rateLimitReply)
+        assertTrue(restarted.remainingMs() > 0L, "retained native facts restore their bounded refusal")
+    }
+
+    @Test
     fun `an answered turn ends both statements on disk as well as in memory`(@TempDir dir: Path) {
         val resetAt = wall / MS + SIX_DAYS_S
         val first = boot(dir)
@@ -124,7 +146,7 @@ class ProviderHoldRestartTest {
         first.planHold.hold(PlanLimit("seven_day", resetAt), RetryNotice {})
         assertTrue(Files.exists(dir.resolve("hold.json")))
 
-        first.answered()
+        first.acceptance()()
 
         assertEquals(0L, first.providerUnavailableForMs())
         assertNull(first.planHold.live())
@@ -134,7 +156,7 @@ class ProviderHoldRestartTest {
 
     @Test
     fun `an answered turn on a head with nothing held writes nothing`(@TempDir dir: Path) {
-        boot(dir).answered()
+        boot(dir).acceptance()()
 
         assertFalse(Files.exists(dir.resolve("hold.json")))
         assertTrue(logs.isEmpty(), logs.toString())

@@ -62,10 +62,10 @@ dated = "2026-10-02"
 names = ["DayFileRemoval", "PluginFileMatch"]
 reason = """DayFileRemoval performs filesystem deletion and reports whether a file existed; its IOException refuses a purge. PluginFileMatch only classifies a path for plugin discovery and never deletes it. A predicate cannot implement the destructive operation, so these contracts remain distinct."""
 
-# ── 21 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
+# ── 22 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Unit"
-dated = "2026-10-04"
+dated = "2026-10-05"
 names = [
     "AuthRefreshObserver",
     "ClaudePoolChange",
@@ -73,6 +73,7 @@ names = [
     "FileIoTask",
     "HaltJvm",
     "HandoffMark",
+    "HoldChange",
     "MuseMintWriteGuard",
     "ProtocolAnomaly",
     "PulseTick",
@@ -91,7 +92,8 @@ names = [
 ]
 reason = """A nullary effect is the widest shape in the language and the one that says the least: \
 every one of these is an EVENT or an ACTION with its own lifecycle owner, and no two are wired \
-from the same place. ClaudePoolChange publishes current stored membership into one booted head, \
+from the same place. HoldChange mutates credential-owned refusal state under its generation monitor; \
+it is neither a stream-start notification nor dispatched file IO. ClaudePoolChange publishes current stored membership into one booted head, \
 retaining session choices and captured credentials. ShutdownDaemon ends that head instead; swapping \
 these roles would stop serving on login edits or fail to release resources on shutdown. \
 Notifications the caller only observes: AuthRefreshObserver (a credential \

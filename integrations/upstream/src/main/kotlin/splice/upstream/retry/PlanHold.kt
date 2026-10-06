@@ -35,10 +35,12 @@ public class PlanHold internal constructor(
         val delayMs = limit.resetEpochSeconds * MS_PER_S - wallClock()
         if (delayMs <= 0L) return null
         val candidate = Held(clock() + delayMs, limit)
-        val kept = held.updateAndGet { current ->
-            if (current == null || candidate.untilMs > current.untilMs) candidate else current
+        holds.refusing {
+            val kept = held.updateAndGet { current ->
+                if (current == null || candidate.untilMs > current.untilMs) candidate else current
+            }
+            holds.plan(kept?.limit)
         }
-        holds.plan(kept?.limit)
         onRetry(
             "429 plan limit: the upstream names its ${limit.claim} window spent until " +
                 "${Instant.ofEpochSecond(limit.resetEpochSeconds)}; clients are told to come back then, " +

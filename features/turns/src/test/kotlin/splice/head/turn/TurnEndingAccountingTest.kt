@@ -233,7 +233,7 @@ class TurnEndingAccountingTest {
             assertTrue(fixture.route.move(drive))
             assertEquals("two", drive.account?.account?.label)
             assertSame(fixture.quotas.getValue("two"), drive.quota)
-            fixture.accounts[0].cooldown.answered()
+            fixture.accounts[0].cooldown.acceptance()()
             fixture.hold(1)
             assertFalse(fixture.route.move(drive), "the now-free first login was already refused in this request")
         } finally {

@@ -44,6 +44,7 @@ import splice.core.wire.ErrorEnvelope
 import splice.core.wire.HttpStatus
 import splice.core.wire.RateLimitReply
 import splice.upstream.RetryNotice
+import splice.upstream.StreamStart
 import splice.upstream.transport.UpstreamFailed
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
@@ -85,7 +86,7 @@ public class RateLimitCooldown public constructor(
         set(value) { holds.rateLimitReply = value }
 
     /** V4-233: the plan window the upstream named as spent, held until the reset it named. Its own
-     *  class, so this one keeps its function budget; an answered turn ends it ([answered]). */
+     *  class, so this one keeps its function budget; a newer accepted request ends it ([acceptance]). */
     public val planHold: PlanHold = PlanHold(clock, wallClock, holds)
 
     init {
@@ -119,19 +120,24 @@ public class RateLimitCooldown public constructor(
         unavailableUntilMs.set(0L)
     }
 
-    /** V4-412: an ANSWERED turn is the provider saying it serves again (a top-up, or a reset that
-     *  came early), so it ends both statements, in memory and on disk. */
-    public fun answered() {
-        rateLimitedUntilMs.set(0L)
-        unavailableUntilMs.set(0L)
-        providerUnavailableUntilMs.set(0L)
-        holds.providerReset(null)
-        planHold.clear()
-        rateLimitReply = null
+    /** Capture immediately before posting; invoke only on accepted headers. A newer refusal,
+     *  including one learned at the same clock tick, survives this request's acceptance. */
+    public fun acceptance(): StreamStart {
+        val posted = holds.posted()
+        return StreamStart {
+            holds.accepted(posted) {
+                rateLimitedUntilMs.set(0L)
+                unavailableUntilMs.set(0L)
+                providerUnavailableUntilMs.set(0L)
+                holds.providerReset(null)
+                planHold.clear()
+                rateLimitReply = null
+            }
+        }
     }
 
     /** Marks the account unavailable to future turns, bounded by NF-01's recovery ceiling. */
-    public fun markUnavailable(pushbackMs: Long) {
+    public fun markUnavailable(pushbackMs: Long): Unit = holds.refusing {
         val now = clock()
         val providerDelay = pushbackMs.coerceIn(0L, MAX_PROVIDER_RESET_MS)
         val boundedDelay = minOf(providerDelay, MAX_RATE_LIMIT_COOLDOWN_MS)
@@ -185,10 +191,12 @@ public class RateLimitCooldown public constructor(
             ?: iso?.let { Cancellables.runCatchingCancellable { Instant.parse(it).toEpochMilli() }.getOrNull() }
         val delayMs = absoluteWallMs?.minus(wallClock()) ?: inSeconds?.times(MS_PER_S) ?: return
         if (delayMs <= 0) return
-        providerUnavailableUntilMs.accumulateAndGet(clock() + minOf(delayMs, MAX_PROVIDER_RESET_MS)) { c, n ->
-            maxOf(c, n)
+        holds.refusing {
+            providerUnavailableUntilMs.accumulateAndGet(clock() + minOf(delayMs, MAX_PROVIDER_RESET_MS)) { c, n ->
+                maxOf(c, n)
+            }
+            holds.providerReset(providerResetAt)
         }
-        holds.providerReset(providerResetAt)
     }
 
     /** NF-01: remaining armed cooldown (0 when idle) — surfaced so doctor/status views can name
@@ -200,7 +208,7 @@ public class RateLimitCooldown public constructor(
      *  `val until = clock() + minOf(...)` it replaced. NF-01: at most MAX_RATE_LIMIT_COOLDOWN_MS — the
      *  full pushback rides in the upstream body the caller's GIVE_UP surfaces; only the fail-fast
      *  horizon clamps, and the clamp and the latest-max accumulate live in this one place. */
-    public fun arm(pushbackMs: Long) {
+    public fun arm(pushbackMs: Long): Unit = holds.refusing {
         val until = clock() + minOf(pushbackMs, MAX_RATE_LIMIT_COOLDOWN_MS)
         rateLimitedUntilMs.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
     }

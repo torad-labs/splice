@@ -163,6 +163,46 @@ class PlaygroundProviderAnswerTest {
     }
 
     @Test
+    fun `a Playground acceptance posted before a newer refusal cannot clear its hold`() = runTest {
+        val fixture = fixture(backgroundScope)
+        val posted = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var requests = 0
+        HttpClient(
+            MockEngine {
+                if (requests++ == 0) {
+                    posted.complete(Unit)
+                    release.await()
+                    respond("{}", HttpStatusCode.OK)
+                } else {
+                    respond(
+                        """{"error":{"message":"Subscription quota exhausted","resets_in_seconds":3600}}""",
+                        HttpStatusCode.TooManyRequests,
+                    )
+                }
+            },
+        ).use { client ->
+            val probe = UpstreamPlaygroundProbe(fixture.second, client)
+            val older = async { probe.run(playgroundHead("claudex"), "synthetic prompt", null) }
+            try {
+                posted.await()
+                probe.run(playgroundHead("claudex"), "synthetic prompt", null)
+                assertTrue(fixture.first.head.providerResetForMs() > 0L)
+                release.complete(Unit)
+                assertTrue(older.await() is PlaygroundResult)
+                assertTrue(
+                    fixture.first.head.providerResetForMs() > 0L,
+                    "late accepted headers cannot erase a refusal learned after this send",
+                )
+            } finally {
+                release.complete(Unit)
+                older.await()
+            }
+        }
+        fixture.first.head.stop()
+    }
+
+    @Test
     fun `headers are observed while the response body is still held open`() = runTest {
         val fixture = fixture(backgroundScope)
         val body = ByteChannel(autoFlush = true)

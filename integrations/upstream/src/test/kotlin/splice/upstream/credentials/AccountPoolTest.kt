@@ -639,7 +639,7 @@ class AccountPoolTestAuthOnly {
         login.cooldown.markUnavailable(86_400_000L)
         login.cooldown.arm(60_000L)
 
-        login.cooldown.answered()
+        login.cooldown.acceptance()()
 
         assertEquals(0L, login.cooldown.unavailableForMs(), "a newer success ends local account exclusion")
         assertEquals(0L, login.cooldown.remainingMs(), "a newer success ends follower fail-fast")

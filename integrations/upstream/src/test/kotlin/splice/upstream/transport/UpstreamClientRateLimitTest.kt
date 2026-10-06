@@ -27,6 +27,64 @@ import java.util.concurrent.atomic.AtomicInteger
 class NativeRateLimitHeadersTest {
 
     @Test
+    fun `a posted request cannot clear a later refusal even at the same clock tick`() = runTest {
+        for (advance in listOf(0L, 1L)) {
+            var elapsed = 0L
+            var requests = 0
+            val posted = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val cooldown = RateLimitCooldown(ElapsedClock { elapsed })
+            val native = """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic refusal","resets_in_seconds":3600}}"""
+            val engine = MockEngine {
+                if (requests++ == 0) {
+                    posted.complete(Unit)
+                    release.await()
+                    respond("synthetic success", HttpStatusCode.OK)
+                } else {
+                    respond(native, HttpStatusCode.TooManyRequests, headersOf("Retry-After", "60"))
+                }
+            }
+            val http = HttpClient(engine)
+            val client = UpstreamClient(
+                totalTimeoutMs = 30_000L,
+                maxRetries = 1,
+                client = http,
+                clock = ElapsedClock { elapsed },
+            )
+            fun context() = PostContext(
+                url = "https://api.example.test/v1",
+                auth = fakeAuth,
+                extraHeaders = { emptyMap() },
+                rateLimitCooldown = cooldown,
+            )
+            try {
+                val older = async { client.posted(context(), "{}") { "ok" } }
+                posted.await()
+                elapsed += advance
+                assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+                val horizon = cooldown.remainingMs()
+                val selection = cooldown.unavailableForMs()
+                val reset = cooldown.providerUnavailableForMs()
+                assertTrue(horizon > 0L && selection > 0L && reset > 0L, "the newer refusal holds all horizons")
+                release.complete(Unit)
+                assertEquals("ok", older.await())
+
+                assertEquals(horizon, cooldown.remainingMs(), "late headers cannot erase the newer refusal")
+                assertEquals(selection, cooldown.unavailableForMs())
+                assertEquals(reset, cooldown.providerUnavailableForMs())
+                val follower = assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+                assertTrue(follower.localHold && follower.status == 429, "the follower stays local")
+                assertEquals(2, requests)
+                elapsed += horizon
+                assertEquals(0L, cooldown.remainingMs(), "the original horizon expires without being extended")
+            } finally {
+                release.complete(Unit)
+                http.close()
+            }
+        }
+    }
+
+    @Test
     fun `native refusals relay the whole rate-limit header family verbatim without retrying`() = runTest {
         val native = """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic refusal"}}"""
         val retained = linkedMapOf(

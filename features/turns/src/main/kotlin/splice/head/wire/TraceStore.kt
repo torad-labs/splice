@@ -15,10 +15,10 @@ package splice.head.wire
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayBodyBudget
@@ -63,7 +63,7 @@ public class TraceStore(
     public val maxBodyChars: Int,
     private val now: WallClock = WallClock(System::currentTimeMillis),
     private val ids: TurnIdMint = randomTurnIds,
-    public val heap: HeapBudget = JvmHeap.budget,
+    public val heap: HeapReservations = JvmHeap.budget,
     private val bodyBudget: DayBodyBudget = DayBodyBudget(clock = now),
 ) {
     private val bodies = TraceBodies(heap = heap, budget = bodyBudget)

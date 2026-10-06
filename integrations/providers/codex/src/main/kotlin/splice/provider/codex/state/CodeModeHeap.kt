@@ -5,11 +5,11 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModeIssuedStep
 import splice.provider.codex.CodeModeNativeSegment
@@ -176,7 +176,7 @@ internal object CodeModeHeap {
      *  checkpoint it survives publishes it as a root. */
     fun own(
         record: CodeModeRecord,
-        heap: HeapBudget = JvmHeap.budget,
+        heap: HeapReservations = JvmHeap.budget,
         inherited: List<CodeModeNativeSegment> = emptyList(),
     ) {
         val minimumBytes = inherited.fold(CodeModeWeight.STORED.record(record)) { total, segment ->
@@ -191,11 +191,11 @@ internal object CodeModeHeap {
         }
     }
 
-    fun own(record: CodeModeRecordSnapshot, heap: HeapBudget = JvmHeap.budget) {
+    fun own(record: CodeModeRecordSnapshot, heap: HeapReservations = JvmHeap.budget) {
         if (record.heapLease == null) record.heapLease = HeapOwners.charge(record, heap, retained(record))
     }
 
-    fun own(marker: CodeModeExpiredSnapshot, heap: HeapBudget = JvmHeap.budget) {
+    fun own(marker: CodeModeExpiredSnapshot, heap: HeapReservations = JvmHeap.budget) {
         if (marker.heapLease == null) marker.heapLease = HeapOwners.charge(marker, heap, bytes(marker))
     }
 
@@ -225,7 +225,7 @@ internal object CodeModeHeap {
     }
 
     /** Adopt the returned aggregate and each independently escapable snapshot before closing decode stages. */
-    fun ownState(state: CodeModePersistedState, heap: HeapBudget): CodeModePersistedState {
+    fun ownState(state: CodeModePersistedState, heap: HeapReservations): CodeModePersistedState {
         state.records.forEach { own(it, heap) }
         state.expired.forEach { own(it, heap) }
         HeapOwners.charge(

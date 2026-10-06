@@ -22,6 +22,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
+import splice.core.memory.HeapReservations
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeIssuedStep
 import splice.provider.codex.CodeModePersistenceException
@@ -588,7 +589,7 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
 
     private fun registry(
         record: CodeModeRecord,
-        budget: HeapBudget = heap,
+        budget: HeapReservations = heap,
         writer: CodeModeStateWrite? = null,
     ): CodexCodeModeRegistry {
         val config = CodeModeBridgeConfig(

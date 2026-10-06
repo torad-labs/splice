@@ -1,6 +1,7 @@
 package splice.head
 
 import splice.core.memory.HeapBudget
+import splice.core.memory.HeapReservations
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayBodyBudget
 import splice.core.util.WallClock
@@ -20,7 +21,7 @@ public fun syntheticTraceStore(
     maxBodyChars: Int,
     now: WallClock = WallClock(System::currentTimeMillis),
     ids: TurnIdMint = TurnIdMint { UUID.randomUUID().toString() },
-    heap: HeapBudget = syntheticHeapBudget(),
+    heap: HeapReservations = syntheticHeapBudget(),
 ): TraceStore = TraceStore(
     days,
     head,

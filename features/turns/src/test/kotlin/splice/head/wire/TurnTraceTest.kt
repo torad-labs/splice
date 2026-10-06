@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapReservations
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.storage.ActivityDays
@@ -78,7 +79,7 @@ class TurnTraceTest {
 
     private fun store(
         maxBodyChars: Int = 1 shl 20,
-        heap: HeapBudget = HeapBudget(Long.MAX_VALUE),
+        heap: HeapReservations = HeapBudget(Long.MAX_VALUE),
     ): TraceStore = splice.head.syntheticTraceStore(
         ActivityDays(tmp.resolve("trace"), "kimi", retentionDays = 7, clock = WallClock { DAY_ONE }, ownerOnly = true),
         head = "kimi",

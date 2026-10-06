@@ -24,7 +24,7 @@ package splice.sessions.activity
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.core.memory.HeapBudget
+import splice.core.memory.HeapReservations
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayFiles
 import splice.core.storage.DayInventory
@@ -91,7 +91,7 @@ public class MessageEdgeStore(
     private val retentionDays: Int,
     public val storing: Boolean,
     decode: MessageEdgeDecode = MessageEdgeCodec(),
-    heap: HeapBudget? = null,
+    heap: HeapReservations? = null,
     maxCacheBytes: Long = EDGE_CACHE_BYTES,
 ) {
     private val cache = MessageEdgeCache(days, files, decode, heap, maxCacheBytes)

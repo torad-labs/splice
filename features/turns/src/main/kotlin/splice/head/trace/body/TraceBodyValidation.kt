@@ -1,9 +1,9 @@
 // NEW: trace summary validation certifies current chunk bytes without retaining payloads.
 package splice.head.trace.body
 
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -49,7 +49,7 @@ internal class TraceChunkCertificate(
 
 /** Current-byte certificates belong to the persistent injected owner, never a decoded-body cache. */
 internal class TraceBodyValidation(
-    private val heap: HeapBudget,
+    private val heap: HeapReservations,
     private val decoder: TraceChunkDecoder = TraceChunkDecoder(TracePackFormat::decode),
     private val maxBytes: Long = TRACE_CERTIFICATE_MAX_BYTES,
 ) {

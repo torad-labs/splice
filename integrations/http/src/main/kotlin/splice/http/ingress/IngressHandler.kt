@@ -12,7 +12,7 @@ import io.netty.handler.codec.http.HttpRequest
 import io.netty.handler.codec.http.HttpUtil
 import io.netty.handler.codec.http.LastHttpContent
 import io.netty.util.ReferenceCountUtil
-import splice.core.memory.HeapBudget
+import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.core.wire.HttpStatus
 
@@ -23,7 +23,7 @@ internal class IngressReadGuard(private val ownership: IngressOwnership) : Chann
 }
 
 internal class IngressHandler(
-    private val heap: HeapBudget,
+    private val heap: HeapReservations,
     private val cap: Long,
     private val requestLimit: Long,
     private val ownership: IngressOwnership,

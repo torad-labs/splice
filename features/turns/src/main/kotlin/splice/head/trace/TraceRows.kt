@@ -24,6 +24,8 @@ import kotlinx.serialization.json.Json
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReadView
+import splice.core.memory.HeapReservations
 import splice.core.storage.DayFiles
 import splice.core.util.JsonScalars
 import splice.head.trace.body.TraceBodySelection
@@ -67,8 +69,8 @@ internal class TraceRows(
     private val validation = TraceBodyValidation(this.heap, decoder)
 
     /** One read owns one admission view through projection; escaped records retain their root charges. */
-    internal inline fun <T> withRead(block: (HeapBudget) -> T): T {
-        val view: HeapBudget = heap.readShare()
+    internal inline fun <T> withRead(block: (HeapReservations) -> T): T {
+        val view: HeapReadView = heap.readShare()
         return view.use { block(it) }
     }
 
@@ -102,7 +104,7 @@ internal class TraceRows(
     internal fun summaries(traceDir: Path, head: String, ask: TraceAsk): TraceRead =
         withRead { summaries(traceDir, head, ask, it) }
 
-    internal fun summaries(traceDir: Path, head: String, ask: TraceAsk, share: HeapBudget): TraceRead {
+    internal fun summaries(traceDir: Path, head: String, ask: TraceAsk, share: HeapReservations): TraceRead {
         val turns = selected(traceDir, head, ask, TraceBodySelection.SUMMARY, share)
         val count = census(traceDir, head).count(days(traceDir, head))
         return TraceRead(turns, count.onDisk, count.skippedLines)
@@ -113,7 +115,7 @@ internal class TraceRows(
     internal fun turns(traceDir: Path, head: String, ask: TraceAsk): List<TracedTurn> =
         withRead { turns(traceDir, head, ask, it) }
 
-    internal fun turns(traceDir: Path, head: String, ask: TraceAsk, share: HeapBudget): List<TracedTurn> =
+    internal fun turns(traceDir: Path, head: String, ask: TraceAsk, share: HeapReservations): List<TracedTurn> =
         selected(traceDir, head, ask, TraceBodySelection.RECORDS, share)
 
     private fun selected(
@@ -121,7 +123,7 @@ internal class TraceRows(
         head: String,
         ask: TraceAsk,
         selection: TraceBodySelection,
-        share: HeapBudget,
+        share: HeapReservations,
     ): List<TracedTurn> {
         if (selection == TraceBodySelection.SUMMARY) validation.prune()
         return TraceTail(ask, json, share, selection, decoder, validation).use { tail ->

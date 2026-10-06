@@ -15,7 +15,7 @@
 package splice.head.compaction
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.memory.HeapBudget
+import splice.core.memory.HeapReservations
 import splice.core.turn.TurnMeta
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonWire
@@ -31,7 +31,7 @@ internal class CompactionReplay(
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     private val ttlMs: Long = RECORDING_TTL_MS,
     private val capacity: Int = DEFAULT_CAPACITY,
-    private val heap: HeapBudget = JvmHeap.budget,
+    private val heap: HeapReservations = JvmHeap.budget,
 ) {
     private data class Entry(val recording: FrameRecording, val startedAtMs: Long)
 

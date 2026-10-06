@@ -23,10 +23,10 @@
 package splice.head.trace
 
 import kotlinx.serialization.json.Json
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.storage.DayFiles
 import splice.core.storage.DayLine
 import splice.core.storage.FileVisit
@@ -67,7 +67,7 @@ internal class TraceCensus(
     private val json: Json,
     private val processors: Int = Runtime.getRuntime().availableProcessors(),
     private val fileRead: TraceCountFileRead = TraceCountFileRead(),
-    private val heap: HeapBudget = JvmHeap.budget,
+    private val heap: HeapReservations = JvmHeap.budget,
 ) {
     /** What the store's files held at the last count, each by the first bytes it is known by. */
     @Volatile
@@ -166,7 +166,7 @@ internal class TraceCensus(
     private data class FileCount(val kept: Counted?, val placed: Set<String>, val skipped: Int)
 
     /** Lines tallied from what [from] counted: the turn ids they placed and how many placed none. */
-    private class Tally(private val stamps: TraceStamps, from: Counted?, heap: HeapBudget) : LineVisit {
+    private class Tally(private val stamps: TraceStamps, from: Counted?, heap: HeapReservations) : LineVisit {
         private val lease = heap.reserve(from?.placed.orEmpty().sumOf { HeapJson.text(it) + TRACE_CENSUS_ENTRY_BYTES })
             ?: throw HeapCapacityException()
         val placed = HashSet(from?.placed.orEmpty()).also { HeapOwners.keep(it, lease) }

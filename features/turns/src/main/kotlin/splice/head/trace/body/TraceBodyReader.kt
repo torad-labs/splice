@@ -8,10 +8,10 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.core.util.Cancellables
 import splice.upstream.memory.JvmHeap
@@ -26,7 +26,7 @@ private const val TRACE_LITERAL_HEAP_FACTOR = 12L
 internal class TraceBodyReader(
     private val file: Path,
     private val format: TracePackFormat,
-    private val heap: HeapBudget = JvmHeap.budget,
+    private val heap: HeapReservations = JvmHeap.budget,
 ) : AutoCloseable {
     private val chunks = TraceChunkRead(file, format, heap)
     private val literals = HashMap<JsonArray, JsonPrimitive>()

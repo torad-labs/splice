@@ -4,8 +4,8 @@ package splice.provider.codex.state
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapLines
+import splice.core.memory.HeapReservations
 import splice.core.memory.HeapText
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModePersistedState
@@ -14,7 +14,7 @@ import java.nio.file.Path
 
 /** The source and complete checkpoint stay charged until current cells adopt independent reservations. */
 internal object CodeModeStateRestore {
-    fun read(path: Path, json: Json, heap: HeapBudget): CodeModePersistedState =
+    fun read(path: Path, json: Json, heap: HeapReservations): CodeModePersistedState =
         HeapLines(path, heap).use { lines ->
             CodeModeCheckpointText(heap).use { checkpoint ->
                 Entries(lines, checkpoint, json, heap, CodeModeStateJournal.endsWithNewline(path)).use { it.read() }
@@ -25,7 +25,7 @@ internal object CodeModeStateRestore {
         private val lines: HeapLines,
         private val checkpoint: CodeModeCheckpointText,
         private val json: Json,
-        private val heap: HeapBudget,
+        private val heap: HeapReservations,
         private val committed: Boolean,
     ) : AutoCloseable {
         private var replay: CodeModeStateReplay? = null

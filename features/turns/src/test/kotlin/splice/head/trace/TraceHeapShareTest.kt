@@ -26,6 +26,7 @@ import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.util.JsonWire
 import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
@@ -53,7 +54,7 @@ class TraceHeapShareTest {
         write(dir, oneTurn = false)
         val root = HeapBudget(Long.MAX_VALUE, SHARE_MIB)
         val rows = TraceRows(heap = root)
-        lateinit var view: HeapBudget
+        lateinit var view: HeapReservations
         val turns = rows.withRead { share ->
             view = share
             rows.turns(dir, "synthetic", TraceAsk(1), share)
@@ -67,7 +68,7 @@ class TraceHeapShareTest {
     @Test
     fun `a failed read closes its admission view`() {
         val rows = TraceRows(heap = HeapBudget(256, 100))
-        lateinit var view: HeapBudget
+        lateinit var view: HeapReservations
         assertThrows(IOException::class.java) {
             rows.withRead { share ->
                 view = share
@@ -80,7 +81,7 @@ class TraceHeapShareTest {
     @Test
     fun `a client cancellation closes its admission view without being swallowed`() {
         val rows = TraceRows(heap = HeapBudget(256, 100))
-        lateinit var view: HeapBudget
+        lateinit var view: HeapReservations
         assertThrows(CancellationException::class.java) {
             runBlocking {
                 rows.withRead { share ->
@@ -96,7 +97,7 @@ class TraceHeapShareTest {
     fun `a partway capacity refusal closes its admission view`(@TempDir dir: Path) {
         write(dir, oneTurn = false)
         val rows = TraceRows(heap = HeapBudget(Long.MAX_VALUE, SHARE_MIB))
-        lateinit var view: HeapBudget
+        lateinit var view: HeapReservations
         assertThrows(HeapCapacityException::class.java) {
             rows.withRead { share ->
                 view = share

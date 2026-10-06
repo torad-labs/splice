@@ -2,7 +2,7 @@
 package splice.provider.codex.state
 
 import kotlinx.serialization.json.Json
-import splice.core.memory.HeapBudget
+import splice.core.memory.HeapReservations
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecordSnapshot
 import splice.provider.codex.state.save.CodeModeSaveHeap
@@ -17,7 +17,11 @@ internal object CodeModeJournalEncoding {
             left?.sourceState == right?.sourceState
 
     /** Measures a loaded cell once; saves update only field sizes that actually changed. */
-    fun liveBytes(state: CodeModePersistedState, json: Json, heap: HeapBudget): Long = state.records.sumOf { record ->
+    fun liveBytes(
+        state: CodeModePersistedState,
+        json: Json,
+        heap: HeapReservations,
+    ): Long = state.records.sumOf { record ->
         if (record.encodedFieldBytes == null) {
             CodeModeSaveHeap(heap).encoding(listOf(record), emptyList()).use {
                 CodeModeCellEncoding(record, null, json)

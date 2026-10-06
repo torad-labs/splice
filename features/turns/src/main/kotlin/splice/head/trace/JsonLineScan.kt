@@ -1,9 +1,9 @@
 // NEW: one byte-stream walk of JSON container and scalar grammar.
 package splice.head.trace
 
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import java.nio.ByteBuffer
 
 // why: the initial stack capacity grows only when nesting needs more space.
@@ -20,7 +20,7 @@ private val CLOSE_ARRAY = ']'.code.toByte()
 private enum class Expect { VALUE, FIRST_ITEM, FIRST_KEY, KEY, COLON, AFTER, DONE }
 
 /** The containers the walk is inside, innermost last. */
-private class Containers(private val heap: HeapBudget) {
+private class Containers(private val heap: HeapReservations) {
     private val initialLease = heap.reserve(JSON_LINE_INITIAL_ROOM.toLong()) ?: throw HeapCapacityException()
     private var stack = ByteArray(JSON_LINE_INITIAL_ROOM).also { HeapOwners.keep(it, initialLease) }
 
@@ -49,7 +49,7 @@ private class Containers(private val heap: HeapBudget) {
 }
 
 /** One line's walk by the grammar: the scalar being read, the containers it is in, the named members met. */
-internal class JsonLineScan(names: List<Pair<String, ByteArray>>, heap: HeapBudget) {
+internal class JsonLineScan(names: List<Pair<String, ByteArray>>, heap: HeapReservations) {
     private var expect = Expect.VALUE
     private val containers = Containers(heap)
     private val members = JsonLineMembers(names)

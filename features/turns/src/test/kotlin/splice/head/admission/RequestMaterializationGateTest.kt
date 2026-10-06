@@ -7,6 +7,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -28,6 +29,44 @@ class RequestMaterializationGateTest {
         assertSame(splice.upstream.memory.JvmHeap.budget, RequestMaterializationGate().heap)
         assertSame(RequestMaterializationGate().heap, RequestMaterializationGate().heap)
     }
+
+    @Test
+    fun `waiting gates reject both live and closed read views at the root boundary`() {
+        val root = HeapBudget(256, 100)
+        val constructor = RequestMaterializationGate::class.java.getConstructor(
+            Long::class.javaPrimitiveType,
+            HeapBudget::class.java,
+        )
+        assertSame(root, constructor.newInstance(0L, root).heap)
+        val view = root.readShare()
+        try {
+            assertThrows(IllegalArgumentException::class.java) { constructor.newInstance(0L, view) }
+        } finally {
+            view.close()
+        }
+        assertThrows(IllegalArgumentException::class.java) { constructor.newInstance(0L, view) }
+    }
+
+    @Test
+    fun `a root waiter wakes on child refund while root retains spare capacity`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val root = HeapBudget(256, 100)
+            val view = root.readShare()
+            val held = requireNotNull(view.reserve(75))
+            val gate = RequestMaterializationGate(heap = root)
+            val waiting = async { gate.withLease(10) { "entered" } }
+            try {
+                assertEquals(25L, root.available.value, "the root has room, but not for this root reservation")
+                assertFalse(waiting.isCompleted)
+                held.close()
+                assertEquals("entered", withTimeout(1_000) { waiting.await() })
+                assertEquals(100L, root.available.value)
+            } finally {
+                waiting.cancelAndJoin()
+                held.close()
+                view.close()
+            }
+        }
 
     @Test
     fun `a small heap admits a tiny preflight body`() = runTest(UnconfinedTestDispatcher()) {

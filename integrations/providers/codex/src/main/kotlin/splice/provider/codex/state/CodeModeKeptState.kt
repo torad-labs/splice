@@ -1,9 +1,9 @@
 // NEW: the durable cell index is updated only after a forced write, never rebuilt for a changed-cell append.
 package splice.provider.codex.state
 
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
@@ -12,7 +12,7 @@ import splice.upstream.memory.JvmHeap
 // why: keyed index references, map nodes and backing-table growth beyond the separately owned snapshot.
 private const val KEPT_INDEX_ENTRY_BYTES = 128L
 
-internal class CodeModeKeptState(state: CodeModePersistedState, private val heap: HeapBudget = JvmHeap.budget) {
+internal class CodeModeKeptState(state: CodeModePersistedState, private val heap: HeapReservations = JvmHeap.budget) {
     init {
         state.records.forEach { CodeModeHeap.own(it, heap) }
         state.expired.forEach { CodeModeHeap.own(it, heap) }

@@ -14,7 +14,7 @@ package splice.provider.codex
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import splice.core.memory.HeapBudget
+import splice.core.memory.HeapReservations
 import splice.provider.codex.state.CodeModeCellRetention
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeHeap
@@ -47,7 +47,7 @@ internal class CodexCodeModeRegistry(
     private val sweepInterval: Duration,
     writer: CodeModeStateWrite? = null,
     private val closeSession: CodeModeSessionEnd = CodeModeSessionEnd {},
-    private val heap: HeapBudget = JvmHeap.budget,
+    private val heap: HeapReservations = JvmHeap.budget,
 ) {
     private val monitor = ReentrantLock()
     private val keyLocks = CodeModeKeyLocks()

@@ -9,7 +9,7 @@ import java.lang.ref.Cleaner
 public object HeapOwners {
     private val cleaner = Cleaner.create()
 
-    public fun charge(owner: Any, heap: HeapBudget, bytes: Long): HeapLease {
+    public fun charge(owner: Any, heap: HeapReservations, bytes: Long): HeapLease {
         val lease = heap.reserve(bytes) ?: throw HeapCapacityException()
         keep(owner, lease)
         return lease

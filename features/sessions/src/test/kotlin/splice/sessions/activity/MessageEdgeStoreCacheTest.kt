@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.memory.HeapBudget
+import splice.core.memory.HeapReservations
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayFiles
 import splice.core.util.AsyncFileIo
@@ -152,7 +153,7 @@ class MessageEdgeStoreCacheTest {
     private fun store(
         codec: CountingCodec,
         clock: WallClock = WallClock { CACHE_DAY },
-        heap: HeapBudget? = null,
+        heap: HeapReservations? = null,
         maxBytes: Long = EDGE_CACHE_BYTES,
     ): MessageEdgeStore = MessageEdgeStore(
         ActivityDays(dir, EDGES_PREFIX, 2, clock),

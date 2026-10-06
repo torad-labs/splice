@@ -6,9 +6,9 @@ package splice.head.trace.body
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.upstream.memory.JvmHeap
 import java.io.OutputStream
 import java.io.OutputStreamWriter
@@ -33,7 +33,7 @@ private val GEAR = LongArray(1 shl Byte.SIZE_BITS) { byte ->
 
 internal class TraceChunker(
     private val pack: TraceBodyPack,
-    private val heap: HeapBudget = JvmHeap.budget,
+    private val heap: HeapReservations = JvmHeap.budget,
 ) : OutputStream() {
     private val bufferLease = heap.reserve(CHUNK_MAX.toLong()) ?: throw HeapCapacityException()
     private val buffer = ByteArray(CHUNK_MAX).also { HeapOwners.keep(it, bufferLease) }
@@ -72,7 +72,7 @@ private const val TRACE_CHUNK_REFERENCE_BYTES = 64L
 
 /** Stream one JSON string literal once; lone surrogate code units remain exact across a truncation boundary. */
 internal object TraceLiteral {
-    fun encode(text: String, sink: OutputStream, heap: HeapBudget = JvmHeap.budget) {
+    fun encode(text: String, sink: OutputStream, heap: HeapReservations = JvmHeap.budget) {
         val peak = heap.reserve(TRACE_LITERAL_SCRATCH_CHARS * 2L + TRACE_LITERAL_ENCODER_BYTES)
             ?: throw HeapCapacityException()
         peak.use { encoded(text, sink) }

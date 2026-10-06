@@ -3,7 +3,7 @@ package splice.core.memory
 
 /** An idempotent owner of a shared reservation. The last owner returns its charged bytes. */
 public class HeapLease internal constructor(
-    private val budget: HeapBudget,
+    private val budget: HeapLedger,
     private val allocation: HeapAllocation,
 ) : AutoCloseable {
     private val lock = Any()

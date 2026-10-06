@@ -10,8 +10,8 @@ package splice.head.compaction
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapReservations
 import splice.core.memory.HeapText
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
@@ -48,7 +48,7 @@ public class FileCompactionRecordings(
     private val log: LogSink = LogSink(DaemonLog::write),
     private val now: WallClock = WallClock(System::currentTimeMillis),
     private val ttlMs: Long = RECORDING_TTL_MS,
-    private val heap: HeapBudget = JvmHeap.budget,
+    private val heap: HeapReservations = JvmHeap.budget,
 ) : CompactionRecordings {
     private val json = Json { ignoreUnknownKeys = true }
 

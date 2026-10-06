@@ -13,8 +13,8 @@ import kotlinx.serialization.descriptors.elementNames
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapReservations
 import splice.core.memory.HeapText
 import splice.core.storage.DayLine
 import splice.core.util.Cancellables
@@ -51,7 +51,7 @@ internal data class TraceStamp(
 }
 
 /** Reads lines' stamps, one line at a time: it keeps a buffer, so one read holds one. */
-internal class TraceStamps(private val json: Json, private val heap: HeapBudget = JvmHeap.budget) {
+internal class TraceStamps(private val json: Json, private val heap: HeapReservations = JvmHeap.budget) {
     private val shape = JsonLineShape(TraceStamp.serializer().descriptor.elementNames.toSet(), heap)
 
     /** The line's stamp off its bytes when the shape vouches for it, its named members decoded alone by the same

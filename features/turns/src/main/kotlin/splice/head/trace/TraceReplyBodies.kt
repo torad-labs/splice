@@ -6,9 +6,9 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
@@ -24,7 +24,7 @@ import java.nio.file.Path
 private const val TRACE_REPLY_HEAP_FACTOR = 8L
 
 /** Projects summaries and selected records without changing the stored trace. */
-internal class TraceReplyBodies(private val heap: HeapBudget = JvmHeap.budget.readShare()) {
+internal class TraceReplyBodies(private val heap: HeapReservations = JvmHeap.budget.readShare()) {
     private fun encode(record: JsonObject): String {
         val peak = heap.reserve(HeapWeights.multiply(JsonWire.byteSize(record), TRACE_REPLY_HEAP_FACTOR))
             ?: throw HeapCapacityException()

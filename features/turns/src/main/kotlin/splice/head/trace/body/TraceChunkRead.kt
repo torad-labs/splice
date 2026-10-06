@@ -6,10 +6,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import java.io.IOException
@@ -29,7 +29,7 @@ internal data class TraceChunkReference(val offset: Long, val length: Int, val h
 internal class TraceChunkRead(
     private val file: Path,
     private val format: TracePackFormat,
-    private val heap: HeapBudget,
+    private val heap: HeapReservations,
 ) : AutoCloseable {
     private val channel = Cancellables.runCatchingCancellable {
         FileChannel.open(file, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)

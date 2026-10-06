@@ -1,7 +1,7 @@
 // NEW: the daemon's paired metadata stores and their retention, separated from label decoding.
 package splice.sessions.activity
 
-import splice.core.memory.HeapBudget
+import splice.core.memory.HeapReservations
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayFiles
 import splice.core.util.WallClock
@@ -19,7 +19,7 @@ public class ActivityStores(
     storeHeads: String,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     messageEdges: Boolean = true,
-    heap: HeapBudget? = null,
+    heap: HeapReservations? = null,
 ) {
     private val edgeDays = retentionDays.coerceAtLeast(LOCAL_DAY_UTC_DAYS)
     public val edges: MessageEdgeStore = MessageEdgeStore(

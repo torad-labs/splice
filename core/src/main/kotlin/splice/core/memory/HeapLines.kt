@@ -12,7 +12,7 @@ import java.nio.file.StandardOpenOption
 private const val LINE_SCAN_BYTES = 8192
 
 /** A bounded forward framer. Lookahead inspects bytes and never materializes another line. */
-public class HeapLines(path: Path, private val heap: HeapBudget) : AutoCloseable {
+public class HeapLines(path: Path, private val heap: HeapReservations) : AutoCloseable {
     private val scanLease = heap.reserve(LINE_SCAN_BYTES.toLong()) ?: throw HeapCapacityException()
     private val buffer = ByteArray(LINE_SCAN_BYTES).also { HeapOwners.keep(it, scanLease) }
     private val bytes = ByteBuffer.wrap(buffer)

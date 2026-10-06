@@ -1,10 +1,10 @@
 // NEW: retained message metadata parses once per settled line, not once per Sessions poll.
 package splice.sessions.activity
 
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayFiles
 import splice.core.storage.DayLine
@@ -35,7 +35,7 @@ internal class MessageEdgeCache(
     private val days: ActivityDays,
     private val files: DayFiles,
     private val decode: MessageEdgeDecode,
-    private val heap: HeapBudget?,
+    private val heap: HeapReservations?,
     private val maxBytes: Long,
 ) {
     private val kept = linkedMapOf<Any, Kept>()
@@ -197,7 +197,7 @@ internal class MessageEdgeCache(
         return result
     }
 
-    private class Kept(heap: HeapBudget?) {
+    private class Kept(heap: HeapReservations?) {
         val rows = linkedMapOf<String, MessageEdge>()
         val lease: HeapLease? = heap?.let { HeapOwners.charge(this, it, EDGE_FILE_BYTES) }
         var weight = EDGE_FILE_BYTES

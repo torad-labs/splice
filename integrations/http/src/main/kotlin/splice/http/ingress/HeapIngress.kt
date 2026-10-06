@@ -13,9 +13,9 @@ import io.ktor.util.AttributeKey
 import io.netty.channel.ChannelPipeline
 import io.netty.channel.group.DefaultChannelGroup
 import io.netty.util.concurrent.GlobalEventExecutor
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapLease
+import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.core.wire.HttpStatus
 import java.util.concurrent.atomic.AtomicBoolean
@@ -33,7 +33,7 @@ public fun interface IngressErrorBody {
  *  A refusal closes its connection after Ktor writes the ordered response, without draining an unlimited body.
  */
 public class HeapIngress(
-    private val heap: HeapBudget,
+    private val heap: HeapReservations,
     private val maxBodyBytes: Long,
     private val errorBody: IngressErrorBody,
     private val requestLimit: Long = heap.limitBytes,

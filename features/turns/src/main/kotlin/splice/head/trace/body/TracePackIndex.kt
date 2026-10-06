@@ -6,10 +6,10 @@ package splice.head.trace.body
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.upstream.memory.JvmHeap
 import java.util.HexFormat
 import java.util.UUID
@@ -34,7 +34,7 @@ private const val TRACE_INDEX_KEY_DIGITS = 16
 /** Readers never share this writer-local index or retain a global body cache. A slot names where an entry with that
  *  digest prefix lies; the writer re-reads the entry before reusing it, so a colliding prefix costs a fresh append,
  *  never a wrong body. */
-internal class TracePackIndex(val heap: HeapBudget = JvmHeap.budget) {
+internal class TracePackIndex(val heap: HeapReservations = JvmHeap.budget) {
     var generation: UUID? = null
     var end: Long = TRACE_PACK_START_BYTES.toLong()
     var tail: JsonObject? = null

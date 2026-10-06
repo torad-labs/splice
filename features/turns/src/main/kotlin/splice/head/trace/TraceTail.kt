@@ -10,10 +10,10 @@ package splice.head.trace
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.memory.HeapText
 import splice.core.storage.DayLine
 import splice.core.storage.LineVisit
@@ -35,7 +35,7 @@ private const val LATE_WRITE_SLACK_MS = 60_000L
 internal class TraceTail(
     private val ask: TraceAsk,
     private val json: Json,
-    private val heap: HeapBudget = JvmHeap.budget,
+    private val heap: HeapReservations = JvmHeap.budget,
     private val selection: TraceBodySelection = TraceBodySelection.RECORDS,
     decoder: TraceChunkDecoder = TraceChunkDecoder(TracePackFormat::decode),
     validation: TraceBodyValidation? = null,
@@ -102,7 +102,7 @@ internal class TraceTail(
 }
 
 /** One taken turn's records as they were read, newest first. */
-private class HeldTurn(private val heap: HeapBudget) {
+private class HeldTurn(private val heap: HeapReservations) {
     private val attempts = ArrayList<JsonObject>()
     private val attemptLease = HeapOwners.charge(attempts, heap, HeapJson.text(""))
     private var ending: JsonObject? = null

@@ -3,7 +3,7 @@
 package splice.provider.codex.state
 
 import kotlinx.serialization.json.Json
-import splice.core.memory.HeapBudget
+import splice.core.memory.HeapReservations
 import splice.core.util.Cancellables
 import splice.core.util.JsonlForce
 import splice.core.util.JsonlSink
@@ -110,7 +110,7 @@ internal object CodeModeStateJournal {
 
     /** Counts each source entry before allocating text. The complete pretty checkpoint is budgeted too.
      *  Only newline-terminated deltas commit; an uncommitted final fragment is never applied. */
-    fun read(path: Path, json: Json, heap: HeapBudget = JvmHeap.budget): CodeModePersistedState =
+    fun read(path: Path, json: Json, heap: HeapReservations = JvmHeap.budget): CodeModePersistedState =
         CodeModeStateRestore.read(path, json, heap)
 
     internal fun endsWithNewline(path: Path): Boolean =
@@ -138,7 +138,7 @@ internal object CodeModeStateJournal {
     fun appendable(path: Path, liveBytes: Long): Boolean = Files.exists(path) && !outgrown(path, liveBytes)
 
     /** Measures a loaded cell once; subsequent saves update only changed field sizes. */
-    fun liveBytes(state: CodeModePersistedState, json: Json, heap: HeapBudget = JvmHeap.budget): Long =
+    fun liveBytes(state: CodeModePersistedState, json: Json, heap: HeapReservations = JvmHeap.budget): Long =
         CodeModeJournalEncoding.liveBytes(state, json, heap)
 
     fun cellText(

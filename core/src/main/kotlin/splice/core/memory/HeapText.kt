@@ -31,11 +31,11 @@ public class HeapText private constructor(
 
     public object Reader {
         /** A growing file is refused rather than read past its reserved size. */
-        public fun read(path: Path, heap: HeapBudget): HeapText =
+        public fun read(path: Path, heap: HeapReservations): HeapText =
             Files.newInputStream(path).use { read(it, boundedSize(path), heap) }
 
         /** Reads one counted span without closing its caller-owned stream. */
-        public fun read(input: InputStream, bytes: Long, heap: HeapBudget): HeapText {
+        public fun read(input: InputStream, bytes: Long, heap: HeapReservations): HeapText {
             require(bytes >= 0L && bytes < Int.MAX_VALUE)
             val weight = HeapWeights.multiply(bytes + TEXT_METADATA_BYTES, DECODE_EXPANSION)
             val lease = heap.reserve(weight) ?: throw HeapCapacityException()

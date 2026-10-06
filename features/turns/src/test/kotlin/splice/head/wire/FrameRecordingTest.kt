@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
+import splice.core.memory.HeapReservations
 import java.lang.ref.Reference
 import java.lang.ref.WeakReference
 import java.util.concurrent.TimeUnit
@@ -59,10 +60,10 @@ class FrameRecordingTest {
         Reference.reachabilityFence(text)
     }
 
-    private fun discardedRecording(heap: HeapBudget, frame: String): WeakReference<FrameRecording> =
+    private fun discardedRecording(heap: HeapReservations, frame: String): WeakReference<FrameRecording> =
         WeakReference(FrameRecording(heap).also { it.append(frame) })
 
-    private fun escapedFrame(heap: HeapBudget): Pair<WeakReference<FrameRecording>, String> {
+    private fun escapedFrame(heap: HeapReservations): Pair<WeakReference<FrameRecording>, String> {
         val recording = FrameRecording(heap)
         recording.append("escaped-frame")
         return WeakReference(recording) to recording.frames().single()

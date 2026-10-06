@@ -11,9 +11,9 @@
 // JsonLineMembers captures named stamps, and JsonTokens reads the scalars.
 package splice.head.trace
 
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.storage.ByteWords
 import splice.upstream.memory.JvmHeap
 import java.io.InputStream
@@ -23,7 +23,7 @@ private const val READ_BYTES = 64 * 1024
 
 /** Reads lines as JSON objects, keeping the raw text of the top-level members named [captured]. One per
  *  reader; its buffer is reused from line to line. */
-internal class JsonLineShape(captured: Set<String>, private val heap: HeapBudget = JvmHeap.budget) {
+internal class JsonLineShape(captured: Set<String>, private val heap: HeapReservations = JvmHeap.budget) {
     private val names = captured.map { it to it.toByteArray() }
 
     // The streaming buffer also covers the bounded named-member captures that coexist with it.

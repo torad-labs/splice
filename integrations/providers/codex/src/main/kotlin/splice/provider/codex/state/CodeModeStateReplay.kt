@@ -8,10 +8,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapLease
+import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.core.util.JsonScalars
 import splice.provider.codex.CodeModePersistedState
@@ -30,7 +30,7 @@ private const val REPLAY_EXPIRED = "expired"
 internal class CodeModeStateReplay(
     checkpoint: JsonObject,
     private val json: Json,
-    private val heap: HeapBudget,
+    private val heap: HeapReservations,
 ) : AutoCloseable {
     private val records = linkedMapOf<String, JsonObject>()
     private val charges = linkedMapOf<String, HeapLease>()

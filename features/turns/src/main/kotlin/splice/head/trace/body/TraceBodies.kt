@@ -10,8 +10,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapReservations
 import splice.core.storage.BODY_BUDGET_EVICTED_REASON
 import splice.core.storage.DayBodyBudget
 import splice.core.storage.DayBodyCapacityException
@@ -33,7 +33,7 @@ private val BODY_FIELDS = mapOf("request" to "body", "response" to "text", "clie
 /** JSONL stamps stay inline. Only body literals enter a daily pack, once, directly through the Gear encoder. */
 internal class TraceBodies(
     private val maxPackBytes: Long = TRACE_BODY_MAX_BYTES,
-    private val heap: HeapBudget = JvmHeap.budget,
+    private val heap: HeapReservations = JvmHeap.budget,
     log: LogSink = LogSink(DaemonLog::write),
     // Host free-space policy is injected by TraceStore; standalone codecs only enforce their byte budget.
     private val budget: DayBodyBudget = DayBodyBudget(maxPackBytes, minFreeBytes = 0),

@@ -6,8 +6,8 @@
 package splice.provider.codex
 
 import kotlinx.serialization.json.Json
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapReservations
 import splice.core.memory.HeapText
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
@@ -73,7 +73,7 @@ internal class CodexCodeModeStore(
     },
     private val registryLock: ReentrantLock? = null,
     private val keyLocks: CodeModeKeyLocks = CodeModeKeyLocks(),
-    private val heap: HeapBudget = JvmHeap.budget,
+    private val heap: HeapReservations = JvmHeap.budget,
 ) {
     private val dir = location.dir
     private val legacyFile = location.legacyFile

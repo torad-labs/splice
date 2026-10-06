@@ -3,8 +3,8 @@
 package splice.provider.codex.state
 
 import kotlinx.serialization.json.Json
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapReservations
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.provider.codex.CodeModeExpiredSnapshot
@@ -22,7 +22,7 @@ internal class CodeModeStateDirectory(
     private val dir: Path,
     private val json: Json,
     private val log: LogSink,
-    private val heap: HeapBudget = JvmHeap.budget,
+    private val heap: HeapReservations = JvmHeap.budget,
 ) {
     data class Loaded(val state: CodeModePersistedState, val checkpoint: Boolean)
 

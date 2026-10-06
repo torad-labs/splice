@@ -13,6 +13,22 @@ import java.util.concurrent.TimeUnit
 
 class HeapBudgetTest {
     @Test
+    fun `read views cannot expose root availability or root shutdown`() {
+        val root = HeapBudget(256, 100)
+        val view = root.readShare()
+        try {
+            assertFalse(
+                HeapBudget::class.java.isAssignableFrom(view.javaClass),
+                "a read view must not satisfy a root-only waiting gate",
+            )
+            assertFalse(view.javaClass.methods.any { it.name == "getAvailable" })
+            assertFalse(AutoCloseable::class.java.isAssignableFrom(HeapBudget::class.java))
+        } finally {
+            view.close()
+        }
+    }
+
+    @Test
     fun `process reservations leave proportional room for uncharged live objects and copies`() {
         val heap = 8L * 1024 * 1024 * 1024
         val budget = HeapBudget(heap)
@@ -73,7 +89,6 @@ class HeapBudgetTest {
         assertNull(domain.reserve(56), "the closed view still debits its family's quota")
         escaped.close()
         escaped.close()
-        assertEquals(100, domain.available.value)
         assertEquals(100, root.available.value)
         val reused = domain.reserve(75)
         assertNotNull(reused, "the released output restores the whole domain quota")
@@ -94,7 +109,7 @@ class HeapBudgetTest {
             assertEquals(10, leases.size)
             assertEquals(30, root.available.value)
             leases.forEach(HeapLease::close)
-            views.forEach(HeapBudget::close)
+            views.forEach(HeapReadView::close)
             val reused = domain.reserve(75)
             assertNotNull(reused, "parallel output release restores the domain's whole quota")
             reused?.close()

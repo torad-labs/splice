@@ -1,11 +1,11 @@
 // NEW: snapshot preparation and encoding reserve their peaks before allocating or writing state.
 package splice.provider.codex.state.save
 
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.provider.codex.CodeModeExpiredSnapshot
 import splice.provider.codex.CodeModeNativeSegment
@@ -28,7 +28,7 @@ private const val SAVE_METADATA_BYTES = 4096L
 // why: aggregate references and temporary keyed maps survive apart from snapshot payloads.
 private const val SAVE_REFERENCE_BYTES = 128L
 
-internal class CodeModeSaveHeap(private val heap: HeapBudget) {
+internal class CodeModeSaveHeap(private val heap: HeapReservations) {
     /** Changed-field encoding grows to a checkpoint only after its exact append decision is known. */
     inner class Encoding(private val peak: HeapLease) : AutoCloseable {
         fun checkpoint(prior: CodeModeKeptState, cells: List<CodeModeRecordSnapshot>) {

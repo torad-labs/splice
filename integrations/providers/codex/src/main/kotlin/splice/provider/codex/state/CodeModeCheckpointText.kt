@@ -4,8 +4,8 @@ package splice.provider.codex.state
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
+import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.provider.codex.CodeModePersistedState
 
@@ -16,7 +16,7 @@ private const val CHECKPOINT_TEXT_FACTOR = 16L
 private const val CHECKPOINT_METADATA_BYTES = 256L
 
 /** Accumulates only the initial checkpoint. Journal deltas never enter this growing text. */
-internal class CodeModeCheckpointText(private val heap: HeapBudget) : AutoCloseable {
+internal class CodeModeCheckpointText(private val heap: HeapReservations) : AutoCloseable {
     private val peak = heap.reserve(CHECKPOINT_METADATA_BYTES * CHECKPOINT_TEXT_FACTOR)
         ?: throw HeapCapacityException()
     private val text = StringBuilder(0)

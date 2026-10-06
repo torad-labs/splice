@@ -18,10 +18,10 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.perf.PerfSnapshot
 import splice.core.turn.TurnMeta
 import splice.core.util.ERR_SNIPPET
@@ -214,7 +214,7 @@ public class TurnTrace internal constructor(
 }
 
 /** A text buffer that stops growing at [max] and remembers that it did. */
-private class BoundedText(private val max: Int, private val heap: HeapBudget) {
+private class BoundedText(private val max: Int, private val heap: HeapReservations) {
     private val text = StringBuilder()
     private val heapLease = HeapOwners.charge(text, heap, HeapJson.text(text) + text.capacity() * 2L)
     private var truncated = false

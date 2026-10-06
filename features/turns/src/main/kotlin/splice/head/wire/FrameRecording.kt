@@ -12,17 +12,17 @@ package splice.head.wire
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapJson
 import splice.core.memory.HeapOwners
+import splice.core.memory.HeapReservations
 import splice.core.util.Cancellables
 import splice.upstream.memory.JvmHeap
 
 // why: the array-list's reference and growth slack; escaped strings own their metadata separately.
 private const val FRAME_ENTRY_BYTES = 64L
 
-internal class FrameRecording(private val heap: HeapBudget = JvmHeap.budget) {
+internal class FrameRecording(private val heap: HeapReservations = JvmHeap.budget) {
 
     private data class Progress(val frames: Int, val complete: Boolean, val whole: Boolean = false)
 

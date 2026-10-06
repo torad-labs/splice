@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
+import splice.accounts.claude.ClaudeProfileState
 import splice.client.ClaudeHead
 import splice.client.ClaudeLoginTarget
 import splice.core.auth.CredentialKey
@@ -34,6 +35,97 @@ class ClaudeCredentialProfilesTest {
 
     private fun key(token: String): String =
         requireNotNull(CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $token")))
+
+    @Test
+    fun `profile state is scoped to the current credential and survives a refused token restart`() {
+        val profiles = ClaudeCredentialProfiles(state, {})
+        val pending = key("synthetic-pending")
+        val verified = key("synthetic-verified")
+        val refused = key("synthetic-refused")
+        assertEquals(ClaudeProfileState.PENDING, profiles.state(pending))
+        profiles.observed(verified, ClaudeAccountIdentity("synthetic-account", null))
+        profiles.failed(refused)
+        assertEquals(ClaudeProfileState.VERIFIED, profiles.state(verified))
+        assertEquals(ClaudeProfileState.REFUSED, profiles.state(refused))
+        val restarted = ClaudeCredentialProfiles(state, {})
+        assertEquals(ClaudeProfileState.REFUSED, restarted.state(refused))
+        assertEquals(ClaudeProfileState.PENDING, restarted.state(pending), "another token inherits no refusal")
+        val folder = Files.createDirectories(state.resolve("synthetic-login"))
+        Files.writeString(
+            folder.resolve(".credentials.json"),
+            """{"claudeAiOauth":{"accessToken":"synthetic-refused"}}""",
+        )
+        val location = ClaudeLoginLocation(
+            ClaudeLoginPlaceId.NATIVE,
+            ClaudeLoginTarget(ClaudeHead("synthetic-head", folder), folder.resolve("account.json")),
+            state.resolve("copies"),
+        )
+        val reader = ClaudeLoginFactsReader(restarted)
+        assertEquals(ClaudeProfileState.REFUSED, reader.read(location).profileState)
+        Files.writeString(
+            folder.resolve(".credentials.json"),
+            """{"claudeAiOauth":{"accessToken":"synthetic-verified"}}""",
+        )
+        assertEquals(ClaudeProfileState.VERIFIED, reader.read(location).profileState)
+    }
+
+    @Test
+    fun `a permanent runtime refusal remains refused when its durable cache cannot be written`() = runTest {
+        Files.writeString(state.resolve("claude-credential-identities"), "synthetic obstructing file")
+        val profiles = ClaudeCredentialProfiles(state, {})
+        val refresh = ClaudeIdentityRefresh(
+            backgroundScope,
+            StandardTestDispatcher(testScheduler),
+            profiles,
+            ClaudeProfileCall { null },
+            {},
+        )
+        val digest = key("synthetic-unpersisted-refusal")
+        assertNull(refresh.request(digest, "synthetic-unpersisted-refusal").await())
+        assertEquals(ClaudeProfileState.REFUSED, refresh.state(digest))
+        assertEquals(
+            ClaudeProfileState.PENDING,
+            profiles.state(digest),
+            "disk alone cannot report the unwritten refusal",
+        )
+    }
+
+    @Test
+    fun `a corrupt saved profile is pending rather than a fabricated refusal`() {
+        val profiles = ClaudeCredentialProfiles(state, {})
+        val digest = key("synthetic-corrupt")
+        profiles.failed(digest)
+        val file = state.resolve("claude-credential-identities").resolve("$digest.json")
+        Files.writeString(file, "{ broken")
+        assertEquals(ClaudeProfileState.PENDING, profiles.state(digest))
+    }
+
+    @Test
+    fun `in flight and transient backoff profile reads remain pending without another provider call`() = runTest {
+        val profiles = ClaudeCredentialProfiles(state, {})
+        val release = CompletableDeferred<Unit>()
+        var calls = 0
+        val refresh = ClaudeIdentityRefresh(
+            backgroundScope,
+            StandardTestDispatcher(testScheduler),
+            profiles,
+            ClaudeProfileCall {
+                calls++
+                release.await()
+                throw java.io.IOException("synthetic transient body must not leave")
+            },
+            {},
+        )
+        val digest = key("synthetic-active")
+        val pending = refresh.request(digest, "synthetic-active")
+        runCurrent()
+        assertEquals(ClaudeProfileState.PENDING, refresh.state(digest))
+        release.complete(Unit)
+        assertNull(pending.await())
+        assertEquals(ClaudeProfileState.PENDING, refresh.state(digest))
+        repeat(3) { assertNull(refresh.request(digest, "synthetic-active").await()) }
+        assertEquals(1, calls)
+    }
 
     @Test
     fun `the product profile uses the supplied bearer and only an observed client User Agent`() = runTest {
@@ -195,6 +287,7 @@ class ClaudeCredentialProfilesTest {
         repeat(3) { assertNull(first.request(digest, "synthetic-transient-token").await()) }
         assertEquals(1, calls)
         assertFalse(profiles.attempted(digest), "transient failures cannot persist a refusal")
+        assertEquals(ClaudeProfileState.PENDING, profiles.state(digest), "transient backoff remains pending")
         val restarted = runtime()
         repeat(3) { assertNull(restarted.request(digest, "synthetic-transient-token").await()) }
         assertEquals(2, calls)
@@ -230,6 +323,7 @@ class ClaudeCredentialProfilesTest {
         repeat(3) { assertNull(first.request(digest, "synthetic-forbidden-token").await()) }
         assertEquals(1, calls)
         assertNull(profiles.read(digest))
+        assertEquals(ClaudeProfileState.REFUSED, first.state(digest))
         val restarted = runtime()
         repeat(3) { assertNull(restarted.request(digest, "synthetic-forbidden-token").await()) }
         assertEquals(1, calls)

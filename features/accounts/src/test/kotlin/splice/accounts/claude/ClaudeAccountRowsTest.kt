@@ -44,6 +44,30 @@ class ClaudeAccountRowsTest {
     )
 
     @Test
+    fun `native rows distinguish a verified profile from an unresolved profile`() {
+        val pending = ClaudeLoginPlaceView(
+            ClaudeLoginPlaceId.NATIVE,
+            "synthetic-client",
+            "/synthetic/login",
+            true,
+            null,
+            null,
+            ClaudeLoginStanding(null, null),
+        )
+        val verified = pending.copy(
+            account = ClaudeAccountIdentity("synthetic-account", null),
+            profileState = ClaudeProfileState.VERIFIED,
+        )
+        val refused = pending.copy(profileState = ClaudeProfileState.REFUSED)
+        for ((view, state) in listOf(pending to "pending", verified to "verified", refused to "refused")) {
+            val row = ClaudeLoginRows.json(view, "synthetic-provider", null, 100)
+            assertEquals(state, row.getValue("profile_state").jsonPrimitive.content)
+            assertFalse(row.toString().contains("credential_key"))
+            assertFalse(row.toString().contains("accessToken"))
+        }
+    }
+
+    @Test
     fun `a client kind head exposes its real added pool login beside the native place`() = runBlocking {
         val native = ClaudeLoginPlaceView(
             ClaudeLoginPlaceId.NATIVE,

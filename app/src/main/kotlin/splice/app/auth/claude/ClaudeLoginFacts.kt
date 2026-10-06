@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonIgnoreUnknownKeys
 import kotlinx.serialization.json.decodeFromStream
 import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.claude.ClaudeProfileState
 import splice.core.auth.CredentialKey
 import splice.core.util.Cancellables
 import java.nio.file.Files
@@ -29,6 +30,7 @@ internal data class ClaudeLoginFacts(
     val account: ClaudeAccountIdentity?,
     val key: String?,
     val refusal: String? = null,
+    val profileState: ClaudeProfileState = ClaudeProfileState.PENDING,
 )
 
 /** Streaming typed reads skip unrelated settings and project histories instead of retaining their JSON trees. */
@@ -46,13 +48,22 @@ internal class ClaudeLoginFactsReader(
         val token = credential?.claudeAiOauth?.accessToken?.takeIf { it.isNotBlank() }
         val identity = token?.let(::identified)
         val failure = failures.firstOrNull { it !is NoSuchFileException }
+        val key = token?.let { CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $it")) }
         return ClaudeLoginFacts(
             present = credential != null || Files.exists(location.credentials, java.nio.file.LinkOption.NOFOLLOW_LINKS),
             account = identity,
-            key = token?.let { CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $it")) },
+            key = key,
             refusal = failure?.let { "native Claude login unreadable (${it::class.simpleName})" },
+            profileState = state(key, identity),
         )
     }
+
+    private fun state(key: String?, identity: ClaudeAccountIdentity?): ClaudeProfileState =
+        if (identity != null) {
+            ClaudeProfileState.VERIFIED
+        } else {
+            key?.let { profileRefresh?.state(it) ?: profiles?.state(it) } ?: ClaudeProfileState.PENDING
+        }
 
     /** Only a profile verified for this folder's actual token proves its account. Copied settings prove nothing. */
     fun identity(configDir: Path): ClaudeAccountIdentity? = token(configDir)?.let(::identified)

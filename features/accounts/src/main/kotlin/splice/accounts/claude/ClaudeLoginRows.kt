@@ -57,6 +57,7 @@ internal object ClaudeLoginRows {
         put("label", view.id.wire)
         put("display_name", view.management?.displayName ?: view.id.command)
         put("identity_verified", view.account != null)
+        put("profile_state", view.profileState.wire)
         put("can_remove", view.management?.canRemove == true)
         put("can_rename", view.management?.canRename == true)
         putJsonObject("edit_target") {

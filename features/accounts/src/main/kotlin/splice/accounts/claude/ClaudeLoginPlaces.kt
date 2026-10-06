@@ -31,6 +31,9 @@ public data class ClaudeLoginPlaceView(
     val standing: ClaudeLoginStanding,
     val refusal: String? = null,
     val management: ClaudeLoginManagement? = null,
+    /** Verified identity, an outstanding/transient profile read, or this credential's durable refusal. */
+    val profileState: ClaudeProfileState =
+        if (account != null) ClaudeProfileState.VERIFIED else ClaudeProfileState.PENDING,
 )
 
 /** The app owns native files and login processes; the feature owns HTTP presentation and validation. */

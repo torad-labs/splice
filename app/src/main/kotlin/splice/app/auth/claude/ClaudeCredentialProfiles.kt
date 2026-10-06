@@ -17,6 +17,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonIgnoreUnknownKeys
 import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.claude.ClaudeProfileState
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
@@ -78,6 +79,16 @@ internal class ClaudeCredentialProfiles(private val stateDir: Path, private val 
     }
 
     fun attempted(key: String): Boolean = Files.exists(file(key))
+
+    /** Classification follows the persisted document, not file existence or a copied settings identity. */
+    fun state(key: String): ClaudeProfileState = try {
+        val account = json.decodeFromString<ClaudeProfileAccount>(Files.readString(file(key)))
+        if (account.uuid.isNullOrBlank()) ClaudeProfileState.REFUSED else ClaudeProfileState.VERIFIED
+    } catch (_: java.io.IOException) {
+        ClaudeProfileState.PENDING
+    } catch (_: kotlinx.serialization.SerializationException) {
+        ClaudeProfileState.PENDING
+    }
 
     private fun write(key: String, record: ClaudeProfileAccount) {
         Cancellables.runCatchingCancellable {
@@ -174,6 +185,14 @@ internal class ClaudeIdentityRefresh(
             failures[key] = until
         }
         if (until == null) profiles.failed(key)
+    }
+
+    /** A failed durable write cannot turn this runtime's permanent refusal back into pending. */
+    fun state(key: String): ClaudeProfileState {
+        val persisted = profiles.state(key)
+        if (persisted != ClaudeProfileState.PENDING) return persisted
+        val refused = synchronized(failures) { key in failures && failures[key] == null }
+        return if (refused) ClaudeProfileState.REFUSED else ClaudeProfileState.PENDING
     }
 
     fun request(key: String, token: String): Deferred<ClaudeAccountIdentity?> = active[key]

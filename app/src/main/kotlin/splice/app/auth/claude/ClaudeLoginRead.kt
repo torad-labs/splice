@@ -124,6 +124,7 @@ internal class ClaudeLoginRead(
                 untilEpochSeconds = until,
             ),
             refusal = native.refusal,
+            profileState = native.profileState,
             management = names?.let {
                 ClaudeLoginManagement(name ?: location.id.command, native.present, name != null)
             },

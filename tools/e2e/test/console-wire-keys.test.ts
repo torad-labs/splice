@@ -108,6 +108,28 @@ test("the production Sessions probe derives the optional closed account_state sl
   expect(states.sort()).toEqual(["history_limited", "known", "none"]);
 }, 30_000);
 
+test("the production Accounts probe derives the native-only closed profile_state slot from the API type", () => {
+  const root = findRepoRoot(import.meta.dir);
+  const configPath = join(root, "console-next/tsconfig.json");
+  const config = ts.readConfigFile(configPath, ts.sys.readFile);
+  if (config.error !== undefined) throw new Error("console config must be readable");
+  const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, join(root, "console-next"));
+  const program = ts.createProgram(parsed.fileNames, parsed.options);
+  const checker = program.getTypeChecker();
+  const site = enumerate(program).calls.find(call => call.typeText === "AccountsWire");
+  if (site === undefined) throw new Error("the real Accounts client read must be enumerated");
+  const accounts = checker.getPropertyOfType(site.type, "accounts");
+  if (accounts === undefined) throw new Error("AccountsWire must carry account rows");
+  const row = checker.getIndexTypeOfType(checker.getTypeOfSymbol(accounts), ts.IndexKind.Number);
+  if (row === undefined) throw new Error("the Accounts payload must carry an array");
+  const state = checker.getPropertyOfType(row, "profile_state");
+  if (state === undefined) throw new Error("the probe must derive profile_state from the production API type");
+  expect(state.flags & ts.SymbolFlags.Optional).not.toBe(0);
+  const type = checker.getTypeOfSymbol(state);
+  const states = type.isUnion() ? type.types.filter(member => member.isStringLiteral()).map(member => (member as ts.StringLiteralType).value) : [];
+  expect(states.sort()).toEqual(["pending", "refused", "verified"]);
+}, 30_000);
+
 test("the relocated console probe discovers its sources from an unrelated cwd", () => {
   const replay = mkdtempSync(join(tmpdir(), "console-wire-keys-replay-"));
   try {

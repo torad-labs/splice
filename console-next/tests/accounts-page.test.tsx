@@ -9,7 +9,8 @@ import { budgetsKey } from '../src/api/usage';
 import { AccountCard } from '../src/pages/accounts/AccountCard';
 import { AccountsPage } from '../src/pages/accounts/AccountsPage';
 import { FailoverOrder } from '../src/pages/accounts/FailoverOrder';
-import type { AccountRow } from '../src/types/accounts';
+import { accountsFromWire } from '../src/lib/accounts';
+import type { AccountRow, AccountWire, ClaudeProfileState } from '../src/types/accounts';
 
 const now = Date.parse('2026-10-04T06:00:00Z');
 const SUBSCRIPTION = { uuid: 'one-subscription', email: 'synthetic@example.invalid' };
@@ -79,14 +80,45 @@ test('native cards mark only the login whose credential carried the newest match
   expect(card(null)).not.toContain('known login used this login.');
 });
 
-test('an unidentified Claude folder login states the missing identity while keeping its one sign-in remedy', () => {
-  const card = (identity_verified: boolean) => renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
-    <AccountCard account={{ ...claudeLogin('claude-splice'), identity_verified, account: null, available: false,
-      refusal: 'Access token expired. Sign in again on claude-splice in the console.' }} place="claude-splice" colour="claude" now={now} />
+function profileCard(profile_state: ClaudeProfileState, available = false): string {
+  const wire: AccountWire = {
+    ...claudeLogin('claude-splice'), profile_state, available,
+    identity_verified: profile_state === 'verified',
+    account: profile_state === 'verified' ? { ...SUBSCRIPTION, email: null } : null,
+    plan: null, five_hour_used_percent: null, five_hour_reset_epoch_seconds: null, five_hour_window_seconds: null,
+    seven_day_used_percent: null, seven_day_reset_epoch_seconds: null, seven_day_window_seconds: null,
+    five_hour_current: false, seven_day_current: false, observed_at_epoch_seconds: null,
+    auth_excluded_until_epoch_millis: null, auth_exclusion_reason: null,
+    refusal: 'Access token expired. Sign in again on claude-splice in the console.',
+  };
+  const [account] = accountsFromWire({ accounts: [wire] }).accounts;
+  if (account === undefined) throw new Error('the raw profile fixture must produce an account row');
+  return renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}>
+    <AccountCard account={account} place="claude-splice" colour="claude" now={now} />
   </QueryClientProvider>);
-  expect(card(false)).toContain('Login not identified yet.');
-  expect(card(false)).toContain('Sign in again on claude-splice in the console.');
-  expect(card(true)).not.toContain('Login not identified yet.');
+}
+
+test.each([
+  ['pending', 'Login not identified yet. The profile read is pending.'],
+  ['refused', 'The profile read was refused for this login’s current token.'],
+  ['verified', null],
+] as const)('the raw %s profile wire state controls only the unidentified line', (state, sentence) => {
+  const html = profileCard(state);
+  if (sentence === null) {
+    expect(html).not.toContain('Login not identified');
+    expect(html).not.toContain('The profile read');
+  } else {
+    expect(html).toContain(sentence);
+  }
+  if (state === 'refused') expect(html).not.toContain('yet');
+  if (state === 'pending') expect(html).not.toContain('The profile read was refused');
+  expect(html).toContain('Sign in again on claude-splice in the console.');
+});
+
+test.each([false, true])('a generic refusal or takeover availability cannot classify a pending profile: available=%s', available => {
+  const html = profileCard('pending', available);
+  expect(html).toContain('Login not identified yet. The profile read is pending.');
+  expect(html).not.toContain('The profile read was refused');
 });
 
 test('native takeover status follows availability, not a credential file’s presence', () => {

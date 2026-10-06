@@ -45,7 +45,7 @@ export function AccountCard({ account, place, colour, now, commandLabels, localR
   return (
     <Window as="li" colour={colour} className="card account-card" attention={lastRefusal !== null || (place !== undefined ? account?.available === false : !localRuntime && (refused || excluded || held || present === false))}>
       <div className="bar"><h3>{name}</h3><State tone={lastRefusal !== null ? quotaRefused ? 'quota' : 'stuck' : place !== undefined ? account?.available === true ? 'work' : account?.available === false ? 'stuck' : 'wait' : localRuntime ? 'idle' : refused || excluded ? 'stuck' : held ? 'quota' : present ? 'work' : present === false ? 'stuck' : 'wait'}>{state}</State></div>
-      {email === null ? place !== undefined && account?.identity_verified === false ? <p className="quiet-line">{A.unidentified}</p> : null : <p className="quiet-line">{email}</p>}
+      {email === null ? place !== undefined && (account?.profile_state === 'pending' || account?.profile_state === 'refused') ? <p className="quiet-line">{account.profile_state === 'refused' ? A.profileRefused : A.unidentified}</p> : null : <p className="quiet-line">{email}</p>}
       <div className="account-place">
         {place === undefined ? <p>{commands}{account?.plan ? ` · ${account.plan}` : ''}</p> : <><b>{LOGIN.loginName(place)}</b><p>{place === 'claude' ? A.nativeWhy : A.spliceWhy}</p></>}
       </div>

@@ -32,7 +32,7 @@ async function nativePool(page: Page) {
         ...base, provider: 'anthropic', kind: 'client', heads: ['claude-splice'], label: id, selector_key: 'native:' + id,
         display_name: index === 0 ? 'Personal login' : 'Separate login', login_place: { id, command: id },
         edit_target: { kind: 'native', id }, can_rename: true, can_remove: true, credential_present: true,
-        account: { uuid: 'synthetic-native-' + id, email: null }, identity_verified: false,
+        account: { uuid: 'synthetic-native-' + id, email: null }, identity_verified: false, profile_state: 'pending',
         selected: index === 0, carrying_request: index === 0, available: index === 0, pinned: false, next_target: index === 0,
         refusal: index === 0 ? null : 'Access token expired. Sign in again on claude-splice in the console.',
         five_hour_used_percent: null, five_hour_reset_epoch_seconds: null, five_hour_window_seconds: null,
@@ -166,6 +166,38 @@ test('native takeover availability keeps the expired login remedy reachable and 
   nativeLogin(state.rows, 'claude-splice').available = null;
   await page.reload();
   await expect(separate.locator('.state')).toHaveText('Takeover status not reported');
+  await assertHealthy(page, faults);
+});
+
+test('Accounts explains the current token profile state without turning a profile refusal into a request refusal', async ({ page }) => {
+  const state = await nativePool(page);
+  const faults = await open(page, 'accounts');
+  const card = page.locator('.account-card').filter({ has: page.getByRole('heading', { name: 'Personal login', exact: true }) });
+  const row = nativeLogin(state.rows, 'claude');
+  await expect(card).toContainText('Login not identified yet.');
+  row.profile_state = 'refused';
+  await page.reload();
+  await expect(card).toContainText('The profile read was refused for this login’s current token.');
+  await expect(card).not.toContainText('Login not identified yet');
+  await expect(card.locator('.state')).toHaveText('Can take over');
+  await expect(card.getByRole('button', { name: 'Sign in again', exact: true })).toBeEnabled();
+  row.profile_state = 'verified';
+  row.identity_verified = true;
+  await page.reload();
+  await expect(card).not.toContainText('Login not identified');
+  await expect(card).not.toContainText('The profile read');
+  row.profile_state = 'pending';
+  row.identity_verified = false;
+  await page.reload();
+  await expect(card).toContainText('Login not identified yet. The profile read is pending.');
+  await expect(card).not.toContainText('The profile read was refused');
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1024 });
+    row.profile_state = 'refused';
+    await page.reload();
+    await expect(card).toContainText('The profile read was refused for this login’s current token.');
+    expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  }
   await assertHealthy(page, faults);
 });
 

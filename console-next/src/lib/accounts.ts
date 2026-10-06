@@ -409,6 +409,7 @@ function accountFromWire(wire: AccountWire): AccountRow {
     label: wire.label,
     ...(wire.display_name === undefined ? {} : { display_name: wire.display_name }),
     ...(wire.identity_verified === undefined ? {} : { identity_verified: wire.identity_verified }),
+    ...(wire.profile_state === undefined ? {} : { profile_state: wire.profile_state }),
     ...(wire.can_remove === undefined ? {} : { can_remove: wire.can_remove }),
     ...(wire.can_rename === undefined ? {} : { can_rename: wire.can_rename }),
     ...(wire.edit_target === undefined ? {} : { edit_target: wire.edit_target }),

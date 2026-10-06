@@ -109,6 +109,17 @@
 .kept-plans ul { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: grid; gap: var(--space-3); }
 .kept-plans li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); text-align: left; }
 .census { display: grid; gap: var(--space-3); justify-items: end; text-align: right; font: 500 0.96rem var(--meta); color: var(--body); }
+.compaction-report { padding: var(--space-10) 0; }
+.compaction-report h4, .compaction-recent caption { font: 600 1.1875rem/1.25 var(--read); color: var(--ink); text-align: left; }
+.compaction-report p { margin-top: var(--space-4); font: 400 1rem/1.5 var(--read); color: var(--body); }
+.compaction-outcomes { display: flex; flex-wrap: wrap; gap: var(--space-5) var(--space-9); list-style: none; margin: var(--space-7) 0 0; padding: 0; font: 500 0.96rem var(--meta); color: var(--body); }
+.compaction-outcomes li { white-space: nowrap; }
+.compaction-recent { max-width: 100%; overflow-x: auto; padding-bottom: var(--space-5); }
+.compaction-recent table { width: max-content; min-width: 100%; border-spacing: 0; text-align: left; font: 500 0.96rem var(--meta); color: var(--body); }
+.compaction-recent caption { padding-bottom: var(--space-7); }
+.compaction-recent th, .compaction-recent td { padding: var(--space-4) var(--space-9) var(--space-4) 0; white-space: nowrap; }
+.compaction-recent th { font-weight: 600; color: var(--mute); }
+.compaction-recent th:last-child, .compaction-recent td:last-child { padding-right: 0; text-align: right; }
 .row .ctl .fallback { min-width: 0; overflow-wrap: anywhere; font: 400 0.96rem/1.45 var(--read); color: var(--mute); }
 .recent { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); justify-items: end; font: 500 0.96rem var(--meta); color: var(--body); }
 .recent li { display: flex; gap: var(--space-5); align-items: center; flex-wrap: wrap; justify-content: flex-end; text-align: right; }

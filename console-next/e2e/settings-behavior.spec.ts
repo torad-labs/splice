@@ -33,6 +33,64 @@ async function topologyWrites(page: Page) {
   return writes;
 }
 
+test('Compaction report labels stand above complete single-line recent records', async ({ page }, testInfo) => {
+  const at = Date.now();
+  await page.route(url => url.pathname === '/api/compact', route => route.fulfill({ json: { stats: {
+    total: 3, by_outcome: { model_text: 1, model_thinking: 1, stream_error: 1 },
+    tail: [
+      { head: STACK.oauthHead, ts: at, outcome: 'model_thinking', ms: 33_456 },
+      { head: STACK.soloHead, ts: at - 1000, outcome: 'stream_error', ms: 111_111 },
+      { head: STACK.keyHead, ts: at - 2000, outcome: 'model_text', ms: 10_000 },
+    ],
+  } } }));
+  const faults = await open(page, 'settings/conversation');
+  const block = page.getByRole('region', { name: 'Compaction', exact: true });
+  await expect(block).toContainText('Summary from reasoning');
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    // Check the data geometry, not an implementation class: the rejected list puts durations
+    // on a second line and its Recent label beside the middle of the records.
+    const record = block.locator('tr, li').filter({ hasText: STACK.oauthHead }).filter({ hasText: 'Summary from reasoning' });
+    await expect(record).toHaveCount(1);
+    const geometry = await record.evaluate(element => {
+      const values = [...element.children].map(child => child.getBoundingClientRect());
+      const centres = values.map(value => value.y + value.height / 2);
+      const texts = [...element.children].map(child => {
+        const walker = document.createTreeWalker(child, NodeFilter.SHOW_TEXT);
+        const tops: number[] = [];
+        for (let text = walker.nextNode(); text !== null; text = walker.nextNode()) {
+          if (text.textContent?.trim() === '') continue;
+          const range = document.createRange();
+          range.selectNodeContents(text);
+          tops.push(...[...range.getClientRects()].map(rect => rect.y));
+        }
+        return tops;
+      });
+      return { count: values.length, spread: Math.max(...centres) - Math.min(...centres), lines: texts.map(tops => Math.max(...tops) - Math.min(...tops)), top: element.getBoundingClientRect().top };
+    });
+    expect(geometry.count).toBe(4);
+    expect(geometry.spread).toBeLessThan(2);
+    for (const spread of geometry.lines) expect(spread).toBeLessThan(2);
+    const recentLabel = block.getByText('Recent', { exact: true });
+    const label = await recentLabel.boundingBox();
+    expect((label?.y ?? 0) + (label?.height ?? 0)).toBeLessThanOrEqual(geometry.top);
+    const ended = block.getByRole('heading', { name: 'How they ended', exact: true });
+    const labelBottom = await ended.evaluate(element => element.getBoundingClientRect().bottom);
+    const valuesTop = await block.getByText('Summary written', { exact: true }).first().evaluate(element => element.getBoundingClientRect().top);
+    expect(labelBottom).toBeLessThan(valuesTop);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await block.screenshot({ path: testInfo.outputPath('compaction-report-' + width + '.png') });
+  }
+  const recent = block.getByRole('region', { name: 'Recent compactions', exact: true });
+  await recent.focus();
+  await expect(recent).toBeFocused();
+  const before = await recent.evaluate(element => element.scrollLeft);
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => recent.evaluate(element => element.scrollLeft)).toBeGreaterThan(before);
+  await expect(block.getByRole('table', { name: 'Recent', exact: true })).toBeVisible();
+  await assertHealthy(page, faults);
+});
+
 test('saved login copies remain listed when their last selection is not recorded', async ({ page }, testInfo) => {
   let selected: string | null = null;
   await page.route(url => url.pathname === '/api/claude-head', async route => {

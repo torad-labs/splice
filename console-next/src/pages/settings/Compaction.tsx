@@ -29,35 +29,33 @@ export function Compaction() {
       {stats.isError ? <p className="tip bad" role="alert">{failureText(stats.error)}</p> : null}
       {data === undefined ? null : (
         <>
-          <Row
-            title={W.outcomes}
-            why={compactLede(total, failed, week)}
-            control={
-              <span className="census">
-                {outcomeRows(counts).map(({ outcome, count }) => (
-                  <span key={outcome}><State tone={TONE[stateOf(outcome)]}>{outcomeText(outcome)}</State> {fmtInt(count)} · {shareText(count, total)}</span>
-                ))}
-                {median === null ? null : <span>{W.took} {secondsText(median)}</span>}
-              </span>
-            }
-          />
+          <div className="compaction-report">
+            <h4>{W.outcomes}</h4>
+            <p>{compactLede(total, failed, week)}</p>
+            <ul className="compaction-outcomes">
+              {outcomeRows(counts).map(({ outcome, count }) => (
+                <li key={outcome}><State tone={TONE[stateOf(outcome)]}>{outcomeText(outcome)}</State> {fmtInt(count)} · {shareText(count, total)}</li>
+              ))}
+            </ul>
+            {median === null ? null : <p>{W.took} {secondsText(median)}</p>}
+          </div>
           {recent.length === 0 ? null : (
-            <Row
-              title={W.recent}
-              why=""
-              control={
-                <ul className="recent">
+            <div className="compaction-recent" role="region" aria-label={W.recentRegion} tabIndex={0}>
+              <table>
+                <caption>{W.recent}</caption>
+                <thead><tr><th scope="col">{W.time}</th><th scope="col">{W.command}</th><th scope="col">{W.outcomeColumn}</th><th scope="col">{W.duration}</th></tr></thead>
+                <tbody>
                   {recent.map((row) => (
-                    <li key={`${row.head}-${row.ts}`}>
-                      <span>{clockTime(row.ts)}</span>
-                      <span>{labelOf(row.head)}</span>
-                      <State tone={TONE[stateOf(row.outcome ?? '')]}>{outcomeText(row.outcome ?? row.error ?? '')}</State>
-                      <span>{row.ms === undefined ? '' : secondsText(row.ms)}</span>
-                    </li>
+                    <tr key={`${row.head}-${row.ts}`}>
+                      <td>{clockTime(row.ts)}</td>
+                      <td>{labelOf(row.head)}</td>
+                      <td><State tone={TONE[stateOf(row.outcome ?? '')]}>{outcomeText(row.outcome ?? row.error ?? '')}</State></td>
+                      <td>{row.ms === undefined ? W.durationMissing : secondsText(row.ms)}</td>
+                    </tr>
                   ))}
-                </ul>
-              }
-            />
+                </tbody>
+              </table>
+            </div>
           )}
         </>
       )}

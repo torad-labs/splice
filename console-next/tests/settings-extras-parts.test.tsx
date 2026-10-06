@@ -7,6 +7,7 @@ import { describe, expect, test } from 'vitest';
 import { collapseChecks } from '../src/lib/doctor';
 import { CheckMembers } from '../src/pages/settings/CheckMembers';
 import { ClaudeHead } from '../src/pages/settings/ClaudeHead';
+import { Compaction } from '../src/pages/settings/Compaction';
 import { Upgrade } from '../src/pages/settings/Upgrade';
 import type { ClaudeHeadPayload } from '../src/types/claude-head';
 import type { DoctorCheck, UpgradePayload, UpgradeRun } from '../src/types/doctor';
@@ -78,6 +79,31 @@ describe('the claude command row', () => {
 
   test('a claude that is not on the path says so rather than printing a blank', () => {
     expect(render(<ClaudeHead />, seedCard(card({ resolves_to: null, claude_logins: { count: 0, selected: null, labels: [], constraint: '' } })))).toContain('Nothing named claude');
+  });
+});
+
+describe('the compaction report', () => {
+  const report = (tail: { head: string; ts: number; outcome?: string; ms?: number }[]): string => render(<Compaction />, client => {
+    client.setQueryData(['compact'], { stats: { total: tail.length, by_outcome: { model_text: tail.length }, tail } });
+    client.setQueryData(['compaction-instructions'], { rules: [], unread: [] });
+  });
+  test('recent records have named time, command, outcome and duration columns', () => {
+    const html = report([
+      { head: 'synthetic-long-command', ts: 2, outcome: 'model_text', ms: 10_000 },
+      { head: 'synthetic-other-command', ts: 1, outcome: 'empty_model' },
+    ]);
+    expect(html).toContain('<caption>Recent</caption>');
+    for (const label of ['Time', 'Command', 'Outcome', 'Duration']) expect(html).toContain(`<th scope="col">${label}</th>`);
+    expect(html).toContain('synthetic-long-command');
+    expect(html).toContain('Summary written');
+    expect(html).toContain('Empty reply');
+    expect(html).toContain('Not reported');
+    expect(html).toContain('<h4>How they ended</h4>');
+  });
+  test('an empty report keeps its explanation and has no invented recent records', () => {
+    const html = report([]);
+    expect(html).toContain('No compaction has run yet.');
+    expect(html).not.toContain('<caption>Recent</caption>');
   });
 });
 

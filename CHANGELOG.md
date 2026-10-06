@@ -10,8 +10,10 @@
 - **Account pools on the ChatGPT, Grok, Kimi, Muse and Claude heads.** OAuth heads add labelled
   accounts through `splice login <head> --label <name>`. Claude heads add accounts from Accounts,
   and `claude-splice` can also select plain claude’s login and claude-splice’s own login without
-  refreshing their credentials. Selection is per head and sticky per session; a pin or saved order
-  takes priority, and the default fallback prefers usable quota whose weekly reset comes soonest.
+  refreshing their credentials. Selection is per head and sticky per session. Logins without a
+  full usage reading are preferred, with pins or saved orders guiding selection among them. The
+  default fallback prefers the next reset in either plan window. A full reading alone does not
+  block a turn.
 - **Local models are first-class** on the `openai-chat` dialect. splice asks the runtime what it
   serves and refuses a model Ollama, LM Studio or vLLM does not list. With `slot_affinity = true`,
   llama-server conversations keep their own slot. Local heads
@@ -386,9 +388,10 @@ origin.
   be read is reported as a read error with the coverage marked unknown, never as short retention;
   when none of a head's perf files holds a valid row, it says "no valid perf rows read" with the skipped count
   (`skipped_lines`), never "no perf rows recorded yet".
-  Empty data is reported as empty, never as zero-latency traffic. Reads stream the
-  files, never hold a generation whole, and a rotation during the read is read again. `splice
-  perf` is read-only and refuses malformed flags.
+  Empty data is reported as empty, never as zero-latency traffic. Performance records keep an
+  explicit permanent or retryable failure decision when one was observed, including when the
+  client disconnects. Reads stream the files, never hold a generation whole, and a rotation during
+  the read is read again. `splice perf` is read-only and refuses malformed flags.
 - **`/login` inside a head starts over, and can name an account.** A second `/login` while a
   sign-in was still waiting for its browser callback used to die silently on the callback port
   while the hook promised a browser; on Linux the waiting sign-in started by an earlier hook is cancelled first and the reply
@@ -432,11 +435,12 @@ origin.
   `<kind>/<primary file name>/` next to the primary credential file, by default
   `~/.config/splice/auth/chatgpt-oauth/codex.json/`. Heads sharing a credential share its pool;
   same-kind heads with different credential files do not; the first login stays the primary in the file it always
-  had, so nothing migrates. Selection is per turn and sticky per session: a session keeps its account
-  until its window reaches 100 %, its own credential is rejected, or a 429's `Retry-After` exceeds 15 s,
-  then the next turn tries a usable account in the saved order, or defaults to the soonest weekly
-  reset with the five-hour reset breaking ties. A manual pin comes first. With no saved order,
-  a session keeps its usable account rather than returning to the primary at every reset. A turn
+  had, so nothing migrates. Selection is per turn and sticky per session. A full usage reading
+  prefers another free login, but never blocks a turn by itself. If the current login's own
+  credential is rejected or a 429's `Retry-After` exceeds 15 s, the next turn tries a usable account
+  in the saved order, or defaults to the soonest reset in either plan window. Among the preferred
+  free logins, a manual pin comes first. With no saved order, a session keeps its usable account
+  rather than returning to the primary at every reset. A turn
   in flight finishes where it started; the first turn after a switch is accounted as cache-cold and
   its perf row names the account. When every account is out the turn fails honestly, naming the
   earliest reset. A credential is only ever used by the kind it carries; a mislabeled file is refused.
@@ -451,7 +455,8 @@ origin.
   the wrong kind or label is still refused. Per-session account stickiness is kept for at most
   4096 sessions, least recently used first out.
   The status line names the session's account and why it switched. `splice status` and
-  `splice doctor` show the head's accounts and its last automatic switch.
+  `splice doctor` show the head's accounts and its last automatic switch. Doctor names the login
+  carrying requests and reports each retained refusal under its owning head or account.
   Labeled credential files are read without following symlinks (a linked file is never loaded and is listed as refused with a reason in the console and
   `/api/accounts`; its label stays taken, so a new sign-in never reuses it), matching how they are written; the primary file is resolved as before.
   A 401 rejecting the account's own credential excludes future turns from that account,
@@ -583,11 +588,18 @@ origin.
   request path, and a rate-limited mint is held rather than retried.
 
 ### Changed
-- **Trace bodies use a compressed v2 daily pack.** JSONL rows refer to deterministic chunks
-  targeting 8 KiB, stored once as zstd frames in `.jsonl.bodies2`. Identical bodies and unchanged
-  regions share chunks. The pack remains bounded to 1 GiB per head and UTC day; reaching that
-  budget records an unavailable body and logs the cause once that day. Existing v1 `.jsonl.bodies`
-  and inline rows remain readable, and retention or purge removes both pack formats with the day.
+- **Trace bodies use compressed daily packs with one shared rolling budget.** JSONL rows refer to
+  deterministic chunks targeting 8 KiB, stored once as zstd frames in `.jsonl.bodies2`. Identical
+  bodies and unchanged regions share chunks. Body packs across all heads share a 32 GiB budget.
+  New body writes preserve a 64 GiB free-space floor on the trace volume. Pressure removes the oldest
+  completed UTC day's body packs across heads. The current UTC day's packs are protected, and
+  JSONL records survive body eviction. An evicted or refused body is marked unavailable with its reason.
+  Existing v1 `.jsonl.bodies` and inline rows remain readable, and retention or purge removes
+  both pack formats with the day.
+- **Trace lists retain metadata, not whole conversations.** Trace API lists and `splice trace`
+  tables validate compressed body references in bounded chunks without assembling
+  their body text. A single-turn view still reads the stored bodies. Body literals and retained
+  metadata keep their heap charges while held.
 - **Build and runtime dependency pins are updated.** Kotlin 2.3.21, Ktor 3.6.0, coroutines 1.11.0,
   serialization 1.11.0, GraalJS 25.3.4.1, Netty 4.2.17.Final and Jackson 2.21.5 match main's
   dependency baseline. Trace compression adds zstd-jni 1.5.7-18.
@@ -615,11 +627,15 @@ origin.
   known-alive cells are not reclaimed by that idle sweep. A host that dies fails only its own
   cells, including ones waiting for source; their next cells boot a fresh host in the same slot,
   without rerunning lost source. `Promise.all` and `Promise.allSettled` still dispatch as one batch.
+  Saved code-mode state accepts additional fields from newer writers. Malformed or incomplete
+  records still fail validation.
 - **Claude Code shows a code-mode script as it is written.** While a GPT model writes its `exec`
   script, Claude Code displays the source in a live thinking block. A tool call dispatched by
   the script closes and signs that block; remaining script text continues in the next client
   step. The block carries splice's notice signature and is never sent upstream as model
   reasoning. Script text held between client steps has a separate byte budget from model output.
+  Completed source usage is counted once. Source replies stopped before completion are counted,
+  while their token usage stays unreported when no usage arrived.
 - **The console is rebuilt, and the daemon serves the copy packaged in its jar.** The old console
   is removed. The daemon no longer looks for a console build beside the directory it was started
   from, a lookup that broke once a restart started the daemon from the home directory. To serve
@@ -711,7 +727,9 @@ origin.
   instead of an empty or uncertified raw input. The retained raw item is unchanged; replaying
   history never reruns the JavaScript. The daemon logs the structural interruption cause,
   including failure class, permanence, provider attribution or incomplete terminal shape,
-  without copying script source or upstream message text into that diagnostic.
+  without copying script source or upstream message text into that diagnostic. History warnings
+  include a short session tag and available native replay rejection details, without logging the
+  native payload.
 - **Code-mode turns chain on the WebSocket again.** On a code-mode turn every GPT tool call is `exec`, a custom tool,
   and the chaining check knew only function calls, so each round after an `exec` re-sent the whole
   conversation instead of the script's output (103 of 6,877 WebSocket rounds chained). A round now
@@ -745,11 +763,11 @@ origin.
 - **`splice status` no longer calls a head ready when it cannot answer a turn.** A head whose
   provider refuses every turn until a reset (a spent weekly plan) reads `out of quota until` that
   reset, in the machine's own time zone, and `/health` and the usage view carry the same instant.
-  splice learns it from the refusal, keeps it across a restart, and also reads it from the
-  provider's own quota figure at 100% before any turn has been refused. A local head whose runtime
-  does not answer reads `runtime not answering on :<port>`, and Settings under Health reports it down.
-  The first turn after a restart still goes to the provider, so a plan that resets early is used
-  at once.
+  splice learns it from the refusal and keeps it across a restart. A full quota reading guides
+  account preference but never blocks a turn by itself. A saved native refusal stays scoped to the
+  login that received it and can still answer its first request after restart without contacting
+  the provider. A local head whose runtime does not answer reads `runtime not answering on :<port>`,
+  and Settings under Health reports it down.
 - **`splice doctor` gives the daemon's own fix for a splice.toml value of the wrong type.** It
   pointed at a file inside splice's source tree and suggested deleting the config; it now names the
   key, the line and the expected type, and says what to write, in the words the daemon prints when

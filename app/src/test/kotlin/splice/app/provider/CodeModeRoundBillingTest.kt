@@ -36,6 +36,7 @@ import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -56,6 +57,7 @@ import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.reasoning.ReasoningReplay
+import splice.core.turn.HeadStopSignal
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnMeta
@@ -1213,6 +1215,58 @@ class CodeModeFirstStepBillingTest {
         rejectFirstStep(tmp, reported = false, CancellationException("synthetic first-step cancellation"))
     }
 
+    @Test
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `head restart during first admission cancels its live source without counting a client cut`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val upstream = BillingUpstream()
+        val ws = BillingWsRunner()
+        val runtime = FirstStepBillingRuntime(IOException("synthetic admission must remain pending"))
+        val bridge = CodexCodeModeBridge(
+            CodeModeBridgeConfig(
+                runtimes = { runtime },
+                state = CodeModeStateLocation(tmp.resolve("records"), tmp.resolve("legacy.json")),
+            ),
+        )
+        val delegate = withWs(upstream.url, bridge, ws)
+        val stopped = object : Provider by delegate {
+            override val watchdog = WatchdogBudget(120.seconds, 120.seconds, 120.seconds)
+        }
+        val head = HeadServer(stopped, 0, headDeps(tmp))
+        val client = HttpClient(CIO) {
+            engine { requestTimeout = TimeUnit.SECONDS.toMillis(BILLING_TEST_SECONDS) }
+        }
+        try {
+            head.start()
+            val url = "http://127.0.0.1:${head.port}/v1/messages"
+            val first = async {
+                try {
+                    send(client, url, listOf(message("user", JsonPrimitive("read the synthetic fixture"))))
+                } catch (_: IOException) {
+                    ""
+                }
+            }
+            withTimeout(TURN_BOUND_MS) { runtime.started.await() }
+            val round = billingRound(bridge)
+            val reader = billingField(round, "finished") as kotlinx.coroutines.Deferred<*>
+            assertTrue(reader.isActive, "restart must begin while source generation is still active")
+            head.stop()
+            val posting = rows(tmp, 1).single()
+            assertHeadRestartBill(posting)
+            assertTrue(reader.isCancelled)
+            assertEquals(1, ws.aborts.get())
+            assertEquals(1, ws.posts.get())
+            assertEquals(0, upstream.posts.get())
+            first.cancelAndJoin()
+        } finally {
+            runtime.reject.complete(Unit)
+            head.stop()
+            client.close()
+            upstream.close()
+        }
+    }
+
     private suspend fun rejectFirstStep(
         tmp: Path,
         reported: Boolean,
@@ -1266,6 +1320,111 @@ class CodeModeFirstStepBillingTest {
             upstream.close()
         }
     }
+}
+
+/** A retained reader keeps its generation even when the reusable head accepts a new source. */
+class CodeModeHeadGenerationBillingTest {
+    @ParameterizedTest
+    @ValueSource(strings = ["cancel", "stopClientStep", "lease", "cell-close"])
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `a restarted head keeps old source cuts head owned and new source cuts client owned`(
+        cancellation: String,
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val fixture = HeadGenerationBillingFixture(tmp)
+        try {
+            fixture.head.start()
+            val old = fixture.startSource("synthetic old generation")
+            assertHeldBillingSource(old)
+            fixture.nextGeneration()
+            assertTrue(fixture.reader(old).isActive, "the old independent reader must survive the driver restart")
+            val next = fixture.startSource("synthetic next generation", old)
+            assertHeldBillingSource(next)
+            val oldSignal = billingField(old, "headStop") as HeadStopSignal
+            val nextSignal = billingField(next, "headStop") as HeadStopSignal
+            assertNotSame(oldSignal, nextSignal, "the real head start must replace, never reset, its signal")
+            assertTrue(oldSignal.isStopping, "starting another generation cannot reopen an old round")
+            assertFalse(nextSignal.isStopping, "a new client source belongs to the new live generation")
+            fixture.cut(old, cancellation)
+            fixture.cut(next, cancellation)
+            assertFalse(fixture.takeCut(old), "the surviving old source is head-owned")
+            assertTrue(fixture.takeCut(next), "the new source still records a genuine client cut")
+            assertFalse(fixture.takeCut(next), "the new client cut is consumed once")
+            assertTrue(fixture.reader(old).isCancelled)
+            assertTrue(fixture.reader(next).isCancelled)
+        } finally {
+            fixture.close()
+        }
+    }
+}
+
+private class HeadGenerationBillingFixture(tmp: Path) {
+    private val upstream = BillingUpstream()
+    private val runtime = StatementGatewayRuntime()
+    private val bridge = billingBridge(tmp, runtime)
+    private var source = BillingWsRunner()
+    private val delegate = provider(upstream.url, bridge)
+
+    private val rotating = object : Provider by delegate {
+        override val wsRunner: WsRoundRunner get() = source
+    }
+    val head = HeadServer(rotating, 0, headDeps(tmp))
+    private val client = HttpClient(CIO)
+
+    suspend fun startSource(text: String, previous: Any? = null): Any {
+        val url = "http://127.0.0.1:${head.port}/v1/messages"
+        val answer = withTimeout(TURN_BOUND_MS) {
+            send(client, url, listOf(message("user", JsonPrimitive(text))))
+        }
+        assertTrue(toolUses(answer).isNotEmpty(), "the source must park before restart: $answer")
+        val streams = billingField(billingField(bridge, "driver"), "streams")
+        return checkNotNull((billingField(streams, "rounds") as Map<*, *>).values.single { it !== previous })
+    }
+
+    fun nextGeneration() {
+        // Exercise the real driver generation boundary without tearing down the retained source transport.
+        // The separate first-admission control exercises the entire unchanged HeadServer.stop drain.
+        val driver = billingField(billingField(head, "driver"), "oneDrive")
+        invoke(driver, "stopActive")
+        invoke(driver, "headStarted")
+        source = BillingWsRunner()
+    }
+
+    fun reader(round: Any): kotlinx.coroutines.Deferred<*> =
+        billingField(round, "finished") as kotlinx.coroutines.Deferred<*>
+
+    fun cut(round: Any, cancellation: String) {
+        when (cancellation) {
+            "lease" -> {
+                val record = billingField(billingField(round, "capture"), "record")
+                invoke(billingField(record, "sourceEnd"), "ended")
+            }
+            "cell-close" -> {
+                val record = billingField(billingField(round, "capture"), "record")
+                val cells = billingField(billingField(bridge, "registry"), "cells") as Map<*, *>
+                (checkNotNull(cells[billingField(record, "id")]) as CodeModeCell).close()
+            }
+            else -> invoke(round, cancellation)
+        }
+    }
+
+    fun takeCut(round: Any): Boolean = invoke(round, "takeCut") as Boolean
+
+    private fun invoke(owner: Any, method: String): Any? =
+        owner.javaClass.getDeclaredMethod(method).apply { isAccessible = true }.invoke(owner)
+
+    suspend fun close() {
+        head.stop()
+        bridge.onHeadStop()
+        runtime.close()
+        client.close()
+        upstream.close()
+    }
+}
+
+private fun assertHeadRestartBill(posting: JsonObject) {
+    assertEquals(0L, posting.count(PerfKeys.CUT_SOURCE_ROUNDS) ?: 0L, "head restart is not a client cut: $posting")
+    assertEquals("error:restarted", posting.getValue("outcome").jsonPrimitive.content, "$posting")
 }
 
 private fun assertFirstStepBill(posting: JsonObject, reported: Boolean) {

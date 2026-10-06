@@ -9,6 +9,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.HeadStopSignal
 import splice.core.turn.TurnOutcome
 import splice.core.util.Cancellables
 import splice.provider.codex.CodeModeBody
@@ -33,6 +34,7 @@ internal class CodeModeLiveRound(
     admission: CodeModeStreamAdmission,
     sink: WireSink,
     private val beforeSettle: Runnable? = null,
+    private val headStop: HeadStopSignal? = null,
 ) {
     private val capture = CodeModeSourceCapture(config, registry, wire, admission)
     val source = capture.source
@@ -61,7 +63,8 @@ internal class CodeModeLiveRound(
     @Volatile var unexpectedDeath: Boolean = false
         private set
 
-    private var headStopped = false
+    @Volatile private var headStopped = false
+    private val stoppedByHead: Boolean get() = headStopped || headStop?.isStopping == true
 
     @Volatile private var upstreamEnded = false
 
@@ -132,7 +135,7 @@ internal class CodeModeLiveRound(
         config.log("[code-mode] upstream source reader died (${unnamed::class.simpleName}): $SOURCE_FAILED")
         source.fail(SOURCE_FAILED)
         synchronized(lifecycle) {
-            if (headStopped) return
+            if (stoppedByHead) return
             val current = record?.takeUnless(CodeModeRecord::terminal) ?: return
             Cancellables.runCatchingBestEffort { registry.lose(current, SOURCE_FAILED) }.onFailure { failure ->
                 config.log("[code-mode] the dead reader's record was not saved as lost (${failure::class.simpleName})")
@@ -142,7 +145,7 @@ internal class CodeModeLiveRound(
 
     private fun finish(outcome: TurnOutcome) = synchronized(lifecycle) {
         billing.reported(outcome)
-        if (headStopped) throw CancellationException(HEAD_STOPPED)
+        if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
         localFailure?.let { return@synchronized it }
         if (record?.terminal() == true) {
             executionLost = true
@@ -172,7 +175,7 @@ internal class CodeModeLiveRound(
         upstreamEnded = true
         source.fail("splice code-mode source reader cancelled; source was not rerun")
         synchronized(lifecycle) {
-            if (!headStopped) {
+            if (!stoppedByHead) {
                 record?.takeUnless(CodeModeRecord::terminal)
                     ?.let { registry.lose(it, "splice code-mode source reader cancelled; source was not rerun", error) }
             }
@@ -181,7 +184,7 @@ internal class CodeModeLiveRound(
 
     private fun failed(error: Exception): TurnOutcome.Failure = synchronized(lifecycle) {
         upstreamEnded = true
-        if (headStopped) {
+        if (stoppedByHead) {
             source.fail(SOURCE_FAILED)
             throw CancellationException(HEAD_STOPPED, error)
         }
@@ -212,7 +215,7 @@ internal class CodeModeLiveRound(
     private fun refused(error: UpstreamFailed): TurnOutcome.Failure = synchronized(lifecycle) {
         upstreamEnded = true
         source.fail(SOURCE_REFUSED)
-        if (headStopped) throw CancellationException(HEAD_STOPPED, error)
+        if (stoppedByHead) throw CancellationException(HEAD_STOPPED, error)
         localFailure?.let { return@synchronized it }
         // A record's next client step reads the source's outcome, as a torn source's does.
         sourceInterrupted = record != null
@@ -222,7 +225,7 @@ internal class CodeModeLiveRound(
 
     fun owns(turn: CodexCodeModeBridge.Turn): Boolean = synchronized(lifecycle) {
         if (upstreamEnded || sourceLost) return@synchronized false
-        if (localFailure != null || headStopped) return@synchronized false
+        if (localFailure != null || stoppedByHead) return@synchronized false
         val current = record ?: return@synchronized false
         if (current.sessionId != turn.sessionId || current.key != CodeModeTurnIdentity().turnKey(turn)) {
             return@synchronized false
@@ -247,7 +250,7 @@ internal class CodeModeLiveRound(
     fun cancel() {
         if (upstreamEnded) return
         val reader = finished
-        if (!headStopped && reader?.isActive == true) clientCut.set(true)
+        if (!stoppedByHead && reader?.isActive == true) clientCut.set(true)
         executionLost = true
         source.fail(SOURCE_DISPOSED)
         reader?.cancel()
@@ -259,7 +262,7 @@ internal class CodeModeLiveRound(
     /** A cancelled first client step owns its cut, unless head replacement already ended this source. */
     fun stopClientStep() {
         synchronized(lifecycle) {
-            if (!headStopped) {
+            if (!stoppedByHead) {
                 if (!upstreamEnded && finished?.isActive == true) clientCut.set(true)
                 headStopped = true
             }
@@ -275,7 +278,7 @@ internal class CodeModeLiveRound(
 
     /** Observer faults belong to splice. They never unwind through a transport's generic stream catch. */
     private fun observe(event: CustomToolSource) = synchronized(lifecycle) {
-        if (headStopped) throw CancellationException(HEAD_STOPPED)
+        if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
         if (sourceLost) return@synchronized
         if (localFailure != null || record?.terminal() == true) return@synchronized
         Cancellables.runCatchingBestEffort { capture.observe(event) }.onFailure(::reject)

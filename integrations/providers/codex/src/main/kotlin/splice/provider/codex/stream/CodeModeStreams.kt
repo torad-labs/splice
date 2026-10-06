@@ -87,7 +87,14 @@ internal class CodeModeStreams(
         body: CodeModeBody,
         post: CodeModeRedirectablePost,
         admission: CodeModeStreamAdmission,
-    ): CodeModeLiveRound = CodeModeLiveRound(config, registry, wire, admission, context.sink).also { round ->
+    ): CodeModeLiveRound = CodeModeLiveRound(
+        config,
+        registry,
+        wire,
+        admission,
+        context.sink,
+        headStop = context.headStop,
+    ).also { round ->
         reading += round
         context.postedSources += round
         round.start(scope, post, body) { reading.remove(round) }
@@ -160,7 +167,7 @@ internal class CodeModeStreams(
 
     /** A source round is billed on the client step that posted it. One that finished before the step ended is merged
      *  into the step here. One still streaming then is owed to the step's row, which waits for the round's terminal
-     *  ([CodeModeLiveRound.claim]); the client never waits for it. [CodeModeSourceRecords.consume] hands a round's
+     *  ([CodeModeRoundBilling.claim]); the client never waits for it. [CodeModeSourceRecords.consume] hands a round's
      *  usage out once, so the step that finishes the script ([takeOutcome]) finds nothing left to absorb. A claim that
      *  cannot be saved leaves the round to that later step rather than failing a step whose calls already left. */
     fun billFinished(record: CodeModeRecord, step: TurnOutcome): TurnOutcome {

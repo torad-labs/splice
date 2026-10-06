@@ -149,6 +149,8 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     // Source transport, liveness, context and prose controls run the real head over both wire transports.
     "CodeModeRoundBillingTest" to
         Disposition("3 @ParameterizedTest methods expand to 16 cases (5 @Test + 12 + 2 + 2 = 21)", 21),
+    "CodeModeHeadGenerationBillingTest" to
+        Disposition("1 @ParameterizedTest expands to 4 source-ending paths across old and new head generations", 4),
     "CodeModeSourceBoundaryTest" to
         Disposition("1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)", 3),
     "CodeModeNativeSourceTest" to

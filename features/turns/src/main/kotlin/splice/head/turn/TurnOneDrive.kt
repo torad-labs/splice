@@ -9,6 +9,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import splice.core.perf.PerfKeys
+import splice.core.turn.HeadStopSignal
 import splice.head.HeadDeps
 import splice.head.wire.Heartbeat
 import splice.head.wire.LostClient
@@ -27,20 +28,24 @@ internal class TurnOneDrive(
     private val paceTicker: Ticker = ProcessTicker(),
 ) {
     private val lifecycle = Any()
-    private var stopping = false
+    private var stopSignal = HeadStopSignal()
     private val activeJobs = mutableSetOf<Job>()
 
     /** Stop unfinished child turns before the engine closes their client sockets. */
     fun stopActive() {
         val jobs = synchronized(lifecycle) {
-            stopping = true
+            stopSignal.stop()
             activeJobs.toList()
         }
         jobs.forEach { it.cancel(HeadRestart()) }
     }
 
     /** The same driver is used after a head restart; new turns may run again. */
-    fun headStarted() { synchronized(lifecycle) { stopping = false } }
+    fun headStarted() {
+        synchronized(lifecycle) {
+            if (stopSignal.isStopping) stopSignal = HeadStopSignal()
+        }
+    }
 
     // The turn coroutine is a CHILD job: the watchdog cancels just the turn subtree (then the
     // blocking Writer still lets the honest error frame out), while a client disconnect cancels
@@ -48,17 +53,17 @@ internal class TurnOneDrive(
     // Esc'd turns kept streaming upstream and pinning gate slots until the watchdog cap
     // (the audit's top concurrency finding, 2026-07-18).
     suspend fun driveOneTurn(drive: TurnDrive, pingClient: Boolean = true) {
-        val parent = currentCoroutineContext()[Job]
         // CompletableJob completed in finally: a plain child Job never completes on its own and
         // would park the PARENT call forever after the turn returns.
-        val turnJob = newTurnJob(parent)
+        val owner = synchronized(lifecycle) { stopSignal }
+        val turnJob = newTurnJob(owner)
         // V4-319: the operator's stop cancels exactly this job, the one the watchdog cancels (LiveTurns).
         deps.liveTurns.driving(drive.slot, turnJob)
         // Per TURN: the line remembers whether it has spoken, so the first one explains itself, and
         // counts the heartbeats of the current quiet stretch to thin its lines out.
         val progress = TurnProgressLine()
         try {
-            withContext(turnJob) {
+            withContext(turnJob + owner) {
                 val self = this
                 // Whole-turn client-liveness pinger (2026-07-19 storm): launched BEFORE the first
                 // upstream attempt so the headers-wait (minutes on a long prefill) and the retry
@@ -118,11 +123,11 @@ internal class TurnOneDrive(
         }
     }
 
-    private fun newTurnJob(parent: Job?): CompletableJob {
-        val job = Job(parent)
+    private suspend fun newTurnJob(owner: HeadStopSignal): CompletableJob {
+        val job = Job(currentCoroutineContext()[Job])
         val cut = synchronized(lifecycle) {
             activeJobs += job
-            stopping
+            owner.isStopping
         }
         if (cut) job.cancel(HeadRestart())
         return job

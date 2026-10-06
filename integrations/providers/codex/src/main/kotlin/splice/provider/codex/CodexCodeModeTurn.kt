@@ -1,10 +1,13 @@
 // NEW: serializes each conversation's code-mode replay, resume, and fresh-turn decisions.
 package splice.provider.codex
 
+import kotlinx.coroutines.currentCoroutineContext
 import splice.core.perf.PerfKeys
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
+import splice.core.turn.HeadStopKey
+import splice.core.turn.HeadStopSignal
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.provider.codex.branch.CodexCodeModeBranch
@@ -32,6 +35,7 @@ internal data class CodeModeRunContext(
     val digest: String,
     val sink: WireSink,
     val post: CodeModeUpstreamPost,
+    val headStop: HeadStopSignal? = null,
 ) {
     /** One filtered history for this request, extended only by its own completed scripts. */
     val completed: MutableList<CodeModeRecord> = mutableListOf()
@@ -73,6 +77,7 @@ internal class CodexCodeModeTurn(
             identity.digest(input.body.round),
             input.sink,
             input.post,
+            currentCoroutineContext()[HeadStopKey],
         )
         val held = locks.acquire(key)
         val watched = driver.streams.watchCuts(key)

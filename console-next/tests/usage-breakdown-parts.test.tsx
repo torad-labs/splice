@@ -27,6 +27,25 @@ test('Usage resolves the recorded login on its own command without changing the 
   expect(html).toContain('head=synthetic');
 });
 
+test('Usage recognizes a current verified address without displaying it or changing the recorded drill-down identity', () => {
+  const address = 'synthetic-current@example.invalid';
+  const current = { ...savedLogin, label: 'saved-copy', selector_key: 'native:claude', display_name: 'Synthetic current login',
+    identity_verified: true, account: { uuid: 'synthetic-current-uuid', email: address } };
+  const values = (accounts: typeof current[]) => renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: address }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={accounts} /></MemoryRouter>);
+  const html = values([current]);
+  expect(html).toContain('Synthetic current login · Synthetic command');
+  expect(html).not.toContain('Not listed in Accounts now.');
+  expect(html).not.toContain(address);
+  expect(html).toContain('account=synthetic-current%40example.invalid');
+  expect(html).toContain('head=synthetic');
+  expect(values([{ ...current, heads: ['other'] }])).toContain('Not listed in Accounts now.');
+  expect(values([{ ...current, account: { uuid: 'synthetic-current-uuid', email: 'different@example.invalid' } }])).toContain('Not listed in Accounts now.');
+  expect(values([current, { ...current, display_name: 'Synthetic other location' }])).not.toContain('Not listed in Accounts now.');
+  const unreadIdentity = values([{ ...current, identity_verified: false }]);
+  expect(unreadIdentity).not.toContain('Not listed in Accounts now.');
+  expect(unreadIdentity).not.toContain('Synthetic current login');
+});
+
 test('Usage names the primary fallback without changing its drill-down selector', () => {
   const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'primary' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[]} /></MemoryRouter>);
   expect(html).toContain('Primary account · Synthetic command');

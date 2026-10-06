@@ -82,6 +82,58 @@ test('Usage names earlier logins and no-login failures without borrowing the cur
   await assertHealthy(page, faults);
 });
 
+test('Usage matches a current verified account address without exposing it as the login name', async ({ page }, testInfo) => {
+  const address = 'synthetic-current@example.invalid';
+  let identityVerified = true;
+  const head = 'synthetic-claude-command';
+  const stats = { ...emptyUsage.totals, requests: 1, input_tokens: 200, output_tokens: 50, cost_usd: 0.25 };
+  await page.route(url => url.pathname === '/api/economics', route => route.fulfill({ json: { retention_hours: 24, heads: [] } }));
+  await page.route(url => url.pathname === '/api/heads', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as HeadsPayload;
+    const sample = body.heads[0];
+    if (sample === undefined) throw new Error('isolated stack needs one synthetic command');
+    await route.fulfill({ response, json: { ...body, heads: [{ ...sample, key: head, label: 'Synthetic Claude command' }] } });
+  });
+  await page.route(url => url.pathname === '/api/accounts', route => route.fulfill({ json: { accounts: [{
+    kind: 'client', label: 'saved-copy', display_name: 'Synthetic current Claude login', selector_key: 'native:claude',
+    login_place: { id: 'claude', command: 'claude' }, credential_present: true, heads: [head], carrying_request: true,
+    identity_verified: identityVerified, account: { uuid: 'synthetic-current-uuid', email: address },
+  }] } }));
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const query = new URL(route.request().url()).searchParams;
+    return route.fulfill({ json: { since: Number(query.get('since')), n: 1, heads: [{
+      key: head, label: head, count: 1, rows: [],
+      usage: { ...emptyUsage, totals: stats, accounts: [{ ...stats, key: address }] },
+    }] } });
+  });
+  const faults = await open(page, 'usage');
+  const chart = page.getByRole('region', { name: 'Spend and tokens', exact: true });
+  await chart.getByRole('button', { name: 'Account', exact: true }).click();
+  const link = chart.getByRole('link', { name: 'Synthetic current Claude login · Synthetic Claude command', exact: true });
+  await expect(link).toBeVisible();
+  await expect(chart).not.toContainText('Not listed in Accounts now.');
+  await expect(chart).not.toContainText(address);
+  const query = new URLSearchParams((await link.getAttribute('href'))?.split('?')[1]);
+  expect(query.get('account')).toBe(address);
+  expect(query.get('head')).toBe(head);
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await chart.screenshot({ path: testInfo.outputPath('verified-account-address-' + width + '.png') });
+  }
+  await chart.getByRole('button', { name: 'Show the values as a table', exact: true }).click();
+  await expect(chart.getByRole('table')).toContainText('Synthetic current Claude login');
+  await expect(chart.getByRole('table')).not.toContainText('Not listed in Accounts now.');
+  await expect(chart.getByRole('table')).not.toContainText(address);
+  identityVerified = false;
+  const reported = chart.getByRole('link', { name: address + ' · Synthetic Claude command', exact: true });
+  await expect(reported).toBeVisible({ timeout: 25_000 });
+  await expect(reported.locator('..')).not.toContainText('Not listed in Accounts now.');
+  await expect(reported.locator('..')).not.toContainText('Synthetic current Claude login');
+  await assertHealthy(page, faults);
+});
+
 test('the Usage primary fallback is human-readable while its account selector stays exact', async ({ page }, testInfo) => {
   const stats = { ...emptyUsage.totals, requests: 1, input_tokens: 200, output_tokens: 50, cost_usd: 0.25 };
   const usage = { ...emptyUsage, totals: stats, accounts: [{ key: 'primary', ...stats }] };

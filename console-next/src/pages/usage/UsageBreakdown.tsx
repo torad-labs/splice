@@ -40,11 +40,12 @@ function groupName(item: Breakdown, by: UsageDimension, accounts: readonly Accou
   };
   if (by === 'account' && item.head !== null) {
     const matching = accountsForLabel(accounts ?? [], item.head, item.key);
+    const reportedIdentity = accounts?.some(row => row.heads.some(head => head === item.head) && row.account?.email === item.key) === true;
     const native = item.key === 'native:claude' ? 'claude' : item.key === 'native:claude-splice' ? 'claude-splice' : null;
     if (native !== null) return { title: B.legacyLoginPlace(native), note: B.legacyAccountWhy };
     return {
       title: sessionAccountName(accounts ?? [], item.head, item.key) ?? item.key,
-      note: accounts !== undefined && matching.length === 0 ? B.notCurrentLogin : null,
+      note: accounts !== undefined && matching.length === 0 && !reportedIdentity ? B.notCurrentLogin : null,
     };
   }
   if (by !== 'model') return { title: item.key, note: null };

@@ -15,6 +15,7 @@ import {
   COCK_AT_PERCENT,
   NOT_REPORTED,
   accountState,
+  accountsForLabel,
   sessionAccountName,
   accountsFromWire,
   accountSelector,
@@ -46,6 +47,21 @@ test('a session login name uses its own label and head, never another session’
   expect(sessionAccountName([work, home], 'synthetic', null)).toBeNull();
   expect(sessionAccountName([work, home], 'other', 'work')).toBe('work');
   expect(sessionAccountName([work, { ...work, display_name: 'Another place' }], 'synthetic', 'work')).toBe('work');
+});
+
+test('recorded account addresses match verified identities on their own command without changing selectors', () => {
+  const address = 'synthetic-current@example.invalid';
+  const current = account({ label: 'saved-copy', selector_key: 'native:claude', display_name: 'Synthetic current login',
+    heads: ['synthetic'], identity_verified: true, account: { uuid: 'synthetic-current-uuid', email: address } });
+  expect(accountsForLabel([current], 'synthetic', address)).toEqual([current]);
+  expect(sessionAccountName([current], 'synthetic', address)).toBe('Synthetic current login');
+  expect(accountsForLabel([current], 'other', address)).toEqual([]);
+  expect(accountsForLabel([{ ...current, identity_verified: false }], 'synthetic', address)).toEqual([]);
+  expect(accountsForLabel([{ ...current, account: { uuid: 'synthetic-current-uuid', email: 'different@example.invalid' } }], 'synthetic', address)).toEqual([]);
+  expect(accountSelector(current)).toBe('native:claude');
+  const duplicate = { ...current, display_name: 'Synthetic other location' };
+  expect(accountsForLabel([current, duplicate], 'synthetic', address)).toEqual([current, duplicate]);
+  expect(sessionAccountName([current, duplicate], 'synthetic', address)).toBe(address);
 });
 
 test('a single-login session resolves primary only on its own reported head', () => {

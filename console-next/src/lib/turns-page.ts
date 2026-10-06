@@ -142,7 +142,10 @@ export interface TurnLine {
   cost: string;
 }
 
-export const turnKey = (row: Pick<TurnRow, 'head' | 'ts'>): string => `${row.head}/${row.ts}`;
+/** Prefer the daemon's request identity. Without one, all recorded row facts distinguish concurrent
+ * endings without depending on snapshot order or the property's order on the wire. */
+export const turnKey = (row: TurnRow): string =>
+  `${row.head}/${row.response_message_id ? `response/${row.response_message_id}` : row.turn ? `trace/${row.turn}` : `facts/${JSON.stringify(Object.entries(row).sort(([left], [right]) => left.localeCompare(right)))}`}`;
 
 /** The name a session goes by, looked up from its full id. */
 export type TitleOf = (sessionId: string | undefined, short: string | undefined) => string | null;
@@ -173,6 +176,18 @@ export function lineOf(row: TurnRow, planLabel: (head: string) => string, colour
     outTokens: row.out_tokens ?? null,
     cost: typeof row.cost_usd === 'number' ? fmtUsd(row.cost_usd) : ABSENT,
   };
+}
+
+/** A snapshot keeps every daemon row, including indistinguishable duplicate records. Only those
+ * duplicates need an occurrence suffix; different id-less facts retain their keys across polls. */
+export function linesOf(rows: readonly TurnRow[], planLabel: (head: string) => string, colourOf: ColourOf, titleOf: TitleOf): TurnLine[] {
+  const occurrences = new Map<string, number>();
+  return rows.map(row => {
+    const line = lineOf(row, planLabel, colourOf, titleOf);
+    const occurrence = occurrences.get(line.key) ?? 0;
+    occurrences.set(line.key, occurrence + 1);
+    return occurrence === 0 ? line : { ...line, key: `${line.key}/occurrence/${occurrence}` };
+  });
 }
 
 /** Newest first, the order the page lists them in. */

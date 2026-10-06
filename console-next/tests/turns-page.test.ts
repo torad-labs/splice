@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router';
 import { RunningCard, TurnRowView, TurnsPage } from '../src/pages/turns/TurnsPage';
 import { describe, expect, test } from 'vitest';
 import {
-  askAndAnswer, failedCount, lineOf, outcomeOf, pageLede, planRows, localStepsOf, liveTurnFor, runningOf, servedLocally, spokenFailure, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
+  askAndAnswer, failedCount, lineOf, linesOf, outcomeOf, pageLede, planRows, localStepsOf, liveTurnFor, runningOf, servedLocally, spokenFailure, stagesOf, turnLede, turnsLede, wireFor, WINDOW_MS,
 } from '../src/lib/turns-page';
 import type { RunningLine } from '../src/lib/turns-page';
 import { colourFromRegistry } from '../src/lib/model';
@@ -248,6 +248,53 @@ describe('a turn', () => {
     expect(lineOf(refused, (head) => head, none, () => null).outcome.word)
       .toBe("Couldn't reach its runtime on :8123");
     expect(turnLede(refused, [])).toBe("Couldn't reach its runtime on :8123 after 20 ms.");
+  });
+
+  test('same-millisecond request rows retain separate identities across polls and window expiry', () => {
+    const first = row({ outcome: 'error:restarted', response_message_id: 'synthetic-first-response', turn: 'synthetic-first-trace' });
+    const second = row({ outcome: 'error:restarted', response_message_id: 'synthetic-second-response', turn: 'synthetic-second-trace' });
+    const newer = row({ ts: first.ts + 1000, response_message_id: 'synthetic-newer-response' });
+    const keys = new Map<string, string>();
+    for (const snapshot of [[first, second], [first, second], [second, first, newer], [second, newer], [newer], []]) {
+      const lines = linesOf(snapshot, head => head, none, () => null);
+      expect(new Set(lines.map(line => line.key)).size).toBe(snapshot.length);
+      snapshot.forEach((item, index) => {
+        const id = item.response_message_id ?? '';
+        const key = lines[index]?.key ?? '';
+        if (keys.has(id)) expect(key).toBe(keys.get(id));
+        else keys.set(id, key);
+      });
+    }
+  });
+  test.each([false, true])('id-less rows remain distinct and stable through reordered polls, empty ids %s', empty => {
+    const ids = empty ? { response_message_id: '', turn: '' } : {};
+    const first = row({ ...ids, outcome: 'error:restarted', model: 'Synthetic first', total: 111 });
+    const second = row({ ...ids, outcome: 'error:restarted', model: 'Synthetic second', total: 222 });
+    const newer = row({ ...ids, ts: first.ts + 1000, model: 'Synthetic newer', total: 333 });
+    const keys = new Map<string | null, string>();
+    for (const snapshot of [[first, second], [first, second], [second, first, newer], [second, newer], [newer], []]) {
+      const lines = linesOf(snapshot, head => head, none, () => null);
+      expect(new Set(lines.map(line => line.key)).size).toBe(snapshot.length);
+      snapshot.forEach((item, index) => {
+        const key = lines[index]?.key ?? '';
+        if (keys.has(item.model)) expect(key).toBe(keys.get(item.model));
+        else keys.set(item.model, key);
+      });
+      expect(lines.map(line => line.model)).toEqual(snapshot.map(item => item.model));
+    }
+  });
+  test('wire property order cannot rename a legacy row and identical records stay separately rendered', () => {
+    const first = row({ model: 'Synthetic legacy', total: 111, response_message_id: '', turn: '' });
+    const reordered = Object.fromEntries(Object.entries(first).reverse()) as TurnRow;
+    const lines = linesOf([first, reordered], head => head, none, () => null);
+    expect(lines).toHaveLength(2);
+    expect(new Set(lines.map(line => line.key)).size).toBe(2);
+    expect(lineOf(first, head => head, none, () => null).key).toBe(lineOf(reordered, head => head, none, () => null).key);
+  });
+  test('captured legacy rows use their trace identity and command namespaces remain separate', () => {
+    const key = (item: TurnRow) => lineOf(item, head => head, none, () => null).key;
+    expect(key(row({ turn: 'synthetic-trace-one' }))).not.toBe(key(row({ turn: 'synthetic-trace-two' })));
+    expect(key(row({ response_message_id: 'synthetic-response' }))).not.toBe(key(row({ head: 'other-command', response_message_id: 'synthetic-response' })));
   });
 
   test('a list line carries no cost when the row is not priced', () => {

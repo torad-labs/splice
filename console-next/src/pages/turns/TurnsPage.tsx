@@ -10,7 +10,7 @@ import { sessionLabel } from '../../lib/sessions';
 import { colourFromRegistry } from '../../lib/model';
 import { askOf, narrowed, requestsHref, searchOf, SELECTORS, viewOf } from '../../lib/requests-view';
 import type { RequestsView, Selector } from '../../lib/requests-view';
-import { barMax, cacheText, liveTurnFor, lineOf, newestFirst, pageLede, planRows, runningOf, secondsText, localStepsOf, tookText } from '../../lib/turns-page';
+import { barMax, cacheText, liveTurnFor, linesOf, newestFirst, pageLede, planRows, runningOf, secondsText, localStepsOf, tookText } from '../../lib/turns-page';
 import type { TurnLine, PlanRow, RunningLine } from '../../lib/turns-page';
 import { T } from '../../lib/words-turns';
 import type { PerfWindowLabel } from '../../types/perf';
@@ -170,7 +170,7 @@ export function TurnsPage() {
   const matched = turns.isPending ? undefined : (slice?.matched ?? null);
   const lede = window !== null && summary.isError && plans === null ? undefined : pageLede(view, plans, matched, summary.data?.time_before_first_byte_ms);
   const narrow = (selector: Selector, value: string): string => requestsHref({ ...view, [selector]: value });
-  const lines = slice === undefined ? [] : newestFirst(slice.landed.map((row) => lineOf(row, planLabel, colourOf, titleOf))).slice(0, LIST_CAP);
+  const lines = slice === undefined ? [] : newestFirst(linesOf(slice.landed, planLabel, colourOf, titleOf)).slice(0, LIST_CAP);
   const running = slice === undefined ? [] : runningOf(slice.inflight, planLabel, colourOf, (prefix) => titleOf(undefined, prefix));
   const quiet = running.filter((turn) => turn.longQuiet);
   const longestQuiet = quiet[0];

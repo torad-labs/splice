@@ -18,6 +18,45 @@ function turnsAsks(page: Page): URLSearchParams[] {
 
 const hash = (page: Page): string => decodeURIComponent(new URL(page.url()).hash);
 
+for (const identity of ['recorded', 'missing', 'empty'] as const) {
+  test(identity === 'recorded' ? 'same-millisecond restarted requests never multiply while polling or ageing out' : `id-less restarted requests never multiply or merge across polls: ${identity}`, async ({ page }) => {
+    await page.clock.install();
+    const at = Date.now();
+    const rows = ['first', 'second', 'newer'].map((name, index) => ({
+      ts: at + (index === 2 ? 1000 : 0), model: 'Synthetic ' + name, outcome: 'error:restarted', compact: false,
+      session: null, account: null, cache_cold: null, turn: identity === 'empty' ? '' : null, session_id: null,
+      response_message_id: identity === 'recorded' ? 'synthetic-response-' + name : identity === 'empty' ? '' : null, total: 20,
+    }));
+    let current = rows.slice(0, 2);
+    let reads = 0;
+    await page.route(url => url.pathname === '/api/heads', async route => {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.heads = body.heads.filter((head: { key: string }) => head.key === STACK.soloHead);
+      await route.fulfill({ response, json: body });
+    });
+    await page.route(url => url.pathname === '/api/perf/turns', route => {
+      const query = new URL(route.request().url()).searchParams;
+      reads++;
+      return route.fulfill({ json: { since: Number(query.get('since')), n: 200, heads: [{
+        key: STACK.soloHead, label: STACK.soloHead, count: current.length, rows: current,
+      }] } });
+    });
+    const faults = await open(page, 'requests');
+    const shown = page.locator('.turn');
+    await expect(shown).toHaveCount(2);
+    for (const snapshot of [rows.slice(0, 2), rows.slice(0, 2), [rows[1], rows[0], rows[2]], rows.slice(1), rows.slice(2), []]) {
+      current = snapshot.filter((item): item is typeof rows[number] => item !== undefined);
+      const before = reads;
+      await page.clock.fastForward(6000);
+      await expect.poll(() => reads).toBeGreaterThan(before);
+      await expect(shown).toHaveCount(current.length);
+      for (const item of current) await expect(shown.filter({ hasText: item.model })).toHaveCount(1);
+    }
+    await assertHealthy(page, faults);
+  });
+}
+
 test('Failed asks the daemon for the failed requests, and the address opens the same view after a reload', async ({ page }) => {
   const asks = turnsAsks(page);
   const faults = await open(page, 'requests');

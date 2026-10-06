@@ -1,6 +1,8 @@
 /* A plan's own page: D. The header and the crumb are the session page's (session.css); this is what is specific. */
 .head-sheet .head-body { padding: var(--space-8) var(--space-11) var(--space-11); display: grid; gap: var(--space-9); }
 header.top .acts { flex-wrap: wrap; min-width: 0; }
+.head-sheet > .bar { flex-wrap: wrap; }
+.head-sheet > .bar h3 { flex: 1 0 auto; }
 @media (max-width: 48rem) {
   header.top { flex-wrap: wrap; }
   header.top .acts { margin-left: 0; }

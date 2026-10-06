@@ -45,13 +45,14 @@ describe('the claude command row', () => {
     expect(html).toContain('One login per Claude command at a time; splice login &lt;head&gt; --label &lt;name&gt; saves or switches it');
     expect(html).not.toContain('`');
   });
-  test('saved labels are not presented as the live Accounts identities or launch selection', () => {
-    const html = render(<ClaudeHead />, seedCard(card({ claude_logins: { count: 1, selected: null, labels: ['synthetic-saved'], constraint: '' } })));
+  test.each([{ labels: ['synthetic-saved'] }, { labels: ['synthetic-saved', 'second-synthetic'] }])('saved labels $labels are separate from a missing last selection', ({ labels }) => {
+    const html = render(<ClaudeHead />, seedCard(card({ claude_logins: { count: labels.length, selected: null, labels, constraint: '' } })));
     expect(html).toContain('Saved Claude login copies');
     expect(html).toContain('synthetic-saved');
     expect(html).toContain('Accounts shows the identities of the live logins');
-    expect(html).toContain('Last saved label');
-    expect(html).toContain('No label recorded');
+    expect(html).toContain('Last saved copy selection');
+    expect(html).toContain('No selection recorded');
+    expect(html).not.toContain('No label recorded');
     expect(html).not.toContain('Launches with');
     expect(html).not.toContain('None chosen');
   });

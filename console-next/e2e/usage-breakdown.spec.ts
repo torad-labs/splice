@@ -15,6 +15,38 @@ const wire = (ts: number, priced: boolean): TurnRowWire => ({
   ...(priced ? { cost_usd: 0.25, in_tokens: 200, out_tokens: 50 } : { cost_usd: null }),
 });
 
+test('the Usage primary fallback is human-readable while its account selector stays exact', async ({ page }, testInfo) => {
+  const stats = { ...emptyUsage.totals, requests: 1, input_tokens: 200, output_tokens: 50, cost_usd: 0.25 };
+  const usage = { ...emptyUsage, totals: stats, accounts: [{ key: 'primary', ...stats }] };
+  await page.route(url => url.pathname === '/api/economics', route => route.fulfill({ json: { retention_hours: 24, heads: [] } }));
+  await page.route(url => url.pathname === '/api/accounts', route => route.fulfill({ json: { accounts: [] } }));
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const query = new URL(route.request().url()).searchParams;
+    const head = query.get('head') ?? '';
+    return route.fulfill({ json: { since: Number(query.get('since')), n: 1, heads: [{
+      key: head, label: head, count: head === STACK.oauthHead ? 1 : 0, rows: [],
+      usage: head === STACK.oauthHead ? usage : emptyUsage,
+    }] } });
+  });
+  const faults = await open(page, 'usage');
+  const chart = page.getByRole('region', { name: 'Spend and tokens', exact: true });
+  await chart.getByRole('button', { name: 'Account', exact: true }).click();
+  const name = 'Primary account · ' + STACK.oauthHead;
+  const link = chart.getByRole('link', { name, exact: true });
+  await expect(link).toBeVisible();
+  const query = new URLSearchParams((await link.getAttribute('href'))?.split('?')[1]);
+  expect(query.get('account')).toBe('primary');
+  expect(query.get('head')).toBe(STACK.oauthHead);
+  await chart.getByRole('button', { name: 'Show the values as a table', exact: true }).click();
+  await expect(chart.getByRole('table')).toContainText(name);
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await chart.screenshot({ path: testInfo.outputPath('primary-account-' + width + '.png') });
+  }
+  await assertHealthy(page, faults);
+});
+
 test('Usage counts refused requests, keeps exact drill-down bounds, and offers a real table without narrow overflow', async ({ page }) => {
   const windows = new Map<string, { since: number; until: number }>();
   const awaitedZone = await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);

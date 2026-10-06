@@ -20,7 +20,7 @@ export function sessionAccountName(rows: readonly AccountRow[], head: string, la
   if (label == null) return null;
   const matching = rows.filter(row => row.heads.includes(head) && (row.selector_key === label || row.label === label || (label === 'primary' && row.single_login && row.label === null)));
   const account = matching[0];
-  return matching.length === 1 && account !== undefined ? accountName(account) : label;
+  return matching.length === 1 && account !== undefined ? accountName(account) : label === 'primary' ? W.primaryAccount : label;
 }
 
 /** Native selection keys never fall back to native edit ids. Pooled logins retain their stable label. */

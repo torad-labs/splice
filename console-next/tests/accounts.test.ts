@@ -51,9 +51,9 @@ test('a session login name uses its own label and head, never another session’
 test('a single-login session resolves primary only on its own reported head', () => {
   const single = account({ label: null, single_login: true, display_name: 'Single login', heads: ['solo'] });
   expect(sessionAccountName([single], 'solo', 'primary')).toBe('Single login');
-  expect(sessionAccountName([single], 'other', 'primary')).toBe('primary');
+  expect(sessionAccountName([single], 'other', 'primary')).toBe('Primary account');
   expect(sessionAccountName([single], 'solo', null)).toBeNull();
-  expect(sessionAccountName([single, { ...single, display_name: 'Ambiguous login' }], 'solo', 'primary')).toBe('primary');
+  expect(sessionAccountName([single, { ...single, display_name: 'Ambiguous login' }], 'solo', 'primary')).toBe('Primary account');
 });
 
 test('native selection identities preserve edit targets and session-specific names', () => {

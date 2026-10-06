@@ -1,6 +1,7 @@
 // The words the derivation modules in this directory print. Copy lives in modules like this one, never inline
 // in logic, so the copy wall reads one place.
 export const W = {
+  primaryAccount: 'Primary account',
   /** A window whose reset passed since splice read it: one word on every surface. */
   notReread: 'Reset, not re-read',
   shortWindow: 'short window',

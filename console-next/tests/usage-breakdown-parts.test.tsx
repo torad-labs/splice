@@ -26,6 +26,14 @@ test('Usage resolves the recorded login on its own command without changing the 
   expect(html).toContain('head=synthetic');
 });
 
+test('Usage names the primary fallback without changing its drill-down selector', () => {
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'primary' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[]} /></MemoryRouter>);
+  expect(html).toContain('Primary account · Synthetic command');
+  expect(html).toContain('account=primary');
+  expect(html).toContain('head=synthetic');
+  expect(html).not.toContain('>primary ·');
+});
+
 test('Usage uses an unambiguous catalog label without changing the model drill-down ID', () => {
   const metadata = { accounts: [], catalogs: [namedCatalog] };
   const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} {...metadata} /></MemoryRouter>);

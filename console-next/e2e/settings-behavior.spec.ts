@@ -33,6 +33,34 @@ async function topologyWrites(page: Page) {
   return writes;
 }
 
+test('saved login copies remain listed when their last selection is not recorded', async ({ page }, testInfo) => {
+  let selected: string | null = null;
+  await page.route(url => url.pathname === '/api/claude-head', async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: { ...body, claude_logins: {
+      count: 2, selected, labels: ['synthetic-saved', 'second-synthetic'], constraint: '',
+    } } });
+  });
+  const faults = await open(page, 'settings/tools');
+  const copies = page.locator('.row').filter({ has: page.getByRole('heading', { name: 'Saved Claude login copies', exact: true }) });
+  await expect(copies).toContainText('synthetic-saved, second-synthetic');
+  const choice = page.locator('.row').filter({ has: page.getByRole('heading', { name: 'Last saved copy selection', exact: true }) });
+  await expect(choice).toContainText('No selection recorded');
+  await expect(page.getByRole('main')).not.toContainText('No label recorded');
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('saved-copy-selection-' + width + '.png'), fullPage: true });
+  }
+  selected = 'second-synthetic';
+  await page.reload();
+  await expect(choice).toContainText('second-synthetic');
+  await expect(choice).not.toContainText('No selection recorded');
+  await expect(copies).toContainText('synthetic-saved, second-synthetic');
+  await assertHealthy(page, faults);
+});
+
 test('settings teardown lets an active route finish reading its fetched body', async ({ page }) => {
   let fetched = false;
   await page.route('**/api/topology', async route => {

@@ -37,6 +37,7 @@ describe('the claude command row', () => {
   test('wrapped offers an unwrap and prints the binary the shim runs, and a missing one as not read', () => {
     const html = render(<ClaudeHead />, seedCard(card({ mode: 'wrapped', real_binary_path: null })));
     expect(html).toContain('Wrapped');
+    expect(html).toContain('<span class="state work"><i></i>Wrapped</span>');
     expect(html).toContain('>Unwrap<');
     expect(html).toContain('It runs');
     expect(html).toContain('Not read');

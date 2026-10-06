@@ -1,6 +1,6 @@
 // NEW: V4-444 — runtime/quota/refused-account signals over the actual replacement cards and plan pages.
 import { expect, test, type Page } from '@playwright/test';
-import type { ControlStatusPayload, HeadsPayload, UsagePayload } from '../src/types/core';
+import type { AuthPayload, ControlStatusPayload, HeadsPayload, UsagePayload } from '../src/types/core';
 import type { KeysPayload } from '../src/types/login';
 import type { AccountsWire } from '../src/types/accounts';
 import { STACK } from './stack';
@@ -11,6 +11,49 @@ async function cardStates(page: Page): Promise<string> {
   const cards = await page.locator('li.card').all();
   return (await Promise.all(cards.map(async (card) => (await card.innerText()).replace(/\s+/g, ' ').trim().slice(0, 160)))).join('\n');
 }
+
+test('unknown readiness uses theme amber while accepted and refused commands keep green and red', async ({ page }, testInfo) => {
+  const heads = await read<HeadsPayload>(page, '/api/heads');
+  const unknown = heads.heads.find(head => head.key === STACK.soloHead);
+  const accepted = heads.heads.find(head => head.key === STACK.oauthHead);
+  const refused = heads.heads.find(head => head.key === STACK.keyHead);
+  if (unknown === undefined || accepted === undefined || refused === undefined) throw new Error('isolated stack needs all three synthetic commands');
+  unknown.label = 'Synthetic unknown command';
+  unknown.last_provider_answer = null;
+  accepted.label = 'Synthetic accepted command';
+  accepted.last_provider_answer = { status: 200, accepted: true, observed_at_epoch_ms: Date.now() };
+  refused.label = 'Synthetic refused command';
+  refused.last_provider_answer = { status: 403, accepted: false, observed_at_epoch_ms: Date.now() };
+  await page.route(url => url.pathname === '/api/heads', route => route.fulfill({ json: heads }));
+  await page.route(url => url.pathname === '/api/auth', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as AuthPayload;
+    const credential = body[STACK.keyHead];
+    if (credential === undefined) throw new Error('isolated stack needs key-head authentication');
+    credential.present = true;
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'models');
+  const card = (name: string) => page.locator('li.card').filter({ has: page.getByRole('link', { name, exact: true }) });
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    for (const theme of ['Day', 'Night']) {
+      await page.getByRole('button', { name: theme, exact: true }).click();
+      for (const [name, word, day, night] of [
+        [unknown.label, 'Readiness unknown', 'rgb(125, 84, 25)', 'rgb(231, 192, 105)'],
+        [accepted.label, 'Ready', 'rgb(44, 101, 85)', 'rgb(97, 190, 163)'],
+        [refused.label, 'Access refused', 'rgb(165, 59, 57)', 'rgb(238, 122, 112)'],
+      ] as const) {
+        const state = card(name).locator('.state').filter({ hasText: new RegExp('^' + word + '$') });
+        await expect(state).toHaveCount(1);
+        await expect(state.locator('i')).toHaveCSS('background-color', theme === 'Day' ? day : night);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await card(unknown.label).screenshot({ path: testInfo.outputPath('readiness-attention-' + width + '-' + theme.toLowerCase() + '.png') });
+    }
+  }
+  await assertHealthy(page, faults);
+});
 
 test('a ready command shows its real session launcher and copies it without starting or restarting the daemon', async ({ page }, testInfo) => {
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);

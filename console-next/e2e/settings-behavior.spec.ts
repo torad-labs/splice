@@ -33,6 +33,42 @@ async function topologyWrites(page: Page) {
   return writes;
 }
 
+test('attention dots are amber in both themes and a healthy Wrapped command is green', async ({ page }, testInfo) => {
+  await page.route(url => url.pathname === '/api/doctor', async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.checks = [{ id: 'runtime/synthetic-attention', status: 'warn', detail: 'Synthetic check needs attention.' }];
+    await route.fulfill({ response, json: body });
+  });
+  await page.route(url => url.pathname === '/api/claude-head', async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: { ...body, mode: 'wrapped' } });
+  });
+  for (const path of ['settings/health', 'settings/tools']) {
+    const faults = await open(page, path);
+    const sheet = page.locator('.settings-sheet:not([hidden])');
+    const words = path === 'settings/health' ? ['Mostly good', 'Worth a look'] : ['Wrapped'];
+    for (const width of [1536, 393]) {
+      await page.setViewportSize({ width, height: 1024 });
+      for (const theme of ['Day', 'Night']) {
+        await page.getByRole('button', { name: theme, exact: true }).click();
+        const color = path === 'settings/health'
+          ? theme === 'Day' ? 'rgb(125, 84, 25)' : 'rgb(231, 192, 105)'
+          : theme === 'Day' ? 'rgb(44, 101, 85)' : 'rgb(97, 190, 163)';
+        for (const word of words) {
+          const state = sheet.locator('.state').filter({ hasText: new RegExp('^' + word + '$') });
+          await expect(state).toHaveCount(1);
+          await expect(state.locator('i')).toHaveCSS('background-color', color);
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await sheet.screenshot({ path: testInfo.outputPath(path.split('/')[1] + '-attention-' + width + '-' + theme.toLowerCase() + '.png') });
+      }
+    }
+    await assertHealthy(page, faults);
+  }
+});
+
 test('Compaction report labels stand above complete single-line recent records', async ({ page }, testInfo) => {
   const at = Date.now();
   await page.route(url => url.pathname === '/api/compact', route => route.fulfill({ json: { stats: {

@@ -33,7 +33,7 @@ export function ClaudeHead() {
     : <Confirm trigger={<Button>{C.wrap}</Button>} title={C.wrapTitle} why={C.wrapWhy} act={C.wrap} cancel={C.cancel} onConfirm={async () => void (await wrap.mutateAsync())} />;
   return (
     <>
-      <Row title={C.title} why={wrapped ? C.wrappedWhy : C.separateWhy} control={<><State tone={wrapped ? 'wait' : 'work'}>{wrapped ? C.wrapped : C.separate}</State>{act}</>} />
+      <Row title={C.title} why={wrapped ? C.wrappedWhy : C.separateWhy} control={<><State tone="work">{wrapped ? C.wrapped : C.separate}</State>{act}</>} />
       <Row title={C.onPath} why="" control={<Path>{card.resolves_to ?? C.notFound}</Path>} />
       <Row title={C.shim} why="" control={<Path>{card.shim_path}</Path>} />
       {wrapped ? <Row title={C.realBinary} why="" control={<Path>{card.real_binary_path ?? C.unknown}</Path>} /> : null}

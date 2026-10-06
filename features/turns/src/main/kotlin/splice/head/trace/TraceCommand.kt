@@ -61,7 +61,7 @@ public class TraceCommand(
     }
 
     private fun table(head: String, traceDir: Path, ask: TraceAsk): Boolean {
-        val read = Cancellables.runCatchingCancellable { rows.read(traceDir, head, ask) }
+        val read = Cancellables.runCatchingCancellable { rows.summaries(traceDir, head, ask) }
             .getOrElse { return unreadable(head, traceDir, it) }
         return view.printTable(head, traceDir, read)
     }

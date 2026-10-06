@@ -80,7 +80,7 @@ public class TraceRoute(
     }
 
     private suspend fun list(key: String, traceDir: Path, ask: TraceAsk): JsonReply {
-        val read = withContext(io) { Cancellables.runCatchingCancellable { rows.read(traceDir, key, ask) } }
+        val read = withContext(io) { Cancellables.runCatchingCancellable { rows.summaries(traceDir, key, ask) } }
             .getOrElse { return unreadable(key, traceDir, it) }
         return JsonReply(HttpStatusCode.OK, bodies.list(key, traceDir, read))
     }

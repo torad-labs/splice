@@ -26,6 +26,7 @@ import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapOwners
 import splice.core.storage.DayFiles
 import splice.core.util.JsonScalars
+import splice.head.trace.body.TraceBodySelection
 import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.file.Path
@@ -47,7 +48,7 @@ internal data class TraceAsk(val last: Int, val session: String? = null, val tur
 /** The turns asked for, oldest first, and the store they came from: [onDisk] turns on disk and
  *  [skippedLines] lines no turn placed, over every line of every day. */
 internal data class TraceRead(val turns: List<TracedTurn>, val onDisk: Int, val skippedLines: Int) {
-    /** Only selected records were hydrated; the census makes no claim about other bodies. */
+    /** Only selected records were checked; the census makes no claim about other bodies. */
     val unavailableRecords: Int get() = turns.sumOf { turn ->
         (turn.attempts + listOfNotNull(turn.turn)).count { JsonScalars.str(it, "body_unavailable") == "true" }
     }
@@ -83,10 +84,25 @@ internal class TraceRows(
         return TraceRead(turns, count.onDisk, count.skippedLines)
     }
 
+    /** The table and HTTP list need summaries, not the conversation bodies. */
+    internal fun summaries(traceDir: Path, head: String, ask: TraceAsk): TraceRead {
+        val turns = selected(traceDir, head, ask, TraceBodySelection.SUMMARY)
+        val count = census(traceDir, head).count(days(traceDir, head))
+        return TraceRead(turns, count.onDisk, count.skippedLines)
+    }
+
     /** The turns [ask] names, oldest first, read from the newest line only until each is whole. */
     @Throws(IOException::class)
-    internal fun turns(traceDir: Path, head: String, ask: TraceAsk): List<TracedTurn> {
-        return TraceTail(ask, json, heap).use { tail ->
+    internal fun turns(traceDir: Path, head: String, ask: TraceAsk): List<TracedTurn> =
+        selected(traceDir, head, ask, TraceBodySelection.RECORDS)
+
+    private fun selected(
+        traceDir: Path,
+        head: String,
+        ask: TraceAsk,
+        selection: TraceBodySelection,
+    ): List<TracedTurn> {
+        return TraceTail(ask, json, heap, selection).use { tail ->
             days(traceDir, head).newestFirst(tail)
             tail.turns()
         }

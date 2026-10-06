@@ -20,6 +20,7 @@ import splice.core.storage.LineVisit
 import splice.core.util.JsonScalars
 import splice.head.trace.body.TraceBodies
 import splice.head.trace.body.TraceBodyReaders
+import splice.head.trace.body.TraceBodySelection
 import splice.upstream.memory.JvmHeap
 
 // why: how far before a turn's first attempt its turn record can lie when the attempt was written late. A
@@ -32,6 +33,7 @@ internal class TraceTail(
     private val ask: TraceAsk,
     private val json: Json,
     private val heap: HeapBudget = JvmHeap.budget,
+    private val selection: TraceBodySelection = TraceBodySelection.RECORDS,
 ) : LineVisit, AutoCloseable {
     private val taken = LinkedHashMap<String, HeldTurn>()
     private val unopened = HashSet<String>()
@@ -77,9 +79,10 @@ internal class TraceTail(
         return line.bytes().use { input ->
             HeapText.Reader.read(input, line.byteSize, heap).use { staged ->
                 val record = json.parseToJsonElement(staged.text).jsonObject
-                bodies.selected(record, line.file, readers).also { selected ->
-                    // Hydrated strings have their own owners; only parsed row metadata survives this stage.
-                    staged.retain(selected, HeapJson.bytes(record))
+                bodies.selected(record, line.file, readers, selection).also { selected ->
+                    // Full records own hydrated strings separately. Summaries retain only their projected graph.
+                    val retained = if (selection == TraceBodySelection.SUMMARY) selected else record
+                    staged.retain(selected, HeapJson.bytes(retained))
                 }
             }
         }

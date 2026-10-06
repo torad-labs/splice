@@ -6,6 +6,7 @@ package splice.head.trace.body
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -84,30 +85,42 @@ internal class TraceBodies(
         replace(record) { value -> if (value is JsonObject) resolve(value, day, readers) else value }
 
     /** A damaged reference costs only its body; sibling bodies and record metadata remain readable. */
-    fun selected(record: JsonObject, day: Path, readers: TraceBodyReaders): JsonObject =
+    fun selected(
+        record: JsonObject,
+        day: Path,
+        readers: TraceBodyReaders,
+        selection: TraceBodySelection = TraceBodySelection.RECORDS,
+    ): JsonObject =
         withAvailability(
             replace(record) { value ->
                 if (value is JsonObject) {
                     try {
-                        resolve(value, day, readers)
+                        resolve(value, day, readers, selection)
                     } catch (capacity: HeapCapacityException) {
                         throw capacity
                     } catch (_: IOException) {
                         JsonObject(value + (UNAVAILABLE_TAG to JsonPrimitive(true)))
                     }
                 } else {
-                    value
+                    if (selection == TraceBodySelection.SUMMARY) JsonNull else value
                 }
             },
-        )
+        ).let { selected ->
+            if (selection == TraceBodySelection.SUMMARY) JsonObject(selected - BODY_FIELDS.keys) else selected
+        }
 
-    private fun resolve(value: JsonObject, day: Path, readers: TraceBodyReaders): JsonElement {
+    private fun resolve(
+        value: JsonObject,
+        day: Path,
+        readers: TraceBodyReaders,
+        selection: TraceBodySelection = TraceBodySelection.RECORDS,
+    ): JsonElement {
         val format = TracePackFormat.entries.firstOrNull { it.names(value) }
             ?: throw IOException("invalid trace body chunk version")
         if (JsonScalars.str(value, UNAVAILABLE_TAG) == "true") return value
         if (budget.evicted(day)) return unavailable(BODY_BUDGET_EVICTED_REASON)
         val parts = value["parts"] as? JsonArray ?: throw IOException("invalid trace body chunk parts")
-        return resolveParts(day, readers, format, parts)
+        return resolveParts(day, readers, format, parts, selection)
     }
 
     private fun resolveParts(
@@ -115,8 +128,16 @@ internal class TraceBodies(
         readers: TraceBodyReaders,
         format: TracePackFormat,
         parts: JsonArray,
+        selection: TraceBodySelection,
     ): JsonElement = try {
-        readers.of(format.pack(day), format).literal(parts)
+        val reader = readers.of(format.pack(day), format)
+        when (selection) {
+            TraceBodySelection.RECORDS -> reader.literal(parts)
+            TraceBodySelection.SUMMARY -> {
+                reader.validate(parts)
+                JsonNull
+            }
+        }
     } catch (failure: IOException) {
         if (!budget.evicted(day)) throw failure
         unavailable(BODY_BUDGET_EVICTED_REASON)

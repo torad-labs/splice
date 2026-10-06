@@ -11,16 +11,24 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.memory.HeapBudget
+import splice.core.memory.HeapCapacityException
 import splice.core.perf.PerfSnapshot
 import splice.core.storage.ActivityDays
+import splice.core.storage.DayBodyBudget
 import splice.core.terminal.TerminalOutput
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -31,10 +39,15 @@ import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
+import splice.head.trace.TraceAsk
 import splice.head.trace.TraceCommand
 import splice.head.trace.TraceHeads
 import splice.head.trace.TraceQuery
 import splice.head.trace.TraceRoute
+import splice.head.trace.TraceRows
+import splice.head.trace.TraceTurnSummary
+import splice.head.trace.body.TraceBodyPack
+import splice.head.trace.body.TracePackIndex
 import splice.head.wire.ClientInbound
 import splice.head.wire.TurnIdMint
 import splice.upstream.sse.WireAttempt
@@ -73,17 +86,17 @@ class TraceTailHeapTest {
     )
 
     /** Writes [ids] as the daemon would, one attempt and one turn record each, on the day [at] falls in. */
-    private fun write(traceDir: Path, at: Long, ids: List<String>) {
+    private fun write(traceDir: Path, at: Long, ids: List<String>, bodyChars: Int = BODY_CHARS) {
         val queue = ArrayDeque(ids)
         val store = splice.head.syntheticTraceStore(
             ActivityDays(traceDir, HEAD, 30, WallClock { at }, true),
             HEAD,
-            maxBodyChars = 2 * BODY_CHARS,
+            maxBodyChars = 2 * bodyChars,
             now = WallClock { at },
             ids = TurnIdMint { queue.removeFirst() },
         )
         ids.forEach { id ->
-            val body = id.padEnd(BODY_CHARS, 'x')
+            val body = id.padEnd(bodyChars, 'x')
             val trace = store.begin(meta(), ClientInbound("POST", "/v1/messages", emptyMap(), body))
             trace.responseText(body)
             trace.attempted(
@@ -170,6 +183,148 @@ class TraceTailHeapTest {
         assertEquals(
             listOf("d2-09", "d2-10", "d2-11"),
             payload.getValue("turns").jsonArray.map { it.jsonObject.str("id") },
+        )
+    }
+
+    @Test
+    fun `twenty multi megabyte turns list within 64 MiB without changing their summaries`(@TempDir tmp: Path) {
+        val traceDir = tmp.resolve("bounded")
+        val ids = (0 until 20).map { "bounded-%02d".format(it) }
+        write(traceDir, DAY_ONE, ids, bodyChars = 2 * BODY_CHARS)
+        val ask = TraceAsk(last = ids.size)
+        val expected = ids.map { id ->
+            TraceTurnSummary.of(TraceRows().turns(traceDir, HEAD, TraceAsk(last = 1, turn = id)).single()).toString()
+        }
+        val heap = HeapBudget(heapLimitBytes = 1L shl 30, budgetBytes = 64L shl 20)
+        assertEquals(64L shl 20, heap.limitBytes)
+
+        val listed = TraceRows(heap = heap).summaries(traceDir, HEAD, ask)
+
+        assertEquals(ids.size, listed.onDisk)
+        assertEquals(0, listed.skippedLines)
+        assertEquals(0, listed.unavailableRecords)
+        assertEquals(expected, listed.turns.map { TraceTurnSummary.of(it).toString() })
+        val wide = TraceRows(heap = HeapBudget(heapLimitBytes = 1L shl 30, budgetBytes = 64L shl 20))
+            .summaries(traceDir, HEAD, TraceAsk(last = 2000))
+        assertEquals(expected, wide.turns.map { TraceTurnSummary.of(it).toString() })
+        assertEquals(listed.onDisk, wide.onDisk)
+        listed.turns.forEach { turn ->
+            (turn.attempts + listOfNotNull(turn.turn)).forEach { record ->
+                listOf("request" to "body", "response" to "text", "client" to "body", "answer" to "body")
+                    .forEach { (section, field) ->
+                        val body = record[section]?.jsonObject?.get(field)
+                        assertTrue(body == null || body.toString() == "null", "list retained $section.$field")
+                    }
+            }
+        }
+        assertThrows(HeapCapacityException::class.java) {
+            TraceRows(heap = HeapBudget(heapLimitBytes = 1L shl 30, budgetBytes = 64L shl 20))
+                .read(traceDir, HEAD, ask)
+        }
+    }
+
+    @Test
+    fun `summary validation rejects well hashed chunks that are not a complete JSON string`(@TempDir tmp: Path) {
+        val day = tmp.resolve("$HEAD-2026-09-18.jsonl")
+        val invalid = listOf("false", "\"unfinished", "\"bad\\q\"", "\"first\" \"second\"")
+        val records = TraceBodyPack(
+            day.resolveSibling("${day.fileName}.bodies2"),
+            TracePackIndex(),
+            budget = DayBodyBudget(1L shl 20, minFreeBytes = 0),
+        ).use { pack ->
+            invalid.mapIndexed { index, literal ->
+                val parts = literal.toByteArray().asList().chunked(3).map { pack.put(it.toByteArray()) }
+                buildJsonObject {
+                    put("kind", "turn")
+                    put("turn", "invalid-$index")
+                    put("ts", DAY_ONE)
+                    putJsonObject("client") {
+                        putJsonObject("body") {
+                            put("trace_chunks", 2)
+                            put("parts", JsonArray(parts))
+                        }
+                    }
+                }
+            }
+        }
+        Files.writeString(day, records.joinToString("\n", postfix = "\n"))
+        val ask = TraceAsk(last = invalid.size)
+        val original = TraceRows().read(tmp, HEAD, ask)
+        assertEquals(invalid.size, original.unavailableRecords)
+
+        val listed = TraceRows().summaries(tmp, HEAD, ask)
+
+        assertEquals(original.unavailableRecords, listed.unavailableRecords)
+        assertEquals(
+            original.turns.map { TraceTurnSummary.of(it).toString() },
+            listed.turns.map { TraceTurnSummary.of(it).toString() },
+        )
+    }
+
+    @Test
+    fun `legacy inline bodies are discarded and only projected metadata remains charged`(@TempDir tmp: Path) {
+        val day = tmp.resolve("$HEAD-2026-09-18.jsonl")
+        Files.newBufferedWriter(day).use { writer ->
+            repeat(20) { index ->
+                val id = "inline-$index"
+                val attempt = buildJsonObject {
+                    put("kind", "attempt")
+                    put("turn", id)
+                    put("ts", DAY_ONE)
+                    put("model", "synthetic")
+                    put("attempt", 1)
+                    putJsonObject("request") { put("body", id.padEnd(2 * BODY_CHARS, 'x')) }
+                }
+                val ending = buildJsonObject {
+                    put("kind", "turn")
+                    put("turn", id)
+                    put("ts", DAY_ONE)
+                    put("model", "synthetic")
+                    put("outcome", "failure:api_error")
+                    put("failure_sentence", "synthetic stored refusal")
+                    put("attempts", 1)
+                    put("rounds", 1)
+                }
+                writer.appendLine(attempt.toString())
+                writer.appendLine(ending.toString())
+            }
+        }
+        val ask = TraceAsk(last = 20)
+        val original = TraceRows().read(tmp, HEAD, ask)
+        val heap = HeapBudget(heapLimitBytes = 1L shl 30, budgetBytes = 64L shl 20)
+
+        val listed = TraceRows(heap = heap).summaries(tmp, HEAD, ask)
+
+        assertEquals(20, listed.onDisk)
+        assertEquals(
+            original.turns.map { TraceTurnSummary.of(it).toString() },
+            listed.turns.map { TraceTurnSummary.of(it).toString() },
+        )
+        assertTrue(listed.turns.all { it.attempts.single()["request"]?.jsonObject?.get("body").toString() == "null" })
+    }
+
+    @Test
+    fun `last 2000 on a larger multi megabyte store keeps only per turn metadata`(@TempDir tmp: Path) {
+        val traceDir = tmp.resolve("wide")
+        val ids = (0 until 64).map { "wide-%02d".format(it) }
+        write(traceDir, DAY_ONE, ids, bodyChars = 2 * BODY_CHARS)
+        val expected = ids.map { id ->
+            TraceTurnSummary.of(TraceRows().turns(traceDir, HEAD, TraceAsk(last = 1, turn = id)).single()).toString()
+        }
+        val heap = HeapBudget(heapLimitBytes = 1L shl 30, budgetBytes = 64L shl 20)
+
+        val listed = TraceRows(heap = heap).summaries(traceDir, HEAD, TraceAsk(last = 2000))
+
+        assertEquals(ids.size, listed.onDisk)
+        assertEquals(0, listed.skippedLines)
+        assertEquals(0, listed.unavailableRecords)
+        assertEquals(expected, listed.turns.map { TraceTurnSummary.of(it).toString() })
+        assertTrue(
+            listed.turns.all { turn ->
+                (turn.attempts + listOfNotNull(turn.turn)).all { record ->
+                    listOf("request", "response", "client", "answer").none(record::containsKey)
+                }
+            },
         )
     }
 

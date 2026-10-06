@@ -73,6 +73,18 @@ internal class TraceBodyReader(
         }
     }
 
+    /** Check each bounded chunk without building or caching the multi-megabyte literal. */
+    fun validate(parts: JsonArray) {
+        val peak = heap.reserve(format.maxStored.toLong() + CHUNK_MAX) ?: throw HeapCapacityException()
+        peak.use {
+            val literal = TraceLiteralScan()
+            val valid = parts.all { literal.feed(chunk(it)) }
+            if (!valid || !literal.ended) throw invalidLiteral()
+        }
+    }
+
+    private fun invalidLiteral(): IOException = IOException("invalid trace body chunk literal: $file")
+
     private fun decodedLiteral(literal: ByteArrayOutputStream): JsonPrimitive =
         Cancellables.runCatchingCancellable {
             val primitive = Json.parseToJsonElement(literal.toString(Charsets.UTF_8)) as? JsonPrimitive

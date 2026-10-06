@@ -1,4 +1,6 @@
 source	sha256	disposition	destination	reason
+features/turns/src/main/kotlin/splice/head/trace/body/TraceBodySelection.kt	a5a95d4d34db23f63583331d3cebab6aeab0e7021b530d08cd3b9569de34e5de	created		V4-444: Explicit metadata versus full-record body selection keeps trace lists from hydrating conversations.
+features/turns/src/main/kotlin/splice/head/trace/body/TraceLiteralScan.kt	6cb91dee4ded2ffbd7b924a996abe6f65859f15809cfe12830bf522075286056	created		V4-444: Bounded JSON string validation preserves corruption reporting without assembling or retaining trace bodies.
 console-next/e2e/model-detail-header.spec.ts	f0d0d1850705136387843dde18a41ed7c5288249f2b8fefd2716beaa900940bd	created		V4-444: Independent synthetic model detail header readability at desktop and narrow widths.
 integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeCutClaim.kt	257e4024ef94bec5f078a48caf9f096271145e81ab43ddd4748fd41e5540aef4	created		Separates declared source cancellation ownership from an observed active-reader cut and freezes its once-only client claim across autonomous retirement.
 core/src/main/kotlin/splice/core/turn/HeadStopSignal.kt	d58959d2e284c25d37858f0682276ccb5f906a291b23f50154c494d5ce533ba1	created		Carries a monotonic head-generation stop fence across coroutine and independent source ownership before any turn job is cancelled.

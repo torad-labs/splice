@@ -454,6 +454,20 @@ export async function startStack(): Promise<Stack> {
   // 500 from then on (12 journeys red; the same tree was 28/28 on the rerun).
   const runJar = join(home, 'splice.jar');
   copyFileSync(jar, runJar);
+  // The production 64 GiB floor cannot fit on tmpfs. Persisted state uses disk; home and scratch stay in RAM.
+  // Allocate only after preflight and jar copying, so an early setup failure cannot leak disk fixtures.
+  const traceRoot = join(REPO, 'console-next/build/trace-fixtures');
+  mkdirSync(traceRoot, { recursive: true });
+  const traceDir = mkdtempSync(join(traceRoot, basename(home) + '-'));
+  try {
+    // Keep the trace leaf real while all existing home-relative state consumers use the same layout.
+    symlinkSync(traceDir, join(home, '.splice'), 'dir');
+  } catch (failure) {
+    rmSync(traceDir, { recursive: true, force: true });
+    await new Promise<void>(ok => mock.close(() => ok()));
+    logStream.destroy();
+    throw failure;
+  }
   const child: ChildProcess = spawn('java', ['-Xmx512m', '-Dsplice.noSystemBrowser=1', `-Duser.home=${home}`, '-jar', runJar, 'daemon'], {
     cwd,
     env: {
@@ -474,43 +488,48 @@ export async function startStack(): Promise<Stack> {
 
   const base = `http://127.0.0.1:${ports.control}`;
   const stop = async (): Promise<void> => {
-    if (child.exitCode === null) {
-      child.kill('SIGTERM');
-      const deadline = Date.now() + 20_000;
-      while (child.exitCode === null && Date.now() < deadline) await new Promise((ok) => setTimeout(ok, 100));
-      if (child.exitCode === null) child.kill('SIGKILL');
-    }
-    if (await answers(`${base}/health`)) {
-      // The restart journey replaces the child this harness spawned. Stop its successor through
-      // the same management key, not by sending a signal to an untracked process on this machine.
-      // Include the wrong-parent location from the state-continuity regression: a red test must
-      // still stop the daemon it exposed, not leave an untracked JVM behind on the host.
-      for (const keyFile of [join(home, '.splice/state/mgmt-key'), join(home, '.splice/mgmt-key')]) {
-        if (!existsSync(keyFile)) continue;
-        const key = readFileSync(keyFile, 'utf8').trim();
-        try {
-          const answer = await fetch(`${base}/api/daemon/shutdown`, {
-            method: 'POST', headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(5_000),
-          });
-          if (answer.status !== 202) continue;
-          await until('the restarted daemon to release its control port', BOOT_TIMEOUT_MS, async () =>
-            (await answers(`${base}/health`)) ? null : true);
-          break;
-        } catch (failure) {
-          console.log(`console e2e: could not stop restarted daemon: ${String(failure)}`);
+    try {
+      if (child.exitCode === null) {
+        child.kill('SIGTERM');
+        const deadline = Date.now() + 20_000;
+        while (child.exitCode === null && Date.now() < deadline) await new Promise((ok) => setTimeout(ok, 100));
+        if (child.exitCode === null) child.kill('SIGKILL');
+      }
+      if (await answers(`${base}/health`)) {
+        // The restart journey replaces the child this harness spawned. Stop its successor through
+        // the same management key, not by sending a signal to an untracked process on this machine.
+        // Include the wrong-parent location from the state-continuity regression: a red test must
+        // still stop the daemon it exposed, not leave an untracked JVM behind on the host.
+        for (const keyFile of [join(home, '.splice/state/mgmt-key'), join(home, '.splice/mgmt-key')]) {
+          if (!existsSync(keyFile)) continue;
+          const key = readFileSync(keyFile, 'utf8').trim();
+          try {
+            const answer = await fetch(`${base}/api/daemon/shutdown`, {
+              method: 'POST', headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(5_000),
+            });
+            if (answer.status !== 202) continue;
+            await until('the restarted daemon to release its control port', BOOT_TIMEOUT_MS, async () =>
+              (await answers(`${base}/health`)) ? null : true);
+            break;
+          } catch (failure) {
+            console.log(`console e2e: could not stop restarted daemon: ${String(failure)}`);
+          }
         }
       }
+      await new Promise<void>((ok) => mock.close(() => ok()));
+      // RouteFailure writes the daemon's persistent log, including after the original child exits
+      // and its detached successor takes over. The harness's boot-output log does not own those lines.
+      const routeLog = join(home, '.splice/logs/daemon.log');
+      const failures = (existsSync(routeLog) ? readFileSync(routeLog, 'utf8') : '').split('\n')
+        .filter((line) => /\[control\] \S+ \S+ failed: /.test(line));
+      if (failures.length > 0) console.log(`console e2e: the daemon answered route failures:\n${failures.join('\n')}`);
+      if (await answers(`${base}/health`)) throw new Error(`console e2e: daemon still serves ${base}; kept ${home}`);
+      if (process.env.CONSOLE_E2E_KEEP === undefined) rmSync(home, { recursive: true, force: true });
+      else console.log(`console e2e: kept ${home}`);
+    } finally {
+      // Reap trace fixtures on pass and fail, including KEEP runs, only after their daemon is stopped.
+      if (!(await answers(`${base}/health`))) rmSync(traceDir, { recursive: true, force: true });
     }
-    await new Promise<void>((ok) => mock.close(() => ok()));
-    // RouteFailure writes the daemon's persistent log, including after the original child exits
-    // and its detached successor takes over. The harness's boot-output log does not own those lines.
-    const routeLog = join(home, '.splice/logs/daemon.log');
-    const failures = (existsSync(routeLog) ? readFileSync(routeLog, 'utf8') : '').split('\n')
-      .filter((line) => /\[control\] \S+ \S+ failed: /.test(line));
-    if (failures.length > 0) console.log(`console e2e: the daemon answered route failures:\n${failures.join('\n')}`);
-    if (await answers(`${base}/health`)) throw new Error(`console e2e: daemon still serves ${base}; kept ${home}`);
-    if (process.env.CONSOLE_E2E_KEEP === undefined) rmSync(home, { recursive: true, force: true });
-    else console.log(`console e2e: kept ${home}`);
   };
 
   try {

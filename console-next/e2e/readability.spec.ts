@@ -187,29 +187,33 @@ test('system messages have a system speaker rather than the command or Assistant
 });
 
 test('a wrapped peer delivery renders its named Markdown body without transport metadata', async ({ page }) => {
-  const delivery = '<system-reminder>Another Claude session sent a message while you were working:\n' +
-    '<cross-session-message from="uds:/synthetic/console.sock" from-name="synthetic-console" from-mode="bypass">' +
-    '**Synthetic peer review**\n\n- Preserve this boundary.\n\n```typescript\nconst ready = true;\n```' +
-    '</cross-session-message>\n\nThis came from another Claude session. Synthetic delivery metadata.</system-reminder>';
-  await page.route('**/api/sessions/' + STACK.sender.id + '/transcript?*', route => route.fulfill({ json: {
-    session_id: STACK.sender.id, path: '/synthetic/transcript.jsonl', earlier: null, messages: [
-      { index: 0, role: 'system', text: delivery },
-      { index: 1, role: 'system', text: 'Synthetic ordinary client note.' },
-    ],
-  } }));
-  const faults = await open(page, 'sessions/' + STACK.sender.id);
-  const peer = page.locator('.msg.peer').filter({ hasText: 'Synthetic peer review' });
-  await expect(peer.locator('.stamp')).toContainText('Message from synthetic-console');
-  await expect(peer.locator('strong')).toHaveText('Synthetic peer review');
-  await expect(peer.getByRole('listitem')).toHaveText('Preserve this boundary.');
-  await expect(peer.locator('pre.code')).toContainText('const ready = true;');
-  for (const transport of ['uds:/synthetic', 'cross-session-message', 'Synthetic delivery metadata', 'Another Claude session sent']) {
-    await expect(page.getByRole('main')).not.toContainText(transport);
+  for (const timing of [' while you were working', '']) {
+    const delivery = '<system-reminder>Another Claude session sent a message' + timing + ':\n' +
+      '<cross-session-message from="uds:/synthetic/console.sock" from-name="synthetic-console" from-mode="bypass">' +
+      '**Synthetic peer review**\n\n- Preserve this boundary.\n\n```typescript\nconst ready = true;\n```' +
+      '</cross-session-message>\n\nThis came from another Claude session. Synthetic delivery metadata.</system-reminder>';
+    await page.route('**/api/sessions/' + STACK.sender.id + '/transcript?*', route => route.fulfill({ json: {
+      session_id: STACK.sender.id, path: '/synthetic/transcript.jsonl', earlier: null, messages: [
+        { index: 0, role: 'system', text: delivery },
+        { index: 1, role: 'system', text: 'Synthetic ordinary client note.' },
+      ],
+    } }));
+    const faults = await open(page, 'sessions/' + STACK.sender.id);
+    // The same session address can retain the previous prefix's query cache until the next poll.
+    await page.reload();
+    const peer = page.locator('.msg.peer').filter({ hasText: 'Synthetic peer review' });
+    await expect(peer.locator('.stamp')).toContainText('Message from synthetic-console');
+    await expect(peer.locator('strong')).toHaveText('Synthetic peer review');
+    await expect(peer.getByRole('listitem')).toHaveText('Preserve this boundary.');
+    await expect(peer.locator('pre.code')).toContainText('const ready = true;');
+    for (const transport of ['uds:/synthetic', 'cross-session-message', 'from-mode', 'Synthetic delivery metadata', 'Another Claude session sent']) {
+      await expect(page.getByRole('main')).not.toContainText(transport);
+    }
+    await expect(page.locator('.msg').filter({ hasText: 'Synthetic ordinary client note.' }).locator('.who')).toContainText('Claude Code note');
+    expect(faults.pageErrors).toEqual([]);
+    expect(faults.failedReads).toEqual([]);
+    await page.unrouteAll({ behavior: 'wait' });
   }
-  await expect(page.locator('.msg').filter({ hasText: 'Synthetic ordinary client note.' }).locator('.who')).toContainText('Claude Code note');
-  expect(faults.pageErrors).toEqual([]);
-  expect(faults.failedReads).toEqual([]);
-  await page.unrouteAll({ behavior: 'wait' });
 });
 
 test('session messages keep long speakers, peer stamps and code inside the conversation at narrow widths', async ({ page }) => {

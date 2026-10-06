@@ -17,7 +17,7 @@ export type Cleaned =
 const ESC = String.fromCharCode(27);
 const ANSI = new RegExp(`${ESC}\\[[0-9;]*[A-Za-z]`, 'g');
 const OUTER = /^\s*<([a-zA-Z][\w-]*)>/;
-const PEER = /^\s*(?:Another Claude session sent a message while you were working:\s*)?<cross-session-message\b([^>]*)>([\s\S]*?)<\/cross-session-message>\s*(?:This came from another Claude session[\s\S]*)?$/;
+const PEER = /^\s*(?:Another Claude session sent a message(?: while you were working)?:\s*)?<cross-session-message\b([^>]*)>([\s\S]*?)<\/cross-session-message>\s*(?:This came from another Claude session[\s\S]*)?$/;
 const CAVEAT = /<local-command-caveat>[\s\S]*?<\/local-command-caveat>/g;
 const REMINDER = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
 

@@ -357,6 +357,22 @@ for (const scenario of [
       }
       await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
       await expect(dialog).toHaveCount(0);
+      await open(page, 'accounts');
+      const accountBudget = page.locator('.account-budget').filter({ has: page.getByRole('button', { name: 'Edit cap', exact: true }) });
+      await expect(accountBudget).toHaveCount(1);
+      const resetLine = accountBudget.getByText('Daily budgets reset at ' + local + '.', { exact: true });
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 1024 });
+        await expect(resetLine).toBeVisible();
+        await resetLine.scrollIntoViewIfNeeded();
+        expect(await resetLine.evaluate(element => {
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          return [...range.getClientRects()].every(part => part.left >= -1 && part.right <= innerWidth + 1);
+        })).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await accountBudget.screenshot({ path: testInfo.outputPath('accounts-budget-reset-' + width + '.png') });
+      }
       await assertHealthy(page, faults);
     });
   });

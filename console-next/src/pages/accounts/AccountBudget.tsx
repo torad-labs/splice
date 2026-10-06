@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { useModels } from '../../api/models';
-import { hasBudgetPrices } from '../../lib/budget';
+import { hasBudgetPrices, nextBudgetResetAtEpochSeconds } from '../../lib/budget';
 import { B } from '../usage/copy';
 import { isPendingRoute } from '../../api/auth';
 import { failureText } from '../../api/client';
 import { useBudgets, usePutBudgets } from '../../api/usage';
 import { fmtUsd } from '../../lib/format';
+import { localZonedInstantText } from '../../lib/heads';
 import { U } from '../../lib/words-usage';
 import { Button } from '../../ui';
 import { A } from './copy';
@@ -24,6 +25,7 @@ export function AccountBudget({ head, label = head }: { head: string; label?: st
   if (data.unreadable != null) return <p className="hint alert" role="alert">{data.unreadable}</p>;
   const budget = data.budgets.find(row => row.head === head);
   const cap = budget?.daily_usd ?? null;
+  const reset = localZonedInstantText(nextBudgetResetAtEpochSeconds(Date.now()));
   const catalog = models.data === undefined || isPendingRoute(models.data) ? undefined : models.data.heads.find(row => row.head === head);
   const priced = hasBudgetPrices(catalog);
   const priceWords = models.isPending ? B.pricesReading : models.isError ? failureText(models.error) : catalog === undefined ? B.priceCatalogMissing : priced ? B.budgetPriced : B.budgetUnpriced;
@@ -44,6 +46,7 @@ export function AccountBudget({ head, label = head }: { head: string; label?: st
         <span>{A.spent}: {fmtUsd(budget.used_usd)}</span>
         {budget.remaining_usd == null ? null : <span>{A.left}: {fmtUsd(budget.remaining_usd)}</span>}
       </>}
+      <span className="hint">{U.budgetResets(reset)}</span>
       {editing ? <form className="acts-row" onSubmit={event => { event.preventDefault(); write(); }}>
         <label className="sr" htmlFor={`budget-${head}`}>{A.headBudget(label)}</label>
         <input id={`budget-${head}`} className="input" type="number" min="0.01" step="0.01" value={text} placeholder={A.noCap} onChange={event => setText(event.target.value)} autoFocus />

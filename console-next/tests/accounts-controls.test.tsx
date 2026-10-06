@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { modelsKey } from '../src/api/models';
 import type { HeadCatalog } from '../src/types/models';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { budgetsKey } from '../src/api/usage';
 import { AccountBudget } from '../src/pages/accounts/AccountBudget';
 import { FailoverOrder } from '../src/pages/accounts/FailoverOrder';
@@ -140,6 +140,28 @@ test('a cap without priced spend does not invent zero or a remaining balance', (
   expect(html).not.toContain('Budget used');
   expect(html).not.toContain('Left in budget');
   expect(html).not.toContain('$0');
+});
+
+test.each([
+  ['America/Chicago', '2026-10-05T23:59:59.999Z', '2026-10-06T00:00:00Z'],
+  ['America/Chicago', '2026-10-06T00:00:00Z', '2026-10-07T00:00:00Z'],
+  ['America/New_York', '2026-03-08T05:00:00Z', '2026-03-09T00:00:00Z'],
+  ['America/New_York', '2026-11-01T04:00:00Z', '2026-11-02T00:00:00Z'],
+  ['Asia/Kathmandu', '2026-10-05T12:00:00Z', '2026-10-06T00:00:00Z'],
+])('Accounts states the actual UTC budget reset in viewer zone %s at %s', (zone, at, reset) => {
+  vi.stubEnv('TZ', zone);
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(at));
+  try {
+    const html = budget({ budgets: [{ head: 'synthetic-command', daily_usd: 10, action: 'warn', used_usd: 3, remaining_usd: 7 }] });
+    const local = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short', timeZone: zone }).format(new Date(reset));
+    expect(html).toContain(`Daily budgets reset at ${local}.`);
+    expect(html).toContain('Budget used: $3');
+    expect(html).toContain('Left in budget: $7');
+  } finally {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  }
 });
 
 test('a priced command shows the daemon measured budget values', () => {

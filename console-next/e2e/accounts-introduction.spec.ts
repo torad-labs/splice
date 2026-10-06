@@ -232,8 +232,18 @@ test('native takeover availability keeps the expired login remedy reachable and 
 
 test('Accounts explains the current token profile state without turning a profile refusal into a request refusal', async ({ page }) => {
   const state = await nativePool(page);
-  const faults = await open(page, 'accounts');
+  let release = (): void => {};
+  const firstRead = new Promise<void>(resolve => { release = resolve; });
+  await page.route(url => url.pathname === '/api/accounts', async route => { await firstRead; await route.fallback(); });
+  let faults: Awaited<ReturnType<typeof open>>;
+  try {
+    faults = await open(page, 'accounts');
+    await expect(page.getByRole('main')).toContainText('Reading provider accounts');
+  } finally {
+    release();
+  }
   const card = page.locator('.account-card').filter({ has: page.getByRole('heading', { name: 'Personal login', exact: true }) });
+  await expect(card).toBeVisible();
   const row = nativeLogin(state.rows, 'claude');
   await expect(card).toContainText('Login not identified yet.');
   row.profile_state = 'refused';

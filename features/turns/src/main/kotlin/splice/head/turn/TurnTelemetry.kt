@@ -146,9 +146,8 @@ internal class TurnTelemetry(
                 // addition to the row, never a change to the string that identifies it.
                 cause = ending.cause,
                 layers = ending.layers,
-                // V4-345: the trace turn the row's request and answer were recorded under, so the
-                // console opens that request by its id.
-                turn = drive.trace?.turnId,
+                // The trace id when captured, or the same request-owned id as an untraced wire tap.
+                turn = drive.turnId,
                 sessionId = drive.meta.sessionId,
                 responseMessageId = drive.emitter.responseMessageId,
                 conversationKey = drive.meta.conversationKey,

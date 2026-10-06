@@ -352,6 +352,8 @@ public class InflightGate(
 
         /** The turn-owned receipt stamp, kept separate from this slot's watchdog liveness. */
         public fun interface UpstreamBytes {
+            /** The existing listed turn's stop identity, not a new id for each borrowed handle. */
+            public val turnId: String? get() = null
             public fun received()
         }
 
@@ -363,6 +365,7 @@ public class InflightGate(
             phase = if (state.streaming) GatePhase.STREAMING else GatePhase.CONNECT,
             ageMs = now - state.admittedAt,
             idleMs = now - state.lastTouch.get(),
+            turnId = state.upstreamBytes?.turnId,
         )
 
         /** A raw source round keeps admission and the materialized request heap until it really ends. */

@@ -101,4 +101,6 @@ public data class GateSlot(
     val ageMs: Long,
     /** Since the upstream was last heard, or since admission when it has not been yet. */
     val idleMs: Long,
+    /** The opaque live-turn stop id, absent when this slot has no listed streaming turn. */
+    val turnId: String? = null,
 )

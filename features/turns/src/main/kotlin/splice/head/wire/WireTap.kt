@@ -26,6 +26,8 @@ public data class WireRecord(
     val model: String,
     val compact: Boolean,
     val body: String,
+    /** The request's perf turn id, independent of the live-turn stop id. */
+    val turnId: String? = null,
 )
 
 /** The last [keep] upstream request bodies of one head, newest last. CME-safe under one lock, the
@@ -41,8 +43,10 @@ public class WireTap(public val keep: Int, private val now: WallClock = WallCloc
 
     /** Every round's body passes through here — fold, re-anchor and tool-search rounds included,
      *  because each is its own upstream request and an audit that showed only the first would lie. */
-    public fun record(meta: TurnMeta, body: String) {
-        val record = WireRecord(now(), meta.sessionId, meta.upstreamModel, meta.compact, body)
+    public fun record(meta: TurnMeta, body: String): Unit = record(meta, body, null)
+
+    public fun record(meta: TurnMeta, body: String, turnId: String?) {
+        val record = WireRecord(now(), meta.sessionId, meta.upstreamModel, meta.compact, body, turnId)
         synchronized(lock) {
             ring.addLast(record)
             while (ring.size > keep) ring.removeFirst()
@@ -67,6 +71,7 @@ public class WireTap(public val keep: Int, private val now: WallClock = WallCloc
                         put("model", record.model)
                         put("compact", record.compact)
                         put("body", record.body)
+                        record.turnId?.let { put("turn_id", it) }
                     },
                 )
             }

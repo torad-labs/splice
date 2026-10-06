@@ -78,6 +78,18 @@ class WireTapTest {
     }
 
     @Test
+    fun `keep one evicts ownership with its body and preserves the supplied opaque id`() {
+        val tap = WireTap(keep = 1)
+        tap.record(meta("shared"), "identical", "request-a")
+        tap.record(meta("shared"), "identical", "request-b")
+        assertEquals("request-b", tap.recent().single().turnId)
+        val record = Json.parseToJsonElement(tap.json("test")).jsonObject
+            .getValue("records").jsonArray.single().jsonObject
+        assertEquals("request-b", record.getValue("turn_id").jsonPrimitive.content)
+        assertEquals("identical", record.getValue("body").jsonPrimitive.content)
+    }
+
+    @Test
     fun `a tap that keeps nothing cannot be built - off is null, never an empty ring`() {
         assertThrows(IllegalArgumentException::class.java) { WireTap(keep = 0) }
         assertThrows(IllegalArgumentException::class.java) { WireTap(keep = -1) }

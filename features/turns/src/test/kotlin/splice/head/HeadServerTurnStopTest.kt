@@ -37,14 +37,17 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.head.GatePhase
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.storage.ActivityDays
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.head.turn.LiveTurns
 import splice.head.turn.LiveTurnsByHead
 import splice.head.turn.LiveTurnsRoutes
 import splice.head.turn.LiveTurnsSource
+import splice.head.wire.WireTap
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -68,7 +71,7 @@ class HeadServerTurnStopTest {
 
     /** A real HeadServer over the mock upstream with its live turns wired to [routes] the way the
      *  control plane wires them. maxRetries = 1 so the held turn stays held rather than backing off. */
-    private class Rig(private val tmp: Path) {
+    private class Rig(private val tmp: Path, val tap: WireTap? = null) {
         val mock = MockChatGptUpstream()
         val gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 })
         val turns = LiveTurns()
@@ -110,7 +113,20 @@ class HeadServerTurnStopTest {
                 upstream = UpstreamClient(totalTimeoutMs = 60_000, maxRetries = 1),
                 gate = gate,
                 log = { journal.add(it) },
-            ).copy(liveTurns = turns),
+            ).copy(
+                liveTurns = turns,
+                stores = headStores(
+                    tmp,
+                    wireTap = tap,
+                    trace = tap?.let {
+                        syntheticTraceStore(
+                            ActivityDays(tmp.resolve("trace"), "codex", 7, ownerOnly = true),
+                            "codex",
+                            1 shl 20,
+                        )
+                    },
+                ),
+            ),
         )
 
         suspend fun start() {
@@ -171,6 +187,7 @@ class HeadServerTurnStopTest {
             assertEquals(SESSION, turn["session"]!!.jsonPrimitive.content, "$listed")
             assertEquals("gpt-5.6-sol", turn["model"]!!.jsonPrimitive.content, "$listed")
             val id = turn["id"]!!.jsonPrimitive.content
+            assertEquals(id, rig.gate.snapshot().live.single().turnId, "the gate names the exact live stop target")
 
             val stop = rig.routes.stop("codex", id)
             assertEquals(200, stop.status.value, stop.body)
@@ -205,6 +222,35 @@ class HeadServerTurnStopTest {
             val again = rig.turn("go", stream = false)
             assertEquals(200, again.status.value, again.bodyAsText())
             assertEquals(2, rig.mock.upstreamBodies.size)
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `concurrent identical requests in one session retain both identity spaces`(@TempDir tmp: Path) = runBlocking {
+        val rig = Rig(tmp, WireTap(keep = 2))
+        rig.start()
+        try {
+            val first = async(Dispatchers.IO) { rig.turn("same", stream = true).bodyAsText() }
+            val second = async(Dispatchers.IO) { rig.turn("same", stream = true).bodyAsText() }
+            rig.until("both requests are posted") { rig.tap!!.recent().size == 2 && rig.turns.list().size == 2 }
+            val live = json(rig.routes.live("codex").body).getValue("turns").jsonArray
+            val liveIds = live.map { it.jsonObject.getValue("id").jsonPrimitive.content }.toSet()
+            assertEquals(2, liveIds.size)
+            assertEquals(liveIds, rig.gate.snapshot().live.map { it.turnId }.toSet())
+            val sent = json(rig.tap!!.json("codex")).getValue("records").jsonArray
+            val sentIds = sent.map { it.jsonObject.getValue("turn_id").jsonPrimitive.content }.toSet()
+            assertEquals(2, sentIds.size)
+            rig.mock.releaseHold()
+            withTimeout(WAIT_MS) {
+                first.await()
+                second.await()
+            }
+            assertTrue(AsyncFileIo.drain(), "the synthetic file lane drained")
+            val perfIds = rig.perfRows().lineSequence().filter(String::isNotBlank)
+                .map { json(it).getValue("turn").jsonPrimitive.content }.toSet()
+            assertEquals(sentIds, perfIds)
         } finally {
             rig.close()
         }

@@ -38,7 +38,9 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.storage.ActivityDays
 import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.wire.WireTap
@@ -46,6 +48,7 @@ import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration.Companion.seconds
@@ -100,6 +103,7 @@ class HeadWireTapTest {
     private val json = Json { ignoreUnknownKeys = true }
     private lateinit var tmp: java.nio.file.Path
     private val heads = mutableListOf<HeadServer>()
+    private val perfPaths = mutableMapOf<Int, Path>()
 
     private val catalog = ModelCatalog(
         discoveryPrefix = "claude-splice--",
@@ -107,7 +111,7 @@ class HeadWireTapTest {
         defaultContextWindow = 200_000,
     )
 
-    private fun startHead(wireTap: WireTap?, forwardClientAuth: Boolean = false): Int {
+    private fun startHead(wireTap: WireTap?, forwardClientAuth: Boolean = false, traced: Boolean = false): Int {
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
                 key = "anthropic",
@@ -134,10 +138,24 @@ class HeadWireTapTest {
             ).copy(
                 inferenceToken = TURN_KEY,
                 operatorToken = MGMT_KEY,
-                stores = headStores(tmp, suffix = "-${heads.size}", wireTap = wireTap),
+                stores = headStores(
+                    tmp,
+                    suffix = "-${heads.size}",
+                    wireTap = wireTap,
+                    trace = if (traced) {
+                        syntheticTraceStore(
+                            ActivityDays(tmp.resolve("trace-${heads.size}"), "anthropic", 7, ownerOnly = true),
+                            "anthropic",
+                            1 shl 20,
+                        )
+                    } else {
+                        null
+                    },
+                ),
             ),
         )
         runBlocking { head.start() }
+        perfPaths[head.port] = tmp.resolve("perf-${heads.size}.jsonl")
         heads += head
         return head.port
     }
@@ -159,6 +177,7 @@ class HeadWireTapTest {
         val response = client.post("http://127.0.0.1:$port/v1/messages") {
             header("Authorization", "Bearer $bearer")
             header("Content-Type", "application/json")
+            header("x-claude-code-session-id", "synthetic-wire-session")
             setBody(
                 """{"model":"claude-splice--claude-fable-5","max_tokens":16,""" +
                     """"system":"house rules","messages":[{"role":"user","content":"$text"}],"stream":true}""",
@@ -178,9 +197,16 @@ class HeadWireTapTest {
         json.parseToJsonElement(payload).jsonObject.getValue("records").jsonArray
             .map { it.jsonObject.getValue("body").jsonPrimitive.content }
 
+    private fun perfTurns(port: Int): List<String> {
+        assertTrue(AsyncFileIo.drain(), "the synthetic file lane drained")
+        return Files.readAllLines(perfPaths.getValue(port)).map {
+            json.parseToJsonElement(it).jsonObject.getValue("turn").jsonPrimitive.content
+        }
+    }
+
     @Test
     fun `the tap holds exactly the bytes the upstream received`() {
-        val port = startHead(WireTap(keep = 4))
+        val port = startHead(WireTap(keep = 4), traced = true)
         val before = upstream.bodies.size
         assertEquals(HttpStatusCode.OK, turn(port, "first"))
         assertEquals(before + 1, upstream.bodies.size, "one turn, one upstream request")
@@ -192,6 +218,7 @@ class HeadWireTapTest {
         val record = json.parseToJsonElement(payload).jsonObject.getValue("records").jsonArray.single().jsonObject
         assertEquals("claude-fable-5", record.getValue("model").jsonPrimitive.content)
         assertEquals("false", record.getValue("compact").jsonPrimitive.content)
+        assertEquals(perfTurns(port).single(), record.getValue("turn_id").jsonPrimitive.content)
         assertTrue(payload.contains("\"key\":\"anthropic\""), payload)
     }
 
@@ -207,6 +234,26 @@ class HeadWireTapTest {
 
         assertEquals(upstream.bodies.subList(before + 1, before + 3), bodiesOf(all), "the oldest of three is gone")
         assertEquals(listOf(upstream.bodies[before + 2]), bodiesOf(last))
+    }
+
+    @Test
+    fun `an untraced tap keeps request ownership after keep one evicts an identical request`() {
+        val tap = WireTap(keep = 1)
+        val port = startHead(tap, traced = false)
+        assertEquals(HttpStatusCode.OK, turn(port, "identical"))
+        val (_, firstPayload) = wire(port)
+        val first = json.parseToJsonElement(firstPayload).jsonObject.getValue("records").jsonArray.single().jsonObject
+        val firstId = first.getValue("turn_id").jsonPrimitive.content
+        assertEquals(firstId, perfTurns(port).single())
+
+        assertEquals(HttpStatusCode.OK, turn(port, "identical"))
+        val (_, secondPayload) = wire(port)
+        val second = json.parseToJsonElement(secondPayload).jsonObject.getValue("records").jsonArray.single().jsonObject
+        val secondId = second.getValue("turn_id").jsonPrimitive.content
+        assertTrue(firstId != secondId, "identical bodies in one session still belong to distinct requests")
+        assertEquals(listOf(firstId, secondId), perfTurns(port))
+        assertEquals(first.getValue("body"), second.getValue("body"), "the ids never alter request bytes")
+        assertEquals(1, tap.recent().size)
     }
 
     @Test

@@ -86,6 +86,22 @@ class LiveTurnsTest {
     }
 
     @Test
+    fun `concurrent turns in one session keep distinct live ids on their counted slots`() {
+        val first = slot()
+        val second = slot()
+        try {
+            turns.admitted(first, meta("shared-session"), hash("same"))
+            turns.admitted(second, meta("shared-session"), hash("same"))
+            val ids = turns.list().map { it.id }
+            assertEquals(2, ids.toSet().size)
+            assertEquals(ids, gate.snapshot().live.map { it.turnId })
+        } finally {
+            first.release()
+            second.release()
+        }
+    }
+
+    @Test
     fun `a stop cancels the turn's own job with an OperatorStop and answers its session`() {
         val slot = slot()
         turns.admitted(slot, meta("sess-a"), hash("go"))
@@ -140,6 +156,7 @@ class LiveTurnsTest {
         turns.driving(resumed, current)
 
         assertEquals(listOf("turn-1"), turns.list().map { it.id }, "one counted source is one listed turn")
+        assertEquals("turn-1", gate.snapshot().live.single().turnId, "a borrowed handle keeps its source stop id")
         turns.stop("turn-1")
         assertTrue(causeOf(raw) is OperatorStop)
         assertTrue(causeOf(current) is OperatorStop)

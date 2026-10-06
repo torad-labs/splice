@@ -54,6 +54,7 @@ public object HeadStatus {
                         )
                         put("age_ms", slot.ageMs)
                         put("idle_ms", slot.idleMs)
+                        slot.turnId?.let { put("turn_id", it) }
                     }
                 }
             }

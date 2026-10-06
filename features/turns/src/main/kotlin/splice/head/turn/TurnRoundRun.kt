@@ -66,6 +66,6 @@ internal class TurnRoundRun(
     // and the wire tap reads the text only when a tap is actually open.
     private fun recordPost(drive: TurnDrive, body: RoundBody) {
         drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, body.byteSize())
-        wireTap?.record(drive.meta, body.text)
+        wireTap?.record(drive.meta, body.text, drive.sentTurnId())
     }
 }

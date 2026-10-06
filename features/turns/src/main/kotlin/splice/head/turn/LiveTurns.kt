@@ -86,6 +86,7 @@ public class LiveTurns(
         private val jobs: MutableSet<Job> = ConcurrentHashMap.newKeySet()
         private val stopped = AtomicBoolean(false)
         private val lastByte = AtomicLong(since)
+        override val turnId: String get() = id
 
         override fun received() {
             lastByte.set(clock())

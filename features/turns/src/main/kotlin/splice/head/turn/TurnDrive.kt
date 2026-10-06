@@ -29,6 +29,7 @@ import splice.upstream.credentials.AccountSelection
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.TurnWatchdog
 import splice.upstream.transport.RemainingTurnWait
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -124,6 +125,12 @@ internal data class TurnDrive(
     fun interface SourceRoundStarted {
         fun started(job: kotlinx.coroutines.Job)
     }
+
+    /** Trace ownership when captured; otherwise minted only when this drive actually posts to a tap. */
+    var turnId: String? = trace?.turnId
+        private set
+
+    fun sentTurnId(): String = turnId ?: UUID.randomUUID().toString().also { turnId = it }
 
     private val claims = TurnClaims()
     val collectPerf = CollectPerf()

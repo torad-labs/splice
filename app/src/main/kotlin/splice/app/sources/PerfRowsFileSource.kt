@@ -32,6 +32,7 @@ import kotlinx.serialization.json.longOrNull
 import splice.core.perf.LivenessProbe
 import splice.core.perf.PerfArchiveName
 import splice.core.perf.PerfKeys
+import splice.core.perf.PerfTurnIds
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -81,8 +82,9 @@ private const val ACCOUNT_KEY = "account"
 private const val CACHE_COLD_KEY = "cache_cold"
 private const val COMPACT_KEY = "compact"
 
-// V4-345: the trace turn a row's request was recorded under (PerfRowMeta.turn).
+// Trace lookup and request ownership stay separate, including on a head with capture off.
 private const val TURN_KEY = "turn"
+private const val REQUEST_TURN_KEY = "turn_id"
 
 public class PerfRowsFileSource internal constructor(
     private val file: Path,
@@ -456,7 +458,7 @@ public class PerfRowsFileSource internal constructor(
                 account = text(obj, ACCOUNT_KEY),
                 cacheCold = (obj[CACHE_COLD_KEY] as? JsonPrimitive)?.booleanOrNull,
                 compact = (obj[COMPACT_KEY] as? JsonPrimitive)?.booleanOrNull,
-                turn = text(obj, TURN_KEY),
+                turns = PerfTurnIds(trace = text(obj, TURN_KEY), request = text(obj, REQUEST_TURN_KEY)),
             )
         }
 

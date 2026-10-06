@@ -18,6 +18,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -31,6 +33,7 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
+import splice.app.sources.PerfRowsFileSource
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService
@@ -72,6 +75,7 @@ class ConsoleVerbReadsRoutesTest {
     private lateinit var control: ControlServer
     private lateinit var key: String
     private lateinit var traceDir: Path
+    private lateinit var perfFile: Path
 
     /** Every read this row added, as the console calls it. */
     private val reads: List<String> get() = listOf(
@@ -83,6 +87,7 @@ class ConsoleVerbReadsRoutesTest {
     @BeforeAll
     fun setUp(@TempDir tempDir: Path) {
         traceDir = Files.createDirectory(tempDir.resolve("trace"))
+        perfFile = tempDir.resolve("synthetic-perf.jsonl")
         val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
@@ -137,6 +142,37 @@ class ConsoleVerbReadsRoutesTest {
     }
 
     @Test
+    fun `perf ownership survives streaming through the console route`() = runBlocking {
+        perfOwnership("")
+    }
+
+    @Test
+    fun `perf ownership survives tree fallback through the console route`() = runBlocking {
+        perfOwnership(",\"extra\":{}")
+    }
+
+    private suspend fun perfOwnership(nested: String) {
+        awaitPort()
+        Files.writeString(
+            perfFile,
+            "{\"ts\":1000,\"outcome\":\"ok\",\"model\":\"synthetic\",\"turn\":\"trace-record\"," +
+                "\"turn_id\":\"sent-record\"$nested}\n" +
+                "{\"ts\":2000,\"outcome\":\"ok\",\"model\":\"synthetic\",\"turn_id\":\"123456789012\"$nested}\n" +
+                "{\"ts\":3000,\"outcome\":\"ok\",\"model\":\"synthetic\"$nested}\n",
+        )
+        val response = req { get("$url/api/perf/turns?head=$HEAD_KEY&since=0") { auth() } }
+        assertEquals(HttpStatusCode.OK, response.status)
+        val rows = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+            .getValue("heads").jsonArray.single().jsonObject.getValue("rows").jsonArray.map { it.jsonObject }
+        assertEquals(JsonPrimitive("trace-record"), rows[0].getValue("turn"))
+        assertEquals(JsonPrimitive("sent-record"), rows[0].getValue("turn_id"))
+        assertEquals(JsonNull, rows[1].getValue("turn"), "untraced ownership never claims capture")
+        assertEquals(JsonPrimitive("123456789012"), rows[1].getValue("turn_id"), "digits stay an opaque string")
+        assertEquals(JsonNull, rows[2].getValue("turn"))
+        assertEquals(JsonNull, rows[2].getValue("turn_id"), "legacy rows do not gain invented ownership")
+    }
+
+    @Test
     fun `a wrong provider, an unknown head and a tap that is off each answer in words, never 404`() = runBlocking {
         awaitPort()
         wireAll()
@@ -187,7 +223,7 @@ class ConsoleVerbReadsRoutesTest {
         )
         control.ports.traceDir = traceDir
         val tap = WireTap(keep = 4)
-        listOf("""{"n":0}""", """{"n":1}""").forEach { tap.record(meta(), it) }
+        listOf("""{"n":0}""", """{"n":1}""").forEach { tap.record(meta(), it, null) }
         control.ports.wires = WireTaps().apply { put(HEAD_KEY, tap) }
     }
 
@@ -234,6 +270,7 @@ class ConsoleVerbReadsRoutesTest {
         },
         warnPct = 80,
         warnTokens5h = 0,
+        perfRows = PerfRowsFileSource(perfFile),
     )
 
     private suspend fun awaitPort() {

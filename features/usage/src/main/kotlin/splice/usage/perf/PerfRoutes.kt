@@ -225,6 +225,7 @@ public class PerfRoutes(
         put("compact", row.compact)
         // V4-345: the trace turn the console opens this row's request by; null where none was kept.
         put("turn", row.turn)
+        put("turn_id", row.turnId)
         put("session_id", row.sessionId)
         put("response_message_id", row.responseMessageId)
         // The daemon uses the head's card, as the exact trace read does (TraceRoute.turnJson), and the

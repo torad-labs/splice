@@ -60,10 +60,31 @@ class PerfStreamingParityTest {
             """{"ts":19,"${PerfKeys.UPSTREAM_WRITE_TO_FIRST_BYTE_MS}":345}""",
             """{"ts":20,"unknown":"${"x".repeat(4_097)}"}""",
             """{"ts":21,${(0..64).joinToString(",") { "\"field_$it\":$it" }}}""",
+            """{"ts":22,"turn":"trace-record","turn_id":"sent-record"}""",
+            """{"ts":23,"turn_id":"123456789012"}""",
+            """{"ts":24,"turn":null,"turn_id":null}""",
         )
         rows.forEachIndexed { index, line ->
             assertEquals(paths.tree(line), paths.streamed(line), "tree parity for edge row $index")
         }
+    }
+
+    @Test
+    fun `request ownership remains charged in the retained perf cache`(@TempDir dir: Path) {
+        val bare = dir.resolve("bare.jsonl")
+        val owned = dir.resolve("owned.jsonl")
+        val id = "x".repeat(3_000)
+        Files.writeString(bare, "{\"ts\":1,\"outcome\":\"ok\"}\n")
+        Files.writeString(owned, "{\"ts\":1,\"outcome\":\"ok\",\"turn_id\":\"$id\"}\n")
+        val baseline = PerfRowsFileSource(bare)
+        val source = PerfRowsFileSource(owned)
+        baseline.window(0)
+        assertEquals(id, source.window(0).rows.single().turnId)
+        assertTrue(
+            source.cachedBytes - baseline.cachedBytes >= id.length * PERF_CHAR_BYTES,
+            "the one-off request id cannot escape the source's retained-string charge",
+        )
+        assertTrue(source.cachedBytes <= PERF_CACHE_BYTES)
     }
 
     @Test

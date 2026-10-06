@@ -43,8 +43,6 @@ public class WireTap(public val keep: Int, private val now: WallClock = WallCloc
 
     /** Every round's body passes through here — fold, re-anchor and tool-search rounds included,
      *  because each is its own upstream request and an audit that showed only the first would lie. */
-    public fun record(meta: TurnMeta, body: String): Unit = record(meta, body, null)
-
     public fun record(meta: TurnMeta, body: String, turnId: String?) {
         val record = WireRecord(now(), meta.sessionId, meta.upstreamModel, meta.compact, body, turnId)
         synchronized(lock) {

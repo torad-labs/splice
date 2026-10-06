@@ -10,8 +10,8 @@ internal const val PERF_STRING_OVERHEAD_BYTES = 64L
 // UTF-16 is the worst-case String backing width, even when compact strings are enabled.
 internal const val PERF_CHAR_BYTES = 2L
 
-// Covers the facts, row, entry, boxed scalars and linked queue node with 64-bit references.
-internal const val PERF_RECORD_OVERHEAD_BYTES = 320L
+// Covers the facts, row, entry, boxed scalars, linked queue node and 32-byte identity value with 64-bit references.
+internal const val PERF_RECORD_OVERHEAD_BYTES = 352L
 
 /** Parsed facts plus the original skip hints; window selection never changes timestamp authority. */
 internal data class PerfCachedLine(
@@ -38,6 +38,7 @@ internal data class PerfCachedLine(
                 value.responseMessageId,
                 value.account,
                 value.turn,
+                value.turnId,
             ).sumOf { if (it == null) 0L else PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES }
             return PERF_RECORD_OVERHEAD_BYTES + numericBytes + (retainedTextBytes ?: text)
         }

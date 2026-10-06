@@ -50,7 +50,7 @@ class WireRoutesTest {
     private fun tap(): WireTap {
         var now = 1_000L
         val tap = WireTap(keep = 5, now = WallClock { now++ })
-        listOf("""{"n":0}""", """{"n":1}""", """{"n":2}""").forEach { tap.record(meta("s-1"), it) }
+        listOf("""{"n":0}""", """{"n":1}""", """{"n":2}""").forEach { tap.record(meta("s-1"), it, null) }
         return tap
     }
 

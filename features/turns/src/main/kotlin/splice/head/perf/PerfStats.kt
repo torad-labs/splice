@@ -33,6 +33,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTurn
 import splice.core.perf.PerfSnapshot
+import splice.core.perf.PerfTurnIds
 import splice.core.perf.UpstreamMilestones
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
@@ -71,7 +72,7 @@ public data class PerfRowMeta(
     /** V4-345: the id of the trace turn that recorded this turn's request and answer, on a head that
      *  keeps a trace, so the console opens the request a person clicked by its id rather than guessing
      *  it by time. Null on a head that keeps none, and then the row carries no `turn`. */
-    val turn: String? = null,
+    val turns: PerfTurnIds = PerfTurnIds(),
     /** The full client session id and splice's client-facing response message id, for joining the
      *  local transcript without guessing by timestamp or the shortened session tag (V4-354). */
     val sessionId: String? = null,
@@ -83,6 +84,8 @@ public data class PerfRowMeta(
     internal fun putTranscriptFacts(into: JsonObjectBuilder) {
         sessionId?.let { into.put("session_id", it) }
         responseMessageId?.let { into.put("response_message_id", it) }
+        turns.trace?.let { into.put("turn", it) }
+        turns.request?.let { into.put("turn_id", it) }
     }
 }
 
@@ -206,7 +209,6 @@ public class PerfStats(
                 put("compact", meta.compact)
                 meta.session?.let { put("session", it) }
                 meta.putTranscriptFacts(this)
-                meta.turn?.let { put("turn", it) }
                 meta.cause?.let { put("cause", it) }
                 if (meta.layers > 0) put("layers", meta.layers)
                 meta.account?.let { account ->

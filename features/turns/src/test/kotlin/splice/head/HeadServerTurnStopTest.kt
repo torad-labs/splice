@@ -249,7 +249,11 @@ class HeadServerTurnStopTest {
             }
             assertTrue(AsyncFileIo.drain(), "the synthetic file lane drained")
             val perfIds = rig.perfRows().lineSequence().filter(String::isNotBlank)
-                .map { json(it).getValue("turn").jsonPrimitive.content }.toSet()
+                .map {
+                    val row = json(it)
+                    assertEquals(row.getValue("turn"), row.getValue("turn_id"), "captured ownership equals its trace")
+                    row.getValue("turn_id").jsonPrimitive.content
+                }.toSet()
             assertEquals(sentIds, perfIds)
         } finally {
             rig.close()

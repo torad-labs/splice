@@ -22,11 +22,13 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -197,12 +199,13 @@ class HeadWireTapTest {
         json.parseToJsonElement(payload).jsonObject.getValue("records").jsonArray
             .map { it.jsonObject.getValue("body").jsonPrimitive.content }
 
-    private fun perfTurns(port: Int): List<String> {
+    private fun perfRows(port: Int): List<JsonObject> {
         assertTrue(AsyncFileIo.drain(), "the synthetic file lane drained")
-        return Files.readAllLines(perfPaths.getValue(port)).map {
-            json.parseToJsonElement(it).jsonObject.getValue("turn").jsonPrimitive.content
-        }
+        return Files.readAllLines(perfPaths.getValue(port)).map { json.parseToJsonElement(it).jsonObject }
     }
+
+    private fun perfTurns(port: Int): List<String> =
+        perfRows(port).map { it.getValue("turn_id").jsonPrimitive.content }
 
     @Test
     fun `the tap holds exactly the bytes the upstream received`() {
@@ -219,6 +222,11 @@ class HeadWireTapTest {
         assertEquals("claude-fable-5", record.getValue("model").jsonPrimitive.content)
         assertEquals("false", record.getValue("compact").jsonPrimitive.content)
         assertEquals(perfTurns(port).single(), record.getValue("turn_id").jsonPrimitive.content)
+        assertEquals(
+            perfRows(port).single().getValue("turn"),
+            record.getValue("turn_id"),
+            "a captured request names its trace",
+        )
         assertTrue(payload.contains("\"key\":\"anthropic\""), payload)
     }
 
@@ -241,6 +249,7 @@ class HeadWireTapTest {
         val tap = WireTap(keep = 1)
         val port = startHead(tap, traced = false)
         assertEquals(HttpStatusCode.OK, turn(port, "identical"))
+        assertNull(perfRows(port).single()["turn"], "capture off must not name a nonexistent trace")
         val (_, firstPayload) = wire(port)
         val first = json.parseToJsonElement(firstPayload).jsonObject.getValue("records").jsonArray.single().jsonObject
         val firstId = first.getValue("turn_id").jsonPrimitive.content
@@ -252,6 +261,7 @@ class HeadWireTapTest {
         val secondId = second.getValue("turn_id").jsonPrimitive.content
         assertTrue(firstId != secondId, "identical bodies in one session still belong to distinct requests")
         assertEquals(listOf(firstId, secondId), perfTurns(port))
+        assertTrue(perfRows(port).all { it["turn"] == null }, "both untraced requests keep capture off")
         assertEquals(first.getValue("body"), second.getValue("body"), "the ids never alter request bytes")
         assertEquals(1, tap.recent().size)
     }

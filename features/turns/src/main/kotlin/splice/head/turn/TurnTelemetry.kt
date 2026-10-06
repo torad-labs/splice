@@ -12,6 +12,7 @@ import splice.core.budget.NoHeadBudget
 import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
+import splice.core.perf.PerfTurnIds
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -146,8 +147,8 @@ internal class TurnTelemetry(
                 // addition to the row, never a change to the string that identifies it.
                 cause = ending.cause,
                 layers = ending.layers,
-                // The trace id when captured, or the same request-owned id as an untraced wire tap.
-                turn = drive.turnId,
+                // V4-345: the trace turn that recorded the request and answer; absent when capture is off.
+                turns = PerfTurnIds(trace = drive.trace?.turnId, request = drive.turnId),
                 sessionId = drive.meta.sessionId,
                 responseMessageId = drive.emitter.responseMessageId,
                 conversationKey = drive.meta.conversationKey,
@@ -265,7 +266,7 @@ internal class TurnTelemetry(
             meta.compact,
             session,
             account = refusal.account,
-            turn = trace?.turnId,
+            turns = PerfTurnIds(trace = trace?.turnId),
             sessionId = meta.sessionId,
         )
         val rowTs = perfStats.record(rowMeta, snap)

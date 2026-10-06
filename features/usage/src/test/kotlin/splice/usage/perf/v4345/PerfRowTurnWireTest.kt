@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
+import splice.core.perf.PerfTurnIds
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
@@ -39,7 +40,7 @@ class PerfRowTurnWireTest {
             outcome = "ok",
             fields = mapOf("total" to 5L, "in_tokens" to 1_000L, "out_tokens" to 100L),
             model = "m",
-            turn = TRACED,
+            turns = PerfTurnIds(trace = TRACED),
             sessionId = "sess-v4345",
             responseMessageId = "msg_42",
             cause = "CONTENT_FILTERED",
@@ -86,7 +87,9 @@ class PerfRowTurnWireTest {
         assertEquals(JsonPrimitive("CONTENT_FILTERED"), served[0]["cause"])
         assertEquals(JsonNull, served[1]["cause"], "a legacy row has no recorded cause")
         assertEquals(JsonPrimitive(TRACED), served[0]["turn"], "the traced row's id")
+        assertEquals(JsonPrimitive(TRACED), served[0]["turn_id"], "captured ownership names the same local request")
         assertEquals(JsonNull, served[1]["turn"], "no trace, a null")
+        assertEquals(JsonNull, served[1]["turn_id"], "legacy absence remains unknown")
         assertEquals(JsonPrimitive("sess-v4345"), served[0]["session_id"])
         assertEquals(JsonPrimitive("msg_42"), served[0]["response_message_id"])
         assertEquals(JsonNull, served[1]["session_id"])

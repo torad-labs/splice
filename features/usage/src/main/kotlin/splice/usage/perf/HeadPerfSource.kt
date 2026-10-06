@@ -4,6 +4,7 @@ package splice.usage.perf
 
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTotal
+import splice.core.perf.PerfTurnIds
 
 /** Reads the head's per-turn perf rows (file truth, numeric fields only, newest last). */
 public fun interface HeadPerfSource {
@@ -90,14 +91,20 @@ public data class PerfRow(
     val account: String? = null,
     val cacheCold: Boolean? = null,
     val compact: Boolean? = null,
-    /** V4-345: the trace turn that recorded this turn's request, on a head that keeps a trace. */
-    val turn: String? = null,
+    /** Capture lookup and request ownership are separate facts; legacy rows can lack either. */
+    val turns: PerfTurnIds = PerfTurnIds(),
     /** V4-354: the full session and the response id the client recorded in its local transcript. */
     val sessionId: String? = null,
     val responseMessageId: String? = null,
     /** The recorded failure cause, independent of the client-facing retry type; absent in older rows. */
     val cause: String? = null,
-)
+) {
+    /** The trace turn that recorded the request, never an untraced tap's id. */
+    public val turn: String? get() = turns.trace
+
+    /** The opaque ownership value recorded beside this request's sent body. */
+    public val turnId: String? get() = turns.request
+}
 
 /** What one coherent read of the perf files yields for a window (v0.4.0, FEATURES.md §3). */
 public data class PerfRowsWindow(

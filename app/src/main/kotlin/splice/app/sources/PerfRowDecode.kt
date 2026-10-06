@@ -7,6 +7,7 @@ import com.fasterxml.jackson.core.JsonParser
 import com.fasterxml.jackson.core.JsonToken
 import com.fasterxml.jackson.core.util.JsonRecyclerPools
 import splice.core.perf.PerfKeys
+import splice.core.perf.PerfTurnIds
 import splice.core.util.Cancellables
 import splice.usage.perf.PerfRow
 
@@ -73,6 +74,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
         private var response: String? = null
         private var account: String? = null
         private var turn: String? = null
+        private var turnId: String? = null
         private var cacheCold: Boolean? = null
         private var compact: Boolean? = null
         var drops: Long? = null
@@ -94,6 +96,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
         private fun marker(key: String, parser: JsonParser) {
             when (key) {
                 "cause" -> cause = text(parser)
+                "turn_id" -> turnId = text(parser)
                 "cache_cold" -> cacheCold = text(parser)?.toBooleanStrictOrNull()
                 "compact" -> compact = text(parser)?.toBooleanStrictOrNull()
                 PerfKeys.ASYNC_IO_DROPS -> drops = text(parser)?.toLongOrNull()
@@ -115,7 +118,7 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                 account = account,
                 cacheCold = cacheCold,
                 compact = compact,
-                turn = turn,
+                turns = PerfTurnIds(trace = turn, request = turnId),
             )
         }
 

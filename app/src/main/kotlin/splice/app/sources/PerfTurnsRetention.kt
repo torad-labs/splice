@@ -11,8 +11,8 @@ internal class PerfTurnsRetention : PerfLineKeep {
             if (!names.contains(it)) textBytes += PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES
             shared
         }
-        // Trace identities are not interned: one-off values cannot crowd repeated descriptions out of the pool.
-        listOf(row.turn, row.responseMessageId).forEach {
+        // Request and trace identities are not interned: one-off values cannot crowd repeated descriptions out.
+        listOf(row.turn, row.turnId, row.responseMessageId).forEach {
             if (it != null) textBytes += PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES
         }
         return line.copy(

@@ -34,9 +34,9 @@ class WireTapTest {
     @Test
     fun `keeps the last N bodies, oldest first`() {
         val tap = WireTap(keep = 2)
-        tap.record(meta("s1"), """{"n":1}""")
-        tap.record(meta("s1"), """{"n":2}""")
-        tap.record(meta("s2"), """{"n":3}""")
+        tap.record(meta("s1"), """{"n":1}""", null)
+        tap.record(meta("s1"), """{"n":2}""", null)
+        tap.record(meta("s2"), """{"n":3}""", null)
 
         assertEquals(listOf("""{"n":2}""", """{"n":3}"""), tap.recent().map { it.body })
         assertEquals(listOf("""{"n":3}"""), tap.recent(last = 1).map { it.body })
@@ -47,9 +47,9 @@ class WireTapTest {
     fun `a record carries the turn's stamp and the exact body string`() {
         var now = 1_000L
         val tap = WireTap(keep = 3, now = WallClock { now })
-        tap.record(meta("abc", compact = true), "  {\"raw\": \"kept verbatim\"}\n")
+        tap.record(meta("abc", compact = true), "  {\"raw\": \"kept verbatim\"}\n", null)
         now = 2_000L
-        tap.record(meta(null), "{}")
+        tap.record(meta(null), "{}", null)
 
         val (first, second) = tap.recent()
         assertEquals(1_000L, first.ts)
@@ -65,7 +65,7 @@ class WireTapTest {
     @Test
     fun `the json payload names the head, the ring size and every record`() {
         val tap = WireTap(keep = 5, now = WallClock { 7L })
-        tap.record(meta("s9"), """{"model":"m"}""")
+        tap.record(meta("s9"), """{"model":"m"}""", null)
 
         val payload = Json.parseToJsonElement(tap.json("kimi")).jsonObject
 

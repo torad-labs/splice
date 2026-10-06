@@ -84,7 +84,7 @@ export const P = {
   gone: 'This request is no longer held.',
   goneWhy: 'The daemon keeps a window of requests; this one has aged out of it.',
   ambiguous: 'Several requests share this timestamp.',
-  ambiguousWhy: 'This link does not identify one request. Open its own link from Requests.',
+  ambiguousWhy: 'These requests cannot be told apart by this link. Open Sessions to find the session you want to resume.',
   ownerUnavailable: 'This request could not be selected.',
   ownerUnavailableWhy: 'Its exact identity is not in the returned rows. No other request is shown.',
   resumeWhy: 'To continue the session, copy a resume command and run it in your terminal.',

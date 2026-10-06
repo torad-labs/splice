@@ -321,6 +321,9 @@ for (const width of [1440, 390]) {
         await expect(page.getByRole('link', { name: 'Open the session', exact: true })).toHaveCount(0);
         await expect(page.locator('.hero h1')).toHaveCount(0);
         await expect(page.getByRole('main')).toContainText('Several requests share this timestamp.');
+        await expect(page.getByRole('main')).not.toContainText('Open its own link from Requests.');
+        await expect(page.getByRole('main')).toContainText('cannot be told apart by this link');
+        await expect(page.getByRole('main')).toContainText('Open Sessions');
         expect(recipes).toEqual([]);
       }
       expect(writes).toEqual([]);

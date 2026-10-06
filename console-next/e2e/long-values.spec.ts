@@ -258,6 +258,23 @@ async function syntheticDisplays(page: Page): Promise<(path: string) => string> 
   return replace;
 }
 
+async function sectionValues(page: Page, section: string): Promise<void> {
+  const seen = await renderedValues(page);
+  if (section !== 'general') {
+    expect(seen, section + ': a source section must consume long fixture values before geometry can pass').toBeGreaterThan(0);
+    return;
+  }
+  // Sections.tsx General has a closed theme, bounded warning slider and debug boolean, not daemon free text.
+  test.info().annotations.push({ type: 'disposition', description: 'General: closed theme, warning 50–100 and debug boolean; browser host is the required loopback capture origin, not a daemon-controlled string' });
+  await expect(page.getByRole('textbox')).toHaveCount(0);
+  await expect(page.getByRole('searchbox')).toHaveCount(0);
+  await expect(page.getByRole('slider')).toHaveAttribute('min', '50');
+  await expect(page.getByRole('slider')).toHaveAttribute('max', '100');
+  const host = page.locator('.folder.code');
+  await expect(host).toHaveText(await page.evaluate(() => location.host));
+  await textReachable(host);
+}
+
 async function openDisclosures(page: Page): Promise<void> {
   // Details are native reveals, not truncated replicas. Open outer disclosures before their descendants.
   for (let round = 0; round < 4; round++) {
@@ -382,6 +399,13 @@ for (const section of SECTIONS) {
   test('synthetic long-value Settings section: ' + section, async ({ page }) => {
     await syntheticDisplays(page);
     await page.route(url => url.pathname === '/api/topology/preview', route => route.fulfill({ json: { text: LONG.token, chars: 400, truncated: false } }));
+    if (section === 'tools') {
+      await page.route(url => url.pathname === '/api/mcp', route => route.fulfill({ json: { hosting: true, servers: { [LONG.token]: { eligible: false, reason: LONG.token } } } }));
+      await page.route(url => url.pathname === '/api/claude-head', route => route.fulfill({ json: {
+        mode: 'wrapped', resolves_to: LONG.path, shim_path: LONG.path, real_binary_path: LONG.path,
+        claude_logins: { count: 1, selected: LONG.login, labels: [LONG.login], constraint: LONG.token },
+      } }));
+    }
     const faults = await open(page, 'settings/' + section);
     await expect(page.getByRole('main')).not.toBeEmpty();
     if (section === 'advanced') {
@@ -390,13 +414,13 @@ for (const section of SECTIONS) {
       await draftFields(page.locator('.cf'), page);
       for (const width of WIDTHS) {
         await page.setViewportSize({ width, height: 1024 });
-        await renderedValues(page);
+        await sectionValues(page, section);
       }
     } else {
       await openDisclosures(page);
       for (const width of WIDTHS) {
         await page.setViewportSize({ width, height: 1024 });
-        await renderedValues(page);
+        await sectionValues(page, section);
       }
     }
     if (section === 'health') await draftFields(page.locator('.row').filter({ has: page.getByRole('textbox', { name: 'Release', exact: true }) }), page);
@@ -656,4 +680,6 @@ test('synthetic long-value geometry rejects invisible clipping and admits wrappi
   await expect(textReachable(page.locator('#clip'))).rejects.toThrow();
   await textReachable(page.locator('#scroll'));
   await pageContained(page);
+  await page.setContent('<main></main>');
+  await expect(sectionValues(page, 'tools')).rejects.toThrow();
 });

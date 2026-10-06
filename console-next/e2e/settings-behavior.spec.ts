@@ -91,7 +91,7 @@ test('API URL controls show whole addresses and commit the exact single-line val
 
 test('Storage aligns the Turn statistics title with its retention input', async ({ page }, testInfo) => {
   await page.route(url => url.pathname === '/api/kept/turns', route => route.fulfill({ json: {
-    store: 'turns', state: 'on', days: 12, rows: 1200, oldest: '2026-09-01', ages_out: '2026-12-01',
+    store: 'turns', state: 'on', days: 12, rows: 710932, oldest: '2026-09-01', ages_out: '2026-12-01',
   } }));
   const faults = await open(page, 'settings/storage');
   const row = page.locator('.row').filter({ has: page.getByRole('heading', { name: 'Turn statistics', exact: true }) });
@@ -109,7 +109,7 @@ test('Storage aligns the Turn statistics title with its retention input', async 
       const inputBox = await input.boundingBox();
       expect(Math.abs((titleBox?.x ?? 0) - (inputBox?.x ?? 0))).toBeLessThan(2);
     }
-    await expect(row).toContainText('12 days, 1200 entries kept.');
+    await expect(row).toContainText('12 days, 710,932 entries kept.');
     await expect(row.getByRole('button', { name: 'Delete what is kept', exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await row.screenshot({ path: testInfo.outputPath('retention-alignment-' + width + '.png') });

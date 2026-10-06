@@ -13,7 +13,11 @@ describe('the census', () => {
     expect(ageOutText('soon')).toBeNull();
   });
   test('a store with days says how many, and when the last one ages out', () => {
-    expect(keptLines(store())).toEqual(['10 days, 9227 entries kept.', 'The last kept day ages out on Dec 29.']);
+    expect(keptLines(store())).toEqual(['10 days, 9,227 entries kept.', 'The last kept day ages out on Dec 29.']);
+  });
+  test('large inventories keep their exact count with thousands separators', () => {
+    expect(keptLines(store({ rows: 710932, ages_out: null }))).toEqual(['10 days, 710,932 entries kept.']);
+    expect(entriesOf(store({ rows: 710932 }))).toBe(710932);
   });
   test('an empty store says nothing is kept and names no ageing', () => {
     expect(keptLines(store({ days: 0, rows: 0 }))).toEqual(['Nothing is kept.']);
@@ -22,7 +26,7 @@ describe('the census', () => {
     expect(keptLines(store({ days: 1, rows: 1, ages_out: null, reason: 'Recording is off.' }))).toEqual(['1 day, 1 entry kept.', 'Recording is off.']);
   });
   test('a trace directory counts records and bytes', () => {
-    expect(keptLines(trace())).toEqual(['3780 records, 4.0 GiB kept.']);
+    expect(keptLines(trace())).toEqual(['3,780 records, 4.0 GiB kept.']);
     expect(entriesOf(trace())).toBe(3780);
     expect(entriesOf(store())).toBe(9227);
   });

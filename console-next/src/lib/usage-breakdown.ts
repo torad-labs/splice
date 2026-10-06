@@ -15,7 +15,7 @@ export interface UsageBreakdown {
   missingInput: number;
   missingOutput: number;
   gaps: PriceGaps;
-  /** Replies cut off by a new message, whose tokens were never reported. */
+  /** Replies stopped before completion, whose tokens were never reported; the cause is not identified. */
   cut: number;
 }
 
@@ -38,7 +38,7 @@ export function priceGapLines(gaps: PriceGaps): string[] {
   return lines.flatMap(([n, line]) => n === 0 ? [] : [line(n)]);
 }
 
-/** The sentence for replies cut off by a new message, or none. */
+/** The sentence for replies stopped before completion, or none. */
 export function cutLines(cut: number): string[] {
   return cut === 0 ? [] : [U.cutRounds(cut)];
 }

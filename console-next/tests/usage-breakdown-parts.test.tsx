@@ -203,11 +203,11 @@ test('the bar guidance appears only with a visible spend bar', () => {
   expect(priced).toContain(guidance);
 });
 
-test('a group with replies cut off by a new message says their tokens are not reported', () => {
+test('a group with unfinished replies says their tokens are not reported without inventing a cause', () => {
   const cut = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, cut: 2 }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
-  expect(cut).toContain('2 replies were cut off by a new message, so their tokens are not reported.');
+  expect(cut).toContain('2 replies stopped before they finished, so their tokens are not reported.');
   const plain = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
-  expect(plain).not.toContain('cut off');
+  expect(plain).not.toContain('tokens are not reported');
 });
 
 test('an unanswered failure explains its cause without making recorded spend a lower bound', () => {

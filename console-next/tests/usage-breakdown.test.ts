@@ -124,8 +124,8 @@ test('local and failed-unanswered causes survive command merges and every breakd
   }
 });
 
-// A reply cut off by a new message while it streamed was billed upstream and never reported; the daemon counts it.
-describe('replies cut off by a new message', () => {
+// A source can stop before its reply finishes without reporting tokens; the count does not identify why.
+describe('replies stopped before completion', () => {
   test('merged commands add the count, and no command reporting it leaves it absent', () => {
     expect(mergeWindowStats([stats({ cut_source_rounds: 2 }), stats(), stats({ cut_source_rounds: 1 })]).cut_source_rounds).toBe(3);
     expect(mergeWindowStats([stats()])).toEqual(stats());
@@ -134,8 +134,8 @@ describe('replies cut off by a new message', () => {
     const reading = data({ synthetic: usage({ models: [{ key: 'gpt-5.6-sol', ...stats({ cut_source_rounds: 2 }) }] }) });
     expect(fullUsageBreakdown(reading, 'model')?.[0]?.cut).toBe(2);
     expect(fullUsageBreakdown(data(), 'model')?.[0]?.cut).toBe(0);
-    expect(cutLines(1)).toEqual(['1 reply was cut off by a new message, so its tokens are not reported.']);
-    expect(cutLines(2)).toEqual(['2 replies were cut off by a new message, so their tokens are not reported.']);
+    expect(cutLines(1)).toEqual(['1 reply stopped before it finished, so its tokens are not reported.']);
+    expect(cutLines(2)).toEqual(['2 replies stopped before they finished, so their tokens are not reported.']);
     expect(cutLines(0)).toEqual([]);
   });
 });

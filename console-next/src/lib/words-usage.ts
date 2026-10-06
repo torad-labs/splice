@@ -33,7 +33,7 @@ export const U = {
   unpricedUnknown: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request has' : 'requests have'} no price.`,
   unpricedLocal: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request ran its model' : 'requests ran their models'} on this computer, so ${n === 1 ? 'it has' : 'they have'} no provider price.`,
   unanswered: (n: number) => `${fmtInt(n)} ${n === 1 ? 'request failed' : 'requests failed'} without a recorded answer or token usage.`,
-  cutRounds: (n: number) => `${fmtInt(n)} ${n === 1 ? 'reply was' : 'replies were'} cut off by a new message, so ${n === 1 ? 'its' : 'their'} tokens are not reported.`,
+  cutRounds: (n: number) => `${fmtInt(n)} ${n === 1 ? 'reply' : 'replies'} stopped before ${n === 1 ? 'it' : 'they'} finished, so ${n === 1 ? 'its' : 'their'} tokens are not reported.`,
   plansTitle: 'Each command against its limit',
   plansWhy: 'The provider reports each limit. splice only marks a command out of quota when the provider refuses it.',
   plansNone: 'No command has reported its usage yet.',

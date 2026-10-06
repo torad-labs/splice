@@ -56,21 +56,24 @@ internal object AutoCloseableClosed {
 
     data class Decl(val kind: String, val name: String, val supers: List<String>, val path: String, val line: Int)
 
-    private fun nesting(c: Char): Int = when (c) {
-        in "(<[" -> 1
-        in ")>]" -> -1
-        else -> 0
+    private fun nesting(stack: MutableList<Char>, c: Char, previous: Char?) {
+        when {
+            c in "([{" -> stack.add(c)
+            // Type arguments outside expressions nest; comparison operators inside defaults do not.
+            c == '<' && stack.all { it == '<' } -> stack.add(c)
+            c == '>' && previous != '-' && stack.lastOrNull() == '<' -> stack.removeLast()
+            c in ")]}" && stack.lastOrNull() == "([{".getOrNull(")]}".indexOf(c)) -> stack.removeLast()
+        }
     }
 
     /** The index of the depth-0 ':' before the body opens, or -1. */
     private fun supertypeColon(tail: String): Int {
-        var depth = 0
+        val stack = mutableListOf<Char>()
         for (i in tail.indices) {
             val c = tail[i]
-            depth += nesting(c)
-            val atTop = depth == 0
-            if (atTop && c == ':') return i
-            if (atTop && c == '{') break
+            if (stack.isEmpty() && c == ':') return i
+            if (stack.isEmpty() && c == '{') break
+            nesting(stack, c, tail.getOrNull(i - 1))
         }
         return -1
     }
@@ -82,17 +85,18 @@ internal object AutoCloseableClosed {
         if (colon < 0) return emptyList()
         val names = mutableListOf<String>()
         val buf = StringBuilder()
-        var depth = 0
-        for (c in tail.substring(colon + 1)) {
-            depth += nesting(c)
-            val atTop = depth == 0
-            if (atTop && c == '{') break
-            if (atTop && c == ',') {
+        val stack = mutableListOf<Char>()
+        val parents = tail.substring(colon + 1)
+        for (i in parents.indices) {
+            val c = parents[i]
+            if (stack.isEmpty() && c == '{') break
+            if (stack.isEmpty() && c == ',') {
                 names += buf.toString()
                 buf.setLength(0)
             } else {
                 buf.append(c)
             }
+            nesting(stack, c, parents.getOrNull(i - 1))
         }
         names += buf.toString()
         return names.mapNotNull { raw -> SUPERTYPE_NAME.find(raw)?.groupValues?.get(1) }
@@ -329,6 +333,55 @@ class AutoCloseableClosedLawTest {
         assertEquals(listOf("AutoCloseable"), declarations.single { it.name == "Host" }.supers)
         assertEquals(setOf("Host"), AutoCloseableClosed.closeableClosure(declarations))
     }
+
+    @Test
+    fun `a lambda default never makes the following parameter a superclass`() {
+        val source = constructorSource("")
+        val declarations = AutoCloseableClosed.declarations(mapOf("fixture.kt" to source))
+        assertEquals(emptyList<String>(), declarations.single { it.name == "Holder" }.supers)
+        assertEquals(emptyList<String>(), AutoCloseableClosed.audit(mapOf("fixture.kt" to source)))
+    }
+
+    @Test
+    fun `a real closeable after the same lambda default is still reported unclosed`() {
+        val source = constructorSource(" : AutoCloseable")
+        val declarations = AutoCloseableClosed.declarations(mapOf("fixture.kt" to source))
+        assertEquals(listOf("AutoCloseable"), declarations.single { it.name == "Holder" }.supers)
+        val findings = AutoCloseableClosed.audit(mapOf("fixture.kt" to source))
+        assertEquals(1, findings.size)
+        assertTrue(findings.single().contains("Holder implements AutoCloseable"))
+        assertTrue(findings.single().contains("never closed from one"))
+    }
+
+    @Test
+    fun `comparisons inside defaults cannot change the constructor's nesting`() {
+        for (condition in listOf("value >= 0", "value < 2")) {
+            val source = constructorSource("").replace(
+                "Cause { value -> value }",
+                "Cause { value -> if ($condition) value else 0 }",
+            )
+            assertEquals(emptyList<String>(), AutoCloseableClosed.audit(mapOf("fixture.kt" to source)), condition)
+        }
+        assertEquals(
+            listOf("Base", "AutoCloseable"),
+            AutoCloseableClosed.supertypes(
+                "<T : Map<String, Int>>(heap: Budget) : Base<(Int) -> String>(), AutoCloseable {",
+            ),
+        )
+    }
+
+    private fun constructorSource(supertype: String): String = """
+        fun interface Cause { fun invoke(value: Int): Int }
+        interface Budget : AutoCloseable
+        class Holder(
+            val cause: Cause = Cause { value -> value },
+            val heap: Budget,
+        )$supertype {
+            fun read(query: String) = Unit
+            ${if (supertype.isEmpty()) "" else "override "}fun close() = Unit
+        }
+        fun build(heap: Budget) = Holder(heap = heap)
+    """.trimIndent()
 
     @Test
     fun `every concrete AutoCloseable in main sources is closed from a main source - V4-95`() {

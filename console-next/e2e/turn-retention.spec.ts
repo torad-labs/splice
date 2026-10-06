@@ -43,7 +43,7 @@ async function openTurn(page: Page, head: string, at: number): Promise<void> {
 
 for (const width of [1440, 390]) {
   for (const allZero of [false, true]) {
-    test('recorded zero-duration stages keep their legend but paint no elapsed time at ' + width + (allZero ? ' with all marks zero' : ' beside positive stages'), async ({ page }) => {
+    test('positive timing stages stay visible and zero stages paint nothing at ' + width + (allZero ? ' with all marks zero' : ' beside a tiny positive stage'), async ({ page }) => {
       await page.setViewportSize({ width, height: 1024 });
       const at = Date.now() - 60_000;
       const early = allZero ? 0 : 1;
@@ -71,7 +71,9 @@ for (const width of [1440, 390]) {
         const prepare = await stages.locator('.water i[title^="Prepare:"]').boundingBox();
         const provider = await stages.locator('.water i[title^="Model thinking:"]').boundingBox();
         if (prepare === null || provider === null) throw new Error('positive timings lost their bars');
-        expect(prepare.width / provider.width).toBeCloseTo(1 / 999, 3);
+        expect(prepare.width).toBeGreaterThanOrEqual(1);
+        expect(provider.width).toBeGreaterThanOrEqual(1);
+        expect(provider.width).toBeGreaterThan(prepare.width);
       }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await stages.screenshot({ path: test.info().outputPath('zero-stage-' + width + '-' + allZero + '.png') });

@@ -195,6 +195,9 @@ for (const ending of [
     for (const width of [1536, 393]) {
       await page.setViewportSize({ width, height: 1024 });
       const faults = await open(page, 'requests');
+      await page.getByRole('button', { name: 'Compaction', exact: true }).click();
+      await expect(page).toHaveURL(/status=compacted/);
+      await expect(page.getByRole('button', { name: 'Compacted', exact: true })).toHaveCount(0);
       await expect(page.locator('.turn')).toHaveCount(1);
       await expect(page.locator('.turn .tag')).toHaveText('Compaction');
       await expect(page.locator('.turn .state')).toHaveText(ending.word);

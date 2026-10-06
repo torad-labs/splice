@@ -37,7 +37,7 @@ export const T = {
   finishedTitle: 'Finished',
   finishedWhy: 'Open a request to see where its time went, what was asked and what came back.',
   filterLabel: 'Show',
-  filters: [['all', 'All'], ['failed', 'Failed'], ['stopped', 'Stopped'], ['compacted', 'Compacted']] as readonly (readonly ['all' | 'failed' | 'stopped' | 'compacted', string])[],
+  filters: [['all', 'All'], ['failed', 'Failed'], ['stopped', 'Stopped'], ['compacted', 'Compaction']] as readonly (readonly ['all' | 'failed' | 'stopped' | 'compacted', string])[],
   none: 'No finished request matches.',
   noneWhy: 'Requests land here as commands answer them.',
   matching: (count: number) => `${count.toLocaleString('en-US')} ${count === 1 ? 'request matches' : 'requests match'}.`,

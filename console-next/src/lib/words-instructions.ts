@@ -2,7 +2,7 @@
 export const INSTRUCTION_NOTE = {
   none: 'Claude Code’s own instructions stand.',
   append: 'splice adds this after Claude Code’s own instructions.',
-  replace: 'This replaces Claude Code’s own instructions.',
+  replace: 'Nonempty text replaces Claude Code’s own instructions.',
   strip: 'Paragraphs that match these lines are taken out of Claude Code’s own instructions.',
 } as const;
 
@@ -27,7 +27,7 @@ export const I = {
   reading: 'Reading the file, without saving your changes.',
   chars: (n: number): string => `${n.toLocaleString('en-US')} ${n === 1 ? 'character' : 'characters'}`,
   firstLines: 'Only the start is shown.',
-  replaceEffect: 'That takes away Claude Code’s operating instructions, including its guidance on tools.',
+  replaceEffect: 'A nonempty replacement removes Claude Code’s operating instructions, including its guidance on tools. An empty source leaves them unchanged.',
   depends: 'The full result also depends on the session’s project and Claude Code’s own instructions.',
   noPlans: 'No commands are set up.',
   unavailable: 'This splice cannot edit its configuration file.',

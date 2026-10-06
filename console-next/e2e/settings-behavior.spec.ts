@@ -439,8 +439,8 @@ test('plan instruction modes preview isolated writes and preserve an unrelated u
   const savedHead = () => (writes.at(-1)?.heads as Record<string, Record<string, unknown>>)[STACK.oauthHead];
   expect(savedHead()).toMatchObject({ system_prompt: 'Keep answers brief.', system_prompt_mode: 'append' });
   await conversation.getByRole('button', { name: 'Replace', exact: true }).click();
-  await expect(preview).toContainText('This replaces Claude Code’s own instructions.');
-  await expect(preview).toContainText('That takes away Claude Code’s operating instructions');
+  await expect(preview).toContainText('Nonempty text replaces Claude Code’s own instructions.');
+  await expect(preview).toContainText('A nonempty replacement removes Claude Code’s operating instructions');
   await save.click();
   await expect(conversation.getByRole('status')).toHaveText('Saved. It applies after splice restarts.');
   await expect.poll(() => writes.length).toBe(2);
@@ -491,7 +491,7 @@ test('a finished instruction save preserves a newer mode edit made while the wri
     await expect(conversation.getByRole('button', { name: 'Replace', exact: true })).toHaveAttribute('aria-pressed', 'true');
     const save = conversation.getByRole('button', { name: 'Save', exact: true });
     await expect(save).toBeEnabled();
-    await expect(conversation.getByRole('region', { name: 'What splice will use', exact: true })).toContainText('This replaces Claude Code’s own instructions.');
+    await expect(conversation.getByRole('region', { name: 'What splice will use', exact: true })).toContainText('Nonempty text replaces Claude Code’s own instructions.');
     await save.click();
     await expect(conversation.getByRole('status')).toHaveText('Saved. It applies after splice restarts.');
     await expect.poll(() => writes.length).toBe(2);
@@ -525,7 +525,7 @@ test('a file-backed replacement previews bytes and length before Save without wr
   const preview = conversation.getByRole('region', { name: 'What splice will use', exact: true });
   await expect(preview).toContainText('Synthetic instructions for this plan.');
   await expect(preview).toContainText(content.length.toLocaleString('en-US') + ' characters');
-  await expect(preview).toContainText('That takes away Claude Code’s operating instructions');
+  await expect(preview).toContainText('A nonempty replacement removes Claude Code’s operating instructions');
   await expect(conversation.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
   expect(previews).toContainEqual({ head: STACK.oauthHead, file: 'prompts/preview.md', mode: 'replace' });
   expect(puts).toBe(0);

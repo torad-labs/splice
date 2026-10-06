@@ -32,6 +32,18 @@ function render(seed: (client: QueryClient) => unknown, id = ROOT): string {
 const seedRow = (client: QueryClient): void => void client.setQueryData(['projects', 'row', projectPath(ROOT)], project);
 
 describe('the project page', () => {
+  test('a live session with no activity timestamps does not claim no session ever touched the project', () => {
+    const html = render(client => {
+      seedRow(client);
+      client.setQueryData(['sessions', '/api/sessions'], { sessions: [{
+        session_id: 'synthetic', name: 'Synthetic', head: 'synthetic', availability: 'live',
+        status: 'busy', pid: 1, cwd: ROOT, repo: { root: ROOT },
+        started_at: null, status_updated_at: null, updated_at: null,
+      }] });
+    });
+    expect(html).toContain('Last activity time is not reported.');
+    expect(html).not.toContain('No session has touched it.');
+  });
   test('is named for the folder, says what runs and lists the session by its name', () => {
     const html = render(seedRow);
     expect(html).toContain('tally');

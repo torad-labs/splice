@@ -47,7 +47,7 @@ export const P = {
   noBranch: 'None: no branch shown',
   trusted: { home: 'Home folder', tmp: 'Temp folder', statuslineGitRoots: 'A git folder you added' },
   activity: 'Last seen',
-  never: 'No session has touched it.',
+  never: 'Last activity time is not reported.',
   noPlans: 'No commands yet.',
   head: 'Command',
 } as const;

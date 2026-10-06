@@ -8,6 +8,7 @@ import { collapseChecks } from '../src/lib/doctor';
 import { CheckMembers } from '../src/pages/settings/CheckMembers';
 import { ClaudeHead } from '../src/pages/settings/ClaudeHead';
 import { Compaction } from '../src/pages/settings/Compaction';
+import { PlanInstructions } from '../src/pages/settings/PlanInstructions';
 import { Upgrade } from '../src/pages/settings/Upgrade';
 import type { ClaudeHeadPayload } from '../src/types/claude-head';
 import type { DoctorCheck, UpgradePayload, UpgradeRun } from '../src/types/doctor';
@@ -134,6 +135,16 @@ describe('the claude command row', () => {
 });
 
 describe('the compaction report', () => {
+  test('an empty rule list with an unread head does not certify that no rule exists', () => {
+    const html = render(<Compaction />, client => {
+      client.setQueryData(['compact'], { stats: { total: 0, by_outcome: {}, tail: [] } });
+      client.setQueryData(['compaction-instructions'], { rules: [], unread: [{ head: 'synthetic', reason: 'unavailable' }] });
+    });
+    expect(html).toContain('No rules are listed in this read.');
+    expect(html).toContain('synthetic: unavailable');
+    expect(html).not.toContain('No rule is set');
+    expect(html).not.toContain('own instructions apply');
+  });
   const report = (tail: { head: string; ts: number; outcome?: string; ms?: number }[]): string => render(<Compaction />, client => {
     client.setQueryData(['compact'], { stats: { total: tail.length, by_outcome: { model_text: tail.length }, tail } });
     client.setQueryData(['compaction-instructions'], { rules: [], unread: [] });
@@ -155,6 +166,21 @@ describe('the compaction report', () => {
     const html = report([]);
     expect(html).toContain('No compaction has run yet.');
     expect(html).not.toContain('<caption>Recent</caption>');
+  });
+});
+
+describe('a stored empty replacement prompt', () => {
+  test('zero inline bytes do not claim Claude Code instructions were removed', () => {
+    const html = render(<PlanInstructions />, client => {
+      client.setQueryData(['heads', '/api/heads'], { heads: [{ key: 'synthetic', label: 'Synthetic' }] });
+      client.setQueryData(['topology'], { path: '/synthetic/splice.toml', topology: {
+        heads: { synthetic: { system_prompt: '', system_prompt_mode: 'replace' } },
+      }, stale: false });
+    });
+    expect(html).toContain('Nonempty text replaces Claude Code’s own instructions.');
+    expect(html).toContain('An empty source leaves them unchanged.');
+    expect(html).not.toContain('This replaces Claude Code’s own instructions.');
+    expect(html).not.toContain('That takes away Claude Code’s operating instructions');
   });
 });
 

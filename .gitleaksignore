@@ -117,3 +117,14 @@ beba60d0f1545cad1d5a6b89c0ccb78df8cd15a5:features/diagnostics/src/test/kotlin/sp
 # phrase "management key answers". The flagged token is that backup name; no credential and no auth
 # consumer. Ledger notes now keep backup names away from the word "key".
 e0cb44ff2009e312b96027dacda6b1c30aec49ef:.dev/campaigns/v0.4.0.toml:generic-api-key:423
+# Oct 5 CT, gitleaks 8.30.1 historical triage: opened every exact blob. The ledger match is
+# narrative prose; the plan matches are an interpolated head log and a static beta-header list.
+# The remaining two are the already-vetted hostile-error and dummy Grok authentication fixtures,
+# appearing under additional historical commits. None is a credential; no broad rule is relaxed.
+e91074c9da1d6758c455ffb37dd6eda221a3d7a7:.dev/campaigns/v0.4.0.toml:generic-api-key:519
+3804d64a26802b5b2e08a299046115bfc0404d69:docs/superpowers/plans/2026-08-15-head-decoupling.md:generic-api-key:660
+3804d64a26802b5b2e08a299046115bfc0404d69:docs/superpowers/plans/2026-08-15-head-decoupling.md:generic-api-key:708
+646ce260dbd8e68618640eac4e39e12bf486e5c9:docs/superpowers/plans/2026-08-15-head-decoupling.md:generic-api-key:660
+646ce260dbd8e68618640eac4e39e12bf486e5c9:docs/superpowers/plans/2026-08-15-head-decoupling.md:generic-api-key:708
+646ce260dbd8e68618640eac4e39e12bf486e5c9:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88
+dd2a6783fd349d253b4e1fd70cd36f33471b4bc7:gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt:generic-api-key:73

@@ -10,6 +10,7 @@ import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
 import splice.provider.codex.state.CodeModeWorkerRecovery
 import splice.provider.codex.stream.CodeModeLiveRound
+import splice.provider.codex.stream.CodeModeRecoveryHistory
 import splice.provider.codex.stream.CodeModeSourceInterruptedException
 import splice.provider.codex.stream.CodeModeStreamingCell
 import splice.upstream.codemode.CodeModeCall
@@ -31,6 +32,7 @@ private data class CodeModeAdvanceRequest(
     val results: List<CodeModeResult>,
     val sink: WireSink,
     val source: CodeModeLiveRound?,
+    val recovery: CodeModeRecoveryHistory.Delivery?,
 )
 
 internal class CodexCodeModeMachine(
@@ -50,9 +52,10 @@ internal class CodexCodeModeMachine(
         results: List<CodeModeResult>,
         sink: WireSink,
         source: CodeModeLiveRound? = null,
+        recovery: CodeModeRecoveryHistory.Delivery? = null,
     ): TurnOutcome {
         started.putIfAbsent(record.id, config.clock.millis())
-        val request = CodeModeAdvanceRequest(record, turn, disableParallel, results, sink, source)
+        val request = CodeModeAdvanceRequest(record, turn, disableParallel, results, sink, source, recovery)
         return when {
             config.maxRounds?.let { record.rounds >= it } == true -> poison(record, "code-mode round limit exceeded")
             else -> registry.retainedCells.acquire(record)?.let { cell ->
@@ -80,6 +83,7 @@ internal class CodexCodeModeMachine(
         calls: List<CodeModePending>,
         sink: WireSink,
         cell: CodeModeCell? = null,
+        recovery: CodeModeRecoveryHistory.Delivery? = null,
     ): TurnOutcome {
         registry.changes.edit(record) { checkIssuable(it, cell) }
         val previous = record.issued.firstOrNull { it.requestDigest == record.lastDigest }
@@ -94,7 +98,7 @@ internal class CodexCodeModeMachine(
         }
         if (previous == null) {
             val streaming = cell as? CodeModeStreamingCell
-            val text = streaming?.deliveredText
+            val text = recovery?.text(streaming) ?: streaming?.deliveredText
             val native = streaming?.deliveredNative
             val issued = CodeModeIssuedStep(record.lastDigest, calls.map(CodeModePending::copy), text, native)
             // A failed save: the worker already advanced, but no callback reached the client. A retry
@@ -246,7 +250,7 @@ internal class CodexCodeModeMachine(
             record.pending += pending
             record.updatedAt = config.clock.millis()
         }
-        return emit(request.record, request.record.visiblePending(), request.sink, cell)
+        return emit(request.record, request.record.visiblePending(), request.sink, cell, request.recovery)
     }
 
     private fun complete(record: CodeModeRecord, step: CodeModeStep.Completed): TurnOutcome {

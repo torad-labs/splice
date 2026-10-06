@@ -11,6 +11,7 @@ import splice.provider.codex.CodexCodeModeTurn
 import splice.provider.codex.CodexCodeModeWire
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.PostingTurnRow
+import splice.upstream.ReanchorRound
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundBody
 import splice.upstream.RoundBodyInterceptor
@@ -26,12 +27,23 @@ internal class CodeModeRoundInterceptor(
     private val controller: CodexCodeModeTurn,
     private val streams: CodeModeStreams,
 ) : RoundInterceptor, RoundBodyInterceptor {
+    private var recovery: CodeModeRecoveryHistory? = null
+
     override fun resumesSource(): Boolean = streams.owns(turn)
+
+    override fun reanchor(round: ReanchorRound) {
+        val partial = round.failure.partial ?: return
+        val history = recovery ?: CodeModeRecoveryHistory(wire.body(RoundBody.Tree(round.requestBody)))
+            .also { recovery = it }
+        history.extend(partial)
+    }
 
     /** The round as the head holds it: a tree is read as that tree, so nothing renders or reparses it here. */
     override suspend fun intercept(body: RoundBody, sink: WireSink, postRound: InterceptedRoundPost): TurnOutcome {
         val upstream = CodeModeUpstreamPosts.of(postRound, wire)
-        return controller.run(CodeModeRunInput(turn, initialOuter, disableParallel, wire.body(body), sink, upstream))
+        return controller.run(
+            CodeModeRunInput(turn, initialOuter, disableParallel, wire.body(body), sink, upstream, recovery),
+        )
     }
 
     override suspend fun intercept(bodyJson: String, sink: WireSink, postRound: InterceptedRoundPost): TurnOutcome =

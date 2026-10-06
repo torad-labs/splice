@@ -58,6 +58,10 @@ public fun interface RoundInterceptor {
     /** True only when this prepared request answers a source round that is still live. */
     public fun resumesSource(): Boolean = false
 
+    /** One accepted recovery, before its next dispatch. Its private request additions are not client history.
+     *  The default keeps interceptors without durable replay state unchanged. */
+    public fun reanchor(round: ReanchorRound): Unit = Unit
+
     public suspend fun intercept(
         bodyJson: String,
         sink: WireSink,

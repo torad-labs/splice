@@ -102,6 +102,7 @@ internal class CodeModeStreams(
         admission,
         context.sink,
         headStop = context.headStop,
+        recovery = context.recovery,
     ).also { round ->
         reading += round
         context.postedSources += round

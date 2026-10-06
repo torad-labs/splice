@@ -34,8 +34,9 @@ internal class CodeModeLiveRound(
     sink: WireSink,
     private val beforeSettle: Runnable? = null,
     private val headStop: HeadStopSignal? = null,
+    recovery: CodeModeRecoveryHistory? = null,
 ) {
-    private val capture = CodeModeSourceCapture(config, registry, wire, admission)
+    private val capture = CodeModeSourceCapture(config, registry, wire, admission, recovery)
     val source = capture.source
     val ready = capture.ready
     private val record: CodeModeRecord? get() = capture.record

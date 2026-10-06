@@ -16,6 +16,7 @@ internal class CodeModeSourceCapture(
     private val registry: CodexCodeModeRegistry,
     private val wire: CodexCodeModeWire,
     admission: CodeModeStreamAdmission,
+    private var recovery: CodeModeRecoveryHistory? = null,
 ) {
     // One use only: the driver's closure reaches the raw request, context and client call.
     private var admission: CodeModeStreamAdmission? = admission
@@ -33,6 +34,7 @@ internal class CodeModeSourceCapture(
         private set
     private var startedCall: GatewayCustomCall? = null
     private var completedCall: GatewayCustomCall? = null
+    private var recoveredSource: CodeModeRecoveryHistory.Source? = null
 
     /** Published before waking a source cursor, without taking its round's lifecycle monitor. */
     private fun dispose() {
@@ -63,6 +65,8 @@ internal class CodeModeSourceCapture(
         admission = null
         val admitted = admit.admit(call)
         record = admitted
+        recoveredSource = recovery?.source(admitted)
+        recovery = null
         startedCall = call
         if (call.input.isNotEmpty()) {
             checkSource(call.input)
@@ -111,6 +115,7 @@ internal class CodeModeSourceCapture(
     }
 
     fun finish(outcome: TurnOutcome) {
+        recovery = null
         val current = record ?: return
         val why = uncertified(outcome)
         val success = (outcome as? TurnOutcome.Success)?.takeIf { why == null }
@@ -129,7 +134,8 @@ internal class CodeModeSourceCapture(
         }
         check(call.input.startsWith(source.text)) { "terminal exec source changed its dispatched prefix" }
         checkSource(call.input)
-        if (registry.source.finish(current, call, wire.continuity(success), success.usage)) {
+        val continuity = recoveredSource?.finish(success, wire) ?: wire.continuity(success)
+        if (registry.source.finish(current, call, continuity, success.usage)) {
             source.complete(call.input)
         } else {
             dispose()

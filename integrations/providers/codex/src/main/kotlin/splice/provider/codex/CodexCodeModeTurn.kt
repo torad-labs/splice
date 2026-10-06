@@ -17,6 +17,7 @@ import splice.provider.codex.state.CodeModeTurnNotes
 import splice.provider.codex.state.diagnostics.CodeModeHistoryLog
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
 import splice.provider.codex.stream.CodeModeLiveRound
+import splice.provider.codex.stream.CodeModeRecoveryHistory
 import splice.provider.codex.stream.CodeModeUpstreamPost
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
@@ -28,6 +29,7 @@ internal data class CodeModeRunInput(
     val body: CodeModeBody,
     val sink: WireSink,
     val post: CodeModeUpstreamPost,
+    val recovery: CodeModeRecoveryHistory? = null,
 )
 
 internal data class CodeModeRunContext(
@@ -38,6 +40,7 @@ internal data class CodeModeRunContext(
     val sink: WireSink,
     val post: CodeModeUpstreamPost,
     val headStop: HeadStopSignal? = null,
+    val recovery: CodeModeRecoveryHistory? = null,
 ) {
     /** One filtered history for this request, extended only by its own completed scripts. */
     val completed: MutableList<CodeModeRecord> = mutableListOf()
@@ -80,6 +83,7 @@ internal class CodexCodeModeTurn(
             input.sink,
             input.post,
             currentCoroutineContext()[HeadStopKey],
+            input.recovery,
         )
         val held = locks.acquire(key)
         val watched = driver.streams.watchCuts(key)

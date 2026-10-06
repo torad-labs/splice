@@ -36,7 +36,7 @@ internal class CodexCodeModeDriver(
     private val machine: CodexCodeModeMachine,
 ) {
     val streams = CodeModeStreams(config, registry, wire)
-    private val factory = CodeModeRecordFactory(config)
+    private val factory = CodeModeRecordFactory(config, wire)
     private val starter = CodeModeRuntimeStarter(run, registry, config)
 
     /** A redirectable post can yield a durable script while its upstream response remains live. */
@@ -47,13 +47,7 @@ internal class CodexCodeModeDriver(
             driveProblem(context, listOf(call), call)?.let { error(it) }
             validation.outer(call.copy(input = call.input.ifBlank { "source pending" }))?.let { error(it) }
             context.scripts++
-            val boundary = checkNotNull(wire.anchoredBoundary(body, context.completed))
-            val record = factory.create(
-                context,
-                call,
-                boundary,
-                wire.continuity(TurnOutcome.Success(false, false, Usage())),
-            )
+            val record = checkNotNull(factory.create(context, call, body, TurnOutcome.Success(false, false, Usage())))
             record.sourceState = CodeModeSourceState()
             check(registry.add(record)) { "code-mode registry capacity reached" }
             record
@@ -99,8 +93,10 @@ internal class CodexCodeModeDriver(
 
     suspend fun finishGenerated(record: CodeModeRecord, context: CodeModeRunContext, body: CodeModeBody): TurnOutcome {
         val generated = streams.takeOutcome(record)
+        context.recovery?.generated(generated)
         if (context.completed.none { it.id == record.id }) context.completed += record
-        val rewritten = wire.canonicalize(body, context.completed, context.turn.toolMedia)
+        val posted = context.recovery?.upstream(context.completed) ?: context.completed
+        val rewritten = wire.canonicalize(body, posted, context.turn.toolMedia)
         rewritten.error?.let { return failure(it) }
         val outcome = post(context, null, checkNotNull(rewritten.body))
         val accumulated = CodeModeOutcomeAccumulator()
@@ -184,7 +180,9 @@ internal class CodexCodeModeDriver(
             accumulated.finishLocal(advanced)
         } else {
             context.completed += record
-            val rewritten = wire.canonicalize(state.body, context.completed, context.turn.toolMedia)
+            context.recovery?.generated(success)
+            val posted = context.recovery?.upstream(context.completed) ?: context.completed
+            val rewritten = wire.canonicalize(state.body, posted, context.turn.toolMedia)
             rewritten.error?.let { return accumulated.finishLocal(failure(it)) }
             state.body = checkNotNull(rewritten.body)
             accumulated.finish(post(context, null, state.body))
@@ -198,10 +196,8 @@ internal class CodexCodeModeDriver(
         outcome: TurnOutcome.Success,
     ): Pair<CodeModeRecord?, TurnOutcome> {
         validation.outer(outer)?.let { return null to failure(it) }
-        val boundary = wire.anchoredBoundary(body, context.completed)
+        val record = factory.create(context, outer, body, outcome)
             ?: return null to failure("code mode requires a Responses input array")
-        val continuity = wire.continuity(outcome)
-        val record = factory.create(context, outer, boundary, continuity)
         return if (!registry.add(record)) {
             null to failure("code-mode registry capacity reached")
         } else {
@@ -248,6 +244,7 @@ internal class CodexCodeModeDriver(
                 emptyList(),
                 streams.attach(record, context.sink),
                 stream,
+                context.recovery?.delivery(record),
             )
         }
     } catch (error: CancellationException) {

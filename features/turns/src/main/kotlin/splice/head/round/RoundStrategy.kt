@@ -62,6 +62,7 @@ internal class RoundStrategy(
         perf: TurnPerf?,
     ) {
         val notice = RetryNotice { log(it) }
+        val recovery = observedReanchor(reanchor)
         val interceptedPost = PostRound { body -> intercept(body, emitter, postRound, perf) }
         val interceptedPostToSink = PostRoundToSink { body, sink ->
             intercept(body, sink, PostRound { posted -> postRoundToSink(posted, sink) }, perf)
@@ -73,7 +74,7 @@ internal class RoundStrategy(
                 log = notice,
                 postRound = interceptedPostToSink,
                 finish = finish,
-                reanchor = reanchor,
+                reanchor = recovery,
                 signals = signals,
                 toolSearch = toolSearch,
             ).run(requestBody, fold, perf)
@@ -94,7 +95,13 @@ internal class RoundStrategy(
                 finish = finish,
                 signals = signals,
                 toolSearch = toolSearch,
-            ).run(requestBody, reanchor, perf)
+            ).run(requestBody, recovery, perf)
+        }
+    }
+
+    private fun observedReanchor(controller: ReanchorController?): ReanchorController? = controller?.let { policy ->
+        ReanchorController { round ->
+            policy.continuationForFailure(round)?.also { interception.interceptor?.reanchor(round) }
         }
     }
 

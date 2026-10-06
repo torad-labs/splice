@@ -290,6 +290,7 @@ export function stagesOf(row: TurnRow): TurnTiming {
   const firstDelta = row.first_delta;
   const streamEnd = row.stream_end;
   const stream = response && row.attempts === 1 && (row.ws_refused_too_large ?? 0) === 0
+    && (row.transport_attempt_starts ?? 1) <= 1
     && measured(firstDelta) && measured(streamEnd)
     && firstDelta >= send + responseWait && streamEnd >= firstDelta
     && total !== null && streamEnd <= total

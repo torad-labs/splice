@@ -172,6 +172,8 @@ export interface TurnRow {
   write_ms?: number;
   usage_ms?: number;
   attempts?: number;
+  /** Upstream attempts begun, including those abandoned before their first event. */
+  transport_attempt_starts?: number;
   /** A WebSocket round refused before its first event, not included in accepted rounds. */
   ws_refused_too_large?: number;
   /** 1 when code mode served this step with no upstream attempt (PerfKeys.LOCAL_STEP): a step of a turn, not a turn. Absent on a turn. */

@@ -13,6 +13,7 @@ import { colourFromRegistry } from '../src/lib/model';
 import { viewOf } from '../src/lib/requests-view';
 import { P, T } from '../src/lib/words-turns';
 import type { PerfSummaryHead, TurnRow } from '../src/types/perf';
+import { rowFromWire } from '../src/api/turns';
 
 const none = () => 'none' as const;
 const row = (over: Partial<TurnRow> = {}): TurnRow => ({ head: 'claude', ts: 1_000_000, model: 'opus-5.5', outcome: 'ok', compact: false, ...over });
@@ -236,6 +237,42 @@ describe('a turn', () => {
     expect(timing.additive).toBe(false);
     expect(turnLede(fallback, timing)).not.toContain('Most of it');
     expect(stagesOf({ ...fallback, ws_refused_too_large: 0 }).additive).toBe(true);
+  });
+  const attemptTiming = row({
+    head: 'synthetic', ts: 1, model: 'synthetic', attempts: 1,
+    prep_ms: 12, admit_wait_ms: 1, lease_wait_ms: 0,
+    arrival_to_upstream_write_ms: 20000, upstream_write_to_first_byte_ms: 50,
+    first_byte: 20050, first_frame: 30, first_delta: 21000,
+    stream_end: 25000, finish: 25005, total: 25010,
+  });
+  for (const starts of [2, 3]) {
+    test(`an unmarked WebSocket fallback with ${starts} transport attempt starts cannot split timing`, () => {
+      const fallback = { ...attemptTiming, transport_attempt_starts: starts };
+      const timing = stagesOf(fallback);
+      expect(timing.additive).toBe(false);
+      expect(timing.stages.some(stage => stage.key === 'stream')).toBe(false);
+      expect(timing.stages.find(stage => stage.key === 'provider')?.ms).toBe(50);
+      expect(timing.stages.find(stage => stage.key === 'wait')?.ms).toBe(24947);
+      expect(turnLede(fallback, timing)).not.toContain('Most of it');
+    });
+  }
+  for (const [label, starts] of [['one', { transport_attempt_starts: 1 }], ['unreported', {}]] as const) {
+    test(`${label} transport attempt starts preserves the existing single-attempt timing`, () => {
+      const single = { ...attemptTiming, ...starts };
+      const timing = stagesOf(single);
+      expect(timing.additive).toBe(true);
+      expect(timing.stages.find(stage => stage.key === 'stream')?.ms).toBe(4000);
+      expect(timing.stages.find(stage => stage.key === 'wait')?.ms).toBe(20947);
+    });
+  }
+  test('the wire adapter retains transport attempt starts separately from accepted rounds', () => {
+    const adapted = rowFromWire('synthetic', {
+      ...attemptTiming, transport_attempt_starts: 2,
+      session: null, account: null, cache_cold: null, turn: null,
+      session_id: null, response_message_id: null,
+    });
+    expect(adapted.transport_attempt_starts).toBe(2);
+    expect(adapted.attempts).toBe(1);
   });
   test('structural frames must fit completion bounds without following the first byte', () => {
     const completed = row({

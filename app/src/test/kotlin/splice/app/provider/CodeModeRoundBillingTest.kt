@@ -10,9 +10,13 @@ import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onEach
@@ -76,6 +80,9 @@ import splice.upstream.RowRelease
 import splice.upstream.WsRound
 import splice.upstream.WsRoundAbort
 import splice.upstream.WsRoundRunner
+import splice.upstream.codemode.CodeModeCell
+import splice.upstream.codemode.CodeModeRuntime
+import splice.upstream.codemode.CodeModeSource
 import splice.upstream.retry.InflightGate
 import splice.upstream.sse.SseReader
 import java.io.IOException
@@ -1184,6 +1191,109 @@ class CodeModeTerminalBillingTest {
             upstream.close()
         }
     }
+}
+
+/** A rejected first admission never parks or holds a posting row, but still owns its actual raw post. */
+class CodeModeFirstStepBillingTest {
+    @Test
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `a first step rejected before its source terminal counts one unreported cut`(@TempDir tmp: Path) = runBlocking {
+        rejectFirstStep(tmp, reported = false)
+    }
+
+    @Test
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `a rejected first step keeps its already reported raw tokens without a cut`(@TempDir tmp: Path) = runBlocking {
+        rejectFirstStep(tmp, reported = true)
+    }
+
+    @Test
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `a cancelled first step without an outcome still counts its source cut`(@TempDir tmp: Path) = runBlocking {
+        rejectFirstStep(tmp, reported = false, CancellationException("synthetic first-step cancellation"))
+    }
+
+    private suspend fun rejectFirstStep(
+        tmp: Path,
+        reported: Boolean,
+        failure: Exception = IOException("synthetic first-step rejection"),
+    ) = coroutineScope {
+        val upstream = BillingUpstream()
+        val ws = BillingWsRunner()
+        val runtime = FirstStepBillingRuntime(failure)
+        val bridge = CodexCodeModeBridge(
+            CodeModeBridgeConfig(
+                runtimes = { runtime },
+                state = CodeModeStateLocation(tmp.resolve("records"), tmp.resolve("legacy.json")),
+            ),
+        )
+        val head = HeadServer(withWs(upstream.url, bridge, ws), 0, headDeps(tmp))
+        val client = HttpClient(CIO)
+        try {
+            head.start()
+            val url = "http://127.0.0.1:${head.port}/v1/messages"
+            val history = listOf(message("user", JsonPrimitive("read the synthetic fixture")))
+            val first = async { send(client, url, history) }
+            withTimeout(TURN_BOUND_MS) { runtime.started.await() }
+            val round = billingRound(bridge)
+            val billing = billingField(round, "billing")
+            val owed = billing.javaClass.getDeclaredField("owed").apply { isAccessible = true }.get(billing)
+            assertNull(owed, "the first admission has not parked or held a posting row")
+            if (reported) {
+                ws.endSource()
+                val reader = billingField(round, "finished") as kotlinx.coroutines.Deferred<*>
+                withTimeout(TURN_BOUND_MS) { reader.await() }
+                assertEquals(SOURCE_INPUT, checkNotNull(reportedBillingUsage(round)).inputTokens)
+            }
+            runtime.reject.complete(Unit)
+            val answer = if (failure is CancellationException) {
+                first.cancelAndJoin()
+                ""
+            } else {
+                withTimeout(TURN_BOUND_MS) { first.await() }.also {
+                    assertTrue(it.contains("source was not rerun"), it)
+                }
+            }
+            assertTrue(toolUses(answer).isEmpty(), "the failed first step never publishes a parked callback")
+            assertFirstStepBill(rows(tmp, 1).single(), reported)
+            assertEquals(if (reported) 0 else 1, ws.aborts.get(), "only the unreported source is cancelled")
+            assertEquals(1, ws.posts.get())
+            assertEquals(0, upstream.posts.get(), "the synthetic WebSocket post is not reissued")
+        } finally {
+            runtime.reject.complete(Unit)
+            head.stop()
+            client.close()
+            upstream.close()
+        }
+    }
+}
+
+private fun assertFirstStepBill(posting: JsonObject, reported: Boolean) {
+    assertEquals(if (reported) SOURCE_INPUT else 0L, posting.count(PerfKeys.IN_TOKENS) ?: 0L)
+    assertEquals(if (reported) SOURCE_OUTPUT else 0L, posting.count(PerfKeys.OUT_TOKENS) ?: 0L)
+    assertEquals(if (reported) SOURCE_CACHED else 0L, posting.count(PerfKeys.CACHED_TOKENS) ?: 0L)
+    assertEquals(if (reported) 0L else 1L, posting.count(PerfKeys.CUT_SOURCE_ROUNDS) ?: 0L, "$posting")
+}
+
+private class FirstStepBillingRuntime(private val failure: Exception) : CodeModeRuntime {
+    val started = CompletableDeferred<Unit>()
+    val reject = CompletableDeferred<Unit>()
+
+    override suspend fun start(source: String, tools: Set<String>, descriptions: Map<String, String>): CodeModeCell =
+        error("the synthetic first step must use its streaming source")
+
+    override suspend fun startStreaming(
+        source: CodeModeSource,
+        tools: Set<String>,
+        descriptions: Map<String, String>,
+    ): CodeModeCell {
+        started.complete(Unit)
+        reject.await()
+        if (failure is CancellationException) currentCoroutineContext().cancel(failure)
+        throw failure
+    }
+
+    override fun close() = Unit
 }
 
 private fun stageBillingTerminal(

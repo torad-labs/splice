@@ -10,7 +10,6 @@ import kotlinx.coroutines.async
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
-import splice.core.turn.Usage
 import splice.core.util.Cancellables
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeBridgeConfig
@@ -40,7 +39,7 @@ internal class CodeModeLiveRound(
     val ready = capture.ready
     private val record: CodeModeRecord? get() = capture.record
     private val lifecycle = Any()
-    private val billing = CodeModeRoundBilling(lifecycle, registry, CodeModeRoundRecord { record }, config.log)
+    val billing = CodeModeRoundBilling(lifecycle, registry, CodeModeRoundRecord { record }, config.log)
     val switching = CodeModeSwitchingSink(sink, CodeModeSourceObserver(::observe))
     private val clientCut = AtomicBoolean()
     private val cutCounted = AtomicBoolean()
@@ -257,8 +256,16 @@ internal class CodeModeLiveRound(
     /** A cut can be consumed by one client step only, even after the record's execution lease was removed. */
     fun takeCut(): Boolean = clientCut.get() && cutCounted.compareAndSet(false, true)
 
-    /** Successful terminal usage still belongs to the original posting row. */
-    fun claim(record: CodeModeRecord, step: TurnOutcome): Usage? = billing.claim(record, step)
+    /** A cancelled first client step owns its cut, unless head replacement already ended this source. */
+    fun stopClientStep() {
+        synchronized(lifecycle) {
+            if (!headStopped) {
+                if (!upstreamEnded && finished?.isActive == true) clientCut.set(true)
+                headStopped = true
+            }
+        }
+        cancel()
+    }
 
     /** The synchronous registry stop owns persistence; a cancelled old reader cannot overwrite the next head. */
     fun stop() {

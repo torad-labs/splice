@@ -89,6 +89,7 @@ internal class CodeModeStreams(
         admission: CodeModeStreamAdmission,
     ): CodeModeLiveRound = CodeModeLiveRound(config, registry, wire, admission, context.sink).also { round ->
         reading += round
+        context.postedSources += round
         round.start(scope, post, body) { reading.remove(round) }
     }
 
@@ -131,19 +132,31 @@ internal class CodeModeStreams(
     fun watchCuts(key: String): Map<String, CodeModeLiveRound> = rounds.filterValues { it.key == key }
 
     /** Only the client step that cancelled an actual posted reader consumes its cut, once. */
-    fun takeCuts(watched: Map<String, CodeModeLiveRound>): Long {
+    fun takeCuts(watched: Map<String, CodeModeLiveRound>, posted: List<CodeModeLiveRound>): Long {
         val cut = watched.filterValues(CodeModeLiveRound::takeCut)
         cut.forEach { (id, round) -> rounds.remove(id, round) }
-        return cut.size.toLong()
+        return cut.size.toLong() + posted.count(CodeModeLiveRound::takeCut)
     }
 
-    fun billCuts(watched: Map<String, CodeModeLiveRound>, outcome: TurnOutcome): TurnOutcome {
-        val cut = takeCuts(watched)
+    fun billCuts(
+        watched: Map<String, CodeModeLiveRound>,
+        posted: List<CodeModeLiveRound>,
+        outcome: TurnOutcome,
+    ): TurnOutcome {
+        val cut = takeCuts(watched, posted)
         if (cut == 0L) return outcome
-        val accumulated = CodeModeOutcomeAccumulator()
-        accumulated.absorb(TurnOutcome.Success(false, false, Usage(cutRounds = cut)))
-        return accumulated.finish(outcome)
+        // A cut is accounting, not generated content: preserve the failure's existing re-anchor boundary.
+        return when (outcome) {
+            is TurnOutcome.Success -> outcome.copy(usage = addCuts(outcome.usage, cut))
+            is TurnOutcome.Failure -> outcome.copy(
+                partial = outcome.partial?.let { it.copy(usage = addCuts(it.usage, cut)) },
+                salvagedUsage = addCuts(outcome.salvagedUsage, cut),
+            )
+            is TurnOutcome.ClientAbandoned -> outcome.copy(salvagedUsage = addCuts(outcome.salvagedUsage, cut))
+        }
     }
+
+    private fun addCuts(usage: Usage, cut: Long): Usage = usage.copy(cutRounds = usage.cutRounds + cut)
 
     /** A source round is billed on the client step that posted it. One that finished before the step ended is merged
      *  into the step here. One still streaming then is owed to the step's row, which waits for the round's terminal
@@ -153,7 +166,7 @@ internal class CodeModeStreams(
     fun billFinished(record: CodeModeRecord, step: TurnOutcome): TurnOutcome {
         val round = rounds[record.id]
         val usage = try {
-            if (round != null) round.claim(record, step) else registry.source.consume(record)
+            if (round != null) round.billing.claim(record, step) else registry.source.consume(record)
         } catch (error: CodeModePersistenceException) {
             config.log("[code-mode] source round billed later: its claim was not saved (${error::class.simpleName})")
             null

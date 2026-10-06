@@ -11,6 +11,7 @@ import splice.provider.codex.branch.CodexCodeModeBranch
 import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.provider.codex.state.CodeModeTurnLocks
 import splice.provider.codex.state.CodeModeTurnNotes
+import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeUpstreamPost
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
@@ -34,6 +35,9 @@ internal data class CodeModeRunContext(
 ) {
     /** One filtered history for this request, extended only by its own completed scripts. */
     val completed: MutableList<CodeModeRecord> = mutableListOf()
+
+    /** Sources posted by this step can be cut before it ever parks or holds a billing row. */
+    val postedSources: MutableList<CodeModeLiveRound> = mutableListOf()
     var scripts: Int = 0
 }
 
@@ -86,11 +90,11 @@ internal class CodexCodeModeTurn(
                 error.outcome()
             }
             // The one exit every client-facing step takes, so none tells Claude Code its context is zero.
-            registry.contexts.report(key, driver.streams.billCuts(watched, outcome))
+            registry.contexts.report(key, driver.streams.billCuts(watched, context.postedSources, outcome))
         } finally {
             // A refusal or cancellation has no returned outcome, but the cutting turn still owns its perf row.
             try {
-                val cuts = driver.streams.takeCuts(watched)
+                val cuts = driver.streams.takeCuts(watched, context.postedSources)
                 input.post.perf?.add(PerfKeys.CUT_SOURCE_ROUNDS, cuts)
             } finally {
                 locks.release(key, held)

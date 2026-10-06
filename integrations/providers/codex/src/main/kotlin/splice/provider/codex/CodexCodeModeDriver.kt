@@ -69,7 +69,7 @@ internal class CodexCodeModeDriver(
             withContext(NonCancellable) {
                 val parked = admitted?.phase == CodeModePhase.ACTIVE || admitted?.phase == CodeModePhase.STARTING
                 // A cancelled first client step must release even a reader blocked writing to that client.
-                if (clientCancelled) round.stop() else if (!parked) round.cancel()
+                if (clientCancelled) round.stopClientStep() else if (!parked) round.cancel()
                 try {
                     round.switching.detach()
                 } finally {

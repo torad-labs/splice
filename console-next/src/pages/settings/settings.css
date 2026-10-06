@@ -82,6 +82,7 @@
   .sub { position: static; grid-auto-flow: column; overflow-x: auto; }
   .row { grid-template-columns: minmax(0, 1fr); gap: var(--space-7); }
   .row .ctl { justify-self: start; justify-content: flex-start; }
+  .settings-page .kept-ctl, .settings-page .kept-ctl .census { justify-items: start; text-align: left; }
   .set { padding: var(--space-4) var(--space-8); }
 }
 .knob-group { border-top: 1px solid color-mix(in srgb, var(--ink) 9%, transparent); padding-top: var(--space-11); margin-top: var(--space-6); }
@@ -103,6 +104,7 @@
 .kept-block { margin-top: var(--space-16); }
 .kept-title { font: 520 1.625rem/1.15 var(--display); color: var(--ink); }
 .kept-why { margin: var(--space-4) 0 var(--space-6); font: 400 1rem/1.5 var(--read); color: var(--mute); max-width: 70ch; }
+.row:has(.kept-ctl) { align-items: start; }
 .kept-ctl { display: grid; gap: var(--space-4); justify-items: end; }
 .kept-plans { font: 500 0.96rem var(--meta); color: var(--body); text-align: right; }
 .kept-plans summary { cursor: pointer; }

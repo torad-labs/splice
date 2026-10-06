@@ -106,7 +106,7 @@ function KnobRow({ knob, head, topology, topologyPending, inherited, masked }: {
           ? <QuantityInput label={nameOf(knob.key)} value={typeof knob.value === 'number' ? knob.value : 0} unit={meta.unit} onCommit={save} />
           : <NumberInput label={nameOf(knob.key)} value={typeof knob.value === 'number' ? knob.value : 0} suffix={number.suffix} onCommit={save} />;
       case 'text':
-        if (['chatgptApiBase', 'xaiApiBase'].includes(knob.key)) return <UrlInput label={nameOf(knob.key)} value={textOf(knob.value)} onCommit={next => save(next === '' ? null : next)} />;
+        if (['chatgptApiBase', 'xaiApiBase', 'codexAuthPath', 'grokAuthPath'].includes(knob.key)) return <UrlInput label={nameOf(knob.key)} inputMode={['codexAuthPath', 'grokAuthPath'].includes(knob.key) ? 'text' : 'url'} value={textOf(knob.value)} onCommit={next => save(next === '' ? null : next)} />;
         return ['pinnedModel', 'grokModel', 'foldReasoningModels'].includes(knob.key)
           ? <ModelKnob knob={knob} value={scoped ? override ?? textOf(inherited) : textOf(knob.value)} scoped={scoped} masked={scoped && override !== null && masked} save={save} />
           : <TextInput label={nameOf(knob.key)} value={textOf(knob.value)} onCommit={(next) => save(next === '' ? null : next)} />;

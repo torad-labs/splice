@@ -122,14 +122,14 @@ export function QuantityInput({ value, onCommit, label, unit }: { value: number;
   </span>;
 }
 
-/** A single URL that wraps visually without adding newlines to the value sent on blur or Enter. */
-export function UrlInput({ value, onCommit, label }: { value: string; onCommit: (next: string) => void; label: string }) {
+/** A single URL or path that wraps without adding newlines to the value sent on blur or Enter. */
+export function UrlInput({ value, onCommit, label, inputMode = 'url' }: { value: string; onCommit: (next: string) => void; label: string; inputMode?: 'url' | 'text' }) {
   const [text, setText] = useState(value);
   useEffect(() => setText(value), [value]);
   return <textarea
     className="input wide"
     aria-label={label}
-    inputMode="url"
+    inputMode={inputMode}
     spellCheck={false}
     rows={2}
     style={{ fieldSizing: 'content', height: 'auto', maxWidth: '100%' }}

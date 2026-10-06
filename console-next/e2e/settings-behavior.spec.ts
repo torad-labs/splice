@@ -33,6 +33,20 @@ async function topologyWrites(page: Page) {
   return writes;
 }
 
+async function expectWholeValue(input: Locator) {
+  expect(await input.evaluate(element => {
+    const field = element as HTMLInputElement | HTMLTextAreaElement;
+    if (field instanceof HTMLTextAreaElement) return field.scrollWidth <= field.clientWidth + 1 && field.scrollHeight <= field.clientHeight + 1;
+    const style = getComputedStyle(field);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (context === null) throw new Error('browser needs a canvas text measurement');
+    context.font = style.font;
+    const needed = context.measureText(field.value).width + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 4;
+    return field.getBoundingClientRect().width >= needed;
+  })).toBe(true);
+}
+
 test('API URL controls show whole addresses and commit the exact single-line value', async ({ page }, testInfo) => {
   const initial = 'https://synthetic.example.invalid/v1';
   const changed = 'https://synthetic.example.invalid/v2?literal=%0A&mode=synthetic#fragment';
@@ -54,17 +68,7 @@ test('API URL controls show whole addresses and commit the exact single-line val
   await page.getByRole('button', { name: 'Open the full list', exact: true }).click();
   const input = page.getByRole('textbox', { name: 'ChatGPT API URL', exact: true });
   await expect(input).toHaveValue(initial);
-  const whole = async () => expect(await input.evaluate(element => {
-    const field = element as HTMLInputElement | HTMLTextAreaElement;
-    if (field instanceof HTMLTextAreaElement) return field.scrollWidth <= field.clientWidth + 1 && field.scrollHeight <= field.clientHeight + 1;
-    const style = getComputedStyle(field);
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    if (context === null) throw new Error('browser needs a canvas text measurement');
-    context.font = style.font;
-    const needed = context.measureText(field.value).width + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 4;
-    return field.getBoundingClientRect().width >= needed;
-  })).toBe(true);
+  const whole = () => expectWholeValue(input);
   for (const width of [1536, 393]) {
     await page.setViewportSize({ width, height: 1024 });
     await page.evaluate(() => document.fonts.ready);
@@ -88,6 +92,78 @@ test('API URL controls show whole addresses and commit the exact single-line val
   await whole();
   await assertHealthy(page, faults);
 });
+
+for (const [key, label] of [['codexAuthPath', 'ChatGPT login file'], ['grokAuthPath', 'Grok login file']] as const) {
+  test(label + ' shows the whole path and preserves native single-line writes', async ({ page }, testInfo) => {
+    const initial = '/synthetic/login-files/' + 'a-long-directory-name/'.repeat(8) + 'original-auth.json';
+    const changed = key === 'codexAuthPath'
+      ? '/synthetic/login files/' + 'another-long-directory/'.repeat(8) + 'auth-%0A.json'
+      : 'C:\\Synthetic\\login files\\' + 'another-long-directory\\'.repeat(8) + 'auth-%0A.json';
+    let current: string | null = initial;
+    let releaseRead = () => {};
+    let readReady = Promise.resolve();
+    const writes: Record<string, unknown>[] = [];
+    await page.route(url => url.pathname === '/api/config', async route => {
+      if (route.request().method() === 'PATCH') {
+        const patch = route.request().postDataJSON() as Record<string, unknown>;
+        writes.push(patch);
+        if (typeof patch[key] === 'string' || patch[key] === null) current = patch[key];
+        readReady = new Promise<void>(resolve => { releaseRead = resolve; });
+        return route.fulfill({ json: { applied: patch, rejected: {}, restart_required: [], targets: [], persisted: '/synthetic/state/config.json' } });
+      }
+      await readReady;
+      const response = await route.fetch();
+      const body = await response.json();
+      body.effective[key] = current;
+      await route.fulfill({ response, json: body });
+    });
+    const faults = await open(page, 'settings/advanced');
+    await page.getByRole('button', { name: 'Open the full list', exact: true }).click();
+    const input = page.getByRole('textbox', { name: label, exact: true });
+    await expect(input).toHaveValue(initial);
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 1024 });
+      await page.evaluate(() => document.fonts.ready);
+      await expectWholeValue(input);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.locator('.row').filter({ has: input }).screenshot({ path: testInfo.outputPath(key + '-whole-path-' + width + '.png') });
+    }
+    const pasted = changed.slice(0, 8) + '\r\n' + changed.slice(8);
+    const native = await page.evaluate(value => {
+      const reference = document.createElement('input');
+      reference.value = value;
+      return reference.value;
+    }, pasted);
+    expect(native).toBe(changed);
+    await input.fill(pasted);
+    await expect(input).toHaveValue(native);
+    await expectWholeValue(input);
+    // Keep each save's read pending long enough to prove the control holds edits until it settles.
+    const settle = async (value: string) => {
+      await expect(input).toBeDisabled();
+      releaseRead();
+      await expect(input).toBeEnabled();
+      await expect(input).toHaveValue(value);
+    };
+    try {
+      await input.press('Enter');
+      await expect.poll(() => writes).toEqual([{ [key]: changed }]);
+      await settle(changed);
+      await input.fill(initial);
+      await input.press('Tab');
+      await expect.poll(() => writes).toEqual([{ [key]: changed }, { [key]: initial }]);
+      await settle(initial);
+      await input.fill('');
+      await expect(input).toHaveValue('');
+      await input.press('Tab');
+      await expect.poll(() => writes).toEqual([{ [key]: changed }, { [key]: initial }, { [key]: null }]);
+      await settle('');
+      await assertHealthy(page, faults);
+    } finally {
+      releaseRead();
+    }
+  });
+}
 
 test('Storage aligns the Turn statistics title with its retention input', async ({ page }, testInfo) => {
   await page.route(url => url.pathname === '/api/kept/turns', route => route.fulfill({ json: {

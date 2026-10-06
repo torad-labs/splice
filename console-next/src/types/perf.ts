@@ -216,8 +216,8 @@ export interface TurnUsageStats {
   missing_input_requests: number;
   missing_output_requests: number;
   missing_cache_requests: number;
-  /** Replies these requests cut off with a new message while they streamed: billed upstream, their tokens never
-   *  reported. A daemon older than the count omits it. */
+  /** Replies stopped before completion without reporting tokens; the count does not identify why.
+   *  A daemon older than the count omits it. */
   cut_source_rounds?: number;
 }
 

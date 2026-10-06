@@ -126,7 +126,7 @@ export function UsagePage() {
             {active.length === 0 ? null : <ul className="uplans">{active.map((plan) => <PlanRow key={plan.key} plan={plan} now={now} />)}</ul>}
             {idle.length === 0 ? null : <p className="idle-plans">{U.idlePlans(idle.map((plan) => plan.label).join(", "), spanWords(hours))}</p>}
           </section>
-          <UsageBreakdown key={hours} labelOf={label} read={requests} accounts={accounts.isError ? undefined : accounts.data?.accounts} catalogs={models.data === undefined || isPendingRoute(models.data) ? [] : models.data.heads} />
+          <UsageBreakdown key={asked} labelOf={label} read={requests} accounts={accounts.isError ? undefined : accounts.data?.accounts} catalogs={models.data === undefined || isPendingRoute(models.data) ? [] : models.data.heads} />
           <UsagePricing heads={headRows} recorded={recorded} />
           <Budgets plans={plans} />
           <Alerts />

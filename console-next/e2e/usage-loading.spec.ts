@@ -64,6 +64,51 @@ for (const width of [1440, 390]) {
   }
 }
 
+for (const width of [1440, 390]) {
+  for (const readKind of ['late', 'poll'] as const) {
+    test(`Usage keeps its table choice when a ${readKind} retention read clamps the window at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      await page.clock.install();
+      const heads = await read<HeadsPayload>(page, '/api/heads');
+      heads.heads = heads.heads.filter(head => head.key === STACK.oauthHead);
+      await page.route('**/api/heads', route => route.fulfill({ json: heads }));
+      let release: () => void = () => undefined;
+      const held = new Promise<void>(resolve => { release = resolve; });
+      let shorter = false;
+      await page.route('**/api/economics', async route => {
+        if (readKind === 'late') await held;
+        await route.fulfill({ json: { retention_hours: readKind === 'late' || shorter ? 24 : 168, heads: [] } });
+      });
+      await page.route(url => url.pathname === '/api/perf/turns', route => {
+        const query = new URL(route.request().url()).searchParams;
+        const requests = Number(query.get('until')) - Number(query.get('since')) === 24 * 3_600_000 ? 31 : 2502;
+        const values = { ...stats, requests };
+        return route.fulfill({ json: { since: Number(query.get('since')), n: 1, heads: [{
+          key: STACK.oauthHead, label: STACK.oauthHead, count: requests,
+          usage: { ...usage, totals: values, models: [{ key: 'synthetic-table-model', ...values }] }, rows: [],
+        }] } });
+      });
+      try {
+        await open(page, 'usage?window=168');
+        const breakdown = page.locator('.usage-breakdown');
+        await expect(page.locator('.totals .n').first()).toHaveText('2,502');
+        await breakdown.getByRole('button', { name: 'Show the values as a table', exact: true }).click();
+        await expect(breakdown.getByRole('table')).toBeVisible();
+        shorter = true;
+        release();
+        if (readKind === 'poll') await page.clock.runFor(31_000);
+        await expect(page.locator('.totals .n').first()).toHaveText('31');
+        await expect(breakdown.getByRole('table')).toBeVisible();
+        await expect(breakdown.getByRole('button', { name: 'Show spend bars', exact: true })).toBeVisible();
+        expect(new URL(page.url()).hash).toContain('window=168');
+      } finally {
+        release();
+        await page.unrouteAll({ behavior: 'wait' });
+      }
+    });
+  }
+}
+
 test('Usage explains excluded Playground sends when a configured command has no client requests', async ({ page }, testInfo) => {
   const heads = await read<HeadsPayload>(page, '/api/heads');
   heads.heads = heads.heads.filter(head => head.key === STACK.oauthHead);

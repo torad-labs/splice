@@ -63,7 +63,7 @@ internal open class SilentHostCloseProcess : Process() {
                 }
                 else -> CodeModeWire.completedFrame("fixture", null)
             }
-            CodeModeWire.write(writer, HostProtocol.frame(frame.cell, frame.request, reply))
+            CodeModeWire.write(writer, HostProtocol.reply(frame, reply))
         }
     }
 
@@ -76,7 +76,7 @@ internal open class SilentHostCloseProcess : Process() {
         heldOpen = null
         holdEngineOpen = false
         engines.add(frame.session)
-        CodeModeWire.write(writer, HostProtocol.frame(frame.cell, frame.request, HostProtocol.count(engines.size)))
+        CodeModeWire.write(writer, HostProtocol.reply(frame, HostProtocol.count(engines.size)))
         writeRelease.countDown()
     }
 

@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -50,6 +51,19 @@ class HostReplyAddressTest {
         }
     }
 
+    @Test
+    fun `a reply proof belongs only to its issued cell request and host generation`() {
+        val addresses = HostReplyAddresses()
+        val request = HostFrame(1, 1, HostProtocol.command("synthetic"))
+        val signed = request.copy(replyKey = addresses.key(request.cell, request.request))
+        assertTrue(addresses.matches(signed))
+        assertFalse(addresses.matches(signed.copy(cell = 2)))
+        assertFalse(addresses.matches(signed.copy(request = 2)))
+        assertFalse(HostReplyAddresses().matches(signed), "a replacement generation rejects the old proof")
+        assertFalse(addresses.matches(request), "a missing proof cannot claim a released slot")
+        assertFalse(addresses.matches(signed.copy(replyKey = "0".repeat(checkNotNull(signed.replyKey).length))))
+    }
+
     private fun assertAddressFailure(wrongRequest: Boolean) {
         assertThrows(IOException::class.java) {
             runBlocking {
@@ -76,6 +90,8 @@ class HostReplyAddressTest {
                         request.cell + if (wrongRequest) 0 else 1,
                         request.request + if (wrongRequest) 1 else 0,
                         CodeModeWire.completedFrame("wrong", null),
+                        request.session,
+                        request.replyKey,
                     ),
                 )
             }

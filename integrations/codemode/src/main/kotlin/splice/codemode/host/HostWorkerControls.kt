@@ -58,7 +58,7 @@ internal class HostWorkerControls(
 
     private fun failure(frame: HostFrame, kind: CodeModeInfrastructureClass) {
         val reply = CodeModeFatalFrame.create(CodeModeInfrastructureCategory.HOST, kind)
-        writes.withLock { CodeModeWire.write(output, HostProtocol.frame(frame.cell, frame.request, reply)) }
+        writes.withLock { CodeModeWire.write(output, HostProtocol.reply(frame, reply)) }
     }
 
     override fun close() {

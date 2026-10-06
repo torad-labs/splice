@@ -43,6 +43,7 @@ internal class SharedWorkerChannel(
     private val ready = CompletableDeferred<Unit>()
     private val pending = ConcurrentHashMap<Long, PendingHostReply>()
     private val sequence = AtomicLong()
+    private val addresses = HostReplyAddresses()
     private val writes = Mutex()
     private val closed = AtomicBoolean()
     private val cells = ConcurrentHashMap<Long, HostCellLifetime>()
@@ -137,11 +138,10 @@ internal class SharedWorkerChannel(
         val request = sequence.incrementAndGet()
         val answer = CompletableDeferred<HostFrame>()
         pending[request] = PendingHostReply(cell, answer)
-        var sent = false
         try {
             // Only the frame write is indivisible; cancelling an execution still cancels its await.
             withContext(NonCancellable) {
-                val frame = HostProtocol.frame(cell, request, payload, session)
+                val frame = HostProtocol.frame(cell, request, payload, session, addresses.key(cell, request))
                 if (writeTimeoutMs == null) {
                     writeFrame(frame)
                 } else {
@@ -151,7 +151,6 @@ internal class SharedWorkerChannel(
                     }
                         ?: throw IOException("Code-mode control write timed out after $writeTimeoutMs ms")
                 }
-                sent = true
             }
             return answer.await().payload
         } catch (error: IOException) {
@@ -159,22 +158,37 @@ internal class SharedWorkerChannel(
             close()
             throw error
         } finally {
-            // A cancelled caller's legitimate late reply must still be recognized by the reader.
-            if (sent) answer.cancel() else pending.remove(request)
+            // The generation-authenticated address recognizes late replies without retaining their callers.
+            pending.remove(request)
+            answer.cancel()
+        }
+    }
+
+    private fun validateAddress(reply: HostFrame) {
+        val waiting = pending[reply.request]
+        if (waiting != null && reply.cell != waiting.cell) {
+            throw IOException("Code-mode host replied for a different cell")
+        }
+        if (reply.request > sequence.get() || !addresses.matches(reply)) {
+            throw IOException("Code-mode host replied for an unknown request")
         }
     }
 
     private fun deliver(reply: HostFrame) {
-        val waiting = pending[reply.request] ?: throw IOException("Code-mode host replied for an unknown request")
-        if (reply.cell != waiting.cell) throw IOException("Code-mode host replied for a different cell")
-        // A task death leaves the worker JVM untrusted. With no reply, every waiting request fails now as a lost
-        // worker and the reader closes the process. With one, the cell gets its reply first, because closing now
-        // could lose it to the cell's closing signal, and the process closes when that cell closes.
+        validateAddress(reply)
+        // A task death retires its generation even when the caller already cancelled. An active caller gets
+        // its owed reply first; with no live claimant there is no cell left to close the untrusted process.
         val died = CodeModeFatalFrame.death(reply.payload)?.also { death = it.description }
         if (died != null) retiring.set(true)
+        // Failure here still leaves the waiter in the map for the reader's fail-all path.
         val payload = died?.owed() ?: reply.payload
-        pending.remove(reply.request)
-        waiting.answer.complete(reply.copy(payload = payload))
+        val waiting = pending.remove(reply.request)
+        if (waiting == null) {
+            if (died != null) close()
+            return
+        }
+        val accepted = waiting.answer.complete(reply.copy(payload = payload))
+        if (died != null && !accepted) close()
     }
 
     private fun ensureOpen() {
@@ -224,28 +238,5 @@ internal class SharedWorkerChannel(
         } finally {
             scope.cancel()
         }
-    }
-}
-
-private class HostCellChannel(
-    private val host: SharedWorkerChannel,
-    private val id: Long,
-    private val exited: CompletableDeferred<Unit>,
-    private val session: Long,
-) : CellChannel {
-    private val closed = AtomicBoolean()
-
-    override suspend fun exchange(frame: JsonObject): JsonObject {
-        if (host.isClosed) throw CodeModeWorkerLostException()
-        check(!closed.get()) { "Code-mode cell is closed" }
-        return host.exchange(id, frame, session)
-    }
-
-    override fun afterExit(action: WorkerExited) {
-        exited.invokeOnCompletion { action() }
-    }
-
-    override fun close() {
-        if (closed.compareAndSet(false, true)) host.closeCell(id, session)
     }
 }

@@ -155,9 +155,9 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
         Disposition("2 @ParameterizedTest methods expand to 6 native lifetime/context + 2 altered envelope cases", 8),
     "CodeModeCrossScriptSourceTest" to
         Disposition("2 @ParameterizedTest methods expand to 8 callback/step/context + 2 diagnostic cases (2 @Test + 10 = 12)", 12),
-    // 89e98adab: closing a cell ends its withheld exchange with and without a late guest reply.
+    // Cell close runs with and without a late reply; cancellation and fatal ownership add four plain controls.
     "SharedWorkerChannelCellCloseTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),
+        Disposition("1 @ParameterizedTest expands to 2 cases (4 @Test + 2 = 6)", 6),
     // 8b438c6f0: a record that stored one native item many times loads it once, patched after its checkpoint or not.
     "CodeModeNativeCopiesTest" to Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),
     // 8b438c6f0: after a WebSocket size refusal, a 429 and a 500 each keep their own path.

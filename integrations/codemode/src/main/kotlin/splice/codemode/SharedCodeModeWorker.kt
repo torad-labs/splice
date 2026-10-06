@@ -108,7 +108,7 @@ internal class HostWorkerDispatcher(
         CodeModeFatalFrame.create(CodeModeInfrastructureCategory.PROTOCOL, CodeModeInfrastructureClass.IO)
 
     private fun respond(frame: HostFrame, reply: JsonObject) {
-        writes.withLock { CodeModeWire.write(output, HostProtocol.frame(frame.cell, frame.request, reply)) }
+        writes.withLock { CodeModeWire.write(output, HostProtocol.reply(frame, reply)) }
     }
 
     private fun selectCell(id: Long, owner: Long, type: String): HostWorkerCell? = if (

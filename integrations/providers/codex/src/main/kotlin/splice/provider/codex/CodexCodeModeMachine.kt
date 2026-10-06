@@ -30,6 +30,7 @@ private data class CodeModeAdvanceRequest(
     val disableParallel: Boolean,
     val results: List<CodeModeResult>,
     val sink: WireSink,
+    val source: CodeModeLiveRound?,
 )
 
 internal class CodexCodeModeMachine(
@@ -51,7 +52,7 @@ internal class CodexCodeModeMachine(
         source: CodeModeLiveRound? = null,
     ): TurnOutcome {
         started.putIfAbsent(record.id, config.clock.millis())
-        val request = CodeModeAdvanceRequest(record, turn, disableParallel, results, sink)
+        val request = CodeModeAdvanceRequest(record, turn, disableParallel, results, sink, source)
         return when {
             config.maxRounds?.let { record.rounds >= it } == true -> poison(record, "code-mode round limit exceeded")
             else -> registry.retainedCells.acquire(record)?.let { cell ->
@@ -203,7 +204,7 @@ internal class CodexCodeModeMachine(
         when (step) {
             is CodeModeStep.Calls -> acceptCalls(request, cell, step.calls)
             is CodeModeStep.Completed -> complete(request.record, step)
-        }
+        }.also { request.source?.billing?.prepare(it) }
 
     /** Throwable messages may quote script or tool bytes. Only audited operational text is safe
      * for daemon.log; every other message keeps its concrete exception class and splice throw site

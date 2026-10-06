@@ -30,6 +30,9 @@ import splice.upstream.PostingTurnRow
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RowRelease
 import splice.upstream.transport.UpstreamFailed
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
@@ -398,4 +401,138 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
             assertEquals(0L, next.usage.cutRounds, "a retired source is never recounted by a later request")
         }
     }
+}
+
+/** Capacity retirement after the last borrower releases cannot outrun the posting row's first registration. */
+internal class CodeModeFirstClaimBillingTest : CodeModeStatementStreamSupport() {
+    @Test
+    @Timeout(20)
+    fun `retirement before billFinished settles the first posting row exactly once`() = runBlocking {
+        retireBeforeClaim(FirstClaimEnding.RETURN)
+    }
+
+    @Test
+    @Timeout(20)
+    fun `retirement still settles the posting row when no first claim ever returns`() = runBlocking {
+        retireBeforeClaim(FirstClaimEnding.CANCEL)
+    }
+
+    @Test
+    @Timeout(20)
+    fun `a successful terminal claimed before settlement releases its early hold without inventing a cut`() = runBlocking {
+        val manager = bridge(IncrementalRuntime())
+        val sink = StepSink()
+        val source = GatedPost(sink)
+        val posting = FirstPosting(source)
+        val staged = CountDownLatch(1)
+        val settle = CountDownLatch(1)
+        try {
+            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, posting)
+            val registry = field(manager, "registry") as CodexCodeModeRegistry
+            val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
+            val record = registry.recordsFor(key).single()
+            val round = checkNotNull((field(manager, "driver") as CodexCodeModeDriver).streams.find(record))
+            val barrier = Runnable {
+                staged.countDown()
+                check(settle.await(5, TimeUnit.SECONDS)) { "synthetic terminal settlement was not released" }
+            }
+            round.javaClass.getDeclaredField("beforeSettle").apply { isAccessible = true }.set(round, barrier)
+            source.gates[1].complete(Unit)
+            source.gates[2].complete(Unit)
+            source.complete.complete(Unit)
+            assertTrue(staged.await(1_500, TimeUnit.MILLISECONDS), "the real terminal must be staged before its claim")
+            round.billing.prepare(completedOutcome())
+            val usage = checkNotNull(round.billing.claim(record, completedOutcome()))
+            assertEquals(100L, usage.inputTokens)
+            assertEquals(7L, usage.outputTokens)
+            assertEquals(0L, usage.cutRounds)
+            settle.countDown()
+            withTimeout(1_500) { round.outcome() }
+            assertNull(withTimeout(1_500) { posting.released.await() }, "claimed successful usage cannot invent a cut")
+            assertEquals(1, posting.held.get(), "an early terminal cannot register the same posting row twice")
+            assertEquals(1, posting.releases.get())
+        } finally {
+            settle.countDown()
+            manager.onHeadStop()
+        }
+    }
+
+    private enum class FirstClaimEnding { RETURN, CANCEL }
+
+    private class FirstPosting(source: RedirectableRoundPost) : RedirectableRoundPost by source {
+        val held = AtomicInteger()
+        val releases = AtomicInteger()
+        val released = CompletableDeferred<Usage?>()
+        override val postingRow = PostingTurnRow {
+            held.incrementAndGet()
+            RowRelease {
+                releases.incrementAndGet()
+                released.complete(it)
+            }
+        }
+    }
+
+    private suspend fun retireBeforeClaim(ending: FirstClaimEnding) {
+        val sink = StepSink()
+        val source = GatedPost(sink)
+        val posting = FirstPosting(source)
+        val armed = AtomicBoolean(true)
+        val evicted = CompletableDeferred<Unit>()
+        var manager: CodexCodeModeBridge? = null
+        val config = CodeModeBridgeConfig(
+            runtimes = { IncrementalRuntime() },
+            state = stateLocation(),
+            sessionAlive = CodeModeSessionAlive {
+                manager?.let { owner -> retireIdle(owner, armed, evicted, ending) }
+                null
+            },
+        )
+        val bridge = CodexCodeModeBridge(config).also { manager = it }
+        try {
+            if (ending == FirstClaimEnding.CANCEL) {
+                assertThrows(CancellationException::class.java) {
+                    runBlocking {
+                        bridge.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, posting)
+                    }
+                }
+            } else {
+                val first = bridge.interceptor(turn(), disableParallel = false)
+                    .intercept(BASE_REQUEST, sink, posting) as TurnOutcome.Success
+                assertEquals(0L, first.usage.cutRounds, "retirement is not the first client's cut")
+            }
+            withTimeout(1_500) { evicted.await() }
+            withTimeout(1_500) { source.stopped.await() }
+            assertEquals(1, posting.held.get(), "retirement cannot outrun the first posting-row registration")
+            val bill = withTimeout(1_500) { posting.released.await() }
+            assertEquals(1L, checkNotNull(bill).cutRounds)
+            assertEquals(0L, bill.inputTokens)
+            assertEquals(0L, bill.outputTokens)
+            assertEquals(1, posting.releases.get(), "the retired source settles its row exactly once")
+            assertFalse(armed.get(), "the actual eviction happened after the last borrower released")
+        } finally {
+            bridge.onHeadStop()
+        }
+    }
+
+    private fun retireIdle(
+        manager: CodexCodeModeBridge,
+        armed: AtomicBoolean,
+        evicted: CompletableDeferred<Unit>,
+        ending: FirstClaimEnding,
+    ) {
+        val registry = field(manager, "registry") as CodexCodeModeRegistry
+        val record = (field(registry, "records") as List<*>).singleOrNull() as? CodeModeRecord
+        if (!idle(record) || !armed.compareAndSet(true, false)) return
+        // release() samples liveness only after publishing zero borrowers and idle time.
+        // Do not await reader cleanup while this callback still holds the registry key.
+        checkNotNull(registry.evictIdleCell())
+        evicted.complete(Unit)
+        if (ending == FirstClaimEnding.CANCEL) throw CancellationException("synthetic pre-claim end")
+    }
+
+    private fun idle(record: CodeModeRecord?): Boolean =
+        record?.phase == CodeModePhase.ACTIVE && record.cellBorrowers == 0 && record.cellIdleSince != null
+
+    private fun field(owner: Any, name: String): Any =
+        owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner)
 }

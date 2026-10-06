@@ -23,8 +23,11 @@ internal class CodeModeRoundBilling(
 ) {
     private var postingRow: PostingTurnRow? = null
     private var owed: CodeModeOwedRound? = null
+    private var postingHeld = false
     private var readerEnded = false
+    private var usageConsumed = false
     private var reported: Usage? = null
+    private val unreported: Boolean get() = !usageConsumed && reported == null
 
     fun start(row: PostingTurnRow?) = synchronized(lifecycle) { postingRow = row }
 
@@ -36,14 +39,26 @@ internal class CodeModeRoundBilling(
     private fun consume(current: CodeModeRecord): Usage? {
         val staged = registry.source.consume(current)
         // A staged terminal has one durable consumption owner. Its reported copy is only for rejected staging.
-        return (staged ?: reported.takeIf { current.sourceState?.usage == null })?.also { reported = null }
+        return (staged ?: reported.takeIf { current.sourceState?.usage == null })?.also {
+            reported = null
+            usageConsumed = true
+        }
+    }
+
+    /** Register a successful posting step before its last worker borrower releases.
+     *  Retirement can then settle this row even when it removes the round before the later usage claim. */
+    fun prepare(step: TurnOutcome) = synchronized(lifecycle) {
+        if (readerEnded || postingHeld) return@synchronized
+        if (usageConsumed || step !is TurnOutcome.Success) return@synchronized
+        postingRow?.let {
+            owed = CodeModeOwedRound(it.hold(), step)
+            postingHeld = true
+        }
     }
 
     fun claim(current: CodeModeRecord, step: TurnOutcome): Usage? = synchronized(lifecycle) {
         consume(current) ?: run {
-            if (step is TurnOutcome.Success && !readerEnded) {
-                postingRow?.takeIf { owed == null }?.let { owed = CodeModeOwedRound(it.hold(), step) }
-            }
+            prepare(step)
             null
         }
     }
@@ -62,7 +77,7 @@ internal class CodeModeRoundBilling(
             }
             if (usage == null && !readerEnd) return
             owed = null
-            due to (usage ?: Usage(cutRounds = 1).takeUnless { clientCut || reported != null })
+            due to (usage ?: Usage(cutRounds = 1).takeIf { unreported && !clientCut })
         }
         Cancellables.runCatchingBestEffort { due.settle(usage) }.onFailure { failure ->
             log("[code-mode] the posting turn's row was not released (${failure::class.simpleName})")

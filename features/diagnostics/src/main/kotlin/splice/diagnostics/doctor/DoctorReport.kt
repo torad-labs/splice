@@ -42,7 +42,11 @@ public sealed class AccountPoolsRead {
         public val pools: Map<String, HeadAccountPoolView>,
         public val nativeLogins: List<NativeLoginHealth> = emptyList(),
         public val lastRefusals: Map<String, ProviderAnswer> = emptyMap(),
-    ) : AccountPoolsRead()
+    ) : AccountPoolsRead() {
+        /** Account-keyed observations stay with the roster instead of becoming a head's verdict. */
+        public var accountRefusals: Map<String, Map<String, ProviderAnswer>> = emptyMap()
+            internal set
+    }
 
     public data class Unread(public val reason: String, public val fix: String?) : AccountPoolsRead()
 }

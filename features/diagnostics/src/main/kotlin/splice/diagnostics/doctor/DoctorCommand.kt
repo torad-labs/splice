@@ -229,17 +229,21 @@ public class DoctorCommand(
             null
         }
         val read = (pools as? AccountPoolsRead.Read)?.pools.orEmpty()
+        val authChecks = guarded {
+            val refusals = (pools as? AccountPoolsRead.Read)?.lastRefusals.orEmpty()
+            auth.authChecks(topo, envReader, snapshot, reads, refusals)
+        }
+        val authRefusals = (pools as? AccountPoolsRead.Read)?.lastRefusals.orEmpty().filter { (head, answer) ->
+            AccountHealthChecks.refusal(head, answer) in authChecks
+        }
         val sections = listOf(
             "prerequisites" to guarded { probes.prerequisiteChecks(envReader) },
             "installation" to guarded { installProbes.installationChecks(topo, envReader) },
             "configuration" to guarded { config.configurationChecks(topo, configPath, live, runningTrace, unmapped) },
             CHECK_DAEMON to guarded { daemon.daemonChecks(snapshot, envReader, topology, configPath) },
-            "auth" to guarded {
-                val refusals = (pools as? AccountPoolsRead.Read)?.lastRefusals.orEmpty()
-                auth.authChecks(topo, envReader, snapshot, reads, refusals)
-            },
+            "auth" to authChecks,
             // v0.4.0 (FEATURES.md §11): which account each pooled head is on, and when every one is out.
-            "accounts" to guarded { accountChecks(pools, snapshot) },
+            "accounts" to guarded { accountChecks(pools, snapshot, authRefusals) },
             // JW-05: what actually HAPPENED — every section above reads configuration and presence;
             // this one reads the runtime instruments (health counters + perf outcome tail).
             "runtime" to guarded { doctorRuntime.runtimeChecks(snapshot, envReader, reads, topology) },
@@ -249,7 +253,11 @@ public class DoctorCommand(
 
     // Null only when /health did not answer, which the snapshot names; an unread projection says why,
     // and its remedy when one fits.
-    private fun accountChecks(pools: AccountPoolsRead?, snapshot: DaemonSnapshot): List<DoctorCheck> = when (pools) {
+    private fun accountChecks(
+        pools: AccountPoolsRead?,
+        snapshot: DaemonSnapshot,
+        authRefusals: Map<String, splice.core.head.ProviderAnswer>,
+    ): List<DoctorCheck> = when (pools) {
         null -> listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "skipped (${snapshot.unanswered})"))
         is AccountPoolsRead.Unread -> listOf(
             // Unread's remedy is always a splice verb (FIX_LOGS, FIX_RESTART) or none.
@@ -264,7 +272,8 @@ public class DoctorCommand(
         is AccountPoolsRead.Read -> if (pools.pools.isEmpty()) {
             listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "one account per head"))
         } else {
-            pools.pools.map { (head, view) -> accountText.check(head, view) } + AccountHealthChecks.checks(pools)
+            pools.pools.map { (head, view) -> accountText.check(head, view) } +
+                AccountHealthChecks.checks(pools, authRefusals)
         }
     }
 

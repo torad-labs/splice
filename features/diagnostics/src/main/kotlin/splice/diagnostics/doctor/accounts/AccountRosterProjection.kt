@@ -3,6 +3,7 @@ package splice.diagnostics.doctor.accounts
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -25,6 +26,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+// why: one roster key is shared by account identity and refusal ownership.
+private const val ACCOUNT_LABEL_FIELD = "label"
 
 internal class AccountRosterProjection {
     private val pools = AccountPoolProjection()
@@ -51,9 +55,18 @@ internal class AccountRosterProjection {
         val views = byHead.mapValues { (head, roster) -> view(head, roster, metadata[head]) }
         val native = byHead.flatMap { (head, roster) -> roster.mapNotNull { native(head, it) } }
         val refusals = byHead.mapNotNull { (head, roster) ->
-            roster.mapNotNull(::refusal).maxByOrNull { it.observedAtEpochMs }?.let { head to it }
+            roster.filter { unkeyedRefusal(head, it) }.mapNotNull(::refusal)
+                .maxByOrNull { it.observedAtEpochMs }?.let { head to it }
         }.toMap()
-        return AccountPoolsRead.Read(views, native, refusals)
+        val keyed = byHead.mapValues { (head, roster) ->
+            roster.mapNotNull { row ->
+                val label = refusalLabel(head, row) ?: return@mapNotNull null
+                refusal(row)?.let { label to it }
+            }.groupBy({ it.first }, { it.second }).mapValues { (_, answers) ->
+                answers.maxBy { it.observedAtEpochMs }
+            }
+        }.filterValues { it.isNotEmpty() }
+        return AccountPoolsRead.Read(views, native, refusals).also { it.accountRefusals = keyed }
     }
 
     private fun view(head: String, rows: List<JsonObject>, metadata: HeadAccountPoolView?): HeadAccountPoolView {
@@ -86,7 +99,7 @@ internal class AccountRosterProjection {
         val available = JsonScalars.str(row, "available")?.toBooleanStrictOrNull()
             ?: (single && JsonScalars.str(row, "credential_present") == "true")
         val fields = row + mapOf(
-            "label" to JsonPrimitive(label),
+            ACCOUNT_LABEL_FIELD to JsonPrimitive(label),
             "available" to JsonPrimitive(available),
             "selected" to JsonPrimitive(single || JsonScalars.str(row, "selected") == "true"),
         )
@@ -118,7 +131,7 @@ internal class AccountRosterProjection {
         val label = if (labels?.containsKey(head) == true) {
             JsonScalars.str(labels, head)
         } else {
-            JsonScalars.str(row, "selector_key") ?: JsonScalars.str(row, "label")
+            JsonScalars.str(row, "selector_key") ?: JsonScalars.str(row, ACCOUNT_LABEL_FIELD)
         }
         return (label ?: "primary").takeIf(AccountLabelPolicy::isSelector)
     }
@@ -132,6 +145,24 @@ internal class AccountRosterProjection {
             expired = JsonScalars.str(row, "refusal")?.startsWith("Access token expired.") == true,
             present = JsonScalars.str(row, "credential_present") == "true",
         )
+    }
+
+    /** A null per-head label is the unkeyed login; pooled and native selectors retain their own verdict. */
+    private fun refusalLabel(head: String, row: JsonObject): String? {
+        val labels = row["account_labels"] as? JsonObject
+        val raw = if (labels?.containsKey(head) == true) {
+            JsonScalars.str(labels, head)
+        } else {
+            JsonScalars.str(row, "selector_key") ?: JsonScalars.str(row, ACCOUNT_LABEL_FIELD)
+        }
+        return raw?.takeIf(AccountLabelPolicy::isSelector)
+    }
+
+    private fun unkeyedRefusal(head: String, row: JsonObject): Boolean {
+        val labels = row["account_labels"] as? JsonObject
+        if (labels?.containsKey(head) == true) return labels[head] == JsonNull
+        return row["selector_key"].let { it == null || it == JsonNull } &&
+            row[ACCOUNT_LABEL_FIELD].let { it == null || it == JsonNull }
     }
 
     private fun refusal(row: JsonObject): ProviderAnswer? {
@@ -153,7 +184,10 @@ internal object AccountHealthChecks {
     private val date = DateTimeFormatter.ofPattern("MMM d, h:mm a 'CT'", Locale.US)
         .withZone(ZoneId.of("America/Chicago"))
 
-    fun checks(read: AccountPoolsRead.Read): List<DoctorCheck> =
+    fun checks(
+        read: AccountPoolsRead.Read,
+        authRefusals: Map<String, ProviderAnswer> = emptyMap(),
+    ): List<DoctorCheck> =
         read.nativeLogins.filter { it.expired || !it.present }.map { login ->
             val current = read.pools[login.head]?.let { AccountPoolText().summary(it) }
             val standing = if (login.expired) {
@@ -170,7 +204,11 @@ internal object AccountHealthChecks {
                 ).joinToString(". "),
                 "Sign in again on ${login.place.command} in the console.",
             )
-        } + read.lastRefusals.map { (head, answer) -> refusal(head, answer) }
+        } + read.lastRefusals.mapNotNull { (head, answer) ->
+            refusal(head, answer).takeUnless { authRefusals[head] == answer }
+        } + read.accountRefusals.flatMap { (head, accounts) ->
+            accounts.map { (label, answer) -> refusal("$head account $label", answer) }
+        }
 
     fun refusal(head: String, answer: ProviderAnswer): DoctorCheck = DoctorCheck(
         head,

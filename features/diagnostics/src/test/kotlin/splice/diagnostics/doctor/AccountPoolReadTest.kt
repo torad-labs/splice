@@ -6,14 +6,22 @@
 package splice.diagnostics.doctor
 
 import com.sun.net.httpserver.HttpServer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.head.ProviderAnswer
 import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
+import splice.core.util.JsonScalars
+import splice.diagnostics.doctor.accounts.AccountHealthChecks
+import splice.diagnostics.doctor.accounts.AccountRosterProjection
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -205,12 +213,88 @@ class AccountPoolReadTest {
 
     @Test
     fun `Health names Kimi's newest 403 instead of certifying its stored login`() {
-        val roster = """{"accounts":[{"heads":["claude-kimi"],"kind":"kimi-oauth","single_login":true,""" +
-            """"primary":true,"credential_present":true,"last_refusal":{"status":403,"at_ms":1790000000000}}]}"""
+        val roster = """
+            {"accounts":[
+              {"heads":["claude-kimi"],"kind":"kimi-oauth","single_login":true,"primary":true,
+               "credential_present":true,"last_refusal":{"status":403,"at_ms":1790000000000}},
+              {"heads":["pooled"],"kind":"api-key","label":"work","selected":true,"available":true,
+               "credential_present":true,"last_refusal":{"status":403,"at_ms":1790000000001}},
+              {"heads":["pooled"],"kind":"api-key","label":"backup","available":true,
+               "credential_present":true,"last_refusal":{"status":429,"at_ms":1790000000002}}]}
+        """.trimIndent()
         val port = daemonAnswering(200, roster)
-        val environment = env(true, port)
+        val original = env(true, port)
+        val environment = EnvReader { if (it == "SYNTHETIC_POOL_KEY") "synthetic" else original(it) }
         val credential = tmp.resolve("synthetic-kimi.json")
         Files.writeString(credential, """{"access_token":"synthetic"}""")
+        plantRefusalTopology(credential)
+        val run = DoctorTestPorts.doctor().collect(environment)
+        val auth = run.sections.toMap().getValue("auth").single { it.name == "claude-kimi" }
+        assertEquals(CheckStatus.WARN, auth.status)
+        assertTrue(auth.detail.contains("HTTP 403"), auth.detail)
+        assertTrue(
+            !auth.detail.contains("newest upstream request"),
+            "an account refusal is not the head's latest request",
+        )
+        assertTrue(!auth.detail.contains("signed in"), auth.detail)
+        assertTrue(!auth.fix.orEmpty().contains("login"), "a resource refusal is not a credential rejection")
+        val refusals = run.sections.flatMap { (section, rows) ->
+            rows.filter { it.detail.contains("retained provider refusal") }.map { "$section/${it.name}" }
+        }
+        assertEquals(
+            listOf("accounts/pooled account backup", "accounts/pooled account work", "auth/claude-kimi"),
+            refusals.sorted(),
+            "auth owns only the unkeyed head observation; each pooled account keeps its own refusal",
+        )
+        val json = DoctorTestPorts.doctor().reportJson(run, environment)
+        assertTrue(json.contains("HTTP 403") && json.contains("claude-kimi"), json)
+        val checks = (Json.parseToJsonElement(json).jsonObject.getValue("checks") as JsonArray)
+            .filterIsInstance<JsonObject>()
+        assertEquals(3, checks.count { JsonScalars.str(it, "detail").orEmpty().contains("retained provider refusal") })
+        assertTrue(
+            checks.none {
+                JsonScalars.str(it, "id") == "accounts/claude-kimi" &&
+                    JsonScalars.str(it, "detail").orEmpty().contains("HTTP 403")
+            },
+            "the duplicate head refusal leaves the accounts checks in the shipped JSON report",
+        )
+    }
+
+    @Test
+    fun `joined per-head selectors and native refusals never become an unkeyed head verdict`() {
+        val roster = """
+            {"accounts":[
+              {"heads":["single","pooled"],"label":"work","account_labels":{"single":null,"pooled":"work"},
+               "credential_present":true,"last_refusal":{"status":403,"at_ms":1790000000000}},
+              {"heads":["native"],"label":"claude","selector_key":"native:claude",
+               "login_place":{"id":"claude"},"credential_present":true,
+               "last_refusal":{"status":429,"at_ms":1790000000001}},
+              {"heads":["unsafe"],"label":"unsafe label","credential_present":true,
+               "last_refusal":{"status":403,"at_ms":1790000000002}}]}
+        """.trimIndent()
+        val read = AccountRosterProjection().read(roster) as AccountPoolsRead.Read
+        assertEquals(setOf("single"), read.lastRefusals.keys)
+        assertEquals(setOf("work"), read.accountRefusals.getValue("pooled").keys)
+        assertEquals(setOf("native:claude"), read.accountRefusals.getValue("native").keys)
+        assertTrue("unsafe" !in read.accountRefusals, "an invalid selector cannot become printable account text")
+        val retained = AccountHealthChecks.checks(read, read.lastRefusals)
+        assertEquals(
+            setOf("pooled account work", "native account native:claude"),
+            retained.map { it.name }.toSet(),
+        )
+    }
+
+    @Test
+    fun `only the exact head refusal already rendered by auth is omitted from accounts`() {
+        val answer = ProviderAnswer(403, 1_790_000_000_000L)
+        val read = AccountPoolsRead.Read(emptyMap(), lastRefusals = mapOf("synthetic" to answer))
+        assertEquals(1, AccountHealthChecks.checks(read).size, "missing auth keeps the refusal observable")
+        assertEquals(0, AccountHealthChecks.checks(read, mapOf("synthetic" to answer)).size)
+        val earlier = ProviderAnswer(403, answer.observedAtEpochMs - 1L)
+        assertEquals(1, AccountHealthChecks.checks(read, mapOf("synthetic" to earlier)).size)
+    }
+
+    private fun plantRefusalTopology(credential: Path) {
         val config = Files.createDirectories(tmp.resolve("config/splice"))
         Files.writeString(
             config.resolve("splice.toml"),
@@ -227,20 +311,20 @@ class AccountPoolReadTest {
             port = 3998
             discovery_prefix = "synthetic--"
             pinned_model = "synthetic-model"
+            [providers.pool]
+            dialect = "openai-responses"
+            base_url = "https://synthetic.example"
+            auth = { kind = "api-key", env = "SYNTHETIC_POOL_KEY" }
+            [[providers.pool.models]]
+            id = "synthetic-model"
+            context_window = 4000
+            [heads.pooled]
+            provider = "pool"
+            port = 3997
+            discovery_prefix = "pool--"
+            pinned_model = "synthetic-model"
             """.trimIndent(),
         )
-        val run = DoctorTestPorts.doctor().collect(environment)
-        val auth = run.sections.toMap().getValue("auth").single { it.name == "claude-kimi" }
-        assertEquals(CheckStatus.WARN, auth.status)
-        assertTrue(auth.detail.contains("HTTP 403"), auth.detail)
-        assertTrue(
-            !auth.detail.contains("newest upstream request"),
-            "an account refusal is not the head's latest request",
-        )
-        assertTrue(!auth.detail.contains("signed in"), auth.detail)
-        assertTrue(!auth.fix.orEmpty().contains("login"), "a resource refusal is not a credential rejection")
-        val json = DoctorTestPorts.doctor().reportJson(run, environment)
-        assertTrue(json.contains("HTTP 403") && json.contains("claude-kimi"), json)
     }
 
     private val nativeRoster = """

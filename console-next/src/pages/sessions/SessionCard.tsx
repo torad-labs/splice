@@ -43,7 +43,7 @@ function Asks({ asks }: { asks: SessionAsk[] }) {
           {ask.multi ? <p className="choose">{SW.chooseAny}</p> : null}
           <ul className="ask-options">
             {ask.options.map((option) => (
-              <li key={option} className="tag">{option}</li>
+              <li key={option}>{option}</li>
             ))}
           </ul>
         </div>

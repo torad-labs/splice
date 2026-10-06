@@ -9,6 +9,46 @@ import type { SessionRow } from '../src/types/sessions';
 import { FIRST_READ_MS, env, open, routePath } from './support';
 import { STACK } from './stack';
 
+test('Needs you reports native answers as plain read-only lists and keeps the terminal action', async ({ page }, testInfo) => {
+  const question = 'Synthetic native question with enough words to require a complete wrapped reading on a narrow session card.';
+  const options = ['Synthetic first option', 'Synthetic second option'];
+  await page.route(url => url.pathname === '/api/sessions', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as { sessions: SessionRow[] };
+    const row = body.sessions.find(item => item.session_id === STACK.sender.id);
+    if (row === undefined) throw new Error('isolated stack needs its synthetic sender');
+    row.name = 'Synthetic native question session';
+    row.status = 'waiting';
+    row.waiting_for = 'input needed';
+    row.entrypoint = 'cli';
+    row.last = { role: 'assistant', tool: 'AskUserQuestion', text: question, ts: Date.now(), asks: [{ question, options, multi: true }] };
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'sessions');
+  const waiting = page.getByRole('region', { name: 'Needs you', exact: true });
+  const card = waiting.locator('li.card').filter({ has: page.getByRole('link', { name: 'Synthetic native question session', exact: true }) });
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    const list = card.locator('.ask-options');
+    await expect(list.getByRole('listitem')).toHaveText(options);
+    await expect(list).toHaveCSS('list-style-type', 'disc');
+    for (const item of await list.getByRole('listitem').all()) {
+      await expect(item).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+      await expect(item.locator('button, a, input, [tabindex]')).toHaveCount(0);
+    }
+    const prompt = card.locator('.ask > p').first();
+    await expect(prompt).toHaveText(question);
+    await expect(prompt).toHaveCSS('white-space', 'normal');
+    await expect(card).toContainText('Answer in its terminal');
+    await expect(card.getByRole('link', { name: 'Open the session', exact: true })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Copy resume command', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await card.screenshot({ path: testInfo.outputPath('native-readonly-options-' + width + '.png') });
+  }
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads).toEqual([]);
+});
+
 test('Models puts command ordering before its catalog and supports click and keyboard Move', async ({ page }) => {
   await page.route(url => url.pathname === '/api/heads', async route => {
     const response = await route.fetch();

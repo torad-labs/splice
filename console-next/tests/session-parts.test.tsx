@@ -334,7 +334,7 @@ describe('a session card', () => {
     const html = render(facts({ state: 'waiting', row: row({ status: 'waiting', waiting_for: 'input needed', entrypoint: 'cli', last }) }));
     expect(html).toContain('Which plan should take the session?');
     expect(html).toContain('Which checks should run first?');
-    for (const option of ['Max', 'Pro', 'Unit', 'E2E', 'Lint']) expect(html).toContain(`<li class="tag">${option}</li>`);
+    for (const option of ['Max', 'Pro', 'Unit', 'E2E', 'Lint']) expect(html).toContain(`<li>${option}</li>`);
     expect(html.match(/Choose any/g)).toHaveLength(1);
     expect(html.match(/Which plan should take the session\?/g)).toHaveLength(1);
     expect(html).toContain('Answer in its terminal');

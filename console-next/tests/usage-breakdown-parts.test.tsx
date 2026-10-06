@@ -20,7 +20,7 @@ const savedLogin = { kind: 'synthetic', label: 'work & spare', display_name: 'Sy
 
 test('Usage resolves the recorded login on its own command without changing the account drill-down identity', () => {
   const metadata = { accounts: [{ ...savedLogin, display_name: 'Wrong command login', heads: ['other'] }, savedLogin], catalogs: [] };
-  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'stable-synthetic-login' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} {...metadata} /></MemoryRouter>);
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...item, key: 'stable-synthetic-login' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} {...metadata} /></MemoryRouter>);
   expect(html).toContain('Synthetic saved login · Synthetic command');
   expect(html).not.toContain('Wrong command login');
   expect(html).toContain('account=stable-synthetic-login');
@@ -31,7 +31,7 @@ test('Usage recognizes a current verified address without displaying it or chang
   const address = 'synthetic-current@example.invalid';
   const current = { ...savedLogin, label: 'saved-copy', selector_key: 'native:claude', display_name: 'Synthetic current login',
     identity_verified: true, account: { uuid: 'synthetic-current-uuid', email: address } };
-  const values = (accounts: typeof current[]) => renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: address }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={accounts} /></MemoryRouter>);
+  const values = (accounts: typeof current[]) => renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...item, key: address }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={accounts} /></MemoryRouter>);
   const html = values([current]);
   expect(html).toContain('Synthetic current login · Synthetic command');
   expect(html).not.toContain('Not listed in Accounts now.');
@@ -47,7 +47,7 @@ test('Usage recognizes a current verified address without displaying it or chang
 });
 
 test('Usage names the primary fallback without changing its drill-down selector', () => {
-  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'primary' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[]} /></MemoryRouter>);
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...item, key: 'primary' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[]} /></MemoryRouter>);
   expect(html).toContain('Primary account · Synthetic command');
   expect(html).toContain('account=primary');
   expect(html).toContain('head=synthetic');
@@ -55,7 +55,7 @@ test('Usage names the primary fallback without changing its drill-down selector'
 });
 
 test('earlier login names remain attributed and are explicitly absent from the current Accounts list', () => {
-  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'synthetic-earlier-login' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[savedLogin]} /></MemoryRouter>);
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...item, key: 'synthetic-earlier-login' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[savedLogin]} /></MemoryRouter>);
   expect(html).toContain('synthetic-earlier-login · Synthetic command');
   expect(html).toContain('Not listed in Accounts now.');
   expect(html).not.toContain('Synthetic saved login');
@@ -64,13 +64,13 @@ test('earlier login names remain attributed and are explicitly absent from the c
 });
 
 test('a roster still being read cannot claim that a historical login is no longer listed', () => {
-  const values = (accounts?: typeof savedLogin[]) => renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'synthetic-earlier-login' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} {...(accounts === undefined ? {} : { accounts })} /></MemoryRouter>);
+  const values = (accounts?: typeof savedLogin[]) => renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...item, key: 'synthetic-earlier-login' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} {...(accounts === undefined ? {} : { accounts })} /></MemoryRouter>);
   expect(values()).not.toContain('Not listed in Accounts now.');
   expect(values([])).toContain('Not listed in Accounts now.');
 });
 
 test.each(['synthetic-current-identity', 'native:claude'])('native place keys never borrow the current account, even when its selector is %s', selector => {
-  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'native:claude' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[{ ...savedLogin, selector_key: selector, login_place: { id: 'claude', command: 'claude' } }]} /></MemoryRouter>);
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...item, key: 'native:claude' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[{ ...savedLogin, selector_key: selector, login_place: { id: 'claude', command: 'claude' } }]} /></MemoryRouter>);
   expect(html).toContain('claude login place · Synthetic command');
   expect(html).toContain('The old records name a login place, not which account was used.');
   expect(html).not.toContain('native:claude ·');
@@ -80,19 +80,19 @@ test.each(['synthetic-current-identity', 'native:claude'])('native place keys ne
 
 test('failed requests with no recorded login say so without changing the unattributed selector', () => {
   const failed = { ...item, key: null, cost: null, input: null, output: null, unpriced: 1, missingInput: 1, missingOutput: 1, gaps: { ...item.gaps, unanswered: 1 } };
-  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[failed]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[]} /></MemoryRouter>);
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[failed]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[]} /></MemoryRouter>);
   expect(html).toContain('Failed requests with no login recorded · Synthetic command');
   expect(html).toContain('unattributed=account');
   expect(html).toContain('head=synthetic');
   expect(html).not.toContain('account=null');
-  const mixed = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...failed, turns: 2 }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[]} /></MemoryRouter>);
+  const mixed = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...failed, turns: 2 }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[]} /></MemoryRouter>);
   expect(mixed).toContain('Account identity not recorded');
   expect(mixed).not.toContain('Failed requests with no login recorded');
 });
 
 test('Usage uses an unambiguous catalog label without changing the model drill-down ID', () => {
   const metadata = { accounts: [], catalogs: [namedCatalog] };
-  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} {...metadata} /></MemoryRouter>);
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={items} by="model" since={0} until={200} labelOf={key => key} {...metadata} /></MemoryRouter>);
   expect(html).toContain('Synthetic readable model');
   expect(html).toContain('model=model+%2F+a');
 });
@@ -100,14 +100,14 @@ test('Usage uses an unambiguous catalog label without changing the model drill-d
 test('historical IDs and conflicting catalog names remain literal instead of being attributed to a different model', () => {
   const conflicting = { ...namedCatalog, head: 'other', models: namedCatalog.models.map(model => ({ ...model, label: 'Different provider model' })) };
   const metadata = { accounts: [], catalogs: [namedCatalog, conflicting] };
-  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} {...metadata} /></MemoryRouter>);
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={items} by="model" since={0} until={200} labelOf={key => key} {...metadata} /></MemoryRouter>);
   expect(html).toContain('model / a');
   expect(html).not.toContain('Synthetic readable model');
   expect(html).not.toContain('Different provider model');
-  const historical = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'synthetic-removed-model' }]} by="model" since={0} until={200} labelOf={key => key} {...metadata} /></MemoryRouter>);
+  const historical = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...item, key: 'synthetic-removed-model' }]} by="model" since={0} until={200} labelOf={key => key} {...metadata} /></MemoryRouter>);
   expect(historical).toContain('synthetic-removed-model');
   expect(historical).not.toContain('Synthetic readable model');
-  const unknownLogin = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'synthetic-removed-login' }]} by="account" since={0} until={200} labelOf={key => key} accounts={[savedLogin]} /></MemoryRouter>);
+  const unknownLogin = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...item, key: 'synthetic-removed-login' }]} by="account" since={0} until={200} labelOf={key => key} accounts={[savedLogin]} /></MemoryRouter>);
   expect(unknownLogin).toContain('synthetic-removed-login');
   expect(unknownLogin).not.toContain('Synthetic saved login');
 });
@@ -199,20 +199,20 @@ test('the bar guidance appears only with a visible spend bar', () => {
     const html = renderToStaticMarkup(<MemoryRouter><UsageBreakdown read={reading({ usageBy: { synthetic: usage } })} labelOf={key => key} /></MemoryRouter>);
     expect(html).not.toContain(guidance);
   }
-  const priced = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  const priced = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={items} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
   expect(priced).toContain(guidance);
 });
 
 test('a group with unfinished replies says their tokens are not reported without inventing a cause', () => {
-  const cut = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, cut: 2 }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  const cut = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...item, cut: 2 }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
   expect(cut).toContain('2 replies stopped before they finished, so their tokens are not reported.');
-  const plain = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  const plain = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={items} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
   expect(plain).not.toContain('tokens are not reported');
 });
 
 test('an unanswered failure explains its cause without making recorded spend a lower bound', () => {
   const gaps = { ...item.gaps, unanswered: 1 };
-  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, turns: 2, gaps }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...item, turns: 2, gaps }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
   expect(html).toContain('1 request failed without a recorded answer or token usage.');
   expect(html).not.toContain('missing-spend estimate');
   expect(html).toContain('$0.25');
@@ -288,7 +288,7 @@ test('unknown attribution is explicit instead of becoming an arbitrary named fil
 });
 
 test('a lone sub-dollar amount still spans the full magnitude scale', () => {
-  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={items} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
   expect(html).toContain('width:100%');
 });
 
@@ -296,7 +296,7 @@ test('a lone sub-dollar amount still spans the full magnitude scale', () => {
 // count, and for requests a plan covers. Each cause has its own sentence.
 test('the spend cell says why each request has no price', () => {
   const gaps = { uncounted: 15, plan: 2, undeclared: 1, unknown: 0 };
-  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, unpriced: 18, gaps }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...item, unpriced: 18, gaps }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
   expect(html).toContain('15 requests have no token count, so they cannot be priced.');
   expect(html).toContain('2 requests are covered by a plan, so they have no price.');
   expect(html).toContain('1 request has no recorded price.');
@@ -305,12 +305,12 @@ test('the spend cell says why each request has no price', () => {
 
 test('a null cost shows its precise explanation instead of also claiming Not reported', () => {
   const gaps = { uncounted: 0, plan: 1, undeclared: 0, unknown: 0 };
-  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, cost: null, unpriced: 1, gaps }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...item, cost: null, unpriced: 1, gaps }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
   expect(html).toContain('1 request is covered by a plan, so it has no price.');
   expect(html).not.toContain('Not reported');
   expect(html).not.toContain('$0');
   expect(html).toContain('since=0&amp;until=200');
-  const unknown = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, cost: null }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
+  const unknown = renderToStaticMarkup(<MemoryRouter><UsageValues table={false} onTableChange={() => undefined}items={[{ ...item, cost: null }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
   expect(unknown).toContain('Not reported');
 });
 

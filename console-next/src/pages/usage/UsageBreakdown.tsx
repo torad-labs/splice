@@ -56,8 +56,7 @@ function groupName(item: Breakdown, by: UsageDimension, accounts: readonly Accou
 const amount = (item: Breakdown): string => item.cost === null ? priceGapLines(item.gaps).join(' ') || B.unknown : item.unpriced === 0 ? fmtUsd(item.cost) : B.atLeast(fmtUsd(item.cost));
 const tokens = (value: number | null, missing: number): string => value === null ? B.unknown : missing === 0 ? fmtTokens(value) : B.atLeast(fmtTokens(value));
 
-export function UsageValues({ items, by, since, until, labelOf, accounts, catalogs = [] }: { items: readonly Breakdown[]; by: UsageDimension; since: number; until: number; labelOf: (head: string) => string } & UsageNames) {
-  const [table, setTable] = useState(false);
+export function UsageValues({ items, by, since, until, labelOf, accounts, catalogs = [], table, onTableChange }: { items: readonly Breakdown[]; by: UsageDimension; since: number; until: number; labelOf: (head: string) => string; table: boolean; onTableChange: () => void } & UsageNames) {
   const maximum = Math.max(...items.map(item => item.cost ?? 0), 0) || 1;
   if (items.length === 0) return <Empty title={B.none} />;
   const entries = items.map(item => {
@@ -80,7 +79,7 @@ export function UsageValues({ items, by, since, until, labelOf, accounts, catalo
   });
   const dimension = dimensions.find(([key]) => key === by)?.[1];
   return <>
-    <Button small kind="quiet" onClick={() => setTable(!table)}>{table ? B.plot : B.table}</Button>
+    <Button small kind="quiet" onClick={onTableChange}>{table ? B.plot : B.table}</Button>
     {!table && items.some(item => (item.cost ?? 0) > 0) ? <p className="hint">{B.barWhy}</p> : null}
     <div className="usage-values" data-table={table}>
       {table ? <table>
@@ -104,6 +103,7 @@ export function UsageBreakdown({ labelOf, read, accounts, catalogs = [] }: {
   labelOf: (head: string) => string; read: ReturnType<typeof usePerfTurns>;
 } & UsageNames) {
   const [by, setBy] = useState<UsageDimension>('model');
+  const [table, setTable] = useState(false);
   const data = read.data === undefined || isPendingRoute(read.data) ? null : read.data;
   const window = data?.window;
   const items = data === null ? null : fullUsageBreakdown(data, by);
@@ -116,7 +116,7 @@ export function UsageBreakdown({ labelOf, read, accounts, catalogs = [] }: {
         : data === null || window === undefined || window.until === null ? <p className="hint">{B.unavailable}</p> : <>
           <Coverage data={data} labelOf={labelOf} />
           {(data.pendingHeads?.length ?? 0) > 0 ? <p className="hint">{B.reading}</p> : null}
-          {items === null ? <p className="hint">{B.unavailable}</p> : items.length === 0 && fullWindowUsage(data) === null ? null : <UsageValues items={items} by={by} since={window.since} until={window.until} labelOf={labelOf} accounts={accounts} catalogs={catalogs} />}
+          {items === null ? <p className="hint">{B.unavailable}</p> : items.length === 0 && fullWindowUsage(data) === null ? null : <UsageValues items={items} by={by} since={window.since} until={window.until} labelOf={labelOf} accounts={accounts} catalogs={catalogs} table={table} onTableChange={() => setTable(value => !value)} />}
         </>}
     </section>
   );

@@ -16,6 +16,54 @@ const empty: TurnUsageWire = {
   models: [], accounts: [], days: [], sessions: [],
 };
 
+for (const width of [1440, 390]) {
+  for (const interruption of ['partial', 'pending-route'] as const) {
+    test(`Usage keeps its table choice across a ${interruption} poll at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      await page.clock.install();
+      const heads = await read<HeadsPayload>(page, '/api/heads');
+      heads.heads = heads.heads.filter(head => head.key === STACK.oauthHead || head.key === STACK.soloHead);
+      await page.route('**/api/heads', route => route.fulfill({ json: heads }));
+      await page.route('**/api/economics', route => route.fulfill({ json: { retention_hours: 24, heads: [] } }));
+      let phase: 'good' | 'interrupted' = 'good';
+      let release: () => void = () => undefined;
+      const held = new Promise<void>(resolve => { release = resolve; });
+      const populated: TurnUsageWire = { ...usage, models: [{ key: 'synthetic-table-model', ...stats }] };
+      await page.route(url => url.pathname === '/api/perf/turns', async route => {
+        if (phase === 'interrupted' && interruption === 'pending-route') {
+          await route.fulfill({ status: 404, body: 'unknown route' });
+          return;
+        }
+        const query = new URL(route.request().url()).searchParams;
+        const head = query.get('head') ?? '';
+        if (phase === 'interrupted' && head === STACK.soloHead) await held;
+        await route.fulfill({ json: { since: Number(query.get('since')), n: 1, heads: [{
+          key: head, label: head, count: head === STACK.soloHead ? stats.requests : 0,
+          usage: head === STACK.soloHead ? populated : empty, rows: [],
+        }] } });
+      });
+      await open(page, 'usage');
+      const breakdown = page.locator('.usage-breakdown');
+      await breakdown.getByRole('button', { name: 'Show the values as a table', exact: true }).click();
+      await expect(breakdown.getByRole('table')).toBeVisible();
+      phase = 'interrupted';
+      try {
+        await page.clock.runFor(5100);
+        await expect(breakdown.locator('.usage-values')).toHaveCount(0);
+        phase = 'good';
+        release();
+        if (interruption === 'pending-route') await page.clock.runFor(5100);
+        await expect(breakdown.getByRole('table')).toBeVisible();
+        await expect(breakdown.getByRole('button', { name: 'Show spend bars', exact: true })).toBeVisible();
+      } finally {
+        phase = 'good';
+        release();
+        await page.unrouteAll({ behavior: 'wait' });
+      }
+    });
+  }
+}
+
 test('Usage explains excluded Playground sends when a configured command has no client requests', async ({ page }, testInfo) => {
   const heads = await read<HeadsPayload>(page, '/api/heads');
   heads.heads = heads.heads.filter(head => head.key === STACK.oauthHead);

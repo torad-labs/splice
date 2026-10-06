@@ -78,8 +78,9 @@ internal class TraceBodies(
     }
 
     /** Old inline rows require no companion. New references resolve against the actual selected line's day. */
-    fun hydrate(record: JsonObject, day: Path): JsonObject =
-        TraceBodyReaders(heap).use { hydrate(record, day, it) }
+    fun hydrate(record: JsonObject, day: Path): JsonObject = heap.readShare().use { share ->
+        TraceBodyReaders(share).use { hydrate(record, day, it) }
+    }
 
     private fun hydrate(record: JsonObject, day: Path, readers: TraceBodyReaders): JsonObject =
         replace(record) { value -> if (value is JsonObject) resolve(value, day, readers) else value }

@@ -7,6 +7,6 @@ import splice.core.memory.HeapBudget
 public object JvmHeap {
     public val limitBytes: Long = Runtime.getRuntime().maxMemory()
 
-    /** All production listeners and retained owners spend this same ledger. */
+    /** Listeners and retained owners share at most half the heap; read views debit this same root. */
     public val budget: HeapBudget = HeapBudget(limitBytes)
 }

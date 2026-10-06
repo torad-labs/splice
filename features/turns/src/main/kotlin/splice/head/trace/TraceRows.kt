@@ -56,8 +56,17 @@ internal data class TraceRead(val turns: List<TracedTurn>, val onDisk: Int, val 
 
 internal class TraceRows(
     private val json: Json = Json { ignoreUnknownKeys = true },
-    private val heap: HeapBudget = JvmHeap.budget,
+    heap: HeapBudget = JvmHeap.budget,
 ) {
+    // The persistent census and every in-flight read together stay within this family's share.
+    private val heap = heap.readShare()
+
+    /** One read owns one admission view through projection; escaped records retain their root charges. */
+    internal inline fun <T> withRead(block: (HeapBudget) -> T): T {
+        val view: HeapBudget = heap.readShare()
+        return view.use { block(it) }
+    }
+
     /** Each store's count, by its trace dir and head, kept for as long as this reader lives. */
     private val censuses = ConcurrentHashMap<Pair<Path, String>, TraceCensus>()
     private val censusLease = HeapOwners.charge(censuses, heap, 0L)
@@ -78,15 +87,18 @@ internal class TraceRows(
      *  line of every day; the count reads only what the files gained since this reader last counted them. A
      *  trace dir or a day that cannot be read throws why (V4-286), so no turns means none on disk. */
     @Throws(IOException::class)
-    internal fun read(traceDir: Path, head: String, ask: TraceAsk): TraceRead {
-        val turns = turns(traceDir, head, ask)
+    internal fun read(traceDir: Path, head: String, ask: TraceAsk): TraceRead = withRead { share ->
+        val turns = turns(traceDir, head, ask, share)
         val count = census(traceDir, head).count(days(traceDir, head))
-        return TraceRead(turns, count.onDisk, count.skippedLines)
+        TraceRead(turns, count.onDisk, count.skippedLines)
     }
 
     /** The table and HTTP list need summaries, not the conversation bodies. */
-    internal fun summaries(traceDir: Path, head: String, ask: TraceAsk): TraceRead {
-        val turns = selected(traceDir, head, ask, TraceBodySelection.SUMMARY)
+    internal fun summaries(traceDir: Path, head: String, ask: TraceAsk): TraceRead =
+        withRead { summaries(traceDir, head, ask, it) }
+
+    internal fun summaries(traceDir: Path, head: String, ask: TraceAsk, share: HeapBudget): TraceRead {
+        val turns = selected(traceDir, head, ask, TraceBodySelection.SUMMARY, share)
         val count = census(traceDir, head).count(days(traceDir, head))
         return TraceRead(turns, count.onDisk, count.skippedLines)
     }
@@ -94,15 +106,19 @@ internal class TraceRows(
     /** The turns [ask] names, oldest first, read from the newest line only until each is whole. */
     @Throws(IOException::class)
     internal fun turns(traceDir: Path, head: String, ask: TraceAsk): List<TracedTurn> =
-        selected(traceDir, head, ask, TraceBodySelection.RECORDS)
+        withRead { turns(traceDir, head, ask, it) }
+
+    internal fun turns(traceDir: Path, head: String, ask: TraceAsk, share: HeapBudget): List<TracedTurn> =
+        selected(traceDir, head, ask, TraceBodySelection.RECORDS, share)
 
     private fun selected(
         traceDir: Path,
         head: String,
         ask: TraceAsk,
         selection: TraceBodySelection,
+        share: HeapBudget,
     ): List<TracedTurn> {
-        return TraceTail(ask, json, heap, selection).use { tail ->
+        return TraceTail(ask, json, share, selection).use { tail ->
             days(traceDir, head).newestFirst(tail)
             tail.turns()
         }

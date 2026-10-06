@@ -56,7 +56,6 @@ public class TraceRoute(
     private val cause: TraceFailureCause = TraceFailureCause { _, _, _ -> null },
 ) {
     private val rows = TraceRows()
-    private val bodies = TraceReplyBodies()
 
     public suspend fun read(head: String, query: TraceQuery): JsonReply {
         val found = heads.byName(head).firstOrNull()
@@ -79,28 +78,31 @@ public class TraceRoute(
         return if (turn == null) list(head.key, traceDir, ask) else one(head, traceDir, ask, turn)
     }
 
-    private suspend fun list(key: String, traceDir: Path, ask: TraceAsk): JsonReply {
-        val read = withContext(io) { Cancellables.runCatchingCancellable { rows.summaries(traceDir, key, ask) } }
-            .getOrElse { return unreadable(key, traceDir, it) }
-        return JsonReply(HttpStatusCode.OK, bodies.list(key, traceDir, read))
+    private suspend fun list(key: String, traceDir: Path, ask: TraceAsk): JsonReply = rows.withRead { share ->
+        val read = withContext(io) {
+            Cancellables.runCatchingCancellable { rows.summaries(traceDir, key, ask, share) }
+        }.getOrElse { return unreadable(key, traceDir, it) }
+        JsonReply(HttpStatusCode.OK, TraceReplyBodies(share).list(key, traceDir, read))
     }
 
-    private suspend fun one(head: TurnsHead, traceDir: Path, ask: TraceAsk, turn: String): JsonReply {
-        val key = head.key
-        val turns = withContext(io) { Cancellables.runCatchingCancellable { rows.turns(traceDir, key, ask) } }
-            .getOrElse { return unreadable(key, traceDir, it) }
-        return if (turns.isEmpty()) {
-            val reason = when {
-                DayFiles(traceDir, key).deleted() -> TRACE_DELETED_REASON
-                else -> "no turn $turn in $key's trace"
+    private suspend fun one(head: TurnsHead, traceDir: Path, ask: TraceAsk, turn: String): JsonReply =
+        rows.withRead { share ->
+            val key = head.key
+            val turns = withContext(io) {
+                Cancellables.runCatchingCancellable { rows.turns(traceDir, key, ask, share) }
+            }.getOrElse { return unreadable(key, traceDir, it) }
+            if (turns.isEmpty()) {
+                val reason = when {
+                    DayFiles(traceDir, key).deleted() -> TRACE_DELETED_REASON
+                    else -> "no turn $turn in $key's trace"
+                }
+                refuse(HttpStatusCode.BadRequest, reason)
+            } else {
+                val selected = turns.single()
+                val failureCause = withContext(io) { cause.read(key, selected.id, selected.startedAt) }
+                JsonReply(HttpStatusCode.OK, TraceReplyBodies(share).turn(head, selected, failureCause))
             }
-            refuse(HttpStatusCode.BadRequest, reason)
-        } else {
-            val selected = turns.single()
-            val failureCause = withContext(io) { cause.read(key, selected.id, selected.startedAt) }
-            JsonReply(HttpStatusCode.OK, bodies.turn(head, selected, failureCause))
         }
-    }
 
     /** V4-286: a trace dir or day that cannot be read is said, never an empty list blaming the knob. */
     private fun unreadable(key: String, traceDir: Path, failure: Throwable): JsonReply {

@@ -24,7 +24,7 @@ import java.nio.file.Path
 private const val TRACE_REPLY_HEAP_FACTOR = 8L
 
 /** Projects summaries and selected records without changing the stored trace. */
-internal class TraceReplyBodies(private val heap: HeapBudget = JvmHeap.budget) {
+internal class TraceReplyBodies(private val heap: HeapBudget = JvmHeap.budget.readShare()) {
     private fun encode(record: JsonObject): String {
         val peak = heap.reserve(HeapWeights.multiply(JsonWire.byteSize(record), TRACE_REPLY_HEAP_FACTOR))
             ?: throw HeapCapacityException()

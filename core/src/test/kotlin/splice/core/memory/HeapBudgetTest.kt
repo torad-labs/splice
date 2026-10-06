@@ -3,6 +3,7 @@ package splice.core.memory
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -11,6 +12,98 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class HeapBudgetTest {
+    @Test
+    fun `process reservations leave proportional room for uncharged live objects and copies`() {
+        val heap = 8L * 1024 * 1024 * 1024
+        val budget = HeapBudget(heap)
+        assertNull(budget.reserve(heap / 2 + 1), "a ledger cannot reserve most of the process heap")
+        assertEquals(heap / 2, budget.limitBytes)
+        assertEquals(budget.limitBytes, budget.available.value)
+    }
+
+    @Test
+    fun `a saturated read family leaves room for a maximum sized ingress request`() {
+        val root = HeapBudget(8L * 1024 * 1024 * 1024)
+        val domain = root.readShare()
+        val trace = requireNotNull(domain.reserve(domain.limitBytes))
+        val request = root.reserve(HeapWeights.request(32L * 1024 * 1024))
+        try {
+            assertNotNull(request, "trace saturation cannot exclude a maximum sized request")
+        } finally {
+            request?.close()
+            trace.close()
+            domain.close()
+        }
+        assertEquals(root.limitBytes, root.available.value)
+    }
+
+    @Test
+    fun `a read share refuses cumulative reservations and growth without taking the root's remaining heap`() {
+        val root = HeapBudget(256, 100)
+        val share = root.readShare()
+        val first = requireNotNull(share.reserve(50))
+        val second = requireNotNull(share.reserve(25))
+        assertNull(share.reserve(1))
+        assertFalse(first.resize(51))
+        assertEquals(25, root.available.value)
+        val unrelated = requireNotNull(root.reserve(25))
+        assertNull(share.reserve(1))
+        second.close()
+        assertFalse(first.resize(76))
+        assertTrue(first.resize(75))
+        share.close()
+        first.close()
+        unrelated.close()
+        assertEquals(100, root.available.value)
+    }
+
+    @Test
+    fun `a closed read keeps split shared outputs charged until their last explicit owner releases`() {
+        val root = HeapBudget(256, 100)
+        val domain = root.readShare()
+        val view = domain.readShare()
+        val peak = requireNotNull(view.reserve(75))
+        val retained = peak.split(20)
+        val escaped = retained.share()
+        peak.close()
+        retained.close()
+        view.close()
+        assertNull(view.reserve(0), "closing ends admission, not escaped ownership")
+        assertEquals(80, root.available.value)
+        assertNull(domain.reserve(56), "the closed view still debits its family's quota")
+        escaped.close()
+        escaped.close()
+        assertEquals(100, domain.available.value)
+        assertEquals(100, root.available.value)
+        val reused = domain.reserve(75)
+        assertNotNull(reused, "the released output restores the whole domain quota")
+        reused?.close()
+        assertEquals(100, root.available.value)
+    }
+
+    @Test
+    fun `parallel reads cannot each spend their domain's same free quota`() {
+        val root = HeapBudget(256, 100)
+        val domain = root.readShare()
+        val views = List(4) { domain.readShare() }
+        val executor = Executors.newFixedThreadPool(8)
+        try {
+            val leases = (0 until 100).map { number ->
+                executor.submit<HeapLease?> { views[number % views.size].reserve(7) }
+            }.mapNotNull { it.get(10, TimeUnit.SECONDS) }
+            assertEquals(10, leases.size)
+            assertEquals(30, root.available.value)
+            leases.forEach(HeapLease::close)
+            views.forEach(HeapBudget::close)
+            val reused = domain.reserve(75)
+            assertNotNull(reused, "parallel output release restores the domain's whole quota")
+            reused?.close()
+            assertEquals(100, root.available.value)
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
     @Test
     fun `domains cannot each spend the same free heap`() {
         val budget = HeapBudget(heapLimitBytes = 256, budgetBytes = 100)

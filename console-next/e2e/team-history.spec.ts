@@ -62,7 +62,7 @@ test('team entry reads immediately and yesterday chat and activity remain select
   await expect.poll(() => asked.some((range) => range.from === today && range.to === tomorrow), { timeout: 4000 }).toBe(true);
   await expect.poll(() => activity.includes(today), { timeout: 4000 }).toBe(true);
   expect(Date.now() - started, 'entry must read before the ten-second poll').toBeLessThan(10_000);
-  await expect(page.getByText('The seats sent each other nothing.', { exact: true })).toBeVisible();
+  await expect(page.getByText('No message requests are recorded for this day.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Earlier', exact: true }).click();
   await expect.poll(() => asked.some((range) => range.from === yesterday && range.to === today)).toBe(true);
   await expect.poll(() => activity.includes(yesterday)).toBe(true);
@@ -77,10 +77,10 @@ test('team entry reads immediately and yesterday chat and activity remain select
     await page.screenshot({ path: test.info().outputPath(`team-rich-message-${width}.png`), fullPage: true });
   }
   await expect(page.getByRole('listitem').filter({ hasText: 'Yesterday synthetic activity sample' })).toBeVisible();
-  await expect(page.getByText('The seats sent each other nothing.', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('No message requests are recorded for this day.', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Earlier', exact: true }).click();
   await expect.poll(() => activity.includes(older)).toBe(true);
-  await expect(page.getByText('The seats sent each other nothing.', { exact: true })).toBeVisible();
+  await expect(page.getByText('No message requests are recorded for this day.', { exact: true })).toBeVisible();
   await expect(page.getByText('Nothing was sampled.', { exact: true })).toBeVisible();
   await expect(message).toHaveCount(0);
   await expect(page.getByRole('listitem').filter({ hasText: 'Yesterday synthetic activity sample' })).toHaveCount(0);
@@ -89,7 +89,7 @@ test('team entry reads immediately and yesterday chat and activity remain select
   await expect(page.getByRole('listitem').filter({ hasText: 'Yesterday synthetic activity sample' })).toBeVisible();
   await page.getByRole('button', { name: 'Later', exact: true }).click();
   await expect(page.getByRole('group', { name: 'Day', exact: true })).toContainText('Today');
-  await expect(page.getByText('The seats sent each other nothing.', { exact: true })).toBeVisible();
+  await expect(page.getByText('No message requests are recorded for this day.', { exact: true })).toBeVisible();
   await expect(message).toHaveCount(0);
   expect(faults.pageErrors).toEqual([]);
 });
@@ -192,7 +192,7 @@ test('reentering a team after its empty read shows a newly landed real turn befo
     });
   }
   const faults = await open(page, 'teams/' + team.id);
-  await expect(page.getByText('The seats sent each other nothing.', { exact: true })).toBeVisible({ timeout: FIRST_READ_MS });
+  await expect(page.getByText('No message requests are recorded for this day.', { exact: true })).toBeVisible({ timeout: FIRST_READ_MS });
   await page.getByRole('main').getByRole('link', { name: 'Teams', exact: true }).click();
   await sendHandOff(Number(env('CONSOLE_E2E_OAUTH_PORT')), env('CONSOLE_E2E_KEY'), env('CONSOLE_E2E_PEER_ADDRESS'), 'toolu_synthetic_entry_' + randomUUID());
   const { today, tomorrow } = days();

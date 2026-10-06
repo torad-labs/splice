@@ -106,7 +106,7 @@ test('a team created through the console binds real sessions, joins handoff and 
   await expect(lead).toContainText(new RegExp(String(tally?.turns) + ' turns?'), { timeout: 20_000 });
   expect(tally?.cost_usd).toBeNull();
   await expect(lead.locator('.stat')).toContainText(' · –');
-  await expect(builder.locator('.stat')).toHaveText('No turns yet');
+  await expect(builder.locator('.stat')).toHaveText('No turns are listed for this seat');
   await expect(page.getByRole('main')).toContainText('Messaging a peer session', { timeout: 20_000 });
   await page.getByRole('button', { name: 'Edit the team', exact: true }).click();
   await seat(1).getByRole('textbox', { name: /^Standing instructions/ }).fill('Drive only the synthetic packet');
@@ -120,7 +120,7 @@ test('a team created through the console binds real sessions, joins handoff and 
   expect(saved.slots[0]?.session).toBeNull();
   expect(saved.slots[0]?.instructions).toBe('Drive only the synthetic packet');
   expect(saved.slots[0]?.sessions_history).toContain(STACK.sender.id);
-  await expect(lead).toContainText('Nobody is in this seat');
+  await expect(lead).toContainText('No session is listed for this seat');
   await expect(lead).toContainText('Drive only the synthetic packet');
   await expect(builder).toContainText(peer?.name ?? '');
   expect(faults.pageErrors).toEqual([]);

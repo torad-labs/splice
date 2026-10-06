@@ -67,8 +67,8 @@ describe('the board', () => {
     expect(seatsOf(team()).map((slot) => slot.id)).toEqual(['s2', 's1']);
   });
   test('the lede reads the goal, then how many seats work and how many are open', () => {
-    expect(teamLede(team(), 1)).toBe('Add a rate limiter to the API. One of two seats is working; one seat is open.');
-    expect(teamLede(team({ goal: '' }), 0)).toBe('No goal written. None of two seats are working; one seat is open.');
+    expect(teamLede(team(), 1)).toBe('Add a rate limiter to the API. One working session is listed; one seat is open.');
+    expect(teamLede(team({ goal: '' }), 0)).toBe('No goal written. No working session is listed; one seat is open.');
     // A team whose every seat is open says that, not that none of its one seat is working.
     expect(M.ledeSeats(0, 1, 1)).toBe('The one seat is open.');
     expect(M.ledeSeats(0, 3, 3)).toBe('All three seats are open.');

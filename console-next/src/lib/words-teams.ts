@@ -14,30 +14,29 @@ export const M = {
   archived: 'Archived',
   ledeSeats: (working: number, seats: number, open: number) => {
     if (open === seats) return seats === 1 ? 'The one seat is open.' : `All ${countWord(seats).toLowerCase()} seats are open.`;
-    const set =
-      seats === 1
-        ? `The one seat is${working === 1 ? '' : ' not'} working`
-        : `${working === seats ? 'All' : working === 0 ? 'None' : countWord(working)} of ${countWord(seats).toLowerCase()} seats ${working === 1 ? 'is' : 'are'} working`;
+    const set = working === 0
+      ? 'No working session is listed'
+      : `${countWord(working)} working ${working === 1 ? 'session is' : 'sessions are'} listed`;
     return open === 0 ? `${set}.` : `${set}; ${open === 1 ? 'one seat is' : `${countWord(open).toLowerCase()} seats are`} open.`;
   },
   noGoal: 'No goal written.',
   seatsTitle: 'Seats',
   seatsWhy: 'Each seat has a role, a command and standing instructions; a session sits in it.',
   lead: 'Lead',
-  openSeat: 'Open seat',
-  nobody: 'Nobody is in this seat',
+  openSeat: 'Not listed',
+  nobody: 'No session is listed for this seat',
   openSession: 'Open the session',
   noInstructions: 'No standing instructions.',
-  noTurns: 'No turns yet',
+  noTurns: 'No turns are listed for this seat',
   turns: (n: number) => `${n} ${n === 1 ? 'turn' : 'turns'}`,
   lastFinished: 'last turn finished',
   lastFailed: 'last turn failed',
   cost: (usd: string): string => `API est. ${usd}`,
-  talkTitle: 'Talked',
-  talkWhy: 'What the seats sent each other, newest first.',
-  talkNone: 'The seats sent each other nothing.',
+  talkTitle: 'Message requests',
+  talkWhy: 'Recorded message requests, newest first. Delivery is not confirmed here.',
+  talkNone: 'No message requests are recorded for this day.',
   doneTitle: 'What they did',
-  doneWhy: 'One line about every half minute while a seat works.',
+  doneWhy: 'Recorded activity samples. Not every turn produces one.',
   doneNone: 'Nothing was sampled.',
   earlier: 'Earlier',
   later: 'Later',

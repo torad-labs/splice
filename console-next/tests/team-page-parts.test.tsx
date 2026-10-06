@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { describe, expect, test } from 'vitest';
-import { teamChatPath, teamEconomicsPath } from '../src/api/teams';
+import { teamActivityPath, teamChatPath, teamEconomicsPath } from '../src/api/teams';
 import { dayOf } from '../src/lib/teams-page';
 import { TeamPage } from '../src/pages/teams/TeamPage';
 import type { TeamRow } from '../src/types/teams';
@@ -34,6 +34,42 @@ function render(seed: (client: QueryClient) => void): string {
 }
 
 describe('the team page', () => {
+  test('a known binding with unread sessions and economics does not claim an empty or idle seat', () => {
+    const html = render(client => {
+      client.setQueryData(['teams', '/api/teams'], { teams: [{ ...team, goal: '', slots: [team.slots[0]] }] });
+      client.removeQueries({ queryKey: ['sessions'] });
+    });
+    expect(html).toContain('No working session is listed.');
+    expect(html).toContain('No session is listed for this seat');
+    expect(html).toContain('No turns are listed for this seat');
+    expect(html).not.toContain('seat is not working');
+    expect(html).not.toContain('Nobody is in this seat');
+    expect(html).not.toContain('Open seat');
+    expect(html).not.toContain('No turns yet');
+  });
+  test('retained message requests do not promise successful delivery', () => {
+    const day = dayOf(NOW, 0);
+    // Delivery refusal is not represented in this call-observer payload.
+    const html = render(client => client.setQueryData(['team-panels', 'chat', teamChatPath('t1', day)], {
+      team_id: 't1', day_start_epoch_millis: day.from, packet_note: '',
+      messages: [{ at: NOW, from: 'synthetic', to: 'Synthetic', from_slot: null, to_slot: null,
+        packet: null, text: 'Synthetic', text_source: '/synthetic/transcript.jsonl', missing_reason: null }],
+    }));
+    expect(html).toContain('Recorded message requests, newest first.');
+    expect(html).toContain('Delivery is not confirmed here.');
+    expect(html).not.toContain('What the seats sent each other');
+  });
+  test('a busy text-only turn with no activity sample does not promise a periodic sample', () => {
+    const html = render(client => {
+      const sessions = client.getQueryData<{ sessions: Record<string, unknown>[] }>(['sessions', '/api/sessions']);
+      client.setQueryData(['sessions', '/api/sessions'], { sessions: sessions?.sessions.map(row => ({
+        ...row, status: 'busy', last: { role: 'assistant', text: 'Hello', tool: null, ts: NOW },
+      })) });
+      client.setQueryData(['team-panels', 'activity', teamActivityPath('t1', dayOf(NOW, 0))], { entries: [] });
+    });
+    expect(html).toContain('Recorded activity samples. Not every turn produces one.');
+    expect(html).not.toContain('about every half minute');
+  });
   test('seat colours follow registry vendor families rather than their auth labels', () => {
     const html = render((client) => client.setQueryData(['status', '/api/status'], { registry: [
       { key: 'claude-grok', label: 'Grok', authKind: 'api-key', family: 'local' },
@@ -57,8 +93,8 @@ describe('the team page', () => {
     expect(html).toContain('Rate limiter');
     expect(html.indexOf('Planner')).toBeLessThan(html.indexOf('Builder'));
     expect(html).toContain('Write the rate limiter');
-    expect(html).toContain('Nobody is in this seat');
-    expect(html).toContain('Open seat');
+    expect(html).toContain('No session is listed for this seat');
+    expect(html).toContain('Not listed');
     expect(html).toContain('per-key limits');
     expect(html).toContain('href="/teams"');
   });

@@ -40,7 +40,7 @@ test('Teams groups real registry seats without saved membership and reads a mess
   await expect(project.locator('a[href="#/sessions/' + STACK.peer.id + '"]')).toBeVisible();
   await expect(project).not.toContainText(env('CONSOLE_E2E_PEER_ADDRESS'));
   expect(requestedMessages).toEqual([]);
-  await expect(project.getByRole('region', { name: 'Messages and handoffs', exact: true })).toContainText('Recorded messages between these sessions, newest first.');
+  await expect(project.getByRole('region', { name: 'Messages and handoffs', exact: true })).toContainText('Recorded message requests between these sessions, newest first.');
   await expect(project).not.toContainText('Recent messages');
   const newTeam = page.getByRole('button', { name: 'New team', exact: true });
   const projectSettings = project.getByRole('link', { name: 'Project settings', exact: true });

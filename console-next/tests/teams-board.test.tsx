@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { MgmtError } from '../src/api/client';
 import { TeamsPage } from '../src/pages/teams/TeamsPage';
 import { MessageText } from '../src/pages/teams/HandoffMessage';
 import { ProjectTeam } from '../src/pages/teams/ProjectTeam';
+import { foldTranscript } from '../src/lib/conversation';
 import type { TurnsState } from '../src/types/perf';
 import type { SessionRow } from '../src/types/sessions';
 
@@ -32,15 +33,41 @@ function render(seed: (client: QueryClient) => void = () => undefined): string {
 }
 
 describe('the project teams board', () => {
+  test('a stale heartbeat with a fresh busy status identifies registration freshness, not status age', () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      const html = render(client => client.setQueryData(['sessions', '/api/sessions'], { sessions: [
+        seat('synthetic', { availability: 'stale', status: 'busy', status_updated_at: Date.now(), updated_at: null }),
+      ] }));
+      expect(html).toContain('its registration has not refreshed recently');
+      expect(html).not.toContain('last status update is old');
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  test('an observed SendMessage request does not certify delivery', () => {
+    const input = { to: 'Synthetic', message: 'Synthetic' };
+    const [call] = foldTranscript([
+      { index: 0, role: 'assistant', text: JSON.stringify(input), tool: 'SendMessage', result: false },
+      { index: 1, role: 'tool', text: 'delivery refused', tool: 'SendMessage', result: true },
+    ]);
+    expect(call).toMatchObject({ kind: 'tool', input, output: 'delivery refused' });
+    const html = render(client => client.setQueryData(['edges', '/api/sessions/edges'], { sessions: {
+      lead: [{ from: 'lead', to: input.to, at: 1, direction: 'out' }],
+    } }));
+    expect(html).toContain('Recorded message requests between these sessions, newest first.');
+    expect(html).toContain('Delivery is not confirmed here.');
+    expect(html).not.toContain('read what was handed over');
+  });
   test('real project membership and current activity need no persistent TeamStore row', () => {
     const html = render();
     expect(html).toContain('tally');
     expect(html).toContain('lead');
     expect(html).toContain('builder');
     expect(html).toContain('Assigning the API work.');
-    expect(html).toContain('last status update is old');
+    expect(html).toContain('its registration has not refreshed recently');
     expect(html).toContain('lead to builder');
-    expect(html).toContain('Recorded messages between these sessions, newest first.');
+    expect(html).toContain('Recorded message requests between these sessions, newest first.');
     expect(html).not.toContain('Recent messages');
     expect(html).toContain('href="/sessions/lead"');
     expect(html).not.toContain('uds:');
@@ -56,7 +83,7 @@ describe('the project teams board', () => {
     expect(html).not.toContain(note);
     expect(html).not.toContain('teams-registry-note');
     expect(html).toContain('Assigning the API work.');
-    expect(html).toContain('last status update is old');
+    expect(html).toContain('its registration has not refreshed recently');
     expect(html).toContain('Saved teams');
   });
   test.each(['transport', 'envelope'])('registry %s failure never looks like an empty team list', kind => {

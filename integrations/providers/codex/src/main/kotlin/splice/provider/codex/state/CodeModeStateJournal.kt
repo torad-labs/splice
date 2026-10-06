@@ -37,7 +37,10 @@ internal object CodeModeStateJournal {
     // why: a journal is rewritten once it holds four times its live cells, so the rewrite's cost is
     // amortized over at least three journals' worth of appends.
     private const val COMPACT_RATIO = 4
-    private val codec = Json { encodeDefaults = true }
+    private val codec = Json {
+        encodeDefaults = true
+        ignoreUnknownKeys = true
+    }
     fun same(left: CodeModeRecordSnapshot?, right: CodeModeRecordSnapshot?): Boolean =
         CodeModeJournalEncoding.same(left, right)
 

@@ -120,7 +120,10 @@ public class CodexCodeModeBridge(
         val descriptions: Map<String, String> = emptyMap(),
     )
 
-    private val json = Json { encodeDefaults = true }
+    private val json = Json {
+        encodeDefaults = true
+        ignoreUnknownKeys = true
+    }
     private val wire = CodexCodeModeWire(json, config.log)
     private val run = CodeModeRuntimeRun(config.runtimes)
     private val registry = CodexCodeModeRegistry(

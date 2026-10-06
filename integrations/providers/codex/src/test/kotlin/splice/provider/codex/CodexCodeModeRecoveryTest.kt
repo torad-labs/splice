@@ -1,6 +1,7 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -13,8 +14,15 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
+import splice.provider.codex.state.CodeModeHistoryAnchor
+import splice.provider.codex.state.CodeModeReplayAnchors
+import splice.provider.codex.state.CodeModeStateDelta
+import splice.provider.codex.state.CodeModeStateJournal
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardOpenOption.APPEND
 
 class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
     @Test
@@ -122,6 +130,97 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         assertEvidence(upstream, id, value)
         assertTrue("new user instruction" in upstream)
         assertEquals(0, replacement.starts)
+    }
+
+    @Test
+    fun `future journal fields load through the real bridge without dropping any record or file`() {
+        val (file, records) = seedJournal()
+        addFutureFields(file)
+        val manager = bridge(scripted())
+        try {
+            assertTrue(Files.exists(file), "a newer writer's fields must never cause conversation deletion")
+            assertEquals(records.map { it.snapshot() }, retained(manager).map { it.snapshot() })
+        } finally {
+            manager.onProviderStop()
+        }
+    }
+
+    @Test
+    fun `a torn journal with future fields recovers every committed record before appending`() {
+        val (file, records) = seedJournal()
+        addFutureFields(file)
+        Files.writeString(file, """{"key":"synthetic","records":[""", APPEND)
+        val changed = records.first().snapshot().copy(source = "synthetic recovered source")
+        val delta = CodeModeStateDelta("synthetic", listOf(changed), emptySet(), emptyList())
+
+        CodeModeStateJournal.write(file, Json.encodeToString(delta))
+
+        val manager = bridge(scripted())
+        try {
+            assertTrue(Files.exists(file))
+            val restored = retained(manager).map { it.snapshot() }
+            assertEquals(records.size, restored.size)
+            assertEquals(changed.source, restored.single { it.id == changed.id }.source)
+            assertEquals(records.drop(1).map { it.snapshot() }, restored.filter { it.id != changed.id })
+        } finally {
+            manager.onProviderStop()
+        }
+    }
+
+    @Test
+    fun `malformed JSON remains invalid journal state on the real bridge`() {
+        val (file, _) = seedJournal()
+        Files.writeString(file, "{not valid JSON}\n")
+        val manager = bridge(scripted())
+        try {
+            assertTrue(retained(manager).isEmpty())
+            assertFalse(Files.exists(file), "unknown-key tolerance must not make malformed state valid")
+        } finally {
+            manager.onProviderStop()
+        }
+    }
+
+    @Test
+    fun `a journal missing a required record field remains invalid on the real bridge`() {
+        val (file, _) = seedJournal()
+        val root = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        val records = root.getValue("records").jsonArray.map { JsonObject(it.jsonObject - "source") }
+        Files.writeString(file, JsonObject(root + ("records" to JsonArray(records))).toString() + "\n")
+        val manager = bridge(scripted())
+        try {
+            assertTrue(retained(manager).isEmpty())
+            assertFalse(Files.exists(file), "missing required fields must still reject the conversation")
+        } finally {
+            manager.onProviderStop()
+        }
+    }
+
+    private fun seedJournal(): Pair<Path, List<CodeModeRecord>> {
+        val records = (1..3).map { at ->
+            CodeModeRecords.of("synthetic", at, 1_000L).apply {
+                replayAnchors = CodeModeReplayAnchors(CodeModeHistoryAnchor(null, 0), emptyMap())
+            }
+        }
+        val store = CodexCodeModeStore(stateLocation(), Json { encodeDefaults = true }, {})
+        store.load()
+        store.save(records, emptyList())
+        return stateFiles.files().single() to records
+    }
+
+    private fun addFutureFields(file: Path) {
+        val root = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        val future = "future_field" to JsonPrimitive("synthetic newer-writer metadata")
+        val records = root.getValue("records").jsonArray.map { item ->
+            val record = item.jsonObject
+            val anchors = record.getValue("replayAnchors").jsonObject
+            JsonObject(record + future + ("replayAnchors" to JsonObject(anchors + future)))
+        }
+        Files.writeString(file, JsonObject(root + future + ("records" to JsonArray(records))).toString() + "\n")
+    }
+
+    private fun retained(manager: CodexCodeModeBridge): List<CodeModeRecord> {
+        val field = CodexCodeModeBridge::class.java.getDeclaredField("registry").apply { isAccessible = true }
+        return (field.get(manager) as CodexCodeModeRegistry).recordsFor("synthetic")
     }
 
     private fun scripted(vararg steps: CodeModeStep) = ScriptedRuntime(ArrayDeque(steps.toList()))

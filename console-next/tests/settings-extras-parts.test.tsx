@@ -78,6 +78,35 @@ describe('the claude command row', () => {
     expect(html).toContain('Saved Claude login copies');
   });
 
+  test.each([
+    { name: 'remove only', rename: false, remove: true, target: true, heads: ['claude-splice'], why: 'Remove the exact login shown here.', buttons: ['Remove'] },
+    { name: 'rename only', rename: true, remove: false, target: true, heads: ['claude-splice'], why: 'Rename the exact login shown here.', buttons: ['Rename'] },
+    { name: 'both', rename: true, remove: true, target: true, heads: ['claude-splice'], why: 'Rename or remove the exact login shown here.', buttons: ['Rename', 'Remove'] },
+    { name: 'neither', rename: false, remove: false, target: true, heads: ['claude-splice'], why: 'Live logins reported by Claude Code.', buttons: [] },
+    { name: 'no edit target', rename: true, remove: true, target: false, heads: ['claude-splice'], why: 'Live logins reported by Claude Code.', buttons: [] },
+    { name: 'no command', rename: true, remove: true, target: true, heads: [], why: 'Live logins reported by Claude Code.', buttons: [] },
+  ])('live-login explanation matches the rendered actions: $name', ({ rename, remove, target, heads, why, buttons }) => {
+    const html = render(<ClaudeHead />, client => {
+      seedCard(card())(client);
+      client.setQueryData(['accounts', '/api/accounts'], { accounts: [{
+        kind: 'claude-account', label: 'synthetic-login', display_name: 'Synthetic live login',
+        credential_present: true, heads, can_rename: rename, can_remove: remove,
+        edit_target: target ? { kind: 'native', id: 'claude' } : null,
+      }] });
+    });
+    expect(html).toContain(why);
+    for (const action of ['Rename', 'Remove']) {
+      expect(html.includes('>' + action + '</button>')).toBe(buttons.includes(action));
+    }
+  });
+
+  test('unread live logins do not promise an unavailable action', () => {
+    const html = render(<ClaudeHead />, seedCard(card()));
+    expect(html).toContain('Live logins reported by Claude Code.');
+    expect(html).toContain('Reading live Claude logins.');
+    expect(html).not.toContain('Rename or remove the exact login');
+  });
+
   test('a claude that is not on the path says so rather than printing a blank', () => {
     expect(render(<ClaudeHead />, seedCard(card({ resolves_to: null, claude_logins: { count: 0, selected: null, labels: [], constraint: '' } })))).toContain('Nothing named claude');
   });

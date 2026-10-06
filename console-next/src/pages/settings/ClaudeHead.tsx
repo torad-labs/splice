@@ -27,6 +27,8 @@ export function ClaudeHead() {
   const wrapped = card.mode === 'wrapped';
   const logins = card.claude_logins;
   const live = accounts.data?.accounts.filter(row => row.login_place != null || row.kind === 'claude-account' || row.provider === 'anthropic' && row.kind !== 'api-key');
+  const editable = accounts.isError ? [] : live?.filter(row => row.edit_target != null && (row.heads[0] ?? '') !== '') ?? [];
+  const liveWhy = C.liveLoginsWhy(editable.some(row => row.can_rename === true), editable.some(row => row.can_remove === true));
   const backups = !wrapped ? [] : [wrap.data?.settings_backup_path, wrap.data?.claude_json_backup_path].filter((path): path is string => path !== undefined);
   const act = wrapped
     ? <Confirm trigger={<Button>{C.unwrap}</Button>} title={C.unwrapTitle} why={C.unwrapWhy} act={C.unwrap} cancel={C.cancel} onConfirm={async () => void (await unwrap.mutateAsync())} />
@@ -37,7 +39,7 @@ export function ClaudeHead() {
       <Row title={C.onPath} why="" control={<Path>{card.resolves_to ?? C.notFound}</Path>} />
       <Row title={C.shim} why="" control={<Path>{card.shim_path}</Path>} />
       {wrapped ? <Row title={C.realBinary} why="" control={<Path>{card.real_binary_path ?? C.unknown}</Path>} /> : null}
-      <Row title={C.liveLogins} why={C.liveLoginsWhy} control={
+      <Row title={C.liveLogins} why={liveWhy} control={
         accounts.isError ? <span role="alert">{failureText(accounts.error)}</span>
           : live === undefined ? <span>{C.readingLiveLogins}</span>
           : live.length === 0 ? <span>{C.noLiveLogins}</span>

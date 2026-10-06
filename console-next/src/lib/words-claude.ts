@@ -12,7 +12,7 @@ export const C = {
   realBinary: 'It runs',
   unknown: 'Not read',
   liveLogins: 'Live Claude logins',
-  liveLoginsWhy: 'Rename or remove the exact login shown here.',
+  liveLoginsWhy: (rename: boolean, remove: boolean) => rename && remove ? 'Rename or remove the exact login shown here.' : rename ? 'Rename the exact login shown here.' : remove ? 'Remove the exact login shown here.' : 'Live logins reported by Claude Code.',
   readingLiveLogins: 'Reading live Claude logins.',
   noLiveLogins: 'No live Claude login is reported.',
   logins: 'Saved Claude login copies',

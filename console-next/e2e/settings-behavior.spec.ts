@@ -33,6 +33,34 @@ async function topologyWrites(page: Page) {
   return writes;
 }
 
+for (const variant of [
+  { name: 'remove only', rename: false, remove: true, target: true, heads: ['claude-splice'], why: 'Remove the exact login shown here.' },
+  { name: 'rename only', rename: true, remove: false, target: true, heads: ['claude-splice'], why: 'Rename the exact login shown here.' },
+  { name: 'both', rename: true, remove: true, target: true, heads: ['claude-splice'], why: 'Rename or remove the exact login shown here.' },
+  { name: 'neither', rename: false, remove: false, target: true, heads: ['claude-splice'], why: 'Live logins reported by Claude Code.' },
+  { name: 'no target', rename: true, remove: true, target: false, heads: ['claude-splice'], why: 'Live logins reported by Claude Code.' },
+  { name: 'no command', rename: true, remove: true, target: true, heads: [], why: 'Live logins reported by Claude Code.' },
+]) {
+  test('Live Claude login words match available actions: ' + variant.name, async ({ page }, testInfo) => {
+    await page.route(url => url.pathname === '/api/accounts', route => route.fulfill({ json: { accounts: [{
+      kind: 'claude-account', label: 'synthetic-login', display_name: 'Synthetic live login',
+      credential_present: true, heads: variant.heads, can_rename: variant.rename, can_remove: variant.remove,
+      edit_target: variant.target ? { kind: 'native', id: 'claude' } : null,
+    }] } }));
+    const faults = await open(page, 'settings/tools');
+    const row = page.locator('.row').filter({ has: page.getByRole('heading', { name: 'Live Claude logins', exact: true }) });
+    for (const width of [1536, 393]) {
+      await page.setViewportSize({ width, height: 1024 });
+      await expect(row).toContainText(variant.why);
+      await expect(row.getByRole('button', { name: 'Rename', exact: true })).toHaveCount(variant.rename && variant.target && variant.heads.length > 0 ? 1 : 0);
+      await expect(row.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(variant.remove && variant.target && variant.heads.length > 0 ? 1 : 0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      if (variant.name === 'remove only') await row.screenshot({ path: testInfo.outputPath('live-login-actions-' + width + '.png') });
+    }
+    await assertHealthy(page, faults);
+  });
+}
+
 test('attention dots are amber in both themes and a healthy Wrapped command is green', async ({ page }, testInfo) => {
   await page.route(url => url.pathname === '/api/doctor', async route => {
     const response = await route.fetch();

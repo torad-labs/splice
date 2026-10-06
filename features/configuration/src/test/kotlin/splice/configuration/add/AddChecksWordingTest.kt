@@ -11,6 +11,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.config.UserHome
+import splice.core.model.ModelEntry
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
@@ -55,6 +56,35 @@ class AddChecksWordingTest {
         val results = checks.all(candidate, live = false, env)
         assertFalse(results.all { it.ok }, "a listed but oversized extra row must refuse the add: $results")
         assertTrue(results.any { !it.ok && it.detail.contains("extra") && it.detail.contains("1000") }, "$results")
+    }
+
+    @Test
+    fun `a declared row with no provider window is named unchecked beside the row that fits`() {
+        val result = checks(200).modelWindows(
+            listOf(
+                ModelEntry("a", contextWindow = 128_000),
+                ModelEntry("b", contextWindow = 1_000_000),
+            ),
+            ListedModels.Listed(listOf("a"), mapOf("a" to 128_000L)),
+        )
+        assertTrue(result.ok, "an unreported limit is not an observed oversized window")
+        assertEquals(
+            "a fits: declares 128000, provider serves 128000; b unchecked: provider lists no window size",
+            result.detail,
+        )
+    }
+
+    @Test
+    fun `a provider with no window sizes leaves every declared row explicitly unchecked`() {
+        val result = checks(200).modelWindows(
+            listOf(ModelEntry("a", contextWindow = 128_000), ModelEntry("b", contextWindow = 1_000_000)),
+            ListedModels.Absent,
+        )
+        assertTrue(result.ok)
+        assertEquals(
+            "a unchecked: provider lists no window size; b unchecked: provider lists no window size",
+            result.detail,
+        )
     }
 
     private fun checks(status: Int) = AddChecks(TerminalOutput { }, AddHttp { _, _, _, _ -> AddHttpReply(status, "") })

@@ -156,20 +156,19 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
             }
         }
 
-    /** Every declared row, including unpinned rows, must fit an advertised provider window. */
+    /** Check advertised limits and name every declared row whose limit could not be checked. */
     fun modelWindows(models: List<ModelEntry>, listed: ListedModels): AddCheck {
         val windows = (listed as? ListedModels.Listed)?.windows.orEmpty()
-        val oversized = models.mapNotNull { row ->
-            windows[row.id]?.takeIf { row.contextWindow > it }?.let { served ->
-                "${row.id} declares ${row.contextWindow}, provider serves $served"
+        val oversized = models.any { row -> windows[row.id]?.let { row.contextWindow > it } == true }
+        val detail = models.joinToString("; ") { row ->
+            val served = windows[row.id]
+            when {
+                served == null -> "${row.id} unchecked: provider lists no window size"
+                row.contextWindow > served -> "${row.id} declares ${row.contextWindow}, provider serves $served"
+                else -> "${row.id} fits: declares ${row.contextWindow}, provider serves $served"
             }
-        }
-        val detail = when {
-            oversized.isNotEmpty() -> oversized.joinToString("; ")
-            windows.isEmpty() -> "the provider lists no window sizes to check"
-            else -> "declared rows fit the window sizes the provider lists"
-        }
-        return AddCheck("windows", oversized.isEmpty(), detail)
+        }.ifEmpty { "no declared model windows to check" }
+        return AddCheck("windows", !oversized, detail)
     }
 
     /** The console's direct check supports openai-chat with a splice-held key only.

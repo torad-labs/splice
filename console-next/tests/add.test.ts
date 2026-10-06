@@ -13,9 +13,17 @@ const view = (over: Partial<AddView> = {}): AddView => ({
 
 test('the successful window check uses operator words without replacing a failed or unknown diagnostic', () => {
   const detail = 'declared rows fit the window sizes the provider lists';
-  expect(checkDetail({ name: 'windows', ok: true, detail })).toBe('Every model’s context window fits what the provider serves.');
+  expect(checkDetail({ name: 'windows', ok: true, detail })).toBe('No declared window exceeded a reported provider limit. Models without a reported limit were not checked.');
   expect(checkDetail({ name: 'windows', ok: false, detail: 'm declares 200000, provider serves 100000' })).toBe('m declares 200000, provider serves 100000');
   expect(checkDetail({ name: 'future', ok: true, detail })).toBe(detail);
+});
+
+test('a window result keeps checked and unchecked rows without claiming every model fits', () => {
+  const detail = 'a fits: declares 128000, provider serves 128000; b unchecked: provider lists no window size';
+  const shown = checkDetail({ name: 'windows', ok: true, detail });
+  expect(shown).toBe(detail);
+  expect(shown).toContain('b unchecked');
+  expect(shown).not.toContain('Every model');
 });
 
 describe('the plans offered', () => {

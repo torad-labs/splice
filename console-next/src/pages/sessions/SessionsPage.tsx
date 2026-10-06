@@ -76,7 +76,6 @@ export function SessionsPage() {
     colour: row.head === UNKNOWN_HEAD ? 'none' : colourOf(row.head),
     head: row.head === UNKNOWN_HEAD ? null : (headOf(row)?.label ?? row.head),
     login: sessionAccountName(accounts.data?.accounts ?? [], row.head, row.account),
-    loginUnidentified: row.account === null && headOf(row)?.authKind === 'client',
     hand: handoffOf(sessions.data?.sessions ?? [], row.session_id === null ? [] : (edges.data?.sessions[row.session_id] ?? [])),
     };
   };

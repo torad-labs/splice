@@ -637,6 +637,16 @@ function seedProject(home: string): void {
     startedAt: now,
     updatedAt: now,
   }));
+  // An id-less registration has account:null and no account_state; exercise that optional wire slot too.
+  writeFileSync(join(sessions, "wire-keys-no-id.json"), JSON.stringify({
+    pid: process.pid,
+    cwd: realpathSync(repo),
+    name: "wire-keys-no-id",
+    kind: "interactive",
+    status: "idle",
+    startedAt: now,
+    updatedAt: now,
+  }));
 }
 
 /** The head's command linked where `splice install` puts it, the install bin dir under the daemon's

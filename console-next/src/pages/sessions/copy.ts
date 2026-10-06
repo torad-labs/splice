@@ -39,7 +39,7 @@ export const P = {
   needsAnswer: 'Waiting for your answer',
   login: (name: string): string => `Login: ${name}`,
   loginUnknown: 'Login not reported',
-  loginUnidentified: 'No request with a known login is recorded for this session.',
+  loginNoId: 'A login cannot be attributed until the session has an id.',
   loginUnattributed: 'No known login is attributed to this session.',
   loginHistoryLimited: 'The request history is incomplete, so this session’s login is unknown.',
 } as const;

@@ -4,7 +4,7 @@ import { STACK } from './stack';
 import type { AccountWire, AccountsWire } from '../src/types/accounts';
 import type { HeadStatus } from '../src/types/core';
 import type { HeadCatalog } from '../src/types/models';
-import type { SessionsPayload } from '../src/types/sessions';
+import type { SessionAccountState, SessionsPayload } from '../src/types/sessions';
 
 const budgetCatalog = (priced: boolean): HeadCatalog => ({
   head: STACK.keyHead, provider: 'synthetic', pinned_model: 'synthetic-budget-model', models: [{
@@ -264,14 +264,19 @@ test('Sessions names each attributed native place and the single-login primary w
   const state = await nativePool(page);
   let solo = false;
   let matched: boolean | undefined = true;
+  let attribution: SessionAccountState = 'known';
   await page.route(url => url.pathname === '/api/heads/claude-splice/turns/live', route => route.fulfill({ json: { head: 'claude-splice', turns: [] } }));
   await page.route(url => url.pathname === '/api/sessions', async route => {
     const response = await route.fetch();
     const body = await response.json() as SessionsPayload;
     body.sessions = body.sessions.filter(row => row.session_id === STACK.sender.id || row.session_id === STACK.peer.id).map(row => {
       const projected = { ...row, head: row.session_id === STACK.sender.id && solo ? STACK.soloHead : 'claude-splice' };
-      if (matched === undefined) { delete projected.account; return projected; }
-      return { ...projected, account: !matched ? null : row.session_id === STACK.sender.id ? solo ? 'primary' : 'claude' : 'claude-splice' };
+      if (matched === undefined) {
+        const withoutId = { ...projected, session_id: null, account: null };
+        delete withoutId.account_state;
+        return withoutId;
+      }
+      return { ...projected, account_state: attribution, account: !matched ? null : row.session_id === STACK.sender.id ? solo ? 'primary' : 'claude' : 'claude-splice' };
     });
     await route.fulfill({ response, json: body });
   });
@@ -292,15 +297,23 @@ test('Sessions names each attributed native place and the single-login primary w
   await expect(sender).toContainText('Single login');
   await expect(sender).not.toContainText('Personal login');
   matched = false;
+  attribution = 'none';
   await page.reload();
-  await expect(sender).toContainText('Login not reported');
-  await expect(peer).toContainText('Login not reported');
-  await expect(peer).toContainText('No request with a known login is recorded for this session.');
-  await expect(sender).not.toContainText('No request with a known login is recorded for this session.');
+  for (const card of [sender, peer]) {
+    await expect(card).toContainText('No known login is attributed to this session.');
+    await expect(card).not.toContainText('No request with a known login is recorded');
+  }
+  attribution = 'history_limited';
+  await page.reload();
+  for (const card of [sender, peer]) {
+    await expect(card).toContainText('The request history is incomplete, so this session’s login is unknown.');
+    await expect(card).not.toContainText('No known login is attributed');
+    await expect(card.getByRole('alert')).toHaveCount(0);
+  }
   matched = undefined;
   await page.reload();
-  await expect(peer).toContainText('Login not reported');
-  await expect(peer).not.toContainText('No request with a known login is recorded for this session.');
+  await expect(peer).toContainText('A login cannot be attributed until the session has an id.');
+  await expect(peer).not.toContainText('request history is incomplete');
   await assertHealthy(page, faults);
 });
 

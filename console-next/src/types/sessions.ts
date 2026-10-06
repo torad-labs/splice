@@ -93,6 +93,8 @@ export interface SessionRow {
   /** The selected login for this session when the daemon can attribute one, not the head's
    *  currently selected account for an unrelated session. */
   account?: string | null;
+  /** Request-owned attribution; omitted only on registrations without a session id. */
+  account_state?: SessionAccountState;
   /** Which durable sources found a historical session. Absent on live registry-only rows. */
   source?: 'history+transcript' | 'history-only' | 'transcript-only' | 'registry-only';
   /** A primary file may exist but have no conversation bytes yet. Such a row is counted, not offered

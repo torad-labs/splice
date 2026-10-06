@@ -311,7 +311,7 @@ describe('a session card', () => {
     ['none', null, 'Login not reported. No known login is attributed to this session.'],
     ['history_limited', null, 'Login not reported. The request history is incomplete, so this session’s login is unknown.'],
   ] as const)('the closed %s attribution state names only what the request source proves', (loginState, account, expected) => {
-    const html = render(facts({ row: row({ account }), login: 'Work login', loginState, loginUnidentified: loginState === 'history_limited' }));
+    const html = render(facts({ row: row({ account, account_state: loginState }), login: 'Work login' }));
     expect(html).toContain(expected);
     expect(html).not.toContain('role="alert"');
     if (loginState === 'history_limited') {
@@ -323,12 +323,14 @@ describe('a session card', () => {
       expect(html).not.toContain('No request with a known login is recorded');
     }
   });
-  test('only an explicitly unidentified session login explains the missing request attribution', () => {
-    const why = 'No request with a known login is recorded for this session.';
-    expect(render(facts({ row: row({ account: null }), loginUnidentified: true }))).toContain(why);
-    expect(render(facts({ row: row(), loginUnidentified: true }))).not.toContain(why);
-    expect(render(facts({ row: row({ account: 'known-login' }), loginUnidentified: true }))).not.toContain(why);
-    expect(render(facts({ row: row({ account: null }) }))).not.toContain(why);
+  test('a registration without a session id has no attributable login or request-history verdict', () => {
+    for (const source of [row({ session_id: null }), row({ session_id: null, account: null })]) {
+      const html = render(facts({ row: source }));
+      expect(html).toContain('Login not reported. A login cannot be attributed until the session has an id.');
+      expect(html).not.toContain('No request with a known login is recorded');
+      expect(html).not.toContain('No known login is attributed');
+      expect(html).not.toContain('request history is incomplete');
+    }
   });
   test('a hand-off line says what happened: the last message to a session, or the sessions a lead messaged', () => {
     expect(render(facts({ hand: { kind: 'to', peer: 'claude-muse' } }))).toContain('last message to claude-muse');

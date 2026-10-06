@@ -35,6 +35,42 @@ test('Usage names the primary fallback without changing its drill-down selector'
   expect(html).not.toContain('>primary ·');
 });
 
+test('earlier login names remain attributed and are explicitly absent from the current Accounts list', () => {
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'synthetic-earlier-login' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[savedLogin]} /></MemoryRouter>);
+  expect(html).toContain('synthetic-earlier-login · Synthetic command');
+  expect(html).toContain('Not listed in Accounts now.');
+  expect(html).not.toContain('Synthetic saved login');
+  expect(html).toContain('account=synthetic-earlier-login');
+  expect(html).toContain('head=synthetic');
+});
+
+test('a roster still being read cannot claim that a historical login is no longer listed', () => {
+  const values = (accounts?: typeof savedLogin[]) => renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'synthetic-earlier-login' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} {...(accounts === undefined ? {} : { accounts })} /></MemoryRouter>);
+  expect(values()).not.toContain('Not listed in Accounts now.');
+  expect(values([])).toContain('Not listed in Accounts now.');
+});
+
+test.each(['synthetic-current-identity', 'native:claude'])('native place keys never borrow the current account, even when its selector is %s', selector => {
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, key: 'native:claude' }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[{ ...savedLogin, selector_key: selector, login_place: { id: 'claude', command: 'claude' } }]} /></MemoryRouter>);
+  expect(html).toContain('claude login place · Synthetic command');
+  expect(html).toContain('The old records name a login place, not which account was used.');
+  expect(html).not.toContain('native:claude ·');
+  expect(html).not.toContain('Synthetic saved login');
+  expect(html).toContain('account=native%3Aclaude');
+});
+
+test('failed requests with no recorded login say so without changing the unattributed selector', () => {
+  const failed = { ...item, key: null, cost: null, input: null, output: null, unpriced: 1, missingInput: 1, missingOutput: 1, gaps: { ...item.gaps, unanswered: 1 } };
+  const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={[failed]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[]} /></MemoryRouter>);
+  expect(html).toContain('Failed requests with no login recorded · Synthetic command');
+  expect(html).toContain('unattributed=account');
+  expect(html).toContain('head=synthetic');
+  expect(html).not.toContain('account=null');
+  const mixed = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...failed, turns: 2 }]} by="account" since={0} until={200} labelOf={() => 'Synthetic command'} accounts={[]} /></MemoryRouter>);
+  expect(mixed).toContain('Account identity not recorded');
+  expect(mixed).not.toContain('Failed requests with no login recorded');
+});
+
 test('Usage uses an unambiguous catalog label without changing the model drill-down ID', () => {
   const metadata = { accounts: [], catalogs: [namedCatalog] };
   const html = renderToStaticMarkup(<MemoryRouter><UsageValues items={items} by="model" since={0} until={200} labelOf={key => key} {...metadata} /></MemoryRouter>);

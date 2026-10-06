@@ -5,7 +5,7 @@ import { failureText } from '../../api/client';
 import { usePerfTurns } from '../../api/turns';
 import { fmtTokens, fmtUsd } from '../../lib/format';
 import { cutLines, fullUsageBreakdown, fullWindowUsage, priceGapLines } from '../../lib/usage-breakdown';
-import { sessionAccountName } from '../../lib/accounts';
+import { accountsForLabel, sessionAccountName } from '../../lib/accounts';
 import type { UsageBreakdown as Breakdown, UsageDimension } from '../../lib/usage-breakdown';
 import type { AccountRow } from '../../types/accounts';
 import type { HeadCatalog } from '../../types/models';
@@ -14,7 +14,7 @@ import { Button, Empty, Fault, Segmented } from '../../ui';
 import { B } from './copy';
 import './usage-breakdown.css';
 
-type UsageNames = { accounts?: readonly AccountRow[]; catalogs?: readonly HeadCatalog[] };
+type UsageNames = { accounts?: readonly AccountRow[] | undefined; catalogs?: readonly HeadCatalog[] };
 
 const dimensions = [['model', B.model], ['account', B.account], ['day', B.day]] as const;
 
@@ -33,28 +33,39 @@ export function requestsFor(item: Breakdown, by: UsageDimension, since: number, 
   return '/requests?' + query.toString();
 }
 
-function titleOf(item: Breakdown, by: UsageDimension, accounts: readonly AccountRow[], catalogs: readonly HeadCatalog[]): string {
-  if (item.key === null) return by === 'account' ? B.unreportedAccount : B.unreportedModel;
-  if (by === 'account' && item.head !== null) return sessionAccountName(accounts, item.head, item.key) ?? item.key;
-  if (by !== 'model') return item.key;
+function groupName(item: Breakdown, by: UsageDimension, accounts: readonly AccountRow[] | undefined, catalogs: readonly HeadCatalog[]): { title: string; note: string | null } {
+  if (item.key === null) return {
+    title: by === 'account' ? item.turns > 0 && item.gaps.unanswered === item.turns ? B.failedWithoutLogin : B.unreportedAccount : B.unreportedModel,
+    note: null,
+  };
+  if (by === 'account' && item.head !== null) {
+    const matching = accountsForLabel(accounts ?? [], item.head, item.key);
+    const native = item.key === 'native:claude' ? 'claude' : item.key === 'native:claude-splice' ? 'claude-splice' : null;
+    if (native !== null) return { title: B.legacyLoginPlace(native), note: B.legacyAccountWhy };
+    return {
+      title: sessionAccountName(accounts ?? [], item.head, item.key) ?? item.key,
+      note: accounts !== undefined && matching.length === 0 ? B.notCurrentLogin : null,
+    };
+  }
+  if (by !== 'model') return { title: item.key, note: null };
   // Model groups span commands. A conflicting catalog label cannot rename a historical group.
   const labels = [...new Set(catalogs.flatMap(head => head.models.filter(model => model.id === item.key && model.label !== '').map(model => model.label)))];
-  return labels.length === 1 ? labels[0] ?? item.key : item.key;
+  return { title: labels.length === 1 ? labels[0] ?? item.key : item.key, note: null };
 }
 const amount = (item: Breakdown): string => item.cost === null ? priceGapLines(item.gaps).join(' ') || B.unknown : item.unpriced === 0 ? fmtUsd(item.cost) : B.atLeast(fmtUsd(item.cost));
 const tokens = (value: number | null, missing: number): string => value === null ? B.unknown : missing === 0 ? fmtTokens(value) : B.atLeast(fmtTokens(value));
 
-export function UsageValues({ items, by, since, until, labelOf, accounts = [], catalogs = [] }: { items: readonly Breakdown[]; by: UsageDimension; since: number; until: number; labelOf: (head: string) => string } & UsageNames) {
+export function UsageValues({ items, by, since, until, labelOf, accounts, catalogs = [] }: { items: readonly Breakdown[]; by: UsageDimension; since: number; until: number; labelOf: (head: string) => string } & UsageNames) {
   const [table, setTable] = useState(false);
   const maximum = Math.max(...items.map(item => item.cost ?? 0), 0) || 1;
   if (items.length === 0) return <Empty title={B.none} />;
   const entries = items.map(item => {
-    const title = titleOf(item, by, accounts, catalogs);
+    const { title, note } = groupName(item, by, accounts, catalogs);
     const name = by === 'account' && item.head !== null ? `${title} · ${labelOf(item.head)}` : title;
     const href = requestsFor(item, by, since, until);
     return {
       id: item.id,
-      name: <div className="usage-name"><Link to={href}>{name}</Link><small>{B.requestCount(item.turns)}</small></div>,
+      name: <div className="usage-name"><Link to={href}>{name}</Link>{note === null ? null : <small>{note}</small>}<small>{B.requestCount(item.turns)}</small></div>,
       cost: <div className="usage-spend">
         <Link to={href} className="usage-cost-link" aria-label={`${B.inspect(name)}: ${amount(item)}`} title={`${name}: ${amount(item)}`}>
           {item.cost === null && priceGapLines(item.gaps).length > 0 ? <span>{amount(item)}</span> : <strong>{amount(item)}</strong>}
@@ -88,7 +99,7 @@ function Coverage({ data, labelOf }: { data: TurnsState; labelOf: (head: string)
   return <div className="usage-coverage" role="status"><b>{B.partial}</b>{data.unread.map(row => <p key={row.head}>{labelOf(row.head)}: {row.reason}</p>)}</div>;
 }
 
-export function UsageBreakdown({ labelOf, read, accounts = [], catalogs = [] }: {
+export function UsageBreakdown({ labelOf, read, accounts, catalogs = [] }: {
   labelOf: (head: string) => string; read: ReturnType<typeof usePerfTurns>;
 } & UsageNames) {
   const [by, setBy] = useState<UsageDimension>('model');

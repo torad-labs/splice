@@ -15,10 +15,14 @@ import { W } from './words';
 
 /** One name across every login surface; older replies use the same stable-label fallback. */
 export const accountName = (account: AccountRow): string => account.display_name ?? account.label ?? account.login_place?.command ?? account.heads[0] ?? account.kind;
+/** Account metadata is usable only for this command and its recorded selector or legacy label. */
+export const accountsForLabel = (rows: readonly AccountRow[], head: string, label: string): AccountRow[] =>
+  rows.filter(row => row.heads.includes(head) && (row.selector_key === label || row.label === label || (label === 'primary' && row.single_login && row.label === null)));
+
 /** A session's own attributed label, never the account selected for another session on its head. */
 export function sessionAccountName(rows: readonly AccountRow[], head: string, label: string | null | undefined): string | null {
   if (label == null) return null;
-  const matching = rows.filter(row => row.heads.includes(head) && (row.selector_key === label || row.label === label || (label === 'primary' && row.single_login && row.label === null)));
+  const matching = accountsForLabel(rows, head, label);
   const account = matching[0];
   return matching.length === 1 && account !== undefined ? accountName(account) : label === 'primary' ? W.primaryAccount : label;
 }

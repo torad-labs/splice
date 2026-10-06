@@ -15,6 +15,73 @@ const wire = (ts: number, priced: boolean): TurnRowWire => ({
   ...(priced ? { cost_usd: 0.25, in_tokens: 200, out_tokens: 50 } : { cost_usd: null }),
 });
 
+test('Usage names earlier logins and no-login failures without borrowing the current credential', async ({ page }, testInfo) => {
+  const head = 'synthetic-claude-command';
+  const named = { ...emptyUsage.totals, requests: 1, input_tokens: 200, cached_tokens: 0, output_tokens: 50, cost_usd: 0.25, cache_share: 0 };
+  const failed = { ...emptyUsage.totals, requests: 3, unpriced_requests: 3, unanswered_requests: 3, missing_input_requests: 3, missing_output_requests: 3, missing_cache_requests: 3 };
+  const totals = { ...named, requests: 6, input_tokens: 600, output_tokens: 150, cost_usd: 0.75, unpriced_requests: 3, unanswered_requests: 3, missing_input_requests: 3, missing_output_requests: 3, missing_cache_requests: 3 };
+  const usage = { ...emptyUsage, totals, accounts: [
+    { ...named, key: 'synthetic-current-selector' },
+    { ...named, key: 'earlier-synthetic@example.invalid' },
+    { ...named, key: 'native:claude' },
+    { ...failed, key: null },
+  ] };
+  let releaseAccounts = () => {};
+  const accountReady = new Promise<void>(resolve => { releaseAccounts = resolve; });
+  await page.route(url => url.pathname === '/api/economics', route => route.fulfill({ json: { retention_hours: 24, heads: [] } }));
+  await page.route(url => url.pathname === '/api/heads', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as HeadsPayload;
+    const sample = body.heads[0];
+    if (sample === undefined) throw new Error('isolated stack needs one synthetic command');
+    await route.fulfill({ response, json: { ...body, heads: [{ ...sample, key: head, label: 'Synthetic Claude command' }] } });
+  });
+  await page.route(url => url.pathname === '/api/accounts', async route => {
+    await accountReady;
+    await route.fulfill({ json: { accounts: [
+      { kind: 'synthetic', label: 'synthetic-current-label', display_name: 'Current synthetic login', selector_key: 'synthetic-current-selector', credential_present: true, heads: [head] },
+      { kind: 'client', label: 'claude', display_name: 'Current native occupant', selector_key: 'native:claude', login_place: { id: 'claude', command: 'claude' }, credential_present: true, heads: [head] },
+    ] } });
+  });
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const query = new URL(route.request().url()).searchParams;
+    return route.fulfill({ json: { since: Number(query.get('since')), n: 1, heads: [{ key: head, label: head, count: 6, truncated: true, rows: [{ ts: Number(query.get('until')) - 1, model: 'synthetic-model', outcome: 'error:missing-credential', compact: false, account: null, session: null, cache_cold: null, turn: null, session_id: null, response_message_id: 'synthetic-no-login-response' }], usage }] } });
+  });
+  const faults = await open(page, 'usage');
+  const chart = page.getByRole('region', { name: 'Spend and tokens', exact: true });
+  try {
+    await chart.getByRole('button', { name: 'Account', exact: true }).click();
+    await expect(chart.getByRole('link', { name: 'earlier-synthetic@example.invalid · Synthetic Claude command', exact: true })).toBeVisible();
+    await expect(chart).not.toContainText('Not listed in Accounts now.');
+  } finally {
+    releaseAccounts();
+  }
+  const current = chart.getByRole('link', { name: 'Current synthetic login · Synthetic Claude command', exact: true });
+  await expect(current).toBeVisible();
+  await expect(current.locator('..')).not.toContainText('Not listed in Accounts now.');
+  const earlier = chart.getByRole('link', { name: 'earlier-synthetic@example.invalid · Synthetic Claude command', exact: true });
+  await expect(earlier.locator('..')).toContainText('Not listed in Accounts now.');
+  const legacy = chart.getByRole('link', { name: 'claude login place · Synthetic Claude command', exact: true });
+  await expect(legacy.locator('..')).toContainText('The old records name a login place, not which account was used.');
+  const noLogin = chart.getByRole('link', { name: 'Failed requests with no login recorded · Synthetic Claude command', exact: true });
+  await expect(noLogin).toBeVisible();
+  for (const [link, account] of [[current, 'synthetic-current-selector'], [earlier, 'earlier-synthetic@example.invalid'], [legacy, 'native:claude'], [noLogin, null]] as const) {
+    const query = new URLSearchParams((await link.getAttribute('href'))?.split('?')[1]);
+    expect(query.get('head')).toBe(head);
+    expect(query.get('account')).toBe(account);
+    expect(query.get('unattributed')).toBe(account === null ? 'account' : null);
+  }
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await chart.screenshot({ path: testInfo.outputPath('historical-logins-' + width + '.png') });
+  }
+  await chart.getByRole('button', { name: 'Show the values as a table', exact: true }).click();
+  await expect(chart.getByRole('table')).toContainText('Not listed in Accounts now.');
+  await expect(chart.getByRole('table')).toContainText('Failed requests with no login recorded');
+  await assertHealthy(page, faults);
+});
+
 test('the Usage primary fallback is human-readable while its account selector stays exact', async ({ page }, testInfo) => {
   const stats = { ...emptyUsage.totals, requests: 1, input_tokens: 200, output_tokens: 50, cost_usd: 0.25 };
   const usage = { ...emptyUsage, totals: stats, accounts: [{ key: 'primary', ...stats }] };

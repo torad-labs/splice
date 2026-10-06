@@ -128,8 +128,9 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
         body: CodeModeBody,
         records: List<CodeModeRecord>,
         replayMedia: Map<String, List<JsonElement>> = emptyMap(),
+        capture: CodeModeRecord? = null,
     ): CodeModeRewrite {
-        val rewrite = history.canonicalize(body, records, replayMedia)
+        val rewrite = history.canonicalize(body, records, replayMedia, capture)
         rewrite.omitted.filter { announced.add(it.record.id) }.forEach { omission ->
             log(
                 "[code-mode] history rewrite skipped record ${omission.record.id.take(RECORD_ID_LOG_CHARS)} " +

@@ -136,7 +136,10 @@ internal class CodexCodeModeTurn(
     ): TurnOutcome {
         val completed = context.completed
         completed += registry.completed(context.key).filterNot { it.id in conflicts }
-        val completedHistory = wire.canonicalize(body, completed, context.turn.toolMedia)
+        val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
+        val capture = registry.owner(context.key, context.digest, resultIds, wire.callbackIds(body), conflicts)
+            ?: completed.lastOrNull()
+        val completedHistory = wire.canonicalize(body, completed, context.turn.toolMedia, capture)
         completedHistory.error?.let { return failure(it) }
         val canonicalBody = checkNotNull(completedHistory.body)
         reconcile(context, canonicalBody)

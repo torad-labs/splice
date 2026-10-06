@@ -307,7 +307,9 @@ internal class CodeModeHistoryIndex(
 
     private fun afterParent(record: CodeModeRecord, expected: Int): Int {
         val parent = record.nativeParent ?: return expected
-        val at = owned(parent).lastOrNull() ?: return expected
-        return maxOf(expected, at + 1 + parent.accepted.durableMedia().size)
+        val callbacks = owned(parent)
+        val tail = callbacks.lastOrNull() ?: return expected
+        val following = tail + 1 + parent.accepted.durableMedia().size
+        return if (expected < following) following else expected
     }
 }

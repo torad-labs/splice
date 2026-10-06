@@ -121,7 +121,7 @@ internal class CodeModeRecoveryHistory(private val baseline: CodeModeBody) {
     }
 
     fun clientBoundary(completed: List<CodeModeRecord>, wire: CodexCodeModeWire): CodeModeInputBoundary? {
-        val rewritten = wire.canonicalize(baseline, completed)
+        val rewritten = wire.canonicalize(baseline, completed, emptyMap(), completed.lastOrNull())
         return rewritten.body?.let { wire.anchoredBoundary(it, completed) }
     }
 

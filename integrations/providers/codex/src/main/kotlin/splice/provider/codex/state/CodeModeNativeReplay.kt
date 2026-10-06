@@ -11,6 +11,7 @@ import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.state.diagnostics.CodeModeNativeBranch
 import splice.provider.codex.state.diagnostics.CodeModeNativeEvidence
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
+import splice.provider.codex.state.native.CodeModeCapturedOrder
 
 private data class NativeClaim(
     val recordId: String,
@@ -112,6 +113,25 @@ internal class CodeModeNativeReplay(
 
     fun problem(record: CodeModeRecord): String? = bad[record.id]?.branch?.reason()
 
+    /** A response-only rewrite cannot become evidence for resurrecting its missing captured input. */
+    fun retainedResponse(record: CodeModeRecord): Boolean {
+        if (
+            record.continuityReplay.isEmpty() ||
+            index.owned(record).any { codec.callId(index.items[it]) == record.outerCallId }
+        ) {
+            return false
+        }
+        val boundary = index.boundary(record) ?: return false
+        val echoed = record.continuityReplay.all { segment ->
+            val items = replay[boundary + segment.logicalOffset].orEmpty()
+            (0..items.size - segment.items.size).any { at ->
+                segment.items.indices.all { items[at + it] == segment.items[it] }
+            }
+        }
+        val baseline = CodeModeNativeChain.replay(record).flatMap(CodeModeNativeSegment::items)
+        return echoed && baseline.isNotEmpty() && replay.values.none { items -> items.any { it in baseline } }
+    }
+
     fun restore(record: CodeModeRecord): ResponsesCodeModeInput {
         val claims = claims(listOf(record)).distinctBy { it.offset to it.items }
         val counted = mutableMapOf<Int, MutableMap<JsonElement, Int>>()
@@ -125,18 +145,26 @@ internal class CodeModeNativeReplay(
         placements: List<CodeModeCanonicalPlacement>,
         offsets: IntArray,
         starts: Map<String, Int>,
+        order: CodeModeCapturedOrder? = null,
+        refused: CodeModeCapturedOrder? = null,
     ): List<ResponsesCodeModeReplay> {
-        val claims = claims(placements.map { it.record }).distinctBy { it.offset to it.items }
-        val ownedIds = placements.flatMap { it.record.clientIds() - it.retainedCallbacks }.toSet()
+        val scripts = placements.filter { it.emission == CodeModeCanonicalEmission.SCRIPT }
+        val retained = placements.filter { it.emission == CodeModeCanonicalEmission.CONTINUITY }
+            .map { it.record.id }.toSet()
+        val claims = claims(scripts.map { it.record }).filterNot { it.recordId in retained }
+            .distinctBy { it.offset to it.items }
+        val ownedIds = scripts.flatMap { it.record.clientIds() - it.retainedCallbacks }.toSet()
         val counted = mutableMapOf<Int, MutableMap<JsonElement, Int>>()
         claims.forEach { claim -> count(counted, claim.offset, claim.items) }
         placements.forEach { placement ->
+            // Copy quotas refer to the observed history, not the plan's relocated emission buckets.
+            val observed = checkNotNull(index.boundary(placement.record))
             placement.record.continuityReplay.forEach {
-                count(counted, placement.boundary + it.logicalOffset, it.items)
+                count(counted, observed + it.logicalOffset, it.items)
             }
         }
         val replay = clientReplay(ownedIds, counted, offsets).toMutableList()
-        val placed = placements.associateBy { it.record.id }
+        val placed = scripts.associateBy { it.record.id }
         claims.forEach { claim ->
             val placement = placed[claim.recordId]
             val offset = if (placement != null && claim.offset == placement.boundary) {
@@ -144,10 +172,17 @@ internal class CodeModeNativeReplay(
             } else {
                 offsets[claim.offset]
             }
-            replay += ResponsesCodeModeReplay(offset, null, claim.items)
+            val items = claimItems(claim, order, refused)
+            if (items.isNotEmpty()) replay += ResponsesCodeModeReplay(offset, null, items)
         }
         return replay
     }
+
+    private fun claimItems(
+        claim: NativeClaim,
+        order: CodeModeCapturedOrder?,
+        refused: CodeModeCapturedOrder?,
+    ): List<JsonElement> = order?.claim(claim.items) ?: refused?.claimAt(claim.offset, claim.items) ?: claim.items
 
     private fun clientReplay(
         ownedIds: Set<String>,

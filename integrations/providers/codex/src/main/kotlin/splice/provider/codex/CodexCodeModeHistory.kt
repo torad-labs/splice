@@ -7,17 +7,19 @@ import kotlinx.serialization.json.JsonObject
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.state.CodeModeAnchorCapture
-import splice.provider.codex.state.CodeModeCanonicalHistory
 import splice.provider.codex.state.CodeModeExtraContent
 import splice.provider.codex.state.CodeModeHistoryIndex
 import splice.provider.codex.state.CodeModeMetadataValidator
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeNativeReplay
+import splice.provider.codex.state.native.CodeModeCanonicalRequests
+import splice.provider.codex.state.native.CodeModeLegacyCanonicalization
 import splice.upstream.RoundBody
 import splice.provider.codex.state.diagnostics.CodeModeProjectedRewrite as ProjectedRewrite
 
 internal class CodexCodeModeHistory(private val json: Json) {
     private val codec = CodexCodeModeHistoryCodec(json)
+    private val canonicalizer = CodeModeCanonicalRequests(codec)
     private val nativeReplayValidator = NativeReplayValidator()
     private val metadata = CodeModeMetadataValidator()
     private val ownership = CodeModeOwnership(codec)
@@ -60,26 +62,14 @@ internal class CodexCodeModeHistory(private val json: Json) {
         body: CodeModeBody,
         records: List<CodeModeRecord>,
         replayMedia: Map<String, List<JsonElement>> = emptyMap(),
-    ): CodeModeRewrite {
-        val root = body.request
-            ?: return CodeModeRewrite(null, "code mode requires a Responses input array")
-        val conversation = codec.conversation(codec.projection.project(root.second))
-        var input = conversation.body
-        val omitted = mutableListOf<CodeModeOmission>()
-        val eligible = records.filterNot(CodeModeRecord::abandoned)
-        eligible.filter { it.metadataVersion != CODE_MODE_METADATA_VERSION }.forEach { record ->
-            val rewritten = canonicalizeRecord(input, record, replayMedia)
-            val error = rewritten.error
-            if (error == null) input = checkNotNull(rewritten.input) else omitted += CodeModeOmission(record, error)
-        }
-        val anchored = CodeModeCanonicalHistory(codec).rewrite(
-            input,
-            eligible.filter { it.metadataVersion == CODE_MODE_METADATA_VERSION },
-            replayMedia,
-        )
-        return codec.rebuilt(root.first, conversation, anchored.input, body)
-            .copy(omitted = omitted + anchored.omitted)
-    }
+        capture: CodeModeRecord? = null,
+    ): CodeModeRewrite = canonicalizer.rewrite(
+        body,
+        records,
+        replayMedia,
+        capture,
+        CodeModeLegacyCanonicalization(::canonicalizeRecord),
+    )
 
     /** [canonicalize] for a request held as text: parsed once, as a text round is. */
     fun canonicalize(

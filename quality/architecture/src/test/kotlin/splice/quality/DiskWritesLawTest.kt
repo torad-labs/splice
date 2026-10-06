@@ -103,6 +103,12 @@ internal object DiskWrites {
                 "Files.writeString(",
                 "/proc/<pid>/oom_score_adj of a hosted MCP child: a kernel attribute that ends with the process",
             ),
+            NotAFile(
+                "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeRecoveryHistory.kt",
+                ".appendText(",
+                "Prefix.appendText(StringBuilder) joins in-memory recovery segments into a builder, never a file",
+                matches = 2,
+            ),
         ),
         sites = SHIPPED_SITES,
     )
@@ -522,6 +528,34 @@ class DiskWritesLawTest {
             assertHit(stale, "STALE HELPER", "called nowhere") { "a helper no file calls is STALE" }
             assertHit(stale, "STALE NOT-A-FILE", "Pipe.kt") { "an exemption that matches nothing is STALE" }
         }
+    }
+
+    @Test
+    fun `two in memory recovery joins are not files and a third append still is`(@TempDir root: File) {
+        val path = "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeRecoveryHistory.kt"
+        val source = File(root, path)
+        source.parentFile.mkdirs()
+        source.writeText(
+            """
+            class Prefix {
+                fun appendText(builder: StringBuilder) { builder.append("synthetic") }
+            }
+            fun join() {
+                Prefix().appendText(StringBuilder())
+                Prefix().appendText(StringBuilder())
+            }
+            """.trimIndent(),
+        )
+        val rules = DiskWrites.Rules(emptyList(), DiskWrites.SHIPPED.notAFile.filter { it.path == path }, emptyMap())
+        val readme = readmeNaming()
+        assertEquals(emptyList<String>(), DiskWrites.audit(listOf(source), root, readme, rules).problems)
+        source.appendText("\nfun stored(file: java.io.File) = file.appendText(\"synthetic\")\n")
+        val grown = DiskWrites.audit(listOf(source), root, readme, rules).problems
+        assertHit(grown, "UNLISTED", "CodeModeRecoveryHistory.kt", ".appendText(") {
+            "the disposition covers only the two measured in-memory joins, never a third real file append"
+        }
+        assertHit(grown, "UNRECORDED", "CodeModeRecoveryHistory.kt") { "the real append still needs its own site" }
+        assertEquals(2, grown.size, "exactly the real append is unlisted and unrecorded")
     }
 
     /** The dispatch's mutation, on the SHIPPED tree and README: one Files.write in a main source set

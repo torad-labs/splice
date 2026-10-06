@@ -22,33 +22,64 @@ internal class CodeModeRecoveryHistory(private val baseline: CodeModeBody) {
         val native: CodeModeNativeChain.Capture,
         @Volatile var continuity: CodeModeContinuity,
         val prefix: Prefix,
-        val before: String,
+        val before: Prefix,
+        val generated: Prefix,
         @Volatile var text: String,
     )
 
-    internal class Prefix(val text: String = "", private val envelopes: List<String> = emptyList()) {
-        fun extend(partial: TurnOutcome.PartialRound): Prefix = Prefix(
-            text + partial.bodyText.takeIf { partial.emittedText }.orEmpty(),
-            envelopes + partial.reasoningEnvelopes,
-        )
-
-        fun remaining(partial: TurnOutcome.PartialRound): TurnOutcome.PartialRound = partial.copy(
-            bodyText = partial.bodyText.removePrefix(text),
-            reasoningEnvelopes = if (partial.reasoningEnvelopes.take(envelopes.size) == envelopes) {
-                partial.reasoningEnvelopes.drop(envelopes.size)
+    /** Immutable segments share every earlier script; joining is transient and iterative, never retained. */
+    internal class Prefix(
+        private val text: String = "",
+        private val envelopes: List<String> = emptyList(),
+        private val before: Prefix? = null,
+    ) {
+        fun extend(partial: TurnOutcome.PartialRound): Prefix {
+            val emitted = partial.bodyText.takeIf { partial.emittedText }.orEmpty()
+            return if (emitted.isEmpty() && partial.reasoningEnvelopes.isEmpty()) {
+                this
             } else {
-                partial.reasoningEnvelopes
-            },
-        )
+                Prefix(emitted, partial.reasoningEnvelopes.toList(), this)
+            }
+        }
 
-        fun continuity(outcome: TurnOutcome.Success, wire: CodexCodeModeWire): CodeModeContinuity =
-            wire.continuity(
+        fun remaining(partial: TurnOutcome.PartialRound): TurnOutcome.PartialRound {
+            val envelopes = reasoning()
+            return partial.copy(
+                bodyText = partial.bodyText.removePrefix(text()),
+                reasoningEnvelopes = if (partial.reasoningEnvelopes.take(envelopes.size) == envelopes) {
+                    partial.reasoningEnvelopes.drop(envelopes.size)
+                } else {
+                    partial.reasoningEnvelopes
+                },
+            )
+        }
+
+        fun continuity(outcome: TurnOutcome.Success, wire: CodexCodeModeWire): CodeModeContinuity {
+            val text = text()
+            return wire.continuity(
                 outcome.copy(
                     bodyText = text + outcome.bodyText,
                     emittedText = text.isNotEmpty() || outcome.emittedText,
-                    reasoningEnvelopes = envelopes + outcome.reasoningEnvelopes,
+                    reasoningEnvelopes = reasoning() + outcome.reasoningEnvelopes,
                 ),
             )
+        }
+
+        fun appendText(target: StringBuilder) = visit { target.append(it.text) }
+
+        private fun text(): String = buildString { appendText(this) }
+
+        private fun reasoning(): List<String> = buildList { visit { addAll(it.envelopes) } }
+
+        private inline fun visit(action: (Prefix) -> Unit) {
+            val segments = ArrayDeque<Prefix>()
+            var cursor: Prefix? = this
+            while (cursor != null) {
+                segments.addFirst(cursor)
+                cursor = cursor.before
+            }
+            segments.forEach(action)
+        }
     }
 
     /** A parked reader keeps only its emitted prefix and its own small view, never the original request. */
@@ -64,7 +95,11 @@ internal class CodeModeRecoveryHistory(private val baseline: CodeModeBody) {
     internal class Delivery(private val posted: PostedHistory) {
         fun text(cell: CodeModeStreamingCell?): String? {
             val current = if (cell == null) posted.text else cell.deliveredText ?: return null
-            return (posted.before + current).takeIf(String::isNotEmpty)
+            return buildString {
+                posted.before.appendText(this)
+                posted.generated.appendText(this)
+                append(current)
+            }.takeIf(String::isNotEmpty)
         }
     }
 
@@ -105,7 +140,7 @@ internal class CodeModeRecoveryHistory(private val baseline: CodeModeBody) {
         text: String,
     ) {
         posted[record.id] = PostedHistory(
-            boundary, native, continuity, continuityPrefix, prefix.text + generated.text, text,
+            boundary, native, continuity, continuityPrefix, prefix, generated, text,
         )
         continuityPrefix = Prefix()
     }

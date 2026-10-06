@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import java.io.CharConversionException
 
 /** A minimal record for PageAssembly: payload string values are never materialized by the index. */
 internal class TranscriptRecordShape {
@@ -25,6 +26,8 @@ internal class TranscriptRecordShape {
         }
     } catch (_: JsonProcessingException) {
         null // An unparseable record has no messages, exactly as in the page assembly.
+    } catch (_: CharConversionException) {
+        null // Torn bytes can look like UTF-32; a decoding failure is still only an unparseable line.
     }
 
     private enum class Place { RECORD, MESSAGE, BLOCK }

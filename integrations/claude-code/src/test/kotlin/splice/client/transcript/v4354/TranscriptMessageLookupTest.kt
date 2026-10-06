@@ -68,6 +68,23 @@ class TranscriptMessageLookupTest {
     }
 
     @Test
+    fun `a NUL prefixed torn middle line cannot hide a later response`(@TempDir root: Path) {
+        val file = root.resolve("projects/project/$SESSION.jsonl")
+        Files.createDirectories(file.parent)
+        val prompt = """{"type":"user","message":{"role":"user","content":"synthetic prompt"}}""" + "\n"
+        val torn = """{"type":"assistant","message":{"id":"torn","content":[{"type":"text","text":"torn text"}]}}""" + "\n"
+        val reply = """{"type":"assistant","message":{"id":"$RESPONSE","content":[{"type":"text","text":"answer"}]}}""" + "\n"
+        Files.write(file, prompt.toByteArray() + ByteArray(4) + torn.toByteArray() + reply.toByteArray())
+
+        val lookup = TranscriptMessageLookup()
+        repeat(2) {
+            val found = lookup.lookup(SESSION, listOf(root), RESPONSE) as MessageConversation.Found
+            assertEquals(listOf("synthetic prompt", "answer"), found.messages.map { it.text })
+            assertEquals(RESPONSE, found.messages.last().messageId)
+        }
+    }
+
+    @Test
     fun `no saved transcript or no matching reply is a named absence`(@TempDir root: Path) {
         val lookup = TranscriptMessageLookup()
         val absent = lookup.lookup(SESSION, listOf(root), RESPONSE) as MessageConversation.Missing

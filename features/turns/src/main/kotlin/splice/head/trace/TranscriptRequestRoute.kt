@@ -14,7 +14,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
 import splice.core.util.JsonWire
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.http.JsonReply
 import splice.sessions.transcript.CONVERSATION_READ_TIMEOUT_MS
 import splice.sessions.transcript.CONVERSATION_READ_UNAVAILABLE
@@ -36,6 +39,7 @@ public class TranscriptRequestRoute(
     private val viewEnabled: SessionTranscriptViewEnabled,
     private val io: CoroutineDispatcher,
     private val readTimeoutMs: Long = CONVERSATION_READ_TIMEOUT_MS,
+    private val log: LogSink = LogSink(DaemonLog::write),
 ) {
     public suspend fun read(head: String, sessionId: String?, responseId: String?): JsonReply {
         val approved = roots.forHead(head)
@@ -54,7 +58,9 @@ public class TranscriptRequestRoute(
                 runInterruptible(io) { source.lookup(sessionId, approved, responseId) }
             }
         } ?: return state("unavailable", CONVERSATION_READ_UNAVAILABLE)
-        val lookup = read.getOrElse {
+        val lookup = read.getOrElse { failure ->
+            val diagnostic = SafeFailureText.render(failure) + SafeFailureText.site(failure)
+            log("[transcript] saved transcript read failed: $diagnostic")
             return refuse(HttpStatusCode.InternalServerError, "Could not read this session's saved transcript.")
         }
         return when (lookup) {

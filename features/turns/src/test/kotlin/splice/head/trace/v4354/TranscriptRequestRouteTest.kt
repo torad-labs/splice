@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.util.LogSink
 import splice.head.trace.TranscriptRequestRoute
 import splice.head.trace.TranscriptRoots
 import splice.sessions.transcript.MessageConversation
@@ -25,6 +26,7 @@ import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptMessageSource
 import splice.sessions.transcript.TranscriptRole
+import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -172,6 +174,30 @@ class TranscriptRequestRouteTest {
             "Reading this conversation took too long. Open the session.",
             body.getValue("reason").jsonPrimitive.content,
         )
+    }
+
+    @Test
+    fun `source failures log the safe diagnosis and source site once per failed read`() = runBlocking {
+        val logged = mutableListOf<String>()
+        val failed = TranscriptRequestRoute(
+            TranscriptMessageSource { _, _, _ -> throw IOException("/synthetic/$SESSION/$RESPONSE private text") },
+            roots,
+            enabled,
+            Dispatchers.Unconfined,
+            log = LogSink { logged += it },
+        )
+        val expected = Regex(
+            "\\[transcript] saved transcript read failed: failure " +
+                "\\(message withheld: it may quote file bytes\\) at TranscriptRequestRouteTest\\.kt:\\d+",
+        )
+        repeat(2) { index ->
+            val reply = failed.read("kimi", SESSION, RESPONSE)
+            assertEquals(500, reply.status.value)
+            assertFalse(reply.body.contains(SESSION))
+            assertFalse(reply.body.contains(RESPONSE))
+            assertEquals(index + 1, logged.size)
+            assertTrue(logged.all(expected::matches), logged.toString())
+        }
     }
 
     @Test

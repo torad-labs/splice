@@ -110,14 +110,15 @@ class AccountPoolPinTest {
     fun `a pin on an unavailable account falls through to ordinary policy, never wedging the head`() {
         val fixture = Fixture()
         val primary = fixture.account("primary", primary = true)
-        val exhausted = fixture.account("plus-a")
-        val pool = fixture.pool(primary, exhausted)
-        fixture.setQuota(exhausted, fixture.quota(five = 100.0, reset = 2_000L))
+        val held = fixture.account("plus-a")
+        val pool = fixture.pool(primary, held)
+        held.cooldown.markUnavailable(60_000L)
 
         pool.pin("plus-a")
         val chosen = pool.chosen("session")
 
-        assertSame(primary, chosen.account, "an exhausted pin must not refuse turns the head could otherwise serve")
+        assertFalse(pool.view(null).accounts.single { it.label == "plus-a" }.available)
+        assertSame(primary, chosen.account, "a provider-held pin must not refuse turns the head could otherwise serve")
     }
 
     @Test
@@ -159,7 +160,6 @@ class AccountPoolPinTest {
 
     private class Fixture {
         val now = AtomicReference(1_000_000L)
-        private val quotas = mutableMapOf<PoolAccount, AtomicReference<QuotaSnapshot>>()
         private var elapsed = 0L
 
         fun pool(vararg accounts: PoolAccount): AccountPool = AccountPool(accounts.toList(), WallClock(now::get))
@@ -179,11 +179,7 @@ class AccountPoolPinTest {
                 quota = AccountQuotaSource(quota::get),
                 cooldown = RateLimitCooldown(ElapsedClock { elapsed }),
                 credentialPresent = true,
-            ).also { quotas[it] = quota }
-        }
-
-        fun setQuota(account: PoolAccount, snapshot: QuotaSnapshot) {
-            quotas.getValue(account).set(snapshot)
+            )
         }
 
         fun quota(five: Double = 0.0, weekly: Double = 0.0, reset: Long? = 2_000L): QuotaSnapshot = QuotaSnapshot(

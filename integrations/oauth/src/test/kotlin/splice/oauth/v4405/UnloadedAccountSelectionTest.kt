@@ -108,16 +108,16 @@ class UnloadedAccountSelectionTest {
     }
 
     @Test
-    fun `a full primary is exhausted rather than handed to an orphan or a refused link`(@TempDir home: Path) {
+    fun `a full primary stays selectable without handing turns to an orphan or a refused link`(@TempDir home: Path) {
         populate(home)
         val rig = Rig(listed(home))
         rig.primaryQuota.set(rig.used(FULL))
 
         repeat(TURNS) { turn ->
-            assertTrue(rig.pool.select("session-$turn") is Selection.Exhausted, "session $turn")
-            assertTrue(rig.pool.select(null) is Selection.Exhausted)
+            assertEquals("primary", rig.chosenLabel("session-$turn"), "session $turn")
+            assertEquals("primary", rig.chosenLabel(null))
         }
-        assertEquals(listOf(0, 0, 0), rig.readsOf("primary", "linked", "work"))
+        assertEquals(listOf(0, 0), rig.readsOf("linked", "work"))
     }
 
     @Test

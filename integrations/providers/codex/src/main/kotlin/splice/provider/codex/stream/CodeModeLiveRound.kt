@@ -25,7 +25,6 @@ import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamFailed
 import java.io.IOException
-import java.util.concurrent.atomic.AtomicBoolean
 
 internal class CodeModeLiveRound(
     private val config: CodeModeBridgeConfig,
@@ -43,8 +42,7 @@ internal class CodeModeLiveRound(
     private val lifecycle = Any()
     val billing = CodeModeRoundBilling(lifecycle, registry, CodeModeRoundRecord { record }, config.log)
     val switching = CodeModeSwitchingSink(sink, CodeModeSourceObserver(::observe))
-    private val clientCut = AtomicBoolean()
-    private val cutCounted = AtomicBoolean()
+    val cut = CodeModeCutClaim()
     val key: String? get() = record?.key
     private var finished: Deferred<TurnOutcome>? = null
     private val settled = CompletableDeferred<Unit>()
@@ -55,7 +53,7 @@ internal class CodeModeLiveRound(
             try {
                 died(cause)
             } finally {
-                billing.settle(readerEnd = true, clientCut = clientCut.get())
+                billing.settle(readerEnd = true, clientCut = cut.client)
             }
         },
     )
@@ -100,7 +98,7 @@ internal class CodeModeLiveRound(
                 upstreamEnded = true
                 val ended = finish(outcome)
                 beforeSettle?.run()
-                billing.settle(readerEnd = false, clientCut = clientCut.get())
+                billing.settle(readerEnd = false, clientCut = cut.client)
                 ended
             } catch (error: CancellationException) {
                 cancelled(error)
@@ -250,20 +248,20 @@ internal class CodeModeLiveRound(
     fun cancel() {
         if (upstreamEnded) return
         val reader = finished
-        if (!stoppedByHead && reader?.isActive == true) clientCut.set(true)
+        cut.cancel(reader, stoppedByHead)
         executionLost = true
         source.fail(SOURCE_DISPOSED)
         reader?.cancel()
     }
 
     /** A cut can be consumed by one client step only, even after the record's execution lease was removed. */
-    fun takeCut(): Boolean = clientCut.get() && cutCounted.compareAndSet(false, true)
+    fun takeCut(): Boolean = cut.take()
 
     /** A cancelled first client step owns its cut, unless head replacement already ended this source. */
     fun stopClientStep() {
         synchronized(lifecycle) {
             if (!stoppedByHead) {
-                if (!upstreamEnded && finished?.isActive == true) clientCut.set(true)
+                if (!upstreamEnded) cut.cancel(finished, stoppedByHead = false)
                 headStopped = true
             }
         }

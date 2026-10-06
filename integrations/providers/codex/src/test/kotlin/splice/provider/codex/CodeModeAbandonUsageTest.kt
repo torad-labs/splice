@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -24,11 +25,15 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
+import splice.provider.codex.stream.CodeModeStreams
 import splice.upstream.PostingTurnRow
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RowRelease
 import splice.upstream.transport.UpstreamFailed
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 private enum class SourceDisposition { NATIVE, STEERING, SUPERSEDED }
 
@@ -211,5 +216,186 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
         post.gates[2].complete(Unit)
         post.complete.complete(Unit)
         withTimeout(1_500) { post.stopped.await() }
+    }
+}
+
+/** An autonomous retirement between client steps must not drop an already posted source's bill. */
+internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport() {
+    @Test
+    @Timeout(20)
+    fun `capacity retirement bills its held row before later native abandonment`() = runBlocking {
+        retireSource("capacity")
+    }
+
+    @Test
+    @Timeout(20)
+    fun `dead session retirement bills its held row before later native abandonment`() = runBlocking {
+        retireSource("dead")
+    }
+
+    @Test
+    @Timeout(20)
+    fun `unknown idle session retirement bills its held row before later native abandonment`() = runBlocking {
+        retireSource("idle")
+    }
+
+    @Test
+    @Timeout(20)
+    fun `record expiry bills its held row even after the record and lease leave the registry`() = runBlocking {
+        retireSource("expired")
+    }
+
+    @Test
+    @Timeout(20)
+    fun `an earlier client cut stays client owned when its source lease retires`() = runBlocking {
+        retireSource("client")
+    }
+
+    @Test
+    @Timeout(20)
+    fun `declaring client ownership without cutting an active reader settles its held row once`() = runBlocking {
+        val manager = bridge(IncrementalRuntime())
+        val sink = StepSink()
+        val source = GatedPost(sink)
+        val held = HeldPosting(source)
+        try {
+            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, held)
+            withTimeout(1_500) { sink.callback.await() }
+            val registry = field(manager, "registry") as CodexCodeModeRegistry
+            val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
+            val record = registry.recordsFor(key).single()
+            val round = (field(manager, "driver") as CodexCodeModeDriver).streams.find(record)
+            val lease = checkNotNull(record.sourceEnd)
+            lease.claimClient()
+            assertFalse(checkNotNull(round).takeCut(), "declaring ownership does not cut a reader")
+            val reader = field(round, "finished") as kotlinx.coroutines.Deferred<*>
+            reader.cancel(CancellationException("synthetic source ended without a client cutting its reader"))
+            withTimeout(1_500) { reader.join() }
+            withTimeout(1_500) { source.stopped.await() }
+            assertRetirementBill(withTimeout(1_500) { held.released.await() }, clientCuts = 0L, client = false)
+            lease.ended()
+            assertFalse(round.takeCut(), "a retired ended reader was never cut by this declaration")
+            assertEquals(1, held.releases.get(), "an ended source releases its held posting row exactly once")
+        } finally {
+            manager.onHeadStop()
+        }
+    }
+
+    private class HeldPosting(source: RedirectableRoundPost) : RedirectableRoundPost by source {
+        val released = CompletableDeferred<Usage?>()
+        val releases = AtomicInteger()
+        override val postingRow = PostingTurnRow {
+            RowRelease {
+                releases.incrementAndGet()
+                released.complete(it)
+            }
+        }
+    }
+
+    private suspend fun retireSource(mode: String) {
+        val clock = MutableClock(1_000)
+        val manager = bridge(IncrementalRuntime(), ttl = if (mode == "expired") 1.seconds else 24.hours, clock = clock)
+        val sink = StepSink()
+        val source = GatedPost(sink)
+        val held = HeldPosting(source)
+        val user = Json.parseToJsonElement("""{"role":"user","content":"synthetic request"}""")
+        val input = Json.parseToJsonElement(BASE_REQUEST).jsonObject.getValue("input").jsonArray + user
+        try {
+            val first = manager.interceptor(turn(), disableParallel = false)
+                .intercept(JsonObject(mapOf("input" to JsonArray(input))).toString(), sink, held)
+                as TurnOutcome.Success
+            val callback = withTimeout(1_500) { sink.callback.await() }
+            assertEquals(0L, first.usage.inputTokens)
+            assertEquals(0L, first.usage.outputTokens)
+            assertEquals(0L, first.usage.cutRounds)
+            val clientCuts = retire(manager, mode, clock)
+            withTimeout(1_500) { source.stopped.await() }
+            val settled = withTimeout(1_500) { held.released.await() }
+            assertRetirementBill(settled, clientCuts, mode == "client")
+            assertEquals(1, held.releases.get())
+            assertFalse(source.sent[1].isCompleted, "retirement cannot generate more source")
+            val callbackItems = Json.parseToJsonElement(history(listOf(callback))).jsonObject
+                .getValue("input").jsonArray.drop(1)
+            val nativeEdit = Json.parseToJsonElement(
+                """{"type":"reasoning","id":"synthetic-unexpected","encrypted_content":"synthetic"}""",
+            )
+            val changed = JsonObject(
+                mapOf(
+                    "input" to JsonArray(listOf(input.first(), nativeEdit, input.last()) + callbackItems),
+                ),
+            )
+            if (mode == "expired") {
+                assertTrue(stateFiles.records().isEmpty(), "the expired source record cannot be recreated")
+            } else {
+                assertContinuation(manager, source, callback, changed)
+                assertTrue(logLines.any { "native discovery history was edited" in it })
+            }
+        } finally {
+            manager.onHeadStop()
+        }
+    }
+
+    private fun retire(manager: CodexCodeModeBridge, mode: String, clock: MutableClock): Long = when (mode) {
+        "capacity" -> {
+            reapIdleCell(manager)
+            0L
+        }
+        "dead", "idle" -> {
+            if (mode == "dead") deadSessions += "session-a" else clock.now += 31.minutes.inWholeMilliseconds
+            val timed = (field(manager, "registry") as CodexCodeModeRegistry).timed
+            timed.javaClass.getDeclaredMethod("sweep").apply { isAccessible = true }.invoke(timed)
+            0L
+        }
+        "expired" -> {
+            clock.now += 2_000
+            sweepOwnHistory(manager)
+            0L
+        }
+        "client" -> {
+            val driver = field(manager, "driver") as CodexCodeModeDriver
+            val registry = field(manager, "registry") as CodexCodeModeRegistry
+            val streams: CodeModeStreams = driver.streams
+            val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
+            val record = registry.recordsFor(key).single()
+            val watched = streams.watchCuts(key)
+            checkNotNull(streams.find(record)).cancel()
+            checkNotNull(record.sourceEnd).ended()
+            val cutting = streams.billCuts(watched, emptyList(), completedOutcome()) as TurnOutcome.Success
+            assertEquals(0L, streams.takeCuts(watched, emptyList()), "the client cut is claimed once")
+            cutting.usage.cutRounds
+        }
+        else -> error("unknown synthetic retirement")
+    }
+
+    private fun field(owner: Any, name: String): Any =
+        owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner)
+
+    private fun assertRetirementBill(settled: Usage?, clientCuts: Long, client: Boolean) {
+        assertEquals(1L, (settled?.cutRounds ?: 0L) + clientCuts, "every unreported source has one accounting owner")
+        if (client) {
+            assertNull(settled, "a client's intentional cut does not bill the posting row")
+            assertEquals(1L, clientCuts)
+        } else {
+            assertEquals(1L, checkNotNull(settled).cutRounds)
+            assertEquals(0L, settled.inputTokens, "unreported source tokens are not invented")
+            assertEquals(0L, settled.outputTokens)
+            assertEquals(0L, clientCuts)
+        }
+    }
+
+    private suspend fun assertContinuation(
+        manager: CodexCodeModeBridge,
+        source: GatedPost,
+        callback: SeenTool,
+        changed: JsonObject,
+    ) {
+        repeat(2) {
+            val next = manager.interceptor(turn(callback.id, "result-0"), disableParallel = false)
+                .intercept(changed.toString(), RecordingSink(), source) as TurnOutcome.Success
+            assertEquals(150L, next.usage.inputTokens, "the continuation bills only its own round")
+            assertEquals(5L, next.usage.outputTokens)
+            assertEquals(0L, next.usage.absorbed.rounds)
+            assertEquals(0L, next.usage.cutRounds, "a retired source is never recounted by a later request")
+        }
     }
 }

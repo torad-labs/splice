@@ -69,7 +69,10 @@ internal class CodeModeCellRetention(
             it.key == key && it.phase == CodeModePhase.ACTIVE && it.id in cells && !running(it) &&
                 it.lastDigest != digest && it.id !in continued
         }
-        stale.forEach { park(it, "code-mode parked program was superseded by the client's later history") }
+        stale.forEach {
+            it.sourceEnd?.claimClient()
+            park(it, "code-mode parked program was superseded by the client's later history")
+        }
         return stale.isNotEmpty()
     }
 

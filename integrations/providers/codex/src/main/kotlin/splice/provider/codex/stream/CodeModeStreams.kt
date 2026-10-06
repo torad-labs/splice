@@ -28,6 +28,7 @@ internal object CodeModeSourceEnds {
 
     fun defer(lease: CodeModeSourceLease?) {
         if (lease == null) return
+        lease.retire()
         val held = pending.get()
         if (held == null) lease.ended() else held.add(lease)
     }
@@ -66,7 +67,14 @@ internal class CodeModeSourceLease(
     private val rounds: ConcurrentHashMap<String, CodeModeLiveRound>,
     private val beforeEnd: Runnable? = null,
 ) {
+    /** Supersession is owned by the client step, not by the autonomous park mechanism it uses. */
+    fun claimClient() = round.cut.claimClient()
+
+    /** Publish before a retained cell closes, even when actual cancellation waits for registry unlock. */
+    fun retire() = round.cut.retire()
+
     fun ended() {
+        retire()
         beforeEnd?.run()
         rounds.remove(id, round)
         round.cancel()

@@ -1327,7 +1327,7 @@ class CodeModeHeadGenerationBillingTest {
     @ParameterizedTest
     @ValueSource(strings = ["cancel", "stopClientStep", "lease", "cell-close"])
     @Timeout(BILLING_TEST_SECONDS)
-    fun `a restarted head keeps old source cuts head owned and new source cuts client owned`(
+    fun `a restarted head preserves old head ownership and new client or retirement ownership`(
         cancellation: String,
         @TempDir tmp: Path,
     ) = runBlocking {
@@ -1348,8 +1348,8 @@ class CodeModeHeadGenerationBillingTest {
             fixture.cut(old, cancellation)
             fixture.cut(next, cancellation)
             assertFalse(fixture.takeCut(old), "the surviving old source is head-owned")
-            assertTrue(fixture.takeCut(next), "the new source still records a genuine client cut")
-            assertFalse(fixture.takeCut(next), "the new client cut is consumed once")
+            assertEquals(cancellation != "lease", fixture.takeCut(next), "lease retirement is not a client cut")
+            assertFalse(fixture.takeCut(next), "a genuine new client cut is consumed once")
             assertTrue(fixture.reader(old).isCancelled)
             assertTrue(fixture.reader(next).isCancelled)
         } finally {

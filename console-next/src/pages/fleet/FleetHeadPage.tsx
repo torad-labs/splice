@@ -109,7 +109,7 @@ export function FleetHeadPage() {
                 </>
               )}
               {oauth ? (
-                <SignIn head={head.key} purpose="add">
+                <SignIn head={head.key} commandLabel={head.label} purpose="add">
                   <Button small><Plus />{D.addAccount}</Button>
                 </SignIn>
               ) : null}

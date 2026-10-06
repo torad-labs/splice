@@ -3,7 +3,41 @@ import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import type { HeadsPayload } from '../src/types/core';
 import { STACK } from './stack';
-import { env, open } from './support';
+import { assertHealthy, env, open } from './support';
+
+for (const width of [1440, 390]) {
+  for (const source of ['file', 'environment', 'store', 'missing'] as const) {
+    test('the configured key_file stays exact and visible beside read source ' + source + ' at ' + width, async ({ page }) => {
+      const keyFile = '/synthetic/provider configuration/' + 'long-key-directory-'.repeat(12) + '/provider.key';
+      const storePath = '/synthetic/distinct-key-store/keys.json';
+      await page.setViewportSize({ width, height: 1024 });
+      await page.route(url => url.pathname === '/api/auth', route => route.fulfill({ json: {
+        [STACK.keyHead]: { kind: 'api-key', login: 'synthetic', present: source !== 'missing', env_var: 'SYNTHETIC_API_KEY', key_file: keyFile, api_key_masked: 'synthetic-mask-not-for-rendering' },
+      } }));
+      await page.route(url => url.pathname === '/api/keys', route => route.fulfill({ json: {
+        path: storePath, keys: [{ name: 'SYNTHETIC_API_KEY', stored: source === 'store', heads: [{ head: STACK.keyHead, source }] }],
+      } }));
+      const faults = await open(page, 'models/' + STACK.keyHead);
+      const key = page.locator('.head-key');
+      await expect(key).toHaveCount(1);
+      await expect(key.locator('.key-source dd')).toHaveText(({ file: 'Key file', environment: 'Environment', store: 'Key store', missing: 'Nowhere' })[source] ?? source);
+      const path = key.getByText(keyFile, { exact: true });
+      await expect(path).toBeVisible();
+      await expect(key).toContainText('Configured key file');
+      await expect(key).not.toContainText(storePath);
+      await expect(page.getByRole('main')).not.toContainText('synthetic-mask-not-for-rendering');
+      expect(await path.evaluate(element => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return [...range.getClientRects()].every(part => part.left >= -1 && part.right <= innerWidth + 1);
+      })).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await key.screenshot({ path: test.info().outputPath('configured-key-file-' + source + '-' + width + '.png') });
+      await assertHealthy(page, faults);
+      await page.unrouteAll({ behavior: 'wait' });
+    });
+  }
+}
 
 for (const authKind of ['api-key', 'bearer']) {
   test(`a ${authKind} plan stores and removes its key while reporting its read source without echoing the value`, async ({ page }) => {

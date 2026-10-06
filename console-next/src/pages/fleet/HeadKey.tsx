@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { failureText } from '../../api/client';
 import { useDeleteKey, useKeyStore, usePutKey } from '../../api/auth';
+import { useAuth } from '../../api/queries';
 import { answerLines, headKeys, sourceWord } from '../../lib/keys';
 import type { HeadKeyFacts } from '../../lib/keys';
 import { KW } from '../../lib/words-keys';
@@ -9,7 +10,7 @@ import { Button, Confirm, Fault, Prompt } from '../../ui';
 
 /** One key an api-key head reads: where it reads it from now, a way to store or replace it, and (while splice's store holds it) a way to remove it.
  *  The value goes one way: the dialog's field is forgotten when it closes and no answer carries it. */
-function KeyRow({ head, facts }: { head: string; facts: HeadKeyFacts }) {
+function KeyRow({ head, facts, keyFile }: { head: string; facts: HeadKeyFacts; keyFile: string | undefined }) {
   const put = usePutKey();
   const remove = useDeleteKey();
   const [answer, setAnswer] = useState<string[] | null>(null);
@@ -20,6 +21,7 @@ function KeyRow({ head, facts }: { head: string; facts: HeadKeyFacts }) {
         <dt>{KW.readsFrom}</dt>
         <dd>{sourceWord(facts.source)}</dd>
       </dl>
+      {keyFile === undefined ? null : <p className="hint key-file">{KW.configuredFile}: <code>{keyFile}</code></p>}
       <div className="acts-row">
         <Prompt
           trigger={<Button small>{facts.stored ? KW.replace : KW.store}</Button>}
@@ -50,12 +52,13 @@ function KeyRow({ head, facts }: { head: string; facts: HeadKeyFacts }) {
 /** The key control of an api-key head: one row per variable the daemon says the head reads. */
 export function HeadKey({ head }: { head: string }) {
   const store = useKeyStore();
+  const auth = useAuth();
   if (store.isError) return <Fault message={failureText(store.error)} onRetry={() => void store.refetch()} />;
   const keys = headKeys(store.data, head);
   return (
     <>
       <h2 className="sub-head">{KW.title}</h2>
-      {keys.length === 0 ? <p className="hint">{KW.none}</p> : keys.map((facts) => <KeyRow key={facts.name} head={head} facts={facts} />)}
+      {keys.length === 0 ? <p className="hint">{KW.none}</p> : keys.map((facts) => <KeyRow key={facts.name} head={head} facts={facts} keyFile={auth.data?.[head]?.key_file} />)}
     </>
   );
 }

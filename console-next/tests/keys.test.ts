@@ -1,5 +1,11 @@
 // What an api-key head's key control reads from the key store list, and how it words a write's answer.
 import { describe, expect, test } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { keyStoreKey } from '../src/api/auth';
+import { keys } from '../src/api/queries';
+import { HeadKey } from '../src/pages/fleet/HeadKey';
 import { answerLines, headKeys, readerLine, sourceWord } from '../src/lib/keys';
 import type { KeysPayload } from '../src/types/login';
 
@@ -24,6 +30,27 @@ describe('the keys an api-key head reads', () => {
   test('each link of the read chain has a word, and a link this console does not know prints as itself', () => {
     expect(['environment', 'file', 'store', 'missing'].map(sourceWord)).toEqual(['Environment', 'Key file', 'Key store', 'Nowhere']);
     expect(sourceWord('vault')).toBe('vault');
+  });
+});
+
+describe('the configured key file', () => {
+  const render = (keyFile: string | undefined, source = 'file'): string => {
+    const client = new QueryClient();
+    client.setQueryData([...keyStoreKey, '/api/keys'], { path: '/synthetic/key-store', keys: [{ name: 'SYNTHETIC_KEY', stored: false, heads: [{ head: 'synthetic-head', source }] }] });
+    client.setQueryData([...keys.auth, '/api/auth'], { 'synthetic-head': { kind: 'api-key', login: 'synthetic', present: true, api_key_masked: 'synthetic-mask-not-for-rendering', ...(keyFile === undefined ? {} : { key_file: keyFile }) } });
+    return renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(HeadKey, { head: 'synthetic-head' })));
+  };
+  test.each(['file', 'environment', 'store', 'missing'])('keeps its actual configured path separate from the %s read source', source => {
+    const html = render('/synthetic/provider config/provider.key', source);
+    expect(html).toContain('Configured key file');
+    expect(html).toContain('/synthetic/provider config/provider.key');
+    expect(html).not.toContain('/synthetic/key-store');
+    expect(html).not.toContain('synthetic-mask-not-for-rendering');
+  });
+  test('never substitutes the key-store path for an absent configured file', () => {
+    const html = render(undefined);
+    expect(html).not.toContain('Configured key file');
+    expect(html).not.toContain('/synthetic/key-store');
   });
 });
 

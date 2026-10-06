@@ -4,6 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { assertHealthy, open } from './support';
 import { STACK } from './stack';
 import type { ModelsPayload } from '../src/types/models';
+import type { HeadsPayload } from '../src/types/core';
 
 /** The stack declares no prices, so one model is given a declared zero and another a real price; the third keeps none. */
 async function priced(page: Page): Promise<void> {
@@ -21,6 +22,36 @@ async function priced(page: Page): Promise<void> {
 }
 
 const hash = (page: Page): string => decodeURIComponent(new URL(page.url()).hash);
+
+for (const width of [1440, 390]) {
+  test('Add account names the visible command rather than its internal key at ' + width, async ({ page }) => {
+    const label = 'Synthetic visible command';
+    await page.setViewportSize({ width, height: 1024 });
+    await page.route(url => url.pathname === '/api/heads', async route => {
+      const response = await route.fetch();
+      const body = await response.json() as HeadsPayload;
+      const head = body.heads.find(row => row.key === STACK.oauthHead);
+      if (head === undefined) throw new Error('the synthetic OAuth head is missing');
+      head.label = label;
+      await route.fulfill({ response, json: body });
+    });
+    const faults = await open(page, 'models/' + STACK.oauthHead);
+    await expect(page.getByRole('heading', { level: 1, name: label, exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Add account', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('heading')).toHaveText('Add account: ' + label);
+    await expect(dialog).toContainText('This signs in the ' + label + ' command.');
+    await expect(dialog).toContainText('The new login joins ' + label + '.');
+    await expect(dialog).not.toContainText(STACK.oauthHead);
+    await expect(dialog.getByRole('textbox', { name: 'Label', exact: true })).toBeFocused();
+    expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await dialog.screenshot({ path: test.info().outputPath('add-account-visible-command-' + width + '.png') });
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await assertHealthy(page, faults);
+    await page.unrouteAll({ behavior: 'wait' });
+  });
+}
 
 test('command ordering leads the model table, which keeps undeclared prices distinct from zero', async ({ page }) => {
   await priced(page);

@@ -2,6 +2,7 @@
 export const KW = {
   title: 'Key',
   readsFrom: 'Reads it from',
+  configuredFile: 'Configured key file',
   store: 'Store key',
   replace: 'Replace key',
   remove: 'Remove key',

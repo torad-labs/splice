@@ -132,7 +132,7 @@ export function SessionPage() {
           </div>
         )}
       </header>
-      <div className="cols">
+      <div className="cols session-columns">
         <Window as="section" colour={colour} className="sheet" aria-label={P.conversation}>
           <div className="bar">
             <h3>{P.conversation}</h3>

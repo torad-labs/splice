@@ -8,11 +8,14 @@ a.crumb { display: inline-flex; align-items: center; gap: var(--space-4); margin
 .top .acts { margin-left: auto; padding: var(--space-4) 0 0; margin-top: 0; }
 .cols { display: grid; grid-template-columns: minmax(0, 1fr) 18.75rem; gap: var(--space-13); align-items: start; }
 .convo { padding: var(--space-8) var(--space-12) var(--space-12); display: grid; gap: var(--space-13); justify-items: center; }
-.convo > * { width: 100%; max-width: 78ch; }
-.msg { display: grid; gap: var(--space-6); max-width: 78ch; }
+.convo > * { width: 100%; max-width: 78ch; min-width: 0; }
+.msg { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); max-width: 78ch; min-width: 0; }
 .who { display: flex; align-items: center; gap: var(--space-5); font: 600 0.96rem var(--meta); color: var(--ink); }
 .who .t { margin-left: auto; font-weight: 500; color: var(--mute); }
 .who .m::before { content: ''; display: inline-block; width: 0.625rem; height: 0.625rem; border-radius: 50%; background: var(--c); margin-right: var(--space-4); }
+.convo .who { flex-wrap: wrap; }
+.convo .who > span, .convo .stamp { min-width: 0; overflow-wrap: anywhere; }
+.convo .who .t { flex-shrink: 0; white-space: nowrap; }
 .prose { font: 400 1.15625rem/1.75 var(--read); color: var(--ink); font-variation-settings: 'opsz' 20; overflow-wrap: anywhere; }
 .prose p + p, .prose p + ul, .prose ul + p, .prose ol + p, .prose p + ol { margin-top: var(--space-7); }
 .prose h1, .prose h2 { font: 560 1.6875rem/1.15 var(--display); font-variation-settings: 'opsz' 72; letter-spacing: -.015em; margin: var(--space-3) 0 var(--space-5); color: var(--ink); }
@@ -111,3 +114,10 @@ a.crumb { display: inline-flex; align-items: center; gap: var(--space-4); margin
 .ride::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 0.625rem; background: var(--c); border-radius: 0.375rem 0 0 0.375rem; }
 .ride span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ride small { display: block; font: 500 0.875rem var(--meta); color: var(--mute); margin-top: var(--space-1); }
+@media (max-width: 48rem) {
+  .session-columns { grid-template-columns: minmax(0, 1fr); }
+  .session-columns > .sheet .bar { flex-wrap: wrap; padding: var(--space-7); }
+  .session-columns .seg { max-width: 100%; flex-wrap: wrap; }
+  .session-columns .convo { padding: var(--space-7); }
+  .session-columns .rail { position: static; }
+}

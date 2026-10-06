@@ -212,6 +212,61 @@ test('a wrapped peer delivery renders its named Markdown body without transport 
   await page.unrouteAll({ behavior: 'wait' });
 });
 
+test('session messages keep long speakers, peer stamps and code inside the conversation at narrow widths', async ({ page }) => {
+  const command = 'Synthetic command with a deliberately long readable name for the session speaker';
+  const peerName = 'synthetic-peer-' + 'long'.repeat(20);
+  const code = 'const syntheticBoundary = "' + 'wide'.repeat(40) + '";';
+  const table = '| Synthetic column | Other column |\n| --- | --- |\n| ' + 'table'.repeat(40) + ' | Recorded value |';
+  await page.route(url => url.pathname === '/api/sessions', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as { sessions: SessionRow[] };
+    await route.fulfill({ response, json: { ...body, sessions: body.sessions.map(row => row.session_id === STACK.sender.id ? { ...row, head: STACK.oauthHead } : row) } });
+  });
+  await page.route(url => url.pathname === '/api/heads', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as HeadsPayload;
+    await route.fulfill({ response, json: { ...body, heads: body.heads.map(head => head.key === STACK.oauthHead ? { ...head, label: command } : head) } });
+  });
+  await page.route('**/api/sessions/' + STACK.sender.id + '/transcript?*', route => route.fulfill({ json: {
+    session_id: STACK.sender.id, path: '/synthetic/transcript.jsonl', earlier: null, messages: [
+      { index: 0, role: 'user', ts: 1_700_000_000_000, text: 'Synthetic message.\n\n```typescript\n' + code + '\n```\n\n' + table },
+      { index: 1, role: 'assistant', ts: 1_700_000_001_000, text: 'Synthetic complete answer.' },
+      { index: 2, role: 'system', text: '<cross-session-message from="uds:/synthetic/peer.sock" from-name="' + peerName + '">Synthetic peer message.</cross-session-message>' },
+    ],
+  } }));
+  const faults = await open(page, 'sessions/' + STACK.sender.id);
+  await expect(page.locator('.msg .who .m')).toHaveText(command);
+  await expect(page.locator('.msg.peer .stamp').filter({ hasText: peerName })).toContainText(peerName);
+  await expect(page.locator('.msg pre.code')).toHaveText(code);
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 980 });
+    const overflow = await page.evaluate(() => ({
+      viewport: innerWidth,
+      document: document.documentElement.scrollWidth,
+      outside: [...document.querySelectorAll('.top, .top > *, .facts, .acts, .cols, .sheet, .bar, .seg, .convo, .msg, .who, .stamp, .rail, .seat, .composer')].map(node => {
+        const bounds = node.getBoundingClientRect();
+        return { class: node.className, left: bounds.left, right: bounds.right, width: bounds.width };
+      }).filter(bounds => bounds.left < 0 || bounds.right > innerWidth),
+    }));
+    expect(overflow).toEqual({ viewport: width, document: width, outside: [] });
+    for (const message of await page.locator('.convo > .msg').all()) {
+      const bounds = await message.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect((bounds?.x ?? Infinity) + (bounds?.width ?? Infinity)).toBeLessThanOrEqual(width);
+      for (const label of await message.locator('.who, .who > span, .stamp').all()) {
+        const labelBounds = await label.boundingBox();
+        expect(labelBounds).not.toBeNull();
+        expect(labelBounds?.x ?? -Infinity).toBeGreaterThanOrEqual(bounds?.x ?? Infinity);
+        expect((labelBounds?.x ?? Infinity) + (labelBounds?.width ?? Infinity)).toBeLessThanOrEqual((bounds?.x ?? 0) + (bounds?.width ?? 0));
+      }
+    }
+    await page.locator('.cols').screenshot({ path: test.info().outputPath('session-message-width-' + width + '.png') });
+  }
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads).toEqual([]);
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
 test('an original user isMeta image annotation is normalized by the daemon and never labelled Assistant', async ({ page }) => {
   const file = join(env('CONSOLE_E2E_TRANSCRIPT_ROOT'), 'projects', 'console-e2e', STACK.sender.id + '.jsonl');
   const original = readFileSync(file, 'utf8');

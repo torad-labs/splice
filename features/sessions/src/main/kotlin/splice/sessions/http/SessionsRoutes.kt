@@ -113,6 +113,7 @@ public class SessionsRoutes(
 
     public fun sessionsJson(): String = buildJsonObject {
         val listing = registry.list()
+        val accounts = accountOf.forRecords(listing.sessions)
         val edges = edgeRoutes.index(listing.sessions)
         // The transcript-view switch is consulted before any reader opens a file, so off means no claim.
         val ids = listing.sessions.mapNotNull { it.sessionId }.toSet()
@@ -122,7 +123,7 @@ public class SessionsRoutes(
         put("note_versions", buildJsonArray { noteVersions.sorted().forEach { add(JsonPrimitive(it)) } })
         // An unreadable directory is not an empty one: the error rides beside the (empty) list.
         listing.error?.let { put("error", it) }
-        put("sessions", buildJsonArray { listing.sessions.forEach { add(row(it, edges, resumable)) } })
+        put("sessions", buildJsonArray { listing.sessions.forEach { add(row(it, edges, resumable, accounts)) } })
     }.toString()
 
     /** GET /api/sessions/{id}/transcript?cursor=&limit= reads forward from the start. `before=` reads the newest messages
@@ -157,13 +158,27 @@ public class SessionsRoutes(
     /** The exact same row projection for a durable-history entry after the live overlay. */
     public fun historyRow(record: SessionRecord): JsonObject = row(record, null, Resumability(null))
 
+    /** History pages snapshot only their selected records, never shared mutable per-listing state. */
+    public val historyRows: SessionHistoryRowOf = object : SessionHistoryRowOf {
+        override fun invoke(record: SessionRecord): JsonObject = historyRow(record)
+        override fun forRecords(records: List<SessionRecord>): SessionHistoryRowOf {
+            val accounts = accountOf.forRecords(records)
+            return SessionHistoryRowOf { row(it, null, Resumability(null), accounts) }
+        }
+    }
+
     private fun addEdgeState(body: JsonObjectBuilder) {
         val state = edgeRoutes.state() ?: return
         body.put("edges_state", state.wire)
         state.reason("edges")?.let { body.put("edges_reason", it) }
     }
 
-    private fun row(s: SessionRecord, edges: EdgeIndex?, resumable: Resumability): JsonObject = buildJsonObject {
+    private fun row(
+        s: SessionRecord,
+        edges: EdgeIndex?,
+        resumable: Resumability,
+        accounts: SessionAccountOf = accountOf,
+    ): JsonObject = buildJsonObject {
         put("pid", s.pid)
         put("session_id", s.sessionId)
         put("name", if (viewEnabled()) s.name else null)
@@ -184,7 +199,7 @@ public class SessionsRoutes(
         resumable.mark(this, s.sessionId)
         repoOf(s)?.let { put("repo", repoJson(it)) }
         put("team", s.sessionId?.let { teamOf(it) })
-        put("account", s.sessionId?.let { accountOf.label(s.head, it) })
+        accounts.write(s, this)
         val id = s.sessionId
         addEdgeState(this)
         if (edges != null && id != null) put("edges", edges.summary(id, s.address))

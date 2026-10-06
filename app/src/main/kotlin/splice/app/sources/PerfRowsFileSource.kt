@@ -89,6 +89,7 @@ public class PerfRowsFileSource internal constructor(
     /** Where PerfStats archives retired generations; null reads the two live ones only. */
     private val archiveDir: Path? = null,
     private val cache: PerfRowsCache = PerfRowsCache(),
+    private val sessionAccounts: PerfSessionAccountIndex = PerfSessionAccountIndex(),
 ) : PerfRowsSource, ProjectedPerfRowsSource {
     private val json = Json { ignoreUnknownKeys = true }
     private var cacheSince: Long? = null
@@ -118,6 +119,20 @@ public class PerfRowsFileSource internal constructor(
 
     @Synchronized
     override fun window(sinceMs: Long): PerfRowsWindow = settledRead(sinceMs, PerfSelection.WORK).window()
+
+    /** Full session identity, never the shortened cost tag. Unchanged reads reuse a bounded latest-known index. */
+    @Synchronized
+    internal fun sessionAccount(session: String): String? = sessionAccounts(setOf(session)).accounts[session]
+
+    @Synchronized
+    internal fun sessionAccounts(sessions: Set<String>): PerfSessionAccountIndex.Snapshot {
+        val scan = Scan(0L, PerfSelection.WORK, cache)
+        val archives = archived(scan).map { it.first }
+        if (scan.errors.isNotEmpty() || !AsyncFileIo.awaitFile(file)) {
+            return PerfSessionAccountIndex.Snapshot(emptyMap(), false, emptySet())
+        }
+        return sessionAccounts.accounts(sessions, archives, generations, PerfLineDecode(scan::decode))
+    }
 
     @Synchronized
     override fun <T> projected(sinceMs: Long, read: PerfProjectionRead<T>): T {

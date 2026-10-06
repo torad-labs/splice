@@ -53,6 +53,8 @@ internal class ClaudeCarryingPlaces(
     /** The stable login label of this session's own newest sent credential, including added pool accounts. */
     fun account(head: String, session: String): String? = remembered(SessionOnHead(head, session))?.account
 
+    fun hasProof(head: String, session: String): Boolean = remembered(SessionOnHead(head, session)) != null
+
     private fun resolve(head: String, key: String): Carried {
         val place = locations.firstOrNull { it.target.head.key == head && reads.credentialKey(it) == key }?.id
         return Carried(key, place, place?.wire ?: reads.poolAccountForCredential(head, key))

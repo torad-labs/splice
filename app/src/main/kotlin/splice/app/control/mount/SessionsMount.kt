@@ -11,7 +11,6 @@ import kotlinx.coroutines.withContext
 import splice.core.config.ConfigService
 import splice.sessions.http.KeptActivity
 import splice.sessions.http.SessionHistoryRoute
-import splice.sessions.http.SessionHistoryRowOf
 import splice.sessions.http.SessionRepoNameOf
 import splice.sessions.http.SessionsRoutes
 import splice.sessions.note.PeerNoteSocket
@@ -35,7 +34,7 @@ internal class SessionsMount(
             registry,
             wiring.historyIndex,
             wiring.historyRoots,
-            SessionHistoryRowOf(routes::historyRow),
+            routes.historyRows,
             SessionTranscriptViewEnabled { config.getConfig().transcriptView },
             SessionRepoNameOf { record -> routes.repoOf(record)?.root },
         )

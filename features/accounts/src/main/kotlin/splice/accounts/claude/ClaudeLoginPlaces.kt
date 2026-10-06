@@ -63,6 +63,12 @@ public interface ClaudeLoginPlaces {
     /** The stable label proved by [session]'s newest sent credential on [head], or null when no login matches.
      *  Native sends name their place; added-account sends name their pool member, never a selection not used. */
     public fun carryingAccount(head: String, session: String): String? = carrying(head, session)?.wire
+
+    /** Whether this session sent since boot, including an unmatched send that must defeat older history. */
+    public fun hasCarryingProof(head: String, session: String): Boolean = carryingAccount(head, session) != null
+
+    /** Resolve a persisted proved identity to its current roster label without changing its Requests spelling. */
+    public fun accountLabel(head: String, account: String): String = account
 }
 
 /** Read after composition assigns the native login owner, never capture an unwired null at server construction. */

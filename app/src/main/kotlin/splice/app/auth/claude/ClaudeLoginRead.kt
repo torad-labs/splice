@@ -67,6 +67,17 @@ internal class ClaudeLoginRead(
             token != null && CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $token")) == key
         }?.label
 
+    /** The same proved identities the roster reads, never a copied client-settings account. */
+    fun accountLabel(locations: List<ClaudeLoginLocation>, head: String, account: String): String {
+        val native = locations.filter { it.target.head.key == head }.mapNotNull { location ->
+            facts.read(location).account?.takeIf { it.uuid == account || it.email == account }?.let { location.id.wire }
+        }
+        val added = folders.accounts(head).mapNotNull { stored ->
+            stored.identity?.takeIf { it.uuid == account || it.email == account }?.let { stored.label }
+        }
+        return (native + added).distinct().singleOrNull() ?: account
+    }
+
     /** No token, digest, account or session identifier enters the missing-login diagnostic. */
     fun reportUnmatchedCarrying() {
         log("[claude] carrying login unreported: newest sent credential has no unambiguous login match\n")

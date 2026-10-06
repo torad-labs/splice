@@ -36,12 +36,6 @@ private const val MAX_HISTORY_PAGE = 100
 private const val MAX_SEARCH_CHARS = 200
 private val HISTORY_CURSOR = Regex("(-?[0-9]+):([A-Za-z0-9_-]{1,128})")
 
-/** A selected login is attributed only by the session's own sticky selection, never by what a
- *  different session last selected on the same head. Null means no attribution exists. */
-public fun interface SessionAccountOf {
-    public fun label(head: String?, sessionId: String): String?
-}
-
 /** The canonical repository name for a session, including a linked worktree's shared checkout. */
 public fun interface SessionRepoNameOf {
     public fun root(record: SessionRecord): String?
@@ -50,6 +44,8 @@ public fun interface SessionRepoNameOf {
 /** The existing sessions row serializer, shared by the live and historical routes. */
 public fun interface SessionHistoryRowOf {
     public operator fun invoke(record: SessionRecord): JsonObject
+
+    public fun forRecords(records: List<SessionRecord>): SessionHistoryRowOf = this
 }
 
 /** Paged, searchable durable history with the live registry overlaid by session id. The source
@@ -91,15 +87,16 @@ public class SessionHistoryRoute(
 
     private fun pageJson(scan: SessionHistoryScan, slice: HistorySlice, registryError: String?): JsonObject =
         buildJsonObject {
-            put("sessions", buildJsonArray { slice.sessions.forEach { add(itemJson(it)) } })
+            val rows = rowOf.forRecords(slice.sessions.map { it.record })
+            put("sessions", buildJsonArray { slice.sessions.forEach { add(itemJson(it, rows)) } })
             put("next", slice.next)
             put("skipped", buildJsonObject { scan.skipped.forEach { (reason, count) -> put(reason, count) } })
             val errors = scan.errors + listOfNotNull(registryError)
             put("errors", buildJsonArray { errors.forEach { add(JsonPrimitive(it)) } })
         }
 
-    private fun itemJson(item: HistoryItem): JsonObject {
-        val fields = rowOf(item.record).toMutableMap()
+    private fun itemJson(item: HistoryItem, rows: SessionHistoryRowOf): JsonObject {
+        val fields = rows(item.record).toMutableMap()
         fields["source"] = JsonPrimitive(item.source)
         fields["resumable"] = JsonPrimitive(item.resumable)
         return JsonObject(fields)

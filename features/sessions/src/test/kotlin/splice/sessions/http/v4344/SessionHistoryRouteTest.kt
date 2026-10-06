@@ -78,7 +78,7 @@ class SessionHistoryRouteTest {
             registry,
             source,
             roots,
-            SessionHistoryRowOf(rows::historyRow),
+            rows.historyRows,
             repoOf = repoOf,
         )
     }
@@ -187,6 +187,37 @@ class SessionHistoryRouteTest {
         )
         val row = json(route.page("Atlas", null, null).body).getValue("sessions").jsonArray.single().jsonObject
         assertEquals("claudex", row.getValue("head").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `history attribution snapshots only the selected page once and survives another page snapshot`() {
+        val batches = mutableListOf<List<String>>()
+        val accounts = object : SessionAccountOf {
+            override fun label(head: String?, sessionId: String): String? = error("unprepared account lookup")
+            override fun forRecords(records: List<SessionRecord>): SessionAccountOf {
+                val ids = records.mapNotNull { it.sessionId }
+                batches += ids
+                val labels = ids.associateWith { "login-$it" }
+                return SessionAccountOf { _, session -> labels[session] }
+            }
+        }
+        val history = route(accounts)
+        val first = json(history.page(null, null, 2).body)
+        val ids = first.getValue("sessions").jsonArray.map {
+            it.jsonObject.getValue("session_id").jsonPrimitive.content
+        }
+        assertEquals(listOf(BOTH, REGISTRY_ONLY), ids)
+        assertEquals(listOf(ids), batches, "one batch for the selected page, not per row or whole history")
+        val second = json(history.page(null, first.getValue("next").jsonPrimitive.content, 2).body)
+        assertEquals(2, batches.size)
+        assertEquals(
+            "login-$BOTH",
+            first.getValue("sessions").jsonArray[0].jsonObject.getValue("account").jsonPrimitive.content,
+        )
+        assertEquals(
+            "known",
+            second.getValue("sessions").jsonArray[0].jsonObject.getValue("account_state").jsonPrimitive.content,
+        )
     }
 
     @Test

@@ -26,10 +26,13 @@ import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.pool.HeadAccountPinSource
 import splice.app.control.ControlServer
+import splice.app.sources.PerfRowsFileSource
+import splice.app.sources.PerfSessionAccountIndex
 import splice.core.auth.CredentialKey
 import splice.core.config.ConfigService
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
+import splice.core.util.JsonlSink
 import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
 import splice.sessions.registry.SessionAvailability
@@ -186,6 +189,93 @@ class ClaudeCarryingPoolUsageTest {
             control.stop()
             rig.close()
             upstream.stop()
+        }
+    }
+
+    @Test
+    fun `Sessions keeps the same proved login label before and after a daemon restart`() = runBlocking {
+        val fixture = fixture()
+        val rig = fixture.rig()
+        val file = fixture.paths.perfStatsFile(NATIVE_HEAD)
+        Files.createDirectories(file.parent)
+        Files.writeString(
+            file,
+            """
+                |{"ts":1000,"outcome":"ok","account":"account-native","session_id":"moving"}
+                |{"ts":2000,"outcome":"ok","account":"added-account","session_id":"staying"}
+                |{"ts":3000,"outcome":"ok","session_id":"moving"}
+                |
+            """.trimMargin(),
+        )
+        val control = sessionControl(fixture, rig)
+        control.ports.claudeLogins = rig.server.ports.claudeLogins
+        try {
+            control.start()
+            HttpClient(Java).use { client ->
+                val before = sessionAccounts(client, control, rig)
+                assertEquals("claude", before["moving"], "persisted proved identity maps to the same roster label")
+                assertEquals("added", before["staying"], "an added account retains its stable pool label")
+                assertNull(before["idle"])
+                rig.plane.sentCredentials.sent(NATIVE_HEAD, "moving", key("synthetic-native"))
+                rig.plane.sentCredentials.sent(NATIVE_HEAD, "staying", key("synthetic-added"))
+                assertEquals(before, sessionAccounts(client, control, rig), "post-restart live proof agrees")
+
+                rig.plane.sentCredentials.sent(NATIVE_HEAD, "moving", key("synthetic-added"))
+                assertEquals("added", sessionAccounts(client, control, rig)["moving"], "new live proof wins")
+                rig.plane.sentCredentials.sent(NATIVE_HEAD, "moving", key("synthetic-unlisted"))
+                assertNull(sessionAccounts(client, control, rig)["moving"], "unmatched live proof defeats history")
+            }
+        } finally {
+            control.stop()
+            rig.close()
+        }
+    }
+
+    @Test
+    fun `bounded session history renders a known recent login and never asserts absence for unread older history`() = runBlocking {
+        val fixture = fixture()
+        val rig = fixture.rig()
+        val file = home.resolve("bounded-perf.jsonl")
+        JsonlSink.appendLine(file, """{"ts":10,"outcome":"ok","account":"account-native","session_id":"staying"}""")
+        Files.move(file, file.resolveSibling("bounded-perf.jsonl.1"))
+        JsonlSink.appendLine(file, """{"ts":20,"outcome":"ok","account":"added-account","session_id":"moving"}""")
+        val source = PerfRowsFileSource(
+            file,
+            sessionAccounts = PerfSessionAccountIndex(scanBytes = Files.size(file), scanGenerations = 1),
+        )
+        val control = ControlServer(
+            port = 0,
+            heads = mapOf(NATIVE_HEAD to rig.head.copy(perfRows = source)),
+            config = ConfigService(fixture.paths),
+            mgmtKey = rig.key,
+            dashboardHtml = { "<!doctype html>" },
+            log = {},
+            sessions = sessions(),
+        )
+        control.ports.claudeLogins = rig.server.ports.claudeLogins
+        try {
+            control.start()
+            HttpClient(Java).use { client ->
+                val response = client.get("http://127.0.0.1:${control.listeningPort}/api/sessions") {
+                    bearerAuth(rig.key.get())
+                }
+                assertEquals(HttpStatusCode.OK, response.status, "the ceiling never fails the listing")
+                val rows = Json.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("sessions").jsonArray
+                    .associate { it.jsonObject.getValue("session_id").jsonPrimitive.content to it.jsonObject }
+                assertEquals("added", rows.getValue("moving").getValue("account").jsonPrimitive.content)
+                assertEquals("known", rows.getValue("moving").getValue("account_state").jsonPrimitive.content)
+                assertEquals(
+                    "history_limited",
+                    rows.getValue("staying").getValue("account_state").jsonPrimitive.content,
+                )
+                assertEquals("history_limited", rows.getValue("idle").getValue("account_state").jsonPrimitive.content)
+                val before = source.parsedLines
+                sessionAccounts(client, control, rig)
+                assertEquals(before, source.parsedLines, "an identical listing never decodes the same history again")
+            }
+        } finally {
+            control.stop()
+            rig.close()
         }
     }
 

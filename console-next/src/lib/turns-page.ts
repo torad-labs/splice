@@ -96,7 +96,7 @@ export function turnsLede(rows: readonly PlanRow[], window: PerfWindowLabel, fir
   const fails = failed === 0 ? 'None failed' : `${failed <= WORDS.length ? WORDS[failed - 1] : failed.toLocaleString('en-US')} failed`;
   // Only the daemon's pooled request distribution can report a fleet percentile.
   const middle = first?.p50;
-  return middle === undefined ? `${count}. ${fails}.` : `${count}. ${fails}, and the typical first word came back in ${secondsText(middle)}.`;
+  return middle === undefined ? `${count}. ${fails}.` : `${count}. ${fails}, and ${T.firstResponseLede(secondsText(middle))}.`;
 }
 
 const SPAN_DAY: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric' };

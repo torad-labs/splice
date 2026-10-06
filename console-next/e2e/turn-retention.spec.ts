@@ -529,7 +529,7 @@ test('a failed request listed in the day opens even after more than a detail tai
   await openTurn(page, STACK.soloHead, at);
   await expect(page.getByRole('heading', { name: 'Where the time went', exact: true })).toBeVisible();
   await expect(page.getByRole('main')).toContainText('Rate limited');
-  await expect(page.getByRole('main')).not.toContainText('This request is no longer held');
+  await expect(page.getByRole('main')).not.toContainText('Request not found');
   expect(faults.pageErrors).toEqual([]);
 });
 

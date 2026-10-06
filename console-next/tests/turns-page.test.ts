@@ -11,7 +11,7 @@ import {
 import type { RunningLine } from '../src/lib/turns-page';
 import { colourFromRegistry } from '../src/lib/model';
 import { viewOf } from '../src/lib/requests-view';
-import { T } from '../src/lib/words-turns';
+import { P, T } from '../src/lib/words-turns';
 import type { PerfSummaryHead, TurnRow } from '../src/types/perf';
 
 const none = () => 'none' as const;
@@ -94,7 +94,7 @@ describe('plan rows', () => {
     expect(planRows([bare], none)[0]).toMatchObject({ firstP50: null, firstP95: null });
   });
   test('the lede counts requests, failures and the typical first word', () => {
-    expect(turnsLede(planRows([summary()], none), '1h', summary().time_before_first_byte_ms)).toBe('10 requests in the last hour. One failed, and the typical first word came back in 1.4 s.');
+    expect(turnsLede(planRows([summary()], none), '1h', summary().time_before_first_byte_ms)).toBe('10 requests in the last hour. One failed, and the typical first response bytes arrived in 1.4 s.');
     expect(turnsLede([], '24h')).toBe('No model has answered a request in the last 24 hours.');
   });
   test('the fleet headline uses the pooled request percentile, not equally weighted command medians', () => {
@@ -104,7 +104,7 @@ describe('plan rows', () => {
       summary({ key: 'slower', count: 1, time_before_first_byte_ms: { count: 1, p50: 20_000, p95: 20_000, max: 20_000 }, outcomes: { ok: 1 } }),
     ];
     const pooled = { count: 102, p50: 100, p95: 100, max: 20_000 };
-    expect(turnsLede(planRows(heads, none), '1h', pooled)).toBe('102 requests in the last hour. None failed, and the typical first word came back in 100 ms.');
+    expect(turnsLede(planRows(heads, none), '1h', pooled)).toBe('102 requests in the last hour. None failed, and the typical first response bytes arrived in 100 ms.');
     expect(pageLede(viewOf(new URLSearchParams()), planRows(heads, none), 200, pooled)).toContain('100 ms.');
   });
   test('without pooled readings an older daemon keeps request counts but invents no fleet percentile', () => {
@@ -113,7 +113,7 @@ describe('plan rows', () => {
   });
   test('every count reads with thousands separators', () => {
     const busy = summary({ count: 2362, outcomes: { ok: 1882, 'error:rate-limited': 480 } });
-    expect(turnsLede(planRows([busy], none), '7d', busy.time_before_first_byte_ms)).toBe('2,362 requests in the last 7 days. 480 failed, and the typical first word came back in 1.4 s.');
+    expect(turnsLede(planRows([busy], none), '7d', busy.time_before_first_byte_ms)).toBe('2,362 requests in the last 7 days. 480 failed, and the typical first response bytes arrived in 1.4 s.');
     expect(T.shownOf(200, 2362)).toBe('Showing the newest 200 of 2,362. Narrow the window or filter to see the rest.');
     expect(T.matching(2362)).toBe('2,362 requests match.');
   });
@@ -175,6 +175,26 @@ describe('running turns', () => {
 });
 
 describe('a turn', () => {
+  test('structural first bytes are not described as the first word', () => {
+    const structural = row({ first_byte: 10, first_delta: 1000 });
+    expect(structural.first_byte).toBeLessThan(structural.first_delta ?? 0);
+    expect(T.plansWhy).toContain('first response bytes');
+    expect(T.colFirstWord).toBe('First response');
+  });
+  test('a retry in a continuation does not claim it preceded the first word', () => {
+    const continued = row({ first_delta: 1000, retries: 1 });
+    expect(continued.retries).toBe(1);
+    expect(T.title).toBe('Requests');
+    expect(P.retriesWhy).not.toContain('before the first word');
+    expect(P.retriesWhy).toContain('retried');
+  });
+  test('a timestamp that was never retained does not claim it aged out', () => {
+    const retained = [row({ ts: 1000 })];
+    expect(retained.find(turn => turn.ts === 2000)).toBeUndefined();
+    expect(P.gone).toBe('Request not found');
+    expect(P.goneWhy).not.toContain('aged out');
+    expect(P.goneWhy).toContain('not found');
+  });
   for (const transport of ['websocket', 'sse'] as const) {
     test(`a large delay before the ${transport} send is unmeasured, not model or queue time`, () => {
       const transportMarks = transport === 'websocket'

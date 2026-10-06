@@ -437,7 +437,7 @@ test('the headline reads the pooled request timing while command bars keep their
     })),
   } }));
   const faults = await open(page, 'requests');
-  await expect(page.locator('.page-head .lede')).toHaveText('102 requests in the last hour. None failed, and the typical first word came back in 100 ms.');
+  await expect(page.locator('.page-head .lede')).toHaveText('102 requests in the last hour. None failed, and the typical first response bytes arrived in 100 ms.');
   await expect(page.locator('.plan-first span')).toHaveText([
     '100 ms typical · 100 ms slowest', '20.0 s typical · 20.0 s slowest', '10.0 s typical · 10.0 s slowest',
   ]);

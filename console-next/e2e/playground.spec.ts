@@ -1,6 +1,7 @@
 // NEW: V4-444 — the Playground sends one prompt to several models through the isolated stack and lays the answers side by side. The
 // persona walk found "This page is being rebuilt" here while a working one-command form sat in Settings › Health with no pointer to it.
 import { expect, test } from '@playwright/test';
+import { writeFileSync } from 'node:fs';
 import type { HeadsPayload } from '../src/types/core';
 import { assertHealthy, open, read } from './support';
 import { STACK } from './stack';
@@ -9,6 +10,38 @@ const PROMPT = 'one synthetic prompt from the console e2e';
 /** Not the solo head's pinned model, so an upstream body that names it can only have come from the lane. */
 const NAMED = 'e2e-named-model';
 const hash = (url: string): string => decodeURIComponent(new URL(url).hash);
+
+for (const width of [1440, 390]) {
+  test('Playground field tops align with custom model controls closed and open at ' + width, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    const faults = await open(page, 'playground?try=' + STACK.oauthHead);
+    const lane = page.getByRole('list', { name: 'Answers', exact: true }).getByRole('listitem');
+    const command = lane.getByRole('button', { name: 'Command 1', exact: true });
+    const model = lane.getByRole('button', { name: 'Model', exact: true });
+    await expect(command).toBeVisible();
+    await expect(model).toBeVisible();
+    const measurements = [];
+    for (const custom of [false, true]) {
+      if (custom) await lane.getByRole('button', { name: 'Enter a model ID', exact: true }).click();
+      const a = await command.boundingBox();
+      const b = await model.boundingBox();
+      if (a === null || b === null) throw new Error('a selector has no measured rectangle');
+      const contains = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
+      measurements.push({ width, custom, command: a, model: b, topDelta: b.y - a.y, contains });
+      await lane.screenshot({ path: test.info().outputPath('alignment-' + width + '-' + custom + '.png') });
+    }
+    const geometry = test.info().outputPath('field-geometry.json');
+    writeFileSync(geometry, JSON.stringify(measurements, null, 2));
+    await test.info().attach('field-geometry.json', { path: geometry, contentType: 'application/json' });
+    for (const measurement of measurements) {
+      expect(measurement.contains).toBe(true);
+      if (width === 1440) expect(Math.abs(measurement.topDelta)).toBeLessThanOrEqual(1);
+      else expect(measurement.command.y + measurement.command.height).toBeLessThanOrEqual(measurement.model.y);
+    }
+    await assertHealthy(page, faults);
+    await page.unrouteAll({ behavior: 'wait' });
+  });
+}
 
 test('catalog labels select their exact model ID while command defaults and custom models remain available', async ({ page }) => {
   await page.route(url => url.pathname === '/api/models', route => route.fulfill({ json: { heads: [{

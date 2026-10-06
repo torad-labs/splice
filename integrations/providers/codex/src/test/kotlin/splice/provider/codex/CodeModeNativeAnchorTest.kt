@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeStateJournal
+import splice.provider.codex.state.diagnostics.CodeModeHistoryLog
+import splice.provider.codex.state.diagnostics.CodeModeNativeBranch
 import splice.upstream.RoundBody
 import splice.upstream.codemode.CodeModeResult
 import java.nio.file.Files
@@ -65,7 +67,7 @@ internal class CodeModeNativeAnchorTest {
         val client = listOf(first) + callbacks("old", 2) + edited + latest + callbacks("active", 1)
 
         val restored = history.restoreBaseline(body(client), active)
-        assertEquals("code-mode native discovery history was edited", restored.error)
+        assertEquals("code-mode native discovery history was edited: payload", restored.error)
         assertEquals("native_following=present native_branch=payload", restored.nativeRejection?.logFields())
     }
 
@@ -76,7 +78,10 @@ internal class CodeModeNativeAnchorTest {
         val client = listOf(native, first, latest) + callbacks("active", 1)
 
         val restored = history.restoreBaseline(body(client), active)
-        assertEquals("code-mode native discovery history was edited", restored.error)
+        assertEquals(
+            "code-mode native discovery history conflicts with its captured position: unexpected-offset",
+            restored.error,
+        )
         assertEquals("native_following=present native_branch=unexpected-offset", restored.nativeRejection?.logFields())
         assertTrue(active.replayAnchors?.native?.values?.all { it.logicalTail == 0 } == true)
     }
@@ -108,7 +113,7 @@ internal class CodeModeNativeAnchorTest {
 
         val extra = prefix + native + middle + native + latest + callbacks("active", 1)
         val extraError = history.restoreBaseline(body(extra), active).error
-        assertEquals("code-mode native discovery history was edited", extraError)
+        assertEquals("code-mode native discovery history was edited: nativeOrder", extraError)
 
         val other = item("""{"type":"reasoning","id":"reason-other","encrypted_content":"other synthetic"}""")
         val distinct = baseline.toMutableList().apply { this[7] = other }
@@ -116,7 +121,7 @@ internal class CodeModeNativeAnchorTest {
         val swapped = listOf(first) + callbacks("old", 2) + other + middle + callbacks("older", 2) +
             native + latest + callbacks("active", 1)
         val reorderedError = history.restoreBaseline(body(swapped), separate).error
-        assertEquals("code-mode native discovery history was edited", reorderedError)
+        assertEquals("code-mode native discovery history was edited: nativeOrder", reorderedError)
     }
 
     @Test
@@ -167,7 +172,7 @@ internal class CodeModeNativeAnchorTest {
         val missingParent = listOf(first) + callbacks("retired", 2) + callbacks("parent", 1) +
             latest + callbacks("active", 1)
         val rejected = history.restoreBaseline(body(missingParent), active)
-        assertEquals("code-mode native discovery history was edited", rejected.error)
+        assertEquals("code-mode native discovery history could not be placed: absent", rejected.error)
         assertEquals("native_following=absent native_branch=absent", rejected.nativeRejection?.logFields())
     }
 
@@ -195,7 +200,7 @@ internal class CodeModeNativeAnchorTest {
         assertNull(history.restoreBaseline(body(prefix + native + suffix), active).error)
 
         assertEquals(
-            "code-mode native discovery history was edited",
+            "code-mode native discovery history could not be placed: absent",
             history.restoreBaseline(body(prefix + suffix), active).error,
             "the surviving later item must not substitute for the native's missing immediate witness",
         )
@@ -212,11 +217,12 @@ internal class CodeModeNativeAnchorTest {
             prefix + edited + middle + latest + callbacks("active", 1),
             prefix + middle + native + latest + callbacks("active", 1),
         )
-        for (client in corrupted) {
-            assertEquals(
-                "code-mode native discovery history was edited",
-                history.restoreBaseline(body(client), active).error,
-            )
+        val reasons = listOf(
+            "code-mode native discovery history was edited: payload",
+            "code-mode native discovery history conflicts with its captured position: unexpected-offset",
+        )
+        for ((at, client) in corrupted.withIndex()) {
+            assertEquals(reasons[at], history.restoreBaseline(body(client), active).error)
         }
     }
 
@@ -240,7 +246,7 @@ internal class CodeModeNativeAnchorTest {
             assertNull(restored.error)
             assertEquals(prefix + native + suffix, input(checkNotNull(restored.bodyJson)))
             assertEquals(
-                "code-mode native discovery history was edited",
+                "code-mode native discovery history could not be placed: absent",
                 history.restoreBaseline(body(prefix + listOf(latest) + callbacks("active", 1)), owner).error,
                 "a later stable item cannot replace the missing owned successor",
             )
@@ -251,7 +257,7 @@ internal class CodeModeNativeAnchorTest {
             )
             invalid.forEach { changed ->
                 assertEquals(
-                    "code-mode native discovery history was edited",
+                    "code-mode native discovery history could not be placed: absent",
                     history.restoreBaseline(body(prefix + changed + callbacks("active", 1)), owner).error,
                     "wrong kind, wrong identity, and duplicated identities prove no adjacent witness",
                 )
@@ -331,7 +337,10 @@ internal class CodeModeNativeAnchorTest {
 
         val restored = history.restoreBaseline(body(client), owner)
 
-        assertEquals("code-mode native discovery history was edited", restored.error)
+        assertEquals(
+            "code-mode native discovery history conflicts with its captured position: unexpected-offset",
+            restored.error,
+        )
         assertEquals("native_following=unknown native_branch=unexpected-offset", restored.nativeRejection?.logFields())
     }
 
@@ -357,10 +366,13 @@ internal class CodeModeNativeAnchorTest {
         val request = body(client)
         val restored = history.restoreBaseline(request, owner)
         val error = checkNotNull(restored.error)
-        assertEquals("code-mode native discovery history was edited", error)
+        val expectedBranch = if (branch == "absent") CodeModeNativeBranch.ABSENT else CodeModeNativeBranch.NATIVE_ORDER
+        assertEquals(expectedBranch.reason(), error)
         val lines = mutableListOf<String>()
         CodexCodeModeWire(Json, { lines += it }).canonicalize(request, listOf(owner))
-        val marker = "session syntheti native_following=${if (following) "present" else "absent"} native_branch=$branch"
+        val prefix = "session syntheti native_following=${if (following) "present" else "absent"} native_branch=$branch"
+        val marker = CodeModeHistoryLog.context(owner, restored.nativeRejection)
+        assertTrue(marker.startsWith(prefix))
         assertEquals(
             "[code-mode] history rewrite skipped record active (outer active): $error; " +
                 "its client calls stay in the history as ordinary tool calls; $marker",

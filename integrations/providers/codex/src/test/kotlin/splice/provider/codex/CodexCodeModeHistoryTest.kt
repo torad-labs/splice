@@ -136,7 +136,12 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
         assertEquals(1, upstreamCalls)
         assertEquals(1, runtime.cell.advances)
         assertTrue(runtime.cell.closed)
-        assertTrue(logLines.any { "abandoned record" in it && "native discovery history was edited" in it })
+        assertTrue(
+            logLines.any {
+                "[code-mode] abandoned record" in it &&
+                    "code-mode native discovery history conflicts with its captured position: unexpected-offset" in it
+            },
+        )
     }
 
     @Test

@@ -188,11 +188,14 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
 
     private fun assertDisposition(disposition: SourceDisposition) {
         val expected = when (disposition) {
-            SourceDisposition.NATIVE -> "native discovery history was edited"
+            SourceDisposition.NATIVE -> "[code-mode] abandoned record"
             SourceDisposition.STEERING -> "interrupted extra=STEERING"
             SourceDisposition.SUPERSEDED -> "parked program was superseded"
         }
-        assertTrue(logLines.any { expected in it }, "the intended disposition must be exercised")
+        assertTrue(
+            logLines.any { expected in it && (disposition != SourceDisposition.NATIVE || "native" in it) },
+            "the intended disposition must be exercised",
+        )
     }
 
     private fun changedHistory(
@@ -331,7 +334,7 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
                 assertTrue(stateFiles.records().isEmpty(), "the expired source record cannot be recreated")
             } else {
                 assertContinuation(manager, source, callback, changed)
-                assertTrue(logLines.any { "native discovery history was edited" in it })
+                assertTrue(logLines.any { "[code-mode] abandoned record" in it && "native" in it })
             }
         } finally {
             manager.onHeadStop()

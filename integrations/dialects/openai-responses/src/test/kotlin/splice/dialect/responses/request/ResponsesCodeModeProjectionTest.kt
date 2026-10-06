@@ -1,5 +1,7 @@
 package splice.dialect.responses.request
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.put
@@ -17,6 +19,33 @@ import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.upstream.ToolSearchRound
 
 class ResponsesCodeModeProjectionTest {
+    @Test
+    fun `an appended declared callback preserves its byte-unchanged replay prefix`() {
+        val projection = ResponsesCodeModeProjection()
+        val prefix = Json.parseToJsonElement(
+            """[
+                {"role":"user","content":"synthetic request"},
+                {"type":"reasoning","id":"synthetic-reason","encrypted_content":"synthetic"},
+                {"type":"tool_search_call","call_id":"synthetic-search","arguments":"{}"},
+                {"type":"tool_search_output","call_id":"synthetic-search","tools":[{"name":"Read"}]}
+            ]""",
+        ).jsonArray
+        val callback = Json.parseToJsonElement(
+            """{"type":"function_call","call_id":"synthetic-callback","name":"Read","arguments":"{}"}""",
+        )
+        val before = projection.project(prefix)
+        val after = projection.project(JsonArray(prefix + callback))
+        assertEquals(prefix.toList(), projection.rebuild(after).take(prefix.size))
+        assertEquals(3, before.nativeSegments.sumOf { it.items.size })
+        assertEquals(0, after.nativeSegments.sumOf { it.items.size })
+        assertEquals(
+            before.replayItems.flatMap { it.items },
+            after.replayItems.flatMap { it.items },
+            "callback ownership does not remove bytes from the full replay stream",
+        )
+        assertEquals("synthetic-callback", after.replayItems.single().callbackId)
+    }
+
     @Test
     fun `builder declaration alias at native search offset remains callback owned`() {
         val actual = actualHistory()

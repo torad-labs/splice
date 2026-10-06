@@ -216,7 +216,7 @@ internal class CodexCodeModeHistory(private val json: Json) {
                 sameId,
             )
         }
-        if (conflict) return ReplayRewrite(null, "code-mode native discovery history was edited")
+        if (conflict) return ReplayRewrite(null, "code-mode native replay conflicts with its captured baseline")
         val merged = normalized.toMutableList()
         expected.forEach { (offset, items) ->
             val present = merged.any {

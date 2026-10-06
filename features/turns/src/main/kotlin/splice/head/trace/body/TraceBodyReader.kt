@@ -36,13 +36,13 @@ internal class TraceBodyReader(
         literals[parts]?.let { return it }
         val bytes = parts.sumOf(::literalBytes)
         val weight = HeapJson.add(HeapWeights.multiply(bytes, TRACE_LITERAL_HEAP_FACTOR), HeapJson.text(""))
-        val peak = heap.reserve(weight) ?: throw HeapCapacityException()
+        val peak = (if (bytes <= Int.MAX_VALUE) heap.reserve(weight) else null) ?: throw HeapCapacityException()
         peak.use {
-            val literal = ByteArrayOutputStream()
+            val literal = ByteArrayOutputStream(bytes.toInt())
             parts.forEach { literal.write(chunks.decoded(it)) }
             val decoded = decodedLiteral(literal)
-            // Copy even empty content: an interned singleton must never retain a per-read reservation.
-            val value = JsonPrimitive(String(decoded.content.toCharArray()))
+            // Only the interned empty singleton needs a distinct owner; parsed nonempty strings already have one.
+            val value = if (decoded.content.isEmpty()) JsonPrimitive(String(charArrayOf())) else decoded
             HeapOwners.keep(value.content, peak.split(HeapJson.text(value.content)))
             val metadata = HeapJson.add(literalLease.bytes, HeapJson.add(HeapJson.bytes(parts), HeapJson.text("")))
             if (!literalLease.resize(metadata)) throw HeapCapacityException()

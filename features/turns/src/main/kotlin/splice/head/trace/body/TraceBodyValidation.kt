@@ -57,8 +57,13 @@ internal class TraceBodyValidation(
     private val lease = HeapOwners.charge(certificates, heap, 0L)
     val retainedBytes: Long get() = synchronized(certificates) { lease.bytes }
 
-    fun certify(key: TraceChunkKey, header: TracePackEntry, stored: ByteArray): TraceChunkCertificate {
-        val seal = TracePackBytes.hashOf(stored)
+    fun certify(
+        key: TraceChunkKey,
+        header: TracePackEntry,
+        stored: ByteArray,
+        length: Int = stored.size,
+        seal: String = TracePackBytes.hashOf(stored),
+    ): TraceChunkCertificate {
         synchronized(certificates) {
             removeWhere { it.file == key.file && it.generation != key.generation }
             certificates[key]?.takeIf { it.seal == seal }?.let { previous ->
@@ -67,7 +72,7 @@ internal class TraceBodyValidation(
                 return previous
             }
         }
-        val raw = decoder.decode(key.format, stored, header.raw)
+        val raw = decoder.decode(key.format, stored.copyOf(length), header.raw)
             ?.takeIf { TracePackBytes.hashOf(it) == header.hash }
         val transitions = LITERAL_STATES.map { state ->
             raw?.let { bytes -> state.copy().takeIf { it.feed(bytes) } }

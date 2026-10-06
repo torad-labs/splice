@@ -136,8 +136,10 @@ class SharedWorkerChannelCellCloseTest {
             field.set(host, replies)
             val gone = CompletableDeferred<Unit>()
             host.afterExit {
-                replies.retired.countDown()
+                // Exit is published before the held cancellation is released: once remove() returns, the
+                // assertion below must see it, with no window between the latch and the completion.
                 gone.complete(Unit)
+                replies.retired.countDown()
             }
             val cell = host.cell(1)
             val waiting = async(Dispatchers.Default) { cell.exchange(HostProtocol.command("synthetic-work")) }

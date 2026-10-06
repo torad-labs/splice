@@ -7,6 +7,15 @@ import { economicsKey } from '../src/api/usage';
 import { localZonedInstantText } from '../src/lib/heads';
 import { UsagePage } from '../src/pages/usage/UsagePage';
 
+test('an empty Usage page explains its client-request scope and excluded Playground sends', () => {
+  const client = new QueryClient();
+  client.setQueryData([...economicsKey, '/api/economics'], { retention_hours: 24, heads: [] });
+  client.setQueryData([...keys.heads, '/api/heads'], { heads: [] });
+  const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><UsagePage /></MemoryRouter></QueryClientProvider>);
+  expect(html).toContain('This page counts client requests only.');
+  expect(html).toContain('Playground sends are not counted on this page.');
+});
+
 const now = Math.floor(Date.now() / 1000);
 const weekReset = now + 86400;
 

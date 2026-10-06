@@ -16,6 +16,29 @@ const empty: TurnUsageWire = {
   models: [], accounts: [], days: [], sessions: [],
 };
 
+test('Usage explains excluded Playground sends when a configured command has no client requests', async ({ page }, testInfo) => {
+  const heads = await read<HeadsPayload>(page, '/api/heads');
+  heads.heads = heads.heads.filter(head => head.key === STACK.oauthHead);
+  await page.route('**/api/heads', route => route.fulfill({ json: heads }));
+  await page.route('**/api/economics', route => route.fulfill({ json: { retention_hours: 24, heads: [] } }));
+  await page.route(url => url.pathname === '/api/perf/turns', route => {
+    const query = new URL(route.request().url()).searchParams;
+    expect(query.get('local')).toBe('0');
+    return route.fulfill({ json: { since: Number(query.get('since')), n: 1, heads: [{
+      key: STACK.oauthHead, label: STACK.oauthHead, count: 0, usage: empty, rows: [],
+    }] } });
+  });
+  await open(page, 'usage');
+  const requests = page.getByRole('region', { name: 'Usage', exact: true }).getByRole('heading', { name: 'Requests', exact: true }).locator('..');
+  await expect(requests.locator('.n')).toHaveText('0');
+  await expect(page.getByText('This page counts client requests only. Playground sends are not counted on this page.', { exact: true })).toBeVisible();
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('client-requests-only-' + width + '.png'), fullPage: true });
+  }
+});
+
 for (const requests of [0, 1]) {
   test(`unread request evidence has its own line below a command's ${requests} requests`, async ({ page }) => {
     const heads = await read<HeadsPayload>(page, '/api/heads');

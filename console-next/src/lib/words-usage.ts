@@ -6,6 +6,7 @@ export const spanWords = (hours: number): string => (hours === 24 ? 'the last 24
 
 export const U = {
   title: 'Usage',
+  requestScope: 'This page counts client requests only. Playground sends are not counted on this page.',
   reading: 'Reading the usage.',
   readingMetric: 'Reading…',
   readingRequests: 'Reading requests…',

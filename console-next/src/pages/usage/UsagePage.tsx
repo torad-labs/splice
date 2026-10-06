@@ -106,6 +106,7 @@ export function UsagePage() {
         lede={pendingNames.length === 0 ? lede : `${lede} ${U.commandsReading(pendingNames.join(', '))}`}
         tools={choices.length < 2 ? undefined : <Segmented label={U.window} value={String(hours)} options={choices} onChange={(next) => setParams(next === '24' ? {} : { window: next }, { replace: true })} />}
       />
+      <p className="why">{U.requestScope}</p>
       {notRetained ? <p className="hint" role="status">{U.notRetained(spanWords(Number(asked)), spanWords(hours))}</p> : null}
       {economics.isError ? <section className="section" aria-label={B.hourlyHistory}><Fault message={B.hourlyUnavailable} onRetry={() => void economics.refetch()} /></section>
         : economics.isPending ? <p className="hint" role="status">{B.hourlyReading}</p> : null}

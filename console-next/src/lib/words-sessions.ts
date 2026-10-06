@@ -16,7 +16,7 @@ export const SW = {
   chooseAny: 'Choose any',
   compacted: 'Compacted its context',
   waitingFor: (span: string): string => `Waiting for your answer for ${span}`,
-  toolQuiet: (span: string): string => `Running a tool, quiet for ${span}`,
+  toolQuiet: (span: string): string => `Working, status unchanged for ${span}`,
   working: 'Working',
   workingFor: (span: string): string => `Working for ${span}`,
   idle: 'Waiting for your next message',

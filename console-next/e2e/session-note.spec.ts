@@ -56,6 +56,38 @@ test.afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('session copy distinguishes requested edits and an empty filtered subset from completed work', async ({ page }) => {
+  const input = { file_path: '/synthetic/example.ts', old_string: 'old', new_string: 'new', replace_all: true };
+  let messages: { index: number; role: string; text: string; tool?: string; result?: boolean }[] = [
+    { index: 0, role: 'assistant', text: 'Hello' },
+  ];
+  await page.route(url => url.pathname === '/api/sessions/' + STACK.sender.id + '/transcript', async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: { ...body, messages, earlier: null, next: null } });
+  });
+  const faults = await open(page, 'sessions/' + STACK.sender.id);
+  await expect(page.locator('.convo')).toContainText('Hello');
+  await page.getByRole('button', { name: 'Tools only', exact: true }).click();
+  await expect(page.locator('.convo')).toContainText('No entries in this view.');
+  await expect(page.locator('.convo')).not.toContainText('Nothing has been said');
+  for (const output of [null, 'Error: permission denied']) {
+    messages = [
+      { index: 0, role: 'assistant', text: JSON.stringify(input), tool: 'Edit', result: false },
+      ...(output === null ? [] : [{ index: 1, role: 'tool', text: output, tool: 'Edit', result: true }]),
+    ];
+    await page.reload();
+    const edit = page.locator('details.tool');
+    await expect(edit).toHaveCount(1);
+    await edit.locator('summary').click();
+    await expect(edit).toContainText('Requested replacement of every occurrence in the file.');
+    await expect(edit).not.toContainText('Every occurrence in the file was replaced.');
+    if (output !== null) await expect(edit).toContainText(output);
+  }
+  expect(faults.pageErrors).toEqual([]);
+  expect(faults.failedReads).toEqual([]);
+});
+
 test('a note typed on a live session reaches its inbox as a message from another session, and the page says only that it was sent', async ({ page }) => {
   const faults = await open(page, 'sessions/' + NOTED.id);
   const box = page.getByRole('textbox', { name: BOX, exact: true });
@@ -148,7 +180,7 @@ test('a session that is not running has no box, only the reason', async ({ page 
   try {
     const faults = await open(page, 'sessions/e2e-gone-0000-4000-8000-000000000004');
     try {
-      await expect(page.getByText('This session is not running, so it cannot take a note.')).toBeVisible();
+      await expect(page.getByText('A note cannot be sent to this session.')).toBeVisible();
     } catch (error) {
       // A recurrence says whether the page never got the row, or got it in a state that shows no reason.
       const listed = await read<SessionsPayload>(page, '/api/sessions');

@@ -19,6 +19,12 @@ const note = (over: Partial<SessionRow>): string =>
   renderToStaticMarkup(createElement(QueryClientProvider, { client: new QueryClient() }, createElement(SessionNote, { row: row(over), versions: ['2.1.288'] })));
 
 describe('who takes a note', () => {
+  test('a live busy registration without an addressable id does not claim the process stopped', () => {
+    const html = note({ pid: 1, availability: 'live', session_id: null, status: 'busy' });
+    expect(html).toContain('A note cannot be sent to this session.');
+    expect(html).not.toContain('This session is not running');
+    expect(html).not.toContain('<textarea');
+  });
   test('a live session and a stale one both offer the note box', () => {
     for (const availability of ['live', 'stale'] as const) {
       expect(note({ availability })).toContain(`aria-label="${P.noteLabel}"`);

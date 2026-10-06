@@ -21,7 +21,7 @@ export const P = {
   idle: 'Idle',
   idleWhy: SW.idle,
   gone: 'Ended',
-  goneWhy: 'The process exited.',
+  goneWhy: 'This registration is not available on this daemon.',
   earlier: 'Earlier sessions',
   earlierWhy: 'Found by name or repository in the saved history.',
   more: 'Show more',

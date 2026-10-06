@@ -1,12 +1,20 @@
 import { describe, expect, test } from 'vitest';
 import { callTarget, foldTranscript, interleave, outputSize, toolLabel, toolPath, toolTarget, withoutEchoed } from '../src/lib/conversation';
 import type { SessionEdge, TranscriptMessage } from '../src/types/sessions';
+import { P } from '../src/pages/session/copy';
 
 const say = (index: number, role: TranscriptMessage['role'], text: string, ts?: number): TranscriptMessage => ({ index, role, text, ...(ts === undefined ? {} : { ts }) });
 const call = (index: number, tool: string, input: unknown, ts?: number): TranscriptMessage => ({ ...say(index, 'assistant', JSON.stringify(input), ts), tool, result: false });
 const result = (index: number, tool: string, text: string): TranscriptMessage => ({ ...say(index, 'tool', text), tool, result: true });
 
 describe('folding a transcript', () => {
+  test('an empty tools-only subset does not claim nobody spoke', () => {
+    const items = foldTranscript([say(0, 'assistant', 'Hello')]);
+    expect(items).toHaveLength(1);
+    expect(items.filter(item => item.kind === 'tool')).toHaveLength(0);
+    expect(P.noMessages).toBe('No entries in this view.');
+    expect(P.noMessages).not.toContain('Nothing has been said');
+  });
   test('a call and its result become one item; the last unanswered call is still running', () => {
     const items = foldTranscript([say(0, 'user', 'go'), call(1, 'Bash', { command: 'ls' }), result(2, 'Bash', 'a\nb'), call(3, 'Bash', { command: 'sleep 9' })]);
     expect(items.map((item) => item.kind)).toEqual(['say', 'tool', 'tool']);

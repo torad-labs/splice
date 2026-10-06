@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { SessionLast, SessionRow } from '../src/types/sessions';
 import type { LiveTurn } from '../src/types/turns';
+import { P } from '../src/pages/sessions/copy';
 import { answerWhere, cardSays, waitingAsks } from '../src/lib/session-says';
 import { activityText, cardLine, groupSessions, timingOf, handoffOf, matchesQuery, noConversation, sessionsLede, peerLabel, repoName, sessionForTurn, sessionKey, sessionLabel, sinceOf, spanText, stateOf, stateTone, stateWord, sessionStatus } from '../src/lib/sessions';
 
@@ -37,6 +38,19 @@ describe('request-owned session identity', () => {
 });
 
 describe('a session\'s state', () => {
+  test('a foreign-process registration classified gone does not certify that the foreign process exited', () => {
+    // The registry also returns gone for a live pid in a different process namespace.
+    expect(stateOf(row({ availability: 'gone' }))).toBe('gone');
+    expect(P.goneWhy).toBe('This registration is not available on this daemon.');
+    expect(P.goneWhy).not.toContain('process exited');
+  });
+  test('a busy nonstreaming request absent from the live-stream list does not establish a tool or silence', () => {
+    const session = row({ pid: 1, status: 'busy', availability: 'live', last: null, status_updated_at: 820_000 });
+    const timing = timingOf(session, stateOf(session), null, 1_000_000);
+    const line = cardLine(session, stateOf(session), timing.since, timing.quiet).line;
+    expect(line).toBe('Working, status unchanged for 3 min');
+    expect(line).not.toMatch(/Running a tool|quiet/);
+  });
   test('waiting is the client\'s own word', () => expect(stateOf(row({ status: 'waiting' }))).toBe('waiting'));
   test('busy is working, however old its status stamp: the stamp only moves when the client changes status', () => {
     expect(stateOf(row())).toBe('working');
@@ -341,10 +355,10 @@ describe('the lede', () => {
 
 describe('the two durations of a card', () => {
   const turn = (over: Partial<LiveTurn> = {}): LiveTurn => ({ id: 't', session: 's', model: 'm', compact: false, age_ms: 1, stopped: false, ...over });
-  test('a busy session the head says runs no turn is running a tool, quiet since its last registry change', () => {
+  test('an absent live stream names the status-change age, not a tool or a period of silence', () => {
     const t = timingOf(row(), 'working', null, NOW);
     expect(t.quiet).toBe(60_000);
-    expect(activityText('working', t.since, 3 * 60_000)).toBe('Running a tool, quiet for 3 min');
+    expect(activityText('working', t.since, 3 * 60_000)).toBe('Working, status unchanged for 3 min');
     expect(activityText('working', 60_000, 60_000)).toBe('Working for 1 min');
   });
   test('a live turn, or a head not read yet, is never called quiet', () => {

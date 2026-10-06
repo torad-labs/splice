@@ -24,6 +24,12 @@ const tool = (over: Partial<Tool> = {}): Tool => ({
 });
 
 describe('a tool block', () => {
+  test.each([null, 'Error: permission denied'])('replace-all input does not prove completion with output %s', (output) => {
+    const input = { file_path: '/synthetic/example.ts', old_string: 'old', new_string: 'new', replace_all: true };
+    const html = renderToStaticMarkup(<ToolBlock item={tool({ tool: 'Edit', input, inputText: JSON.stringify(input), output })} />);
+    expect(html).toContain('Requested replacement of every occurrence in the file.');
+    expect(html).not.toContain('Every occurrence in the file was replaced.');
+  });
   test('a finished call names its verb, its target and the size of what came back', () => {
     const html = renderToStaticMarkup(<ToolBlock item={tool()} />);
     expect(html).toContain('Bash');
@@ -155,6 +161,15 @@ describe('a tool call reads the way Claude Code shows it', () => {
 });
 
 describe('a hand-off', () => {
+  test('retained text hidden by display filtering does not claim the sender transcript lost it', () => {
+    const html = renderToStaticMarkup(<Handoff edge={{
+      from: 'synthetic-sender', to: 'synthetic', at: 1, direction: 'in',
+      text: '<local-command-caveat>synthetic content exists</local-command-caveat>',
+      text_source: '/synthetic/transcript.jsonl', missing_reason: null,
+    }} peer="Synthetic" colour="none" />);
+    expect(html).toContain('No readable message text is shown.');
+    expect(html).not.toContain('no longer in the sender');
+  });
   const edge = (over: Partial<HandedEdge> = {}): HandedEdge => ({
     from: 'a', to: 'uds:/x', at: new Date(2026, 8, 29, 15, 4).getTime(), direction: 'in', text: 'Build the limiter.', text_source: 't', missing_reason: null, ...over,
   });
@@ -213,8 +228,8 @@ describe('the note box', () => {
     expect(html).toContain('Relaunch it on Claude Code 2.1.286.');
     expect(html).not.toContain('<textarea');
   });
-  test('a session that is not running has no box, and says why', () => {
-    expect(renderToStaticMarkup(<NoteClosed />)).toContain('This session is not running, so it cannot take a note.');
+  test('a session that cannot be addressed has no box without guessing why', () => {
+    expect(renderToStaticMarkup(<NoteClosed />)).toContain('A note cannot be sent to this session.');
   });
 });
 

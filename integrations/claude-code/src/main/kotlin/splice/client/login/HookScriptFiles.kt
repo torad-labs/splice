@@ -42,6 +42,7 @@ internal fun interface HookExecProbe {
 }
 
 internal object HookScriptFiles {
+    private const val COMMAND = "command"
     const val HOOK_TIMEOUT_SECONDS: Int = 15
 
     /** The hook event both installers register on (the key-setup advertiser and the resume hook). */
@@ -140,14 +141,27 @@ internal object HookScriptFiles {
         }
     }
 
+    /** Exec-form arguments stay literal even when the generated script path contains shell characters. */
+    fun asyncHookEntry(script: Path, phase: String): JsonObject = buildJsonObject {
+        putJsonArray("hooks") {
+            addJsonObject {
+                put("type", COMMAND)
+                put(COMMAND, script.toString())
+                putJsonArray("args") { add(kotlinx.serialization.json.JsonPrimitive(phase)) }
+                put("async", true)
+                put("timeout", 2)
+            }
+        }
+    }
+
     /** [matcher] narrows the event (SessionStart matches its `source`: startup, resume, clear, compact);
      *  null registers for every occurrence, as the login hooks do. */
     fun hookEntry(script: Path, timeoutSeconds: Int, matcher: String? = null): JsonObject = buildJsonObject {
         matcher?.let { put("matcher", it) }
         putJsonArray("hooks") {
             addJsonObject {
-                put("type", "command")
-                put("command", script.toString())
+                put("type", COMMAND)
+                put(COMMAND, script.toString())
                 put("timeout", timeoutSeconds)
             }
         }

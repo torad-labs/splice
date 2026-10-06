@@ -37,7 +37,12 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /** The rows a launched session's own statusline command and SessionStart hook call: the only ones its
  *  turn key opens (Door.SESSION at UsageMount and LaunchMount). */
-private val SESSION_ROWS = setOf("GET /statusline/{head}", "POST /statusline/{head}", "POST /hooks/resume/{head}")
+private val SESSION_ROWS = setOf(
+    "GET /statusline/{head}",
+    "POST /statusline/{head}",
+    "POST /hooks/resume/{head}",
+    "POST /hooks/foreground/{head}",
+)
 
 /** The rows that answer with no key at all: the liveness probe, and the dashboard page at both of its
  *  paths (FleetMount), which asks for the key itself before it calls anything. */

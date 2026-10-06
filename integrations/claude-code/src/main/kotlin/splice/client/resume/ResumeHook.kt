@@ -25,6 +25,8 @@ import kotlinx.serialization.json.JsonObject
 import splice.client.login.HookChmod
 import splice.client.login.HookExecProbe
 import splice.client.login.HookScriptFiles
+import splice.core.client.FOREGROUND_OWNER_ENV
+import splice.core.client.FOREGROUND_OWNER_HEADER
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
@@ -57,6 +59,7 @@ internal object ResumeHook {
         appendLine("curl -sS -m $CURL_TIMEOUT_S -X POST \\")
         appendLine("  -H ${shellSingleQuote("@$authHeaderFile")} \\")
         appendLine("  -H 'Content-Type: application/json' --data-binary @- \\")
+        appendLine("  -H \"$FOREGROUND_OWNER_HEADER: $" + "{$FOREGROUND_OWNER_ENV:-}\" \\")
         appendLine("  \"http://127.0.0.1:$controlPort/hooks/resume/$headKey\" >/dev/null 2>&1 || true")
         appendLine("exit 0")
     }
@@ -82,9 +85,10 @@ internal object ResumeHook {
             }
             // Written current HERE, per install: a header file removed since the last launch is back
             // before the script naming it is, and a write that fails is this hook's logged failure.
-            val body = script(target.controlPort, target.authHeader.current(), headKey)
+            val authHeader = target.authHeader.current()
+            val body = script(target.controlPort, authHeader, headKey)
             val script = HookScriptFiles.writeHookScript(configDir, RESUME_HOOK_SH, body, chmod)
-            mapOf(
+            ForegroundHook.install(configDir, target.controlPort, authHeader, headKey, chmod) + mapOf(
                 HookScriptFiles.SESSION_START to listOf(
                     HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS, matcher = RESUME_SOURCE),
                     HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS, matcher = STARTUP_SOURCE),

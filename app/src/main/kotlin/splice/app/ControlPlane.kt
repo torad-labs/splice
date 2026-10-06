@@ -144,6 +144,7 @@ internal class ControlPlane(
     internal val budgets = ConsoleWiring.budgetStore(statePaths)
     internal val alerts = ConsoleWiring.alertStore(statePaths)
     internal val perfRows = PerfSourceFiles(statePaths)
+    internal val foregroundTools = splice.sessions.registry.ForegroundTools()
 
     /** V4-444: each assembled head's provider, registered by ManagedHeadFactory, so the Playground sends
      *  through the head's own request builder rather than a hand-built copy of it. */
@@ -264,6 +265,7 @@ internal class ControlPlane(
                 home.resolve(".claude").resolve("sessions"),
                 RouteOfPid { pid -> environment.route(pid) { port -> headOfPort(heads, port) } },
                 heard = console.sessionsHeard,
+                foreground = foregroundTools,
             ),
             clientVersions = clientVersions,
         )
@@ -294,6 +296,7 @@ internal class ControlPlane(
      *  [ConsoleWiring.wireV4133] carries the same hazard for the budget/alert stores and the
      *  playground probe, and V4-239's [ConsoleWiring.wireVerbReads] for the models, trace and wire reads. */
     private fun wireConsolePorts(srv: ControlServer) {
+        srv.ports.foreground = foregroundTools
         srv.ports.compaction = compactionInstructions
         srv.ports.claudeLogins = claudeLoginOwner
         srv.ports.budgetSpending = console.budgets

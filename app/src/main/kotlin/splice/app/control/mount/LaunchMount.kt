@@ -12,11 +12,11 @@ import splice.app.control.api.ControlAudit
 import splice.app.control.api.HeadResolver
 import splice.client.resume.TranscriptModelRewrite
 import splice.client.resume.originals.TranscriptOriginals
-import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import splice.http.JsonBody
 import splice.launch.recipe.LaunchRoutes
 import splice.launch.recipe.LaunchService
+import splice.launch.resume.ForegroundHookRoute
 import splice.launch.resume.ResumeHookRoute
 import splice.launch.resume.ResumeRecipeRoute
 import splice.launch.resume.SessionLive
@@ -31,10 +31,10 @@ internal class LaunchMount(
     audit: ControlAudit,
     log: LogSink,
     private val guard: ControlGuard,
-    statePaths: StatePaths,
-    sessions: SessionSource? = null,
+    sessions: LaunchSessions,
 ) {
     private val launchHeads = LaunchHeadAdapter.heads(heads, resolver)
+    private val foregroundRoute = ForegroundHookRoute(launchHeads, sessions.activity)
     private val launchRoutes = LaunchRoutes(launchHeads, launchService, LaunchHeadAdapter.audit(audit), JsonBody())
 
     // V4-129 review: the wrap routes act on the SAME wrap the launch route resolves a wrapped
@@ -48,16 +48,19 @@ internal class LaunchMount(
     private val resumeHookRoute = ResumeHookRoute(
         launchHeads,
         log,
-        launchService?.transcriptRewriter ?: TranscriptModelRewrite(originals = TranscriptOriginals(statePaths)),
+        launchService?.transcriptRewriter
+            ?: TranscriptModelRewrite(originals = TranscriptOriginals(sessions.statePaths)),
+        sessions.activity,
     )
 
     // V4-320: the recipe asks the launch's own resolution and copies nothing; whether the original still
     // runs is the registry's word.
-    private val resumeRecipeRoute = ResumeRecipeRoute(launchHeads, RegistryLive(sessions))
+    private val resumeRecipeRoute = ResumeRecipeRoute(launchHeads, RegistryLive(sessions.source))
 
     fun register(route: Route) {
         route.post("/launch/{head}") { guard.guarded(call) { launchRoutes.launch(call) } }
         route.post("/hooks/resume/{head}") { guard.guarded(call, Door.SESSION) { resumeHookRoute.resume(call) } }
+        route.post("/hooks/foreground/{head}") { guard.guarded(call, Door.SESSION) { foregroundRoute.receive(call) } }
         route.get("/api/sessions/{id}/resume") { guard.guarded(call) { resumeRecipeRoute.recipe(call) } }
         route.get("/api/claude-head") { guard.guarded(call) { claudeHeadRoutes.status(call) } }
         route.post("/api/claude-head/wrap") { guard.guarded(call) { claudeHeadRoutes.wrap(call) } }

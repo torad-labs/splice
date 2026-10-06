@@ -30,6 +30,11 @@ import splice.client.resume.RESUME_SOURCE
 import splice.client.resume.STARTUP_SOURCE
 import splice.client.resume.SessionOwnership
 import splice.client.resume.TranscriptModelRewrite
+import splice.core.client.FOREGROUND_OWNER_HEADER
+import splice.core.client.FOREGROUND_OWNER_LENGTH
+import splice.core.client.ForegroundToolActivity
+import splice.core.client.ForegroundToolCall
+import splice.core.client.ForegroundToolPhase
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSafe
@@ -56,13 +61,14 @@ public class ResumeHookRoute(
     private val heads: LaunchHeads,
     private val log: LogSink,
     private val rewriter: TranscriptModelRewrite = TranscriptModelRewrite(),
+    private val foreground: ForegroundToolActivity? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
     public suspend fun resume(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
         val body = call.receiveText()
-        val refusal = handle(key, body)
+        val refusal = handle(key, body, call.request.headers[FOREGROUND_OWNER_HEADER])
         // refusal is a sentence THIS class composes; the id it may carry passed SESSION_ID_SHAPE first.
         if (refusal != null) log("[resume] hook for ${LogSafe.str(key)} did nothing: ${LogSafe.str(refusal)}\n")
         call.respondText("{}", ContentType.Application.Json)
@@ -70,7 +76,7 @@ public class ResumeHookRoute(
 
     /** The reason nothing was rewritten, or null when the transcript was moved onto the head's model
      *  (or already named it). Internal so the decision is tested without a socket, as SessionsRoutes is. */
-    internal fun handle(key: String, body: String): String? {
+    internal fun handle(key: String, body: String, owner: String? = null): String? {
         val managed = heads.byKey(key)
         val spec = managed?.spec
         val hook = parse(body)?.let { ResumeCall(it) }
@@ -81,7 +87,16 @@ public class ResumeHookRoute(
             hook.source != RESUME_SOURCE && hook.source != STARTUP_SOURCE ->
                 "the hook source is neither a startup nor a resume"
             !SESSION_ID_SHAPE.matches(hook.sessionId) -> "the session id is not a session id"
-            else -> located(managed, spec, hook)
+            else -> {
+                started(hook.sessionId, owner)
+                located(managed, spec, hook)
+            }
+        }
+    }
+
+    private fun started(sessionId: String, owner: String?) {
+        owner?.takeIf { it.length == FOREGROUND_OWNER_LENGTH }?.let {
+            foreground?.record(ForegroundToolCall(sessionId, null, ForegroundToolPhase.SESSION_START, it))
         }
     }
 

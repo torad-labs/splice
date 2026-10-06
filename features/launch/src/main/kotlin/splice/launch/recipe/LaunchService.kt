@@ -145,7 +145,7 @@ public class LaunchService(
             addAll(bounded.args)
         }
         val warning = launchWarning(spec, dangerouslySkipPermissions, adoption, bounded.warning)
-        return LaunchRecipe(environment.env, environment.unset, argv, warning)
+        return environment.recipe(argv, warning)
     }
 
     private fun materializeLaunch(
@@ -440,8 +440,6 @@ public class LaunchService(
             .entries
             .associate { (model, slot) -> slot.lowercase() to model }
 }
-
-private data class LaunchEnvironment(val env: Map<String, String>, val unset: List<String>)
 
 /** The variable that moves Claude Code's whole config root, and its global .claude.json with it. */
 private const val CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"

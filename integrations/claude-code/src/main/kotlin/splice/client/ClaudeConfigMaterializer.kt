@@ -118,6 +118,7 @@ public class ClaudeConfigMaterializer(
         // linkShared explicitly skips settings.json (merged, never linked), so nothing between
         // here and writeSettings can change what this read observes.
         val existingSettings = readSettingsModelBase(spec.configDir.resolve(Keys.SETTINGS))
+        val hookOrigins = jsonReads.tolerant(spec.configDir.resolve(HookSettings.ORIGINS))
         Files.createDirectories(spec.configDir)
         linkShared(spec.configDir, spec.policy, spec.headKey)
         val hookAdditions = LoginInterception.concat(
@@ -148,7 +149,7 @@ public class ClaudeConfigMaterializer(
                 } ?: emptyMap(),
             ),
         )
-        writeSettings(spec, hookAdditions, existingSettings, modelOverrides)
+        writeSettings(spec, hookAdditions, existingSettings, modelOverrides, hookOrigins)
         val mcpCount = writeClaudeJson(
             spec.configDir,
             spec.modelOptionsCache.takeIf { spec.availableModelIds != null },
@@ -298,6 +299,7 @@ public class ClaudeConfigMaterializer(
         hookAdditions: Map<String, List<JsonObject>>,
         existing: JsonObject,
         modelOverrides: Map<String, String>,
+        hookOrigins: JsonObject,
     ) {
         val allow = spec.availableModelIds
         val dst = spec.configDir.resolve(Keys.SETTINGS)
@@ -314,7 +316,14 @@ public class ClaudeConfigMaterializer(
         // JsonScalars is the sanctioned throw-free read (and filters JsonNull, which this chain
         // used to leak as the literal string "null"; both shapes now fall back to the default).
         val model = chosenModel(JsonScalars.str(existing[Keys.MODEL]), spec)
-        val hooks = LoginInterception.mergeInto(global[Keys.HOOKS], hookAdditions)
+        val inherited = HookSettings.inherited(hookOrigins, existing[Keys.HOOKS])
+        val hooks = HookSettings.merge(
+            global[Keys.HOOKS],
+            existing[Keys.HOOKS],
+            hookAdditions,
+            spec.configDir,
+            inherited,
+        )
         val merged = buildJsonObject {
             global.forEach { (k, v) -> if (isCarriedGlobalKey(k, clientPicks = allow == null)) put(k, v) }
             if (allow != null) {
@@ -330,11 +339,16 @@ public class ClaudeConfigMaterializer(
                     put("padding", 0)
                 },
             )
-            if (hooks != null) put(Keys.HOOKS, hooks)
+            hooks.hooks?.let { put(Keys.HOOKS, it) }
             mergedOverrides(global, modelOverrides)?.let { put(Keys.MODEL_OVERRIDES, it) }
         }
         // The one atomic-write primitive (DR-11b): a LIVE Claude Code re-reads this file, and the
         // old truncate-then-write let it observe a torn settings.json mid-launch.
+        val origins = HookSettings.origins(inherited, existing[Keys.HOOKS], hooks.inherited, hooks.hooks)
+        SecureFile.writeAtomic0600(
+            spec.configDir.resolve(HookSettings.ORIGINS),
+            json.encodeToString(JsonObject.serializer(), origins) + "\n",
+        )
         SecureFile.writeAtomic0600(dst, json.encodeToString(JsonObject.serializer(), merged) + "\n")
     }
 

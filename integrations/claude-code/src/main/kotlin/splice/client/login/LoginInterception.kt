@@ -12,12 +12,7 @@
 // HeadCommandsDir.kt; wire() returns the settings.json hook entries to merge, keyed by event.
 package splice.client.login
 
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.putJsonArray
 import splice.client.wrap.HeadCommandsDir
 import splice.core.config.envNameRegex
 import splice.core.util.Cancellables
@@ -163,6 +158,13 @@ internal object LoginInterception {
         return leg.getOrElse { emptyMap() }
     }
 
+    /** Exact generated commands, so preserving local hooks never revives an obsolete capture hook. */
+    fun ownedHookCommands(configDir: Path): Set<String> = setOf(
+        configDir.resolve(LOGIN_HOOK_SH).toString(),
+        configDir.resolve(CAPTURE_HOOK_SH).toString(),
+        configDir.resolve(KEYSETUP_HOOK_SH).toString(),
+    )
+
     /** Concatenate two hook-addition maps per event — a plain map `+` would silently overwrite
      *  a duplicate event key (e.g. capture hook + login hook both landing on UserPromptSubmit). */
     fun concat(
@@ -170,26 +172,6 @@ internal object LoginInterception {
         b: Map<String, List<JsonObject>>,
     ): Map<String, List<JsonObject>> =
         (a.keys + b.keys).associateWith { k -> a[k].orEmpty() + b[k].orEmpty() }
-
-    /** Merge [additions] (event -> entries) into the operator's global hooks, preserving any
-     *  existing entries per event. */
-    fun mergeInto(globalHooks: JsonElement?, additions: Map<String, List<JsonObject>>): JsonObject? {
-        val base = globalHooks as? JsonObject
-        if (additions.isEmpty()) return base
-        val events = (base?.keys.orEmpty() + additions.keys).toSet()
-        if (events.isEmpty()) return null
-        return buildJsonObject {
-            for (event in events) {
-                val existing = (base?.get(event) as? JsonArray).orEmpty()
-                val added = additions[event].orEmpty()
-                if (existing.isEmpty() && added.isEmpty()) continue
-                putJsonArray(event) {
-                    existing.forEach { add(it) }
-                    added.forEach { add(it) }
-                }
-            }
-        }
-    }
 
     /** DR-8 redo-2 (codex noexec catch): prove the directory can execute an owner-only script
      *  BEFORE anything is staged or registered — a hook that registers but cannot run is

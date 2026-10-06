@@ -115,6 +115,7 @@ public class SessionRegistry(
     private val staleAfterMs: Long = DEFAULT_STALE_MS,
     private val identity: PidIdentity = ProcPidIdentity(),
     private val heard: SessionsHeard = SessionsHeard { emptyMap() },
+    private val foreground: ForegroundTools? = null,
 ) : SessionSource {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -130,6 +131,9 @@ public class SessionRegistry(
         // ast-grep-ignore: kt-no-silent-result-collapse -- the failure is consumed on the line above: it becomes the listing's error, and only a missing directory reads as empty
         val records = entries.getOrDefault(emptyList()).mapNotNull { record(it, heardAt) }
             .sortedByDescending { it.updatedAt ?: 0L }
+        val liveIds = records.filter { it.availability != SessionAvailability.GONE }.mapNotNull { it.sessionId }.toSet()
+        records.filter { it.availability == SessionAvailability.GONE }
+            .mapNotNull { it.sessionId }.filterNot(liveIds::contains).forEach { foreground?.forget(it) }
         return SessionListing(records, error?.let { "$sessionsDir: ${SafeFailureText.render(it)}" })
     }
 
@@ -145,7 +149,11 @@ public class SessionRegistry(
         val updatedAt = JsonScalars.long(obj, "updatedAt")
         val availability = availability(
             pid,
-            listOfNotNull(updatedAt, sessionId?.let(heardAt::get)).maxOrNull(),
+            listOfNotNull(
+                updatedAt,
+                sessionId?.let(heardAt::get),
+                sessionId?.let { foreground?.heardAt(it) },
+            ).maxOrNull(),
             JsonScalars.long(obj, "startedAt"),
             JsonScalars.str(obj, "pidDomain"),
             JsonScalars.str(obj, "procStart"),

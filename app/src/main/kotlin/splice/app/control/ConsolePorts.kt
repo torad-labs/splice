@@ -6,6 +6,7 @@ package splice.app.control
 import splice.accounts.claude.ClaudeLoginPlaces
 import splice.accounts.signin.ConsoleAccounts
 import splice.configuration.add.AddConsole
+import splice.core.client.ForegroundToolActivity
 import splice.core.compaction.CompactionInstructions
 import splice.core.config.KeyStore
 import splice.core.config.StatePaths
@@ -51,6 +52,9 @@ import java.nio.file.Path
  *  what happened the one time one was: a fresh bus here meant the route streamed a daemon that
  *  looked quiet forever while every head reported to a different bus. */
 public class ConsolePorts {
+    /** Optional local tool callbacks. Unwired keeps the existing unknown or stale session policy. */
+    public var foreground: ForegroundToolActivity? = null
+
     /** v0.4.0 (V4-126, FEATURES.md §6): the console event bus GET /api/events streams from.
      *
      *  A SETTABLE PROPERTY, not a constructor parameter: as a parameter it widened this constructor

@@ -39,6 +39,7 @@ import splice.app.control.mount.DiagnosticsMount
 import splice.app.control.mount.EventsMount
 import splice.app.control.mount.FleetMount
 import splice.app.control.mount.LaunchMount
+import splice.app.control.mount.LaunchSessions
 import splice.app.control.mount.LifecycleMount
 import splice.app.control.mount.McpMount
 import splice.app.control.mount.ModelsMount
@@ -168,7 +169,8 @@ public class ControlServer(
     )
 
     private val models = ModelsMount(heads, ports, guard)
-    private val launch = LaunchMount(heads, resolver, launchService, audit, log, guard, config.statePaths, sessions)
+    private val launchSessions = LaunchSessions(sessions, ports, config.statePaths)
+    private val launch = LaunchMount(heads, resolver, launchService, audit, log, guard, launchSessions)
     private val mcp = mcpHost?.let { McpMount(it, guard) }
     private val ingress = HeapIngress(JvmHeap.budget, Knob.MAX_REQUEST_BYTES.default as Long, AdmissionErrorBody)
 

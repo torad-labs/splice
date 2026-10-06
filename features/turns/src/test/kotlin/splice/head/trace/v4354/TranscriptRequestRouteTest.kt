@@ -27,6 +27,7 @@ import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptMessageSource
 import splice.sessions.transcript.TranscriptRole
 import java.io.IOException
+import java.nio.file.AccessDeniedException
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -197,6 +198,30 @@ class TranscriptRequestRouteTest {
             assertFalse(reply.body.contains(RESPONSE))
             assertEquals(index + 1, logged.size)
             assertTrue(logged.all(expected::matches), logged.toString())
+        }
+    }
+
+    @Test
+    fun `filesystem failure diagnostics withhold the transcript path and both request identities`() = runBlocking {
+        val path = "/synthetic/$SESSION/$RESPONSE/transcript.jsonl"
+        val logged = mutableListOf<String>()
+        val failed = TranscriptRequestRoute(
+            TranscriptMessageSource { _, _, _ -> throw AccessDeniedException(path) },
+            roots,
+            enabled,
+            Dispatchers.Unconfined,
+            log = LogSink { logged += it },
+        )
+        val reply = failed.read("kimi", SESSION, RESPONSE)
+        assertEquals(500, reply.status.value)
+        assertEquals(1, logged.size)
+        assertTrue(logged.single().matches(Regex(".* at TranscriptRequestRouteTest\\.kt:\\d+")))
+        listOf(path, SESSION, RESPONSE).forEach { privateValue ->
+            assertFalse(
+                logged.single().contains(privateValue),
+                "a transcript filesystem failure must withhold identity",
+            )
+            assertFalse(reply.body.contains(privateValue), "the client error must also remain private")
         }
     }
 

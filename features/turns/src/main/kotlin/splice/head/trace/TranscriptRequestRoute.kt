@@ -59,7 +59,7 @@ public class TranscriptRequestRoute(
             }
         } ?: return state("unavailable", CONVERSATION_READ_UNAVAILABLE)
         val lookup = read.getOrElse { failure ->
-            val diagnostic = SafeFailureText.render(failure) + SafeFailureText.site(failure)
+            val diagnostic = "failure (message withheld: it may quote file bytes)" + SafeFailureText.site(failure)
             log("[transcript] saved transcript read failed: $diagnostic")
             return refuse(HttpStatusCode.InternalServerError, "Could not read this session's saved transcript.")
         }

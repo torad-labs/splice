@@ -1,7 +1,8 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
-import { expect, test } from 'vitest';
-import { BudgetBalance } from '../src/pages/usage/Budgets';
+import { expect, test, vi } from 'vitest';
+import { BudgetBalance, Budgets } from '../src/pages/usage/Budgets';
 import { CommandPricing } from '../src/pages/usage/UsagePricing';
 import { UsageBreakdown, UsageValues, requestsFor } from '../src/pages/usage/UsageBreakdown';
 import type { TurnRow, TurnsState, TurnUsageWire } from '../src/types/perf';
@@ -256,6 +257,27 @@ test('a null cost shows its precise explanation instead of also claiming Not rep
   expect(html).toContain('since=0&amp;until=200');
   const unknown = renderToStaticMarkup(<MemoryRouter><UsageValues items={[{ ...item, cost: null }]} by="model" since={0} until={200} labelOf={key => key} /></MemoryRouter>);
   expect(unknown).toContain('Not reported');
+});
+
+test.each([
+  ['America/Chicago', '2026-10-05T23:59:59.999Z', '2026-10-06T00:00:00Z'],
+  ['America/Chicago', '2026-10-06T00:00:00Z', '2026-10-07T00:00:00Z'],
+  ['America/New_York', '2026-03-08T05:00:00Z', '2026-03-09T00:00:00Z'],
+  ['America/New_York', '2026-11-01T04:00:00Z', '2026-11-02T00:00:00Z'],
+  ['Asia/Kathmandu', '2026-10-05T12:00:00Z', '2026-10-06T00:00:00Z'],
+])('budgets show the UTC reset in viewer zone %s at %s', (zone, at, reset) => {
+  vi.stubEnv('TZ', zone);
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(at));
+  try {
+    const client = new QueryClient();
+    const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><Budgets plans={[]} /></MemoryRouter></QueryClientProvider>);
+    const local = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short', timeZone: zone }).format(new Date(reset));
+    expect(html).toContain(`Daily budgets reset at ${local}.`);
+  } finally {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  }
 });
 
 test('a completely read empty budget day displays its measured zero and full remaining balance', () => {

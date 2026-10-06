@@ -200,6 +200,49 @@ test('a pending empty-day budget finishes on Usage without a page change and agr
   await assertHealthy(page, faults);
 });
 
+for (const scenario of [
+  { zone: 'America/Chicago', at: '2026-10-05T23:59:59.999Z', reset: '2026-10-06T00:00:00Z' },
+  { zone: 'America/Chicago', at: '2026-10-06T00:00:00Z', reset: '2026-10-07T00:00:00Z' },
+  { zone: 'America/New_York', at: '2026-03-08T05:00:00Z', reset: '2026-03-09T00:00:00Z' },
+  { zone: 'America/New_York', at: '2026-11-01T04:00:00Z', reset: '2026-11-02T00:00:00Z' },
+  { zone: 'Asia/Kathmandu', at: '2026-10-05T12:00:00Z', reset: '2026-10-06T00:00:00Z' },
+]) {
+  test.describe('daily budget reset in ' + scenario.zone + ' at ' + scenario.at, () => {
+    test.use({ timezoneId: scenario.zone });
+    test('budgets display UTC midnight as local time on the page and in the dialog', async ({ page }, testInfo) => {
+      await page.clock.setFixedTime(new Date(scenario.at));
+      await page.route(url => url.pathname === '/api/budgets', route => route.fulfill({ json: { budgets: [{ head: STACK.keyHead, daily_usd: 1, action: 'block', used_usd: 0, remaining_usd: 1 }] } }));
+      await page.route(url => url.pathname === '/api/models', async route => {
+        const response = await route.fetch();
+        const body = await response.json();
+        for (const head of body.heads) for (const model of head.models) if (head.head === STACK.keyHead) model.rates = { input: 1, cache_read: 0.1, output: 2 };
+        await route.fulfill({ response, json: body });
+      });
+      const faults = await open(page, 'usage');
+      const local = await page.evaluate(reset => new Intl.DateTimeFormat('en-US', {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+      }).format(new Date(reset)), scenario.reset);
+      const budgets = page.getByRole('region', { name: 'Budgets', exact: true });
+      await expect(budgets).toContainText('Daily budgets reset at ' + local + '.');
+      await budgets.getByRole('button', { name: 'Change', exact: true }).click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toContainText('Daily budgets reset at ' + local + '.');
+      await dialog.getByRole('button', { name: 'When it is reached', exact: true }).click();
+      await expect(page.getByRole('menu')).toContainText('New turns are refused until the daily reset shown above.');
+      await expect(page.getByRole('menu')).not.toContainText('until tomorrow');
+      await page.keyboard.press('Escape');
+      for (const width of [1536, 393]) {
+        await page.setViewportSize({ width, height: 1024 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await dialog.screenshot({ path: testInfo.outputPath('local-budget-reset-' + width + '.png') });
+      }
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await assertHealthy(page, faults);
+    });
+  });
+}
+
 test('eleven budget commands stay in the viewport and an outside menu click never discards typed input', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.route(url => url.pathname === '/api/models', route => route.fulfill({ json: { heads: [{ head: 'synthetic-command-10', provider: 'synthetic', pinned_model: '', models: [{ id: 'synthetic-priced-model', rates: { input: 1, cache_read: 0.1, output: 2 } }] }] } }));

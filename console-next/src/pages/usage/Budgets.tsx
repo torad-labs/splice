@@ -6,7 +6,8 @@ import { useModels } from '../../api/models';
 import { CommandPricing } from './UsagePricing';
 import { useBudgets, usePutBudgets } from '../../api/usage';
 import { fmtUsd } from '../../lib/format';
-import { budgetFor, hasBudgetPrices } from '../../lib/budget';
+import { budgetFor, hasBudgetPrices, nextBudgetResetAtEpochSeconds } from '../../lib/budget';
+import { localZonedInstantText } from '../../lib/heads';
 import { budgetWarning } from '../../lib/usage-breakdown';
 import { B } from './copy';
 import type { PlanUsage } from '../../lib/usage-page';
@@ -23,6 +24,7 @@ const ACTIONS = [
 function BudgetDialog({ plans, budgets, first, onClose }: { plans: readonly PlanUsage[]; budgets: readonly Budget[]; first: string | null; onClose: () => void }) {
   const put = usePutBudgets();
   const models = useModels();
+  const reset = localZonedInstantText(nextBudgetResetAtEpochSeconds(Date.now()));
   const [discarding, setDiscarding] = useState(false);
   const [openMenu, setOpenMenu] = useState<'command' | 'action' | null>(null);
   const catalogs = models.data === undefined || isPendingRoute(models.data) ? [] : models.data.heads;
@@ -54,7 +56,7 @@ function BudgetDialog({ plans, budgets, first, onClose }: { plans: readonly Plan
             <Dialog.Title>{plan === undefined ? U.budgetAdd : U.budgetDialog(plan.label)}</Dialog.Title>
             <Dialog.Close asChild><button type="button" className="icon-btn" aria-label={U.budgetCancel}><Close /></button></Dialog.Close>
           </div>
-          <Dialog.Description className="hint">{key === '' ? U.budgetChoose : models.isPending ? B.pricesReading : models.isError || catalog === undefined ? B.priceCatalogMissing : priced ? U.budgetDialogWhy : B.budgetUnpriced}</Dialog.Description>
+          <Dialog.Description className="hint">{key === '' ? U.budgetChoose : models.isPending ? B.pricesReading : models.isError || catalog === undefined ? B.priceCatalogMissing : priced ? U.budgetDialogWhy : B.budgetUnpriced} {U.budgetResets(reset)}</Dialog.Description>
           <div className="budget-form">
             {first !== null ? null : (
               <div className="field"><span className="eyebrow">{U.budgetPlan}</span><Select value={key} placeholder={B.chooseCommand} options={free.map((candidate) => ({ id: candidate.key, label: candidate.label }))} onChange={setKey} label={U.budgetPlan} menuClassName="budget-command-menu" menuState={{ open: openMenu === 'command', onOpenChange: open => setOpenMenu(open ? 'command' : null) }} />{free.length <= 7 ? null : <small className="hint">{B.commandScroll}</small>}</div>
@@ -93,13 +95,14 @@ export function BudgetBalance({ budget }: { budget: Budget | null }) {
 export function Budgets({ plans }: { plans: readonly PlanUsage[] }) {
   const read = useBudgets();
   const data = read.data;
+  const reset = localZonedInstantText(nextBudgetResetAtEpochSeconds(Date.now()));
   const [editing, setEditing] = useState<string | null | undefined>(undefined);
   const set = data === undefined || isPendingRoute(data) ? [] : plans.filter((plan) => budgetFor(data, plan.key)?.daily_usd != null);
   const room = data === undefined || isPendingRoute(data) ? false : plans.some((plan) => budgetFor(data, plan.key)?.daily_usd == null);
   return (
     <section className="section" aria-labelledby="usage-budgets">
       <h2 id="usage-budgets">{U.budgetsTitle}</h2>
-      <p className="why">{U.budgetsWhy}</p>
+      <p className="why">{U.budgetsWhy} {U.budgetResets(reset)}</p>
       {read.isError ? <p className="why alert" role="alert">{failureText(read.error)}</p> : null}
       {data === undefined ? null : isPendingRoute(data) ? <p className="why">{U.budgetsPending}</p> : (
         <>

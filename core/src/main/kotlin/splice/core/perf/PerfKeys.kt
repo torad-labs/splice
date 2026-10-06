@@ -77,6 +77,12 @@ public object PerfKeys {
     /** One client-facing code-mode step synthesized without an upstream post, not a turn. */
     public const val LOCAL_STEP: String = "local_step"
 
+    /** Elapsed milliseconds inside canonical history passes, summed on the owning turn. */
+    public const val CODE_MODE_CANONICAL_MS: String = "code_mode_canonical_ms"
+
+    /** Elapsed milliseconds acquiring the code-mode conversation turn lock, including cancelled waits. */
+    public const val CODE_MODE_TURN_LOCK_WAIT_MS: String = "code_mode_turn_lock_wait_ms"
+
     /** A changed code-mode callback was sent upstream without touching the owner's queued script. */
     public const val CODE_MODE_DIVERGENCE: String = "code_mode_divergence"
 

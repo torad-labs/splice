@@ -17,8 +17,8 @@ import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesRequestBuilder
-import splice.provider.codex.state.CodeModeAnchorCapture
 import splice.provider.codex.state.CodeModeHistoryIndex
+import splice.provider.codex.state.native.CodeModeAnchorCapture
 import splice.upstream.RoundBody
 import splice.upstream.codemode.CodeModeResult
 

@@ -22,9 +22,9 @@ import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.dialect.responses.request.ResponsesContextMessage
-import splice.provider.codex.state.CodeModeAnchorCapture
 import splice.provider.codex.state.CodeModeExtraContent
 import splice.provider.codex.state.CodeModeNativeChain
+import splice.provider.codex.state.native.CodeModeAnchorCapture
 import splice.upstream.codemode.CodeModeResult
 
 private const val SCRIPTS = 6

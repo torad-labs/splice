@@ -125,7 +125,10 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
             val item = index.items[at] as? JsonObject
             val type = codec.string(item, CODE_MODE_FIELD_TYPE)
             when {
-                type == "custom_tool_call" && item !in setOf(record.outer, CodeModeCallReplay.item(record)) ->
+                type == "custom_tool_call" && item?.let(index.payloads::token) !in setOf(
+                    index.payloads.token(record.outer),
+                    index.payloads.token(CodeModeCallReplay.item(record)),
+                ) ->
                     "code-mode opaque call was edited"
                 type == TYPE_CUSTOM_OUTPUT && item != codec.customOutput(record) -> "code-mode opaque output was edited"
                 else -> null
@@ -245,6 +248,9 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         val replay = natives.rewrite(planned, offsets, starts, order, refused)
         continuityReplay += capturedReplay(planned, offsets, starts, order)
         continuityReplay += refused?.preserved(offsets).orEmpty()
-        return ResponsesCodeModeInput(logical, CodeModeNativeChain.emittedReplay(replay + continuityReplay))
+        return ResponsesCodeModeInput(
+            logical,
+            CodeModeNativeChain.emittedReplay(replay + continuityReplay, natives.payloads),
+        )
     }
 }

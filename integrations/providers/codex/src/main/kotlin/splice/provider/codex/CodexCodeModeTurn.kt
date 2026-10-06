@@ -88,7 +88,8 @@ internal class CodexCodeModeTurn(
             currentCoroutineContext()[HeadStopKey],
             input.recovery,
         )
-        val held = locks.acquire(key)
+        val held = input.post.perf?.timed(PerfKeys.CODE_MODE_TURN_LOCK_WAIT_MS) { locks.acquire(key) }
+            ?: locks.acquire(key)
         val watched = driver.streams.watchCuts(key)
         return try {
             val outcome = try {
@@ -139,7 +140,7 @@ internal class CodexCodeModeTurn(
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
         val capture = registry.owner(context.key, context.digest, resultIds, wire.callbackIds(body), conflicts)
             ?: completed.lastOrNull()
-        val completedHistory = wire.canonicalize(body, completed, context.turn.toolMedia, capture)
+        val completedHistory = context.post.canonicalize(body, completed, context.turn.toolMedia, capture)
         completedHistory.error?.let { return failure(it) }
         val canonicalBody = checkNotNull(completedHistory.body)
         reconcile(context, canonicalBody)

@@ -97,7 +97,7 @@ internal class CodexCodeModeDriver(
         if (context.completed.none { it.id == record.id }) context.completed += record
         val posted = context.recovery?.upstream(context.completed) ?: context.completed
         val capture = posted.lastOrNull { it.id == record.id }
-        val rewritten = wire.canonicalize(body, posted, context.turn.toolMedia, capture)
+        val rewritten = context.post.canonicalize(body, posted, context.turn.toolMedia, capture)
         rewritten.error?.let { return failure(it) }
         val outcome = post(context, null, checkNotNull(rewritten.body))
         val accumulated = CodeModeOutcomeAccumulator()
@@ -184,7 +184,7 @@ internal class CodexCodeModeDriver(
             context.recovery?.generated(success)
             val posted = context.recovery?.upstream(context.completed) ?: context.completed
             val capture = posted.lastOrNull { it.id == record.id }
-            val rewritten = wire.canonicalize(state.body, posted, context.turn.toolMedia, capture)
+            val rewritten = context.post.canonicalize(state.body, posted, context.turn.toolMedia, capture)
             rewritten.error?.let { return accumulated.finishLocal(failure(it)) }
             state.body = checkNotNull(rewritten.body)
             accumulated.finish(post(context, null, state.body))

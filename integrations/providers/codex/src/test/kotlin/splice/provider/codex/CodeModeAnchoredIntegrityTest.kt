@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.provider.codex.state.CodeModeAnchorCapture
+import splice.provider.codex.state.native.CodeModeAnchorCapture
 import splice.upstream.codemode.CodeModeResult
 
 internal class CodeModeAnchoredIntegrityTest : CodeModeBridgeTestSupport() {

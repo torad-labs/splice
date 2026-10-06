@@ -2,8 +2,6 @@
   "recorded": "2026-09-18",
   "law": "V4-92 ratchet. Each entry is '<module> <fqn>': a public top-level declaration no other module's main or testFixtures sources name. Every line is DEBT, not permission \u2014 the gate fails when a declaration NOT listed here joins them (growth) and when a listed one stops offending (stale). The entry is edited by hand and graded by PublicSurfaceLawTest; the diff is the record of what moved.",
   "offenders": [
-    ":core splice.core.util.JsonElementHash",
-    ":core splice.core.util.JsonElementInterner",
     ":integrations-claude-code splice.client.portKeys",
     ":integrations-claude-code splice.client.sharedLinkItems",
     ":integrations-mcp splice.control.mcp.McpHostException",
@@ -51,8 +49,6 @@
     ":integrations-upstream splice.upstream.PollRuntime"
   ],
   "kept": {
-    ":core splice.core.util.JsonElementHash": "2026-10-06: The codex replay-anchor membership path will consume JsonElementInterner in Part 2; its constructor exposes this structural hash contract. Remove this entry when that consumer lands.",
-    ":core splice.core.util.JsonElementInterner": "2026-10-06: Part 1 prepares exact payload identity for the codex replay-anchor membership path in Part 2, after the native captured-order stack lands. Remove this entry when that consumer lands.",
     "law": "V4-149. The companion to `offenders`: a public declaration MEASURED as unconsumed that CANNOT be made internal, carrying the reason it cannot. PublicSurfaceLawTest (V4-92) fails on an entry here with a blank reason, and on an entry here the baseline does not also list \u2014 until 2026-09-21 this line named `bun checks/public-surface.ts --ratchet`, a script deleted with the port to Kotlin. EMPTY AGAIN AS OF V4-153, and the WAY it emptied is the point: its one entry, :upstream splice.upstream.retry.ProviderProbe, was recorded by V4-150 with a reason that named a defect in this instrument, and V4-153 fixed the defect \u2014 so the declaration became JUSTIFIED and left. It was never deleted to make the gate green; deleting it would have left the blindness in place. The defect, for the record: V4-149 walked a declaration's public member signatures to find the types they mention, but captured only each member's FIRST LINE, so a member whose parameter list spans lines hid its own types \u2014 TurnWatchdog.launchIn carries `probe: ProviderProbe?` on its fifteenth line. That is the second defect found in this instrument one level below the previous one, and it was found by reading a number that did not move rather than by reading the code."
   }
 }

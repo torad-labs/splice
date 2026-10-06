@@ -3,6 +3,7 @@ package splice.provider.codex.state
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import splice.core.util.JsonElementInterner.Token
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.CodeModeNativeSegment
@@ -29,6 +30,7 @@ internal class CodeModeNativeReplay(
     private val index: CodeModeHistoryIndex,
     records: List<CodeModeRecord>,
 ) {
+    val payloads = index.payloads
     private val bad = mutableMapOf<String, CodeModeNativeRejection>()
     private val origins = ancestors(records).flatMap { record ->
         record.continuityReplay.map { CodeModeNativeOrigin(record, it) }
@@ -46,7 +48,7 @@ internal class CodeModeNativeReplay(
         claims.forEach { claim ->
             claim.items.forEach { expected ->
                 val actual = replayed[claim.offset]?.get(identity(expected))
-                if (actual?.any { it != expected } == true) {
+                if (actual?.any { payloads.token(it) != payloads.token(expected) } == true) {
                     bad.putIfAbsent(
                         claim.recordId,
                         CodeModeNativeRejection(claim.following, CodeModeNativeBranch.PAYLOAD, claim.evidence),
@@ -78,13 +80,16 @@ internal class CodeModeNativeReplay(
         segment: ResponsesCodeModeReplay,
         claims: List<NativeClaim>,
     ): CodeModeNativeRejection {
-        val matched = claims.filter { claim -> claim.items.any { it in segment.items } }
+        val known = segment.items.map(payloads::token).toSet()
+        val matched = claims.filter { claim -> claim.items.any { payloads.token(it) in known } }
         val witness = matched.map(NativeClaim::following).distinct().singleOrNull()
-        val expected = claims.distinctBy { it.offset to it.items }.sumOf { claim ->
-            claim.items.count { it in segment.items }
+        val expected = claims.distinctBy { it.offset to it.items.map(payloads::token) }.sumOf { claim ->
+            claim.items.count { payloads.token(it) in known }
         }
         val boundary = index.boundary(record) ?: 0
-        val actual = replay.filterKeys { it < boundary }.values.sumOf { items -> items.count { it in segment.items } }
+        val actual = replay.filterKeys { it < boundary }.values.sumOf { items ->
+            items.count { payloads.token(it) in known }
+        }
         val evidence = matched.map(NativeClaim::evidence).distinct().singleOrNull()
             ?.copy(expectedOccurrences = expected, actualOccurrences = actual)
         // A restored parent may be missing; surviving claims are not a complete history denominator.
@@ -92,18 +97,18 @@ internal class CodeModeNativeReplay(
     }
 
     private fun unexpectedOffset(records: List<CodeModeRecord>, claims: List<NativeClaim>): ResponsesCodeModeReplay? {
-        val allowed = mutableMapOf<Int, MutableSet<JsonElement>>()
-        claims.forEach { allowed.getOrPut(it.offset) { mutableSetOf() } += it.items }
+        val allowed = mutableMapOf<Int, MutableSet<Token>>()
+        claims.forEach { allowed.getOrPut(it.offset) { mutableSetOf() } += it.items.map(payloads::token) }
         records.forEach { record ->
             val boundary = index.boundary(record)
             if (boundary != null) {
                 record.continuityReplay.forEach {
-                    allowed.getOrPut(boundary + it.logicalOffset) { mutableSetOf() } += it.items
+                    allowed.getOrPut(boundary + it.logicalOffset) { mutableSetOf() } += it.items.map(payloads::token)
                 }
             }
         }
         return input.nativeSegments.firstNotNullOfOrNull { segment ->
-            segment.items.firstOrNull { it !in allowed[segment.logicalOffset].orEmpty() }
+            segment.items.firstOrNull { payloads.token(it) !in allowed[segment.logicalOffset].orEmpty() }
                 ?.let { segment.copy(items = listOf(it)) }
         }
     }
@@ -125,20 +130,23 @@ internal class CodeModeNativeReplay(
         val echoed = record.continuityReplay.all { segment ->
             val items = replay[boundary + segment.logicalOffset].orEmpty()
             (0..items.size - segment.items.size).any { at ->
-                segment.items.indices.all { items[at + it] == segment.items[it] }
+                segment.items.indices.all { payloads.token(items[at + it]) == payloads.token(segment.items[it]) }
             }
         }
         val baseline = CodeModeNativeChain.replay(record).flatMap(CodeModeNativeSegment::items)
-        return echoed && baseline.isNotEmpty() && replay.values.none { items -> items.any { it in baseline } }
+            .map(payloads::token).toSet()
+        return echoed && baseline.isNotEmpty() && replay.values.none { items ->
+            items.any { payloads.token(it) in baseline }
+        }
     }
 
     fun restore(record: CodeModeRecord): ResponsesCodeModeInput {
-        val claims = claims(listOf(record)).distinctBy { it.offset to it.items }
-        val counted = mutableMapOf<Int, MutableMap<JsonElement, Int>>()
+        val claims = claims(listOf(record)).distinctBy { it.offset to it.items.map(payloads::token) }
+        val counted = mutableMapOf<Int, MutableMap<Token, Int>>()
         claims.forEach { count(counted, it.offset, it.items) }
         val replay = clientReplay(emptySet(), counted, IntArray(input.logicalItems.size + 1) { it }).toMutableList()
         claims.forEach { replay += ResponsesCodeModeReplay(it.offset, null, it.items) }
-        return input.copy(replayItems = CodeModeNativeChain.emittedReplay(replay))
+        return input.copy(replayItems = CodeModeNativeChain.emittedReplay(replay, payloads))
     }
 
     fun rewrite(
@@ -152,9 +160,9 @@ internal class CodeModeNativeReplay(
         val retained = placements.filter { it.emission == CodeModeCanonicalEmission.CONTINUITY }
             .map { it.record.id }.toSet()
         val claims = claims(scripts.map { it.record }).filterNot { it.recordId in retained }
-            .distinctBy { it.offset to it.items }
+            .distinctBy { it.offset to it.items.map(payloads::token) }
         val ownedIds = scripts.flatMap { it.record.clientIds() - it.retainedCallbacks }.toSet()
-        val counted = mutableMapOf<Int, MutableMap<JsonElement, Int>>()
+        val counted = mutableMapOf<Int, MutableMap<Token, Int>>()
         claims.forEach { claim -> count(counted, claim.offset, claim.items) }
         placements.forEach { placement ->
             // Copy quotas refer to the observed history, not the plan's relocated emission buckets.
@@ -186,13 +194,14 @@ internal class CodeModeNativeReplay(
 
     private fun clientReplay(
         ownedIds: Set<String>,
-        counted: MutableMap<Int, MutableMap<JsonElement, Int>>,
+        counted: MutableMap<Int, MutableMap<Token, Int>>,
         offsets: IntArray,
     ): List<ResponsesCodeModeReplay> = input.replayItems.filterNot { it.callbackId in ownedIds }.mapNotNull { segment ->
         val quota = counted[segment.logicalOffset].orEmpty()
         val kept = segment.items.filter { item ->
-            val remaining = quota[item] ?: 0
-            if (remaining > 0) counted.getValue(segment.logicalOffset)[item] = remaining - 1
+            val token = payloads.token(item)
+            val remaining = quota[token] ?: 0
+            if (remaining > 0) counted.getValue(segment.logicalOffset)[token] = remaining - 1
             remaining == 0
         }
         kept.takeIf(List<JsonElement>::isNotEmpty)?.let {
@@ -244,9 +253,12 @@ internal class CodeModeNativeReplay(
         return indexed.values.toList()
     }
 
-    private fun count(target: MutableMap<Int, MutableMap<JsonElement, Int>>, offset: Int, items: List<JsonElement>) {
+    private fun count(target: MutableMap<Int, MutableMap<Token, Int>>, offset: Int, items: List<JsonElement>) {
         val quota = target.getOrPut(offset) { mutableMapOf() }
-        items.forEach { quota[it] = (quota[it] ?: 0) + 1 }
+        items.forEach { item ->
+            val token = payloads.token(item)
+            quota[token] = (quota[token] ?: 0) + 1
+        }
     }
 
     private fun identity(item: JsonElement): Pair<String, String> {

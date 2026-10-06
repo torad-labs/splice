@@ -10,7 +10,6 @@ import splice.provider.codex.CodeModeCallReplay
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeHistoryCodec
-import splice.provider.codex.state.CodeModeAnchorCapture
 import splice.provider.codex.state.CodeModeCanonicalEmission
 import splice.provider.codex.state.CodeModeCanonicalPlacement
 import splice.provider.codex.state.CodeModeHistoryIndex

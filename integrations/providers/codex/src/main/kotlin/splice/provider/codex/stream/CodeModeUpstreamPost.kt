@@ -1,10 +1,14 @@
 // NEW: wire projection preserves the transport's redirected-round capability.
 package splice.provider.codex.stream
 
+import kotlinx.serialization.json.JsonElement
+import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.CodeModeBody
+import splice.provider.codex.CodeModeRecord
+import splice.provider.codex.CodeModeRewrite
 import splice.provider.codex.CodeModeRunInput
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeTurn
@@ -64,6 +68,15 @@ internal open class CodeModeUpstreamPost(
     private val wire: CodexCodeModeWire,
 ) {
     val perf: TurnPerf? get() = target.perf
+
+    suspend fun canonicalize(
+        body: CodeModeBody,
+        records: List<CodeModeRecord>,
+        media: Map<String, List<JsonElement>>,
+        capture: CodeModeRecord? = null,
+    ): CodeModeRewrite = perf?.timed(PerfKeys.CODE_MODE_CANONICAL_MS) {
+        wire.canonicalize(body, records, media, capture)
+    } ?: wire.canonicalize(body, records, media, capture)
 
     suspend operator fun invoke(body: CodeModeBody): TurnOutcome {
         val posted = wire.upstream(body)

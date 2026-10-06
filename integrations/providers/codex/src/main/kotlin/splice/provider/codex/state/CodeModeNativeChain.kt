@@ -2,6 +2,8 @@
 package splice.provider.codex.state
 
 import kotlinx.serialization.json.JsonElement
+import splice.core.util.JsonElementInterner
+import splice.core.util.JsonElementInterner.Token
 import splice.dialect.responses.request.ResponsesCodeModeReplay
 import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
@@ -99,11 +101,15 @@ internal object CodeModeNativeChain {
      * bytes at another slot are the client's own history and stay. A slot's natives come before its
      * callback replay, which is the order the request is rebuilt in.
      */
-    fun emittedReplay(replay: List<ResponsesCodeModeReplay>): List<ResponsesCodeModeReplay> {
-        val seen = mutableMapOf<Int, MutableSet<JsonElement>>()
+    fun emittedReplay(
+        replay: List<ResponsesCodeModeReplay>,
+        payloads: JsonElementInterner = JsonElementInterner(),
+    ): List<ResponsesCodeModeReplay> {
+        val seen = mutableMapOf<Int, MutableSet<Token>>()
         return normalizedReplay(replay).sortedBy { it.callbackId != null }.sortedBy { it.logicalOffset }.mapNotNull {
             val slot = seen.getOrPut(it.logicalOffset) { mutableSetOf() }
-            it.copy(items = it.items.filter(slot::add)).takeIf { segment -> segment.items.isNotEmpty() }
+            it.copy(items = it.items.filter { item -> slot.add(payloads.token(item)) })
+                .takeIf { segment -> segment.items.isNotEmpty() }
         }
     }
 

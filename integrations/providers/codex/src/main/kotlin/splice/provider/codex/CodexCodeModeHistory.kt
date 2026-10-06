@@ -6,12 +6,12 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.dialect.responses.request.ResponsesCodeModeReplay
-import splice.provider.codex.state.CodeModeAnchorCapture
 import splice.provider.codex.state.CodeModeExtraContent
 import splice.provider.codex.state.CodeModeHistoryIndex
 import splice.provider.codex.state.CodeModeMetadataValidator
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeNativeReplay
+import splice.provider.codex.state.native.CodeModeAnchorCapture
 import splice.provider.codex.state.native.CodeModeCanonicalRequests
 import splice.provider.codex.state.native.CodeModeLegacyCanonicalization
 import splice.upstream.RoundBody

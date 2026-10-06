@@ -29,6 +29,6 @@ test.each([3600, -3600])('the Usage plan keeps both readings and gives a reset o
     quota: { five_hour: { used_pct: 12, resets_at: fiveReset, observed_at: now - 60 }, seven_day: { used_pct: 65, resets_at: weekReset, observed_at: now - 60 } },
   } }] });
   const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><UsagePage /></MemoryRouter></QueryClientProvider>);
-  expect(html).toContain(offset > 0 ? `5 hours · 12% · resets ${localZonedInstantText(fiveReset)}` : `5 hours · Last reading 12% · reset ${localZonedInstantText(fiveReset)} · Not current`);
-  expect(html).toContain(`Week · 65% · resets ${localZonedInstantText(weekReset)}`);
+  expect(html).toContain(offset > 0 ? `Short window · 12% · resets ${localZonedInstantText(fiveReset)}` : `Short window · Last reading 12% · reset ${localZonedInstantText(fiveReset)} · Not current`);
+  expect(html).toContain(`Longer window · 65% · resets ${localZonedInstantText(weekReset)}`);
 });

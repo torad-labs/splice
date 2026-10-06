@@ -1,6 +1,7 @@
 // The Usage page's arithmetic: the windows the retention allows, a plan against its limit, the pace sentence, idle plans.
 import { describe, expect, test } from 'vitest';
 import { orderPlans, paceText, planUsage, splitIdle, totalsOf, usageLede, windowChoices } from '../src/lib/usage-page';
+import { U } from '../src/lib/words-usage';
 import type { PlanUsage } from '../src/lib/usage-page';
 import type { EconomicsBucket, HeadEconomics } from '../src/types/economics';
 import type { HeadStatus, UsagePayload } from '../src/types/core';
@@ -137,14 +138,32 @@ describe('a plan', () => {
 });
 
 describe('the lede', () => {
+  test('a configured token warning is a reading, not a provider-reported limit', () => {
+    const warning: UsagePayload = {
+      window_hours: 5, warn_pct: 80, warn_tokens_5h: 1000,
+      heads: [{ key: 'synthetic', label: 'Synthetic', usage: {
+        output_tokens_5h: 500, entries: 1,
+        warn: { source: 'tokens5h', pct: 50, level: 'ok', reset: null }, ratelimit: null,
+      } }],
+    };
+    const warned = planUsage(head('synthetic', []), 'Synthetic', 'none', warning, 24, NOW);
+    expect(warned.pct).toBe(50);
+    expect(U.ofLimit(warned.pct ?? 0, warned.limitWindow)).toContain('reading');
+    expect(U.ofLimit(warned.pct ?? 0, warned.limitWindow)).not.toContain('limit');
+    expect(U.plansWhy).not.toContain('The provider reports each limit');
+  });
+  test('a long quota slot does not assert a week without its actual duration', () => {
+    expect(U.ofLimit(50, '7d')).toContain('longer-window reading');
+    expect(U.ofLimit(50, '7d')).not.toContain('weekly');
+  });
   test('names the cost, and the nearest plan only when it is close', () => {
     const totals = totalsOf([head('a', [bucket(1)])], 24, NOW);
     expect(usageLede(totals, [plan({ pct: 40 })], 24)).toBe('About $2.00 of recorded API cost in the last 24 hours.');
-    expect(usageLede(totals, [plan({ label: 'ChatGPT', pct: 100, full: false, limitWindow: '5h' })], 24)).toContain('ChatGPT is at 100% of its 5-hour limit.');
+    expect(usageLede(totals, [plan({ label: 'ChatGPT', pct: 100, full: false, limitWindow: '5h' })], 24)).toContain('ChatGPT is at 100% on its short-window reading.');
     expect(usageLede(totals, [plan({ label: 'ChatGPT', pct: 33, full: true })], 24)).toContain('ChatGPT is out of quota.');
     expect(usageLede(totals, [plan({ label: 'ChatGPT', pct: null, full: true })], 24)).toContain('ChatGPT is out of quota.');
     expect(usageLede(totals, [plan({ label: 'Reading', pct: 100 }), plan({ label: 'Held', pct: null, full: true })], 24)).toContain('Held is out of quota.');
-    expect(usageLede(totals, [plan({ label: 'Kimi', pct: 82.4, limitWindow: '7d' })], 24)).toContain('Kimi is at 82% of its weekly limit.');
+    expect(usageLede(totals, [plan({ label: 'Kimi', pct: 82.4, limitWindow: '7d' })], 24)).toContain('Kimi is at 82% on its longer-window reading.');
   });
   test('says none priced rather than $0 when no turn has a price', () => {
     const totals = totalsOf([head('a', [bucket(1, { cost_usd: null })])], 24, NOW);

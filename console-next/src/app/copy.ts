@@ -23,7 +23,7 @@ export const C = {
   pages: 'Pages',
   theme: 'Theme',
   pending: 'This page is being rebuilt.',
-  stale: 'splice was upgraded after this page opened, so this page is out of date.',
+  stale: 'The served page changed after this tab opened, so this page is out of date.',
   reload: 'Reload the page',
 } as const;
 

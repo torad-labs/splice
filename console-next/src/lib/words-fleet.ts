@@ -7,7 +7,7 @@ export const FL = {
   fullReading: 'at its reported limit',
   stopped: 'This command is not running.',
   unhealthy: 'Its health check is failing.',
-  signedOut: 'Its next turn will fail until you sign in.',
+  signedOut: 'No usable credential is reported. Check the sign-in for this command.',
   keyMissing: 'Its next turn will fail until its key is set.',
   loginExpired: 'Its login could not be refreshed, so its next turn will fail.',
   accountExcluded: 'The pool has set its selected account aside.',

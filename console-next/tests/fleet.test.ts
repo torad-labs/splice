@@ -20,6 +20,15 @@ const inputs = (over: Partial<FleetInputs> = {}): FleetInputs => ({ usage: usage
 const account = (over: Partial<AccountRow> = {}): AccountRow => ({ heads: ['claude-grok'], label: 'Ava’s Grok', selected: null, ...over }) as AccountRow;
 
 describe('a fleet card', () => {
+  test('a refused forwarded credential does not predict the next caller credential', () => {
+    const command = head({ key: 'synthetic-client', authKind: 'client',
+      last_provider_answer: { status: 401, accepted: false, observed_at_epoch_ms: NOW } });
+    const card = fleetCard(command, inputs({ family: 'anthropic', usage: null,
+      auth: { 'synthetic-client': { kind: 'client', present: false, login: '' } } }));
+    expect(card.state).toBe('Signed out');
+    expect(card.line?.kind === 'note' ? card.line.text : '').not.toContain('next turn will fail');
+    expect(card.line?.kind === 'note' ? card.line.text : '').toContain('credential');
+  });
   test.each([true, false])('provider response evidence with accepted=%s never claims a recorded client request', accepted => {
     const card = fleetCard(head({ last_provider_answer: { status: accepted ? 200 : 403, accepted, observed_at_epoch_ms: NOW - 34 * 3_600_000 } }), inputs({ sessions: new Map(), usage: null }));
     expect(card.providerAnswer).toBe(`Last provider answer: ${accepted ? 'accepted' : 'refused'}, 34h ago`);

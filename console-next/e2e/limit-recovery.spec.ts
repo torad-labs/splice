@@ -98,8 +98,8 @@ test('a near-limit notice leads through the spare plan to exact cross-plan resum
   await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Usage', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Usage', exact: true })).toBeVisible();
   const spareUsage = page.getByRole('listitem').filter({ hasText: STACK.soloHead });
-  await expect(spareUsage).toContainText('20% of its 5-hour limit');
-  await expect(page.getByRole('main')).toContainText('99% of its 5-hour limit');
+  await expect(spareUsage).toContainText('20% on its short-window reading');
+  await expect(page.getByRole('main')).toContainText('99% on its short-window reading');
   await page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link', { name: 'Models', exact: true }).click();
   await page.getByRole('link', { name: STACK.soloHead, exact: true }).click();
   await expect(page.getByRole('main')).toContainText('synthetic-spare');

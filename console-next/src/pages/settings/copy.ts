@@ -45,7 +45,7 @@ export const T = {
   effortReading: 'Reading the thinking default…',
   effortCompare: 'Compare thinking levels',
   inflight: 'Turns at once, per command',
-  inflightWhy: 'More turns at once finish sooner but use the provider’s limit faster. Zero means no limit.',
+  inflightWhy: 'Limits how many turns this command admits at once. Zero means no admission limit.',
   reasoning: 'Show the model’s reasoning',
   reasoningWhy: 'Some models think before they answer. Choose how Claude Code shows that.',
   // Storage

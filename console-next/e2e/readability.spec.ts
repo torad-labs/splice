@@ -6,8 +6,106 @@ import type { PerfTurnsWire } from '../src/types/perf';
 import type { HeadsPayload } from '../src/types/core';
 import { UNKNOWN_HEAD } from '../src/types/sessions';
 import type { SessionRow } from '../src/types/sessions';
-import { FIRST_READ_MS, env, open, routePath } from './support';
+import { FIRST_READ_MS, env, open, read, routePath } from './support';
 import { STACK } from './stack';
+
+for (const width of [1440, 390]) {
+  test(`copy evidence for request bytes, continuation retries and missing history at ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    const at = Date.now() - 60_000;
+    await page.route('**/api/perf/turns?*', route => {
+      const since = Number(new URL(route.request().url()).searchParams.get('since'));
+      const rows = since === at ? [{ ts: at, model: STACK.model, outcome: 'ok', compact: false,
+        session: null, account: null, cache_cold: null, turn: null, session_id: null,
+        response_message_id: null, retries: 1, first_byte: 10, first_delta: 1000, total: 3000 }] : [];
+      return route.fulfill({ json: { since, n: 1, heads: [{ key: STACK.oauthHead,
+        label: STACK.oauthHead, count: rows.length, returned: rows.length, rows }] } });
+    });
+    await open(page, 'requests/' + STACK.oauthHead + '/' + at);
+    await expect(page.getByText('splice retried an upstream request during this turn.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('main')).not.toContainText('before the first word');
+    await page.goto(env('CONSOLE_E2E_BASE') + '/#/requests/' + STACK.oauthHead + '/' + (at + 1));
+    await expect(page.getByText('This request was not found in the retained history. This link does not establish whether it was once held.', { exact: true })).toBeVisible();
+    await page.goto(env('CONSOLE_E2E_BASE') + '/#/requests');
+    await expect(page.getByText('The dark end of each bar is the typical wait for first response bytes; the pale end is the slowest twentieth. Response bytes can arrive before any words.', { exact: true })).toBeVisible();
+    await page.unrouteAll({ behavior: 'wait' });
+  });
+
+  for (const source of ['tokens5h', 'quota_7d'] as const) {
+    test(`copy evidence for ${source} quota readings at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      await page.route('**/api/economics', route => route.fulfill({ json: { retention_hours: 24, heads: [] } }));
+      await page.route(url => url.pathname === '/api/usage' || url.pathname === '/api/usage/probe', route => route.fulfill({ json: {
+        window_hours: 5, warn_pct: 80, warn_tokens_5h: 1000, heads: [{ key: STACK.oauthHead, label: STACK.oauthHead,
+          usage: { output_tokens_5h: 500, entries: 1, ratelimit: null, warn: { source, pct: 50, level: 'ok', reset: null },
+            ...(source === 'quota_7d' ? { quota: { seven_day: { used_pct: 50, resets_at: null,
+              observed_at: Math.floor(Date.now() / 1000), current: true } } } : {}) } }],
+      } }));
+      await page.route('**/api/perf/turns?*', route => {
+        const query = new URL(route.request().url()).searchParams;
+        const head = query.get('head') ?? '';
+        const requests = head === STACK.oauthHead ? 1 : 0;
+        const totals = { requests, input_tokens: 100, cached_tokens: 0, output_tokens: 500, cost_usd: null,
+          cache_share: 0, unpriced_requests: requests, missing_input_requests: 0, missing_output_requests: 0, missing_cache_requests: 0 };
+        return route.fulfill({ json: { since: Number(query.get('since')), n: 1, heads: [{
+          key: head, label: head, count: requests, usage: { totals, models: [], accounts: [], days: [], sessions: [] }, rows: [],
+        }] } });
+      });
+      await open(page, 'usage');
+      const row = page.locator('.uplan').filter({ has: page.getByText(STACK.oauthHead, { exact: true }) });
+      await expect(row).toContainText(source === 'tokens5h' ? '50% on its short-window reading' : '50% on its longer-window reading');
+      await expect(row).not.toContainText('weekly limit');
+      if (source === 'quota_7d') await expect(row).toContainText('Longer window');
+      await expect(page.getByRole('main')).not.toContainText('The provider reports each limit');
+      await page.unrouteAll({ behavior: 'wait' });
+    });
+  }
+
+  test(`copy evidence for admission, unread accounts, append-only logs and forwarded login at ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    await page.clock.install();
+    const heads = await read<HeadsPayload>(page, '/api/heads');
+    heads.heads = heads.heads.map(head => head.key === STACK.oauthHead ? { ...head, authKind: 'client',
+      last_provider_answer: { status: 401, accepted: false, observed_at_epoch_ms: Date.now() } } : head);
+    await page.route('**/api/heads', route => route.fulfill({ json: heads }));
+    await page.route('**/api/auth', route => route.fulfill({ json: {
+      [STACK.oauthHead]: { kind: 'client', present: false, login: '' },
+    } }));
+    await page.route(url => url.pathname === '/api/usage' || url.pathname === '/api/usage/probe', route => route.fulfill({ json: {
+      window_hours: 5, warn_pct: 80, warn_tokens_5h: 0, heads: [],
+    } }));
+    let release: () => void = () => undefined;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/accounts', async route => {
+      await held;
+      await route.fulfill({ json: { accounts: [] } });
+    });
+    try {
+      await open(page, 'models/' + STACK.oauthHead);
+      await expect(page.getByText('No sign-ins are shown for this command.', { exact: true })).toBeVisible();
+      await expect(page.getByText('No usable credential is reported. Check the sign-in for this command.', { exact: true })).toBeVisible();
+      release();
+      await page.goto(env('CONSOLE_E2E_BASE') + '/#/settings/conversation');
+      await expect(page.getByText('Limits how many turns this command admits at once. Zero means no admission limit.', { exact: true })).toBeVisible();
+      let first = 1;
+      await page.route('**/api/logs/*?*', route => route.fulfill({ json: {
+        key: STACK.oauthHead, path: '/synthetic/append-only.log',
+        lines: Array.from({ length: 10 }, (_, i) => 'Synthetic log line ' + (first + i)),
+      } }));
+      await page.goto(env('CONSOLE_E2E_BASE') + '/#/models/' + STACK.oauthHead + '?tab=log');
+      await expect(page.getByRole('log')).toContainText('Synthetic log line 1');
+      first = 11;
+      await page.clock.runFor(5100);
+      await expect(page.getByText('This is a different log window from the one previously shown.', { exact: true })).toBeVisible();
+      await expect(page.getByRole('main')).not.toContainText('The log restarted');
+      await page.goto(env('CONSOLE_E2E_BASE') + '/#/playground');
+      await expect(page.getByText(STACK.oauthHead + ' is configured for forwarded login and is not offered in this Playground.', { exact: true })).toBeVisible();
+    } finally {
+      release();
+      await page.unrouteAll({ behavior: 'wait' });
+    }
+  });
+}
 
 test('Needs you reports native answers as plain read-only lists and keeps the terminal action', async ({ page }, testInfo) => {
   const question = 'Synthetic native question with enough words to require a complete wrapped reading on a narrow session card.';

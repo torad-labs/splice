@@ -28,8 +28,8 @@ export const G = {
   sent: 'What splice sent',
   reply: 'What came back',
   forwarded: (names: readonly string[]): string => (names.length === 1
-    ? `${names[0] ?? ''} signs in with Claude Code's own login, which the Playground does not have, so it is not offered here.`
-    : `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''} sign in with Claude Code's own login, which the Playground does not have, so they are not offered here.`),
+    ? `${names[0] ?? ''} is configured for forwarded login and is not offered in this Playground.`
+    : `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''} are configured for forwarded login and are not offered in this Playground.`),
   pinnedModel: (id: string): string => `The pinned model, ${id}`,
   anyModel: 'Command default',
   none: 'No command can be tried yet.',

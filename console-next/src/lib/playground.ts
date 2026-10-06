@@ -28,8 +28,8 @@ export const laneParam = (lane: Lane): string => (lane.model === null ? lane.hea
 /** The address of a set of lanes, in their order. */
 export const lanesSearch = (lanes: readonly Lane[]): [string, string][] => lanes.map((lane) => ['try', laneParam(lane)]);
 
-/** A command whose auth kind is `client` forwards the caller's own login (ClientAuthProvider), and the Playground has no caller
- *  login to forward, so the daemon refuses it. It is left out of the picker rather than offered to fail. */
+/** The picker excludes commands configured in client-auth mode. That mode does not prove a selected pool member lacks
+ *  a stored credential: the daemon's Playground target can select one independently. */
 export const FORWARDED_AUTH = 'client';
 export const canTry = (authKind: string): boolean => authKind !== FORWARDED_AUTH;
 

@@ -5,7 +5,7 @@ export const R = {
   cancel: 'Cancel',
   restarting: 'Restarting splice…',
   warns: 'Turns in flight finish first, then splice restarts and this page reconnects.',
-  draining: 'splice is draining and will restart; this page reconnects once it is back.',
+  draining: 'The restart was accepted. This page reconnects once splice is back.',
   failed: 'That did not work:',
 } as const;
 

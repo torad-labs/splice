@@ -427,7 +427,7 @@ test('critical and warning readings differ on Models and detail without inventin
     }
   }
   await page.getByRole('link', { name: 'Usage', exact: true }).click();
-  await expect(page.locator('main .lede')).toContainText(STACK.oauthHead + ' is at 100% of its 5-hour limit.');
+  await expect(page.locator('main .lede')).toContainText(STACK.oauthHead + ' is at 100% on its short-window reading.');
   const plan = page.locator('li.uplan').filter({ hasText: STACK.oauthHead }).first();
   await expect(plan.locator('.track')).not.toHaveClass(/full/);
   // The removed global observations feed has no nav badge; serving and quota facts stay on Models and Usage.
@@ -567,7 +567,7 @@ test('the real account pool keeps provider windows, its exact next target and se
   await expect(accounts.filter({ hasText: STACK.soloHead })).toHaveCount(0);
   await page.goto(env('CONSOLE_E2E_BASE') + '/#/models/' + STACK.keyHead);
   await expect(page.locator('li.account')).toHaveCount(0);
-  await expect(page.getByRole('main')).toContainText('This command has no account pool: it uses one login or a key.');
+  await expect(page.getByRole('main')).toContainText('No sign-ins are shown for this command.');
   expect(faults.pageErrors).toEqual([]);
 });
 

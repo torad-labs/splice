@@ -34,8 +34,8 @@ test('each quota surface calls probe-now on open and Usage prints the retained o
     await open(page, path);
     await expect.poll(() => probes, { message: path + ' must probe quota on open' }).toBe(index + 1);
   }
-  await expect(page.getByText('5 hours · 25% · resets ' + observedText(observed + 3_600).slice('Observed '.length) + ' · ' + observedText(observed), { exact: true })).toBeVisible();
-  await expect(page.getByText('Week · 50% · resets ' + observedText(observed + 86_400).slice('Observed '.length) + ' · ' + observedText(observed), { exact: true })).toBeVisible();
+  await expect(page.getByText('Short window · 25% · resets ' + observedText(observed + 3_600).slice('Observed '.length) + ' · ' + observedText(observed), { exact: true })).toBeVisible();
+  await expect(page.getByText('Longer window · 50% · resets ' + observedText(observed + 86_400).slice('Observed '.length) + ' · ' + observedText(observed), { exact: true })).toBeVisible();
 });
 
 test('retained quota readings distinguish an expired deadline from a stale future reset on every display', async ({ page }) => {
@@ -58,9 +58,11 @@ test('retained quota readings distinguish an expired deadline from a stale futur
   for (const path of ['models', 'models/' + STACK.oauthHead, 'usage']) {
     const faults = await open(page, path);
     const separator = path === 'models' ? ', ' : ' · ';
-    await expect(page.getByRole('main')).toContainText('5 hours' + separator + 'Last reading 25%' + separator + 'reset ' + past + separator + 'Not current');
-    await expect(page.getByRole('main')).not.toContainText('5 hours' + separator + 'Last reading 25%' + separator + 'resets ' + past);
-    await expect(page.getByRole('main')).toContainText('Week' + separator + 'Last reading 50%' + separator + 'resets ' + ahead + separator + 'Not current');
+    const short = path === 'usage' ? 'Short window' : '5 hours';
+    const long = path === 'usage' ? 'Longer window' : 'Week';
+    await expect(page.getByRole('main')).toContainText(short + separator + 'Last reading 25%' + separator + 'reset ' + past + separator + 'Not current');
+    await expect(page.getByRole('main')).not.toContainText(short + separator + 'Last reading 25%' + separator + 'resets ' + past);
+    await expect(page.getByRole('main')).toContainText(long + separator + 'Last reading 50%' + separator + 'resets ' + ahead + separator + 'Not current');
     await expect(page.getByRole('main')).toContainText(observedText(observed));
     expect(faults.pageErrors).toEqual([]);
     expect(faults.failedReads).toEqual([]);

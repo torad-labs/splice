@@ -36,7 +36,8 @@ describe('the offer to reload', () => {
     const { renderToStaticMarkup } = await import('react-dom/server');
     const html = renderToStaticMarkup(createElement(StaleBanner));
     expect(html).toContain('role="status"');
-    expect(html).toContain('splice was upgraded after this page opened');
+    expect(html).toContain('The served page changed after this tab opened');
+    expect(html).not.toContain('splice was upgraded');
     expect(html).toContain('>Reload the page<');
   });
 });

@@ -1,7 +1,7 @@
 // V4-444: the Playground sends one prompt to several models and lays their answers side by side. The persona walk found the page
 // saying "This page is being rebuilt" while a working one-command form sat in Settings › Health with no pointer to it; the form moved
-// here and became several lanes, and Health keeps a link. A command that forwards Claude Code's own login is never offered, since the
-// Playground has no login to forward and the daemon refuses it.
+// here and became several lanes, and Health keeps a link. The picker excludes commands configured for client auth without
+// claiming that the daemon cannot serve a stored login from their account pool.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
@@ -184,7 +184,7 @@ describe('the Playground page', () => {
     const html = page('/playground');
     expect(html).toContain('<h1>Playground</h1>');
     expect(lanesIn(html)).toEqual(['GPT-6-SOL', 'claudeor']);
-    expect(html).toContain('claude-splice signs in with Claude Code&#x27;s own login, which the Playground does not have, so it is not offered here.');
+    expect(html).toContain('claude-splice is configured for forwarded login and is not offered in this Playground.');
     expect(html).not.toContain('aria-label="claude-splice"');
     expect(html).not.toContain('This page is being rebuilt');
   });

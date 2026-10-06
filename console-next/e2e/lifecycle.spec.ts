@@ -51,7 +51,7 @@ test('an unsupervised restart returns the replacement console and applies the ch
       new URL(response.url()).pathname === '/api/daemon/restart');
     await confirm.click();
     expect((await accepted).status()).toBe(202);
-    await expect(page.getByRole('status').filter({ hasText: 'splice is draining' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'The restart was accepted' })).toBeVisible();
     expect(posts).toBe(1);
     await expect.poll(async () => {
       const state = await health();

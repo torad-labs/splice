@@ -33,6 +33,7 @@ internal class CodeModeLiveRound(
     wire: CodexCodeModeWire,
     admission: CodeModeStreamAdmission,
     sink: WireSink,
+    private val beforeSettle: Runnable? = null,
 ) {
     private val capture = CodeModeSourceCapture(config, registry, wire, admission)
     val source = capture.source
@@ -96,6 +97,7 @@ internal class CodeModeLiveRound(
                 val outcome = post.into(body, switching)
                 upstreamEnded = true
                 val ended = finish(outcome)
+                beforeSettle?.run()
                 billing.settle(readerEnd = false, clientCut = clientCut.get())
                 ended
             } catch (error: CancellationException) {
@@ -140,8 +142,8 @@ internal class CodeModeLiveRound(
     }
 
     private fun finish(outcome: TurnOutcome) = synchronized(lifecycle) {
-        if (headStopped) throw CancellationException(HEAD_STOPPED)
         billing.reported(outcome)
+        if (headStopped) throw CancellationException(HEAD_STOPPED)
         localFailure?.let { return@synchronized it }
         if (record?.terminal() == true) {
             executionLost = true

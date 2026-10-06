@@ -10,6 +10,7 @@ import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -30,9 +31,11 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestReporter
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
@@ -52,6 +55,7 @@ import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnMeta
+import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
 import splice.dialect.responses.websocket.WsConnector
@@ -68,6 +72,7 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexProvider
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
+import splice.upstream.RowRelease
 import splice.upstream.WsRound
 import splice.upstream.WsRoundAbort
 import splice.upstream.WsRoundRunner
@@ -1081,6 +1086,232 @@ class CodeModeCrossScriptSourceTest {
             }
         }
     }
+}
+
+/** Real head rows and releases, with the two source-terminal settlement boundaries held deterministically. */
+class CodeModeTerminalBillingTest {
+    @Test
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `a staged terminal consumed after lease removal cannot bill its held posting row again`(
+        @TempDir tmp: Path,
+        reporter: TestReporter,
+    ) = runBlocking {
+        val upstream = BillingUpstream(held = true)
+        val runtime = StatementGatewayRuntime()
+        val bridge = billingBridge(tmp, runtime)
+        val head = HeadServer(provider(upstream.url, bridge), 0, headDeps(tmp))
+        val client = HttpClient(CIO)
+        val staged = CountDownLatch(1)
+        val settle = CountDownLatch(1)
+        try {
+            head.start()
+            val url = "http://127.0.0.1:${head.port}/v1/messages"
+            val history = mutableListOf(message("user", JsonPrimitive("read the synthetic fixture")))
+            val first = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+            assertTrue(first.contains("message_stop"), first)
+            val round = billingRound(bridge)
+            assertHeldBillingSource(round)
+            val release = recordBillingRelease(round)
+            stageBillingTerminal(round, upstream, staged, settle)
+            history += message("assistant", JsonArray(toolUses(first)))
+            history += message("user", JsonArray(toolUses(first).map(::result)))
+            val replay = replayParkedBillingCallback(client, url, history, bridge, round)
+            assertEquals(1, upstream.posts.get(), "local callbacks post no raw round")
+            history += message("assistant", JsonArray(toolUses(replay)))
+            history += message("user", JsonArray(toolUses(replay).map(::result)))
+            val answer = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+            assertTrue(answer.contains("message_stop"), answer)
+            assertTrue(
+                billingStateFlag(round, "consumed"),
+                "the old callback must consume staged usage while the held posting row cannot settle",
+            )
+            settle.countDown()
+            val settled = withTimeout(TURN_BOUND_MS) { release.await() }
+            val reported = rows(tmp, 4).sortedBy { it.getValue("ts").jsonPrimitive.long }
+            reportBillingRows(reporter, reported, settled)
+            assertBillingRowsOnce(reporter, reported)
+            assertNull(settled, "already-consumed usage must not bill the held row again")
+        } finally {
+            settle.countDown()
+            head.stop()
+            runtime.close()
+            client.close()
+            upstream.close()
+        }
+    }
+
+    @Test
+    @Timeout(BILLING_TEST_SECONDS)
+    fun `a parsed successful terminal keeps its held row bill across head stop before finish`(
+        @TempDir tmp: Path,
+        reporter: TestReporter,
+    ) = runBlocking {
+        val upstream = BillingUpstream(held = true)
+        val runtime = StatementGatewayRuntime()
+        val bridge = billingBridge(tmp, runtime)
+        val head = HeadServer(provider(upstream.url, bridge), 0, headDeps(tmp))
+        val client = HttpClient(CIO)
+        try {
+            head.start()
+            val history = listOf(message("user", JsonPrimitive("read the synthetic fixture")))
+            val url = "http://127.0.0.1:${head.port}/v1/messages"
+            val first = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+            assertTrue(first.contains("message_stop"), first)
+            val round = billingRound(bridge)
+            assertHeldBillingSource(round)
+            val release = recordBillingRelease(round)
+            synchronized(billingField(round, "lifecycle")) {
+                upstream.endSource()
+                awaitParsedBillingTerminal(round)
+                assertNull(reportedBillingUsage(round), "finish must still be blocked before it records the terminal")
+                round.javaClass.getDeclaredMethod("stop").apply { isAccessible = true }.invoke(round)
+            }
+            val settled = checkNotNull(withTimeout(TURN_BOUND_MS) { release.await() })
+            val posting = rows(tmp, 1).single()
+            reportBillingRows(reporter, listOf(posting), settled)
+            assertEquals(SOURCE_INPUT, settled.inputTokens, "settlement keeps parsed input despite raw precedence")
+            assertEquals(SOURCE_OUTPUT, settled.outputTokens)
+            assertEquals(SOURCE_CACHED, settled.cachedTokens)
+            assertEquals(0L, settled.cutRounds, "a successful terminal is not a cut")
+            assertEquals(SOURCE_INPUT, posting.count(PerfKeys.IN_TOKENS), "parsed input must stay on its held row")
+            assertEquals(SOURCE_OUTPUT, posting.count(PerfKeys.OUT_TOKENS))
+            assertEquals(SOURCE_CACHED, posting.count(PerfKeys.CACHED_TOKENS))
+            assertEquals(0L, posting.count(PerfKeys.CUT_SOURCE_ROUNDS) ?: 0L, "a successful terminal is not a cut")
+        } finally {
+            head.stop()
+            runtime.close()
+            client.close()
+            upstream.close()
+        }
+    }
+}
+
+private fun stageBillingTerminal(
+    round: Any,
+    upstream: BillingUpstream,
+    staged: CountDownLatch,
+    settle: CountDownLatch,
+) {
+    round.javaClass.getDeclaredField("beforeSettle").apply { isAccessible = true }.set(
+        round,
+        Runnable {
+            staged.countDown()
+            check(settle.await(BILLING_TEST_SECONDS, TimeUnit.SECONDS)) { "the test never resumed settlement" }
+        },
+    )
+    upstream.endSource()
+    assertTrue(staged.await(BILLING_TEST_SECONDS, TimeUnit.SECONDS), "terminal never reached settlement")
+    assertEquals(SOURCE_INPUT, checkNotNull(reportedBillingUsage(round)).inputTokens, "the parsed terminal")
+    assertTrue(billingStateFlag(round, "complete"))
+}
+
+private suspend fun replayParkedBillingCallback(
+    client: HttpClient,
+    url: String,
+    history: List<JsonObject>,
+    bridge: CodexCodeModeBridge,
+    round: Any,
+): String {
+    val local = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+    assertTrue(toolUses(local).isNotEmpty(), local)
+    loseBillingRecord(bridge, round)
+    val replay = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
+    assertEquals(toolUses(local), toolUses(replay), "the parked callback replays recorded calls")
+    assertFalse(billingStateFlag(round, "consumed"), "neither no-raw callback owns the source usage")
+    return replay
+}
+
+private fun assertBillingRowsOnce(reporter: TestReporter, reported: List<JsonObject>) {
+    val localRows = reported.drop(1).dropLast(1)
+    reporter.publishEntry("no_raw_callback_inputs", localRows.map { it.count(PerfKeys.IN_TOKENS) }.toString())
+    assertTrue(localRows.all { it.count(PerfKeys.IN_TOKENS) == 0L }, "local callbacks do not bill source input")
+    assertTrue(localRows.all { it.count(PerfKeys.OUT_TOKENS) == 0L }, "local callbacks do not bill source output")
+    assertEquals(SOURCE_INPUT, reported.first().count(PerfKeys.IN_TOKENS), "posting row keeps its raw source")
+    assertEquals(ANSWER_INPUT, reported.last().count(PerfKeys.IN_TOKENS), "continuation keeps its own raw round")
+    assertEquals(SOURCE_INPUT + ANSWER_INPUT, reported.sumOf { it.count(PerfKeys.IN_TOKENS) ?: 0L })
+    assertEquals(SOURCE_OUTPUT + ANSWER_OUTPUT, reported.sumOf { it.count(PerfKeys.OUT_TOKENS) ?: 0L })
+    assertEquals(SOURCE_CACHED, reported.sumOf { it.count(PerfKeys.CACHED_TOKENS) ?: 0L })
+    assertEquals(0L, reported.sumOf { it.count(PerfKeys.CUT_SOURCE_ROUNDS) ?: 0L }, "a parsed terminal is not a cut")
+}
+
+private fun reportBillingRows(reporter: TestReporter, rows: List<JsonObject>, settlement: Usage?) {
+    reporter.publishEntry(
+        mapOf(
+            "posting_row_input" to rows.first().count(PerfKeys.IN_TOKENS).toString(),
+            "posting_row_output" to rows.first().count(PerfKeys.OUT_TOKENS).toString(),
+            "continuation_row_input" to rows.drop(1).sumOf { it.count(PerfKeys.IN_TOKENS) ?: 0L }.toString(),
+            "row_cut_source_rounds" to rows.sumOf { it.count(PerfKeys.CUT_SOURCE_ROUNDS) ?: 0L }.toString(),
+            "settlement_input" to settlement?.inputTokens.toString(),
+            "settlement_cut_rounds" to settlement?.cutRounds.toString(),
+        ),
+    )
+}
+
+private fun billingBridge(tmp: Path, runtime: StatementGatewayRuntime): CodexCodeModeBridge = CodexCodeModeBridge(
+    CodeModeBridgeConfig(
+        runtimes = { runtime },
+        state = CodeModeStateLocation(tmp.resolve("records"), tmp.resolve("legacy.json")),
+    ),
+)
+
+private fun billingField(owner: Any, name: String): Any =
+    checkNotNull(owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner))
+
+private fun billingRound(bridge: CodexCodeModeBridge): Any {
+    val streams = billingField(billingField(bridge, "driver"), "streams")
+    return checkNotNull((billingField(streams, "rounds") as Map<*, *>).values.single())
+}
+
+private fun billingStateFlag(round: Any, name: String): Boolean {
+    val state = billingField(billingField(billingField(round, "capture"), "record"), "sourceState")
+    return state.javaClass.getDeclaredField(name).apply { isAccessible = true }.getBoolean(state)
+}
+
+private fun loseBillingRecord(bridge: CodexCodeModeBridge, round: Any) {
+    val registry = billingField(bridge, "registry")
+    val record = billingField(billingField(round, "capture"), "record")
+    val retained = billingField(registry, "retainedCells")
+    retained.javaClass.getDeclaredMethod("park", record.javaClass, String::class.java)
+        .apply { isAccessible = true }.invoke(retained, record, "synthetic newer-program disposal")
+    val streams = billingField(billingField(bridge, "driver"), "streams")
+    assertTrue((billingField(streams, "rounds") as Map<*, *>).isEmpty(), "the lease must remove the old round")
+}
+
+/** Raw-post telemetry deliberately overrides these counters, so also observe billing's actual release. */
+private fun recordBillingRelease(round: Any): CompletableDeferred<Usage?> {
+    val released = CompletableDeferred<Usage?>()
+    val owed = billingField(billingField(round, "billing"), "owed")
+    val field = owed.javaClass.getDeclaredField("release").apply { isAccessible = true }
+    val original = field.get(owed) as RowRelease
+    field.set(
+        owed,
+        RowRelease { usage ->
+            released.complete(usage)
+            original.release(usage)
+        },
+    )
+    return released
+}
+
+private fun reportedBillingUsage(round: Any): Usage? {
+    val billing = billingField(round, "billing")
+    return billing.javaClass.getDeclaredField("reported").apply { isAccessible = true }.get(billing) as? Usage
+}
+
+private fun assertHeldBillingSource(round: Any) {
+    val ended = round.javaClass.getDeclaredField("upstreamEnded").apply { isAccessible = true }
+    assertFalse(ended.getBoolean(round), "the gated source must not have returned its terminal")
+    val billing = billingField(round, "billing")
+    val owed = billing.javaClass.getDeclaredField("owed").apply { isAccessible = true }.get(billing)
+    assertTrue(owed != null, "the source posting row must already be held")
+}
+
+private fun awaitParsedBillingTerminal(round: Any) {
+    val ended = round.javaClass.getDeclaredField("upstreamEnded").apply { isAccessible = true }
+    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(BILLING_TEST_SECONDS)
+    val pause = CountDownLatch(1)
+    while (!ended.getBoolean(round) && System.nanoTime() < deadline) pause.await(GATE_POLL_MS, TimeUnit.MILLISECONDS)
+    assertTrue(ended.getBoolean(round), "the post must return its parsed terminal before head stop")
 }
 
 /** No row carries a round's tokens a second time, as tokens or as absorbed rounds, nor prices it twice. */

@@ -33,8 +33,11 @@ internal class CodeModeRoundBilling(
         reported = (outcome as? TurnOutcome.Success)?.usage
     }
 
-    private fun consume(current: CodeModeRecord): Usage? =
-        (registry.source.consume(current) ?: reported)?.also { reported = null }
+    private fun consume(current: CodeModeRecord): Usage? {
+        val staged = registry.source.consume(current)
+        // A staged terminal has one durable consumption owner. Its reported copy is only for rejected staging.
+        return (staged ?: reported.takeIf { current.sourceState?.usage == null })?.also { reported = null }
+    }
 
     fun claim(current: CodeModeRecord, step: TurnOutcome): Usage? = synchronized(lifecycle) {
         consume(current) ?: run {
@@ -59,7 +62,7 @@ internal class CodeModeRoundBilling(
             }
             if (usage == null && !readerEnd) return
             owed = null
-            due to (usage ?: Usage(cutRounds = 1).takeUnless { clientCut })
+            due to (usage ?: Usage(cutRounds = 1).takeUnless { clientCut || reported != null })
         }
         Cancellables.runCatchingBestEffort { due.settle(usage) }.onFailure { failure ->
             log("[code-mode] the posting turn's row was not released (${failure::class.simpleName})")

@@ -204,6 +204,36 @@ describe('a turn', () => {
     });
     expect(turnLede(later, stagesOf(later))).not.toContain('Most of it');
   });
+  test('a WebSocket size refusal before SSE fallback is not one wire attempt', () => {
+    const fallback = row({
+      head: 'synthetic', ts: 1, model: 'synthetic', attempts: 1, ws_refused_too_large: 1,
+      prep_ms: 12, admit_wait_ms: 1, lease_wait_ms: 0,
+      arrival_to_upstream_write_ms: 20000, upstream_write_to_first_byte_ms: 50,
+      first_byte: 20050, first_frame: 30, first_delta: 21000,
+      stream_end: 25000, finish: 25005, total: 25010,
+    });
+    const timing = stagesOf(fallback);
+    expect(timing.additive).toBe(false);
+    expect(turnLede(fallback, timing)).not.toContain('Most of it');
+    expect(stagesOf({ ...fallback, ws_refused_too_large: 0 }).additive).toBe(true);
+  });
+  test('structural frames must fit completion bounds without following the first byte', () => {
+    const completed = row({
+      head: 'synthetic', ts: 1, model: 'synthetic', attempts: 1,
+      prep_ms: 20, admit_wait_ms: 30, lease_wait_ms: 0,
+      arrival_to_upstream_write_ms: 100, upstream_write_to_first_byte_ms: 8000,
+      first_byte: 8100, first_delta: 8200, stream_end: 9900,
+      finish: 9905, first_frame: 9990, total: 10000,
+    });
+    for (const first_frame of [9990, 9903, 10001]) {
+      const conflicting = { ...completed, first_frame };
+      const timing = stagesOf(conflicting);
+      expect(timing.additive).toBe(false);
+      expect(turnLede(conflicting, timing)).not.toContain('Most of it');
+    }
+    expect(stagesOf({ ...completed, first_frame: 50 }).additive).toBe(true);
+    expect(stagesOf({ ...completed, first_frame: 9900 }).additive).toBe(true);
+  });
   const noTiming = { stages: [], additive: false };
   const marks = {
     recv: 1, parse: 3, build: 20, gate: 2100, headers: 2300, first_byte: 5500,

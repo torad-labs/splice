@@ -42,6 +42,43 @@ async function openTurn(page: Page, head: string, at: number): Promise<void> {
 }
 
 for (const width of [1440, 390]) {
+  for (const shape of ['ws-refusal', 'frame-past-finish', 'frame-past-stream', 'early-frame'] as const) {
+    test(`reviewed timing completion and fallback ${shape} at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      const at = Date.now() - 60_000;
+      const timing = shape === 'ws-refusal'
+        ? { attempts: 1, ws_refused_too_large: 1, prep_ms: 12, admit_wait_ms: 1, lease_wait_ms: 0,
+          arrival_to_upstream_write_ms: 20000, upstream_write_to_first_byte_ms: 50,
+          first_byte: 20050, first_frame: 30, first_delta: 21000, stream_end: 25000, finish: 25005, total: 25010 }
+        : { attempts: 1, prep_ms: 20, admit_wait_ms: 30, lease_wait_ms: 0,
+          arrival_to_upstream_write_ms: 100, upstream_write_to_first_byte_ms: 8000,
+          first_byte: 8100, first_frame: shape === 'early-frame' ? 50 : shape === 'frame-past-stream' ? 9903 : 9990,
+          first_delta: 8200, stream_end: 9900, finish: 9905, total: 10000 };
+      const row: TurnRowWire = {
+        ...timing, ts: at, model: 'synthetic', outcome: 'ok', compact: false,
+        session: null, account: null, cache_cold: null, turn: null, session_id: null, response_message_id: null,
+      };
+      await page.route('**/api/perf/turns?*', route => route.fulfill({ json: {
+        since: at, n: 1, heads: [{ key: STACK.soloHead, label: STACK.soloHead, count: 1, returned: 1,
+          truncated: false, oldest_held_ts: at, rows: [row] }],
+      } }));
+      const faults = await open(page, 'requests/' + STACK.soloHead + '/' + at);
+      const stages = page.getByRole('region', { name: 'Where the time went', exact: true });
+      if (shape === 'early-frame') {
+        await expect(stages.locator('.water')).toHaveCount(1);
+        await expect(page.locator('.hero .lede')).toContainText('Most of it');
+      } else {
+        await expect(stages).toContainText('do not form a complete breakdown');
+        await expect(stages.locator('.water')).toHaveCount(0);
+        await expect(page.locator('.hero .lede')).not.toContainText('Most of it');
+      }
+      await assertHealthy(page, faults);
+      await page.unrouteAll({ behavior: 'wait' });
+    });
+  }
+}
+
+for (const width of [1440, 390]) {
   for (const transport of ['websocket', 'sse'] as const) {
     for (const shape of ['first-send', 'later-send', 'marks-past-total'] as const) {
       test(`unmeasured pre-send timing is never painted as model time for ${transport} ${shape} at ${width}`, async ({ page }) => {

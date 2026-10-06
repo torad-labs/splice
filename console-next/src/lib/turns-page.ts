@@ -289,7 +289,8 @@ export function stagesOf(row: TurnRow): TurnTiming {
   // ordering check never moves a legacy mark forward to manufacture a non-overlapping interval.
   const firstDelta = row.first_delta;
   const streamEnd = row.stream_end;
-  const stream = response && row.attempts === 1 && measured(firstDelta) && measured(streamEnd)
+  const stream = response && row.attempts === 1 && (row.ws_refused_too_large ?? 0) === 0
+    && measured(firstDelta) && measured(streamEnd)
     && firstDelta >= send + responseWait && streamEnd >= firstDelta
     && total !== null && streamEnd <= total
     && (!measured(row.first_byte) || row.first_byte >= send && row.first_byte <= firstDelta)
@@ -300,7 +301,10 @@ export function stagesOf(row: TurnRow): TurnTiming {
   const additive = stream && total !== null && sum <= total
     && local.every(([, ms]) => measured(ms))
     && localMs <= send
-    && MARK_KEYS.every(key => row[key] === undefined || measured(row[key]) && row[key] <= total);
+    && MARK_KEYS.every(key => row[key] === undefined || measured(row[key]) && row[key] <= total)
+    && (row.first_frame === undefined || measured(row.first_frame)
+      && row.first_frame <= streamEnd
+      && (row.finish === undefined || measured(row.finish) && row.first_frame <= row.finish));
   // These measured spans are disjoint even when earlier attempts are missing. Their remainder is
   // not a measured phase and, without a comparable complete row, is never presented as a stack.
   if (total !== null && sum <= total && (!response || localMs <= send && send + responseWait <= total)) {

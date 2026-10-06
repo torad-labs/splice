@@ -131,7 +131,9 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
         Disposition("4 @ParameterizedTest methods expand to 12 cases (8 @Test + 12 = 20)", 20),
     "CodeModeDisposedSourceTest" to
         Disposition("3 @ParameterizedTest methods expand to 2 late-loss + 2 terminal + 3 billing cases (2 @Test + 7 = 9)", 9),
-    "CodexCodeModeReanchorTest" to Disposition("2 @ParameterizedTest methods expand to 5 cases (1 @Test + 5 = 6)", 6),
+    // b40f250e8: client baselines across re-anchors add an 8-row CsvSource and two boolean sources.
+    "CodexCodeModeReanchorTest" to
+        Disposition("5 @ParameterizedTest methods expand to 2 + 3 + 8 + 2 + 2 cases (1 @Test + 17 = 18)", 18),
     // b5bfa0a11: an item-complete suffix waits for response certification over six endings, and the
     // incomplete ending repeats 50 times as a race cohort; each annotation declares one method.
     "CodeModeSourceCertificationTest" to

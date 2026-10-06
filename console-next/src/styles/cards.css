@@ -6,9 +6,10 @@
 .card.dragging { z-index: 5; opacity: .92; cursor: grabbing; }
 .card .bar h3 { font-size: var(--text-4); }
 .card-link { color: inherit; text-decoration: none; }
-/* the whole card opens the session; its acts stay above the link */
+/* the whole card opens the session; its acts and disclosures stay above the link */
 .card-link::after { content: ''; position: absolute; inset: 0; z-index: 0; }
 .card .acts { position: relative; z-index: 1; align-items: center; flex-wrap: wrap; }
+.card .on-request { position: relative; z-index: 1; }
 .card .glass.one { padding: var(--space-6) var(--space-7); margin-bottom: var(--space-4); }
 .card .glass.one p { color: var(--glass-ink); }
 .card[tabindex="0"] .card-link::after { cursor: grab; }

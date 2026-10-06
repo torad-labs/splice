@@ -106,7 +106,7 @@ test('unknown readiness uses theme amber while accepted and refused commands kee
     for (const theme of ['Day', 'Night']) {
       await page.getByRole('button', { name: theme, exact: true }).click();
       for (const [name, word, day, night] of [
-        [unknown.label, 'Readiness unknown', 'rgb(125, 84, 25)', 'rgb(231, 192, 105)'],
+        [unknown.label, 'Not checked yet', 'rgb(125, 84, 25)', 'rgb(231, 192, 105)'],
         [accepted.label, 'Ready', 'rgb(44, 101, 85)', 'rgb(97, 190, 163)'],
         [refused.label, 'Access refused', 'rgb(165, 59, 57)', 'rgb(238, 122, 112)'],
       ] as const) {
@@ -137,7 +137,7 @@ test('a ready command shows its real session launcher and copies it without star
   const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: ready.label, exact: true }) });
   await expect(card.getByText('Ready', { exact: true })).toBeVisible();
   await expect(card).toContainText('Start a session in your terminal:');
-  await expect(card.locator('code')).toHaveText(ready.label);
+  await expect(card.locator('.acts code')).toHaveText(ready.label);
   for (const width of [1536, 393]) {
     await page.setViewportSize({ width, height: 1024 });
     for (const theme of ['Day', 'Night']) {
@@ -176,33 +176,65 @@ test('Models and its detail use the last real provider answer instead of daemon 
   const faults = await open(page, 'models');
   const card = () => page.locator('li.card').filter({ has: page.getByRole('link', { name: provider.label, exact: true }) });
   await expect(card().getByText('Access refused', { exact: true })).toBeVisible();
-  await expect(card()).toContainText('HTTP 403');
+  const details = () => card().locator('details').filter({ has: page.getByText('Connection details', { exact: true }) });
+  await expect(details()).not.toHaveAttribute('open');
+  await expect(details().locator('code')).toHaveText('HTTP 403');
+  await expect(details().locator('code')).not.toBeVisible();
   await expect(card()).toContainText('1h ago');
   await expect(card()).not.toContainText('No reading yet');
   await expect(card().getByText('Ready', { exact: true })).toHaveCount(0);
   for (const width of [1536, 393]) {
     await page.setViewportSize({ width, height: 1024 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    const order = await page.locator('li.card .card-link').allTextContents();
+    await details().locator('summary').focus();
+    await details().locator('summary').press('Enter');
+    await expect(details().locator('code')).toBeVisible();
+    expect(await page.locator('li.card .card-link').allTextContents()).toEqual(order);
+    await details().locator('summary').click();
+    await expect(details().locator('code')).not.toBeVisible();
     await card().screenshot({ path: testInfo.outputPath('provider-refused-' + width + '.png') });
   }
   await card().getByRole('link', { name: provider.label, exact: true }).click();
   await expect(page.locator('header.top')).toContainText('Access refused');
-  await expect(page.getByRole('main')).toContainText('HTTP 403');
+  const detailDisclosure = page.getByRole('main').locator('details').filter({ has: page.getByText('Connection details', { exact: true }) });
+  await expect(detailDisclosure.locator('code')).toHaveText('HTTP 403');
+  await expect(detailDisclosure.locator('code')).not.toBeVisible();
+  await detailDisclosure.locator('summary').click();
+  await expect(detailDisclosure.locator('code')).toBeVisible();
+  await detailDisclosure.locator('summary').click();
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.getByRole('main').screenshot({ path: testInfo.outputPath('provider-detail-' + width + '.png') });
+  }
   await expect(page.getByRole('main')).not.toContainText('No reading yet');
   provider.last_provider_answer = { status: 429, observed_at_epoch_ms: observed, accepted: false };
   await open(page, 'models');
   await page.reload();
   await expect(card().getByText('Rate limited', { exact: true })).toBeVisible();
-  await expect(card()).toContainText('HTTP 429');
+  await expect(details().locator('code')).toHaveText('HTTP 429');
+  await expect(details().locator('code')).not.toBeVisible();
+  await details().locator('summary').click();
+  await expect(details().locator('code')).toBeVisible();
   await expect(card()).toContainText('1h ago');
   provider.last_provider_answer = null;
   await page.reload();
-  await expect(card().getByText('Readiness unknown', { exact: true })).toBeVisible();
+  await expect(card().getByText('Not checked yet', { exact: true })).toBeVisible();
   await expect(card().getByText('Ready', { exact: true })).toHaveCount(0);
+  await expect(details()).toHaveCount(0);
+  provider.last_provider_answer = { status: 200, observed_at_epoch_ms: Date.now(), accepted: true };
+  await page.reload();
+  await expect(card().getByText('Ready', { exact: true })).toBeVisible();
+  await expect(details().locator('code')).toHaveText('HTTP 200');
+  await expect(details().locator('code')).not.toBeVisible();
+  await details().locator('summary').click();
+  await expect(details().locator('code')).toBeVisible();
   provider.last_provider_answer = { status: null, observed_at_epoch_ms: Date.now(), accepted: true };
   await page.reload();
   await expect(card().getByText('Ready', { exact: true })).toBeVisible();
-  await expect(card()).toContainText('streamed request');
+  await expect(card()).toContainText('Last request accepted');
+  await expect(details()).toHaveCount(0);
   await expect(card()).not.toContainText('HTTP 200');
   await assertHealthy(page, faults);
 });
@@ -281,12 +313,22 @@ test('a silent runtime is off on its card and detail while unmarked plans remain
   });
   await open(page, 'models');
   const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: STACK.oauthHead, exact: true }) });
-  await expect(card.getByText('Runtime off', { exact: true })).toBeVisible();
-  await expect(card).toContainText('The runtime is not answering on :8099.');
-  await expect(page.locator('li.card').filter({ hasNot: page.getByRole('link', { name: STACK.oauthHead, exact: true }) }).getByText('Runtime off', { exact: true })).toHaveCount(0);
-  await expect(page.locator('main .lede')).toContainText('one switched off');
+  await expect(card.getByText('Model not responding', { exact: true })).toBeVisible();
+  await expect(card).toContainText('The model on this computer is not responding.');
+  const details = card.locator('details').filter({ has: page.getByText('Connection details', { exact: true }) });
+  await expect(details.locator('code')).toContainText(':8099');
+  await expect(details.locator('code')).not.toBeVisible();
+  await details.locator('summary').click();
+  await expect(details.locator('code')).toBeVisible();
+  await expect(page.locator('li.card').filter({ hasNot: page.getByRole('link', { name: STACK.oauthHead, exact: true }) }).getByText('Model not responding', { exact: true })).toHaveCount(0);
+  await expect(page.locator('main .lede')).toContainText('one not available');
   await card.getByRole('link', { name: STACK.oauthHead, exact: true }).click();
-  await expect(page.getByRole('main')).toContainText('Runtime off');
+  await expect(page.getByRole('main')).toContainText('Model not responding');
+  const detailDisclosure = page.getByRole('main').locator('details').filter({ has: page.getByText('Connection details', { exact: true }) });
+  await expect(detailDisclosure.locator('code')).toContainText(':8099');
+  await expect(detailDisclosure.locator('code')).not.toBeVisible();
+  await detailDisclosure.locator('summary').click();
+  await expect(detailDisclosure.locator('code')).toBeVisible();
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.getByRole('button', { name: 'Copy start command', exact: true }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('rig up ' + STACK.oauthHead);

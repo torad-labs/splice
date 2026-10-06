@@ -158,7 +158,7 @@ export function headAttention(head: HeadStatus, signals: HeadSignals = NO_SIGNAL
 /** The retained answer's age, never the time the console polled its state. */
 export function providerAnswerText(head: HeadStatus, now: number): string | null {
   const answer = head.last_provider_answer;
-  return answer == null ? null : FL.providerAnswer(answer.accepted, answer.status, timeAgo(answer.observed_at_epoch_ms, now));
+  return answer == null ? null : FL.providerAnswer(answer.accepted, timeAgo(answer.observed_at_epoch_ms, now));
 }
 
 /** The provider families the fleet groups by. Derived from the head's auth kind, which is the only

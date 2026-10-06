@@ -25,6 +25,7 @@ export const F = {
   copyLaunch: 'Copy session command',
   copyKey: 'Copy the key command',
   copied: 'Copied',
+  connectionDetails: 'Connection details',
   failed: 'That did not work:',
 } as const;
 

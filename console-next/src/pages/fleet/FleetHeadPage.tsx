@@ -10,7 +10,8 @@ import { Back, Button, Empty, Fault, PageHead, Plus, Segmented, State, Window } 
 import { failureText } from '../../api/client';
 import { SignIn } from '../shared/SignIn';
 import { AccountRowView } from './AccountRows';
-import { D } from './copy';
+import { D, F } from './copy';
+import { OnRequest } from '../shared/OnRequest';
 import { A } from '../accounts/copy';
 import { LogTab } from './LogTab';
 import { ModelsTab } from './ModelsTab';
@@ -85,6 +86,7 @@ export function FleetHeadPage() {
         {facts.fix === null ? null : <div className="acts"><FleetFix fix={facts.fix} head={head} pool={pool} now={now} keyCommand={facts.keyCommand ?? null} /></div>}
       </header>
       {facts.providerAnswer == null ? null : <p className="quiet-line">{facts.providerAnswer}</p>}
+      {facts.connectionDetails == null ? null : <div className="quiet-line"><OnRequest label={F.connectionDetails}>{facts.connectionDetails}</OnRequest></div>}
       {facts.line?.kind === 'note' ? <p className="quiet-line">{facts.line.text}</p> : null}
       <Window as="section" colour={facts.colour} attention={facts.attention} className="sheet head-sheet" aria-label={D.windowsTab}>
         <div className="bar">

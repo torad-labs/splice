@@ -7,6 +7,7 @@ import { localZonedInstantText } from '../../lib/heads';
 import { Q } from '../../lib/words-quota';
 import { Button, State, Window } from '../../ui';
 import { F } from './copy';
+import { OnRequest } from '../shared/OnRequest';
 
 /** One measured window: a command-colour bar, or a red hatch for a held refusal. */
 function Gauge({ line }: { line: Extract<FleetLine, { kind: 'gauge' }> }) {
@@ -61,6 +62,7 @@ export function FleetCardView({ facts, fix, sortable = true, ordering }: { facts
         ))}
       </div>
       {facts.providerAnswer == null ? null : <p className="quiet-line">{facts.providerAnswer}</p>}
+      {facts.connectionDetails == null ? null : <div className="quiet-line" onPointerDown={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}><OnRequest label={F.connectionDetails}>{facts.connectionDetails}</OnRequest></div>}
       {facts.line === null && facts.none !== null ? <div className="quiet-meta"><span>{facts.none}</span></div> : null}
       {fix === null && (ordering === undefined || !sortable) ? null : <div className="acts" onPointerDown={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
         {sortable && ordering !== undefined ? <>

@@ -27,7 +27,9 @@ describe('a fleet card', () => {
     expect(card.standing).not.toBe('ready');
     expect(card.line?.kind).toBe('note');
     expect(card.none).not.toBe('No reading yet');
-    expect(card.providerAnswer).toContain(`HTTP ${status}`);
+    expect(card.providerAnswer).toContain('Last request refused');
+    expect(card.providerAnswer).not.toContain('HTTP');
+    expect(card.connectionDetails).toBe(`HTTP ${status}`);
     expect(card.providerAnswer).toContain('1h ago');
     expect(fleetCard({ ...refused, last_provider_answer: { status: 200, observed_at_epoch_ms: NOW, accepted: true } }, inputs()).state).toBe('Ready');
   });
@@ -36,7 +38,7 @@ describe('a fleet card', () => {
     const unobserved = head({ last_provider_answer: null });
     if (last_provider_answer === undefined) delete unobserved.last_provider_answer;
     const card = fleetCard(unobserved, inputs());
-    expect(card.state).toBe('Readiness unknown');
+    expect(card.state).toBe('Not checked yet');
     expect(card.standing).not.toBe('ready');
     expect(card.attention).toBe(false);
   });
@@ -46,19 +48,22 @@ describe('a fleet card', () => {
     const card = fleetCard(denied, inputs({ usage: null, auth: { 'claude-grok': { kind: 'grok-oauth', login: '', present: false } } }));
     expect(card.state).toBe('Signed out');
     expect(card.none).toBeNull();
-    expect(card.providerAnswer).toContain('HTTP 403');
+    expect(card.providerAnswer).toContain('Last request refused');
+    expect(card.providerAnswer).not.toContain('HTTP');
+    expect(card.connectionDetails).toBe('HTTP 403');
   });
 
   test('unknown readiness preserves an independently current quota reading without treating it as acceptance', () => {
     const card = fleetCard(head({ last_provider_answer: null }), inputs());
-    expect(card.state).toBe('Readiness unknown');
+    expect(card.state).toBe('Not checked yet');
     expect(card.line).toMatchObject({ kind: 'gauge', name: '5 hours', pct: 41 });
   });
 
   test('an accepted WebSocket response is proof without a fabricated HTTP status', () => {
     const card = fleetCard(head({ last_provider_answer: { status: null, observed_at_epoch_ms: NOW - 60_000, accepted: true } }), inputs());
     expect(card.state).toBe('Ready');
-    expect(card.providerAnswer).toContain('streamed request');
+    expect(card.providerAnswer).toContain('Last request accepted');
+    expect(card.connectionDetails).toBeNull();
     expect(card.providerAnswer).not.toContain('HTTP');
   });
   test('the daemon family names a local runtime even when it has a key, and a remote head stays remote without one', () => {
@@ -173,7 +178,7 @@ describe('a fleet card', () => {
   test.each([
     [head({ running: false }), 'Stopped'],
     [head({ healthy: false }), 'Failing'],
-    [head({ last_provider_answer: null }), 'Readiness unknown'],
+    [head({ last_provider_answer: null }), 'Not checked yet'],
     [head({ last_provider_answer: { status: 403, observed_at_epoch_ms: NOW, accepted: false } }), 'Access refused'],
     [head({ quotaResetAtEpochSeconds: NOW / 1000 + 60 }), `Out of quota until ${localZonedInstantText(NOW / 1000 + 60)}`],
   ] as const)('a critical reading never replaces a stronger %s state', (command, state) => {
@@ -212,8 +217,9 @@ describe('a fleet card', () => {
   test('a stopped head is stopped and can be started; a silent local runtime is off, never an item, and is copied not started', () => {
     expect(fleetCard(head({ running: false }), inputs())).toMatchObject({ state: 'Stopped', attention: false, fix: 'start' });
     const off = fleetCard(head({ authKind: 'local', runtimeNotAnswering: ':8099' }), inputs({ family: 'local' }));
-    expect(off).toMatchObject({ state: 'Runtime off', tone: 'idle', attention: false, fix: 'copy-start' });
-    expect(off.line).toEqual({ kind: 'note', text: 'The runtime is not answering on :8099.' });
+    expect(off).toMatchObject({ state: 'Model not responding', tone: 'idle', attention: false, fix: 'copy-start' });
+    expect(off.line).toEqual({ kind: 'note', text: 'The model on this computer is not responding.' });
+    expect(off.connectionDetails).toBe('HTTP 200\n:8099');
     expect(off.meta[0]).toBe('this computer');
     expect(startCommandOf(head({ key: 'bonsai' }))).toBe('rig up bonsai');
   });
@@ -258,7 +264,7 @@ describe('the fleet sentence', () => {
   const stand = (...standings: FleetStanding[]): FleetCard[] => standings.map((standing) => ({ standing }) as FleetCard);
   test('counts each standing in order and ends with how to arrange the cards', () => {
     expect(fleetLede(stand('ready', 'quota', 'ready', 'off', 'ready', 'signed-out', 'limited'))).toBe(
-      'Seven commands: three ready, one with high quota use, one out of quota, one needs a sign-in or a key, one switched off. Drag a card to put it where you want it; Sessions follows.',
+      'Seven commands: three ready, one with high quota use, one out of quota, one needs a sign-in or a key, one not available. Drag a card to put it where you want it; Sessions follows.',
     );
   });
   test('one command is singular and a standing nobody has is left out', () => {

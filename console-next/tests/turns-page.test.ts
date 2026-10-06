@@ -320,6 +320,14 @@ describe('a turn', () => {
     const link = (href: string, text: string) => `<a href="${href}" data-discover="true">${text}</a>`;
     expect(shown).toContain(`${link('/requests?head=claude', 'claude-splice')} · ${link('/requests?model=opus-5.5', 'opus-5.5')} · ${link('/requests?account=work%40x.io', 'work@x.io')}`);
   });
+  test.each(['ok', 'error:restarted', 'error:cancelled', 'failure:api_error'])('compaction is a request kind, not a completion claim: %s', outcome => {
+    const line = lineOf(row({ compact: true, outcome }), h => h, none, () => null);
+    expect(line.tags).toEqual(['Compaction']);
+    expect(line.outcome).toEqual(outcomeOf(outcome));
+    expect(html({ compact: true, outcome })).toContain('<span class="tag">Compaction</span>');
+    expect(html({ compact: true, outcome })).not.toContain('Compacted');
+  });
+
   test('a row with a session links to that session\'s requests', () => {
     expect(html({ session: '1a2b3c4d' })).toContain('<a class="same" href="/requests?session=1a2b3c4d" data-discover="true">Same session</a>');
     expect(html({})).not.toContain('Same session');
@@ -327,7 +335,7 @@ describe('a turn', () => {
   test('the chips say a compaction, a cache hit, a retry and a switch of account, each only when the row carries it', () => {
     const tags = (over: Partial<TurnRow>) => lineOf(row(over), (h) => h, none, () => null).tags;
     expect(tags({})).toEqual([]);
-    expect(tags({ compact: true, cached_tokens: 120, retries: 2, account: 'backup', cache_cold: true })).toEqual(['Compacted', 'Cache hit', 'Retried', 'Switched account']);
+    expect(tags({ compact: true, cached_tokens: 120, retries: 2, account: 'backup', cache_cold: true })).toEqual(['Compaction', 'Cache hit', 'Retried', 'Switched account']);
     expect(tags({ cached_tokens: 0, retries: 0, account: 'work', cache_cold: false })).toEqual([]);
     expect(html({ retries: 1 })).toContain('<span class="tag">Retried</span>');
   });

@@ -60,7 +60,7 @@ export const T = {
   shownOf: (shown: number, total: number) => `Showing the newest ${shown.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}. Narrow the window or filter to see the rest.`,
   in: 'in',
   out: 'out',
-  compacted: 'Compacted',
+  compacted: 'Compaction',
   cacheHit: 'Cache hit',
   retried: 'Retried',
   switchedAccount: 'Switched account',

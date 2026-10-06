@@ -175,6 +175,40 @@ test('an empty answer explains reported thinking and uses the same plan-cost sen
   await assertHealthy(page, faults);
 });
 
+for (const ending of [
+  { outcome: 'error:restarted', word: 'Restarted by splice' },
+  { outcome: 'ok', word: 'Done' },
+]) {
+  test('a compaction request tag never invents completion: ' + ending.outcome, async ({ page }, testInfo) => {
+    const at = Date.now();
+    const row = { ts: at, model: STACK.soloModel, outcome: ending.outcome, compact: true, total: 20,
+      session: null, account: null, cache_cold: null, turn: null, session_id: null, response_message_id: null };
+    await page.route('**/api/perf/summary?*', route => route.fulfill({ json: { window: '1h', heads: [{
+      key: STACK.soloHead, label: STACK.soloHead, count: 1, empty: false, outcomes: { [ending.outcome]: 1 },
+    }] } }));
+    await page.route(url => url.pathname === '/api/perf/turns', route => {
+      const key = new URL(route.request().url()).searchParams.get('head') ?? '';
+      return route.fulfill({ json: { since: at - 1000, n: 200, heads: [{
+        key, label: key, count: key === STACK.soloHead ? 1 : 0, rows: key === STACK.soloHead ? [row] : [],
+      }] } });
+    });
+    for (const width of [1536, 393]) {
+      await page.setViewportSize({ width, height: 1024 });
+      const faults = await open(page, 'requests');
+      await expect(page.locator('.turn')).toHaveCount(1);
+      await expect(page.locator('.turn .tag')).toHaveText('Compaction');
+      await expect(page.locator('.turn .state')).toHaveText(ending.word);
+      await page.locator('.turn h3 a').click();
+      await expect(page.locator('.facts .tag')).toHaveText('Compaction');
+      await expect(page.locator('.facts .state')).toHaveText(ending.word);
+      await expect(page.getByRole('main')).not.toContainText('Compacted');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      if (ending.outcome === 'error:restarted') await page.locator('header.hero').screenshot({ path: testInfo.outputPath('cut-compaction-' + width + '.png') });
+      await assertHealthy(page, faults);
+    }
+  });
+}
+
 test('a restart cut keeps its owner in Failed and never falls back to an operator stop', async ({ page }) => {
   const at = Date.now();
   const row = {

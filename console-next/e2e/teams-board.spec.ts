@@ -21,6 +21,8 @@ test('Teams groups real registry seats without saved membership and reads a mess
   await expect(project.locator('a[href="#/sessions/' + STACK.peer.id + '"]')).toBeVisible();
   await expect(project).not.toContainText(env('CONSOLE_E2E_PEER_ADDRESS'));
   expect(requestedMessages).toEqual([]);
+  await expect(project.getByRole('region', { name: 'Messages and handoffs', exact: true })).toContainText('Recorded messages between these sessions, newest first.');
+  await expect(project).not.toContainText('Recent messages');
   const call = 'toolu_synthetic_project_team_' + Date.now();
   const dir = join(env('CONSOLE_E2E_TRANSCRIPT_ROOT'), 'projects', 'console-e2e');
   mkdirSync(dir, { recursive: true, mode: 0o700 });

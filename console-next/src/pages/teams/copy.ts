@@ -11,7 +11,7 @@ export const T = {
   lastModel: (name: string) => `Last model: ${name}`,
   folderGrouping: 'Grouped by the reported working folder; repository details were not read.',
   handoffs: 'Messages and handoffs',
-  handoffsWhy: 'Recent messages between these sessions. Open a message to read what was handed over.',
+  handoffsWhy: 'Recorded messages between these sessions, newest first. Open one to read what was handed over.',
   readingHandoffs: 'Reading the handoffs…',
   noHandoffs: 'No handoffs recorded between these sessions.',
   allHandoffs: 'Show more handoffs',

@@ -40,6 +40,8 @@ describe('the project teams board', () => {
     expect(html).toContain('Assigning the API work.');
     expect(html).toContain('last status update is old');
     expect(html).toContain('lead to builder');
+    expect(html).toContain('Recorded messages between these sessions, newest first.');
+    expect(html).not.toContain('Recent messages');
     expect(html).toContain('href="/sessions/lead"');
     expect(html).not.toContain('uds:');
     expect(html).not.toContain('No teams');

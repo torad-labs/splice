@@ -18,12 +18,20 @@ describe('a project in words', () => {
     expect(repoLabel('/home/ava/mythos/repo', 'git@github.com:torad-labs/splice.git')).toBe('splice');
     expect(repoLabel('/home/ava/mythos/repo')).toBe('mythos/repo');
   });
-  test('the sentence says what runs, which teams work here and what today cost', () => {
-    expect(projectLede(row())).toBe('2 sessions are running and 1 team works here. 12 turns today. About $1.50 of API cost.');
-    expect(projectLede(row({ live_sessions: 0, teams: 0, turns_today: 0 }))).toBe('Nothing is running. No turns today.');
+  test('the sentence says what runs, which teams work here and what the recorded window cost', () => {
+    expect(projectLede(row())).toMatch(/^2 sessions are running and 1 team works here\. 12 turns since .+\. About \$1\.50 of API cost\.$/);
+    expect(projectLede(row({ live_sessions: 0, teams: 0, turns_today: 0 }))).toMatch(/^Nothing is running\. No turns since .+\.$/);
   });
   test('turns with no priced turn state no cost rather than a cost of zero', () => {
-    expect(projectLede(row({ cost_today_usd: null, teams: 0, live_sessions: 1 }))).toBe('1 session is running. 12 turns today. No turn here was priced today.');
+    expect(projectLede(row({ cost_today_usd: null, teams: 0, live_sessions: 1 }))).toMatch(/^1 session is running\. 12 turns since .+\. No turn in this window was priced\.$/);
+  });
+  test('the recorded count names day_start in the viewer’s local clock, not a client-recounted today', () => {
+    const evening = new Date(2026, 8, 29, 19, 0).getTime();
+    const morning = new Date(2026, 8, 29, 1, 42).getTime();
+    expect(projectLede(row({ day_start: evening, turns_today: 12 }))).toMatch(/12 turns since .*?(7:00\s?PM|19:00)/i);
+    expect(projectLede(row({ day_start: morning, turns_today: 12 }))).toMatch(/12 turns since .*?(1:42\s?AM|01:42|1:42)/i);
+    expect(projectLede(row({ day_start: evening, turns_today: 0 }))).toMatch(/No turns since .*?(7:00\s?PM|19:00)/i);
+    expect(projectLede(row({ day_start: evening }))).not.toContain('today');
   });
   test('an alive session counts even when its registration is stale; a gone process does not', () => {
     const here = session({ session_id: 'a', repo: { root: ROOT } } as Partial<SessionRow>);

@@ -233,7 +233,7 @@ test('Models and its detail use the last real provider answer instead of daemon 
   provider.last_provider_answer = { status: null, observed_at_epoch_ms: Date.now(), accepted: true };
   await page.reload();
   await expect(card().getByText('Ready', { exact: true })).toBeVisible();
-  await expect(card()).toContainText('Last request accepted');
+  await expect(card()).toContainText('Last provider answer: accepted');
   await expect(details()).toHaveCount(0);
   await expect(card()).not.toContainText('HTTP 200');
   await assertHealthy(page, faults);
@@ -374,7 +374,7 @@ test('critical and warning readings differ on Models and detail without inventin
   await expect(card.getByText('At reported limit', { exact: true })).toBeVisible();
   await expect(card.getByText('Ready', { exact: true })).toHaveCount(0);
   await expect(card).not.toContainText('Out of quota');
-  await expect(card).toContainText('Last request accepted');
+  await expect(card).toContainText('Last provider answer: accepted');
   await expect(card.locator('.track')).not.toHaveClass(/full/);
   await expect(card.locator('.track i')).toHaveCSS('width', await card.locator('.track').evaluate((node) => getComputedStyle(node).width));
   const local = await page.evaluate((seconds) => new Intl.DateTimeFormat('en-US', {

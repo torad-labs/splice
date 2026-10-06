@@ -2,6 +2,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const RENDERS = /renders against the live daemon$/;
+const qualificationWidth = process.env['CONSOLE_E2E_WIDTH'];
+if (qualificationWidth !== undefined && !['1440', '390'].includes(qualificationWidth)) throw new Error('CONSOLE_E2E_WIDTH must be 1440 or 390');
 
 export default defineConfig({
   testDir: '.',
@@ -16,7 +18,7 @@ export default defineConfig({
   outputDir: '../build/e2e',
   use: {
     ...devices['Desktop Chrome'],
-    viewport: { width: 1536, height: 1024 },
+    viewport: { width: Number(qualificationWidth ?? 1536), height: 1024 },
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

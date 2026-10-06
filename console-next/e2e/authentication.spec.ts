@@ -1,6 +1,25 @@
 // NEW: V4-444 — pasted-key recovery, event continuity and one shell across source-derived routes.
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { ROUTES, env, routePath } from './support';
+
+async function shellColumn(page: Page, route: string): Promise<void> {
+  const column = await page.getByRole('main').evaluate(element => {
+    const shell = element.parentElement;
+    if (shell === null) throw new Error('main has no shell');
+    const style = getComputedStyle(shell);
+    const available = Math.min(innerWidth, shell.clientWidth) - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    return { width: element.getBoundingClientRect().width, floor: available > 600 ? 600 : available - 1 };
+  });
+  expect(column.width, route + ': page column must not be squeezed by a duplicate shell').toBeGreaterThan(column.floor);
+}
+
+test('the narrow shell column check rejects a squeezed main', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 1024 });
+  await page.setContent('<style>*{box-sizing:border-box}body{margin:0}.app{padding:0 12px}main{width:100%}</style><div class="app"><main>synthetic shell</main></div>');
+  await shellColumn(page, 'positive narrow control');
+  await page.getByRole('main').evaluate(element => { (element as HTMLElement).style.width = '160px'; });
+  await expect(shellColumn(page, 'squeezed narrow control')).rejects.toThrow();
+});
 
 for (const route of ROUTES) {
   test(route + ': a refused key recovers every shell read and events in place', async ({ page }) => {
@@ -74,8 +93,7 @@ test('two unlocks leave one shell through forward and reverse source-derived rou
     await expect(page.getByRole('navigation', { name: 'Pages', exact: true })).toHaveCount(1);
     await expect(page.locator('aside.side')).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
-    const column = await page.getByRole('main').boundingBox();
-    expect(column?.width ?? 0, route + ': page column must not be squeezed by a duplicate shell').toBeGreaterThan(600);
+    await shellColumn(page, route);
     expect(warnings, route + ': duplicate React keys').toEqual([]);
   }
 });

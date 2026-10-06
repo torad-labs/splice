@@ -1,6 +1,6 @@
 // The Projects page's arithmetic: a repo's name and sentence, and the standing prompt and compaction rule read from and written
 // into splice.toml. Pure over the daemon's payloads and the parsed topology.
-import { ABSENT, fmtUsd } from './format';
+import { ABSENT, clockTime, fmtUsd } from './format';
 import { repoNameOf } from './repo';
 import { sessionLabel } from './sessions';
 import { P } from './words-projects';
@@ -14,8 +14,9 @@ export const repoLabel = (root: string, remote?: string): string => repoNameOf(r
 export function projectLede(row: ProjectRow, runningSessions = row.live_sessions): string {
   const running = runningSessions === 0 ? P.noneRunning : P.running(runningSessions);
   const teams = row.teams === 0 ? '' : ` ${P.teams(row.teams)}`;
-  const today = row.turns_today === 0 ? P.noTurnsToday : row.cost_today_usd === null ? `${P.turnsToday(row.turns_today)} ${P.costUnpriced}` : `${P.turnsToday(row.turns_today)} ${P.costToday(fmtUsd(row.cost_today_usd))}`;
-  return `${running}${teams}. ${today}`;
+  const since = clockTime(row.day_start);
+  const window = row.turns_today === 0 ? P.noTurnsSince(since) : row.cost_today_usd === null ? `${P.turnsSince(row.turns_today, since)} ${P.costUnpriced}` : `${P.turnsSince(row.turns_today, since)} ${P.costToday(fmtUsd(row.cost_today_usd))}`;
+  return `${running}${teams}. ${window}`;
 }
 
 export const costText = (row: ProjectRow): string => (row.cost_today_usd === null ? ABSENT : fmtUsd(row.cost_today_usd));

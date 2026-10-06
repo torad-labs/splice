@@ -20,6 +20,12 @@ const inputs = (over: Partial<FleetInputs> = {}): FleetInputs => ({ usage: usage
 const account = (over: Partial<AccountRow> = {}): AccountRow => ({ heads: ['claude-grok'], label: 'Ava’s Grok', selected: null, ...over }) as AccountRow;
 
 describe('a fleet card', () => {
+  test.each([true, false])('provider response evidence with accepted=%s never claims a recorded client request', accepted => {
+    const card = fleetCard(head({ last_provider_answer: { status: accepted ? 200 : 403, accepted, observed_at_epoch_ms: NOW - 34 * 3_600_000 } }), inputs({ sessions: new Map(), usage: null }));
+    expect(card.providerAnswer).toBe(`Last provider answer: ${accepted ? 'accepted' : 'refused'}, 34h ago`);
+    expect(card.providerAnswer).not.toMatch(/request/i);
+    expect(card.line?.kind === 'note' ? card.line.text : '').not.toMatch(/last request/i);
+  });
   test.each([['kimi-oauth', 403, 'Access refused'], ['muse-oauth', 429, 'Rate limited']] as const)('the last %s provider answer overrides daemon liveness and old gauges', (authKind, status, state) => {
     const refused = head({ authKind, last_provider_answer: { status, observed_at_epoch_ms: NOW - 3_600_000, accepted: false } });
     const card = fleetCard(refused, inputs());
@@ -27,7 +33,7 @@ describe('a fleet card', () => {
     expect(card.standing).not.toBe('ready');
     expect(card.line?.kind).toBe('note');
     expect(card.none).not.toBe('No reading yet');
-    expect(card.providerAnswer).toContain('Last request refused');
+    expect(card.providerAnswer).toContain('Last provider answer: refused');
     expect(card.providerAnswer).not.toContain('HTTP');
     expect(card.connectionDetails).toBe(`HTTP ${status}`);
     expect(card.providerAnswer).toContain('1h ago');
@@ -48,7 +54,7 @@ describe('a fleet card', () => {
     const card = fleetCard(denied, inputs({ usage: null, auth: { 'claude-grok': { kind: 'grok-oauth', login: '', present: false } } }));
     expect(card.state).toBe('Signed out');
     expect(card.none).toBeNull();
-    expect(card.providerAnswer).toContain('Last request refused');
+    expect(card.providerAnswer).toContain('Last provider answer: refused');
     expect(card.providerAnswer).not.toContain('HTTP');
     expect(card.connectionDetails).toBe('HTTP 403');
   });
@@ -62,7 +68,7 @@ describe('a fleet card', () => {
   test('an accepted WebSocket response is proof without a fabricated HTTP status', () => {
     const card = fleetCard(head({ last_provider_answer: { status: null, observed_at_epoch_ms: NOW - 60_000, accepted: true } }), inputs());
     expect(card.state).toBe('Ready');
-    expect(card.providerAnswer).toContain('Last request accepted');
+    expect(card.providerAnswer).toContain('Last provider answer: accepted');
     expect(card.connectionDetails).toBeNull();
     expect(card.providerAnswer).not.toContain('HTTP');
   });

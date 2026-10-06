@@ -111,12 +111,21 @@ for (const method of ['keyboard', 'pointer'] as const) {
       await page.evaluate(() => new Promise<void>((resolve) => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       }));
-      await page.keyboard.press('ArrowRight');
+      const first = await cards.first().boundingBox();
+      const next = await cards.nth(1).boundingBox();
+      if (first === null || next === null) throw new Error('plan cards have no layout');
+      const x = next.x + next.width / 2 - first.x - first.width / 2;
+      const y = next.y + next.height / 2 - first.y - first.height / 2;
+      await page.keyboard.press(Math.abs(x) > Math.abs(y) ? x > 0 ? 'ArrowRight' : 'ArrowLeft' : y > 0 ? 'ArrowDown' : 'ArrowUp');
       await expect(page.getByRole('status')).toContainText('over droppable area e2e-codex-solo');
       await page.keyboard.press('Space');
     } else {
-      const start = await cards.first().locator('.quiet-meta').first().boundingBox();
-      const finish = await cards.nth(1).locator('.quiet-meta').first().boundingBox();
+      const startField = cards.first().locator('.quiet-meta').first();
+      const finishField = cards.nth(1).locator('.quiet-meta').first();
+      await finishField.scrollIntoViewIfNeeded();
+      await startField.scrollIntoViewIfNeeded();
+      const start = await startField.boundingBox();
+      const finish = await finishField.boundingBox();
       if (start === null || finish === null) throw new Error('plan card bodies have no layout');
       await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
       await page.mouse.down();

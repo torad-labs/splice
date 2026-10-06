@@ -8,6 +8,38 @@ import type { ProjectRow } from '../src/types/projects';
 import { driveOneTurn, STACK, utcDayWait } from './stack';
 import { env, FIRST_READ_MS, open, read } from './support';
 
+test.describe('the project source window in the viewer’s local time', () => {
+  test.use({ timezoneId: 'America/Chicago' });
+  test('a UTC-started API count names its local start and changes only when the API window changes', async ({ page }) => {
+    const repo = env('CONSOLE_E2E_REPO');
+    let start = Date.parse('2026-10-06T00:00:00Z');
+    let count = 12;
+    await page.route(url => url.pathname === '/api/projects/' + encodeURIComponent(repo), async route => {
+      const response = await route.fetch();
+      const body = await response.json() as ProjectRow;
+      await route.fulfill({ response, json: { ...body, day_start: start, turns_today: count, cost_today_usd: null } });
+    });
+    const faults = await open(page, 'projects/' + encodeURIComponent(repo));
+    const lede = page.locator('.page-head .lede');
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 1024 });
+      await expect(lede).toContainText('12 turns since ');
+      await expect(lede).toContainText('7:00 PM');
+      await expect(lede).not.toContainText('today');
+    }
+    start = Date.parse('2026-10-06T06:42:00Z');
+    await page.reload();
+    await expect(lede).toContainText('12 turns since ');
+    await expect(lede).toContainText('1:42 AM');
+    count = 0;
+    await page.reload();
+    await expect(lede).toContainText('No turns since ');
+    await expect(lede).toContainText('1:42 AM');
+    expect(faults.pageErrors).toEqual([]);
+    expect(faults.failedReads).toEqual([]);
+  });
+});
+
 test('a repository page retains daemon session/turn facts, selected rule length and trusted roots', async ({ page }) => {
   const wait = utcDayWait(60_000);
   test.setTimeout(60_000 + wait);
@@ -22,10 +54,12 @@ test('a repository page retains daemon session/turn facts, selected rule length 
   const main = page.getByRole('main');
   await expect(main).toContainText(repo);
   await expect(main).toContainText(row.live_sessions + ' sessions are running');
-  await expect(main).toContainText(new RegExp(row.turns_today + ' turns? today'));
+  await expect(main).toContainText(new RegExp(row.turns_today + ' turns? since '));
+  const sourceClock = await page.evaluate(start => new Date(start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), row.day_start);
+  await expect(main).toContainText(sourceClock);
   await expect(main).toContainText(repo + '/CLAUDE.md');
   expect(row.cost_today_usd).toBeNull();
-  await expect(main).toContainText('No turn here was priced today');
+  await expect(main).toContainText('No turn in this window was priced');
   const rules = page.getByRole('region', { name: 'Compaction rules', exact: true });
   expect(row.compaction).toEqual([{ scope: 'project', source: 'project:' + repo, chars: STACK.compactProject.length }]);
   await expect(rules).toContainText(basename(repo));

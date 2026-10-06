@@ -23,7 +23,7 @@ internal class WrapRig(home: Path) {
     val realBinary: Path = binaryAt(versions.resolve("2.1.278"))
     val cmd: Path = bin.resolve("claude")
     val shim: Path = share.resolve("splice-launch").also { it.writeText("#!/usr/bin/env bash\n") }
-    val installPaths = InstallPaths(binOverride = bin, shareOverride = share)
+    val installPaths = InstallPaths(binOverride = bin, shareOverride = share, envReader = { null })
     val stateStore = WrapStateStore(file = home.resolve("state").resolve("claude-head-wrap.json"))
     var clock = 1_000L
     val head = WrappedHead(

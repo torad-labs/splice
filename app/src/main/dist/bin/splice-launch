@@ -71,7 +71,7 @@ module.exports = { liveStateDir };
 
 // Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 // — bump both together whenever this shim's behavior changes. No code generation.
-const SPLICE_SHIM_VERSION = "shim-13";
+const SPLICE_SHIM_VERSION = "shim-14";
 // Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 const SPLICE_GATEWAY_VERSION = "0.4.0";
 
@@ -402,7 +402,7 @@ function unitEnvironment() {
 }
 
 async function startThroughUnit(unit, managerHome, present) {
-  if (!(HEALTH_JSON === "" && present && HOME === managerHome && unitDefaults())) return;
+  if (!(HEALTH_JSON === "" && present && sameHome(managerHome) && unitDefaults())) return;
   warn(`splice: starting ${unit}…`);
   try {
     execFileSync("systemctl", ["--user", "start", unit], { stdio: "ignore", env: userBusEnv() });
@@ -580,14 +580,57 @@ function unwrappedClaude(managed) {
   exec([binary, ...args], env);
 }
 
+// Wrap publishes this locator before replacing claude, and reconcile backfills older wraps.
+// It lives beside the real launcher, so caller HOME, runtime and bus selectors cannot relocate it.
+function launcherOwner() {
+  const file = path.join(path.dirname(fs.realpathSync(__filename)), "splice-launch-owner.json");
+  let owner;
+  try {
+    owner = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (failure) {
+    if (failure.code === "ENOENT") return null;
+    fail("splice: launcher's owner record is unreadable; no daemon was contacted");
+  }
+  if (typeof owner?.home !== "string" || !path.isAbsolute(owner.home) ||
+      typeof owner?.state_dir !== "string" || !path.isAbsolute(owner.state_dir)) {
+    fail("splice: launcher's owner record is invalid; no daemon was contacted");
+  }
+  const profile = { HOME: owner.home, SPLICE_STATE_DIR: owner.state_dir };
+  for (const name of ["SPLICE_CONFIG", "XDG_CONFIG_HOME", "SPLICE_CONTROL_PORT", "CONTROL_PROXY_PORT"]) {
+    const value = owner.selectors?.[name];
+    if (value !== undefined && typeof value !== "string") {
+      fail("splice: launcher's owner selectors are invalid; no daemon was contacted");
+    }
+    if (value) profile[name] = value;
+  }
+  return profile;
+}
+
+function sameHome(other) {
+  if (typeof other !== "string") return false;
+  const canonical = (home) => {
+    try {
+      return fs.realpathSync(home);
+    } catch {
+      return path.resolve(home);
+    }
+  };
+  return canonical(HOME) === canonical(other);
+}
+
 async function main() {
+  const owner = launcherOwner();
+  if (owner !== null && !sameHome(owner.HOME) && HEAD === "claude") unwrappedClaude(owner);
   const unit = or(env.SPLICE_SUPERVISOR_UNIT, "splice.service");
   const present = unitExists(unit);
   const managed = present ? unitEnvironment() : null;
-  if (present && managed === null) fail(`splice: cannot read ${unit}'s HOME; no daemon was contacted`);
-  if (managed !== null && HOME !== managed.HOME && HEAD === "claude") unwrappedClaude(managed);
+  if (managed === null && (owner === null || !sameHome(owner.HOME)) && readKey() === "") {
+    fail("splice: cannot establish this launcher's owning HOME or this HOME's splice state; no daemon was contacted");
+  }
+  const profile = owner ?? managed;
+  if (profile !== null && !sameHome(profile.HOME) && HEAD === "claude") unwrappedClaude(profile);
   if (args[0] === "login") headLogin();
-  if (managed !== null && HOME !== managed.HOME && Number(CONTROL_PORT) === Number(controlPortFor(managed.HOME, managed))) {
+  if (profile !== null && !sameHome(profile.HOME) && Number(CONTROL_PORT) === Number(controlPortFor(profile.HOME, profile))) {
     fail(`splice: ${unit} belongs to another HOME on port ${CONTROL_PORT}; set SPLICE_CONTROL_PORT to an isolated port`);
   }
   HEALTH_JSON = await health();

@@ -20,7 +20,7 @@
 //
 // The arms run IN ORDER in ONE sandbox, as the script's did — several depend on what the previous
 // one left in the daemon-state file.
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { shimMarkers } from "./shim.ts";
@@ -441,6 +441,135 @@ const ARMS: readonly Arm[] = [
     },
   },
   {
+    name: "wrapped Claude keeps its owner when the caller's user bus is unreachable",
+    run: async (ctx) => {
+      const share = join(ctx.dir, "bus-owner-share");
+      const state = join(ctx.dir, "bus-owner-state");
+      const otherHome = join(ctx.dir, "bus-other-home");
+      const installed = join(share, "splice-launch");
+      const wrapped = join(ctx.dir, "bus-wrapped", "claude");
+      const binary = join(ctx.dir, "bus-real-claude");
+      const capture = join(ctx.dir, "bus-real-capture");
+      for (const dir of [share, state, otherHome, join(ctx.dir, "bus-wrapped")]) mkdirSync(dir, { recursive: true });
+      copyFileSync(ctx.shim, installed);
+      chmodSync(installed, 0o755);
+      symlinkSync(installed, wrapped);
+      const customConfig = join(ctx.dir, "owner-custom.toml");
+      writeFileSync(customConfig, `[daemon]\ncontrol_port = ${ctx.daemon.state}\n`);
+      writeFileSync(join(share, "splice-launch-owner.json"), JSON.stringify({
+        home: ctx.env.HOME, state_dir: state, selectors: { SPLICE_CONFIG: customConfig },
+      }));
+      writeFileSync(join(state, "claude-head-wrap.json"), JSON.stringify({ real_binary_path: binary, shim_path: installed }));
+      writeStub(binary,
+        'import { writeFileSync } from "node:fs";\n' +
+        `writeFileSync(${JSON.stringify(capture)}, JSON.stringify({ argv: process.argv.slice(2), home: process.env.HOME, runtime: process.env.XDG_RUNTIME_DIR, bus: process.env.DBUS_SESSION_BUS_ADDRESS }));\n` +
+        "process.exit(23);\n",
+      );
+      const environments = [
+        { XDG_RUNTIME_DIR: join(otherHome, "isolated-runtime"), DBUS_SESSION_BUS_ADDRESS: undefined },
+        { XDG_RUNTIME_DIR: undefined, DBUS_SESSION_BUS_ADDRESS: "unix:path=/synthetic-dead-bus" },
+        { XDG_RUNTIME_DIR: join(otherHome, "isolated-runtime"), DBUS_SESSION_BUS_ADDRESS: "unix:path=/synthetic-dead-bus" },
+      ];
+      const argv = ["--print", "--output-format", "json", "synthetic peer request", "", "line one\nline two"];
+      const problems: string[] = [];
+      for (const [index, environment] of environments.entries()) {
+        ctx.cold();
+        rmSync(capture, { force: true });
+        const reads = ctx.daemon.healthReads;
+        const run = await ctx.launch({
+          ...environment, HOME: otherHome, SPLICE_HEAD: undefined, SPLICE_CONTROL_PORT: String(ctx.daemon.toml),
+        }, argv, wrapped);
+        const expected = { argv, home: otherHome, runtime: environment.XDG_RUNTIME_DIR, bus: environment.DBUS_SESSION_BUS_ADDRESS };
+        if (run.code !== 23 || read(capture) !== JSON.stringify(expected)) problems.push(`bus case ${index}: unwrapped launch failed: ${run.output}`);
+        if (ctx.daemon.healthReads !== reads || ctx.daemon.lastLaunch || existsSync(ctx.captures.javaArgv)) {
+          problems.push(`bus case ${index}: foreign HOME contacted or started splice`);
+        }
+        ctx.cold();
+        const namedReads = ctx.daemon.healthReads;
+        const named = await ctx.launch({
+          ...environment, HOME: otherHome, SPLICE_HEAD: "synthetic-named", SPLICE_CONTROL_PORT: String(ctx.daemon.toml),
+        }, ["--version"], installed);
+        if (named.code !== 1 || !named.stderr.includes("no daemon was contacted") || ctx.daemon.healthReads !== namedReads) {
+          problems.push(`bus case ${index}: a foreign locator must not authorize an unowned named head: ${named.output}`);
+        }
+      }
+      const ownHome = join(ctx.dir, "bus-owned-other-profile");
+      const ownState = join(ownHome, ".splice", "state");
+      mkdirSync(ownState, { recursive: true });
+      mkdirSync(join(ownHome, ".local", "share", "splice"), { recursive: true });
+      writeFileSync(join(ownHome, ".local", "share", "splice", "splice.jar"), "");
+      writeFileSync(join(ownState, "mgmt-key"), "test-key\n");
+      writeFileSync(join(ownState, "config.json"), JSON.stringify({ controlPort: ctx.daemon.state }));
+      ctx.cold();
+      const conflictReads = ctx.daemon.healthReads;
+      const conflict = await ctx.launch({
+        HOME: ownHome, SPLICE_HEAD: "synthetic-named", XDG_RUNTIME_DIR: join(ownHome, "isolated-runtime"),
+      }, ["--version"], installed);
+      if (conflict.code !== 1 || ctx.daemon.healthReads !== conflictReads) {
+        problems.push(`the owner's selected topology port must refuse a named-head collision: ${conflict.output}`);
+      }
+      ctx.cold();
+      rmSync(capture, { force: true });
+      const same = await ctx.launch({
+        HOME: `${ctx.env.HOME}/.`, SPLICE_HEAD: "claude", XDG_RUNTIME_DIR: join(otherHome, "isolated-runtime"),
+      }, ["--version"], installed);
+      if (same.code !== 0 || ctx.daemon.lastLaunch?.url !== `http://127.0.0.1:${ctx.daemon.toml}/launch/claude` || existsSync(capture)) {
+        problems.push(`an equivalent owner HOME spelling must keep splice routing: ${same.output}`);
+      }
+      writeFileSync(join(ownState, "config.json"), JSON.stringify({ controlPort: ctx.daemon.toml }));
+      ctx.cold();
+      const own = await ctx.launch({
+        HOME: ownHome, SPLICE_HEAD: "synthetic-named", XDG_RUNTIME_DIR: join(ownHome, "isolated-runtime"),
+      }, ["--version"], installed);
+      if (own.code !== 0 || ctx.daemon.lastLaunch?.url !== `http://127.0.0.1:${ctx.daemon.toml}/launch/synthetic-named`) {
+        problems.push(`a named head with its own state must launch despite a foreign locator: ${own.output}`);
+      }
+      return problems.length === 0 ? null : problems.join("\n");
+    },
+  },
+  {
+    name: "an unreachable bus and absent owner refuse plain and named heads before daemon contact",
+    run: async (ctx) => {
+      const otherHome = join(ctx.dir, "bus-unowned-home");
+      mkdirSync(join(otherHome, ".config", "splice"), { recursive: true });
+      writeFileSync(join(otherHome, ".config", "splice", "splice.toml"), `[daemon]\ncontrol_port = ${ctx.daemon.toml}\n`);
+      const environments = [
+        { XDG_RUNTIME_DIR: join(otherHome, "isolated-runtime"), DBUS_SESSION_BUS_ADDRESS: undefined },
+        { XDG_RUNTIME_DIR: undefined, DBUS_SESSION_BUS_ADDRESS: "unix:path=/synthetic-dead-bus" },
+      ];
+      const problems: string[] = [];
+      for (const environment of environments) {
+        for (const head of ["claude", "synthetic-named"]) {
+          ctx.cold();
+          const reads = ctx.daemon.healthReads;
+          const run = await ctx.launch({ ...environment, HOME: otherHome, SPLICE_HEAD: head }, ["--version"]);
+          if (run.code !== 1 || !run.stderr.includes("no daemon was contacted")) problems.push(`${head}: missing owner must refuse: ${run.output}`);
+          if (ctx.daemon.healthReads !== reads || ctx.daemon.lastLaunch || existsSync(ctx.captures.javaArgv)) {
+            problems.push(`${head}: an unowned HOME contacted or started splice`);
+          }
+        }
+      }
+      return problems.length === 0 ? null : problems.join("\n");
+    },
+  },
+  {
+    name: "no user manager or owner locator still launches this HOME's existing splice state",
+    run: async (ctx) => {
+      // Includes the first plain-claude launch after upgrade, before reconcile backfills its locator.
+      for (const head of ["test", "claude"]) {
+        ctx.cold();
+        const run = await ctx.launch({
+          SPLICE_HEAD: head, LAUNCHER_UNIT_PRESENT: "0",
+          XDG_RUNTIME_DIR: join(ctx.dir, "isolated-runtime"), DBUS_SESSION_BUS_ADDRESS: "unix:path=/synthetic-dead-bus",
+        }, ["--version"]);
+        if (run.code !== 0 || ctx.daemon.lastLaunch?.url !== `http://127.0.0.1:${ctx.daemon.toml}/launch/${head}`) {
+          return `own-HOME ${head} must keep working without a locator or bus: ${run.output}`;
+        }
+      }
+      return null;
+    },
+  },
+  {
     name: "wrapped Claude refuses missing or recursive recorded binaries before daemon contact",
     run: async (ctx) => {
       const otherHome = join(ctx.dir, "wrapped-other-home");
@@ -727,6 +856,7 @@ function writeMocks(bin: string): void {
     'import { appendFileSync, writeFileSync } from "node:fs";\n' +
       "const argv = process.argv.slice(2);\n" +
       'if (argv[0] !== "--user") { process.stderr.write(`unexpected systemctl args: ${argv.join(" ")}\\n`); process.exit(2); }\n' +
+      'if (process.env.XDG_RUNTIME_DIR?.endsWith("isolated-runtime") || process.env.DBUS_SESSION_BUS_ADDRESS?.includes("synthetic-dead-bus")) process.exit(1);\n' +
       'if (argv[1] === "cat") process.exit(process.env.LAUNCHER_UNIT_PRESENT === "1" ? 0 : 1);\n' +
       'if (argv[1] === "show-environment") {\n' +
       '  process.stdout.write(`HOME=${process.env.LAUNCHER_UNIT_HOME}\\n`);\n' +

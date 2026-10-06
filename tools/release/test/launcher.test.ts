@@ -48,8 +48,8 @@ describe("the launch shim", () => {
   // UF-04 and UF-05, V4-258's boot-log flag, V4-457's OOM flags, V4-218's three HOME arms, the wrapped-HOME arms,
   // and the CLI console arm.
   test("the rehearsal is the script's arms, all of them", () => {
-    expect(ARM_NAMES.length).toBe(6 + 2 + SELECTORS.length + 2 + 1 + 1 + 3 + 2 + 1);
-    expect(ARM_NAMES.length).toBe(27);
+    expect(ARM_NAMES.length).toBe(6 + 2 + SELECTORS.length + 2 + 1 + 1 + 3 + 5 + 1);
+    expect(ARM_NAMES.length).toBe(30);
     expect(ARM_NAMES.filter((name) => name.startsWith("UF-03")).length).toBe(SELECTORS.length);
     expect(ARM_NAMES.filter((name) => name.startsWith("V4-218")).length).toBe(3);
     for (const marker of ["JW-01", "JW-04", "UF-01", "UF-02", "UF-04", "UF-05", "V4-258", "V4-457", "V4-218"]) {
@@ -111,6 +111,15 @@ describe("the launch shim", () => {
         "process.exit(result.status === null ? 1 : result.status);\n",
     );
     expect(await launcherRehearsal(wrapper)).toContain("UF-01");
+  }, 180_000);
+
+  test("dropping owner selectors exposes the selected-port collision before health", async () => {
+    const source = readFileSync(shipped, "utf8");
+    const assignment = "if (value) profile[name] = value;";
+    expect(source).toContain(assignment);
+    const mutant = fixture("");
+    writeFileSync(mutant, source.replace(assignment, ""));
+    expect(await launcherRehearsal(mutant)).toContain("the owner's selected topology port must refuse");
   }, 180_000);
 
   test("no fake curl survives: the shim speaks node:http, so PATH mocks are java and systemctl only", () => {

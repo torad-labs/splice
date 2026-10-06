@@ -2,7 +2,7 @@
 // on PATH becomes a splice launcher over the vanilla config, which this file never writes (V4-445): a
 // wrapped launch runs Claude Code with no CLAUDE_CONFIG_DIR, so it reads the operator's real ~/.claude.json
 // and ~/.claude exactly as a plain `claude` does, and the head's own settings ride the launch (LaunchService).
-// What wrap changes is one symlink and one state file. Three hazards this file exists to close:
+// Wrap changes one symlink, its state file and the launcher-owner locator. Three hazards this file exists to close:
 //   - SELF-EXEC: app/src/main/dist/bin/splice-launch execs its recipe's argv[0] by resolving it through PATH, and
 //     LaunchService plants the bare string "claude" there. The moment `claude` on PATH IS the shim,
 //     every head's launch (not only the wrapped one) would resolve argv[0] back to the shim that is
@@ -19,7 +19,7 @@
 //   - THE DAEMON'S OWN SWAP: unwrap swaps the same symlink, and the watch would read that as an update and
 //     wrap again. wrap, unwrap and reconcile therefore take one lock, and unwrap clears the state inside it.
 // "no pool, no isolation, no un-link on a wrapped head" (the row title): this class does not touch
-// Topology, ManagedHead or the account pool — it is a self-contained shim-and-one-file mechanism.
+// Topology, ManagedHead or the account pool — it is a self-contained shim-and-state mechanism.
 // DTOs, read seams and outcome types live in WrappedHeadTypes.kt (concentration, 2026-09-20). Same
 // package, same FQCNs.
 package splice.client.wrap
@@ -33,6 +33,7 @@ import splice.client.SymlinkOp
 import splice.core.config.InstallPaths
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
+import splice.core.util.FileTightening
 import splice.core.util.JsonScalars
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
@@ -87,6 +88,35 @@ public class WrapStateStore(
             put("wrapped_at_epoch_millis", state.wrappedAtEpochMillis)
         }
         SecureFile.writeAtomic0600(file, json.encodeToString(JsonObject.serializer(), body) + "\n")
+    }
+
+    /** Locate this wrap independently of the caller's HOME and user-manager bus. */
+    public fun recordLauncherOwner(home: Path, shim: Path, profile: Map<String, String>) {
+        val owner = shim.toRealPath().resolveSibling("splice-launch-owner.json")
+        val body = buildJsonObject {
+            put("home", home.toAbsolutePath().normalize().toString())
+            put("state_dir", file.toAbsolutePath().normalize().parent.toString())
+            if (profile.isNotEmpty()) put("selectors", ownerSelectors(home, profile))
+        }.toString() + "\n"
+        if (!Files.exists(owner, NOFOLLOW_LINKS) || Files.readString(owner) != body) {
+            SecureFile.writeAtomic0600(owner, body)
+        }
+        when (val access = SecureFile.ownerOnlyFile(owner)) {
+            is FileTightening.Open -> error("launcher owner record is not owner-only: ${access.why}")
+            else -> Unit
+        }
+    }
+
+    private fun ownerSelectors(home: Path, profile: Map<String, String>): JsonObject = buildJsonObject {
+        profile.forEach { (name, value) ->
+            val selected = if (name == "SPLICE_CONFIG" || name == "XDG_CONFIG_HOME") {
+                (if (value.startsWith("~/")) home.resolve(value.substring(2)) else Paths.get(value))
+                    .toAbsolutePath().normalize().toString()
+            } else {
+                value
+            }
+            put(name, selected)
+        }
     }
 
     /** Best-effort: an unreadable leftover already answers [read] as absent (proven-absence law), so
@@ -200,7 +230,10 @@ public class WrappedHead(
         val shim = shimPath
         when {
             !Files.exists(shim, NOFOLLOW_LINKS) -> ReconcileResult.Waiting("launch shim not found at $shim")
-            isWrapShim(cmd, shim) -> refreshBinary(state)
+            isWrapShim(cmd, shim) -> {
+                stateStore.recordLauncherOwner(home, shim, installPaths.launcherProfile)
+                refreshBinary(state)
+            }
             !Files.exists(cmd, NOFOLLOW_LINKS) -> ReconcileResult.Waiting("$cmd is missing")
             !cmd.isSymbolicLink() -> ReconcileResult.Waiting("$cmd is not a symlink, so it is left alone")
             else -> rewrap(cmd, shim, state)
@@ -246,6 +279,7 @@ public class WrappedHead(
                 wrappedAtEpochMillis = now(),
             ),
         )
+        stateStore.recordLauncherOwner(home, shim, installPaths.launcherProfile)
         atomicSymlink(cmd, shim)
         return WrapResult.Ok(status())
     }
@@ -298,6 +332,7 @@ public class WrappedHead(
                 wrappedAtEpochMillis = now(),
             ),
         )
+        stateStore.recordLauncherOwner(home, shim, installPaths.launcherProfile)
         atomicSymlink(cmd, shim)
         return ReconcileResult.Rewrapped(real.toString())
     }

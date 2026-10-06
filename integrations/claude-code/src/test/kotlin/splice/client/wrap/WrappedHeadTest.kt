@@ -6,13 +6,20 @@
 // test touches the real ~/.local/bin or ~/.claude-codey/state.
 package splice.client.wrap
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.InstallPaths
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermission.OWNER_READ
+import java.nio.file.attribute.PosixFilePermission.OWNER_WRITE
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isSymbolicLink
@@ -62,10 +69,62 @@ class WrappedHeadTest {
         val state = rig.stateStore.read()!!
         assertEquals(rig.realBinary.toString(), state.shadowedSymlinkTarget)
         assertEquals(rig.realBinary.toString(), state.realBinaryPath)
+        assertEquals(
+            """{"home":"$home","state_dir":"${home.resolve("state")}"}""",
+            rig.share.resolve("splice-launch-owner.json").readText().trim(),
+        )
+        assertEquals(
+            setOf(OWNER_READ, OWNER_WRITE),
+            Files.getPosixFilePermissions(rig.share.resolve("splice-launch-owner.json")),
+        )
 
         // V4-445: the operator's own state is where it was, byte for byte, and wrap added nothing to it.
         vanilla.assertUntouched()
         assertEquals("", state.settingsBackupPath, "there is nothing to back up when nothing is written")
+    }
+
+    @Test
+    fun `reconcile backfills an older wrap owner without changing its binary or command`(@TempDir home: Path) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        assertTrue(rig.head.wrap() is WrapResult.Ok)
+        val owner = rig.share.resolve("splice-launch-owner.json")
+        Files.delete(owner)
+        val state = rig.stateStore.read()
+        assertEquals(ReconcileResult.Intact, rig.head.reconcile())
+        assertEquals(state, rig.stateStore.read())
+        assertEquals(rig.shim.toRealPath(), rig.cmd.toRealPath())
+        assertEquals(
+            """{"home":"$home","state_dir":"${home.resolve("state")}"}""",
+            owner.readText().trim(),
+        )
+        Files.setPosixFilePermissions(owner, java.nio.file.attribute.PosixFilePermissions.fromString("rw-rw-rw-"))
+        assertEquals(ReconcileResult.Intact, rig.head.reconcile())
+        assertEquals(setOf(OWNER_READ, OWNER_WRITE), Files.getPosixFilePermissions(owner))
+    }
+
+    @Test
+    fun `wrap publishes all owner selectors before swapping the command`(@TempDir home: Path) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        val profile = mapOf(
+            "SPLICE_CONFIG" to home.resolve("custom.toml").toString(),
+            "XDG_CONFIG_HOME" to home.resolve("xdg").toString(),
+            "SPLICE_CONTROL_PORT" to "4500",
+            "CONTROL_PROXY_PORT" to "4501",
+        )
+        val paths = InstallPaths(binOverride = rig.bin, shareOverride = rig.share, envReader = profile::get)
+        val wrap = WrappedHead(
+            home = home,
+            installPaths = paths,
+            stateStore = rig.stateStore,
+            symlink = { link, target ->
+                val owner = Json.parseToJsonElement(rig.share.resolve("splice-launch-owner.json").readText()).jsonObject
+                assertEquals(JsonObject(profile.mapValues { JsonPrimitive(it.value) }), owner["selectors"])
+                Files.createSymbolicLink(link, target)
+            },
+        )
+        assertTrue(wrap.wrap() is WrapResult.Ok)
     }
 
     @Test

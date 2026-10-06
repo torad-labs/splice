@@ -11,10 +11,15 @@ class InstallPathsTest {
 
     @Test
     fun `env overrides win over the home defaults`() {
-        val env = mapOf("SPLICE_BIN_DIR" to "/opt/bin", "SPLICE_SHARE_DIR" to "/opt/share/splice")
+        val profile = mapOf("SPLICE_CONFIG" to "/opt/custom.toml", "SPLICE_CONTROL_PORT" to "4500")
+        val env = profile + mapOf(
+            "SPLICE_BIN_DIR" to "/opt/bin", "SPLICE_SHARE_DIR" to "/opt/share/splice",
+            "ANTHROPIC_API_KEY" to "synthetic-do-not-copy",
+        )
         val paths = InstallPaths(envReader = { env[it] })
         assertEquals(Paths.get("/opt/bin"), paths.binDir)
         assertEquals(Paths.get("/opt/share/splice"), paths.shareDir)
+        assertEquals(profile, paths.launcherProfile)
     }
 
     @Test

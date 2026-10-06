@@ -18,6 +18,13 @@ public class InstallPaths(
         ?: envReader("SPLICE_BIN_DIR")?.let { Paths.get(it) }
         ?: UserHome.dir(envReader).resolve(".local/bin")
 
+    /** Only the path and port selectors a launcher needs to recognize this install's daemon. */
+    public val launcherProfile: Map<String, String> = buildMap {
+        for (name in listOf("SPLICE_CONFIG", "XDG_CONFIG_HOME", "SPLICE_CONTROL_PORT", "CONTROL_PROXY_PORT")) {
+            envReader(name)?.takeIf(String::isNotEmpty)?.let { put(name, it) }
+        }
+    }
+
     public val shareDir: Path = shareOverride
         ?: envReader("SPLICE_SHARE_DIR")?.let { Paths.get(it) }
         ?: UserHome.dir(envReader).resolve(".local/share/splice")

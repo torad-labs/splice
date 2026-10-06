@@ -40,6 +40,45 @@ async function openTurn(page: Page, head: string, at: number): Promise<void> {
   await expect.poll(() => new URL(page.url()).hash).toBe(href);
 }
 
+for (const width of [1440, 390]) {
+  for (const allZero of [false, true]) {
+    test('recorded zero-duration stages keep their legend but paint no elapsed time at ' + width + (allZero ? ' with all marks zero' : ' beside positive stages'), async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      const at = Date.now() - 60_000;
+      const early = allZero ? 0 : 1;
+      const end = allZero ? 0 : 1000;
+      const row: TurnRowWire = {
+        ts: at, model: STACK.soloModel, outcome: 'ok', compact: false, session: null, account: null, cache_cold: null, turn: null,
+        session_id: null, response_message_id: null, recv: 0, parse: 0, build: early, gate: early, headers: early,
+        first_byte: end, first_delta: end, stream_end: end, finish: end, total: end,
+      };
+      await page.route('**/api/perf/turns?*', route => route.fulfill({ json: {
+        since: at, n: 1, heads: [{ key: STACK.soloHead, label: STACK.soloHead, count: 1, returned: 1, truncated: false, oldest_held_ts: at, rows: [row] }],
+      } }));
+      await open(page, 'requests/' + STACK.soloHead + '/' + at);
+      const stages = page.getByRole('region', { name: 'Where the time went', exact: true });
+      const legend = stages.locator('.legend');
+      await expect(legend.getByText('Waiting in line', { exact: true })).toBeVisible();
+      await expect(legend.getByText('Streaming', { exact: true })).toBeVisible();
+      await expect(legend.locator('.v')).toHaveText(allZero ? ['0 ms', '0 ms', '0 ms', '0 ms'] : ['1 ms', '0 ms', '999 ms', '0 ms']);
+      await expect(stages.locator('.water i[title^="Waiting in line:"]')).toHaveCount(0);
+      await expect(stages.locator('.water i[title^="Streaming:"]')).toHaveCount(0);
+      if (allZero) {
+        await expect(stages.getByRole('img')).toHaveCount(0);
+      } else {
+        await expect(stages.locator('.water i')).toHaveCount(2);
+        const prepare = await stages.locator('.water i[title^="Prepare:"]').boundingBox();
+        const provider = await stages.locator('.water i[title^="Model thinking:"]').boundingBox();
+        if (prepare === null || provider === null) throw new Error('positive timings lost their bars');
+        expect(prepare.width / provider.width).toBeCloseTo(1 / 999, 3);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await stages.screenshot({ path: test.info().outputPath('zero-stage-' + width + '-' + allZero + '.png') });
+      await page.unrouteAll({ behavior: 'wait' });
+    });
+  }
+}
+
 test('a recorded turn opens its own page with the exact received request and answer', async ({ page }) => {
   const faults = await open(page, 'requests');
   await driveOneTurn(Number(env('CONSOLE_E2E_SOLO_PORT')), env('CONSOLE_E2E_KEY'), undefined, STACK.soloModel);

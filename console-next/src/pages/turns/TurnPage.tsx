@@ -36,6 +36,7 @@ export function TurnPage() {
   const title = session === undefined ? plan : sessionLabel(session);
   const outcome = outcomeOf(row.outcome, row.refused_runtime_port, row.cause);
   const stages = stagesOf(row);
+  const painted = stages.filter(stage => stage.ms > 0);
   const moved = movedOf(row);
   const posted = (row.upstream_req_bytes ?? 0) > 0;
   const when = new Date(row.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -64,9 +65,9 @@ export function TurnPage() {
         <p className="why">{stages.length === 0 ? P.stagesNone : P.stagesWhy}</p>
         {stages.length === 0 ? null : (
           <>
-            <div className="water" role="img" aria-label={P.stagesTitle}>
-              {stages.map((stage) => <i key={stage.key} title={`${P.stages[stage.key][0]}: ${secondsText(stage.ms)}`} style={{ flex: Math.max(stage.ms, 1), ['--s' as string]: `${95 - STAGE_ORDER.indexOf(stage.key) * 15}%` }} />)}
-            </div>
+            {painted.length === 0 ? null : <div className="water" role="img" aria-label={P.stagesTitle}>
+              {painted.map((stage) => <i key={stage.key} title={`${P.stages[stage.key][0]}: ${secondsText(stage.ms)}`} style={{ flex: stage.ms, ['--s' as string]: `${95 - STAGE_ORDER.indexOf(stage.key) * 15}%` }} />)}
+            </div>}
             <div className="legend">
               {stages.map((stage) => (
                 <div key={stage.key}>

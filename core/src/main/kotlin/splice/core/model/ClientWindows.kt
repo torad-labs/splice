@@ -25,6 +25,7 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.util.LogSink
 import splice.core.util.LruSizing
+import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -77,12 +78,12 @@ public class ClientWindows(
                 }
             }
         } catch (e: IOException) {
-            log(unreadable(path, e))
-        } catch (e: SerializationException) {
-            log(unreadable(path, e))
+            log(unreadable(path, SafeFailureText.render(e)))
+        } catch (_: SerializationException) {
+            log(unreadable(path, "store is not valid JSON"))
         } catch (e: IllegalArgumentException) {
             // A well-formed JSON document of the wrong shape (an array, a nested object).
-            log(unreadable(path, e))
+            log(unreadable(path, SafeFailureText.render(e)))
         }
     }
 
@@ -97,10 +98,10 @@ public class ClientWindows(
             Files.writeString(tmp, json)
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         } catch (e: IOException) {
-            log("[windows] client-window registry not saved to $path (${e::class.simpleName})\n")
+            log("[windows] client-window registry not saved to $path: ${SafeFailureText.render(e)}\n")
         }
     }
 
-    private fun unreadable(path: Path, e: Exception): String =
-        "[windows] client-window registry at $path ignored (${e::class.simpleName}); sessions re-teach it\n"
+    private fun unreadable(path: Path, reason: String): String =
+        "[windows] client-window registry at $path ignored: $reason; sessions re-teach it\n"
 }

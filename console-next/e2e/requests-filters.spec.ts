@@ -135,7 +135,9 @@ test('stops stay out of failure counts and have a separate reloadable view with 
 test('an empty answer stays clean in Requests and explains the delivered ending before timing', async ({ page }) => {
   const at = Date.now();
   const row = { ts: at, model: STACK.soloModel, outcome: 'empty_message', compact: false,
-    upstream_req_bytes: 512, in_tokens: 80, out_tokens: 4000, total: 14200, recv: 1, parse: 3, build: 20, gate: 2100, headers: 2300, first_byte: 5500, stream_end: 13900, finish: 14000,
+    upstream_req_bytes: 512, in_tokens: 80, out_tokens: 4000, total: 14200, recv: 1, parse: 3, build: 20, gate: 2100, headers: 2300, first_byte: 5500, first_delta: 5500, stream_end: 13900, finish: 14000,
+    prep_ms: 20, admit_wait_ms: 2080, lease_wait_ms: 0, attempts: 1,
+    arrival_to_upstream_write_ms: 2300, upstream_write_to_first_byte_ms: 3200,
     session: null, account: null, cache_cold: null, turn: null, session_id: null, response_message_id: null };
   await page.route('**/api/perf/summary?*', route => route.fulfill({ json: { window: '1h', heads: [{
     key: STACK.soloHead, label: STACK.soloHead, count: 1, empty: false, outcomes: { empty_message: 1 },
@@ -150,7 +152,7 @@ test('an empty answer stays clean in Requests and explains the delivered ending 
   await expect(page.locator('.turn .state')).toHaveText('Empty answer');
   await expect(page.locator('.turn.failed')).toHaveCount(0);
   await page.locator('.turn h3 a').click();
-  await expect(page.locator('.page-head .lede')).toHaveText('The session received an empty answer from the model, which ended its reply with no text and no tool call. Took 14.2 s. Most of it, 8.5 s, was the answer arriving.');
+  await expect(page.locator('.page-head .lede')).toHaveText('The session received an empty answer from the model, which ended its reply with no text and no tool call. Took 14.2 s. Most of it, 8.4 s, was the answer arriving.');
   await expect(page.locator('.failure-sentence')).toHaveCount(0);
   await expect(page.locator('.page-head .lede')).not.toContainText('token');
   await expect(page.locator('.page-head .lede')).not.toContainText('reasoning');
@@ -246,6 +248,8 @@ test('a progress timeout explains provider silence and draws the missing wait wi
   const row = {
     ts: at, model: STACK.soloModel, outcome: 'error:cancelled', compact: false, total: 915_000,
     recv: 1, build: 20, headers: 1000, first_delta: 12_000,
+    prep_ms: 20, admit_wait_ms: 0, lease_wait_ms: 0, attempts: 1,
+    arrival_to_upstream_write_ms: 1000, upstream_write_to_first_byte_ms: 11_000,
     session: null, account: null, cache_cold: null, turn: 'synthetic-watchdog', session_id: null, response_message_id: null,
   };
   await page.route('**/api/perf/summary?*', route => route.fulfill({ json: { window: '1h', heads: [{
@@ -268,13 +272,12 @@ test('a progress timeout explains provider silence and draws the missing wait wi
   await expect(page.locator('.turn .state')).toHaveText('Ended by splice');
   await page.locator('.turn h3 a').click();
   await expect(page.locator('.failure-sentence')).toHaveText('Splice gave up after 15m 0s without progress from the provider. Retry the request.');
-  await expect(page.locator('.legend > div').filter({ hasText: 'Unrecorded time' }).locator('.v')).toHaveText('15m 3s');
-  await expect(page.locator('.legend > div').filter({ hasText: 'Model thinking' }).locator('.v')).toHaveText('12.0 s');
+  await expect(page.locator('.legend > div').filter({ hasText: 'Unmeasured time' }).locator('.v')).toHaveText('15m 3s');
+  await expect(page.locator('.legend > div').filter({ hasText: 'Waiting for response' }).locator('.v')).toHaveText('11.0 s');
   await expect(page.locator('.legend')).not.toContainText('Streaming');
-  const wait = page.locator('.water i[title="Unrecorded time: 15m 3s"]');
-  await expect(wait).toHaveCount(1);
-  const fraction = await wait.evaluate(element => element.getBoundingClientRect().width / (element.parentElement?.getBoundingClientRect().width ?? 1));
-  expect(fraction).toBeGreaterThan(0.95);
+  await expect(page.locator('.legend')).not.toContainText('Model thinking');
+  await expect(page.getByRole('region', { name: 'Where the time went', exact: true })).toContainText('do not form a complete breakdown');
+  await expect(page.locator('.water')).toHaveCount(0);
   await page.setViewportSize({ width: 1536, height: 1000 });
   await page.screenshot({ path: 'captures/console-walk-oct3/watchdog-wait-1536.png', fullPage: true });
   await page.setViewportSize({ width: 393, height: 850 });

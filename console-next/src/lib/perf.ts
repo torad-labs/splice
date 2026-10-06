@@ -1,85 +1,13 @@
-// The arithmetic behind the turns page: the WATERFALL, the GROUPING and the IN-FLIGHT SET. Pure
-// functions over the daemon's rows, kept out of the view so each is directly testable.
-//
-// WHY THE WATERFALL IS SEGMENTS AND NOT ONE DURATION. FEATURES.md 4.3 asks for queue wait, upstream
-// wait and streaming to be "visibly separate", because the console cannot say WHY an upstream was
-// slow (2.12): it can only say where the time went. Every perf row carries the marks that answer it,
-// each in ms since the request arrived (PerfKeys: "marks are *_ms-since-arrival").
-//
-// THE SEGMENTS FOLLOW THE CLOCK, NOT THE KEY ORDER. The line prints its marks in PerfKeys.markOrder,
-// and the daemon does not stamp them in that order: admission marks `gate` as the turn opens,
-// before `parse` and `build` (AdmissionTelemetry.kt), and the client's first frame goes out at
-// upstream handoff, before the provider's first byte (ClientChannel.kt, the dead-air fix). Read in
-// key order, a live row's queue wait ran backwards and was dropped (gate=1 after build=18, the
-// demo daemon's log on 2026-09-25). So each present mark ends a segment that starts at the mark
-// before it in time, and the first one starts at arrival.
-//
-// ABSENT IS NOT ZERO. A failed turn has no `stream_end`, a turn that never reached the upstream has
-// no `headers`. An absent mark draws no segment of its own: its time belongs to the next mark that
-// was stamped, and the bar stops at the last one, so a broken turn reads as broken instead of as an
-// instant one.
+// Grouping and in-flight arithmetic over the daemon's rows. Request timing uses measured spans
+// in turns-page.ts, never causal labels inferred from gaps between legacy marks.
 import type { HeadStatus } from '../types/core';
 import { MARK_KEYS } from '../types/perf';
 import type { InflightTurn, MarkKey, TurnRow } from '../types/perf';
-
-/** Where a segment sits in the turn: the proxy's own work, the admission queue, the upstream wait,
- *  the stream, or the close. */
-export type StageGroup = 'ingest' | 'queue' | 'upstream' | 'stream' | 'finish';
-
-export interface Stage {
-  /** The mark pair this segment measures, e.g. "gate" is build..gate. */
-  key: string;
-  /** The daemon's own word for the segment (FEATURES.md 4.3 names the same three: "queue wait
-   *  (gate)", "upstream wait (headers, first byte)", "streaming (first delta to stream end)"). */
-  label: string;
-  group: StageGroup;
-  /** ms since arrival at the segment's start. */
-  start: number;
-  /** ms since arrival at the segment's end. */
-  end: number;
-  /** end - start, always >= 0. */
-  ms: number;
-}
-
-/** What the segment a mark ENDS is called, and where in the turn it sits. `total` is the daemon's
- *  closing tally and not a phase, so it ends no segment. */
-const STAGE_OF: Record<Exclude<MarkKey, 'total'>, { label: string; group: StageGroup }> = {
-  recv: { label: 'receive', group: 'ingest' },
-  parse: { label: 'parse', group: 'ingest' },
-  build: { label: 'build', group: 'ingest' },
-  gate: { label: 'gate', group: 'queue' },
-  headers: { label: 'headers', group: 'upstream' },
-  first_byte: { label: 'first byte', group: 'upstream' },
-  first_frame: { label: 'first frame', group: 'stream' },
-  first_delta: { label: 'first delta', group: 'stream' },
-  stream_end: { label: 'streaming', group: 'stream' },
-  finish: { label: 'finish', group: 'finish' },
-};
 
 /** The marks a row actually carries, in pipeline order. A row with no marks returns empty, and the
  *  page says the row carries no telemetry rather than drawing a flat bar. */
 export function marksOf(row: TurnRow): MarkKey[] {
   return MARK_KEYS.filter((key) => typeof row[key] === 'number');
-}
-
-/** The turn's segments in the order they happened: each stamped mark ends one, starting at the
- *  mark stamped before it, the first at arrival. A mark stamped at the same ms as another keeps the
- *  key order between them (the sort is stable), and a negative mark is a defect in the row, dropped.
- *  It reads the marks and nothing else, so a perf line parsed off the log draws the same bar. */
-export function waterfall(row: Pick<TurnRow, MarkKey>): Stage[] {
-  const marks = MARK_KEYS
-    .filter((key): key is Exclude<MarkKey, 'total'> => key !== 'total')
-    .flatMap((key) => {
-      const at = row[key];
-      return typeof at === 'number' && at >= 0 ? [{ key, at }] : [];
-    })
-    .sort((left, right) => left.at - right.at);
-  let from = 0;
-  return marks.map(({ key, at }) => {
-    const stage: Stage = { key, ...STAGE_OF[key], start: from, end: at, ms: at - from };
-    from = at;
-    return stage;
-  });
 }
 
 /** What a turn with no client session tag is grouped under, so unattributed turns are counted and

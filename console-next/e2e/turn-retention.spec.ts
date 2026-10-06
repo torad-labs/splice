@@ -42,6 +42,59 @@ async function openTurn(page: Page, head: string, at: number): Promise<void> {
 }
 
 for (const width of [1440, 390]) {
+  for (const transport of ['websocket', 'sse'] as const) {
+    for (const shape of ['first-send', 'later-send', 'marks-past-total'] as const) {
+      test(`unmeasured pre-send timing is never painted as model time for ${transport} ${shape} at ${width}`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 1024 });
+        const at = Date.now() - 60_000;
+        const send = shape === 'first-send' ? 20_000 : 30_000;
+        const measurements = {
+          admit_wait_ms: 1, lease_wait_ms: 0, prep_ms: 12,
+          arrival_to_ws_send_accepted_ms: transport === 'websocket' ? send : null,
+          ws_send_accepted_to_first_fragment_ms: transport === 'websocket' ? 50 : null,
+          arrival_to_upstream_write_ms: transport === 'sse' ? send : null,
+          upstream_write_to_first_byte_ms: transport === 'sse' ? 50 : null,
+        };
+        const row: TurnRowWire = {
+          ...measurements, ts: at, model: STACK.soloModel, outcome: 'ok', compact: false,
+          session: null, account: null, cache_cold: null, turn: null, session_id: null, response_message_id: null,
+          recv: 1, parse: 6, build: 15, gate: 1, first_frame: 30,
+          first_byte: shape === 'first-send' ? 20_050 : 100,
+          first_delta: shape === 'first-send' ? 21_000 : 200,
+          stream_end: shape === 'marks-past-total' ? 42_000 : shape === 'first-send' ? 25_000 : 40_000,
+          finish: shape === 'first-send' ? 25_005 : 40_000,
+          total: shape === 'first-send' ? 25_010 : 40_005,
+          attempts: shape === 'first-send' ? 1 : 2,
+        };
+        await page.route('**/api/perf/turns?*', route => route.fulfill({ json: {
+          since: at, n: 1, heads: [{ key: STACK.soloHead, label: STACK.soloHead, count: 1, returned: 1, truncated: false, oldest_held_ts: at, rows: [row] }],
+        } }));
+        const faults = await open(page, 'requests/' + STACK.soloHead + '/' + at);
+        const stages = page.getByRole('region', { name: 'Where the time went', exact: true });
+        const rendered = (await stages.innerText()).replace(/\s+/g, ' ');
+        expect(rendered, 'Synthetic timing rendered: ' + rendered).toContain('Unmeasured time');
+        await expect(stages).not.toContainText('Model thinking');
+        const legend = stages.locator('.legend');
+        await expect(legend.getByText('Prepare', { exact: true }).locator('..').locator('.v')).toHaveText('12 ms');
+        await expect(legend.getByText('Waiting in line', { exact: true }).locator('..').locator('.v')).toHaveText('1 ms');
+        await expect(legend.getByText('Waiting for response', { exact: true }).locator('..').locator('.v')).toHaveText('50 ms');
+        if (shape === 'first-send') {
+          await expect(stages.locator('.water i[title^="Unmeasured time:"]')).toHaveCount(1);
+        } else {
+          await expect(stages).toContainText('do not form a complete breakdown');
+          await expect(stages.getByRole('img')).toHaveCount(0);
+          await expect(page.locator('.hero .lede')).not.toContainText('Most of it');
+        }
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await stages.screenshot({ path: test.info().outputPath(`unmeasured-${transport}-${shape}-${width}.png`) });
+        await assertHealthy(page, faults);
+        await page.unrouteAll({ behavior: 'wait' });
+      });
+    }
+  }
+}
+
+for (const width of [1440, 390]) {
   for (const allZero of [false, true]) {
     test('positive timing stages stay visible and zero stages paint nothing at ' + width + (allZero ? ' with all marks zero' : ' beside a tiny positive stage'), async ({ page }) => {
       await page.setViewportSize({ width, height: 1024 });
@@ -51,7 +104,9 @@ for (const width of [1440, 390]) {
       const row: TurnRowWire = {
         ts: at, model: STACK.soloModel, outcome: 'ok', compact: false, session: null, account: null, cache_cold: null, turn: null,
         session_id: null, response_message_id: null, recv: 0, parse: 0, build: early, gate: early, headers: early,
-        first_byte: end, first_delta: end, stream_end: end, finish: end, total: end,
+        first_byte: end, first_delta: end, stream_end: end, finish: end, total: end, attempts: 1,
+        prep_ms: early, admit_wait_ms: 0, lease_wait_ms: 0,
+        arrival_to_ws_send_accepted_ms: early, ws_send_accepted_to_first_fragment_ms: end - early,
       };
       await page.route('**/api/perf/turns?*', route => route.fulfill({ json: {
         since: at, n: 1, heads: [{ key: STACK.soloHead, label: STACK.soloHead, count: 1, returned: 1, truncated: false, oldest_held_ts: at, rows: [row] }],
@@ -61,7 +116,7 @@ for (const width of [1440, 390]) {
       const legend = stages.locator('.legend');
       await expect(legend.getByText('Waiting in line', { exact: true })).toBeVisible();
       await expect(legend.getByText('Streaming', { exact: true })).toBeVisible();
-      await expect(legend.locator('.v')).toHaveText(allZero ? ['0 ms', '0 ms', '0 ms', '0 ms'] : ['1 ms', '0 ms', '999 ms', '0 ms']);
+      await expect(legend.locator('.v')).toHaveText(allZero ? ['0 ms', '0 ms', '0 ms', '0 ms', '0 ms', '0 ms'] : ['1 ms', '0 ms', '0 ms', '999 ms', '0 ms', '0 ms']);
       await expect(stages.locator('.water i[title^="Waiting in line:"]')).toHaveCount(0);
       await expect(stages.locator('.water i[title^="Streaming:"]')).toHaveCount(0);
       if (allZero) {
@@ -69,7 +124,7 @@ for (const width of [1440, 390]) {
       } else {
         await expect(stages.locator('.water i')).toHaveCount(2);
         const prepare = await stages.locator('.water i[title^="Prepare:"]').boundingBox();
-        const provider = await stages.locator('.water i[title^="Model thinking:"]').boundingBox();
+        const provider = await stages.locator('.water i[title^="Waiting for response:"]').boundingBox();
         if (prepare === null || provider === null) throw new Error('positive timings lost their bars');
         expect(prepare.width).toBeGreaterThanOrEqual(1);
         expect(provider.width).toBeGreaterThanOrEqual(1);

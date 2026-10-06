@@ -41,7 +41,7 @@ describe('outcome words', () => {
       const row = { head: 'synthetic', ts: 1000, model: 'm', compact: false, outcome, cause: 'CONTENT_FILTERED', total: 422_000 };
       const line = lineOf(row, head => head, () => 'none', () => null);
       expect(line.outcome).toMatchObject({ word: 'Request refused', failed: true });
-      expect(turnLede(row, [])).toBe('Request refused after 7m 2s.');
+      expect(turnLede(row)).toBe('Request refused after 7m 2s.');
       expect(outcomeOf(outcome)).not.toMatchObject({ word: 'Request refused' });
       expect(lineOf({ ...row, cause: 'MODEL_REFUSED' }, head => head, () => 'none', () => null).outcome.word).toBe('Model declined');
     }

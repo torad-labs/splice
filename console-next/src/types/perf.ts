@@ -78,7 +78,7 @@ export interface PerfSummaryPayload {
   time_before_first_byte_ms?: PerfStats;
 }
 
-/** The stage marks, in pipeline order, ms since the request arrived (PerfKeys.markOrder). */
+/** Legacy marks in pipeline order, ms since TurnPerf's origin. Transport milestones use request arrival. */
 export const MARK_KEYS = [
   'recv',
   'parse',
@@ -156,6 +156,16 @@ export interface TurnRow {
   stream_end?: number;
   finish?: number;
   total?: number;
+  /** Measured local spans, not differences between pipeline marks. */
+  admit_wait_ms?: number;
+  lease_wait_ms?: number;
+  prep_ms?: number;
+  /** Arrival-relative transport milestones and response waits belong to the latest upstream attempt.
+   *  A null or absent observation is unknown, not a zero-duration span. */
+  arrival_to_ws_send_accepted_ms?: number | null;
+  ws_send_accepted_to_first_fragment_ms?: number | null;
+  arrival_to_upstream_write_ms?: number | null;
+  upstream_write_to_first_byte_ms?: number | null;
   auth_ms?: number;
   backoff_ms?: number;
   refresh_ms?: number;

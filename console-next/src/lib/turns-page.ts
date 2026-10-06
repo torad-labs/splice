@@ -1,7 +1,7 @@
 // The arithmetic and words of the Requests pages: one plan row per summary head, one line per finished request, and a
 // request's recorded phases and unrecorded tail. Pure over the daemon's payloads; the pages only draw what this returns.
 import { ABSENT, fmtDurationS, fmtShare, fmtUsd } from './format';
-import { waterfall } from './perf';
+import { MARK_KEYS } from '../types/perf';
 import type { ModelColour } from './model';
 import { spanText } from './sessions';
 import { U } from './words-usage';
@@ -250,30 +250,63 @@ export function runningOf(turns: readonly InflightTurn[], planLabel: (head: stri
 
 // ── one turn's stages ───────────────────────────────────────────────────────────────────────────
 
-export type StageKey = 'prepare' | 'queue' | 'provider' | 'stream' | 'wait';
-export const STAGE_ORDER: readonly StageKey[] = ['prepare', 'queue', 'provider', 'stream', 'wait'];
+export type StageKey = 'prepare' | 'queue' | 'lease' | 'provider' | 'stream' | 'wait';
+export const STAGE_ORDER: readonly StageKey[] = ['prepare', 'queue', 'lease', 'provider', 'stream', 'wait'];
 export interface StageBar {
   key: StageKey;
   ms: number;
 }
+export interface TurnTiming {
+  stages: StageBar[];
+  additive: boolean;
+}
 
-const STAGE_OF_GROUP = { ingest: 'prepare', queue: 'queue', upstream: 'provider', stream: 'stream', finish: 'stream' } as const;
+const measured = (value: number | null | undefined): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
-/** Recorded phases fold from their marks. A failed request's measured tail stays visible as unrecorded time,
- *  never invented streaming or thinking. Its total still bounds the bar when no later phase was stamped. */
-export function stagesOf(row: TurnRow): StageBar[] {
-  const sums = new Map<StageKey, number>();
-  for (const stage of waterfall(row)) {
-    const beforeWord = !servedLocally(row) && (stage.key === 'first_frame' || stage.key === 'first_delta');
-    const key = beforeWord ? 'provider' : STAGE_OF_GROUP[stage.group];
-    sums.set(key, (sums.get(key) ?? 0) + stage.ms);
+/** Local counters measure distinct spans. Transport pairs describe only the latest attempt, not the
+ *  gap after preparation. Legacy marks alone cannot identify preparation, admission or provider wait.
+ *  Stack only a bounded single-attempt breakdown; every uncovered millisecond stays unattributed. */
+export function stagesOf(row: TurnRow): TurnTiming {
+  const stages: StageBar[] = [];
+  const total = measured(row.total) ? row.total : null;
+  const local = [['prepare', row.prep_ms], ['queue', row.admit_wait_ms], ['lease', row.lease_wait_ms]] as const;
+  for (const [key, ms] of local) {
+    if (measured(ms)) stages.push({ key, ms });
   }
-  const remaining = (row.total ?? 0) - [...sums.values()].reduce((sum, ms) => sum + ms, 0);
-  if (outcomeOf(row.outcome).failed && remaining > 0) sums.set('wait', remaining);
-  return STAGE_ORDER.flatMap((key) => {
-    const ms = sums.get(key);
-    return ms === undefined ? [] : [{ key, ms }];
-  });
+  const localMs = stages.reduce((n, stage) => n + stage.ms, 0);
+  const transports = [
+    [row.arrival_to_ws_send_accepted_ms, row.ws_send_accepted_to_first_fragment_ms],
+    [row.arrival_to_upstream_write_ms, row.upstream_write_to_first_byte_ms],
+  ] as const;
+  const observed = transports.filter(pair => pair.some(value => value != null));
+  const pair = observed.length === 1 ? observed[0] : undefined;
+  const send = pair?.[0];
+  const responseWait = pair?.[1];
+  const response = !servedLocally(row) && measured(send) && measured(responseWait);
+  if (response) stages.push({ key: 'provider', ms: responseWait });
+
+  // Arrival-relative transport marks and legacy marks have different origins. This conservative
+  // ordering check never moves a legacy mark forward to manufacture a non-overlapping interval.
+  const firstDelta = row.first_delta;
+  const streamEnd = row.stream_end;
+  const stream = response && row.attempts === 1 && measured(firstDelta) && measured(streamEnd)
+    && firstDelta >= send + responseWait && streamEnd >= firstDelta
+    && total !== null && streamEnd <= total
+    && (!measured(row.first_byte) || row.first_byte >= send && row.first_byte <= firstDelta)
+    && (!measured(row.finish) || row.finish >= streamEnd);
+  if (stream) stages.push({ key: 'stream', ms: streamEnd - firstDelta });
+
+  const sum = stages.reduce((n, stage) => n + stage.ms, 0);
+  const additive = stream && total !== null && sum <= total
+    && local.every(([, ms]) => measured(ms))
+    && localMs <= send
+    && MARK_KEYS.every(key => row[key] === undefined || measured(row[key]) && row[key] <= total);
+  // These measured spans are disjoint even when earlier attempts are missing. Their remainder is
+  // not a measured phase and, without a comparable complete row, is never presented as a stack.
+  if (total !== null && sum <= total && (!response || localMs <= send && send + responseWait <= total)) {
+    stages.push({ key: 'wait', ms: total - sum });
+  }
+  return { stages, additive };
 }
 
 /** The sentence under a turn's title: how long it took and where most of it went. */
@@ -286,16 +319,16 @@ export const servedLocally = (row: TurnRow): boolean => row.local_step === 1;
 /** The steps splice answered itself across every plan in the window, as the summary counts them. */
 export const localStepsOf = (heads: readonly PerfSummaryHead[]): number => heads.reduce((n, head) => n + (head.local_steps ?? 0), 0);
 
-export function turnLede(row: TurnRow, stages: readonly StageBar[]): string {
+export function turnLede(row: TurnRow, timing: TurnTiming = stagesOf(row)): string {
   const outcome = outcomeOf(row.outcome, row.refused_runtime_port, row.cause);
   if (servedLocally(row)) return T.servedLocallyLede;
-  const total = row.total ?? stages.reduce((n, stage) => n + stage.ms, 0);
-  const took = total > 0 ? secondsText(total) : null;
-  const longest = [...stages].sort((left, right) => right.ms - left.ms)[0];
+  const total = measured(row.total) ? row.total : null;
+  const took = total !== null && total > 0 ? secondsText(total) : null;
+  const longest = [...timing.stages].sort((left, right) => right.ms - left.ms)[0];
   if (outcome.failed) return took === null ? `${outcome.word}.` : `${outcome.word} after ${took}.`;
   const empty = row.outcome === 'empty_message' ? `${T.emptyAnswerLede} ${(row.reasoning_tokens ?? 0) > 0 ? `${T.emptyAnswerThinking} ` : ''}` : '';
-  if (took === null) return `${empty}${outcome.word}. It carries no timing.`;
-  return longest === undefined || longest.ms < 1000 ? `${empty}Took ${took}.` : `${empty}Took ${took}. Most of it, ${secondsText(longest.ms)}, was ${STAGE_PHRASE[longest.key]}.`;
+  if (took === null) return `${empty}${outcome.word}. ${timing.stages.length === 0 ? P.noTiming : P.totalNotReported}`;
+  return !timing.additive || total === null || longest === undefined || longest.ms < 1000 || longest.ms <= total / 2 ? `${empty}Took ${took}.` : `${empty}Took ${took}. Most of it, ${secondsText(longest.ms)}, was ${STAGE_PHRASE[longest.key]}.`;
 }
 
 /** Translate only known splice failure sentences; raw request and answer bodies stay untouched. */

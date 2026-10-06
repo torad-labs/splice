@@ -40,7 +40,8 @@ export function TurnPage() {
   const title = session === undefined ? plan : sessionLabel(session);
   const outcome = outcomeOf(row.outcome, row.refused_runtime_port, row.cause);
   const resumable = session !== undefined && outcome.failed && canResumeSession(session);
-  const stages = stagesOf(row);
+  const timing = stagesOf(row);
+  const { stages } = timing;
   const painted = stages.filter(stage => stage.ms > 0);
   const moved = movedOf(row);
   const posted = (row.upstream_req_bytes ?? 0) > 0;
@@ -52,7 +53,7 @@ export function TurnPage() {
       <header className="page-head hero">
         <div>
           <h1>{title}</h1>
-          <p className="lede">{turnLede(row, stages)}</p>
+          <p className="lede">{turnLede(row, timing)}</p>
           <Failure row={row} />
           <div className="facts">
             {servedLocally(row) ? <span className="tag">{T.servedLocallyTag}</span> : <State tone={outcome.tone}>{outcome.word}</State>}
@@ -70,10 +71,10 @@ export function TurnPage() {
 
       <section className="turn-section wide" aria-labelledby="turn-stages">
         <h2 id="turn-stages">{P.stagesTitle}</h2>
-        <p className="why">{stages.length === 0 ? P.stagesNone : P.stagesWhy}</p>
+        <p className="why">{stages.length === 0 ? P.stagesNone : timing.additive ? P.stagesWhy : P.stagesIncomplete}</p>
         {stages.length === 0 ? null : (
           <>
-            {painted.length === 0 ? null : <div className="water" role="img" aria-label={P.stagesTitle}>
+            {!timing.additive || painted.length === 0 ? null : <div className="water" role="img" aria-label={P.stagesTitle}>
               {painted.map((stage) => <i key={stage.key} title={`${P.stages[stage.key][0]}: ${secondsText(stage.ms)}`} style={{ flex: stage.ms, ['--s' as string]: `${95 - STAGE_ORDER.indexOf(stage.key) * 15}%` }} />)}
             </div>}
             <div className="legend">

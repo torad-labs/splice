@@ -79,7 +79,7 @@ describe('a record splice answered itself', () => {
     expect(localStepsOf([])).toBe(0);
   });
   test('its page says the plan was not asked', () => {
-    expect(turnLede(local, [])).toBe('This step sent no request to the model. Splice answered from the existing script, so its input and output token counts are zero.');
+    expect(turnLede(local)).toBe('This step sent no request to the model. Splice answered from the existing script, so its input and output token counts are zero.');
   });
 });
 
@@ -175,32 +175,119 @@ describe('running turns', () => {
 });
 
 describe('a turn', () => {
-  const marks = { recv: 1, parse: 3, build: 20, gate: 2100, headers: 2300, first_byte: 5500, stream_end: 13900, finish: 14000, total: 14200 };
-  test('its marks fold into four stages in the reader\'s order', () => {
-    const stages = stagesOf(row(marks));
-    expect(stages.map((s) => s.key)).toEqual(['prepare', 'queue', 'provider', 'stream']);
-    expect(stages.reduce((n, s) => n + s.ms, 0)).toBe(14000);
+  for (const transport of ['websocket', 'sse'] as const) {
+    test(`a large delay before the ${transport} send is unmeasured, not model or queue time`, () => {
+      const transportMarks = transport === 'websocket'
+        ? { arrival_to_ws_send_accepted_ms: 20_000, ws_send_accepted_to_first_fragment_ms: 50 }
+        : { arrival_to_upstream_write_ms: 20_000, upstream_write_to_first_byte_ms: 50 };
+      const delayed = row({
+        ...transportMarks, admit_wait_ms: 1, lease_wait_ms: 0, prep_ms: 12,
+        recv: 1, parse: 6, build: 15, gate: 1, first_frame: 30, first_byte: 20_050,
+        first_delta: 21_000, stream_end: 25_000, finish: 25_005, total: 25_010, attempts: 1,
+      });
+      const timing = stagesOf(delayed);
+      const { stages } = timing;
+      expect(stages.find(stage => stage.key === 'provider')?.ms).toBe(50);
+      expect(stages.find(stage => stage.key === 'queue')?.ms).toBe(1);
+      expect(stages.find(stage => stage.key === 'prepare')?.ms).toBe(12);
+      expect(stages.find(stage => stage.key === 'wait')?.ms).toBeGreaterThan(19_000);
+      expect(timing.additive).toBe(true);
+      expect(turnLede(delayed, timing)).not.toContain('the model thinking');
+    });
+  }
+  test('an earlier first byte and marks past total cannot claim most time was one measured stage', () => {
+    const transportMarks = { arrival_to_ws_send_accepted_ms: 30_000, ws_send_accepted_to_first_fragment_ms: 50 };
+    const later = row({
+      ...transportMarks, admit_wait_ms: 1, lease_wait_ms: 0, prep_ms: 12, attempts: 2,
+      recv: 1, parse: 6, build: 15, gate: 1, first_byte: 100, first_delta: 200,
+      stream_end: 42_000, finish: 40_000, total: 40_005,
+    });
+    expect(turnLede(later, stagesOf(later))).not.toContain('Most of it');
+  });
+  const noTiming = { stages: [], additive: false };
+  const marks = {
+    recv: 1, parse: 3, build: 20, gate: 2100, headers: 2300, first_byte: 5500,
+    first_delta: 5500, stream_end: 14000, finish: 14000, total: 14200, attempts: 1,
+    prep_ms: 20, admit_wait_ms: 2080, lease_wait_ms: 0,
+    arrival_to_upstream_write_ms: 2300, upstream_write_to_first_byte_ms: 3200,
+  };
+  test('measured non-overlapping spans account for the total without attributing the remainder', () => {
+    const timing = stagesOf(row(marks));
+    expect(timing.additive).toBe(true);
+    expect(timing.stages).toEqual([
+      { key: 'prepare', ms: 20 }, { key: 'queue', ms: 2080 }, { key: 'lease', ms: 0 },
+      { key: 'provider', ms: 3200 }, { key: 'stream', ms: 8500 }, { key: 'wait', ms: 400 },
+    ]);
+    expect(timing.stages.reduce((n, s) => n + s.ms, 0)).toBe(14200);
   });
   test('a turn with no marks has no stages, and the lede does not invent one', () => {
-    expect(stagesOf(row())).toEqual([]);
-    expect(turnLede(row(), [])).toBe('Done. It carries no timing.');
+    expect(stagesOf(row())).toEqual(noTiming);
+    expect(turnLede(row(), noTiming)).toBe('Done. It carries no timing.');
+  });
+  test('legacy marks never become measured preparation, admission or provider spans', () => {
+    const legacy = row({ recv: 1, build: 20, gate: 2100, first_byte: 5500, stream_end: 14000, total: 14200 });
+    expect(stagesOf(legacy)).toEqual({ stages: [{ key: 'wait', ms: 14200 }], additive: false });
+    expect(turnLede(legacy, stagesOf(legacy))).toBe('Took 14.2 s.');
+  });
+  for (const patch of [
+    { attempts: 2 }, { first_byte: 100 }, { first_byte: 6000 }, { first_delta: 100 }, { stream_end: 15000 },
+    { finish: 13000 }, { prep_ms: 3000 }, { recv: -1 }, { gate: Infinity },
+    { first_delta: NaN }, { arrival_to_ws_send_accepted_ms: 2300, ws_send_accepted_to_first_fragment_ms: 3200 },
+    { arrival_to_upstream_write_ms: null }, { upstream_write_to_first_byte_ms: null },
+  ]) {
+    test('incomplete or conflicting measurements never form an additive bar: ' + JSON.stringify(patch), () => {
+      const incomplete = row({ ...marks, ...patch });
+      const timing = stagesOf(incomplete);
+      expect(timing.additive).toBe(false);
+      expect(turnLede(incomplete, timing)).not.toContain('Most of it');
+    });
+  }
+  test('unknown transport observations and missing local counters are not reported as zero', () => {
+    const unknown = row({ total: 1000, arrival_to_ws_send_accepted_ms: null, ws_send_accepted_to_first_fragment_ms: null });
+    expect(stagesOf(unknown).stages).toEqual([{ key: 'wait', ms: 1000 }]);
+    const { prep_ms, ...missing } = marks;
+    expect(prep_ms).toBe(20);
+    expect(stagesOf(row(missing)).additive).toBe(false);
+    expect(stagesOf(row(missing)).stages.some(stage => stage.key === 'prepare')).toBe(false);
+  });
+  test('overlapping spans or a send past total cannot define an unmeasured remainder', () => {
+    for (const patch of [{ arrival_to_upstream_write_ms: 10 }, { arrival_to_upstream_write_ms: 15000 }]) {
+      const timing = stagesOf(row({ ...marks, ...patch }));
+      expect(timing.additive).toBe(false);
+      expect(timing.stages.some(stage => stage.key === 'wait')).toBe(false);
+    }
+  });
+  test('missing totals are never fabricated by summing partial measurements', () => {
+    const partial = row({ prep_ms: 2000, admit_wait_ms: 3000 });
+    expect(stagesOf(partial)).toEqual({ stages: [{ key: 'prepare', ms: 2000 }, { key: 'queue', ms: 3000 }], additive: false });
+    expect(turnLede(partial, stagesOf(partial))).toBe('Done. No total time was reported.');
+  });
+  test('a largest stage that is not a majority is not called most of the request', () => {
+    const balanced = row({
+      total: 6000, prep_ms: 1000, admit_wait_ms: 1000, lease_wait_ms: 1000, attempts: 1,
+      arrival_to_ws_send_accepted_ms: 3000, ws_send_accepted_to_first_fragment_ms: 1000,
+      first_byte: 4000, first_delta: 4000, stream_end: 6000,
+    });
+    const timing = stagesOf(balanced);
+    expect(timing.additive).toBe(true);
+    expect(turnLede(balanced, timing)).toBe('Took 6.0 s.');
   });
   test('an empty answer names thinking only when its own row reports positive reasoning tokens', () => {
     const empty = row({ outcome: 'empty_message', out_tokens: 417, reasoning_tokens: 417, total: 20 });
-    expect(turnLede(empty, [])).toContain('The model reported thinking tokens.');
-    expect(turnLede(empty, [])).toContain('Took 20 ms.');
+    expect(turnLede(empty)).toContain('The model reported thinking tokens.');
+    expect(turnLede(empty)).toContain('Took 20 ms.');
     for (const reasoning_tokens of [undefined, null, 0]) {
-      expect(turnLede(row({ outcome: 'empty_message', out_tokens: 417, ...(reasoning_tokens === undefined ? {} : { reasoning_tokens }) }), [])).not.toContain('reported thinking');
+      expect(turnLede(row({ outcome: 'empty_message', out_tokens: 417, ...(reasoning_tokens === undefined ? {} : { reasoning_tokens }) }), noTiming)).not.toContain('reported thinking');
     }
-    expect(turnLede(row({ outcome: 'ok', reasoning_tokens: 417 }), [])).not.toContain('reported thinking');
-    expect(turnLede(row({ outcome: 'empty_model', reasoning_tokens: 417 }), [])).not.toContain('reported thinking');
+    expect(turnLede(row({ outcome: 'ok', reasoning_tokens: 417 }), noTiming)).not.toContain('reported thinking');
+    expect(turnLede(row({ outcome: 'empty_model', reasoning_tokens: 417 }), noTiming)).not.toContain('reported thinking');
   });
   test('a clean empty answer explains what reached the session before unchanged timing', () => {
     const sentence = 'The session received an empty answer from the model, which ended its reply with no text and no tool call.';
     const timed = row({ ...marks, outcome: 'empty_message' });
     expect(turnLede(timed, stagesOf(timed))).toBe(sentence + ' Took 14.2 s. Most of it, 8.5 s, was the answer arriving.');
-    expect(turnLede(row({ outcome: 'empty_message' }), [])).toBe(sentence + ' Empty answer. It carries no timing.');
-    expect(turnLede(row({ outcome: 'empty_message', total: 20 }), [])).toBe(sentence + ' Took 20 ms.');
+    expect(turnLede(row({ outcome: 'empty_message' }), noTiming)).toBe(sentence + ' Empty answer. It carries no timing.');
+    expect(turnLede(row({ outcome: 'empty_message', total: 20 }), noTiming)).toBe(sentence + ' Took 20 ms.');
     expect(outcomeOf('empty_message')).toEqual({ word: 'Empty answer', tone: 'work', failed: false });
     expect(failedCount(summary({ outcomes: { empty_message: 3, ok: 1 } }))).toBe(0);
     expect(failedCount(summary({ outcomes: { empty_message: 3, 'error:upstream-failed': 1 } }))).toBe(1);
@@ -208,28 +295,34 @@ describe('a turn', () => {
       expect(turnLede(row({ ...timed, ...(out_tokens === undefined ? {} : { out_tokens }), in_tokens: 80 }), stagesOf(timed))).toBe(sentence + ' Took 14.2 s. Most of it, 8.5 s, was the answer arriving.');
     }
     expect(turnLede(row({ outcome: 'ok', ...marks }), stagesOf(row(marks)))).toBe('Took 14.2 s. Most of it, 8.5 s, was the answer arriving.');
-    expect(turnLede(row({ outcome: 'empty_model', total: 20 }), [])).toBe('Empty answer after 20 ms.');
-    expect(turnLede(row({ outcome: 'empty_message', local_step: 1 }), [])).toBe(T.servedLocallyLede);
+    expect(turnLede(row({ outcome: 'empty_model', total: 20 }), noTiming)).toBe('Empty answer after 20 ms.');
+    expect(turnLede(row({ outcome: 'empty_message', local_step: 1 }), noTiming)).toBe(T.servedLocallyLede);
   });
 
   test('the lede names the longest stage; a failure says how long it ran', () => {
     expect(turnLede(row(marks), stagesOf(row(marks)))).toContain('Most of it, 8.5 s, was the answer arriving.');
     expect(turnLede(row({ ...marks, outcome: 'error:upstream-failed' }), stagesOf(row(marks)))).toBe('Provider failed after 14.2 s.');
   });
-  test('a watchdog ending includes the missing time without calling it streaming', () => {
-    const timedOut = row({ outcome: 'error:cancelled', total: 915_000, recv: 1, build: 20, headers: 1000, first_delta: 12_000 });
-    const stages = stagesOf(timedOut);
-    expect(stages.find(stage => stage.key === 'wait')?.ms).toBe(903_000);
-    expect(stages.reduce((sum, stage) => sum + stage.ms, 0)).toBe(915_000);
-    expect(stages.find(stage => stage.key === 'provider')?.ms).toBe(11_980);
-    expect(stages.some(stage => stage.key === 'stream')).toBe(false);
+  test('a watchdog ending shows only measured wait and leaves the tail unattributed', () => {
+    const timedOut = row({
+      outcome: 'error:cancelled', total: 915_000, recv: 1, build: 20, headers: 1000, first_delta: 12_000,
+      attempts: 1, prep_ms: 20, admit_wait_ms: 0, lease_wait_ms: 0,
+      arrival_to_upstream_write_ms: 1000, upstream_write_to_first_byte_ms: 11000,
+    });
+    const timing = stagesOf(timedOut);
+    expect(timing.additive).toBe(false);
+    expect(timing.stages.find(stage => stage.key === 'wait')?.ms).toBe(903_980);
+    expect(timing.stages.reduce((sum, stage) => sum + stage.ms, 0)).toBe(915_000);
+    expect(timing.stages.find(stage => stage.key === 'provider')?.ms).toBe(11000);
+    expect(timing.stages.some(stage => stage.key === 'stream')).toBe(false);
     const delivered = stagesOf(row({ ...timedOut, first_frame: 500, stream_end: 13_000, total: 15_000 }));
-    expect(delivered.find(stage => stage.key === 'provider')?.ms).toBe(11_980);
-    expect(delivered.find(stage => stage.key === 'stream')?.ms).toBe(1000);
+    expect(delivered.stages.find(stage => stage.key === 'provider')?.ms).toBe(11000);
+    expect(delivered.stages.find(stage => stage.key === 'stream')?.ms).toBe(1000);
     const local = stagesOf(row({ local_step: 1, first_frame: 1, first_delta: 5, stream_end: 10, total: 10 }));
-    expect(local.some(stage => stage.key === 'provider')).toBe(false);
-    expect(turnLede(timedOut, stages)).toBe('Ended by splice after 15m 15s.');
-    expect(stagesOf(row({ ...timedOut, total: 1000 })).some(stage => stage.key === 'wait')).toBe(false);
+    expect(local.stages.some(stage => stage.key === 'provider')).toBe(false);
+    expect(local.additive).toBe(false);
+    expect(turnLede(timedOut, timing)).toBe('Ended by splice after 15m 15s.');
+    expect(stagesOf(row({ ...timedOut, total: 1000 })).stages.some(stage => stage.key === 'wait')).toBe(false);
   });
   test('only known splice failures become plain explanations without rewriting provider words', () => {
     const reason = '[SPLICE-OVERLOADED] splice progress timeout expired after 900000ms without upstream progress; retry';
@@ -248,7 +341,7 @@ describe('a turn', () => {
     const refused = row({ outcome: 'error:conn-reset', refused_runtime_port: 8123, total: 20 });
     expect(lineOf(refused, (head) => head, none, () => null).outcome.word)
       .toBe("Couldn't reach its runtime on :8123");
-    expect(turnLede(refused, [])).toBe("Couldn't reach its runtime on :8123 after 20 ms.");
+    expect(turnLede(refused, noTiming)).toBe("Couldn't reach its runtime on :8123 after 20 ms.");
   });
 
   test('same-millisecond request rows retain separate identities across polls and window expiry', () => {

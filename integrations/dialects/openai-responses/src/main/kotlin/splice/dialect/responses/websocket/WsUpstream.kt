@@ -119,10 +119,10 @@ private const val MAX_CONNECTIONS = 32
 // OpenAI's websocket mode ends a connection at 60 minutes and answers the next request on it with
 // websocket_connection_limit_reached (developers.openai.com/api/docs/guides/websocket-mode). Six
 // rounds met that error between Oct 2 and Oct 4; each fell back to a full HTTP send. Sockets also
-// drop with a 1006 well before the limit, and far more often at 40-44 minutes than earlier: Oct 3-6,
-// counting each burst once across 5 boots, 6.7 to 19.9 drops per 1,000 connection-minutes there
-// against 0.8 to 1.3 under 40 minutes. A drop costs the round's elapsed time and an SSE re-run. An
-// idle socket is retired at 35 minutes, so a round that starts on the oldest socket the pool hands
-// out has 5 minutes before that band and the full upstream timeout (Knob.UPSTREAM_TIMEOUT_MS, 900
+// drop with a 1006 before the limit. A drop on an idle socket costs only the reconnect the next round
+// makes; a drop mid-round costs the round's elapsed time and an SSE re-run. Oct 3-6, the mid-round
+// drops at 40-44 minutes of age all hit rounds that started on a socket already 38 to 44 minutes old.
+// The age is checked when a round acquires an idle socket, which is retired past 35 minutes: no round
+// starts on an older one, and each still has the full upstream timeout (Knob.UPSTREAM_TIMEOUT_MS, 900
 // seconds) before the 60-minute limit. Each retirement costs one reconnect full-send.
 private const val MAX_SOCKET_AGE_MS = 2_100_000L

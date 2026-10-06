@@ -243,6 +243,8 @@ public class PerfRowsFileSource internal constructor(
         val probes = ArrayList<PerfRow>()
         val errors = ArrayList<String>()
         private var skipped = 0
+        private var windowSkipped = 0
+        private var afterInWindowRow = false
 
         /** The minimum valid top-level timestamp seen (physical order is not a retention premise). */
         private var oldest: Long? = null
@@ -261,14 +263,15 @@ public class PerfRowsFileSource internal constructor(
         private val latest = ArrayList<Skipped>(NEWEST_CANDIDATES + 1)
 
         override fun beforeCutoff(line: String): Long? =
-            if (emptyModel.containsMatchIn(line)) null else provablyBefore(line)
+            if (afterInWindowRow || emptyModel.containsMatchIn(line)) null else provablyBefore(line)
 
         override fun canSkip(minimum: Long, maximum: Long): Boolean =
-            oldest?.let { minimum >= it && maximum < sinceMs } ?: false
+            !afterInWindowRow && (oldest?.let { minimum >= it && maximum < sinceMs } ?: false)
 
         override fun knownSpan(minimum: Long, maximum: Long) {
             oldest = minOf(oldest ?: minimum, minimum)
             if (maximum < sinceMs) {
+                afterInWindowRow = false
                 newest = maxOf(newest ?: maximum, maximum)
                 latestCandidate(Skipped(maximum, ts = maximum))
             }
@@ -277,7 +280,7 @@ public class PerfRowsFileSource internal constructor(
         /** A writer-shaped line provably inside the held span and before the cutoff is skipped unparsed;
          *  every other line is parsed and its top-level unquoted ts decides where it goes. */
         override fun raw(line: String) {
-            val hint = provablyBefore(line)
+            val hint = provablyBefore(line).takeUnless { afterInWindowRow }
             if (hint != null && !emptyModel.containsMatchIn(line)) {
                 if (dropsField.containsMatchIn(line)) candidate(Baseline(raw = line))
                 latestCandidate(Skipped(hint, line))
@@ -324,12 +327,13 @@ public class PerfRowsFileSource internal constructor(
         }
 
         override fun kept(line: PerfCachedLine) {
-            if (skipBefore(line)) return
             val row = line.row
             if (row == null) {
-                skipped++
+                rejected(line)
                 return
             }
+            afterInWindowRow = row.ts >= sinceMs
+            if (skipBefore(line)) return
             oldest = minOf(oldest ?: row.ts, row.ts)
             if (row.ts < sinceMs) line.drops?.let { candidate(Baseline(drops = it)) }
             if (line.probe) {
@@ -338,6 +342,12 @@ public class PerfRowsFileSource internal constructor(
             }
             newest = maxOf(newest ?: row.ts, row.ts)
             if (row.ts >= sinceMs) rows += row
+        }
+
+        private fun rejected(line: PerfCachedLine) {
+            if (afterInWindowRow) windowSkipped++
+            // Preserve the original baseline and economics proof, without giving this line a row time.
+            if (!skipBefore(line)) skipped++
         }
 
         private fun skipBefore(line: PerfCachedLine): Boolean {
@@ -405,6 +415,7 @@ public class PerfRowsFileSource internal constructor(
             readError = errors.takeIf { it.isNotEmpty() }?.joinToString("; "),
             skipped = skipped,
             newestHeldTs = newestHeld(),
+            windowSkipped = windowSkipped,
         )
 
         private fun parse(line: String): JsonObject? {

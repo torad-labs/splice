@@ -198,7 +198,7 @@ public class PerfRoutes(
             // at all. Null means the source cannot say — never zero, which would read as 1970.
             put("oldest_held_ts", read.oldestHeldTs)
             read.readError?.let { put("read_error", it) }
-            if (read.skipped > 0) put("skipped_lines", read.skipped)
+            if (read.windowSkipped > 0) put("skipped_lines", read.windowSkipped)
             put("usage", TurnUsage(matching, price, AccountPlans(head, heads.billing(head.key)), asked.zone).json())
             putJsonArray("rows") { rows.forEach { add(rowJson(it, gaps)) } }
         }

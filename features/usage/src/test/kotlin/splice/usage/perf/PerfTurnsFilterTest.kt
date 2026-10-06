@@ -102,6 +102,27 @@ class PerfTurnsFilterTest {
     private fun count(head: JsonObject): Long = head.getValue("count").jsonPrimitive.long
 
     @Test
+    fun `Requests uses window attributed rejections without reporting historical file health as missing requests`() =
+        testApplication {
+            var windowSkipped = 0
+            val measured = UsageHead(
+                key = "kimi",
+                label = "claude-kimi",
+                usage = HeadUsageSource { UsageView(0, 0, null) },
+                warnPct = 80,
+                warnTokens5h = 0,
+                perfRows = PerfRowsSource {
+                    PerfRowsWindow(emptyList(), skipped = 3, windowSkipped = windowSkipped)
+                },
+            )
+            val measuredRoutes = PerfRoutes(UsageHeadLookup { listOf(measured) }, WallClock { 20_000 })
+            application { routing { get("/api/perf/turns") { measuredRoutes.turns(call) } } }
+            assertEquals(null, ask(client, "")["skipped_lines"], "historical file health is not window request loss")
+            windowSkipped = 1
+            assertEquals(1L, ask(client, "").getValue("skipped_lines").jsonPrimitive.long)
+        }
+
+    @Test
     fun `Failed includes watchdog cancellation but excludes stops however many newer rows fill the list`() = testApplication {
         mount()
         val head = ask(client, "n=2000&outcome=failed")

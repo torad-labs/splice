@@ -20,6 +20,85 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class PerfRowsFileSourceTest {
+    @Test
+    fun `historical malformed lines do not become unread requests in a one hour window`(@TempDir dir: Path) {
+        val file = dir.resolve("synthetic-perf.jsonl")
+        Files.writeString(file, "{\"ts\":1000,\"outcome\":\"ok\"}\n{ historical torn row\n")
+        val read = PerfRowsFileSource(file).window(3_600_000L)
+        assertTrue(read.rows.isEmpty())
+        assertEquals(0, read.windowSkipped, "an old malformed line has no in-window predecessor")
+        assertEquals(1, read.skipped, "the rejected line still contributes to file integrity")
+    }
+
+    @Test
+    fun `a warm cached historical malformed line stays outside the requested window`(@TempDir dir: Path) {
+        val file = dir.resolve("synthetic-perf.jsonl")
+        Files.writeString(file, "{\"ts\":1000,\"outcome\":\"ok\"}\n{ historical torn row\n")
+        val source = PerfRowsFileSource(file)
+        source.window(3_600_000L)
+        val decodes = source.parsedLines
+        val read = source.window(3_600_000L)
+        assertEquals(0, read.windowSkipped)
+        assertEquals(1, read.skipped)
+        assertEquals(decodes, source.parsedLines, "the same retained facts must carry the correct attribution")
+    }
+
+    @Test
+    fun `a malformed line after an in window valid row remains an unread window request`(@TempDir dir: Path) {
+        val file = dir.resolve("synthetic-perf.jsonl")
+        Files.writeString(file, "{\"ts\":4000000,\"outcome\":\"ok\"}\n{ current torn row\n")
+        val source = PerfRowsFileSource(file)
+        repeat(2) { assertEquals(1, source.window(3_600_000L).windowSkipped) }
+    }
+
+    @Test
+    fun `an older valid row resets malformed attribution even after an in window row`(@TempDir dir: Path) {
+        val file = dir.resolve("synthetic-perf.jsonl")
+        Files.writeString(
+            file,
+            "{\"ts\":1000,\"outcome\":\"ok\"}\n" +
+                "{\"ts\":4000000,\"outcome\":\"ok\"}\n" +
+                "{\"ts\":2000000,\"outcome\":\"ok\"}\n{ older torn row\n",
+        )
+        val source = PerfRowsFileSource(file)
+        repeat(2) {
+            val read = source.window(3_600_000L)
+            assertEquals(0, read.windowSkipped)
+            assertEquals(1, read.skipped)
+        }
+    }
+
+    @Test
+    fun `an invalid old timestamp hint cannot erase its in window valid predecessor`(@TempDir dir: Path) {
+        val file = dir.resolve("synthetic-perf.jsonl")
+        Files.writeString(
+            file,
+            "{\"ts\":1000,\"outcome\":\"ok\"}\n" +
+                "{\"ts\":4000000,\"outcome\":\"ok\"}\n" +
+                "{\"ts\":2000000,\"outcome\":}\n" +
+                "{\"ts\":4500000,\"outcome\":\"ok\"}\n",
+        )
+        listOf(PerfRowsCache(), PerfRowsCache(limitRows = 1)).forEach { cache ->
+            val source = PerfRowsFileSource(file, cache = cache)
+            repeat(2) {
+                val read = source.window(3_600_000L)
+                assertEquals(1, read.windowSkipped, "only a valid row can move the malformed line's time context")
+                assertEquals(0, read.skipped, "the original pre-cutoff proof still excludes this rejection")
+            }
+        }
+    }
+
+    @Test
+    fun `uncached prefixes preserve malformed attribution in source file order`(@TempDir dir: Path) {
+        val file = dir.resolve("synthetic-perf.jsonl")
+        Files.writeString(
+            file,
+            "{\"ts\":1000,\"outcome\":\"ok\"}\n{ old torn row\n" +
+                "{\"ts\":4000000,\"outcome\":\"ok\"}\n{ current torn row\n",
+        )
+        val source = PerfRowsFileSource(file, cache = PerfRowsCache(limitRows = 1))
+        repeat(2) { assertEquals(1, source.window(3_600_000L).windowSkipped) }
+    }
 
     @Test
     fun `a file reader waits for an accepted perf row before returning`(@TempDir dir: Path) {
@@ -85,6 +164,7 @@ class PerfRowsFileSourceTest {
         val read = PerfRowsFileSource(file).window(500)
         assertEquals(listOf(900L, 1500L, 2000L), read.rows.map { it.ts })
         assertEquals(2, read.skipped, "the BROKEN and torn lines are counted, never fatal")
+        assertEquals(1, read.windowSkipped, "only the torn line follows an in-window valid row")
         assertEquals(listOf("client_abort", "ok", "error:upstream-failed"), read.rows.map { it.outcome })
         assertEquals(mapOf("ts" to 1500L, "total" to 9L, "first_byte" to 3L), read.rows[1].fields)
         assertEquals(100L, read.oldestHeldTs, "the rotated generation, VALID rows only")
@@ -97,6 +177,7 @@ class PerfRowsFileSourceTest {
         val corrupt = PerfRowsFileSource(file).window(0)
         assertEquals(emptyList<Long>(), corrupt.rows.map { it.ts })
         assertEquals(2, corrupt.skipped, "a corrupt-only generation is counted, not read as an idle head")
+        assertEquals(0, corrupt.windowSkipped, "without a valid row there is no window attribution")
         assertNull(corrupt.readError, "skipping is not a read error")
         val absent = PerfRowsFileSource(dir.resolve("absent.jsonl")).window(0)
         assertEquals(emptyList<Long>(), absent.rows.map { it.ts })

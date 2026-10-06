@@ -124,8 +124,11 @@ public data class PerfRowsWindow(
     /** The maximum timestamp a VALID row holds at all, in or before the window: the head's last turn
      *  as the files record it, so a window that excludes the newest row still names it. The mirror of
      *  [oldestHeldTs], and null on the same terms: the source cannot say, which the summary treats as
-     *  "no newer than the newest row it returned". Declared last so no positional call site moves. */
+     *  "no newer than the newest row it returned". Appended after earlier fields to preserve their positions. */
     val newestHeldTs: Long? = null,
+    /** Rejections following an in-window valid row in source order. Only Requests uses this count;
+     *  unknown-time lines still contribute to [skipped] and its existing file-integrity consumers. */
+    val windowSkipped: Int = 0,
 )
 
 /** The rows recorded at or after [sinceMs] with the evidence the summary needs about them. */

@@ -10,10 +10,12 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.accounts.AccountHead
+import splice.accounts.pool.AccountAnswerJson
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountView
 import splice.core.auth.AuthDescription
 import splice.core.auth.REFUSAL_FIELD
+import splice.core.head.ProviderAnswer
 import splice.core.usage.QuotaFreshness
 
 internal object ClaudeLoginRows {
@@ -32,6 +34,7 @@ internal object ClaudeLoginRows {
             nowSeconds,
             head?.activePool?.view(null),
             head?.accountAuth?.descriptions()?.get("native:${view.id.wire}"),
+            head?.answers?.answer("native:${view.id.wire}"),
         )
     }
 
@@ -44,8 +47,10 @@ internal object ClaudeLoginRows {
         nowSeconds: Long,
         pool: HeadAccountPoolView? = null,
         description: AuthDescription? = null,
+        answer: ProviderAnswer? = null,
     ): JsonObject = buildJsonObject {
         put("provider", provider)
+        AccountAnswerJson.write(this, answer)
         put("credential_path", view.credentialPath)
         put("credential_present", view.credentialPresent)
         put("kind", "client")

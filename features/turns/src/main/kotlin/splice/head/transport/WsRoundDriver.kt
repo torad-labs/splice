@@ -16,38 +16,28 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
-import splice.core.util.JsonScalars
-import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.head.turn.TurnDrive
 import splice.head.turn.ZeroEventClassifier
 import splice.upstream.Provider
-import splice.upstream.WsRound
 import splice.upstream.WsRoundAbort
 import splice.upstream.WsRoundRunner
 import splice.upstream.transport.HeaderRedaction
-
-/** A real response.created or failure frame, without invented HTTP metadata. */
-internal fun interface StreamAnswerObserver {
-    fun observed(accepted: Boolean, observedAtEpochMs: Long)
-}
 
 internal class WsRoundDriver(
     private val provider: Provider,
     private val log: LogSink,
     classifyZeroEvent: ZeroEventClassifier,
-    private val answerObserver: StreamAnswerObserver = StreamAnswerObserver { _, _ -> },
-    private val clock: WallClock = WallClock(System::currentTimeMillis),
+    answerObserver: StreamAnswerObserver = StreamAnswerObserver { _, _, _, _ -> },
+    clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val roundDrive = WsRoundDrive(provider, classifyZeroEvent)
+    private val roundAcquire = WsRoundAcquire(provider, answerObserver, clock)
 
     /** Run the round, or null to fall through to the SSE path. */
     suspend fun run(inputs: WsRoundInputs): TurnOutcome? {
@@ -55,34 +45,6 @@ internal class WsRoundDriver(
         val drive = inputs.drive
         clearAccountBoundary(runner, drive)
         return driveRound(runner, drive, inputs)
-    }
-
-    /** Observe one response boundary, never update readiness for each streamed delta or body completion. */
-    private fun startingEvents(round: WsRound, runner: WsRoundRunner, drive: TurnDrive): Flow<JsonObject> {
-        var observed = false
-        return round.events.onEach { event ->
-            if (!observed) {
-                val accepted = when {
-                    runner.isFailureTerminal(event) -> false
-                    JsonScalars.strOrEmpty(event["type"]) == "response.created" -> true
-                    else -> null
-                }
-                if (accepted != null) {
-                    observed = true
-                    answerObserver.observed(accepted, clock())
-                }
-            }
-            drive.emitter.ensureStarted()
-            drive.trace?.responseText(JsonWire.string(event) + "\n")
-        }
-    }
-
-    /** Start the reader clock at the attempt, before client opening, without changing the round's lease. */
-    private suspend fun timedRound(runner: WsRoundRunner, drive: TurnDrive, bodyJson: String): WsRound? {
-        val credentials = (drive.account?.account?.auth ?: provider.auth).credentials() ?: return null
-        val postedAtMs = drive.perf.elapsedMs()
-        val accepted = runner.attempt(bodyJson, drive.meta, drive.turnHeaders, credentials, drive.perf) ?: return null
-        return accepted.copy(events = UpstreamEventTiming(drive.perf, postedAtMs).observe(accepted.events))
     }
 
     /** The round body, extracted (V4-114 continuation) so [run] stays inside detekt's
@@ -112,13 +74,14 @@ internal class WsRoundDriver(
             // Credentials come from the provider's auth surface, NOT from a WS-side refresh: L5
             // keeps the single-flight 401 refresh in UpstreamClient, so a missing/expired
             // credential here simply rides SSE and gets refreshed there.
-            val accepted = timedRound(runner, drive, inputs.body.text)
-            if (accepted == null) {
+            val acquired = roundAcquire.acquire(runner, drive, inputs.body.text)
+            if (acquired == null) {
                 // SSE is about to serve this round, so the conversation advances outside any chain.
                 runner.roundBypassed(drive.meta)
                 reported = true
                 return null
             }
+            val accepted = acquired.round
             drive.slot.touch()
             drive.perf.add(PerfKeys.ATTEMPTS, 1)
             drive.trace?.wsRoundStarted()
@@ -126,7 +89,7 @@ internal class WsRoundDriver(
             // Start the client while the acquired cold flow is being collected, not before: if the
             // start write throws or is cancelled, the exception unwinds through the transport flow's
             // onCompletion and poisons its busy lease instead of stranding the connection forever.
-            val startingEvents = startingEvents(accepted, runner, drive)
+            val events = roundDrive.startingEvents(accepted, runner, drive, acquired.answer)
             drive.watchdog.resetRound()
             // DR-7 round 2: the idle watchdog reaps THIS ROUND here too, the same way
             // SseRoundConsume does. It used to cancel inputs.turnJob, so a WS stall killed the
@@ -179,7 +142,7 @@ internal class WsRoundDriver(
             // a name. Both arms report the round (Streamed via roundEnded inside drive, NeedsSse
             // via roundBypassed), so `reported` is set once after the when returns — after the
             // report, so an exception still leaves it false and the finally clears the chain.
-            val outcome = when (val result = roundDrive.drive(inputs, runner, startingEvents)) {
+            val outcome = when (val result = roundDrive.drive(inputs, runner, events)) {
                 is WsRoundResult.Streamed -> result.outcome
                 is WsRoundResult.NeedsSse -> {
                     ending = result.detail

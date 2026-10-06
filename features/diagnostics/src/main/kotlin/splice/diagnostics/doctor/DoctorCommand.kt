@@ -18,6 +18,7 @@ import splice.core.util.SafeFailureText
 import splice.core.util.TopologySlotsFailure
 import splice.core.util.TopologyTypeFailure
 import splice.daemonclient.DaemonSettings
+import splice.diagnostics.doctor.accounts.AccountHealthChecks
 import splice.diagnostics.doctor.report.DOCTOR_USAGE
 import splice.diagnostics.doctor.report.DoctorFindingRenderer
 import splice.diagnostics.doctor.report.DoctorJsonReport
@@ -233,7 +234,10 @@ public class DoctorCommand(
             "installation" to guarded { installProbes.installationChecks(topo, envReader) },
             "configuration" to guarded { config.configurationChecks(topo, configPath, live, runningTrace, unmapped) },
             CHECK_DAEMON to guarded { daemon.daemonChecks(snapshot, envReader, topology, configPath) },
-            "auth" to guarded { auth.authChecks(topo, envReader, snapshot, reads) },
+            "auth" to guarded {
+                val refusals = (pools as? AccountPoolsRead.Read)?.lastRefusals.orEmpty()
+                auth.authChecks(topo, envReader, snapshot, reads, refusals)
+            },
             // v0.4.0 (FEATURES.md §11): which account each pooled head is on, and when every one is out.
             "accounts" to guarded { accountChecks(pools, snapshot) },
             // JW-05: what actually HAPPENED — every section above reads configuration and presence;
@@ -260,7 +264,7 @@ public class DoctorCommand(
         is AccountPoolsRead.Read -> if (pools.pools.isEmpty()) {
             listOf(DoctorCheck(ACCOUNTS_CHECK, CheckStatus.INFO, "one account per head"))
         } else {
-            pools.pools.map { (head, view) -> accountText.check(head, view) }
+            pools.pools.map { (head, view) -> accountText.check(head, view) } + AccountHealthChecks.checks(pools)
         }
     }
 

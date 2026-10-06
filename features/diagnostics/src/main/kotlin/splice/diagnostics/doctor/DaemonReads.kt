@@ -17,6 +17,7 @@ import splice.daemonclient.DaemonProbe
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
 import splice.daemonclient.TraceConfigProbe
+import splice.diagnostics.doctor.accounts.AccountRosterProjection
 import java.nio.file.Path
 
 /** One read of the daemon past /health: what it answered, or why it was not asked. Each section
@@ -121,7 +122,8 @@ internal class AnsweredDaemon(private val answers: DaemonAnswers) : DaemonReads 
     override fun trace(port: Int, env: EnvReader, heads: Set<String>): DaemonRead<Map<String, DaemonProbe.HeadTrace>> =
         DaemonRead.Answered(answers.trace)
 
-    override fun accountPools(port: Int, env: EnvReader): AccountPoolsRead = AccountPoolProjection().read(answers.auth)
+    override fun accountPools(port: Int, env: EnvReader): AccountPoolsRead =
+        AccountRosterProjection().read(answers.accounts)
 
     override fun unmappedTiers(port: Int, env: EnvReader): DaemonRead<Map<String, Map<String, String>>> =
         DaemonRead.Answered(answers.unmappedTiers)

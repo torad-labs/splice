@@ -16,6 +16,10 @@ public object CredentialKey {
         return own + extra
     }
 
+    /** Uses exactly the carrier-scoped key used for sent quota readings, not a separate token hash. */
+    public fun fromCredentials(credentials: Credentials): String? =
+        fromHeaders(headers(credentials, emptyMap()), (credentials as? Credentials.ApiKey)?.header)
+
     /** Header names are case-insensitive; last spelling wins just as in the upstream wire merge. */
     public fun fromHeaders(headers: Map<String, String>, declaredCarrier: String? = null): String? {
         val normalized = headers.entries.associate { it.key.lowercase() to it.value }

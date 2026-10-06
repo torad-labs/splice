@@ -17,6 +17,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialExpiry
 import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.CredentialJson
+import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
@@ -184,6 +185,10 @@ public class KimiAuthProvider(
 
     override suspend fun describe(): AuthDescription =
         store.describe(oauth.kimiAuthIdentityOrNull(authPath, log), invalidGrantLatch)
+
+    override fun observedCredentialKey(): String? = store.readSnapshot(0L)?.access?.let {
+        CredentialKey.fromCredentials(apiKey(it))
+    }
 
     override fun credentialIdentity(): CredentialFileIdentity? = credentialEvidence().identity
 

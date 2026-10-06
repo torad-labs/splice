@@ -58,6 +58,9 @@ public interface AuthProvider {
     public suspend fun credentials(): Credentials?
 
     public suspend fun describe(): AuthDescription
+
+    /** Existing credential-reading join key, resolved without refresh, writes or provider requests. Never rendered. */
+    public fun observedCredentialKey(): String? = null
 }
 
 /** An AuthProvider that can refresh its credentials (single-flight at the impl). */

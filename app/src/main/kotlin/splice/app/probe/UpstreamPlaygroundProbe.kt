@@ -162,12 +162,22 @@ internal class UpstreamPlaygroundProbe(
         // The login's headers ride ON TOP of the provider's, as on a real turn (SseRoundPost).
         val own = sender.login?.headers?.invoke(creds).orEmpty()
         val headers = UpstreamHeaders.compose(creds, provider.extraHeaders(creds) + own + turn.extraHeaders)
+        val replySender = ProviderReplySender(
+            sender.auth,
+            headers,
+            sender.login?.label,
+            (creds as? Credentials.ApiKey)?.header,
+            sender.login?.selectedAccount,
+            CredentialKey.fromHeaders(headers, (creds as? Credentials.ApiKey)?.header),
+        )
         return Cancellables.runCatchingCancellable {
             client.preparePost(url) {
                 headers { headers.forEach { (name, value) -> append(name, value) } }
                 contentType(ContentType.Application.Json)
                 setBody(turn.requestBody.toString())
-            }.execute { sent -> response(sender, turn, headers, url, sent) }
+            }.execute { sent ->
+                response(sender, turn, replySender, url, sent)
+            }
         }.getOrElse { PlaygroundFailure("upstream call to $url failed: ${SafeFailureText.render(it)}") }
     }
 
@@ -175,20 +185,14 @@ internal class UpstreamPlaygroundProbe(
     private suspend fun response(
         sender: Sender,
         turn: BuiltTurn,
-        headers: Map<String, String>,
+        replySender: ProviderReplySender,
         url: String,
         sent: HttpResponse,
     ): PlaygroundResult {
         val creds = sender.creds
         val at = clock()
         val responseHeaders = QuotaHeaderRead { sent.headers[it] }
-        val replySender = ProviderReplySender(
-            sender.auth,
-            headers,
-            sender.login?.label,
-            (creds as? Credentials.ApiKey)?.header,
-            sender.login?.selectedAccount,
-        )
+        val headers = replySender.requestHeaders
         sender.observer?.observed(ProviderReply(sent.status.value, at, responseHeaders), replySender)
         (sender.auth as? RefreshableAuthProvider)?.upstreamAnswered(sent.status.value, sent.status.isSuccess())
         val bodyText = sent.bodyAsText().take(MAX_RESPONSE_CHARS)

@@ -162,6 +162,7 @@ public class ControlServer(
                     DaemonProbe.HeadTrace(effective.trace)
                 },
                 unmappedTiers = heads.mapValues { (_, head) -> head.catalog?.unmappedTiers.orEmpty() },
+                accounts = accounts.accountsJson(),
             )
         },
     )

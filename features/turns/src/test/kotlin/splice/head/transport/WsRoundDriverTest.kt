@@ -51,6 +51,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.auth.AuthDescription
+import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
@@ -68,6 +69,7 @@ import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
+import splice.core.util.WallClock
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
@@ -106,8 +108,13 @@ import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.CodeModeSource
 import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.codemode.CodeModeStep
+import splice.upstream.credentials.AccountPool
+import splice.upstream.credentials.AccountQuotaSource
+import splice.upstream.credentials.PoolAccount
+import splice.upstream.credentials.Selection
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
+import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.TurnWatchdog
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamClient
@@ -123,6 +130,23 @@ private class WsFakeAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-ws", "acct-ws")
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
+}
+
+private fun selectedAnswers(inputs: WsRoundInputs, answers: MutableList<Pair<Boolean, Long>>): StreamAnswerObserver {
+    val sender = WsFakeAuth()
+    val account = PoolAccount(
+        "synthetic",
+        true,
+        sender,
+        AccountQuotaSource { null },
+        RateLimitCooldown(ElapsedClock { 0L }),
+    )
+    inputs.drive.account = (AccountPool(listOf(account), WallClock { 999L }).select(null) as Selection.Chosen).account
+    return StreamAnswerObserver { accepted, at, owner, key ->
+        assertSame(sender, owner, "the selected pool sender, not the head login, owns this reply")
+        assertEquals(CredentialKey.fromHeaders(inputs.drive.turnHeaders), key, "effective headers win")
+        answers += accepted to at
+    }
 }
 
 private fun ev(json: String): JsonObject =
@@ -858,7 +882,7 @@ class WsRoundDriverTest {
                 provider(runner),
                 log = {},
                 classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
-                answerObserver = StreamAnswerObserver { accepted, at -> answers += accepted to at },
+                answerObserver = StreamAnswerObserver { accepted, at, _, _ -> answers += accepted to at },
                 clock = { testScheduler.currentTime },
             ).run(inputs)
             assertTrue(result is TurnOutcome.Success)
@@ -880,13 +904,15 @@ class WsRoundDriverTest {
         val runner = ScriptedRunner(
             listOf("""{"type":"error","code":"permission_denied","message":"synthetic refusal"}"""),
         )
-        val inputs = coldFlowInputs(RecordingTerminal(), this)
+        val inputs = coldFlowInputs(RecordingTerminal(), this).let {
+            it.copy(drive = it.drive.copy(turnHeaders = mapOf("Authorization" to "Bearer synthetic override")))
+        }
         val answers = mutableListOf<Pair<Boolean, Long>>()
         val driver = WsRoundDriver(
             provider(runner),
             log = {},
             classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
-            answerObserver = StreamAnswerObserver { accepted, at -> answers += accepted to at },
+            answerObserver = selectedAnswers(inputs, answers),
             clock = { 999L },
         )
         try {

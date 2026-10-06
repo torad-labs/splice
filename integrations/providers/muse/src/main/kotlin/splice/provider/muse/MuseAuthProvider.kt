@@ -108,23 +108,9 @@ public class MuseAuthProvider(
     override fun allowRefreshAfterFailure(status: Int, body: String): Boolean =
         !oauth.isPlanTierRejection(body)
 
-    override suspend fun describe(): AuthDescription {
-        val snapshot = store.read()
-        return AuthDescription(
-            present = snapshot?.apiKey != null,
-            kind = "muse-oauth",
-            fields = buildMap {
-                put("login", "device")
-                put("auth_path", authPath.toString())
-                snapshot?.let { current ->
-                    putAll(holds.description(current))
-                    if (invalidAccountLatch.isLatched(current.identity)) {
-                        put("account_token", "invalid")
-                    }
-                }
-            },
-        )
-    }
+    override suspend fun describe(): AuthDescription = store.describe(holds, invalidAccountLatch)
+
+    override fun observedCredentialKey(): String? = store.observedCredentialKey()
 
     override fun credentialIdentity(): CredentialFileIdentity? = credentialEvidence().identity
 

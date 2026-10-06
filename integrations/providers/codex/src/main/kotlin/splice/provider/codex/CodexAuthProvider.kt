@@ -17,6 +17,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialExpiry
 import splice.core.auth.CredentialFileIdentity
+import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
@@ -212,6 +213,10 @@ public class CodexAuthProvider(
     }
 
     override suspend fun describe(): AuthDescription = describeAuth.describe()
+
+    override fun observedCredentialKey(): String? = authJson.readSnapshot(0L)?.let {
+        CredentialKey.fromCredentials(Credentials.Bearer(it.access, it.accountId))
+    }
 
     /** V4-377: a 429 `usage_limit_reached` naming a reset in the future is a spent plan window, not a
      *  burst: the reset is bounded by the window it names (a reset further out than one whole window

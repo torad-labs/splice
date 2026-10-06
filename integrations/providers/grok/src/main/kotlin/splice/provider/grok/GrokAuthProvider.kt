@@ -27,6 +27,7 @@ import kotlinx.serialization.json.Json
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialExpiry
 import splice.core.auth.CredentialFileIdentity
+import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
@@ -186,6 +187,10 @@ public class GrokAuthProvider(
 
     override suspend fun refresh(): Credentials? =
         singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
+
+    override fun observedCredentialKey(): String? = authJson.readSnapshot(0L)?.access?.let {
+        CredentialKey.fromCredentials(Credentials.Bearer(it))
+    }
 
     /**
      * RULE 1, the structural half (2026-09-16 operator report: the grok login page kept reopening).

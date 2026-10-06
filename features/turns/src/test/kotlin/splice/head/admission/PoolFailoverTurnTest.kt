@@ -21,10 +21,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.ClientAuthProvider
+import splice.core.auth.CredentialVerdict
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
@@ -108,6 +110,44 @@ class PoolFailoverTurnTest {
     }
 
     @Test
+    fun `a client head records acceptance when a pooled login serves its streamed request`() = runBlocking {
+        assertClientHeadAccepted(stream = true)
+    }
+
+    @Test
+    fun `a client head records acceptance when a pooled login serves its buffered request`() = runBlocking {
+        assertClientHeadAccepted(stream = false)
+    }
+
+    @Test
+    fun `an added account's unauthorized answer does not reject the client head login`() = runBlocking<Unit> {
+        val auth = ClientAuthProvider("synthetic")
+        val rig = FailoverRig(directory, limited = emptyMap(), headAuth = auth, refusedStatus = 401)
+        rig.start()
+        try {
+            assertEquals(HttpStatusCode.Unauthorized, rig.turn(stream = false).first)
+            assertInstanceOf(CredentialVerdict.Unverified::class.java, auth.describe().verdict)
+        } finally {
+            rig.close()
+        }
+    }
+
+    private suspend fun assertClientHeadAccepted(stream: Boolean) {
+        val auth = ClientAuthProvider("synthetic")
+        val rig = FailoverRig(directory, limited = mapOf("one" to 2 * HOUR_S), headAuth = auth)
+        rig.start()
+        try {
+            assertEquals(HttpStatusCode.OK, rig.turn(stream).first)
+            assertEquals(listOf("one", "two"), rig.requests)
+            assertInstanceOf(CredentialVerdict.Accepted::class.java, auth.describe().verdict)
+            assertEquals(true, rig.answer("one")?.refused, "the named quota refusal belongs to the spent login")
+            assertEquals(true, rig.answer("two")?.accepted, "the serving login owns its acceptance")
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test
     fun `the usage row names the login that served the same request`() = runBlocking {
         val rig = FailoverRig(directory, limited = mapOf("one" to 2 * HOUR_S))
         rig.start()
@@ -155,7 +195,13 @@ private class SyntheticLogin(private val token: String) : RefreshableAuthProvide
 }
 
 /** [limited] names each login the upstream refuses and how far out its five-hour reset is. */
-private class FailoverRig(directory: Path, private val limited: Map<String, Long>, pooled: Boolean = true) {
+private class FailoverRig(
+    directory: Path,
+    private val limited: Map<String, Long>,
+    pooled: Boolean = true,
+    headAuth: RefreshableAuthProvider? = null,
+    refusedStatus: Int? = null,
+) {
     val requests = CopyOnWriteArrayList<String>()
     val bodies = CopyOnWriteArrayList<String>()
     private val labels = listOf("one", "two", "three")
@@ -177,11 +223,16 @@ private class FailoverRig(directory: Path, private val limited: Map<String, Long
                     "anthropic-ratelimit-unified-5h-reset" to reset,
                 ).forEach { (name, value) -> request.responseHeaders.add(name, value) }
             }
-            val body = if (resetIn != null) refusal(login) else SUCCESS_WIRE
-            val type = if (resetIn != null) "application/json" else "text/event-stream"
+            val body = when {
+                refusedStatus != null ->
+                    """{"type":"error","error":{"type":"authentication_error","message":"synthetic unauthorized"}}"""
+                resetIn != null -> refusal(login)
+                else -> SUCCESS_WIRE
+            }
+            val type = if (refusedStatus != null || resetIn != null) "application/json" else "text/event-stream"
             request.responseHeaders.add("Content-Type", type)
             val bytes = body.toByteArray(Charsets.UTF_8)
-            request.sendResponseHeaders(if (resetIn != null) 429 else 200, bytes.size.toLong())
+            request.sendResponseHeaders(refusedStatus ?: if (resetIn != null) 429 else 200, bytes.size.toLong())
             request.responseBody.use { it.write(bytes) }
         }
         start()
@@ -214,7 +265,7 @@ private class FailoverRig(directory: Path, private val limited: Map<String, Long
                     defaultContextWindow = 200_000,
                 ),
                 pinnedModel = "model",
-                auth = if (pooled) logins.getValue("one") else ClientAuthProvider("synthetic"),
+                auth = headAuth ?: if (pooled) logins.getValue("one") else ClientAuthProvider("synthetic"),
                 baseUrl = "http://127.0.0.1:${server.address.port}",
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
@@ -245,6 +296,8 @@ private class FailoverRig(directory: Path, private val limited: Map<String, Long
     }
 
     fun switchReason(): String? = pool.view(SESSION).lastSwitch?.reason
+
+    fun answer(account: String): splice.core.head.ProviderAnswer? = head.providerAnswer(account)
 
     fun lastAccount(): String? {
         check(AsyncFileIo.drain())

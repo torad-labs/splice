@@ -7,6 +7,7 @@ package splice.diagnostics.doctor
 
 import splice.accounts.status.CredentialPresence
 import splice.core.auth.CredentialVerdict
+import splice.core.head.ProviderAnswer
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
@@ -31,11 +32,14 @@ internal class DoctorAuth(output: TerminalOutput) {
         envReader: EnvReader,
         snapshot: DaemonSnapshot,
         reads: DaemonReads,
+        lastRefusals: Map<String, ProviderAnswer> = emptyMap(),
     ): List<DoctorCheck> {
         val topology = (topo as? DoctorTopology.Parsed)?.topology
             ?: return listOf(DoctorCheck("auth", CheckStatus.INFO, "skipped (no readable topology)"))
         val daemon = splitBrain.read(snapshot, envReader, reads)
-        val heads = probeHeads(topology, envReader).map { head -> seenBy(head, daemon) }
+        val heads = probeHeads(topology, envReader).map { head ->
+            seenBy(head, daemon).copy(lastRefusal = lastRefusals[head.key])
+        }
         if (heads.isEmpty()) return listOf(DoctorCheck("auth", CheckStatus.INFO, "no heads configured"))
         // Severity is honest to "can I use splice at all": with zero authed heads a missing credential
         // is THE blocker (FAIL); once any head works, the others are ignorable (WARN).

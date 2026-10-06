@@ -1,5 +1,5 @@
 // NEW: v0.4.0 FEATURES.md §11 — the account pools as the CLI sees them out of process: the daemon's
-// /api/auth account_pool projection (labels, availability, plan windows, the last switch), read with
+// /api/accounts roster and per-head pool metadata (availability, plan windows, the last switch), read with
 // the mgmt key and parsed into the control plane's own view type. The projection carries no
 // credential, raw account id, e-mail or path, and this reader keeps only the fields it names.
 package splice.diagnostics.doctor
@@ -20,6 +20,7 @@ import splice.core.util.SafeFailureText
 import splice.core.wire.HttpStatus
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
+import splice.diagnostics.doctor.accounts.AccountRosterProjection
 import splice.upstream.credentials.AccountLabelPolicy
 import splice.upstream.credentials.AccountSwitchReason
 import java.net.URI
@@ -36,27 +37,15 @@ private const val NO_KEY = "this shell's state dir holds no management key, so t
     "were not asked; splice doctor's mgmt-key check names the fix"
 private const val KEY_REFUSED = "the daemon refused this shell's management key (HTTP 401): it holds " +
     "another, so the two resolve different state dirs or the key changed after the daemon started"
-private const val OTHER_SHAPE = "the daemon's /api/auth answered, but not with the account projection " +
+private const val OTHER_SHAPE = "the daemon's /api/accounts answered, but not with the account projection " +
     "this build reads, so the daemon runs another version"
-
-/** What reading the daemon's account projection found. DR-174's lesson, applied to its fourth
- *  caller: the read returned null for no key, a refused key, nothing answering and a body of another
- *  shape alike, and each caller invented one sentence for all four ("mgmt key?"). */
-public sealed class AccountPoolsRead {
-    /** Pools keyed by head, empty when no head holds one. */
-    public data class Read(public val pools: Map<String, HeadAccountPoolView>) : AccountPoolsRead()
-
-    /** The projection is unknown. [reason] says why in one sentence; [fix] is the one remedy that
-     *  fits, or null when none does or another check carries it, which [reason] then says. */
-    public data class Unread(public val reason: String, public val fix: String?) : AccountPoolsRead()
-}
 
 public fun interface AccountPoolRead {
     public operator fun invoke(port: Int, env: EnvReader): AccountPoolsRead
 }
 
 public class JdkAccountPoolRead : AccountPoolRead {
-    private val projection = AccountPoolProjection()
+    private val projection = AccountRosterProjection()
     private val client = HttpClient.newHttpClient()
 
     override fun invoke(port: Int, env: EnvReader): AccountPoolsRead = when (val key = MgmtKeyFile().read(env)) {
@@ -70,7 +59,7 @@ public class JdkAccountPoolRead : AccountPoolRead {
     }
 
     private fun ask(port: Int, key: String): AccountPoolsRead {
-        val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/api/auth"))
+        val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/api/accounts"))
             .timeout(Duration.ofSeconds(READ_TIMEOUT_S))
             .header("Authorization", "Bearer $key")
             .GET()
@@ -78,7 +67,7 @@ public class JdkAccountPoolRead : AccountPoolRead {
         val reply = Cancellables.runCatchingCancellable { client.send(request, HttpResponse.BodyHandlers.ofString()) }
             .getOrElse { failure ->
                 return AccountPoolsRead.Unread(
-                    "the daemon's /api/auth did not answer (${SafeFailureText.render(failure)})",
+                    "the daemon's /api/accounts did not answer (${SafeFailureText.render(failure)})",
                     FIX_LOGS,
                 )
             }
@@ -86,14 +75,14 @@ public class JdkAccountPoolRead : AccountPoolRead {
             HttpStatus.OK -> parsed(reply.body())
             // Not a daemon with no pools: a read that FAILED, and the one no restart of ours can mend.
             HttpStatus.UNAUTHORIZED -> AccountPoolsRead.Unread(KEY_REFUSED, null)
-            else -> AccountPoolsRead.Unread("the daemon's /api/auth answered HTTP ${reply.statusCode()}", FIX_LOGS)
+            else -> AccountPoolsRead.Unread("the daemon's /api/accounts answered HTTP ${reply.statusCode()}", FIX_LOGS)
         }
     }
 
     private fun parsed(body: String): AccountPoolsRead = projection.read(body)
 }
 
-/** The account_pool object under each head of /api/auth, and nothing else from that payload. */
+/** The per-head account_pool metadata under /api/accounts head_pools, also read by legacy synthetic fixtures. */
 internal class AccountPoolProjection {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -105,8 +94,7 @@ internal class AccountPoolProjection {
         "recovery_probe_in_flight",
     )
 
-    /** [body] as the pools it projects, or unread when it is not the shape this build reads: the CLI's
-     *  loopback read and the daemon's own doctor (V4-230) both read an /api/auth body through here. */
+    /** Reads legacy pool fixtures; production roster readers use [parse] only for accompanying metadata. */
     fun read(body: String): AccountPoolsRead =
         Cancellables.runCatchingCancellable { AccountPoolsRead.Read(parse(body)) }
             .getOrElse { AccountPoolsRead.Unread(OTHER_SHAPE, FIX_RESTART) }
@@ -138,7 +126,7 @@ internal class AccountPoolProjection {
         )
     }
 
-    private fun account(a: JsonObject): HeadAccountView? {
+    internal fun account(a: JsonObject): HeadAccountView? {
         val label = label(a, "label") ?: return null
         val authExclusion = authExclusion(a)
         return HeadAccountView(
@@ -181,5 +169,5 @@ internal class AccountPoolProjection {
 
     /** A stale or foreign daemon is still a boundary: rejected labels never enter a printable view. */
     private fun label(obj: JsonObject, key: String): String? = (obj[key] as? JsonPrimitive)
-        ?.takeIf { it.isString }?.content?.takeIf(AccountLabelPolicy::isSafe)
+        ?.takeIf { it.isString }?.content?.takeIf(AccountLabelPolicy::isSelector)
 }

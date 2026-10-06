@@ -52,20 +52,24 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
             headKey,
             CheckStatus.WARN,
             "every account is out ($at): $detail",
-            "splice login $headKey --label <name>",
+            if (safe.accounts.all { it.label.startsWith("native:") }) {
+                "Review the native login places and their reported resets in the console."
+            } else {
+                "splice login $headKey --label <name>"
+            },
         )
     }
 
     /** Rendering also accepts directly constructed views, so decoding is not the only label gate. */
     private fun safeView(view: HeadAccountPoolView): HeadAccountPoolView {
-        val accounts = view.accounts.filter { AccountLabelPolicy.isSafe(it.label) }
+        val accounts = view.accounts.filter { AccountLabelPolicy.isSelector(it.label) }
         val missingSelection = view.selectedLabel != null && accounts.none { it.label == view.selectedLabel }
-        val droppedSelected = view.accounts.any { it.selected && !AccountLabelPolicy.isSafe(it.label) }
+        val droppedSelected = view.accounts.any { it.selected && !AccountLabelPolicy.isSelector(it.label) }
         return view.copy(
-            selectedLabel = view.selectedLabel?.takeIf(AccountLabelPolicy::isSafe),
+            selectedLabel = view.selectedLabel?.takeIf(AccountLabelPolicy::isSelector),
             accounts = accounts,
             lastSwitch = view.lastSwitch?.takeIf {
-                AccountLabelPolicy.isSafe(it.from) && AccountLabelPolicy.isSafe(it.to) &&
+                AccountLabelPolicy.isSelector(it.from) && AccountLabelPolicy.isSelector(it.to) &&
                     AccountSwitchReason.isSafe(it.reason)
             },
             selectionUnknown = view.selectionUnknown || missingSelection || droppedSelected,

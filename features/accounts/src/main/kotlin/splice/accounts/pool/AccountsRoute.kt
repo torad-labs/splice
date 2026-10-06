@@ -50,6 +50,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
                 joined.values.forEach { row -> addJsonObject { write(this, row, nowSeconds, providers) } }
                 nativeRows.forEach { add(it) }
             }
+            extras.pools(this)
         }.toString()
     }
 
@@ -117,7 +118,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
             if (kind == "client" && account.primary) return@forEach
             val fields = described[account.label]?.fields.orEmpty()
             if (fields["native_place"] != null) return@forEach
-            merge(joined, fields["auth_path"] ?: "$headKey:${account.label}", headKey) {
+            merge(joined, fields["auth_path"] ?: "$headKey:${account.label}", headKey, account.label) {
                 pooledAccount(kind, account, view, fields)
             }
         }
@@ -168,20 +169,21 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
     )
 
     // The one join point: an existing row (another head sharing this credential path) only grows
-    // its `heads` set; a new key builds the row once, from whichever head reached it first. inline
+    // its per-head selector map; a new key builds the row once, from whichever head reached it first. inline
     // (kt-no-lambda-seam exemption): a raw () -> JoinedAccount here would need a named fun
     // interface for one two-call-site builder.
     private inline fun merge(
         joined: MutableMap<String, JoinedAccount>,
         key: String,
         headKey: String,
+        label: String? = null,
         build: () -> JoinedAccount,
     ) {
         val existing = joined[key]
         if (existing != null) {
-            existing.heads += headKey
+            existing.labelsByHead[headKey] = label
         } else {
-            joined[key] = build().also { it.heads += headKey }
+            joined[key] = build().also { it.labelsByHead[headKey] = label }
         }
     }
 
@@ -191,9 +193,12 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         nowSeconds: Long,
         providers: Map<String, String>,
     ) {
-        extras.write(into, row.heads, row.label, providers)
+        extras.write(into, row.labelsByHead, providers)
         management.write(into, row.label, row.primary, row.authExclusion.displayName, row.authExclusion.identity)
         writeQuota(into, row, nowSeconds)
+        val answer = row.labelsByHead.mapNotNull { (head, label) -> heads[head]?.answers?.answer(label) }
+            .maxByOrNull { it.observedAtEpochMs }
+        AccountAnswerJson.write(into, answer)
     }
 
     private fun writeQuota(into: JsonObjectBuilder, row: JoinedAccount, nowSeconds: Long) {
@@ -262,7 +267,7 @@ private data class AccountFlags(
 
 /** One joined row: an OAuth account (or a single-login head with none) plus every head riding it.
  *  A `data class` (LongParameterList's `ignoreDataClasses`) even though nothing here compares or
- *  copies one — [merge] mutates [heads] in place as later heads join the same credential path. */
+ *  copies one — [merge] retains each head's own selector as it joins the same credential path. */
 private data class JoinedAccount(
     val credentialPath: String?,
     val kind: String,
@@ -276,5 +281,7 @@ private data class JoinedAccount(
     val observedAtEpochSeconds: Long?,
     val authExclusion: AuthExclusionView,
     val flags: AccountFlags,
-    val heads: MutableSet<String> = sortedSetOf(),
-)
+    val labelsByHead: MutableMap<String, String?> = sortedMapOf(),
+) {
+    val heads: Set<String> get() = labelsByHead.keys
+}

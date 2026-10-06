@@ -2,6 +2,9 @@
 // route's port, moved beside the route that answers with it.
 package splice.diagnostics.doctor
 
+import splice.accounts.claude.ClaudeLoginPlaceId
+import splice.accounts.pool.HeadAccountPoolView
+import splice.core.head.ProviderAnswer
 import splice.daemonclient.DaemonProbe
 
 /**
@@ -29,6 +32,27 @@ public data class DaemonAnswers(
     public val trace: Map<String, DaemonProbe.HeadTrace>,
     /** Declared tiers absent from each head's current catalog, read in process. */
     public val unmappedTiers: Map<String, Map<String, String>> = emptyMap(),
+    /** The exact /api/accounts roster, not the auth endpoint's different account-pool denominator. */
+    public val accounts: String = """{"accounts":[]}""",
+)
+
+/** The authoritative roster was read, or its exact read failure, shared by doctor and status. */
+public sealed class AccountPoolsRead {
+    public data class Read(
+        public val pools: Map<String, HeadAccountPoolView>,
+        public val nativeLogins: List<NativeLoginHealth> = emptyList(),
+        public val lastRefusals: Map<String, ProviderAnswer> = emptyMap(),
+    ) : AccountPoolsRead()
+
+    public data class Unread(public val reason: String, public val fix: String?) : AccountPoolsRead()
+}
+
+/** Allowlisted place diagnosis, with no path, credential, identity or raw provider sentence. */
+public data class NativeLoginHealth(
+    val head: String,
+    val place: ClaudeLoginPlaceId,
+    val expired: Boolean,
+    val present: Boolean,
 )
 
 /** Takes the daemon's [DaemonAnswers] at call time: two of the three are suspend reads, and a doctor

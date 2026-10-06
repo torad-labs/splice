@@ -27,6 +27,9 @@ public interface Head {
     /** Last actual provider acceptance or refusal, retained across restarts; absence proves no acceptance. */
     public fun providerAnswer(): ProviderAnswer? = null
 
+    /** Newest answer of the current credential owner, never another account's head-wide answer. */
+    public fun providerAnswer(account: String?): ProviderAnswer? = null
+
     /** Milliseconds left on a refusal this head is HOLDING (V4-398/V4-412), zero when it holds none. The one value
      *  any surface may print as out of quota (V4-452). */
     public fun providerResetForMs(): Long = 0L
@@ -42,7 +45,12 @@ public data class ProviderAnswer(
     val status: Int?,
     val observedAtEpochMs: Long,
     val accepted: Boolean = status != null && status in HttpStatus.OK..HttpStatus.MAX_SUCCESS,
-)
+    /** A 429 counts as a login refusal only when the provider names a spent subscription window. */
+    val quotaRefused: Boolean = false,
+) {
+    public val refused: Boolean get() = status == HttpStatus.UNAUTHORIZED || status == HttpStatus.FORBIDDEN ||
+        (status == HttpStatus.TOO_MANY_REQUESTS && quotaRefused)
+}
 
 /** Provider rate failures and local cooldown holds are disjoint, not absorbed-round error events. */
 public data class RateLimitHealth(val providerTurns: Long, val heldTurns: Long)

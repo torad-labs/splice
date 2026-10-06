@@ -200,7 +200,8 @@ internal class UpstreamRequest(
         recorder: AttemptRecorder?,
     ): RetryOutcome<T> {
         ctx.markHeaders()
-        ctx.providerAnswerObserver.observed(resp.status.value, wallClock())
+        val answeredAt = wallClock()
+        ctx.providerAnswerObserver.observed(resp.status.value, answeredAt)
         // V4-220 item 6b: every answer reaches the provider, so a forwarded credential's verdict is known.
         ctx.auth.upstreamAnswered(resp.status.value, resp.status.isSuccess())
         recorder?.response(resp.status.value, resp.headers.entries().associate { (k, v) -> k to v.joinToString() })
@@ -237,6 +238,7 @@ internal class UpstreamRequest(
                     null
                 },
             )
+            ctx.observeQuotaRefusal(realStatus, answeredAt, failed.planLimit)
             WsSizeRefusal.read(ctx, failed)
         }
     }

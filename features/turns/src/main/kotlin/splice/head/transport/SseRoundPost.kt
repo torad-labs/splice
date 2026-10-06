@@ -4,9 +4,12 @@
 package splice.head.transport
 
 import kotlinx.coroutines.flow.emptyFlow
+import splice.core.auth.CredentialKey
+import splice.core.auth.Credentials
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.head.admission.TurnQuota
+import splice.head.usage.TurnProviderAnswers
 import splice.head.usage.UsageStore
 import splice.upstream.Provider
 import splice.upstream.RetryNotice
@@ -14,7 +17,6 @@ import splice.upstream.TurnSignals
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.transport.AuthRefreshObserver
 import splice.upstream.transport.PostContext
-import splice.upstream.transport.ProviderAnswerObserver
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamPost
 
@@ -53,16 +55,23 @@ internal class SseRoundPost(
         val drive = inputs.drive
         val selection = drive.account
         val account = selection?.account
+        val sender = account?.auth ?: provider.auth
+        val answers = TurnProviderAnswers(usageStore, sender, provider.auth)
         val activeQuota = turnQuota.forSession(drive.meta.sessionId, drive.account)
         return upstream.post(
             PostContext(
                 url = provider.upstreamUrl,
-                auth = account?.auth ?: provider.auth,
+                auth = sender,
                 extraHeaders = { creds ->
                     // The account's headers ride ON TOP of the provider's, never instead of them.
                     val headers = provider.extraHeaders(creds) +
                         account?.extraHeaders?.invoke(creds).orEmpty() +
                         CallerCredential.over(drive.turnHeaders, creds) + httpRoutingHeaders(inputs)
+                    val key = CredentialKey.fromHeaders(
+                        CredentialKey.headers(creds, headers),
+                        (creds as? Credentials.ApiKey)?.header,
+                    )
+                    answers.sent(key)
                     drive.observeAccount(creds, headers)
                     headers
                 },
@@ -76,7 +85,7 @@ internal class SseRoundPost(
                 // V4-174: the trace hears every send of this round from inside the retry loop.
                 wire = drive.trace,
             ).also { context ->
-                context.providerAnswerObserver = ProviderAnswerObserver(usageStore::observeProviderAnswer)
+                context.providerAnswerObserver = answers
                 context.relayRateLimitReplies = provider.relayRateLimitReplies
                 context.bodyRefusedAsTooLarge = inputs.refusedAsTooLarge()
                 context.upstreamAccepted = splice.upstream.StreamStart {

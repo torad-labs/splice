@@ -7,6 +7,7 @@ import splice.accounts.pool.HeadAccountAuthSource
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.signin.HeadRestart
 import splice.core.auth.AuthProvider
+import splice.core.head.ProviderAnswer
 import splice.core.usage.QuotaView
 
 /** One head as the auth and accounts surfaces see it. */
@@ -26,6 +27,8 @@ public data class AccountHead(
      *  the exact same fallback ([splice.usage.quota.UsagePayloads]'s `pool?.selectedQuota() ?:
      *  usage.quota`) for the same head. Null only for a test double that wires neither source. */
     val quota: HeadQuotaSource? = null,
+    /** Actual current credential answers from the same store Models reads. Never probes credentials. */
+    val answers: HeadAccountAnswerSource? = null,
 ) {
     /** Membership is live even when this head was adapted before its first stored account landed. */
     val activePool: HeadAccountPoolSource? get() = pool?.takeIf { it.active }
@@ -35,6 +38,11 @@ public data class AccountHead(
  *  pool-or-tracker fallback so a caller never re-derives it. */
 public fun interface HeadQuotaSource {
     public fun quota(): QuotaView?
+}
+
+/** Null [account] names the single login; a pool label names its current captured credential owner. */
+public fun interface HeadAccountAnswerSource {
+    public fun answer(account: String?): ProviderAnswer?
 }
 
 /** One head for a by-name /api route, or null after the resolver has answered the error itself —

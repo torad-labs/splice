@@ -3,13 +3,29 @@
 // allowlist, never a denylist. V4-220 item 6b: each account's `auth` carries the verdict shape too.
 package splice.accounts.pool
 
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.accounts.CredentialVerdictJson
 import splice.core.auth.AuthDescription
+import splice.core.head.ProviderAnswer
+
+/** A newest answer, not refusal history. Later success, overload or server error therefore renders null. */
+internal object AccountAnswerJson {
+    fun write(into: JsonObjectBuilder, answer: ProviderAnswer?) {
+        val refusal = answer?.takeIf { it.refused }?.let {
+            buildJsonObject {
+                put("status", it.status)
+                put("at_ms", it.observedAtEpochMs)
+            }
+        }
+        into.put("last_refusal", refusal ?: JsonNull)
+    }
+}
 
 public class AccountPoolJson {
     public fun write(

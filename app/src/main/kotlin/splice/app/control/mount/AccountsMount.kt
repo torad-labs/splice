@@ -54,6 +54,15 @@ internal class AccountsMount(
     /** The /api/auth body, for the daemon's own doctor (V4-230). */
     suspend fun authJson(): String = authStatusRoutes.authJson()
 
+    /** The route and in-process doctor read one authoritative roster at call time. */
+    suspend fun accountsJson(): String {
+        val providers = ports.declaredHeads?.invoke()?.mapValues { it.value.provider }.orEmpty()
+        val logins = ports.claudeLogins
+        val native = logins?.places().orEmpty()
+        val carrying = native.map { it.head }.distinct().associateWith { logins?.carrying(it) }
+        return accountsRoute.accountsJson(providers, native, carrying)
+    }
+
     /** V4-132: EXPLICIT constant segments (login, switch, accounts/{label}) ahead of the `{action}`
      *  catch-all — Ktor's routing tree scores a literal segment over a parameter, so POST .../login
      *  wins over POST .../{action} regardless of registration order; pinned by a test rather than
@@ -62,11 +71,7 @@ internal class AccountsMount(
         route.get("/api/auth") { guard.guarded(call) { ControlReplies.respond(call, authStatusRoutes.authJson()) } }
         route.get("/api/accounts") {
             guard.guarded(call) {
-                val providers = ports.declaredHeads?.invoke()?.mapValues { it.value.provider }.orEmpty()
-                val logins = ports.claudeLogins
-                val native = logins?.places().orEmpty()
-                val carrying = native.map { it.head }.distinct().associateWith { logins?.carrying(it) }
-                ControlReplies.respond(call, accountsRoute.accountsJson(providers, native, carrying))
+                ControlReplies.respond(call, accountsJson())
             }
         }
         route.post("/api/auth/{head}/login") { guard.guarded(call) { loginRoutes.startLogin(call) } }

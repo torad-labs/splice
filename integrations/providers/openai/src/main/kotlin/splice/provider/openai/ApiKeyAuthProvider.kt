@@ -10,6 +10,7 @@ package splice.provider.openai
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import splice.core.auth.AuthDescription
+import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.KeyStore
@@ -59,6 +60,10 @@ public class ApiKeyAuthProvider(
     override suspend fun credentials(): Credentials? = resolveKey()?.let { Credentials.ApiKey(it.value) }
 
     override suspend fun refresh(): Credentials? = credentials()
+
+    override fun observedCredentialKey(): String? = resolveKey()?.value?.let {
+        CredentialKey.fromCredentials(Credentials.ApiKey(it))
+    }
 
     /** Non-suspend presence peek for launch-time decisions (the SessionStart advertiser is
      *  installed only while this is false). Same read chain as credentials(). */

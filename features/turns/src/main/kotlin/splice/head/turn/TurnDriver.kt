@@ -29,10 +29,10 @@ import splice.head.compaction.CompactionReplay
 import splice.head.transport.SseRoundConsume
 import splice.head.transport.SseRoundDriver
 import splice.head.transport.SseRoundPost
-import splice.head.transport.StreamAnswerObserver
 import splice.head.transport.TearAwareEvents
 import splice.head.transport.WsRoundDriver
 import splice.head.transport.ZeroEventFailure
+import splice.head.usage.TurnStreamAnswers
 import splice.upstream.Provider
 import splice.upstream.RetryNotice
 
@@ -76,7 +76,7 @@ internal class TurnDriver(
                     telemetry,
                 )
             },
-            answerObserver = StreamAnswerObserver(deps.stores.usageStore::observeProviderStreamAnswer),
+            answerObserver = TurnStreamAnswers(deps.stores.usageStore),
             clock = splice.core.util.WallClock(System::currentTimeMillis),
         ),
         SseRoundPost(

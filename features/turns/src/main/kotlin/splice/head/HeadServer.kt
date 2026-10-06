@@ -146,9 +146,18 @@ public class HeadServer(
 
     override fun providerAnswer(): splice.core.head.ProviderAnswer? = deps.stores.usageStore.providerAnswer()
 
+    override fun providerAnswer(account: String?): splice.core.head.ProviderAnswer? {
+        val auth = if (account == null) {
+            provider.auth
+        } else {
+            deps.quotaBundle.activePool?.members?.singleOrNull { it.label == account }?.auth
+        }
+        return auth?.let(deps.stores.usageStore::providerAnswer)
+    }
+
     /** Independent sends report through this head's same retained answer and credential-specific hold. */
     public val providerReplies: splice.head.usage.ProviderReplyObserver =
-        splice.head.usage.HeadProviderReplies(deps)
+        splice.head.usage.HeadProviderReplies(deps, provider.auth)
 
     /** The refusal this head holds (V4-398/V4-412), and nothing else: a full reading is [quotaFull] (V4-452). */
     override fun providerResetForMs(): Long =

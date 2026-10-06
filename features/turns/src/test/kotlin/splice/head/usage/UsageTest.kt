@@ -12,6 +12,11 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.auth.AuthDescription
+import splice.core.auth.ClientAuthProvider
+import splice.core.auth.CredentialKey
+import splice.core.auth.Credentials
+import splice.core.auth.RefreshableAuthProvider
 import splice.core.head.ProviderAnswer
 import splice.core.model.CodexCompactionReserves
 import splice.core.model.ModelCatalog
@@ -25,6 +30,8 @@ import splice.core.usage.UsageWarnPolicy
 import splice.core.util.LogSink
 import splice.head.round.RoundUsage
 import splice.head.wire.TurnWiring
+import splice.upstream.credentials.AccountCredentialIdentitySource
+import splice.upstream.credentials.AccountCredentialIdentitySource.CredentialFileEvidenceReader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -58,6 +65,96 @@ class UsageTest {
         restored.flushNow()
         assertEquals(ProviderAnswer(null, 600L, true), UsageStore(usage, rates).providerAnswer())
         assertNull(store.readRateLimit(), "an answer is not a quota observation")
+    }
+
+    @Test
+    fun `a credential refusal survives restart but never follows a replacement file`(@TempDir tmp: Path) {
+        val file = tmp.resolve("synthetic-login.json")
+        Files.writeString(file, "synthetic first login")
+        val auth = object : RefreshableAuthProvider, AccountCredentialIdentitySource {
+            override suspend fun credentials(): Credentials = error("diagnostics must not resolve credentials")
+            override suspend fun refresh(): Credentials = error("diagnostics must not refresh credentials")
+            override suspend fun describe(): AuthDescription = AuthDescription(true, "synthetic")
+            override fun credentialIdentity() = CredentialFileEvidenceReader.read(file).identity
+            override fun observedCredentialKey(): String? =
+                CredentialKey.fromCredentials(Credentials.Bearer(Files.readString(file)))
+        }
+        val usage = tmp.resolve("usage.json")
+        val rates = tmp.resolve("rates.json")
+        val store = UsageStore(usage, rates)
+        store.observeProviderAnswer(auth, 403, 100L)
+        store.flushNow()
+        val restored = UsageStore(usage, rates)
+        assertEquals(403, restored.providerAnswer(auth)?.status, "Accounts and Models retain the same answer")
+        Files.writeString(file, "synthetic replacement login")
+        val unansweredKey = requireNotNull(auth.observedCredentialKey())
+        assertNull(restored.providerAnswer(auth), "a credential-file replacement has never answered")
+        val snapshot = rates.resolveSibling("${rates.fileName}.provider-answer")
+        val serialized = Files.readString(snapshot)
+        assertTrue(!serialized.contains("synthetic first login") && !serialized.contains("synthetic replacement login"))
+        assertTrue(!serialized.contains(unansweredKey), "a peek never persists an unanswered credential digest")
+        assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(snapshot))
+    }
+
+    @Test
+    fun `a newer WebSocket acceptance clears only its own credential's HTTP refusal`(@TempDir tmp: Path) {
+        val store = UsageStore(tmp.resolve("usage.json"), tmp.resolve("rates.json"))
+        val first = ClientAuthProvider("first")
+        val second = ClientAuthProvider("second")
+        store.observeProviderAnswer(first, 403, 100L)
+        store.observeProviderAnswer(second, 403, 100L)
+        TurnStreamAnswers(store).observed(true, 200L, first, null)
+        assertEquals(true, store.providerAnswer(first)?.accepted)
+        assertNull(store.providerAnswer(first)?.status, "a WebSocket acceptance is not an HTTP 200")
+        assertEquals(403, store.providerAnswer(second)?.status, "another login was not accepted")
+    }
+
+    @Test
+    fun `a delayed WebSocket answer stays with the sent credential across rotation and restart`(@TempDir tmp: Path) {
+        var token = "synthetic sent login"
+        val auth = object : RefreshableAuthProvider {
+            override suspend fun credentials(): Credentials = error("observation must not resolve credentials")
+            override suspend fun refresh(): Credentials = error("observation must not refresh credentials")
+            override suspend fun describe(): AuthDescription = AuthDescription(true, "synthetic")
+            override fun observedCredentialKey(): String? = CredentialKey.fromCredentials(Credentials.Bearer(token))
+        }
+        val usage = tmp.resolve("usage.json")
+        val rates = tmp.resolve("rates.json")
+        val store = UsageStore(usage, rates)
+        val sentKey = auth.observedCredentialKey()
+        store.observeProviderAnswer(auth, 403, 100L, credentialKey = sentKey)
+        token = "synthetic replacement login"
+        TurnStreamAnswers(store).observed(true, 200L, auth, sentKey)
+        assertNull(store.providerAnswer(auth), "a late acceptance cannot verify the replacement")
+        store.flushNow()
+        val restored = UsageStore(usage, rates)
+        assertNull(restored.providerAnswer(auth), "the unanswered replacement is still unknown after restart")
+        token = "synthetic sent login"
+        assertEquals(ProviderAnswer(null, 200L, true), restored.providerAnswer(auth))
+        TurnStreamAnswers(restored).observed(false, 150L, auth, sentKey)
+        assertEquals(ProviderAnswer(null, 200L, true), restored.providerAnswer(auth), "an older refusal cannot win")
+    }
+
+    @Test
+    fun `credential answers stay independent and only a named quota refusal qualifies`(@TempDir tmp: Path) {
+        val store = UsageStore(tmp.resolve("usage.json"), tmp.resolve("rates.json"))
+        val first = ClientAuthProvider("first")
+        val second = ClientAuthProvider("second")
+        store.observeProviderAnswer(first, 403, 100L)
+        store.observeProviderAnswer(second, 200, 200L)
+        assertEquals(403, store.providerAnswer(first)?.status, "another login's success cannot clear this refusal")
+        assertEquals(200, store.providerAnswer()?.status, "Models reads the same owner's head-wide latest answer")
+        for (status in listOf(429, 500, 503, 200)) {
+            store.observeProviderAnswer(first, status, 300L + status)
+            assertEquals(false, store.providerAnswer(first)?.refused, "an ordinary $status is not a login refusal")
+        }
+        store.observeProviderAnswer(first, 429, 1000L, quotaRefused = true)
+        assertEquals(true, store.providerAnswer(first)?.refused)
+        store.observeProviderAnswer(first, 200, 900L)
+        assertEquals(429, store.providerAnswer(first)?.status, "late older replies do not change the newest answer")
+        store.observeProviderAnswer(first, 200, 1100L)
+        assertEquals(false, store.providerAnswer(first)?.refused)
+        assertNull(store.providerAnswer(ClientAuthProvider("replacement")), "no answer belongs to a replacement owner")
     }
 
     @Test

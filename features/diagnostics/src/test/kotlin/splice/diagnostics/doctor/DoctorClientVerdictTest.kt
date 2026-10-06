@@ -102,7 +102,7 @@ class DoctorClientVerdictTest {
         val line = authChecks(tmp, port).single { it.name == HEAD }
 
         assertEquals(CheckStatus.OK, line.status, line.toString())
-        assertTrue(line.detail.contains("upstream accepted the forwarded login"), line.detail)
+        assertTrue(line.detail.contains("upstream accepted a login for this head"), line.detail)
     }
 
     @Test

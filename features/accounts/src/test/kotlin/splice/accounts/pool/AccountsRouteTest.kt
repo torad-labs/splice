@@ -14,10 +14,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.accounts.AccountHead
+import splice.accounts.HeadAccountAnswerSource
 import splice.accounts.HeadQuotaSource
 import splice.accounts.signin.HeadRestart
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
+import splice.core.head.ProviderAnswer
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 
@@ -57,6 +59,38 @@ class AccountsRouteTest {
         assertEquals(18_000L, row["five_hour_window_seconds"]!!.jsonPrimitive.content.toLong())
         assertEquals(604_800L, row["seven_day_window_seconds"]!!.jsonPrimitive.content.toLong())
         assertEquals(1_699_999_000L, row["observed_at_epoch_seconds"]!!.jsonPrimitive.content.toLong())
+    }
+
+    @Test
+    fun `a joined credential uses each head's own account label and its newest answer`() = runBlocking<Unit> {
+        for ((firstLabel, secondLabel) in listOf("one" to "two", "two" to "one")) {
+            val account = HeadAccountView(firstLabel, true, true, true, null, null, null, null, null)
+            val firstPool = HeadAccountPoolView(firstLabel, listOf(account), null)
+            val secondPool = HeadAccountPoolView(secondLabel, listOf(account.copy(label = secondLabel)), null)
+            var secondAnswer = ProviderAnswer(403, 200L)
+            val heads = mapOf(
+                "first" to oauthHead("first", firstPool, "/synthetic/shared.json").copy(
+                    answers = HeadAccountAnswerSource { label ->
+                        assertEquals(firstLabel, label)
+                        ProviderAnswer(200, 100L)
+                    },
+                ),
+                "second" to oauthHead("second", secondPool, "/synthetic/shared.json").copy(
+                    answers = HeadAccountAnswerSource { label ->
+                        assertEquals(secondLabel, label, "credential-path joining does not rename a head's account")
+                        secondAnswer
+                    },
+                ),
+            )
+            val route = AccountsRoute(heads)
+            val refusedBody = json.parseToJsonElement(route.accountsJson()).jsonObject
+            val refused = refusedBody.getValue("accounts").jsonArray.single().jsonObject
+            assertEquals("403", refused["last_refusal"]!!.jsonObject["status"]!!.jsonPrimitive.content)
+            secondAnswer = ProviderAnswer(200, 300L)
+            val acceptedBody = json.parseToJsonElement(route.accountsJson()).jsonObject
+            val accepted = acceptedBody.getValue("accounts").jsonArray.single().jsonObject
+            assertEquals(JsonNull, accepted["last_refusal"], "the newest answer clears the joined row's old refusal")
+        }
     }
 
     @Test
@@ -157,7 +191,9 @@ class AccountsRouteTest {
         base(key, "chatgpt-oauth").copy(
             pool = HeadAccountPoolSource { pool },
             accountAuth = HeadAccountAuthSource {
-                mapOf("backup" to AuthDescription(true, "chatgpt-oauth", mapOf("auth_path" to authPath)))
+                mapOf(
+                    pool.accounts.single().label to AuthDescription(true, "chatgpt-oauth", mapOf("auth_path" to authPath)),
+                )
             },
         )
 

@@ -5,6 +5,7 @@ package splice.app.control
 import io.ktor.server.application.ApplicationCall
 import splice.accounts.AccountHead
 import splice.accounts.AccountHeadResolver
+import splice.accounts.HeadAccountAnswerSource
 import splice.accounts.HeadQuotaSource
 import splice.accounts.signin.HeadRestart
 import splice.app.control.api.HeadResolver
@@ -22,6 +23,7 @@ internal object AccountHeadAdapter {
         // Same fallback UsagePayloads.usageJson() reads for /api/usage's quota: the pool's selected
         // account when this head has a pool, else the head's own tracked snapshot.
         quota = HeadQuotaSource { head.accountPool?.view(null)?.selectedQuota() ?: head.usage.snapshot().quota },
+        answers = HeadAccountAnswerSource { account -> head.head.providerAnswer(account) },
     )
 
     /** The shared by-name lookup (key first, then wrapper command; 404/409 answered by the resolver). */

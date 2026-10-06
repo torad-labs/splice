@@ -2,7 +2,11 @@
 package splice.provider.muse
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialFileIdentity
+import splice.core.auth.CredentialKey
+import splice.core.auth.Credentials
+import splice.core.auth.InvalidGrantLatch
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
@@ -34,6 +38,26 @@ internal class MuseCredentialStore(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     @Volatile private var cache: Cache? = null
+
+    fun describe(holds: MuseMintHolds, invalidAccountLatch: InvalidGrantLatch): AuthDescription {
+        val snapshot = read()
+        return AuthDescription(
+            present = snapshot?.apiKey != null,
+            kind = "muse-oauth",
+            fields = buildMap {
+                put("login", "device")
+                put("auth_path", authPath.toString())
+                snapshot?.let { current ->
+                    putAll(holds.description(current))
+                    if (invalidAccountLatch.isLatched(current.identity)) put("account_token", "invalid")
+                }
+            },
+        )
+    }
+
+    fun observedCredentialKey(): String? = read()?.apiKey?.let {
+        CredentialKey.fromCredentials(Credentials.Bearer(it))
+    }
 
     fun clearCache() {
         cache = null

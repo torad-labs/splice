@@ -5,6 +5,7 @@
 package splice.diagnostics.doctor
 
 import splice.core.auth.CredentialVerdict
+import splice.diagnostics.doctor.accounts.AccountHealthChecks
 import java.time.Instant
 
 internal class DoctorAuthVerdict {
@@ -12,6 +13,7 @@ internal class DoctorAuthVerdict {
     internal fun credentialVerdict(heads: List<DoctorHeadAuth>, missingStatus: CheckStatus): List<DoctorCheck> {
         return heads.map { auth ->
             when {
+                auth.present && auth.lastRefusal != null -> AccountHealthChecks.refusal(auth.key, auth.lastRefusal)
                 auth.present -> DoctorCheck(auth.key, CheckStatus.OK, credentialLabel(auth))
                 // V4-220 item 6b: the caller's own login, rejected upstream; only the client can sign in again.
                 auth.selfManaged -> DoctorCheck(
@@ -52,9 +54,10 @@ internal class DoctorAuthVerdict {
     // V4-220 item 6b: with the daemon read, the line says what upstream last answered instead.
     private fun credentialLabel(auth: DoctorHeadAuth): String = when {
         auth.selfManaged -> when (val verdict = auth.daemonVerdict) {
-            is CredentialVerdict.Accepted -> "client-native: upstream accepted the forwarded login${at(verdict)}"
+            is CredentialVerdict.Accepted -> "client-native: upstream accepted a login for this head${at(verdict)}"
             CredentialVerdict.Unverified ->
-                "client-native: no forwarded turn answered since the daemon started, so the login is unverified"
+                "client-native: no successful turn answered on this head since the daemon started, " +
+                    "so the login is unverified"
             else -> "client-native: declared auth.kind = client, so there is no key to set"
         }
         auth.envVar != null -> "${auth.envVar} is set"

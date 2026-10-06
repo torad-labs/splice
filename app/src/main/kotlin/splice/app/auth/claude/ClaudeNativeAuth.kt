@@ -53,6 +53,8 @@ internal class ClaudeNativeAuth(
             CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $it"))
         }
 
+    override fun observedCredentialKey(): String? = credentialKey
+
     override suspend fun credentials(): Credentials? {
         val observed = observe()
         return observed?.takeIf(::usable)?.accessToken?.let(Credentials::Bearer)

@@ -91,6 +91,7 @@ class DoctorSelfProbeTest {
             auth = POOLED,
             trace = emptyMap(), // this fixture exercises pool and health, not a booted trace
             unmappedTiers = mapOf("codex" to mapOf("opus" to "fixture/absent")),
+            accounts = """{"accounts":[{"heads":["codex"],"label":"roster-login","selected":true,"available":true}]}""",
         )
         val reader = env(port)
         val config = tmp.resolve("config/splice/splice.toml")
@@ -108,6 +109,7 @@ class DoctorSelfProbeTest {
             sections.getValue("runtime").toString(),
         )
         assertEquals(setOf("codex"), run.accountPools.keys)
+        assertEquals(listOf("roster-login"), run.accountPools.getValue("codex").accounts.map { it.label })
         val missing = sections.getValue("configuration").single { it.name == "model-slot:codex:opus" }
         assertEquals(CheckStatus.WARN, missing.status)
         assertTrue(missing.detail.contains("fixture/absent"), missing.detail)

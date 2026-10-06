@@ -74,6 +74,38 @@ class AccountStatusTest {
     }
 
     @Test
+    fun `status names the selected native login and counts its real roster`() {
+        val view = nativeView()
+        assertEquals("on native:claude (1 of 2 open)", AccountPoolText { 0L }.summary(view))
+    }
+
+    @Test
+    fun `doctor does not erase the native logins that Accounts offers`() {
+        val check = AccountPoolText { 0L }.check("claude-splice", nativeView())
+        assertEquals(CheckStatus.OK, check.status)
+        assertEquals("on native:claude (1 of 2 open)", check.detail)
+    }
+
+    @Test
+    fun `native-only exhaustion never offers a splice-managed credential login`() {
+        val roster = nativeView()
+        val view = roster.copy(accounts = roster.accounts.map { it.copy(available = false) })
+        val check = AccountPoolText { 0L }.check("claude-splice", view)
+        assertEquals(CheckStatus.WARN, check.status)
+        assertTrue(check.fix.orEmpty().contains("native login places"))
+        assertFalse(check.fix.orEmpty().contains("splice login"))
+    }
+
+    private fun nativeView(): HeadAccountPoolView = HeadAccountPoolView(
+        "native:claude",
+        listOf(
+            HeadAccountView("native:claude", false, true, true, null, null, null, null, null),
+            HeadAccountView("native:claude-splice", false, false, false, null, null, null, null, null),
+        ),
+        null,
+    )
+
+    @Test
     fun `nonblocking and past windows cannot shorten the published blocked horizon`() {
         for ((used, reset) in listOf(10 to atSeconds + 7200, 100 to atSeconds - 1, 100 to atSeconds + 7200)) {
             val windows = """

@@ -19,6 +19,7 @@ import splice.core.perf.TimedWork
 import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
 import splice.core.usage.PlanLimit
+import splice.core.wire.HttpStatus
 import splice.core.wire.RateLimitReply
 import splice.upstream.BodyAmendment
 import splice.upstream.ClientFrameEmitted
@@ -40,6 +41,9 @@ public fun interface AuthRefreshObserver {
 /** Observes the original HTTP status at header arrival, before normalization or body consumption. */
 public fun interface ProviderAnswerObserver {
     public fun observed(status: Int, observedAtEpochMs: Long)
+
+    /** Enriches that same answer only after a spent subscription window has been decoded. */
+    public fun quotaRefused(status: Int, observedAtEpochMs: Long) {}
 }
 
 /** The per-post collaborators threaded through every attempt (grouped: one cohesive argument).
@@ -77,6 +81,10 @@ public data class PostContext(
 
     /** Passive metadata only; a caller without an observer retains the existing transport behavior. */
     public var providerAnswerObserver: ProviderAnswerObserver = ProviderAnswerObserver { _, _ -> }
+
+    internal fun observeQuotaRefusal(status: Int, at: Long, plan: PlanLimit?) {
+        if (status == HttpStatus.TOO_MANY_REQUESTS && plan != null) providerAnswerObserver.quotaRefused(status, at)
+    }
 
     internal fun markRetry() {
         perf?.add(PerfKeys.RETRIES, 1)

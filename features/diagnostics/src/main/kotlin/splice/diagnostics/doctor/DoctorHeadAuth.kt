@@ -3,6 +3,7 @@
 package splice.diagnostics.doctor
 
 import splice.core.auth.CredentialVerdict
+import splice.core.head.ProviderAnswer
 
 internal data class DoctorHeadAuth(
     val key: String,
@@ -15,4 +16,5 @@ internal data class DoctorHeadAuth(
     /** V4-220 item 6b: what the running daemon says upstream last answered a self-managed head's
      *  forwarded login; null when the daemon was not read (stopped, or no mgmt key). */
     val daemonVerdict: CredentialVerdict? = null,
+    val lastRefusal: ProviderAnswer? = null,
 )

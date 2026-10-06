@@ -10,15 +10,43 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
+import splice.head.turn.TurnDrive
 import splice.head.turn.ZeroEventClassifier
 import splice.upstream.Provider
 import splice.upstream.TurnSignals
+import splice.upstream.WsRound
 import splice.upstream.WsRoundRunner
 
 internal class WsRoundDrive(
     private val provider: Provider,
     private val classifyZeroEvent: ZeroEventClassifier,
 ) {
+    /** Observe one response boundary, never update readiness for each streamed delta or body completion. */
+    fun startingEvents(
+        round: WsRound,
+        runner: WsRoundRunner,
+        drive: TurnDrive,
+        answer: WsRoundAnswer,
+    ): Flow<JsonObject> {
+        var observed = false
+        return round.events.onEach { event ->
+            if (!observed) {
+                val accepted = when {
+                    runner.isFailureTerminal(event) -> false
+                    JsonScalars.strOrEmpty(event["type"]) == "response.created" -> true
+                    else -> null
+                }
+                if (accepted != null) {
+                    observed = true
+                    answer.observed(accepted)
+                }
+            }
+            drive.emitter.ensureStarted()
+            drive.trace?.responseText(JsonWire.string(event) + "\n")
+        }
+    }
+
     /** The per-round bookkeeping mirrors the SSE path exactly — slot touch, first-byte/events
      *  perf, zero-event classification — because the client must not be able to tell which
      *  transport served its turn. An EVENT touches the slot (liveness) but never picks the watchdog

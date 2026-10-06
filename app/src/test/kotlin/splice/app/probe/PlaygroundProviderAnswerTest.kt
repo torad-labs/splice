@@ -14,7 +14,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -25,8 +28,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.pool.AccountsRoute
 import splice.app.TokenUrlRefreshCall
 import splice.app.auth.SignInPlanner
+import splice.app.control.AccountHeadAdapter
 import splice.app.head.HeadServerFactory
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
@@ -94,6 +99,33 @@ class PlaygroundProviderAnswerTest {
             assertNotNull(answer)
             assertEquals(403, answer!!.status)
             assertEquals(false, answer.accepted)
+        }
+        fixture.first.head.stop()
+    }
+
+    @Test
+    fun `a single-login roster reports its real 403 and clears it after a newer acceptance`() = runTest {
+        val fixture = fixture(backgroundScope)
+        val route = AccountsRoute(AccountHeadAdapter.adapt(mapOf("claudex" to fixture.first)))
+        var refused = true
+        HttpClient(
+            MockEngine { respond("{}", if (refused) HttpStatusCode.Forbidden else HttpStatusCode.OK) },
+        ).use { client ->
+            val probe = UpstreamPlaygroundProbe(fixture.second, client)
+            probe.run(playgroundHead("claudex"), "synthetic prompt", null)
+            val row = Json.parseToJsonElement(route.accountsJson()).jsonObject.getValue("accounts").jsonArray.single()
+            val refusal = row.jsonObject["last_refusal"]
+            assertNotNull(refusal, "Accounts and Models must read the actual credential's same answer")
+            assertEquals("403", requireNotNull(refusal).jsonObject.getValue("status").jsonPrimitive.content)
+            assertEquals(
+                fixture.first.head.providerAnswer()?.observedAtEpochMs.toString(),
+                refusal.jsonObject.getValue("at_ms").jsonPrimitive.content,
+            )
+            refused = false
+            probe.run(playgroundHead("claudex"), "synthetic prompt", null)
+            val accounts = Json.parseToJsonElement(route.accountsJson()).jsonObject.getValue("accounts").jsonArray
+            val cleared = accounts.single()
+            assertEquals(JsonNull, cleared.jsonObject.getValue("last_refusal"))
         }
         fixture.first.head.stop()
     }

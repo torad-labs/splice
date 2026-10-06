@@ -57,9 +57,10 @@ test('retained quota readings distinguish an expired deadline from a stale futur
   const ahead = observedText(future).slice('Observed '.length);
   for (const path of ['models', 'models/' + STACK.oauthHead, 'usage']) {
     const faults = await open(page, path);
-    await expect(page.getByRole('main')).toContainText('5 hours · Last reading 25% · reset ' + past + ' · Not current');
-    await expect(page.getByRole('main')).not.toContainText('5 hours · Last reading 25% · resets ' + past);
-    await expect(page.getByRole('main')).toContainText('Week · Last reading 50% · resets ' + ahead + ' · Not current');
+    const separator = path === 'models' ? ', ' : ' · ';
+    await expect(page.getByRole('main')).toContainText('5 hours' + separator + 'Last reading 25%' + separator + 'reset ' + past + separator + 'Not current');
+    await expect(page.getByRole('main')).not.toContainText('5 hours' + separator + 'Last reading 25%' + separator + 'resets ' + past);
+    await expect(page.getByRole('main')).toContainText('Week' + separator + 'Last reading 50%' + separator + 'resets ' + ahead + separator + 'Not current');
     await expect(page.getByRole('main')).toContainText(observedText(observed));
     expect(faults.pageErrors).toEqual([]);
     expect(faults.failedReads).toEqual([]);

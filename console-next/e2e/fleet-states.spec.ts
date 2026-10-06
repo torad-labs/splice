@@ -12,6 +12,72 @@ async function cardStates(page: Page): Promise<string> {
   return (await Promise.all(cards.map(async (card) => (await card.innerText()).replace(/\s+/g, ' ').trim().slice(0, 160)))).join('\n');
 }
 
+test('command metadata wraps without leading separator dots', async ({ page }, testInfo) => {
+  const heads = await read<HeadsPayload>(page, '/api/heads');
+  const head = heads.heads.find(row => row.key === STACK.oauthHead);
+  if (head === undefined) throw new Error('isolated stack needs a synthetic subscription command');
+  head.label = 'Synthetic metadata command';
+  head.last_provider_answer = { accepted: true, status: 200, observed_at_epoch_ms: Date.now() };
+  await page.route(url => url.pathname === '/api/heads', route => route.fulfill({ json: heads }));
+  await page.route(url => url.pathname === '/api/accounts', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as AccountsWire;
+    const account = body.accounts.find(row => row.heads.includes(STACK.oauthHead));
+    if (account === undefined) throw new Error('isolated stack needs a synthetic account');
+    account.identity_verified = true;
+    account.account = { uuid: 'synthetic-metadata-identity', email: 'long-synthetic-metadata@example.invalid' };
+    body.accounts = body.accounts.filter(row => row === account || !row.heads.includes(STACK.oauthHead));
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'models');
+  const card = page.locator('li.card').filter({ has: page.getByRole('link', { name: head.label, exact: true }) });
+  const meta = card.locator('.quiet-meta').first();
+  for (const width of [1536, 393]) {
+    await page.setViewportSize({ width, height: 1024 });
+    await expect(meta).toContainText('long-synthetic-metadata@example.invalid');
+    const lines = await meta.evaluate(area => {
+      let previousTop: number | null = null;
+      let rows = 0;
+      let leadingDots = 0;
+      for (const span of area.querySelectorAll(':scope > span')) {
+        const box = span.getBoundingClientRect();
+        if (box.width === 0) continue;
+        if (previousTop === null || Math.abs(box.top - previousTop) > 2) {
+          rows++;
+          if (getComputedStyle(span, '::before').content.includes('·')) leadingDots++;
+        }
+        previousTop = box.top;
+      }
+      const actualLines: { top: number; glyphs: { left: number; text: string }[] }[] = [];
+      const walker = document.createTreeWalker(area, NodeFilter.SHOW_TEXT);
+      let node: Node | null;
+      while ((node = walker.nextNode()) !== null) {
+        const value = node.textContent ?? '';
+        for (let index = 0; index < value.length; index++) {
+          const range = document.createRange();
+          range.setStart(node, index);
+          range.setEnd(node, index + 1);
+          const box = range.getBoundingClientRect();
+          if (box.width === 0 || value[index]?.trim() === '') continue;
+          let line = actualLines.find(candidate => Math.abs(candidate.top - box.top) < 2);
+          if (line === undefined) {
+            line = { top: box.top, glyphs: [] };
+            actualLines.push(line);
+          }
+          line.glyphs.push({ left: box.left, text: value[index] ?? '' });
+        }
+      }
+      leadingDots += actualLines.filter(line => line.glyphs.sort((left, right) => left.left - right.left).map(glyph => glyph.text).join('').startsWith('·')).length;
+      return { rows: Math.max(rows, actualLines.length), leadingDots };
+    });
+    if (width === 393) expect(lines.rows).toBeGreaterThan(1);
+    expect(lines.leadingDots).toBe(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await card.screenshot({ path: testInfo.outputPath('command-metadata-' + width + '.png') });
+  }
+  await assertHealthy(page, faults);
+});
+
 test('unknown readiness uses theme amber while accepted and refused commands keep green and red', async ({ page }, testInfo) => {
   const heads = await read<HeadsPayload>(page, '/api/heads');
   const unknown = heads.heads.find(head => head.key === STACK.soloHead);

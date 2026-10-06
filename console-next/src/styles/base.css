@@ -150,6 +150,8 @@ svg { display: block; flex: none; }
 /* the one quiet line under a card's activity: facts a person reads once, never chips */
 .quiet-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) 0; padding: 0 var(--space-7) var(--space-6); font: 500 0.96rem var(--meta); color: var(--mute); }
 .quiet-meta span + span::before { content: '·'; margin: 0 var(--space-4); color: var(--faint); }
+.command-meta { column-gap: var(--space-5); }
+.command-meta span + span::before { content: none; }
 .acts { display: flex; gap: var(--space-5); padding: 0 var(--space-7) var(--space-7); margin-top: calc(-1 * var(--space-2)); }
 
 /* ---------- shared bits ---------- */

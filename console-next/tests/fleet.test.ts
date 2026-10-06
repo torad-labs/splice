@@ -151,7 +151,8 @@ describe('a fleet card', () => {
     quota.seven_day = { used_pct: 65, resets_at: NOW / 1000 + 86400 };
     const card = fleetCard(head(), inputs({ usage: reading }));
     expect(card.line).toMatchObject({ kind: 'gauge', name: 'Week', pct: 65 });
-    expect(card.meta).toContain(`5 hours · 12% · resets ${localZonedInstantText(NOW / 1000 + 3600)} · Observation time not reported`);
+    expect(card.meta).toContain(`5 hours, 12%, resets ${localZonedInstantText(NOW / 1000 + 3600)}`);
+    expect(card.meta).toContain('Observation time not reported');
     expect(card.meta.at(-1)).toBe('2 sessions');
   });
 
@@ -227,7 +228,8 @@ describe('a fleet card', () => {
   test('a window that reset since it was read is not the tightest', () => {
     const card = fleetCard(head(), inputs({ usage: usage(99, NOW / 1000 - 60) }));
     expect(card.line).toBeNull();
-    expect(card.meta.join(' ')).toContain(`Last reading 99% · reset ${localZonedInstantText(NOW / 1000 - 60)} · Not current`);
+    expect(card.meta.join(' ')).toContain(`Last reading 99%, reset ${localZonedInstantText(NOW / 1000 - 60)}, Not current`);
+    expect(card.meta).toContain('Observation time not reported');
     expect(card.meta.join(' ')).not.toContain(`resets ${localZonedInstantText(NOW / 1000 - 60)}`);
   });
   test('an aged reading before its reset stays visible and is not called reset or current', () => {
@@ -239,7 +241,8 @@ describe('a fleet card', () => {
     const card = fleetCard(head(), inputs({ usage: reading }));
     expect(card.line).toBeNull();
     expect(card.none).toBe('Last reading 1h ago: 41% of 5 hours, not current');
-    expect(card.meta).toContain(`5 hours · Last reading 41% · resets ${localZonedInstantText(NOW / 1000 + 3600)} · Not current · Observed ${localZonedInstantText(NOW / 1000 - 3600)}`);
+    expect(card.meta).toContain(`5 hours, Last reading 41%, resets ${localZonedInstantText(NOW / 1000 + 3600)}, Not current`);
+    expect(card.meta).toContain(`Observed ${localZonedInstantText(NOW / 1000 - 3600)}`);
   });
 
   test('a fact already said is not said twice', () => {

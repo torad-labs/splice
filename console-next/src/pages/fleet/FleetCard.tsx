@@ -55,7 +55,7 @@ export function FleetCardView({ facts, fix, sortable = true, ordering }: { facts
       ) : (
         <p className="quiet-line">{facts.line.text}</p>
       )}
-      <div className="quiet-meta">
+      <div className="quiet-meta command-meta">
         {facts.meta.map((part) => (
           <span key={part}>{part}</span>
         ))}

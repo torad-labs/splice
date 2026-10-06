@@ -16,9 +16,32 @@ internal object HookSettings {
 
     data class Merged(val hooks: JsonObject?, val inherited: JsonObject?)
 
-    /** The pre-write memo remembers both sides, so an interrupted settings swap still chooses the old origin. */
-    fun inherited(memo: JsonObject, local: JsonElement?): JsonElement? =
-        if (memo["before_hooks"] == (local ?: JsonNull)) memo["before_inherited"] else memo["after_inherited"]
+    /** Local edits do not erase evidence of an interrupted swap. When deliberate copies contain both
+     * inherited snapshots, prefer the completed snapshot and preserve the old occurrences as local hooks. */
+    fun inherited(memo: JsonObject, local: JsonElement?): JsonElement? {
+        val hooks = local ?: JsonNull
+        val before = memo["before_inherited"]
+        val after = memo["after_inherited"]
+        return when {
+            memo["before_hooks"] == hooks -> before
+            memo["after_hooks"] == hooks -> after
+            hasDistinctive(hooks, after, before) -> after
+            hasDistinctive(hooks, before, after) -> before
+            else -> after
+        }
+    }
+
+    private fun hasDistinctive(local: JsonElement, side: JsonElement?, other: JsonElement?): Boolean {
+        val current = local as? JsonObject ?: return false
+        val expected = side as? JsonObject ?: return false
+        val prior = other as? JsonObject
+        return expected.any { (event, value) ->
+            val shared = (prior?.get(event) as? JsonArray).orEmpty()
+            val distinct = subtract((value as? JsonArray).orEmpty(), shared)
+            val available = subtract((current[event] as? JsonArray).orEmpty(), shared)
+            distinct.any(available::contains)
+        }
+    }
 
     fun origins(
         previous: JsonElement?,

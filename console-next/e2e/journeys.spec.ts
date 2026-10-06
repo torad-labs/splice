@@ -1,7 +1,8 @@
-// NEW: V4-444 — replacement-console journeys over real daemon payloads, never mocked API rows.
+// NEW: V4-444 — replacement-console journeys over real daemon payloads and explicit synthetic source controls.
 import { expect, test } from '@playwright/test';
 import { STACK } from './stack';
 import type { SessionsPayload } from '../src/types/sessions';
+import type { ProjectsPayload } from '../src/types/projects';
 import { FINISHED } from './setup';
 import { assertHealthy, env, open, read, watch } from './support';
 
@@ -41,6 +42,47 @@ test('real working waiting and finished rows group and a session opens on its ow
   await expect(page.getByRole('heading', { name: 'Sessions', level: 1, exact: true })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Conversation', exact: true })).toContainText('Synthetic answer');
   await expect(page.getByRole('region', { name: 'Conversation', exact: true }).getByText('code', { exact: true })).toBeVisible();
+  await assertHealthy(page, faults);
+});
+
+test('Repo separates same-name roots with distinct titles and links while a single root keeps its name', async ({ page }) => {
+  const roots = ['/synthetic/a/cohort', '/synthetic/b/cohort'] as const;
+  let shared = false;
+  await page.route(url => url.pathname === '/api/sessions', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as SessionsPayload;
+    body.sessions = body.sessions.filter(row => row.session_id === STACK.sender.id || row.session_id === STACK.peer.id).map(row => ({
+      ...row, repo: { root: roots[shared || row.session_id === STACK.sender.id ? 0 : 1] },
+    }));
+    await route.fulfill({ response, json: body });
+  });
+  await page.route(url => url.pathname === '/api/projects', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as ProjectsPayload;
+    const base = body.projects[0];
+    if (base === undefined) throw new Error('the isolated stack must provide a synthetic project');
+    body.projects = (shared ? roots.slice(0, 1) : roots).map(root => ({ ...base, id: root, root }));
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'sessions?group=repo');
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1024 });
+    for (const [root, name] of [[roots[0], STACK.sender.name], [roots[1], STACK.peer.name]] as const) {
+      const group = page.getByRole('region', { name: 'cohort · ' + root, exact: true });
+      await expect(group).toBeVisible();
+      await expect(group.locator('li.card')).toHaveCount(1);
+      await expect(group.getByRole('link', { name, exact: true })).toBeVisible();
+      await expect(group.getByRole('link', { name: 'Open the project', exact: true })).toHaveAttribute('href', '#/projects/' + encodeURIComponent(root));
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  shared = true;
+  await page.reload();
+  const single = page.getByRole('region', { name: 'cohort', exact: true });
+  await expect(single.locator('li.card')).toHaveCount(2);
+  await expect(single.getByRole('heading', { name: 'cohort', exact: true })).toBeVisible();
+  await expect(single.getByRole('link', { name: 'Open the project', exact: true })).toHaveAttribute('href', '#/projects/' + encodeURIComponent(roots[0]));
+  await expect(page.getByRole('heading', { name: /cohort · / })).toHaveCount(0);
   await assertHealthy(page, faults);
 });
 

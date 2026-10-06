@@ -101,6 +101,9 @@ export function SessionsPage() {
   }
 
   const groups = groupSessions(live, by);
+  const repoNames = new Map(groups.flatMap(group => group.repoRoot === undefined ? [] : [[group.repoRoot, repoNameOf(group.repoRoot, group.sessions.find(row => row.repo?.remote !== undefined)?.repo?.remote)] as const]));
+  const repoNameCounts = new Map<string, number>();
+  for (const name of repoNames.values()) repoNameCounts.set(name, (repoNameCounts.get(name) ?? 0) + 1);
   const liveKeys = new Set(allKeys);
   const pages = history.data?.pages ?? [];
   const found = pages.flatMap((page) => ('sessions' in page ? page.sessions : []));
@@ -129,9 +132,10 @@ export function SessionsPage() {
           const text = by === 'state' ? STATE_HEAD[group.key] : undefined;
           const teamId = group.team?.kind === 'saved' ? group.team.id : undefined;
           const team = teamId === undefined ? undefined : teams.data?.teams.find((candidate) => candidate.id === teamId);
-          const root = group.team?.kind === 'project' ? group.team.root : by === 'repo' ? group.sessions.find((row) => row.repo !== undefined)?.repo?.root : undefined;
-          const projectName = group.team?.kind === 'project' ? repoNameOf(group.team.root, group.sessions.find(row => row.repo?.remote !== undefined)?.repo?.remote) : undefined;
-          const title = text?.title ?? team?.name ?? projectName ?? (teamId !== undefined ? P.byTeam : group.key === UNATTRIBUTED ? P.unattributed : group.key === UNKNOWN_HEAD ? P.unknownHead : group.key);
+          const root = group.team?.kind === 'project' ? group.team.root : group.repoRoot;
+          const projectName = group.team?.kind === 'project' ? repoNameOf(group.team.root, group.sessions.find(row => row.repo?.remote !== undefined)?.repo?.remote) : group.repoRoot === undefined ? undefined : repoNames.get(group.repoRoot);
+          const repoTitle = group.repoRoot !== undefined && projectName !== undefined && (repoNameCounts.get(projectName) ?? 0) > 1 ? `${projectName} · ${group.repoRoot}` : projectName;
+          const title = text?.title ?? team?.name ?? repoTitle ?? (teamId !== undefined ? P.byTeam : group.key === UNATTRIBUTED ? P.unattributed : group.key === UNKNOWN_HEAD ? P.unknownHead : group.key);
           return (
             <section key={group.key} aria-label={title}>
               <GroupHead title={title} count={rows.length} {...(text === undefined ? {} : { why: text.why })} {...(team !== undefined ? { action: <Link to={`/teams/${encodeURIComponent(team.id)}`}>{M.openTeam}</Link> } : root !== undefined && projects.data?.projects.some((project) => project.root === root) === true ? { action: <Link to={`/projects/${encodeURIComponent(root)}`}>{PJ.openProject}</Link> } : {})} />

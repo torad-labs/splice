@@ -25,6 +25,8 @@ test('in-flight Requests cards stay inside their list at both exact widths', asy
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1024 });
     await expect(cards).toHaveCount(2);
+    const pageWidth = await page.evaluate(() => ({ document: document.documentElement.scrollWidth, viewport: innerWidth }));
+    expect(pageWidth.document, width + ': the page must not scroll horizontally around its running cards').toBeLessThanOrEqual(pageWidth.viewport);
     const outside = await cards.evaluateAll(elements => elements.map(element => {
       const box = element.getBoundingClientRect();
       const list = element.parentElement?.getBoundingClientRect();

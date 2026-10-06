@@ -6,6 +6,67 @@ import type { HeadStatus } from '../src/types/core';
 import type { HeadCatalog } from '../src/types/models';
 import type { SessionAccountState, SessionsPayload } from '../src/types/sessions';
 
+// Drain polling handlers before the page's request context disposes their response bodies.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
+test('forced slow route teardown fails without a drain and consumes the body before a drained context is disposed', async ({ browser }) => {
+  for (const drain of [false, true]) {
+    const context = await browser.newContext();
+    const probe = await context.newPage();
+    let captured = (): void => {};
+    const responseCaptured = new Promise<void>(resolve => { captured = resolve; });
+    let release = (): void => {};
+    const held = new Promise<void>(resolve => { release = resolve; });
+    let finished = (): void => {};
+    const bodyFinished = new Promise<void>(resolve => { finished = resolve; });
+    let consumed = false;
+    let failure: string | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await probe.route('**/route-body-probe', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Synthetic route lifecycle</title>' }));
+      await probe.goto(env('CONSOLE_E2E_BASE') + '/route-body-probe');
+      await probe.route('**/held-route-body', async route => {
+        const response = await route.fetch({ url: env('CONSOLE_E2E_BASE') + '/health' });
+        captured();
+        await held;
+        try {
+          const json = await response.json();
+          consumed = true;
+          await route.fulfill({ response, json });
+        } catch (error) {
+          failure = error instanceof Error ? error.message : String(error);
+          await route.abort();
+        } finally {
+          finished();
+        }
+      });
+      await probe.evaluate(() => { void fetch('/held-route-body').catch(() => {}); });
+      await responseCaptured;
+      expect(consumed).toBe(false);
+      if (drain) {
+        timer = setTimeout(release, 100);
+        await probe.unrouteAll({ behavior: 'wait' });
+        expect(consumed).toBe(true);
+      }
+      await context.request.dispose();
+      release();
+      await bodyFinished;
+      if (drain) {
+        expect(failure).toBeNull();
+      } else {
+        expect(consumed).toBe(false);
+        expect(failure).toContain('Response has been disposed');
+      }
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      release();
+      await context.close();
+    }
+  }
+});
+
 const budgetCatalog = (priced: boolean): HeadCatalog => ({
   head: STACK.keyHead, provider: 'synthetic', pinned_model: 'synthetic-budget-model', models: [{
     id: 'synthetic-budget-model', label: 'Synthetic budget model', description: '', slot: null, context_window: 1000, context_window_source: 'synthetic', pinned: true, resolved: true,

@@ -72,8 +72,10 @@ export function groupKeyOf(row: SessionRow, by: GroupBy): string {
     }
     case 'head':
       return row.head === '' ? UNKNOWN_HEAD : row.head;
-    case 'repo':
-      return repoName(row) ?? UNATTRIBUTED;
+    case 'repo': {
+      const root = projectRoot(row);
+      return root === null ? UNATTRIBUTED : `repo:${root}`;
+    }
     case 'team': {
       const team = teamGroupOf(row);
       return team === null ? UNATTRIBUTED : team.kind === 'saved' ? `team:${team.id}` : `project:${team.root}`;
@@ -95,6 +97,8 @@ export interface SessionGroup {
   sessions: SessionRow[];
   /** Structured identity keeps internal namespace keys out of titles and links. */
   team?: SessionTeam;
+  /** Repository identity stays separate from its human display name. */
+  repoRoot?: string;
 }
 
 const STATE_ORDER = ['needs', 'working', 'idle', 'gone'];
@@ -106,7 +110,8 @@ export function groupSessions(rows: readonly SessionRow[], by: GroupBy): Session
   for (const row of rows) {
     const key = groupKeyOf(row, by);
     const team = by === 'team' ? teamGroupOf(row) : null;
-    const group = groups.get(key) ?? { key, sessions: [], ...(team === null ? {} : { team }) };
+    const repoRoot = by === 'repo' ? projectRoot(row) : null;
+    const group = groups.get(key) ?? { key, sessions: [], ...(team === null ? {} : { team }), ...(repoRoot === null ? {} : { repoRoot }) };
     group.sessions.push(row);
     groups.set(key, group);
   }

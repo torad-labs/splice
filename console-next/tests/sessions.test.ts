@@ -95,7 +95,30 @@ describe('grouping', () => {
   });
   test('by repo, biggest first, an unplaced row is unattributed and not dropped', () => {
     const groups = groupSessions([row(), row(), row({ cwd: '/x/other' }), row({ cwd: null })], 'repo');
-    expect(groups.map((group) => [group.key, group.sessions.length])).toEqual([['tally', 2], ['other', 1], ['unattributed', 1]]);
+    expect(groups.map((group) => [group.repoRoot ?? null, group.sessions.length])).toEqual([['/home/ava/code/tally', 2], ['/x/other', 1], [null, 1]]);
+    expect(groups.find(group => group.repoRoot === undefined)?.key).toBe('unattributed');
+  });
+  test('Repo and Team keep same-name repositories separate by their common root', () => {
+    const roots = ['/synthetic/a/cohort', '/synthetic/b/cohort'];
+    const members = roots.map((root, index) => row({ session_id: `repo-${index}`, cwd: `${root}/seat`, repo: { root } }));
+    const groups = groupSessions(members, 'repo');
+    expect(groups).toHaveLength(2);
+    expect(groups.map(group => group.repoRoot)).toEqual(roots);
+    expect(groups.map(group => group.sessions)).toEqual(members.map(member => [member]));
+    expect(groupSessions(members, 'team')).toHaveLength(2);
+  });
+  test('a repository named unattributed cannot swallow an unplaced session', () => {
+    const groups = groupSessions([row({ repo: { root: '/synthetic/unattributed' } }), row({ cwd: null })], 'repo');
+    expect(groups).toHaveLength(2);
+    expect(groups.find(group => group.repoRoot === '/synthetic/unattributed')?.sessions).toHaveLength(1);
+    expect(groups.find(group => group.key === 'unattributed')?.sessions).toHaveLength(1);
+  });
+  test('Repo uses the common root, not each seat folder, with the same cwd fallback as Team', () => {
+    const root = '/synthetic/cohort';
+    const groups = groupSessions([row({ repo: { root }, cwd: `${root}/a` }), row({ repo: { root }, cwd: `${root}/b` }), row({ repo: { root: '' }, cwd: root })], 'repo');
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.repoRoot).toBe(root);
+    expect(groups[0]?.sessions).toHaveLength(3);
   });
   test('by team uses the common project root for unbound live, stale and ended rows without changing their identity', () => {
     const root = '/synthetic/cohort';

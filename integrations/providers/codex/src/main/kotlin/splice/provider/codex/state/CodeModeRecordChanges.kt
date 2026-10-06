@@ -52,7 +52,7 @@ internal class CodeModeRecordChanges(
         access.withKey(record.key) {
             startup.entries.remove(record.id)
             record.phase = CodeModePhase.LOST
-            replaceError(record, message)
+            CodeModeRecordErrors.replace(record, message)
             record.updatedAt = config.clock.millis()
             cleanup.rejected(cells.remove(record.id))
             try {
@@ -75,31 +75,13 @@ internal class CodeModeRecordChanges(
                     .filter { it.phase != CodeModePhase.STARTING }.forEach { record ->
                         cells.remove(record.id)?.close()
                         record.phase = CodeModePhase.LOST
-                        replaceError(record, "completed client call ids=${record.results.keys}; source was not rerun")
+                        CodeModeRecordErrors.replace(
+                            record,
+                            "completed client call ids=${record.results.keys}; source was not rerun",
+                        )
                     }
                 store.save(records, history.entries, dirtyKeys = setOf(key))
             }
-        }
-    }
-
-    /** Loss must finish even at capacity. The empty error is already covered by the record's charge. */
-    private fun replaceError(record: CodeModeRecord, message: String) {
-        val stored = CodeModeWeight.STORED
-        val replaced = record.error
-        val growth = (stored.text(message) - stored.text(replaced.orEmpty())).coerceAtLeast(0L)
-        record.error = try {
-            CodeModeHeap.grow(record, growth) { kept ->
-                if (replaced === message) {
-                    0L
-                } else if (replaced != null && kept.error === replaced) {
-                    stored.text(replaced)
-                } else {
-                    0L
-                }
-            }
-            message
-        } catch (_: HeapCapacityException) {
-            ""
         }
     }
 
@@ -130,6 +112,29 @@ internal class CodeModeRecordChanges(
         } catch (error: CodeModePersistenceException) {
             undo(record)
             throw error
+        }
+    }
+}
+
+/** Loss must finish even at capacity. The empty error is already covered by the record's charge. */
+internal object CodeModeRecordErrors {
+    fun replace(record: CodeModeRecord, message: String) {
+        val stored = CodeModeWeight.STORED
+        val replaced = record.error
+        val growth = (stored.text(message) - stored.text(replaced.orEmpty())).coerceAtLeast(0L)
+        record.error = try {
+            CodeModeHeap.grow(record, growth) { kept ->
+                if (replaced === message) {
+                    0L
+                } else if (replaced != null && kept.error === replaced) {
+                    stored.text(replaced)
+                } else {
+                    0L
+                }
+            }
+            message
+        } catch (_: HeapCapacityException) {
+            ""
         }
     }
 }

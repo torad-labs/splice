@@ -58,7 +58,10 @@ internal class CodeModeStartupAdmissions(
             cell.close()
             if (record in records) {
                 record.phase = CodeModePhase.LOST
-                record.error = record.error ?: "code-mode runtime stopped during startup; source was not rerun"
+                CodeModeRecordErrors.replace(
+                    record,
+                    record.error ?: "code-mode runtime stopped during startup; source was not rerun",
+                )
                 record.updatedAt = clock.millis()
                 store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
             }

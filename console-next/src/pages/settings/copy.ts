@@ -114,6 +114,8 @@ export const AS = {
   scopeAll: 'All commands',
   scopeWhy: 'A value set for all commands; a command can override it with its own.',
   none: 'Not set',
+  on: 'On',
+  off: 'Off',
   locked: 'splice fixes this value.',
   headOnly: 'Set only for a command of its own: choose the command above.',
   headUnserved: 'This version of splice does not serve its topology, so a command’s own value cannot be written from here.',

@@ -19,10 +19,10 @@ const config: ConfigPayload = {
 };
 afterEach(() => vi.unstubAllGlobals());
 
-function render(path: string, ready = true, effective: ConfigPayload['effective'] = config.effective, fullList = false): string {
+function render(path: string, ready = true, effective: ConfigPayload['effective'] = config.effective, fullList = false, perHead: ConfigPayload['layers']['perHead'] = {}): string {
   vi.stubGlobal('location', { host: 'synthetic.invalid' });
   const client = new QueryClient();
-  if (ready) client.setQueryData(['config', '/api/config'], { ...config, effective });
+  if (ready) client.setQueryData(['config', '/api/config'], { ...config, effective, layers: { ...config.layers, perHead } });
   client.setQueryData(['models'], { heads: [
     { head: 'synthetic-codex-command', provider: 'synthetic-codex-provider', pinned_model: '', models: [{ id: 'synthetic-codex', label: 'Synthetic ChatGPT model' }] },
     { head: 'synthetic-grok-command', provider: 'grok', pinned_model: '', models: [{ id: 'synthetic-grok', label: 'Synthetic Grok model' }] },
@@ -88,6 +88,34 @@ test('Settings retains the shared fix actions after the retired card is removed'
   const open = fix({ kind: 'open', href: '#/models/synthetic-command', label: 'Open log', fallback: 'splice logs --head synthetic-command' });
   expect(open).toContain('href="/models/synthetic-command"');
   expect(open).toContain('splice logs --head synthetic-command');
+});
+
+test('Health does not link to itself and retains the report’s advice, while other pages can open Health', () => {
+  const fix: Fix = { kind: 'open', href: '#/settings/health', label: 'Open Health', fallback: 'Synthetic repair advice stays here.' };
+  const at = (path: string): string => renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[path]}><NeedFix fix={fix} /></MemoryRouter></QueryClientProvider>);
+  for (const path of ['/settings/health', '/settings/health?from=synthetic-command']) {
+    const health = at(path);
+    expect(health).toContain('Synthetic repair advice stays here.');
+    expect(health).not.toContain('href="/settings/health"');
+  }
+  const elsewhere = at('/models/synthetic-command');
+  expect(elsewhere).toContain('href="/settings/health"');
+  expect(elsewhere).toContain('Open Health');
+});
+
+test('Advanced override notes resolve declared command labels and retain override-only identities', () => {
+  const html = render('/settings/advanced', true, { replayReasoning: true }, true, {
+    'synthetic-command': { replayReasoning: false },
+    'synthetic-override-only': { replayReasoning: false },
+  });
+  expect(html).toContain('A command sets its own: Synthetic command, synthetic-override-only.');
+  expect(html).not.toContain('A command sets its own: synthetic-command,');
+});
+
+test.each([true, false])('Advanced readonly boolean values use On and Off without changing controls or values: %s', value => {
+  const html = render('/settings/advanced', true, { trace: value, mirrorReasoning: value }, true);
+  expect(html.match(new RegExp('<span class="folder code">' + (value ? 'On' : 'Off') + '</span>', 'g'))).toHaveLength(2);
+  expect(html).not.toContain('<span class="folder code">' + String(value) + '</span>');
 });
 
 test('Storage names Requests as the page backed by retained request traces', () => {

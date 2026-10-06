@@ -124,6 +124,26 @@ describe('a failed turn\'s sentence', () => {
   });
 });
 
+test('Sent leads with the plain off state and keeps the daemon configuration advice secondary', () => {
+  const advice = 'wire tap is off for head claude-solo: set [heads.claude-solo.overrides] wireTap = N (bodies to keep) and restart';
+  const html = page(<KeptTabs row={row('synthetic')} plan="Solo" tab="sent" />, client => client.setQueryData(['wire', 'claude-solo'], { off: advice }));
+  expect(html).toContain('<p class="kept-note">Sent bodies are not kept for this command.</p>');
+  expect(html).toContain('<p class="sub">' + advice + '</p>');
+  expect(html.indexOf('Sent bodies are not kept')).toBeLessThan(html.indexOf('wireTap'));
+});
+
+test('Sent keeps a wire read failure as a failure, never an off state', () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retryOnMount: false } } });
+  const queryKey = ['wire', 'claude-solo'];
+  client.setQueryData(queryKey, { tap: { key: 'claude-solo', keep: 1, records: [] } });
+  const query = client.getQueryCache().find({ queryKey });
+  if (query === undefined) throw new Error('seeded wire query must exist');
+  query.setState({ data: undefined, status: 'error', fetchStatus: 'idle', error: new Error('Synthetic wire read failed') });
+  const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><KeptTabs row={row('synthetic')} plan="Solo" tab="sent" /></MemoryRouter></QueryClientProvider>);
+  expect(html).toContain('<p class="kept-note" role="alert">Synthetic wire read failed</p>');
+  expect(html).not.toContain('Sent bodies are not kept');
+});
+
 describe('the body capture control', () => {
   const file = (trace: string | null): TopologyState => ({ path: '/x/splice.toml', stale: false, topology: { heads: { 'claude-solo': { overrides: trace === null ? {} : { trace } } } } });
   const control = (enabled: boolean | null, saved: string | null = null): string => page(<CaptureControl head="claude-solo" plan="Solo" />, (client) => {

@@ -98,7 +98,7 @@ test('the daemon’s stale window verdict prevents a retained percentage from be
   const window = { seconds: 604800, used_percent: 94, reset_epoch_seconds: NOW / 1000 + 3600, current: false };
   expect(nearestWindow(account({ windows: [window] }), NOW)).toBeNull();
   expect(accountState(account({ windows: [window] }), NOW).label).toBe(NOT_REPORTED);
-  expect(accountState(account({ windows: [{ ...window, current: true }] }), NOW).label).toBe('warn 94%');
+  expect(accountState(account({ windows: [{ ...window, current: true }] }), NOW).label).toBe('near its limit · 94%');
 });
 
 const HOUR_5 = 18000;
@@ -179,6 +179,11 @@ describe('selectable account rows', () => {
 });
 
 describe('the strip state', () => {
+  test('a nearly full account uses the Models wording without changing the warning verdict', () => {
+    expect(accountState(account({ windows: [window5h(96)] }), NOW)).toEqual({
+      edge: 'amber', cocked: true, struck: false, label: 'near its limit · 96%',
+    });
+  });
   test('a spent window goes red and cocked', () => {
     const state = accountState(account({ windows: [window5h(100)] }), NOW);
     expect(state.edge).toBe('red');
@@ -191,7 +196,7 @@ describe('the strip state', () => {
     const state = accountState(account({ windows: [window5h(COCK_AT_PERCENT)] }), NOW);
     expect(state.edge).toBe('amber');
     expect(state.cocked).toBe(true);
-    expect(state.label).toBe('warn 90%');
+    expect(state.label).toBe('near its limit · 90%');
   });
 
   test('one point below the threshold is still ok, so the warning means something', () => {
@@ -298,7 +303,7 @@ describe('a window read before its reset', () => {
     expect(accountState(muse, NOW).label).toBe(NOT_REPORTED);
     expect(accountState(muse, NOW).edge).toBe('grey');
     // the same window before its reset is the figure it was
-    expect(accountState(muse, reset * 1000 - 1).label).toBe('warn 99%');
+    expect(accountState(muse, reset * 1000 - 1).label).toBe('near its limit · 99%');
   });
 
   test('the opened account says when it was read, and which window reset since', () => {

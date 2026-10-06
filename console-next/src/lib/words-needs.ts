@@ -6,7 +6,7 @@ import { H as LOGIN } from './words-login';
 
 export const S = {
   openLog: 'Open log',
-  openDoctor: 'Open doctor',
+  openDoctor: 'Open Health',
 } as const;
 
 export const H = {

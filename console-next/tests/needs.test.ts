@@ -13,13 +13,13 @@ describe('the live doctor fix', () => {
     expect(doctorFixOf(null, 'install_all', null)).toEqual({ kind: 'doctor-fix', id: 'install_all' });
   });
   test('a remedy without a console action keeps its honest CLI fallback', () => {
-    expect(doctorFixOf('repair by hand', null, 'advice')).toEqual({ kind: 'open', href: '#/settings/health', label: 'Open doctor', fallback: 'repair by hand' });
-    expect(doctorFixOf(null, null, null)).toEqual({ kind: 'open', href: '#/settings/health', label: 'Open doctor' });
+    expect(doctorFixOf('repair by hand', null, 'advice')).toEqual({ kind: 'open', href: '#/settings/health', label: 'Open Health', fallback: 'repair by hand' });
+    expect(doctorFixOf(null, null, null)).toEqual({ kind: 'open', href: '#/settings/health', label: 'Open Health' });
   });
   test('only a fix the daemon marked as a command is offered to paste', () => {
     const remedy = 'rm ~/.local/bin/claudeor';
     expect(doctorFixOf(remedy, null, 'command')).toEqual({ kind: 'copy', command: remedy });
-    expect(doctorFixOf(remedy, null, null)).toEqual({ kind: 'open', href: '#/settings/health', label: 'Open doctor', fallback: remedy });
+    expect(doctorFixOf(remedy, null, null)).toEqual({ kind: 'open', href: '#/settings/health', label: 'Open Health', fallback: remedy });
     expect(doctorFixOf('set system_prompt_mode = "append" to add your text', null, 'advice')).toMatchObject({ kind: 'open', fallback: 'set system_prompt_mode = "append" to add your text' });
   });
   test('a log remedy opens the requested command and tail, while restart uses the restart action', () => {

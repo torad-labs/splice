@@ -307,7 +307,7 @@ export function accountState(account: AccountRow, nowMs: number, pool: readonly 
     return { edge: 'red', cocked: true, struck: false, label: `spent ${Math.round(used)}%` };
   }
   if (used >= COCK_AT_PERCENT) {
-    return { edge: 'amber', cocked: true, struck: false, label: `warn ${Math.round(used)}%` };
+    return { edge: 'amber', cocked: true, struck: false, label: `near its limit · ${Math.round(used)}%` };
   }
   return { edge: 'green', cocked: false, struck: false, label: 'ok' };
 }

@@ -8,6 +8,38 @@ import type { SessionsPayload } from '../src/types/sessions';
 import { assertHealthy, open } from './support';
 import { STACK } from './stack';
 
+
+test('in-flight Requests cards stay inside their list at both exact widths', async ({ page }) => {
+  await page.route('**/api/heads', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as HeadsPayload;
+    const head = body.heads.find(entry => entry.key === STACK.oauthHead);
+    if (head?.gate == null) throw new Error('synthetic running gate missing');
+    head.gate.live = ['first', 'second'].map(name => ({ label: 'synthetic-running-' + name, compact: false, phase: 'streaming', age_ms: 5000, idle_ms: 50 }));
+    head.gate.inflight = 2;
+    await route.fulfill({ response, json: body });
+  });
+  const faults = await open(page, 'requests');
+  const cards = page.locator('.running-list > li');
+  await expect(cards).toHaveCount(2);
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1024 });
+    await expect(cards).toHaveCount(2);
+    const outside = await cards.evaluateAll(elements => elements.map(element => {
+      const box = element.getBoundingClientRect();
+      const list = element.parentElement?.getBoundingClientRect();
+      if (list === undefined) throw new Error('running card has no list');
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const clippedText = [...range.getClientRects()].some(part => part.left < box.left - 1 || part.right > Math.min(box.right, innerWidth) + 1);
+      return clippedText || box.left < list.left - 1 || box.right > Math.min(list.right, innerWidth) + 1;
+    }));
+    expect(outside, width + ': actual running cards and their text must fit their list and viewport').toEqual([false, false]);
+  }
+  await assertHealthy(page, faults);
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
 test('same-label same-age live siblings do not collapse and one removal leaves its twin', async ({ page }) => {
   let count = 2;
   await page.route('**/api/heads', async (route) => {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import { failureText } from '../../api/client';
 import { useDoctorFix } from '../../api/doctor';
 import { useHeadAction } from '../../api/queries';
@@ -43,9 +43,11 @@ function CopyCommand({ command, tone }: { command: string; tone: Tone }) {
 
 /** A fix that is a link: the page where the act is. `fallback` is the command the row also carries, printed quietly. */
 function OpenFix({ fix, tone }: { fix: Extract<Fix, { kind: 'open' }>; tone: Tone }) {
+  const location = useLocation();
+  const target = routeOf(fix.href);
   return (
     <>
-      <Link className={`btn ${tone}`} to={routeOf(fix.href)}>{fix.label}</Link>
+      {target === location.pathname || target === location.pathname + location.search ? null : <Link className={`btn ${tone}`} to={target}>{fix.label}</Link>}
       {fix.fallback === undefined ? null : <span className="fallback">{fix.fallback}</span>}
     </>
   );

@@ -59,7 +59,7 @@ function ModelKnob({ knob, value, masked, scoped, save }: { knob: KnobDispositio
 
 /** One knob as its own typed control. Scoped to all plans it is PATCHed; scoped to one plan it is that plan's override in
  *  splice.toml, which is a different write and never a PATCH (a PATCH would land in the state file, above every override). */
-function KnobRow({ knob, head, topology, topologyPending, inherited, masked }: { knob: KnobDisposition; head: string | null; topology: Record<string, unknown> | null; topologyPending: boolean; inherited: ConfigValue; masked: boolean }) {
+function KnobRow({ knob, head, topology, topologyPending, inherited, masked, labelOf }: { knob: KnobDisposition; head: string | null; topology: Record<string, unknown> | null; topologyPending: boolean; inherited: ConfigValue; masked: boolean; labelOf: (key: string) => string }) {
   const global = useSetting(knob.key);
   const edit = useTopologyEdit();
   const [own, setOwn] = useState<Saved>(null);
@@ -87,9 +87,8 @@ function KnobRow({ knob, head, topology, topologyPending, inherited, masked }: {
   const ctl = ((): React.ReactNode => {
     switch (control.kind) {
       case 'locked':
-        return <span className="folder code">{textOf(knob.value) || AS.none}</span>;
       case 'head-only':
-        return <span className="folder code">{textOf(knob.value) || AS.none}</span>;
+        return <span className="folder code">{typeof knob.value === 'boolean' ? knob.value ? AS.on : AS.off : textOf(knob.value) || AS.none}</span>;
       case 'switch':
         return <Switch label={nameOf(knob.key)} checked={knob.value === true} onChange={save} />;
       case 'choice':
@@ -118,7 +117,7 @@ function KnobRow({ knob, head, topology, topologyPending, inherited, masked }: {
     control.kind === 'head-only' ? AS.headOnly : null,
     control.kind === 'number' && (meta?.unit === 'ms' || meta?.unit === 'bytes') ? null : number.readable,
     knob.provenance === 'default' ? null : AS.source[knob.provenance],
-    !scoped && knob.overriddenBy.length > 0 ? AS.overriddenBy(knob.overriddenBy.join(', ')) : null,
+    !scoped && knob.overriddenBy.length > 0 ? AS.overriddenBy(knob.overriddenBy.map(labelOf).join(', ')) : null,
   ].filter((note): note is string => note !== null);
 
   return (
@@ -172,7 +171,7 @@ export function AllSettings() {
         <div key={group.group} className="knob-group">
           <h3 className="knob-group-title">{GROUP_LABELS[group.group]}</h3>
           {group.knobs.map((knob) => (
-            <KnobRow key={`${head ?? 'global'}:${knob.key}`} knob={knob} head={head} topology={file} topologyPending={topologyPending} inherited={wide.data?.effective[knob.key] ?? null} masked={shadowOfOverride(knob.key, config.data) !== null} />
+            <KnobRow key={`${head ?? 'global'}:${knob.key}`} knob={knob} head={head} topology={file} topologyPending={topologyPending} inherited={wide.data?.effective[knob.key] ?? null} masked={shadowOfOverride(knob.key, config.data) !== null} labelOf={labelOf} />
           ))}
         </div>
       ))}

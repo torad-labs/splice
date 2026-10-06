@@ -107,7 +107,7 @@ function Sent({ row }: { row: TurnRow }) {
   const wire = useWire(row.head);
   if (wire.isError) return <p className="kept-note" role="alert">{failureText(wire.error)}</p>;
   if (wire.data === undefined) return <p className="kept-note" role="status">{P.readingSent}</p>;
-  if ('off' in wire.data) return <p className="kept-note">{wire.data.off}</p>;
+  if ('off' in wire.data) return <><p className="kept-note">{P.wireOff}</p><p className="sub">{wire.data.off}</p></>;
   const records = wireFor(wire.data.tap.records, row);
   if (records.length === 0) return <p className="kept-note">{P.wireNone}</p>;
   return (

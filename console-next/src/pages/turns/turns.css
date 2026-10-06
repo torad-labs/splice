@@ -3,7 +3,7 @@
 .section:first-of-type { margin-top: 0; }
 .section > h2 { font: 520 1.625rem/1.15 var(--display); color: var(--ink); letter-spacing: -.01em; }
 .section > .why { margin-top: var(--space-4); font: 400 1rem/1.5 var(--read); color: var(--mute); max-width: 70ch; }
-.running-list { list-style: none; margin: var(--space-10) 0 0; padding: 0 var(--space-8) 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(28.75rem, 1fr)); gap: var(--space-13) var(--space-15); align-items: start; }
+.running-list { list-style: none; margin: var(--space-10) 0 0; padding: 0 var(--space-8) 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 28.75rem), 1fr)); gap: var(--space-13) var(--space-15); align-items: start; }
 .running-list .win .bar { padding-bottom: var(--space-4); }
 .running-list .say { padding: 0 var(--space-9) var(--space-7); font: 400 1.0625rem/1.5 var(--read); color: var(--body); }
 .running-list .say b { color: var(--ink); font-weight: 650; }

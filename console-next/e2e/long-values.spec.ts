@@ -1,6 +1,7 @@
 // NEW: V4-444 — synthetic long-value reachability across the source-derived console page census.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { ConfigPayload, HeadsPayload } from '../src/types/core';
+import type { TopologyPayload } from '../src/types/topology';
 import { KNOB_META } from '../src/lib/knobs';
 import { headOptions } from '../src/lib/config';
 import { CURATED_KNOBS, SECTIONS, controlOf } from '../src/lib/settings';
@@ -394,6 +395,24 @@ async function draftFields(scope: Locator, page: Page): Promise<void> {
   }
   expect(failures, 'every disclosed text draft must keep its whole value reachable').toEqual([]);
 }
+
+test('Usage Prices keeps its full configuration path inside the viewport', async ({ page }) => {
+  await page.route('**/api/topology', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as TopologyPayload;
+    await route.fulfill({ response, json: { ...body, path: LONG.path } });
+  });
+  const faults = await open(page, 'usage?prices=' + STACK.oauthHead);
+  const pricing = page.locator('.usage-pricing-command[open]').first();
+  const value = pricing.locator('code').getByText(LONG.path, { exact: true });
+  await expect(value).toHaveCount(1);
+  for (const width of WIDTHS) {
+    await page.setViewportSize({ width, height: 1024 });
+    await textReachable(value);
+    await pageContained(page);
+  }
+  await assertHealthy(page, faults);
+});
 
 for (const section of SECTIONS) {
   test('synthetic long-value Settings section: ' + section, async ({ page }) => {

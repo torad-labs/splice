@@ -277,8 +277,10 @@ class UsageTest {
         val usage = RoundUsage().plusRound(first).plusRound(second).plusTerminal(third).toUsage()
         val firstRound = AbsorbedRounds(rounds = 1, inputTokens = 1000, cachedTokens = 800, cacheWriteTokens = 100)
             .copy(outputTokens = 50)
-        assertEquals(firstRound, usage.absorbed, "the first round is billed once; the terminal measured no input")
-        assertEquals(1500, usage.inputTokens, "the context is still the last round that measured input")
+        val secondRound = AbsorbedRounds(rounds = 1, inputTokens = 1500, cachedTokens = 1200, outputTokens = 30)
+        assertEquals(firstRound + secondRound, usage.absorbed, "both known requests are billed once")
+        assertEquals(0, usage.inputTokens, "the terminal's input is unreported")
+        assertEquals(1500, usage.clientContext?.inputTokens, "the prior context rides outside billing")
         assertEquals(85, usage.outputTokens, "output accrues per round")
     }
 

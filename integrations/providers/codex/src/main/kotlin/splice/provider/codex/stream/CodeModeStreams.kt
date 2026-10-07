@@ -138,7 +138,7 @@ internal class CodeModeStreams(
         record.sourceEnd = null
         round?.switching?.detach()
         return when (raw) {
-            is TurnOutcome.Success -> raw.copy(usage = usage ?: Usage())
+            is TurnOutcome.Success -> raw.copy(usage = usage ?: Usage(reported = emptySet()))
             null -> usage?.let { TurnOutcome.Success(false, false, it) }
             else -> raw
         }

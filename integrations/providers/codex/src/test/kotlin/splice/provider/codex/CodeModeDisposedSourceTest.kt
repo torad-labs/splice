@@ -151,7 +151,7 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
         val scope = LifecycleScope(StandardTestDispatcher(testScheduler))
         try {
             round.start(scope, CodeModeRedirectablePost(post, state.wire), state.wire.body(RoundBody.Text("{}"))) {}
-            assertNull(round.billing.claim(state.record, TurnOutcome.Success(true, false, Usage())))
+            assertNull(round.billing.claim(state.record, TurnOutcome.Success(true, false, Usage(localStep = true))))
             assertEquals(1, holds.get())
             state.dispose(disposition)
             terminal.complete(state.outcome)
@@ -162,7 +162,7 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
             assertEquals(12L, usage.outputTokens)
             assertEquals(1_100L, usage.cachedTokens)
             assertEquals(0L, usage.cutRounds, "a parsed terminal is not an unreported cut")
-            assertNull(round.billing.claim(state.record, TurnOutcome.Success(true, false, Usage())))
+            assertNull(round.billing.claim(state.record, TurnOutcome.Success(true, false, Usage(localStep = true))))
             assertEquals(1, holds.get(), "a later step must not acquire another claim")
             assertEquals(1, releases.get(), "the original row settles exactly once")
             assertNull(state.registry.source.consume(state.record), "continuations cannot rebill the parsed terminal")

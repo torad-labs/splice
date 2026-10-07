@@ -96,7 +96,7 @@ internal class RoundSplice {
     }
 
     private fun burned(total: RoundUsage): Boolean =
-        total.reported.isNotEmpty() || total.outSum + total.reasoningSum > 0
+        total.reported.isNotEmpty() || total.absorbed.rounds > 0 || total.outSum + total.reasoningSum > 0
 
     /** Cross-round merge (code-review 2026-07-24): the post-stream pipeline — empty-model honesty
      *  gate, promote-to-text, reasoning mirror — is round-blind; it sees ONE outcome. A spliced

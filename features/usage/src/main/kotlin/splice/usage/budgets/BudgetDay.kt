@@ -12,7 +12,11 @@ internal class DayTally(val day: Long) {
     var unpriced: Long = 0L
         private set
 
-    /** False when any pre-boot history could not be read, so the displayed amount cannot claim completeness. */
+    /** Rows whose usage was incomplete, so a refusal must not attribute every missing price to a rate card. */
+    var inexactRows: Long = 0
+        private set
+
+    /** False when any usage or pre-boot history could not be read, so the displayed amount cannot claim completeness. */
     var historyReadable: Boolean = true
 
     /** True once the spend recorded before this daemon's boot has been folded in. */
@@ -33,11 +37,19 @@ internal class DayTally(val day: Long) {
         if (usd != null) this.usd += usd else unpriced += 1
     }
 
+    /** A reported charge still enforces the budget, but cannot claim the whole day's spend. */
+    fun addLowerBound(usd: Double?) {
+        add(usd)
+        inexactRows++
+        historyReadable = false
+    }
+
     /** Folds [before] in, once: the second fold of a racing pair is a no-op. */
     fun seed(before: DayTally) {
         if (seeded) return
         usd += before.usd
         unpriced += before.unpriced
+        inexactRows += before.inexactRows
         historyReadable = historyReadable && before.historyReadable
         seeded = true
         seeding = false

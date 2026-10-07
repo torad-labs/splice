@@ -32,6 +32,8 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.ModelRates
+import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
@@ -233,6 +235,8 @@ class PassthroughFailureUsageTest {
             val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
             assertEquals(125L, row.getValue(PerfKeys.IN_TOKENS).jsonPrimitive.long)
             assertNull(row[PerfKeys.OUT_TOKENS], "the message_delta never reported output")
+            val billing = TurnBill.counters(failure.salvagedUsage)
+            assertEquals(0.0002165, TurnBill.lowerBoundUsd(billing, ModelRates(2.0, 0.2, 10.0, 2.5))!!, 1e-12)
         } finally {
             drive.slot.release()
             rig.usageStore.flushNow()
@@ -526,11 +530,8 @@ class TurnUsageStampTest {
             val rig = UsageStampRig(tmp, "chat-shaped")
             val drive = rig.drive()
             try {
-                // ChatUsage.toUsage() builds Usage(inputTokens, outputTokens, cachedTokens) positionally,
-                // so cacheWriteTokens defaults to 0 on every OpenAI-chat head. setCount writes it anyway,
-                // which is the distinction worth keeping: a 0 in the row means "this head wrote no
-                // cache", while an ABSENT key means "this row predates the counter" — and SessionCost
-                // reads the second as 0 too, which is what keeps historical rows priced exactly as before.
+                // The normalized chat input group explicitly reports a measured zero cache-write bucket.
+                // A historical row missing that observation stays unpriced; it is never a measured zero.
                 rig.stamp.stampSuccess(drive, success(Usage(inputTokens = 1_000, outputTokens = 7, cachedTokens = 200)))
 
                 val counters = drive.perf.snapshot().counters
@@ -623,4 +624,35 @@ class TurnUsageStampTest {
                 drive.slot.release()
             }
         }
+}
+
+class CodeModeZeroBillingTest {
+    @TempDir
+    lateinit var tmp: Path
+
+    @Test
+    fun `an intercepted raw round's reported zero bill survives the posted-row filter`() = runBlocking {
+        val rig = UsageStampRig(tmp, "synthetic-zero-source")
+        val drive = rig.drive(RoundInterceptor { _, _, _ -> error("synthetic only") })
+        try {
+            drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, 123)
+            drive.recordRawRound(TurnOutcome.Success(false, false, Usage()))
+            rig.stamp.stampSuccess(drive, TurnOutcome.Success(false, false, Usage(localStep = true)))
+            rig.telemetry.recordPerf(drive, "ok")
+            assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+            val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
+            val keys = listOf(
+                PerfKeys.IN_TOKENS,
+                PerfKeys.OUT_TOKENS,
+                PerfKeys.CACHED_TOKENS,
+                PerfKeys.CACHE_WRITE_TOKENS,
+            )
+            for (key in keys) {
+                assertEquals(0L, row[key]?.jsonPrimitive?.long, "observed zero remains reported: $key")
+            }
+        } finally {
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
 }

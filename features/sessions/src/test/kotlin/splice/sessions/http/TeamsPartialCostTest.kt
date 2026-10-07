@@ -62,7 +62,13 @@ class TeamsPartialCostTest {
         return runs.flatMap { (model, count) ->
             List(count) {
                 at += 1_000
-                SessionPerfRow(at, "ok", mapOf("in_tokens" to 1_000L, "out_tokens" to 100L), model, session.take(8))
+                val fields = mapOf(
+                    "in_tokens" to 1_000L,
+                    "out_tokens" to 100L,
+                    "cached_tokens" to 0L,
+                    "cache_write_tokens" to 0L,
+                )
+                SessionPerfRow(at, "ok", fields, model, session.take(8))
             }
         }
     }

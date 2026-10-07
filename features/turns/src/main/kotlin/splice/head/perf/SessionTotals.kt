@@ -37,6 +37,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfModelTotal
@@ -175,14 +176,16 @@ public class SessionTotals(
 
     private fun folded(prev: PerfModelTotal?, counters: Map<String, Long>, usd: Double?): PerfModelTotal {
         val p = prev ?: PerfModelTotal(0, 0, 0, 0, 0, usd = 0.0, unpricedTurns = 0)
+        val buckets = TurnBill.total(counters)
         return PerfModelTotal(
             turns = p.turns + 1,
-            inTokens = p.inTokens + (counters[PerfKeys.IN_TOKENS] ?: 0L),
-            cachedTokens = p.cachedTokens + (counters[PerfKeys.CACHED_TOKENS] ?: 0L),
-            cacheWriteTokens = p.cacheWriteTokens + (counters[PerfKeys.CACHE_WRITE_TOKENS] ?: 0L),
-            outTokens = p.outTokens + (counters[PerfKeys.OUT_TOKENS] ?: 0L),
+            inTokens = p.inTokens + buckets.input + buckets.cacheRead + buckets.cacheWrite,
+            cachedTokens = p.cachedTokens + buckets.cacheRead,
+            cacheWriteTokens = p.cacheWriteTokens + buckets.cacheWrite,
+            outTokens = p.outTokens + buckets.output,
             usd = p.usd + (usd ?: 0.0),
             unpricedTurns = p.unpricedTurns + if (usd == null) 1 else 0,
+            unreportedUsageTurns = p.unreportedUsageTurns + if (TurnBill.fullyReported(counters)) 0 else 1,
         )
     }
 
@@ -301,6 +304,7 @@ private object TotalsFile {
                                         put("out_tokens", t.outTokens)
                                         put("cost_usd", t.usd)
                                         put("unpriced_turns", t.unpricedTurns)
+                                        put("unreported_usage_turns", t.unreportedUsageTurns)
                                     }
                                 }
                             }
@@ -322,6 +326,7 @@ private object TotalsFile {
                 outTokens = long(t, "out_tokens"),
                 usd = field(t, "cost_usd").jsonPrimitive.double,
                 unpricedTurns = long(t, "unpriced_turns"),
+                unreportedUsageTurns = t["unreported_usage_turns"]?.jsonPrimitive?.long ?: 0L,
             )
         }
         val tag = field(o, "session").jsonPrimitive.content

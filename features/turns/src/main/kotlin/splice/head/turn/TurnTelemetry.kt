@@ -175,7 +175,8 @@ internal class TurnTelemetry(
             (snap.counters[PerfKeys.UPSTREAM_REQ_BYTES] ?: 0L) > 0L
         if (!posted) return snap
         val counters = snap.counters - PerfKeys.LOCAL_STEP
-        return if (TurnBill.isEmpty(counters)) {
+        val observed = drive.rawRoundUsage()?.reported.orEmpty().isNotEmpty()
+        return if (TurnBill.isEmpty(counters) && !observed) {
             snap.copy(counters = counters.filterKeys { it !in UNREPORTED_TOKEN_FIELDS })
         } else {
             snap.copy(counters = counters)
@@ -227,6 +228,7 @@ internal class TurnTelemetry(
                         toolsDeferred = snap.counters[PerfKeys.TOOLS_DEFERRED],
                         rateLimited = rateLimited,
                         absorbed = TurnBill.absorbed(snap.counters),
+                        cutRounds = snap.counters[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L,
                     ),
                 )
             },

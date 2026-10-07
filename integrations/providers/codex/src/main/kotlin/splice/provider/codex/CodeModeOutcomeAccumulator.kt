@@ -4,6 +4,7 @@ package splice.provider.codex
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.UsageField
 
 internal class CodeModeOutcomeAccumulator {
     private var success: TurnOutcome.Success? = null
@@ -66,39 +67,42 @@ internal class CodeModeOutcomeAccumulator {
         hasToolUse = prior.hasToolUse || latest?.hasToolUse == true,
         reasoningEnvelopes = prior.reasoningEnvelopes + latest?.reasoningEnvelopes.orEmpty(),
         toolTearOpen = latest?.toolTearOpen == true,
-        usage = mergeTerminalUsage(prior.usage, latest?.usage ?: Usage()),
+        usage = mergeTerminalUsage(prior.usage, latest?.usage ?: Usage(reported = emptySet())),
     )
 
-    private fun mergeRoundUsage(prior: Usage, latest: Usage): Usage = Usage(
-        inputTokens = if (latest.inputTokens > 0) latest.inputTokens else prior.inputTokens,
-        outputTokens = prior.outputTokens + latest.outputTokens,
-        cachedTokens = if (latest.inputTokens > 0) latest.cachedTokens else prior.cachedTokens,
-        reasoningTokens = prior.reasoningTokens + latest.reasoningTokens,
-        cacheWriteTokens = if (latest.inputTokens > 0) latest.cacheWriteTokens else prior.cacheWriteTokens,
-        localStep = prior.localStep || latest.localStep,
-        codeModeDiverged = prior.codeModeDiverged || latest.codeModeDiverged,
-        recordedOutputTokens = prior.recordedOutputTokens + latest.recordedOutputTokens,
-        absorbed = absorbed(prior, latest),
-        cutRounds = prior.cutRounds + latest.cutRounds,
-    )
-
-    private fun mergeTerminalUsage(prior: Usage, latest: Usage): Usage = Usage(
-        inputTokens = if (latest.inputTokens > 0) latest.inputTokens else prior.inputTokens,
-        outputTokens = prior.outputTokens + latest.outputTokens,
-        cachedTokens = if (latest.cachedTokens > 0) latest.cachedTokens else prior.cachedTokens,
-        reasoningTokens = prior.reasoningTokens + latest.reasoningTokens,
-        cacheWriteTokens = if (latest.inputTokens > 0) latest.cacheWriteTokens else prior.cacheWriteTokens,
-        localStep = prior.localStep || latest.localStep,
-        codeModeDiverged = prior.codeModeDiverged || latest.codeModeDiverged,
-        recordedOutputTokens = prior.recordedOutputTokens + latest.recordedOutputTokens,
-        absorbed = absorbed(prior, latest),
-        cutRounds = prior.cutRounds + latest.cutRounds,
-    )
-
-    /** A round whose input replaces the prior's final round keeps that round billed as its own request:
-     *  a hidden continuation, or a source round that finished after the client turn that posted it. */
-    private fun absorbed(prior: Usage, latest: Usage): AbsorbedRounds {
-        val superseded = if (latest.inputTokens > 0) prior.finalRound else AbsorbedRounds()
-        return prior.absorbed + superseded + latest.absorbed
+    private fun mergeRoundUsage(prior: Usage, latest: Usage): Usage {
+        val final = if (latest.localStep) prior else latest
+        val observations = final.reported + prior.reported.intersect(setOf(UsageField.OUTPUT))
+        val missingBills = missingBills(prior, latest, observations)
+        return Usage(
+            inputTokens = final.inputTokens,
+            outputTokens = prior.outputTokens + latest.outputTokens,
+            cachedTokens = final.cachedTokens,
+            reasoningTokens = prior.reasoningTokens + latest.reasoningTokens,
+            cacheWriteTokens = final.cacheWriteTokens,
+            localStep = prior.localStep || latest.localStep,
+            codeModeDiverged = prior.codeModeDiverged || latest.codeModeDiverged,
+            recordedOutputTokens = prior.recordedOutputTokens + latest.recordedOutputTokens,
+            clientContext = contextFor(prior, latest, final),
+            absorbed = prior.absorbed +
+                (if (latest.localStep) AbsorbedRounds() else prior.finalRound) + latest.absorbed,
+            cutRounds = prior.cutRounds + latest.cutRounds + missingBills,
+            reported = observations,
+        )
     }
+
+    private fun missingBills(prior: Usage, latest: Usage, observations: Set<UsageField>): Long {
+        if (latest.localStep || observations.size < UsageField.entries.size) return 0
+        val before = if (prior.reported.size < UsageField.entries.size) 1L else 0L
+        val final = if (latest.reported.size < UsageField.entries.size) 1L else 0L
+        return before + final
+    }
+
+    private fun contextFor(prior: Usage, latest: Usage, final: Usage): Usage? {
+        if (latest.clientContext != null) return latest.clientContext
+        if (UsageField.INPUT in final.reported) return null
+        return prior.takeIf { UsageField.INPUT in it.reported } ?: prior.clientContext
+    }
+
+    private fun mergeTerminalUsage(prior: Usage, latest: Usage): Usage = mergeRoundUsage(prior, latest)
 }

@@ -75,6 +75,19 @@ private fun turn(
 
 class UnknownFailureEconomicsTest {
     @Test
+    fun `missing cache usage and an unknown earlier bill both mark the hourly totals`(@TempDir tmp: Path) {
+        val store = EconomicsStore(tmp.resolve("coverage.json"), FABLE_HEAD, WallClock { 10 * HOUR })
+        store.record(turn(inTokens = 100, cached = null, out = 7, model = HAIKU))
+        store.record(turn(inTokens = 100, out = 7, model = HAIKU).copy(cutRounds = 1))
+        val bucket = store.read().single()
+        assertEquals(200L, bucket.inTokens)
+        assertEquals(14L, bucket.outTokens)
+        assertEquals(2L, bucket.counts.unreportedUsageTurns)
+        assertEquals(2L, bucket.unpricedTurns)
+        store.flushNow()
+    }
+
+    @Test
     fun `unknown usage remains unpriced and carries a persisted unknown-turn count`(@TempDir tmp: Path) {
         val file = tmp.resolve("economics.json")
         val store = EconomicsStore(file, FABLE_HEAD, WallClock { 10 * HOUR })

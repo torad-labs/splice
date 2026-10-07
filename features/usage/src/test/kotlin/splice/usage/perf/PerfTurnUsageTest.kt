@@ -40,6 +40,7 @@ class PerfTurnUsageTest {
         PerfKeys.IN_TOKENS to 1_000L,
         PerfKeys.CACHED_TOKENS to 900L,
         PerfKeys.OUT_TOKENS to 100L,
+        PerfKeys.CACHE_WRITE_TOKENS to 0L,
     )
     private val priced = (0..2_500).map { i ->
         PerfRow(

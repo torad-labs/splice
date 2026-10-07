@@ -31,6 +31,8 @@ public data class TurnEconomics(
      *  and billed like the final round's, so it joins the hour's input sums and its dollars. NO default,
      *  for the reason [cacheWriteTokens] has none: a call site that forgot it would drop billed input. */
     val absorbed: AbsorbedRounds,
+    /** Source requests whose complete bill never arrived. */
+    val cutRounds: Long = 0,
 ) {
     /** The turn's tokens as the perf-row counters [splice.core.model.TurnPrice] prices, written the way the
      *  row is. */
@@ -41,6 +43,7 @@ public data class TurnEconomics(
             cachedTokens = cachedTokens ?: 0,
             cacheWriteTokens = cacheWriteTokens ?: 0,
             absorbed = absorbed,
+            cutRounds = cutRounds,
             reported = buildSet {
                 if (inTokens != null) add(UsageField.INPUT)
                 if (outTokens != null) add(UsageField.OUTPUT)

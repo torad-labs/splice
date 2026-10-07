@@ -47,7 +47,8 @@ internal class CodexCodeModeDriver(
             driveProblem(context, listOf(call), call)?.let { error(it) }
             validation.outer(call.copy(input = call.input.ifBlank { "source pending" }))?.let { error(it) }
             context.scripts++
-            val record = checkNotNull(factory.create(context, call, body, TurnOutcome.Success(false, false, Usage())))
+            val pending = TurnOutcome.Success(false, false, Usage(reported = emptySet()))
+            val record = checkNotNull(factory.create(context, call, body, pending))
             record.sourceState = CodeModeSourceState()
             check(registry.add(record)) { "code-mode registry capacity reached" }
             record
@@ -104,7 +105,11 @@ internal class CodexCodeModeDriver(
         when (generated) {
             is TurnOutcome.Success -> accumulated.absorb(generated)
             is TurnOutcome.Failure -> accumulated.absorb(
-                TurnOutcome.Success(false, false, (generated.partial?.usage ?: Usage()) + generated.salvagedUsage),
+                TurnOutcome.Success(
+                    false,
+                    false,
+                    (generated.partial?.usage ?: Usage(reported = emptySet())) + generated.salvagedUsage,
+                ),
             )
             is TurnOutcome.ClientAbandoned -> accumulated.absorb(
                 TurnOutcome.Success(false, false, generated.salvagedUsage),

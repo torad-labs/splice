@@ -1,0 +1,18 @@
+id: kt-usage-reports-observations
+language: kotlin
+severity: error
+message: Usage must state which token buckets were observed; numeric wire defaults are not observations.
+files:
+  - "**/src/main/**/*.kt"
+rule:
+  any:
+    - pattern: Usage($$$ARGS)
+    - pattern: splice.core.turn.Usage($$$ARGS)
+  not:
+    has:
+      kind: call_suffix
+      has:
+        kind: value_arguments
+        has:
+          kind: value_argument
+          regex: ^reported\s*=

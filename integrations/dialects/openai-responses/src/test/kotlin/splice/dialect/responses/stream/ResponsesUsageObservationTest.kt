@@ -5,6 +5,7 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.model.ModelRates
 import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 
@@ -23,6 +24,7 @@ class ResponsesUsageObservationTest {
         val counters = TurnBill.counters(usage)
         assertEquals(100L, counters[PerfKeys.IN_TOKENS])
         assertTrue(PerfKeys.OUT_TOKENS !in counters)
+        assertEquals(0.0002, TurnBill.lowerBoundUsd(counters, ModelRates(2.0, 0.2, 10.0))!!, 1e-12)
     }
 
     @Test

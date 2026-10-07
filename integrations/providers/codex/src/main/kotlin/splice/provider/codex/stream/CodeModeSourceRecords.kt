@@ -57,6 +57,7 @@ internal class CodeModeSourceRecords(
                     usage.reasoningTokens,
                     usage.cacheWriteTokens,
                     usage.recordedOutputTokens,
+                    reported = usage.reported,
                 ),
             )
             // A round that finishes after its client turn ended is still the conversation's newest context.

@@ -77,7 +77,7 @@ internal class CodeModeRoundBilling(
             }
             if (usage == null && !readerEnd) return
             owed = null
-            due to (usage ?: Usage(cutRounds = 1).takeIf { unreported && !clientCut })
+            due to (usage ?: Usage(cutRounds = 1, reported = emptySet()).takeIf { unreported && !clientCut })
         }
         Cancellables.runCatchingBestEffort { due.settle(usage) }.onFailure { failure ->
             log("[code-mode] the posting turn's row was not released (${failure::class.simpleName})")

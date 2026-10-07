@@ -38,7 +38,13 @@ class PerfRowTurnWireTest {
         PerfRow(
             ts = 1_000,
             outcome = "ok",
-            fields = mapOf("total" to 5L, "in_tokens" to 1_000L, "out_tokens" to 100L),
+            fields = mapOf(
+                "total" to 5L,
+                "in_tokens" to 1_000L,
+                "out_tokens" to 100L,
+                "cached_tokens" to 0L,
+                "cache_write_tokens" to 0L,
+            ),
             model = "m",
             turns = PerfTurnIds(trace = TRACED),
             sessionId = "sess-v4345",

@@ -40,7 +40,12 @@ private val PRICE = TurnPrice(
 )
 
 /** One cold turn: 100000 input tokens, none cached, and 1000 output. */
-private val COLD = mapOf(PerfKeys.IN_TOKENS to 100_000L, PerfKeys.OUT_TOKENS to 1_000L)
+private val COLD = mapOf(
+    PerfKeys.IN_TOKENS to 100_000L,
+    PerfKeys.OUT_TOKENS to 1_000L,
+    PerfKeys.CACHED_TOKENS to 0L,
+    PerfKeys.CACHE_WRITE_TOKENS to 0L,
+)
 
 class SessionTotalsTest {
 

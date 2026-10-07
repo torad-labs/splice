@@ -4,6 +4,7 @@ package splice.provider.codex.stream
 
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.UsageField
 import splice.core.util.LruSizing
 
 /**
@@ -42,7 +43,12 @@ internal class CodeModeClientContexts(private val persisted: CodeModePersistedCo
     }
 
     private fun contextOf(usage: Usage): Usage? = usage.takeIf { it.inputTokens > 0 }?.let {
-        Usage(inputTokens = it.inputTokens, cachedTokens = it.cachedTokens, cacheWriteTokens = it.cacheWriteTokens)
+        Usage(
+            inputTokens = it.inputTokens,
+            cachedTokens = it.cachedTokens,
+            cacheWriteTokens = it.cacheWriteTokens,
+            reported = it.reported - UsageField.OUTPUT,
+        )
     }
 }
 

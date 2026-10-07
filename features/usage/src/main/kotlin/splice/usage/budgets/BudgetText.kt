@@ -13,13 +13,14 @@ internal object BudgetText {
     /** The block refusal: the head, the day's spend, the limit, when it lifts, how to lift it now, and
      *  how many of today's turns it could not count. */
     fun refusal(head: String, tally: DayTally, limit: Double): BudgetBlock {
-        val uncounted = when (tally.unpriced) {
-            0L -> ""
-            1L -> " 1 turn today ran on a model with no rate card and is not counted."
-            else -> " ${tally.unpriced} turns today ran on a model with no rate card and are not counted."
+        val uncounted = when {
+            tally.unpriced == 0L -> ""
+            tally.inexactRows > 0L -> " ${tally.unpriced} turns could not be priced from their reported usage."
+            else -> noCard(tally.unpriced)
         }
         val partial = when {
             !tally.seeded -> " Earlier spend is still loading, so this tally is partial."
+            tally.inexactRows > 0L -> " Some spend is not reported, so this tally is only a lower bound."
             !tally.historyReadable -> " Earlier spend could not all be read, so this tally is partial."
             else -> ""
         }
@@ -31,6 +32,11 @@ internal object BudgetText {
             detail = "${amounts(tally.usd, limit)} unpriced_turns=${tally.unpriced}" +
                 if (partial.isEmpty()) "" else " spend_complete=false",
         )
+    }
+
+    private fun noCard(turns: Long): String = when (turns) {
+        1L -> " 1 turn today ran on a model with no rate card and is not counted."
+        else -> " $turns turns today ran on a model with no rate card and are not counted."
     }
 
     /** The warn alert: the budget is reached and the head's turns continue. */

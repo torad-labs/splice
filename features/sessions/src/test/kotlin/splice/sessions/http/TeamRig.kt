@@ -97,7 +97,12 @@ class TeamRig(val tmp: Path, retentionDays: Int = 90) {
         SessionPerfRow(
             ts = ts,
             outcome = "ok",
-            fields = mapOf("in_tokens" to input, "cached_tokens" to cached, "out_tokens" to out),
+            fields = mapOf(
+                "in_tokens" to input,
+                "cached_tokens" to cached,
+                "out_tokens" to out,
+                "cache_write_tokens" to 0L,
+            ),
             model = "m",
             session = session?.take(8),
         )

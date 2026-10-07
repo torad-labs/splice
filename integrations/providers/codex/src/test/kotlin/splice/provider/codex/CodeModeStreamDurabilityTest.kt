@@ -325,7 +325,9 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         state.source.finish(state.record, state.terminal, state.continuity, Usage(1_400, 12, 1_100))
         val step = TurnOutcome.Success(true, false, Usage(localStep = true))
         val reported = state.contexts.report(state.record.key, step) as TurnOutcome.Success
-        assertEquals(Usage(inputTokens = 1_400, cachedTokens = 1_100), reported.usage.clientContext)
+        val observed = splice.core.turn.UsageField.entries.toSet() - splice.core.turn.UsageField.OUTPUT
+        val expected = Usage(inputTokens = 1_400, cachedTokens = 1_100, reported = observed)
+        assertEquals(expected, reported.usage.clientContext)
     }
 
     @Test
@@ -340,6 +342,18 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         assertFalse(stateFiles.records().single()["sourceState"].toString().contains("\"complete\":true"))
         assertEquals(7L, state.source.consume(state.record)?.outputTokens)
         assertTrue(stateFiles.records().single()["sourceState"].toString().contains("\"consumed\":true"))
+    }
+
+    @Test
+    fun `source persistence preserves absent buckets through finish consume and restart`() {
+        val state = SourceState()
+        val usage = Usage(outputTokens = 7, reported = setOf(splice.core.turn.UsageField.OUTPUT))
+        state.source.finish(state.record, state.terminal, state.continuity, usage)
+        assertEquals(usage.reported, state.record.sourceState?.usage?.value()?.reported)
+        assertEquals(usage.reported, state.source.consume(state.record)?.reported)
+        val stored = stateFiles.records().single().getValue("sourceState")
+        val restored = Json.decodeFromJsonElement(CodeModeSourceState.serializer(), stored)
+        assertEquals(usage.reported, restored.usage?.value()?.reported)
     }
 
     @Test

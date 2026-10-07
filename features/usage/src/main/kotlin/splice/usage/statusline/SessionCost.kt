@@ -71,7 +71,8 @@ internal class SessionCost(
     private fun spendOf(total: PerfSessionTotal): SessionSpend? {
         val models = total.models.values
         if (models.none { it.turns > it.unpricedTurns }) return null
-        return SessionSpend(models.sumOf { it.usd }, lowerBound = models.any { it.unpricedTurns > 0 })
+        val incomplete = models.any { it.unpricedTurns > 0 || it.unreportedUsageTurns > 0 }
+        return SessionSpend(models.sumOf { it.usd }, lowerBound = incomplete)
     }
 
     /** V4-240 review. Each turn is priced at the card of the model it RAN on (finding 4b), so a

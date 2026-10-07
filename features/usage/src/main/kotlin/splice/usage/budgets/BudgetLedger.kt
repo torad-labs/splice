@@ -16,8 +16,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import splice.core.budget.BudgetBlock
 import splice.core.budget.HeadBudget
+import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
-import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
@@ -57,7 +57,7 @@ internal class BudgetLedger(
 
     override fun spent(atMs: Long, model: String, counters: Map<String, Long>) {
         val usd = measuredCost(model, counters)
-        synchronized(lock) { tallyAt(atMs)?.add(usd) }
+        synchronized(lock) { tallyAt(atMs)?.let { charge(it, usd, counters) } }
         val limit = limit() ?: return
         if (usd == null) noteUnpriced(atMs, model)
         if (limit.action == BudgetActions.WARN && reached(atMs, limit.usd)) warnOnce(atMs, limit.usd)
@@ -147,13 +147,16 @@ internal class BudgetLedger(
             unread("${window.skipped} historical request records could not be read")
         }
         window.rows.filter { it.ts in dayStart until context.bootMs }
-            .forEach { before.add(measuredCost(it.model, it.fields)) }
+            .forEach { charge(before, measuredCost(it.model, it.fields), it.fields) }
         return before
     }
 
-    /** Missing billing counters cannot turn a posted-but-unreported source into a zero-dollar request. */
-    private fun measuredCost(model: String?, fields: Map<String, Long>): Double? =
-        if (PerfKeys.IN_TOKENS in fields || PerfKeys.OUT_TOKENS in fields) price.usd(model, fields) else null
+    /** Budgets enforce reported spend even when a failed stream's whole price is unknown. */
+    private fun measuredCost(model: String?, fields: Map<String, Long>): Double? = price.lowerBoundUsd(model, fields)
+
+    private fun charge(tally: DayTally, usd: Double?, fields: Map<String, Long>) {
+        if (TurnBill.fullyReported(fields)) tally.add(usd) else tally.addLowerBound(usd)
+    }
 
     /** Today's earlier spend is short by what could not be read, and the head's log says so. */
     private fun unread(why: String) {

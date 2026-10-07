@@ -36,6 +36,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.put
+import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
 import splice.core.perf.ECONOMICS_RETENTION_MS
 import splice.core.util.Cancellables
@@ -63,7 +64,7 @@ private const val ECONOMICS_FLUSH_DELAY_MS = 1_000L
 public data class EconomicsTurnCounts(
     val turns: Long = 0,
     val localSteps: Long = 0,
-    /** Posted turns missing input or output usage; numeric sums below include only observed values. */
+    /** Turns with incomplete billing usage; numeric sums below include only observed values. */
     val unreportedUsageTurns: Long = 0,
 ) {
     public fun add(localStep: Boolean): EconomicsTurnCounts =
@@ -72,7 +73,7 @@ public data class EconomicsTurnCounts(
     public fun record(turn: TurnEconomics): EconomicsTurnCounts {
         val next = add(turn.localStep)
         if (turn.localStep) return next
-        val unknown = turn.inTokens == null || turn.outTokens == null
+        val unknown = !TurnBill.fullyReported(turn.counters())
         return if (unknown) next.copy(unreportedUsageTurns = next.unreportedUsageTurns + 1) else next
     }
 }

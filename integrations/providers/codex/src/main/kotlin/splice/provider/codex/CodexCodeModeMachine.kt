@@ -6,6 +6,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.UsageField
 import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
 import splice.provider.codex.state.CodeModeWorkerRecovery
@@ -123,13 +124,21 @@ internal class CodexCodeModeMachine(
             sink.inputJsonDelta(index, JsonWire.string(call.arguments))
             sink.closeBlock(index)
         }
-        return TurnOutcome.Success(hasToolUse = true, incomplete = false, usage = Usage(localStep = true))
+        return TurnOutcome.Success(
+            hasToolUse = true,
+            incomplete = false,
+            usage = Usage(localStep = true, reported = UsageField.entries.toSet()),
+        )
     }
 
     fun interrupt(record: CodeModeRecord, detail: String = "additional client content arrived"): TurnOutcome {
         val output = CodeModeExecOutput.terminated(record, detail, wallMillis(record), config.maxOutputChars)
         registry.complete(record, output)
-        return TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(localStep = true))
+        return TurnOutcome.Success(
+            hasToolUse = false,
+            incomplete = false,
+            usage = Usage(localStep = true, reported = UsageField.entries.toSet()),
+        )
     }
 
     /** The script's wall time so far; its stamp goes with it, since the record is terminal after this. */
@@ -259,7 +268,11 @@ internal class CodexCodeModeMachine(
         val output = step.error?.let { CodeModeExecOutput.failed(step.output, it, wall, config.maxOutputChars) }
             ?: CodeModeExecOutput.completed(step.output, wall, config.maxOutputChars)
         registry.complete(record, output)
-        return TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(localStep = true))
+        return TurnOutcome.Success(
+            hasToolUse = false,
+            incomplete = false,
+            usage = Usage(localStep = true, reported = UsageField.entries.toSet()),
+        )
     }
 }
 

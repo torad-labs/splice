@@ -44,6 +44,7 @@ internal class ProjectEconomics(private val heads: Map<String, SessionHead>, now
             put("turns_today", tally.turns)
             put("cost_today_usd", tally.costUsd)
             put("unpriced_turns_today", tally.unpricedTurns)
+            put("unreported_usage_turns_today", tally.unreportedUsageTurns)
             put("day_start", dayStart)
             put("last_activity", last?.let(::JsonPrimitive) ?: JsonNull)
         }

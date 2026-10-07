@@ -12,10 +12,16 @@ package splice.core.model
 
 public class TurnPrice(private val catalog: ModelCatalog?, private val cost: TokenCost = TokenCost()) {
     /** USD for every request one perf row's [counters] billed on [model] ([TurnBill]), or null when the
-     *  model has no rate card or the row lacks input or output counts. */
+     *  model has no rate card or the row lacks any billing bucket. */
     public fun usd(model: String?, counters: Map<String, Long>): Double? {
         val rates = model?.let(::ratesFor) ?: return null
         return TurnBill.usd(counters, rates, cost)
+    }
+
+    /** The reported tokens' lower-bound charge, even when a failed stream omitted its output. */
+    public fun lowerBoundUsd(model: String?, counters: Map<String, Long>): Double? {
+        val rates = model?.let(::ratesFor) ?: return null
+        return TurnBill.lowerBoundUsd(counters, rates, cost)
     }
 
     /** Whether [model] has a rate card, so that a request on it with token counts gets a price. */

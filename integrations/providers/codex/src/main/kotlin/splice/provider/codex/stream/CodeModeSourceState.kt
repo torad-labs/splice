@@ -3,6 +3,7 @@ package splice.provider.codex.stream
 
 import kotlinx.serialization.Serializable
 import splice.core.turn.Usage
+import splice.core.turn.UsageField
 
 @Serializable
 internal data class CodeModeSourceState(
@@ -19,6 +20,7 @@ internal data class CodeModeSourceUsage(
     val reasoningTokens: Long,
     val cacheWriteTokens: Long,
     val recordedOutputTokens: Long = 0,
+    val reported: Set<UsageField> = UsageField.entries.toSet(),
 ) {
     fun value(): Usage = Usage(
         inputTokens,
@@ -27,5 +29,6 @@ internal data class CodeModeSourceUsage(
         reasoningTokens,
         cacheWriteTokens,
         recordedOutputTokens = recordedOutputTokens,
+        reported = reported,
     )
 }

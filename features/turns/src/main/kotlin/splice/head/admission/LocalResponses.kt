@@ -13,6 +13,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
+import splice.core.turn.UsageField
 import splice.core.util.JsonWire
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
@@ -134,6 +135,10 @@ internal class LocalResponses(
         val block = terminal.openText()
         terminal.textDelta(block, text)
         terminal.closeAll()
-        terminal.emitTerminal(hasToolUse = false, incomplete = false, usage = Usage())
+        terminal.emitTerminal(
+            hasToolUse = false,
+            incomplete = false,
+            usage = Usage(reported = UsageField.entries.toSet()),
+        )
     }
 }

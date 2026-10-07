@@ -123,6 +123,8 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
     /** Counted turns whose model had no rate card, so their dollars are not in [costUsd]. */
     var unpricedTurns: Long = 0L
         private set
+    var unreportedUsageTurns: Long = 0L
+        private set
     private var input = 0L
     private var cacheRead = 0L
     private var cacheWrite = 0L
@@ -147,6 +149,7 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
         // Every request the row billed: its final round and the rounds it absorbed (TurnBill).
         val buckets = TurnBill.total(row.fields)
         turns += 1
+        if (!TurnBill.fullyReported(row.fields)) unreportedUsageTurns += 1
         input += buckets.input
         cacheRead += buckets.cacheRead
         cacheWrite += buckets.cacheWrite
@@ -172,6 +175,7 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
         )
         put("cost_usd", costUsd)
         put("unpriced_turns", unpricedTurns)
+        put("unreported_usage_turns", unreportedUsageTurns)
         put("last_turn_at_epoch_millis", lastAt)
     }
 

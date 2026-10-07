@@ -7,7 +7,10 @@
 package splice.head.round
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import splice.core.model.ModelRates
+import splice.core.model.TurnBill
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
@@ -48,9 +51,9 @@ class RoundSpliceSalvageTest {
             Usage(
                 inputTokens = 120,
                 outputTokens = 10,
-                cachedTokens = 20,
                 reasoningTokens = 3,
                 absorbed = AbsorbedRounds(rounds = 1, inputTokens = 100, cachedTokens = 20, outputTokens = 3),
+                reported = setOf(UsageField.INPUT, UsageField.OUTPUT),
             ),
             out.salvagedUsage,
         )
@@ -78,13 +81,17 @@ class RoundSpliceSalvageTest {
     }
 
     @Test
-    fun `terminal round with no input report keeps the last known input - DR-124`() {
+    fun `terminal round with no input report keeps prior context outside its unknown bill - DR-124`() {
         val acc = RoundUsage().plusRound(Usage(inputTokens = 55, outputTokens = 3))
         val out = rounds.withFailureSalvage(
             failure(Usage(outputTokens = 4, reported = setOf(UsageField.OUTPUT))),
             acc,
         ) as TurnOutcome.Failure
-        assertEquals(Usage(inputTokens = 55, outputTokens = 7), out.salvagedUsage)
+        assertEquals(0L, out.salvagedUsage.inputTokens)
+        assertEquals(55L, out.salvagedUsage.clientContext?.inputTokens)
+        assertEquals(55L, TurnBill.total(TurnBill.counters(out.salvagedUsage)).input)
+        assertEquals(7L, out.salvagedUsage.outputTokens)
+        assertNull(TurnBill.usd(TurnBill.counters(out.salvagedUsage), ModelRates(1.0, 0.1, 4.0)))
     }
 
     @Test
@@ -122,10 +129,14 @@ class RoundSpliceSalvageTest {
     }
 
     @Test
-    fun `an unreported terminal preserves observations without inventing an extra request`() {
+    fun `an unreported terminal preserves the prior bill once while its own request stays unknown`() {
         val acc = RoundUsage().plusRound(Usage(inputTokens = 55, outputTokens = 3))
         val out = rounds.withFailureSalvage(failure(Usage(reported = emptySet())), acc) as TurnOutcome.Failure
-        assertEquals(Usage(inputTokens = 55, outputTokens = 3), out.salvagedUsage)
+        assertEquals(0L, out.salvagedUsage.inputTokens)
+        assertEquals(55L, out.salvagedUsage.clientContext?.inputTokens)
+        assertEquals(55L, TurnBill.total(TurnBill.counters(out.salvagedUsage)).input)
+        assertEquals(3L, out.salvagedUsage.outputTokens)
+        assertNull(TurnBill.usd(TurnBill.counters(out.salvagedUsage), ModelRates(1.0, 0.1, 4.0)))
     }
 
     @Test
@@ -154,7 +165,10 @@ class RoundSpliceSalvageTest {
     fun `client abandonment carries the absorbed burn - DR-125`() {
         val acc = RoundUsage().plusRound(Usage(inputTokens = 50, outputTokens = 6))
         val out = rounds.withFailureSalvage(TurnOutcome.ClientAbandoned(), acc) as TurnOutcome.ClientAbandoned
-        assertEquals(Usage(inputTokens = 50, outputTokens = 6), out.salvagedUsage)
+        assertEquals(50L, TurnBill.total(TurnBill.counters(out.salvagedUsage)).input)
+        assertEquals(50L, out.salvagedUsage.clientContext?.inputTokens)
+        assertEquals(6L, out.salvagedUsage.outputTokens)
+        assertNull(TurnBill.usd(TurnBill.counters(out.salvagedUsage), ModelRates(1.0, 0.1, 4.0)))
     }
 
     @Test

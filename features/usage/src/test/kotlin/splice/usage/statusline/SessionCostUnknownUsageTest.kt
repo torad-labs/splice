@@ -28,7 +28,7 @@ class SessionCostUnknownUsageTest {
 
     @Test
     fun `unknown usage leaves known session spend as a lower bound`() {
-        val known = mapOf("in_tokens" to 100L, "out_tokens" to 7L)
+        val known = mapOf("in_tokens" to 100L, "out_tokens" to 7L, "cached_tokens" to 0L, "cache_write_tokens" to 0L)
         val partial = mapOf("in_tokens" to 200L)
         val unknown = mapOf("attempts" to 1L)
         val spend = cost(listOf(known, partial, unknown)).spendFor(session, model, null)!!
@@ -39,7 +39,7 @@ class SessionCostUnknownUsageTest {
 
     @Test
     fun `a posted wholly unreported turn makes a known session a lower bound`() {
-        val known = mapOf("in_tokens" to 100L, "out_tokens" to 7L)
+        val known = mapOf("in_tokens" to 100L, "out_tokens" to 7L, "cached_tokens" to 0L, "cache_write_tokens" to 0L)
         val spend = cost(listOf(known, mapOf("transport_attempt_starts" to 1L))).spendFor(session, model, null)!!
         assertTrue(spend.lowerBound, "a posted request did not report how much it spent")
         assertEquals(0.00027, spend.usd, 1e-12)

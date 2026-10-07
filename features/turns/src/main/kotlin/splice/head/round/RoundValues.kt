@@ -40,39 +40,46 @@ internal data class RoundUsage(
     /** Source rounds the turn cut while they streamed ([splice.core.turn.Usage.cutRounds]); they accrue. */
     val cutRounds: Long = 0,
     val reported: Set<UsageField> = emptySet(),
+    private val hasRound: Boolean = false,
 ) {
-    fun plusRound(u: Usage) = RoundUsage(
-        lastInput = if (UsageField.INPUT in u.reported) u.inputTokens else lastInput,
-        lastCached = if (UsageField.CACHED in u.reported) u.cachedTokens else lastCached,
-        outSum = outSum + u.outputTokens,
-        reasoningSum = reasoningSum + u.reasoningTokens,
-        lastCacheWrite = if (UsageField.CACHE_WRITE in u.reported) u.cacheWriteTokens else lastCacheWrite,
-        localStep = localStep || u.localStep,
-        codeModeDiverged = codeModeDiverged || u.codeModeDiverged,
-        recordedOutputSum = recordedOutputSum + u.recordedOutputTokens,
-        clientContext = u.clientContext ?: clientContext,
-        absorbed = absorbed + toUsage().finalRound + u.absorbed,
-        cutRounds = cutRounds + u.cutRounds,
-        reported = reported + u.reported,
-    )
+    fun plusRound(u: Usage): RoundUsage {
+        val prior = toUsage()
+        val latest = if (u.localStep && hasRound) prior else u
+        val priorOutput = if (hasRound) reported.intersect(setOf(UsageField.OUTPUT)) else emptySet()
+        val observations = latest.reported + priorOutput
+        val missingBills = missingBills(u, observations)
+        return RoundUsage(
+            lastInput = latest.inputTokens,
+            lastCached = latest.cachedTokens,
+            outSum = outSum + u.outputTokens,
+            reasoningSum = reasoningSum + u.reasoningTokens,
+            lastCacheWrite = latest.cacheWriteTokens,
+            localStep = localStep || u.localStep,
+            codeModeDiverged = codeModeDiverged || u.codeModeDiverged,
+            recordedOutputSum = recordedOutputSum + u.recordedOutputTokens,
+            clientContext = contextFor(u, latest, prior),
+            absorbed = absorbed + (if (u.localStep) AbsorbedRounds() else prior.finalRound) + u.absorbed,
+            cutRounds = cutRounds + u.cutRounds + missingBills,
+            reported = observations,
+            hasRound = hasRound || !u.localStep,
+        )
+    }
 
-    /** Fold a failed round under the same cumulative law. Unreported buckets preserve their
-     *  last observation; a reported zero replaces it just as a positive observation does. */
-    fun plusTerminal(u: Usage) = RoundUsage(
-        lastInput = if (UsageField.INPUT in u.reported) u.inputTokens else lastInput,
-        lastCached = if (UsageField.CACHED in u.reported) u.cachedTokens else lastCached,
-        outSum = outSum + u.outputTokens,
-        reasoningSum = reasoningSum + u.reasoningTokens,
-        lastCacheWrite = if (UsageField.CACHE_WRITE in u.reported) u.cacheWriteTokens else lastCacheWrite,
-        localStep = localStep || u.localStep,
-        codeModeDiverged = codeModeDiverged || u.codeModeDiverged,
-        recordedOutputSum = recordedOutputSum + u.recordedOutputTokens,
-        clientContext = u.clientContext ?: clientContext,
-        absorbed = absorbed +
-            (if (UsageField.INPUT in u.reported) toUsage().finalRound else AbsorbedRounds()) + u.absorbed,
-        cutRounds = cutRounds + u.cutRounds,
-        reported = reported + u.reported,
-    )
+    /** A failed continuation is a distinct request too: never inherit the previous round's bill. */
+    fun plusTerminal(u: Usage): RoundUsage = plusRound(u)
+
+    private fun missingBills(u: Usage, observations: Set<UsageField>): Long {
+        if (u.localStep || observations.size < UsageField.entries.size) return 0
+        val prior = if (hasRound && reported.size < UsageField.entries.size) 1L else 0L
+        val latest = if (u.reported.size < UsageField.entries.size) 1L else 0L
+        return prior + latest
+    }
+
+    private fun contextFor(u: Usage, latest: Usage, prior: Usage): Usage? {
+        if (u.clientContext != null) return u.clientContext
+        if (UsageField.INPUT in latest.reported) return null
+        return prior.takeIf { UsageField.INPUT in reported } ?: clientContext
+    }
 
     fun toUsage() = Usage(
         inputTokens = lastInput,

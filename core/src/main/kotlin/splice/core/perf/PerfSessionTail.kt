@@ -28,6 +28,8 @@ public data class PerfModelTotal(
     val outTokens: Long,
     val usd: Double,
     val unpricedTurns: Long,
+    /** Turns with incomplete usage; numeric token totals contain only the observed lower bound. */
+    val unreportedUsageTurns: Long = 0,
 )
 
 /** V4-244: one client session's running total, by the model each turn ran on. It holds every row of

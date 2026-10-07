@@ -20,6 +20,14 @@ import splice.core.turn.UsageField
  * exactly as it always did.
  */
 public object TurnBill {
+    private val billingKeys = setOf(
+        PerfKeys.IN_TOKENS,
+        PerfKeys.OUT_TOKENS,
+        PerfKeys.CACHED_TOKENS,
+        PerfKeys.CACHE_WRITE_TOKENS,
+    )
+    private val inputBillingKeys = setOf(PerfKeys.IN_TOKENS, PerfKeys.CACHED_TOKENS, PerfKeys.CACHE_WRITE_TOKENS)
+
     /** The counters a turn's [usage] writes on its perf row. */
     public fun counters(usage: Usage): Map<String, Long> = buildMap {
         if (UsageField.INPUT in usage.reported) put(PerfKeys.IN_TOKENS, usage.inputTokens)
@@ -76,12 +84,36 @@ public object TurnBill {
     /** Whether [row] billed nothing at all: a local refusal, or a step with no round. */
     public fun isEmpty(row: Map<String, Long>): Boolean = total(row).isEmpty
 
-    /** USD for the reported requests at [rates]; absent input or output makes the price unknown. */
-    public fun usd(row: Map<String, Long>, rates: ModelRates, cost: TokenCost = TokenCost()): Double? {
-        if (PerfKeys.IN_TOKENS !in row || PerfKeys.OUT_TOKENS !in row) return null
+    /** Whether all four token buckets were reported, including explicit measured zeros. */
+    public fun fullyReported(row: Map<String, Long>): Boolean =
+        row.keys.containsAll(billingKeys) && (row[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L) == 0L
+
+    /** Exact USD for the reported requests; every billing bucket must be known. */
+    public fun usd(row: Map<String, Long>, rates: ModelRates, cost: TokenCost = TokenCost()): Double? =
+        if (fullyReported(row)) lowerBoundUsd(row, rates, cost) else null
+
+    /** Charge only observed buckets. An inclusive input group must be complete or entirely absent,
+     *  or its cache subtraction cannot be priced safely. Missing output contributes no charge.
+     *  With nonnegative rates, this never exceeds the cost of the unreported tokens as well. */
+    public fun lowerBoundUsd(row: Map<String, Long>, rates: ModelRates, cost: TokenCost = TokenCost()): Double? {
+        val inputKeys = inputBillingKeys.count(row::containsKey)
+        if (inputKeys != 0 && inputKeys != inputBillingKeys.size) return null
         val absorbed = absorbed(row)
-        val earlier = if (absorbed.rounds > 0) cost.of(absorbedBuckets(absorbed), rates, absorbed.rounds) else 0.0
-        return cost.of(last(row), rates) + earlier
+        val prefixRates = if (fullyReported(row)) rates else minimumRates(rates)
+        val earlier = if (absorbed.rounds > 0) cost.of(absorbedBuckets(absorbed), prefixRates, absorbed.rounds) else 0.0
+        val finalRates = if (inputKeys == 0) minimumRates(rates) else rates
+        return cost.of(last(row), finalRates) + earlier
+    }
+
+    /** Absorbed requests lost their individual sizes, so an inexact bill must not assume a mean tier. */
+    private fun minimumRates(rates: ModelRates): ModelRates {
+        val tier = rates.longContext ?: return rates
+        return ModelRates(
+            input = minOf(rates.input, tier.input),
+            cacheRead = minOf(rates.cacheRead, tier.cacheRead),
+            output = minOf(rates.output, tier.output),
+            cacheWrite = minOf(rates.cacheWrite ?: rates.input, tier.cacheWrite ?: tier.input),
+        )
     }
 
     private fun absorbedBuckets(absorbed: AbsorbedRounds): TokenBuckets = buckets(

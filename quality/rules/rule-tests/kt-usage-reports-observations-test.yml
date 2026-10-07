@@ -1,0 +1,14 @@
+id: kt-usage-reports-observations
+valid:
+  - 'val u = Usage(reported = emptySet())'
+  - 'val u = Usage(inputTokens = 100, reported = fields)'
+  - 'val u = Usage(reported = fields, outputTokens = 0)'
+  - 'val u = splice.core.turn.Usage(reported = fields)'
+  - 'val u = Usage(clientContext = Usage(reported = fields), reported = emptySet())'
+  - 'val u = OtherUsage()'
+invalid:
+  - 'val u = Usage()'
+  - 'val u = Usage(100, 7)'
+  - 'val u = Usage(localStep = true)'
+  - 'val u = splice.core.turn.Usage(outputTokens = 7)'
+  - 'val u = Usage(clientContext = Usage(reported = fields))'

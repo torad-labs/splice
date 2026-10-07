@@ -68,6 +68,12 @@ files = [
 date = "2026-10-02"
 reason = "Named non-prompt serializers: model/quota metadata, one-integer token estimates, diagnostics/model roster, compact/turn retention counters, live-turn status, hourly economics, bounded usage ring, capture configuration/error replies, local diagnostic probe templates and quota hold state. No request history, prompt body or selected trace body is serialized at these sites."
 
+[[exclusion]]
+rule = "kt-usage-reports-observations"
+sourceSets = ["test", "testFixtures"]
+date = "2026-10-06"
+reason = "Production Usage constructors state provenance explicitly. Synthetic tests retain the known-count default by the line-613 ruling."
+
 # ─── source-set scope ────────────────────────────────────────────────────────────────────────────
 
 [[exclusion]]

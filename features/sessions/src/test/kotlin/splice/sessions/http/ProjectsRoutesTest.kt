@@ -110,7 +110,8 @@ class ProjectsRoutesTest {
         assertEquals(
             rig.json(
                 """{"id":"${rig.repo}","root":"${rig.repo}","live_sessions":2,"teams":1,"turns_today":2,""" +
-                    """"unpriced_turns_today":0,"day_start":$DAY_START,"last_activity":${AT + 2}}""",
+                    """"unpriced_turns_today":0,"unreported_usage_turns_today":0,""" +
+                    """"day_start":$DAY_START,"last_activity":${AT + 2}}""",
             ),
             JsonObject(repo - "cost_today_usd" - "compaction" - "statusline_roots"),
             "yesterday's row and the outsider's are not this repo's today; the archived team is not counted",

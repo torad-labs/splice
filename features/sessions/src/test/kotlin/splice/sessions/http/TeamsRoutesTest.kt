@@ -371,7 +371,7 @@ class TeamsRoutesTest {
             rig.json(
                 """{"role":"builder","turns":2,""" +
                     """"tokens":{"input":1600000,"cache_read":400000,"cache_write":0,"output":1000010},""" +
-                    """"unpriced_turns":0,"last_turn_at_epoch_millis":$AT}""",
+                    """"unpriced_turns":0,"unreported_usage_turns":0,"last_turn_at_epoch_millis":$AT}""",
             ),
             JsonObject(builder - "cost_usd"),
         )

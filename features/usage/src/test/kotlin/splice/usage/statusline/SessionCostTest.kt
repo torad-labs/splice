@@ -42,6 +42,13 @@ import splice.core.perf.PerfSessionTurn
 import splice.usage.perf.HeadPerfSource
 import splice.usage.perf.HeadSessionPerfSource
 
+private fun observed(input: Long, cached: Long = 0L, output: Long = 0L) = mapOf(
+    "in_tokens" to input,
+    "cached_tokens" to cached,
+    "out_tokens" to output,
+    "cache_write_tokens" to 0L,
+)
+
 class SessionCostTest {
 
     private val offPeak = ModelRates(input = 0.15, cacheRead = 0.003, output = 0.60)
@@ -54,9 +61,9 @@ class SessionCostTest {
      *  actually appends, so each row's `in_tokens` already contains its `cached_tokens` and the
      *  fresh-input figure is what the subtraction has to recover. */
     private val measuredTurns = listOf(
-        mapOf("in_tokens" to 2_100_000L, "cached_tokens" to 2_000_000L, "out_tokens" to 15_000L),
-        mapOf("in_tokens" to 2_555_680L, "cached_tokens" to 2_455_680L, "out_tokens" to 16_000L),
-        mapOf("in_tokens" to 2_561_140L, "cached_tokens" to 2_455_680L, "out_tokens" to 15_897L),
+        observed(2_100_000L, 2_000_000L, 15_000L),
+        observed(2_555_680L, 2_455_680L, 16_000L),
+        observed(2_561_140L, 2_455_680L, 15_897L),
     )
 
     private fun deepseekCatalog() = ModelCatalog(
@@ -133,7 +140,7 @@ class SessionCostTest {
     }
 
     @Test
-    fun `the operator's own rows price the cached prefix ONCE, not once as a miss and again as a read`() {
+    fun `legacy rows retain known cache arithmetic but cannot invent missing cache-write measurements`() {
         val cost = SessionCost(realTokens(), deepseekCatalog())
         // Summed straight off the three rows above:
         //   in_tokens      82225 + 107790 + 108852 = 298867
@@ -145,24 +152,18 @@ class SessionCostTest {
         //      439 * 0.60   =   263.40
         //                      --------
         //                      17151.69 / 1e6 = 0.01715169
-        assertEquals(0.01715169, cost.usdFor(realSessionId, "deepseek-flash")!!, 1e-12)
-        // What the pre-redo arithmetic produced on these same bytes: it billed the raw 298867 as a
-        // miss AND the 190080 again as a read.
-        //   298867 * 0.15 = 44830.05, + 570.24 + 263.40 = 45663.69 / 1e6 = 0.04566369
-        // 2.66x here; 32.7x across the full 668-row session (46.465407 against 1.420652), because
-        // the longer the session the larger the cached share of every prompt.
-        assertNotEquals(
-            0.04566369,
-            cost.usdFor(realSessionId, "deepseek-flash")!!,
-            "the cached prefix must not be billed at the cache-MISS rate as well as the read rate",
-        )
+        val buckets = realTokens().sessionTail(realSessionId).turns
+            .map { splice.core.model.TurnBill.total(it.counters) }
+        assertEquals(108_787L, buckets.sumOf { it.input }, "the known cached prefix is subtracted once")
+        assertEquals(190_080L, buckets.sumOf { it.cacheRead })
+        assertNull(cost.usdFor(realSessionId, "deepseek-flash"), "the old rows never reported cache-write usage")
     }
 
     @Test
     fun `a row whose cached count exceeds its input floors the miss bucket instead of crediting it`() {
         // Not a shape the sink writes today, but an older or torn row could carry it, and a negative
         // miss bucket would SUBTRACT from the operator's bill rather than floor at zero.
-        val impossible = listOf(mapOf("in_tokens" to 1_000L, "cached_tokens" to 9_000L, "out_tokens" to 0L))
+        val impossible = listOf(observed(1_000L, 9_000L))
         val cost = SessionCost(tokens(impossible), deepseekCatalog())
         // 0 miss + 9000 * 0.003 = 27.0 / 1e6
         assertEquals(0.000027, cost.usdFor(sessionId, "deepseek-flash")!!, 1e-12)
@@ -264,8 +265,7 @@ class SessionCostTest {
         // 0.01715169 rounded to the two decimals the segment draws. The double-billed figure would
         // have rendered "$0.05" from the very same bytes.
         val line = segment(SessionCost(realTokens(), deepseekCatalog()), session = realSessionId)
-        assertTrue("$0.02" in line, line)
-        assertTrue("$0.05" !in line, "the double-billed figure must not survive: $line")
+        assertTrue("$" !in line, "legacy rows with absent cache-write usage have no exact price: $line")
         assertTrue("3.69" !in line, "and neither must the client's Anthropic-priced total: $line")
     }
 
@@ -308,8 +308,8 @@ class SessionCostTest {
             defaultContextWindow = 500_000,
             pinnedModel = "grok-4.7",
         )
-        val small = mapOf("in_tokens" to 150_000L, "out_tokens" to 1_000L)
-        val large = mapOf("in_tokens" to 250_000L, "out_tokens" to 1_000L)
+        val small = observed(150_000L, output = 1_000L)
+        val large = observed(250_000L, output = 1_000L)
 
         val twoSmall = SessionCost(tokens(listOf(small, small)), catalog).usdFor(sessionId, "grok-4.7")!!
         // 2 x (150000 x 2.0 + 1000 x 6.0) / 1e6 = 2 x 0.306
@@ -449,7 +449,12 @@ class SessionCostTest {
     )
 
     /** One cold turn: 100000 input tokens, none cached, and 1000 output. */
-    private val coldTurn = mapOf("in_tokens" to 100_000L, "out_tokens" to 1_000L)
+    private val coldTurn = mapOf(
+        "in_tokens" to 100_000L,
+        "out_tokens" to 1_000L,
+        "cached_tokens" to 0L,
+        "cache_write_tokens" to 0L,
+    )
 
     private fun tail(turns: List<PerfSessionTurn>, tailStartMs: Long? = null) = HeadSessionPerfSource { asked ->
         if (asked == sessionId) PerfSessionTail(turns, tailStartMs) else PerfSessionTail(emptyList(), null)
@@ -599,8 +604,8 @@ class SessionCostTest {
             pinnedModel = "grok-4.7",
         )
         val grokRows = listOf(
-            mapOf("in_tokens" to 150_000L, "cached_tokens" to 40_000L, "out_tokens" to 1_000L),
-            mapOf("in_tokens" to 250_000L, "cached_tokens" to 200_000L, "out_tokens" to 3_000L),
+            observed(150_000L, 40_000L, 1_000L),
+            observed(250_000L, 200_000L, 3_000L),
         )
         val sonnetRows = listOf(
             mapOf(

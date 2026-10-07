@@ -84,7 +84,8 @@ class TurnBillTest {
 
         val row = TurnBill.counters(plain + Usage(cutRounds = 2))
         assertEquals(2L, row[PerfKeys.CUT_SOURCE_ROUNDS], "$row")
-        assertEquals(priceOf(TurnBill.counters(plain)), priceOf(row), CENT_FRACTION)
+        assertNull(TurnBill.usd(row, rates), "the cut source bill is unknown")
+        assertEquals(priceOf(TurnBill.counters(plain)), TurnBill.lowerBoundUsd(row, rates)!!, CENT_FRACTION)
     }
 
     /** A Responses model reports its reasoning tokens inside its output-token details, so they are already in

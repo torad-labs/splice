@@ -9,10 +9,13 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.UsageField
 import splice.provider.codex.stream.CodeModeClientContexts
 
 internal class CodeModeClientContextsTest {
     private val step = TurnOutcome.Success(hasToolUse = true, incomplete = false, usage = Usage(localStep = true))
+
+    private val contextFields = UsageField.entries.toSet() - UsageField.OUTPUT
 
     private fun contextOf(outcome: TurnOutcome): Usage? = (outcome as TurnOutcome.Success).usage.clientContext
 
@@ -23,7 +26,8 @@ internal class CodeModeClientContextsTest {
         contexts.report("a", TurnOutcome.Success(true, false, Usage(1_200, 30, 700, 0, 0)))
 
         val reported = contexts.report("a", step) as TurnOutcome.Success
-        assertEquals(Usage(inputTokens = 1_200, cachedTokens = 700), reported.usage.clientContext)
+        val expected = Usage(inputTokens = 1_200, cachedTokens = 700, reported = contextFields)
+        assertEquals(expected, reported.usage.clientContext)
         assertEquals(Usage(localStep = true), reported.usage.copy(clientContext = null), "accounting stays raw")
     }
 
@@ -55,11 +59,12 @@ internal class CodeModeClientContextsTest {
             salvagedUsage = Usage(900, 2, 300),
         )
         assertSame(failure, contexts.report("a", failure), "a failure reaches the client unchanged")
-        assertEquals(Usage(inputTokens = 900, cachedTokens = 300), contextOf(contexts.report("a", step)))
+        val failedContext = Usage(inputTokens = 900, cachedTokens = 300, reported = contextFields)
+        assertEquals(failedContext, contextOf(contexts.report("a", step)))
 
         contexts.note("a", Usage(1_500, 80, 1_000, 0, 20))
         assertEquals(
-            Usage(inputTokens = 1_500, cachedTokens = 1_000, cacheWriteTokens = 20),
+            Usage(inputTokens = 1_500, cachedTokens = 1_000, cacheWriteTokens = 20, reported = contextFields),
             contextOf(contexts.report("a", step)),
         )
     }
@@ -71,9 +76,11 @@ internal class CodeModeClientContextsTest {
             asked += key
             Usage(2_000, 50, 1_800)
         }
-        assertEquals(Usage(inputTokens = 2_000, cachedTokens = 1_800), contextOf(contexts.report("a", step)))
+        val persisted = Usage(inputTokens = 2_000, cachedTokens = 1_800, reported = contextFields)
+        assertEquals(persisted, contextOf(contexts.report("a", step)))
         contexts.report("a", TurnOutcome.Success(true, false, Usage(2_100, 4, 1_900)))
-        assertEquals(Usage(inputTokens = 2_100, cachedTokens = 1_900), contextOf(contexts.report("a", step)))
+        val newest = Usage(inputTokens = 2_100, cachedTokens = 1_900, reported = contextFields)
+        assertEquals(newest, contextOf(contexts.report("a", step)))
         assertEquals(listOf("a"), asked, "the records are read only while this process has measured nothing")
     }
 }

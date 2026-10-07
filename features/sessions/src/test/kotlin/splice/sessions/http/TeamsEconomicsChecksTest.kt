@@ -78,6 +78,14 @@ class TeamsEconomicsChecksTest {
     }
 
     @Test
+    fun `a wholly unreported team turn labels its token totals as incomplete`() {
+        val missing = row(CHECKS_AT, OutcomeTag.UNEXPECTED.wire).copy(fields = emptyMap())
+        val lead = leadSlot(listOf(missing))
+        assertEquals("1", lead["unreported_usage_turns"]?.jsonPrimitive?.content)
+        assertEquals("0", lead.getValue("tokens").jsonObject.getValue("input").jsonPrimitive.content)
+    }
+
+    @Test
     fun `an ok outcome reads pass`() {
         val lead = leadSlot(listOf(row(CHECKS_AT, OutcomeTag.OK.wire)))
         assertEquals("pass", lead.getValue("checks").jsonPrimitive.content)

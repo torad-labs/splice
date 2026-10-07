@@ -4,9 +4,11 @@
 // Same-package — callers keep splice.core.turn.{Usage,ErrorType,...}.
 package splice.core.turn
 
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
 /** Token buckets observed by the provider, distinct from the numeric defaults used on the client wire. */
+@Serializable
 public enum class UsageField { INPUT, OUTPUT, CACHED, CACHE_WRITE }
 
 private val ALL_USAGE_FIELDS = UsageField.entries.toSet()
@@ -52,11 +54,11 @@ public data class Usage(
     public val unrecordedOutputTokens: Long get() = outputTokens - recordedOutputTokens
 
     /** This usage's final round as an absorbed round, for the merge that supersedes it. A round that
-     *  measured no input of its own is none: its output stays in [outputTokens], billed with the final. */
-    public val finalRound: AbsorbedRounds get() = if (inputTokens > 0) {
-        AbsorbedRounds(1, inputTokens, cachedTokens, cacheWriteTokens, outputTokens - absorbed.outputTokens)
-    } else {
-        AbsorbedRounds()
+     *  reported no input of its own is none: its output stays in [outputTokens], billed with the final. */
+    public val finalRound: AbsorbedRounds get() {
+        if (UsageField.INPUT !in reported) return AbsorbedRounds()
+        if (localStep && inputTokens == 0L) return AbsorbedRounds()
+        return AbsorbedRounds(1, inputTokens, cachedTokens, cacheWriteTokens, outputTokens - absorbed.outputTokens)
     }
 
     /** Sum two rounds' usage — reasoning-continuation folding accumulates across hidden rounds. */

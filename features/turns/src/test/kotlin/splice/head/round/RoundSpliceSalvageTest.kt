@@ -195,6 +195,19 @@ class RoundSpliceSalvageTest {
     }
 
     @Test
+    fun `known cut counts survive an unreported failure or abandonment without inventing tokens`() {
+        val acc = RoundUsage().plusRound(Usage(history = UsageHistory(cutRounds = 1), reported = emptySet()))
+        for (ending in listOf(failure(null), TurnOutcome.ClientAbandoned())) {
+            val usage = when (val result = rounds.withFailureSalvage(ending, acc)) {
+                is TurnOutcome.Failure -> result.salvagedUsage
+                is TurnOutcome.ClientAbandoned -> result.salvagedUsage
+                else -> error("the synthetic ending must remain unsuccessful")
+            }
+            assertEquals(mapOf(splice.core.perf.PerfKeys.CUT_SOURCE_ROUNDS to 1L), TurnBill.counters(usage))
+        }
+    }
+
+    @Test
     fun `a clean abandonment stays bare - DR-125`() {
         val bare = TurnOutcome.ClientAbandoned()
         assertEquals(bare, rounds.withFailureSalvage(bare, RoundUsage()))

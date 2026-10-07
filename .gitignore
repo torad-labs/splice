@@ -66,6 +66,14 @@ credentials.json
 
 # transient operator wall grant (/grant) — never committed
 .claude/state/walls-grant.json
+# hook and tool state written beside the repo's settings (gitleaks reports, restart logs)
+/.claude/state/
+# tool output a seat's run drops at the root: Playwright's default outputDir, a Java language
+# server's workspace, tsc's incremental cache; screenshots belong in captures/
+/test-results/
+/workspace/
+*.tsbuildinfo
+/console-next/captures/
 .claude/tmp/
 
 # gradle slot lock + holder (bun tools/gate slot)

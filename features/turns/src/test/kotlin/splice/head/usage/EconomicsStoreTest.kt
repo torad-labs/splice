@@ -6,6 +6,7 @@ package splice.head.usage
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -45,10 +46,10 @@ private val FABLE_HEAD = TurnPrice(
 )
 
 private fun turn(
-    inTokens: Long = 0,
-    cached: Long = 0,
-    cacheWrite: Long = 0,
-    out: Long = 0,
+    inTokens: Long? = 0,
+    cached: Long? = 0,
+    cacheWrite: Long? = 0,
+    out: Long? = 0,
     req: Long? = null,
     upstream: Long? = null,
     eager: Long? = null,
@@ -71,6 +72,71 @@ private fun turn(
     localStep,
     absorbed,
 )
+
+class UnknownFailureEconomicsTest {
+    @Test
+    fun `unknown usage remains unpriced and carries a persisted unknown-turn count`(@TempDir tmp: Path) {
+        val file = tmp.resolve("economics.json")
+        val store = EconomicsStore(file, FABLE_HEAD, WallClock { 10 * HOUR })
+        val unknown = turn(inTokens = null, cached = null, cacheWrite = null, out = null, model = HAIKU)
+        assertTrue(unknown.counters().isEmpty())
+        assertNull(FABLE_HEAD.usd(HAIKU, unknown.counters()))
+        store.record(unknown)
+        store.record(turn(inTokens = 100, out = 7, model = HAIKU))
+        store.flushNow()
+        AsyncFileIo.drain()
+        val kept = EconomicsStore(file, FABLE_HEAD, WallClock { 10 * HOUR }).read().single()
+        assertEquals(100L, kept.inTokens, "known counts survive an unknown turn")
+        assertEquals(7L, kept.outTokens)
+        assertEquals(1L, kept.counts.unreportedUsageTurns)
+        assertEquals(1L, kept.unpricedTurns)
+        assertEquals(
+            TokenCost().of(TokenBuckets(input = 100, output = 7), HAIKU_RATES),
+            requireNotNull(kept.costUsd),
+            1e-9,
+        )
+    }
+
+    @Test
+    fun `input-only failure preserves input but never prices the absent output`(@TempDir tmp: Path) {
+        val store = EconomicsStore(tmp.resolve("economics.json"), FABLE_HEAD, WallClock { 10 * HOUR })
+        store.record(turn(inTokens = 100, out = null, model = HAIKU))
+        val kept = store.read().single()
+        assertEquals(100L, kept.inTokens)
+        assertEquals(1L, kept.counts.unreportedUsageTurns)
+        assertEquals(1L, kept.unpricedTurns)
+        store.flushNow()
+        AsyncFileIo.drain()
+    }
+
+    @Test
+    fun `reported zero usage is priced and does not count as unreported`(@TempDir tmp: Path) {
+        val store = EconomicsStore(tmp.resolve("economics.json"), FABLE_HEAD, WallClock { 10 * HOUR })
+        store.record(turn(model = HAIKU))
+        val kept = store.read().single()
+        assertEquals(0L, kept.counts.unreportedUsageTurns)
+        assertEquals(0L, kept.unpricedTurns)
+        assertEquals(0.0, kept.costUsd)
+        store.flushNow()
+        AsyncFileIo.drain()
+    }
+
+    @Test
+    fun `an old hourly file keeps its counters and defaults only the additive unknown count`(@TempDir tmp: Path) {
+        val file = tmp.resolve("economics.json")
+        Files.writeString(
+            file,
+            """[{"hour":36000000,"turns":1,"in_tokens":100,"cached_tokens":20,"out_tokens":7,"cost_usd":0.5}]""",
+        )
+        val kept = EconomicsStore(file, FABLE_HEAD, WallClock { 10 * HOUR }).read().single()
+        assertEquals(100L, kept.inTokens)
+        assertEquals(20L, kept.cachedTokens)
+        assertEquals(7L, kept.outTokens)
+        assertEquals(0L, kept.cacheWriteTokens, "legacy decoding is unchanged")
+        assertEquals(0.5, kept.costUsd)
+        assertEquals(0L, kept.counts.unreportedUsageTurns)
+    }
+}
 
 class EconomicsStoreTest {
 

@@ -102,6 +102,22 @@ class PerfSummaryTest {
     }
 
     @Test
+    fun `cache ratio uses paired observations and never invents a miss for an input-only failure`() {
+        val measured = row(1000)
+        val partial = PerfRow(now - 2000, "error:upstream-failed", mapOf(PerfKeys.IN_TOKENS to 1000L))
+        val unknown = PerfRow(now - 3000, "error:upstream-failed", emptyMap())
+        val orphanCache = PerfRow(now - 4000, "error:upstream-failed", mapOf(PerfKeys.CACHED_TOKENS to 9999L))
+        val s = PerfSummary { now }.json(
+            PerfRowsWindow(listOf(measured, partial, unknown, orphanCache)),
+            PerfWindow.H1,
+            now,
+        )
+        assertEquals(0.5, n(s, "cache_hit_ratio").toDouble(), 1e-9)
+        val absent = PerfSummary { now }.json(PerfRowsWindow(listOf(partial, unknown)), PerfWindow.H1, now)
+        assertEquals(JsonNull, absent["cache_hit_ratio"])
+    }
+
+    @Test
     fun `slow, retried and failed rows produce distinguishable numbers`() {
         val s = PerfSummary { now }.json(PerfRowsWindow(controlled()), PerfWindow.H1, now)
         assertEquals("20", n(s, "count"))

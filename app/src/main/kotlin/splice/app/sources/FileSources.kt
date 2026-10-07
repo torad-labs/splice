@@ -105,7 +105,7 @@ public class EconomicsStoreSource(
     private fun row(it: EconomicsBucket): EconomicsRow =
         EconomicsRow(
             hour = it.hour,
-            counts = EconomicsTurnCounts(it.turns, it.localSteps),
+            counts = EconomicsTurnCounts(it.turns, it.localSteps, it.counts.unreportedUsageTurns),
             inTokens = it.inTokens,
             cachedTokens = it.cachedTokens,
             cacheWriteTokens = it.cacheWriteTokens,

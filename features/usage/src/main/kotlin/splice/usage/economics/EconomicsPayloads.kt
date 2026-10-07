@@ -68,6 +68,7 @@ public class EconomicsPayloads(
                 put("hour", b.hour)
                 put("turns", b.turns)
                 put("local_steps", b.localSteps)
+                put("unreported_usage_turns", b.counts.unreportedUsageTurns)
                 put("in_tokens", b.inTokens)
                 put("cached_tokens", b.cachedTokens)
                 put("cache_write_tokens", b.cacheWriteTokens)

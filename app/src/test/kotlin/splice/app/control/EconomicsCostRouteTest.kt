@@ -95,6 +95,7 @@ class EconomicsCostRouteTest {
             heads = mapOf(
                 "priced" to managedHead("priced", pricedStore()),
                 "legacy" to managedHead("legacy", legacyStore()),
+                "unknown" to managedHead("unknown", unknownStore()),
             ),
             config = ConfigService(paths),
             mgmtKey = mgmt,
@@ -118,6 +119,13 @@ class EconomicsCostRouteTest {
         store.record(turn("gpt-5.6-sol", inTokens = 1_000, cached = 0, cacheWrite = 0, out = 100))
         val local = TurnEconomics(FABLE, 0, 0, 0, 0, null, null, null, null, localStep = true, absorbed = NONE)
         store.record(local)
+        return store
+    }
+
+    private fun unknownStore(): EconomicsStore {
+        val store = EconomicsStore(tmp.resolve("unknown.json"), TurnPrice(catalog), WallClock { 10 * HOUR_MS })
+        store.record(TurnEconomics(HAIKU, null, null, null, null, null, null, null, null, absorbed = NONE))
+        store.record(turn(HAIKU, inTokens = 100, cached = 0, cacheWrite = 0, out = 7))
         return store
     }
 
@@ -153,6 +161,18 @@ class EconomicsCostRouteTest {
     fun `an hour recorded before the daemon priced turns reads null, never zero`() = runBlocking<Unit> {
         awaitPort()
         assertEquals(JsonNull, bucketOf("legacy").getValue("cost_usd"))
+    }
+
+    @Test
+    fun `unknown usage reaches the API as an additive count without erasing known sums`() = runBlocking<Unit> {
+        awaitPort()
+        val bucket = bucketOf("unknown")
+        assertEquals(1L, bucket.getValue("unreported_usage_turns").jsonPrimitive.long)
+        assertEquals(1L, bucket.getValue("unpriced_turns").jsonPrimitive.long)
+        assertEquals(100L, bucket.getValue("in_tokens").jsonPrimitive.long)
+        assertEquals(7L, bucket.getValue("out_tokens").jsonPrimitive.long)
+        assertEquals(0.000135, bucket.getValue("cost_usd").jsonPrimitive.double, 1e-12)
+        assertEquals(0L, bucketOf("legacy").getValue("unreported_usage_turns").jsonPrimitive.long)
     }
 
     private suspend fun bucketOf(head: String): JsonObject {

@@ -137,8 +137,9 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
     private fun counters(rows: List<PerfRow>): JsonObject = buildJsonObject {
         put("retries", rows.sumOf { it.fields[PerfKeys.RETRIES] ?: 0L })
         put("refreshes", rows.sumOf { it.fields[PerfKeys.REFRESHES] ?: 0L })
-        val inTokens = rows.sumOf { it.fields[PerfKeys.IN_TOKENS] ?: 0L }
-        val cached = rows.sumOf { it.fields[PerfKeys.CACHED_TOKENS] ?: 0L }
+        val measured = rows.filter { PerfKeys.IN_TOKENS in it.fields && PerfKeys.CACHED_TOKENS in it.fields }
+        val inTokens = measured.sumOf { it.fields.getValue(PerfKeys.IN_TOKENS) }
+        val cached = measured.sumOf { it.fields.getValue(PerfKeys.CACHED_TOKENS) }
         put("cache_hit_ratio", if (inTokens > 0) cached.toDouble() / inTokens else null)
         put("peak_inflight", rows.maxOfOrNull { it.fields[PerfKeys.INFLIGHT] ?: 0L })
     }

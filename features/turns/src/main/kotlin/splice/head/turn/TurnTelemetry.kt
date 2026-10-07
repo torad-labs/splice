@@ -214,15 +214,10 @@ internal class TurnTelemetry(
                         // V4-221: priced at THIS turn's card, the model the perf row names.
                         model = model,
                         localStep = snap.counters[PerfKeys.LOCAL_STEP] == 1L,
-                        inTokens = snap.counters[PerfKeys.IN_TOKENS] ?: 0,
-                        cachedTokens = snap.counters[PerfKeys.CACHED_TOKENS] ?: 0,
-                        // V4-86: the cache-WRITE bucket. Absent on a perf row written before the
-                        // counter existed, which reads as 0 — the true historical value, since
-                        // nothing was counting it. Without this line the counter TurnUsageStamp
-                        // writes on every turn died right here and the rollup saw a cache write
-                        // as ordinary input.
-                        cacheWriteTokens = snap.counters[PerfKeys.CACHE_WRITE_TOKENS] ?: 0,
-                        outTokens = snap.counters[PerfKeys.OUT_TOKENS] ?: 0,
+                        inTokens = snap.counters[PerfKeys.IN_TOKENS],
+                        cachedTokens = snap.counters[PerfKeys.CACHED_TOKENS],
+                        cacheWriteTokens = snap.counters[PerfKeys.CACHE_WRITE_TOKENS],
+                        outTokens = snap.counters[PerfKeys.OUT_TOKENS],
                         reqBytes = snap.counters[PerfKeys.REQ_BYTES],
                         upstreamBytes = snap.counters[PerfKeys.UPSTREAM_REQ_BYTES],
                         // Absent (not zero) on a head whose dialect cannot defer — the chat dialect

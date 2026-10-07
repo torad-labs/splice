@@ -21,7 +21,12 @@ public sealed class EconomicsRead {
 }
 
 /** The control plane's client-turn and local-step counts, projected from the head's bucket. */
-public data class EconomicsTurnCounts(val turns: Long = 0, val localSteps: Long = 0)
+public data class EconomicsTurnCounts(
+    val turns: Long = 0,
+    val localSteps: Long = 0,
+    /** Turns whose input or output usage was not reported; token sums include only known values. */
+    val unreportedUsageTurns: Long = 0,
+)
 
 /** One hour of a head's economics on the control-plane side. Sums only; every ratio the dashboard
  *  shows is derived at render time from these. [deferralTurns] is the denominator for the tool

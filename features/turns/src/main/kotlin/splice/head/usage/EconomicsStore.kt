@@ -60,9 +60,21 @@ private const val MAX_FILE_BYTES = 1L * 1024 * 1024
 private const val ECONOMICS_FLUSH_DELAY_MS = 1_000L
 
 /** One hour's client turns and code-mode steps, grouped without widening the economics bucket. */
-public data class EconomicsTurnCounts(val turns: Long = 0, val localSteps: Long = 0) {
+public data class EconomicsTurnCounts(
+    val turns: Long = 0,
+    val localSteps: Long = 0,
+    /** Posted turns missing input or output usage; numeric sums below include only observed values. */
+    val unreportedUsageTurns: Long = 0,
+) {
     public fun add(localStep: Boolean): EconomicsTurnCounts =
         if (localStep) copy(localSteps = localSteps + 1) else copy(turns = turns + 1)
+
+    public fun record(turn: TurnEconomics): EconomicsTurnCounts {
+        val next = add(turn.localStep)
+        if (turn.localStep) return next
+        val unknown = turn.inTokens == null || turn.outTokens == null
+        return if (unknown) next.copy(unreportedUsageTurns = next.unreportedUsageTurns + 1) else next
+    }
 }
 
 /** One hour of a head's economics. Sums only — ratios are derived by the reader, never stored,
@@ -112,16 +124,11 @@ public class EconomicsStore(
         val hour = clock() / HOUR_MS * HOUR_MS
         val localStep = turn.localStep
         val usd = price.usd(turn.model, turn.counters())
-        val absorbed = turn.absorbed
         synchronized(lock) {
             loadUnderLock()
             val b = buckets[hour] ?: EconomicsBucket(hour)
-            buckets[hour] = b.copy(
-                counts = b.counts.add(localStep),
-                inTokens = b.inTokens + turn.inTokens + absorbed.inputTokens,
-                cachedTokens = b.cachedTokens + turn.cachedTokens + absorbed.cachedTokens,
-                cacheWriteTokens = b.cacheWriteTokens + turn.cacheWriteTokens + absorbed.cacheWriteTokens,
-                outTokens = b.outTokens + turn.outTokens,
+            buckets[hour] = tokens(b, turn).copy(
+                counts = b.counts.record(turn),
                 reqBytes = b.reqBytes + (turn.reqBytes ?: 0),
                 upstreamBytes = b.upstreamBytes + (turn.upstreamBytes ?: 0),
                 toolsEager = b.toolsEager + (turn.toolsEager ?: 0),
@@ -138,10 +145,18 @@ public class EconomicsStore(
         CoalescedFlush.scheduleCoalesced(ECONOMICS_FLUSH_DELAY_MS, writeScheduled) { flushScheduled() }
     }
 
+    /** Numeric sums are observed values only; the count beside them records unknown turns. */
+    private fun tokens(b: EconomicsBucket, turn: TurnEconomics): EconomicsBucket = b.copy(
+        inTokens = b.inTokens + (turn.inTokens ?: 0) + turn.absorbed.inputTokens,
+        cachedTokens = b.cachedTokens + (turn.cachedTokens ?: 0) + turn.absorbed.cachedTokens,
+        cacheWriteTokens = b.cacheWriteTokens + (turn.cacheWriteTokens ?: 0) + turn.absorbed.cacheWriteTokens,
+        outTokens = b.outTokens + (turn.outTokens ?: 0),
+    )
+
     private fun deferralTurn(turn: TurnEconomics): Int =
         if (turn.localStep || turn.toolsEager == null) 0 else 1
 
-    /** V4-221: the turn's dollars into its hour; null [usd] is a turn with no card. A null hour (one
+    /** V4-221: the turn's dollars into its hour; null [usd] is a turn with no card or incomplete usage. A null hour (one
      *  written before the field) stays null: a partial sum must not read as the hour's cost. */
     private fun priced(b: EconomicsBucket, usd: Double?, localStep: Boolean): EconomicsBucket = b.copy(
         costUsd = b.costUsd?.plus(usd ?: 0.0),
@@ -230,6 +245,7 @@ public class EconomicsStore(
                             put("hour", b.hour)
                             put("turns", b.turns)
                             put("local_steps", b.localSteps)
+                            put("unreported_usage_turns", b.counts.unreportedUsageTurns)
                             put("in_tokens", b.inTokens)
                             put("cached_tokens", b.cachedTokens)
                             put("cache_write_tokens", b.cacheWriteTokens)
@@ -266,7 +282,11 @@ public class EconomicsStore(
         val hour = long(o, "hour") ?: return null
         return EconomicsBucket(
             hour = hour,
-            counts = EconomicsTurnCounts(longOr(o, "turns"), longOr(o, "local_steps")),
+            counts = EconomicsTurnCounts(
+                longOr(o, "turns"),
+                longOr(o, "local_steps"),
+                longOr(o, "unreported_usage_turns"),
+            ),
             inTokens = longOr(o, "in_tokens"),
             cachedTokens = longOr(o, "cached_tokens"),
             // THE MIGRATION, and it is deliberately the absent-field default rather than a version

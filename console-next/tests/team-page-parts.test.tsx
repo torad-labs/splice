@@ -47,6 +47,30 @@ describe('the team page', () => {
     expect(html).not.toContain('Open seat');
     expect(html).not.toContain('No turns yet');
   });
+  test('two seats bound to one busy session list one working session', () => {
+    const html = render(client => {
+      client.setQueryData(['teams', '/api/teams'], { teams: [{
+        ...team, goal: '', slots: team.slots.map(slot => ({ ...slot, session: 'sess-1' })),
+      }] });
+      const sessions = client.getQueryData<{ sessions: Record<string, unknown>[] }>(['sessions', '/api/sessions']);
+      client.setQueryData(['sessions', '/api/sessions'], { sessions: sessions?.sessions.map(row => ({ ...row, status: 'busy' })) });
+    });
+    expect(html).toContain('One working session is listed.');
+    expect(html).not.toContain('Two working sessions are listed.');
+    expect(html.match(/>Working</g)).toHaveLength(2);
+  });
+  test('distinct busy session bindings retain their separate working-session count', () => {
+    const html = render(client => {
+      client.setQueryData(['teams', '/api/teams'], { teams: [{
+        ...team, goal: '', slots: team.slots.map((slot, index) => ({ ...slot, session: 'sess-' + (index + 1) })),
+      }] });
+      client.setQueryData(['sessions', '/api/sessions'], { sessions: ['sess-1', 'sess-2'].map(session_id => ({
+        session_id, name: session_id, head: 'claude-grok', availability: 'live', status: 'busy', pid: 1,
+        kind: null, version: null, cwd: null, status_updated_at: null, started_at: null, updated_at: NOW, address: null,
+      })) });
+    });
+    expect(html).toContain('Two working sessions are listed.');
+  });
   test('retained message requests do not promise successful delivery', () => {
     const day = dayOf(NOW, 0);
     // Delivery refusal is not represented in this call-observer payload.

@@ -56,10 +56,10 @@ export function TeamPage() {
   const colourOf = colourFromRegistry(status.data);
   const labelOf = (key: string): string => heads.data?.heads.find((head) => head.key === key)?.label ?? key;
   const seats = seatsOf(team);
-  const working = seats.filter((slot) => {
+  const working = new Set(seats.filter((slot) => {
     const row = sessionIn(slot, rows);
     return row !== null && stateOf(row) === 'working';
-  }).length;
+  }).map(slot => slot.session)).size;
   const tallies = new Map((economics.data?.slots ?? []).map((tally) => [tally.slot, tally] as const));
   const nameOf = (session: string): string => {
     const slot = team.slots.find((candidate) => candidate.id === session);

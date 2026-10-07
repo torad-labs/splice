@@ -2,6 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import type { TeamRow } from '../src/types/teams';
+import type { SessionsPayload } from '../src/types/sessions';
 import { env, FIRST_READ_MS, open, read } from './support';
 import { sendHandOff, STACK } from './stack';
 
@@ -21,6 +22,39 @@ function days() {
   const now = new Date();
   const midnight = (offset: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset).getTime();
   return { today: midnight(0), yesterday: midnight(-1), older: midnight(-2), tomorrow: midnight(1) };
+}
+
+for (const width of [1440, 390]) {
+  test(`two bound team seats count their one busy session once at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    await page.route('**/api/teams', route => route.fulfill({ json: { teams: [{
+      ...TEAM, goal: '', slots: TEAM.slots.map(slot => ({ ...slot, session: STACK.sender.id })),
+    }] } }));
+    await page.route('**/api/sessions', async route => {
+      const response = await route.fetch();
+      const body = await response.json() as SessionsPayload;
+      const sender = body.sessions.find(row => row.session_id === STACK.sender.id);
+      if (sender === undefined) throw new Error('isolated team fixture has no sender session');
+      await route.fulfill({ response, json: { ...body, sessions: [{
+        ...sender, status: 'busy', availability: 'live', updated_at: Date.now(), status_updated_at: Date.now(),
+      }] } });
+    });
+    await page.route('**/api/teams/' + TEAM.id + '/chat*', route => route.fulfill({ json: {
+      team_id: TEAM.id, day_start_epoch_millis: days().today, packet_note: '', messages: [],
+    } }));
+    await page.route('**/api/teams/' + TEAM.id + '/activity*', route => route.fulfill({ json: {
+      team_id: TEAM.id, day_start_epoch_millis: days().today, entries: [],
+    } }));
+    await page.route('**/api/teams/' + TEAM.id + '/economics', route => route.fulfill({ json: {
+      team_id: TEAM.id, heads_read: [], unattributed_turns: 0, oldest_turn_epoch_millis: null, roles: [], slots: [],
+    } }));
+    const faults = await open(page, 'teams/' + TEAM.id);
+    await expect(page.locator('header.page-head .lede')).toHaveText('No goal written. One working session is listed.');
+    await expect(page.locator('.seatrows > li')).toHaveCount(2);
+    await expect(page.locator('.seatrows .state').filter({ hasText: 'Working' })).toHaveCount(2);
+    expect(faults.pageErrors).toEqual([]);
+    expect(faults.failedReads).toEqual([]);
+  });
 }
 
 test('team entry reads immediately and yesterday chat and activity remain selectable independently of empty today', async ({ page }) => {

@@ -19,5 +19,16 @@ rule:
                   kind: value_argument
                   regex: ^reported\s*=
     - pattern: import splice.core.turn.Usage as $ALIAS
-    - pattern: typealias $ALIAS = Usage
-    - pattern: typealias $ALIAS = splice.core.turn.Usage
+    - all:
+        - kind: type_alias
+        - has:
+            kind: user_type
+            regex: ^(splice\s*\.\s*core\s*\.\s*turn\s*\.\s*)?Usage$
+    - all:
+        - kind: callable_reference
+        - has:
+            kind: simple_identifier
+            regex: ^Usage$
+    - all:
+        - kind: navigation_suffix
+        - regex: ^::\s*Usage$

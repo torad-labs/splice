@@ -8,6 +8,8 @@ valid:
   - 'val u = OtherUsage()'
   - 'import splice.core.turn.Usage'
   - 'val u = prior.copy(outputTokens = 7)'
+  - 'val u: Usage = prior'
+  - 'val u: splice.core.turn.Usage = prior'
 invalid:
   - 'val u = Usage()'
   - 'val u = Usage(100, 7)'
@@ -17,3 +19,7 @@ invalid:
   - 'import splice.core.turn.Usage as Counted; val u = Counted()'
   - 'typealias Counted = Usage; val u = Counted()'
   - 'typealias Counted = splice.core.turn.Usage; val u = Counted()'
+  - 'typealias Bill<T> = splice.core.turn.Usage; val u = Bill<String>(inputTokens = 100)'
+  - 'typealias Bill<T> = Usage; val u = Bill<String>(inputTokens = 100)'
+  - 'val make: (Long) -> Usage = ::Usage'
+  - 'val make: (Long) -> Usage = splice.core.turn::Usage'

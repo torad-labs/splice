@@ -39,9 +39,14 @@ class WrapGuardTest {
         assertTrue(rig.head.wrap() is WrapResult.Ok)
         guard(rig).use { guard ->
             guard.start()
+            // The start-up reconcile races the first update and may serve it, so the first update only proves the
+            // guard is past its start. Only the directory event can serve the second within the wait: the tick is
+            // 30 s. Each wait is for the result, not the log line, which a reconcile that sees the new version
+            // beside the recorded one before the updater's rename also writes.
+            rig.update("2.1.291")
+            assertTrue(waitFor { wrapped(rig) }, "not wrapped after the first update: $lines")
             val next = rig.update("2.1.292")
-            assertTrue(rewrapped.await(EVENT_WAIT_SECONDS, TimeUnit.SECONDS), "not wrapped again: $lines")
-            assertEquals(rig.shim.toRealPath(), rig.cmd.toRealPath())
+            assertTrue(waitFor { wrapped(rig) }, "not wrapped again: $lines")
             assertEquals(next.toRealPath().toString(), rig.head.realBinaryPath())
         }
     }
@@ -81,6 +86,8 @@ class WrapGuardTest {
             assertTrue(waitFor { lines.any { line -> "cannot watch $missing" in line } }, "no line named it: $lines")
         }
     }
+
+    private fun wrapped(rig: WrapRig): Boolean = rig.cmd.toRealPath() == rig.shim.toRealPath()
 
     private fun waitFor(condition: () -> Boolean): Boolean {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(EVENT_WAIT_SECONDS)

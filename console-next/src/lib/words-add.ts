@@ -51,8 +51,6 @@ export const AD = {
   checking: 'Checking…',
   checkLive: 'Also send one short turn',
   checksTitle: 'Checks',
-  windowFitsDiagnostic: 'declared rows fit the window sizes the provider lists',
-  windowFits: 'No declared window exceeded a reported provider limit. Models without a reported limit were not checked.',
   passed: 'Passed',
   failed: 'Failed',
   save: 'Save and restart',

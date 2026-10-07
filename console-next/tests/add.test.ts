@@ -2,6 +2,7 @@
 import { describe, expect, test } from 'vitest';
 import { asksAnything, autoSaveTarget, checkDetail, draftFor, loginRunning, openingField, planChoices, planLabel, ready, requestOf } from '../src/lib/add';
 import type { AddProfile, AddView } from '../src/types/add';
+import { AD } from '../src/lib/words-add';
 
 const profile = (over: Partial<AddProfile> = {}): AddProfile => ({
   name: 'openrouter', summary: 's', auth_kind: 'api-key', requires_key: true, base_url: 'https://x', head_key: 'openrouter', command: '', models: [], asks: [], ...over,
@@ -11,11 +12,30 @@ const view = (over: Partial<AddView> = {}): AddView => ({
   credential: { present: false, detail: 'none' }, sign_in: null, checks: null, saved: null, ...over,
 });
 
-test('the successful window check uses operator words without replacing a failed or unknown diagnostic', () => {
-  const detail = 'declared rows fit the window sizes the provider lists';
-  expect(checkDetail({ name: 'windows', ok: true, detail })).toBe('No declared window exceeded a reported provider limit. Models without a reported limit were not checked.');
-  expect(checkDetail({ name: 'windows', ok: false, detail: 'm declares 200000, provider serves 100000' })).toBe('m declares 200000, provider serves 100000');
-  expect(checkDetail({ name: 'future', ok: true, detail })).toBe(detail);
+describe('producer-owned window diagnostics', () => {
+  // AddChecks.kt:166–168, with the model id and token counts substituted verbatim.
+  const branches = [
+    { kind: 'unchecked', ok: true, detail: 'b unchecked: provider lists no window size' },
+    { kind: 'oversized', ok: false, detail: 'm declares 200000, provider serves 100000' },
+    { kind: 'fits', ok: true, detail: 'a fits: declares 128000, provider serves 128000' },
+  ];
+  const retired = 'declared rows fit the window sizes the provider lists';
+  test.each(branches)('the actual $kind branch stays verbatim', ({ ok, detail }) => {
+    expect(detail).not.toBe(retired);
+    expect(checkDetail({ name: 'windows', ok, detail })).toBe(detail);
+  });
+  test('only the retired synthetic diagnostic reached the old summary rewrite', () => {
+    expect(branches.every(({ detail }) => detail !== retired)).toBe(true);
+    expect(checkDetail({ name: 'windows', ok: true, detail: retired })).toBe(retired);
+  });
+  test('the retired window summary strings have no production entry', () => {
+    expect(AD).not.toHaveProperty('windowFitsDiagnostic');
+    expect(AD).not.toHaveProperty('windowFits');
+  });
+  test('unknown checks keep their producer diagnostic too', () => {
+    const detail = 'synthetic future check detail';
+    expect(checkDetail({ name: 'future', ok: true, detail })).toBe(detail);
+  });
 });
 
 test('a window result keeps checked and unchecked rows without claiming every model fits', () => {

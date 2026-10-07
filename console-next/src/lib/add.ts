@@ -2,12 +2,11 @@
 // asked (`asks`): a plan name when the catalogue has none, a provider address when the provider has no fixed one, and models
 // when the catalogue lists none. A blank field sends nothing, so the daemon's own default holds (AddRequestReader).
 import type { AddAsk, AddCheck, AddProfile, AddRequest, AddView } from '../types/add';
-import { AD, PLAN_LABELS, PLAN_NAMES, PLAN_WHY } from './words-add';
+import { PLAN_LABELS, PLAN_NAMES, PLAN_WHY } from './words-add';
 
-/** The known successful window check in operator words; failures and other checks keep their diagnostic. */
+/** Keep the daemon's per-model diagnostics verbatim, just like every other check. */
 export function checkDetail(check: AddCheck): string {
-  return check.name === 'windows' && check.ok && check.detail === AD.windowFitsDiagnostic
-    ? AD.windowFits : check.detail;
+  return check.detail;
 }
 
 /** A field the daemon can ask to correct while opening an add. */

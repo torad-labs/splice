@@ -45,6 +45,7 @@ async function fractions(page: Page) {
   });
 }
 test("a below-fold pin reloads at its full-page position and a verdict persists", async () => {
+  const drawnWidth = await page.locator("#screen-canvas").evaluate((el) => el.clientWidth);
   const placed = await point(page, .25, .72);
   await page.locator("#note").fill("Synthetic feedback about the lower page.");
   await page.getByRole("button", { name: "Approve", exact: true }).click();
@@ -54,7 +55,7 @@ test("a below-fold pin reloads at its full-page position and a verdict persists"
   expect(persisted.pins[0].x).toBeCloseTo(placed.x, 5);
   expect(persisted.pins[0].y).toBeCloseTo(placed.y, 5);
   expect(persisted.pins[0].at).toBeTruthy();
-  expect(persisted.pins[0].width).toBe(1440);
+  expect(persisted.pins[0].width).toBe(drawnWidth);
   await page.reload();
   await expect(page.locator("#note")).toHaveValue("Synthetic feedback about the lower page.");
   await expect.poll(() => page.locator("#screen-canvas").evaluate((el) => el.scrollTop)).toBeGreaterThan(100);
@@ -66,17 +67,24 @@ test("a below-fold pin reloads at its full-page position and a verdict persists"
   await expect.poll(async () => (await fractions(page)).y).toBeCloseTo(placed.y, 4);
   position = await fractions(page);
   expect(position.x).toBeCloseTo(placed.x, 4);
-  expect(await page.locator("#mock").evaluate((el) => el.clientWidth)).toBe(1440);
+  expect(await page.locator("#mock").evaluate((el) => el.clientWidth)).toBe(drawnWidth);
   await page.getByRole("button", { name: "Close pin editor" }).click();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect.poll(() => page.locator("#mock").evaluate((el) => el.clientWidth)).toBe(390);
+  await expect.poll(() => page.locator("#mock").evaluate((el) => el.clientWidth)).toBe(388);
   await expect.poll(() => page.locator("#mock").evaluate((el) => el.clientHeight)).toBe(9000);
   await page.locator(".note-item").click();
-  await expect.poll(() => page.locator("#mock").evaluate((el) => el.clientWidth)).toBe(1440);
+  await expect.poll(() => page.locator("#mock").evaluate((el) => el.clientWidth)).toBe(drawnWidth);
   await expect.poll(() => page.locator("#mock").evaluate((el) => el.clientHeight)).toBe(5600);
   const restored = await fractions(page);
   expect(restored.x).toBeCloseTo(placed.x, 4);
   expect(restored.y).toBeCloseTo(placed.y, 4);
+  expect(await page.locator("#mock").evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a)).toBe(1);
+  expect(await page.locator("#screen-canvas").evaluate((el) => el.scrollWidth > el.clientWidth && el.scrollLeft > 0)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole("button", { name: "Fit width", exact: true }).click();
+  await expect.poll(() => page.locator("#mock").evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a)).toBeLessThan(1);
+  await page.getByRole("button", { name: "Actual size", exact: true }).click();
+  await expect.poll(() => page.locator("#mock").evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a)).toBe(1);
 }, 15_000);
 test("the review chrome fits wide, light, and narrow viewports without horizontal clipping", async () => {
   for (const view of [
@@ -90,7 +98,7 @@ test("the review chrome fits wide, light, and narrow viewports without horizonta
     await expect(page.locator("html")).toHaveAttribute("data-theme", view.colorScheme);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await expect(page.getByRole("button", { name: "Add a pin", exact: true })).toBeVisible();
-    await expect.poll(() => page.locator("#mock").evaluate((el) => el.clientWidth)).toBe(view.width);
+    await expect.poll(() => page.locator("#mock").evaluate((el) => el.clientWidth)).toBe(view.width - 2);
     for (const id of ["approve", "decline"]) {
       const bounds = await page.locator(`#${id}`).boundingBox();
       expect(bounds!.y).toBeGreaterThanOrEqual(0);
@@ -100,6 +108,46 @@ test("the review chrome fits wide, light, and narrow viewports without horizonta
     await page.locator("#note").fill("Synthetic feedback: make the table labels easier to scan.");
     await saved(page);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.getByRole("button", { name: "Delete pin", exact: true }).click();
+    await saved(page);
+  }
+});
+test("mocks render at native scale across viewer sizes", async () => {
+  const measured = [];
+  for (const view of [{ width: 3394, height: 1889 }, { width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(view);
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    measured.push(await page.locator("#mock").evaluate((el) => ({
+      window: window.innerWidth,
+      layout: el.clientWidth,
+      canvas: document.getElementById("screen-canvas")!.clientWidth,
+      scale: new DOMMatrix(getComputedStyle(el).transform).a,
+    })));
+  }
+  console.log("Native scale proof:", JSON.stringify(measured));
+  expect(measured.map((view) => view.scale)).toEqual([1, 1, 1]);
+  for (const view of measured) {
+    expect(view.layout).toBeGreaterThanOrEqual(view.window * .97);
+    expect(view.layout).toBe(view.canvas);
+  }
+});
+test("shell text stays readable and the editor does not cover its pin", async () => {
+  const sizes = await page.locator(".shell").evaluate((root) => Array.from(root.querySelectorAll("h1,h2,h3,p,span,strong,summary,button,textarea,code,label"))
+    .map((el) => Number.parseFloat(getComputedStyle(el).fontSize)));
+  expect(Math.min(...sizes)).toBeGreaterThanOrEqual(14);
+  for (const view of [{ width: 3394, height: 1889 }, { width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(view);
+    await expect.poll(() => page.locator("#mock").evaluate((el) => el.clientWidth)).toBe(view.width - 2);
+    await page.getByRole("button", { name: "Add a pin", exact: true }).click();
+    const pin = await page.locator(".pin.selected").boundingBox();
+    const card = await page.locator("#editor").boundingBox();
+    const canvas = await page.locator("#screen-canvas").boundingBox();
+    expect(card!.x >= pin!.x + pin!.width || card!.x + card!.width <= pin!.x ||
+      card!.y >= pin!.y + pin!.height || card!.y + card!.height <= pin!.y).toBe(true);
+    expect(card!.x).toBeGreaterThanOrEqual(canvas!.x);
+    expect(card!.x + card!.width).toBeLessThanOrEqual(canvas!.x + canvas!.width);
+    expect(card!.y).toBeGreaterThanOrEqual(canvas!.y);
+    expect(card!.y + card!.height).toBeLessThanOrEqual(canvas!.y + canvas!.height);
     await page.getByRole("button", { name: "Delete pin", exact: true }).click();
     await saved(page);
   }

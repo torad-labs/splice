@@ -18,7 +18,7 @@ let current = "";
 let active = "";
 let pageHeight = 1889;
 let layoutWidth = window.innerWidth;
-let actualSize = false;
+let fitWidth = false;
 let saving = false;
 let shouldScroll = false;
 const pending: Mutation[] = [];
@@ -149,12 +149,47 @@ function renderPins(resetEditor = true) {
   });
   const selected = data.pins.find((pin) => pin.id === active);
   element("editor").hidden = !selected;
-  element("no-pins").hidden = data.pins.length > 0;
   element("pin-count").textContent = data.pins.length ? `${data.pins.length} pin${data.pins.length === 1 ? "" : "s"}` : "No pins";
   if (selected) {
     element("pin-label").textContent = `Pin ${data.pins.indexOf(selected) + 1}`;
     if (resetEditor) note.value = selected.text;
+    positionEditor();
   }
+}
+function positionEditor() {
+  const editor = element("editor");
+  const marker = layer.querySelector<HTMLElement>(".pin.selected");
+  if (editor.hidden || !marker) return;
+  const bounds = canvas.getBoundingClientRect();
+  const pin = marker.getBoundingClientRect();
+  const gap = 12;
+  const margin = 8;
+  editor.style.maxHeight = `${canvas.clientHeight - margin * 2}px`;
+  const width = editor.offsetWidth;
+  const height = editor.offsetHeight;
+  const left = pin.left - bounds.left;
+  const right = pin.right - bounds.left;
+  const top = pin.top - bounds.top;
+  const bottom = pin.bottom - bounds.top;
+  const limit = (value: number, end: number) => Math.max(margin, Math.min(value, end - margin));
+  let x: number;
+  let y: number;
+  if (canvas.clientWidth - right >= width + gap + margin) {
+    x = right + gap;
+    y = limit(top, canvas.clientHeight - height);
+  } else if (left >= width + gap + margin) {
+    x = left - gap - width;
+    y = limit(top, canvas.clientHeight - height);
+  } else {
+    const below = canvas.clientHeight - bottom - gap - margin;
+    const above = top - gap - margin;
+    const down = below >= height || below >= above;
+    editor.style.maxHeight = `${Math.max(1, down ? below : above)}px`;
+    x = limit((left + right - width) / 2, canvas.clientWidth - width);
+    y = down ? bottom + gap : top - gap - editor.offsetHeight;
+  }
+  editor.style.left = `${x}px`;
+  editor.style.top = `${y}px`;
 }
 function openPin(id: string) {
   active = id;
@@ -166,10 +201,10 @@ function openPin(id: string) {
 }
 function fit() {
   const pin = review().pins.find((p) => p.id === active);
-  const width = pin?.width ?? window.innerWidth;
+  const width = pin?.width ?? canvas.clientWidth;
   if (width !== layoutWidth) pageHeight = 1889;
   layoutWidth = width;
-  const scale = actualSize ? 1 : canvas.clientWidth / layoutWidth;
+  const scale = fitWidth ? Math.min(1, canvas.clientWidth / layoutWidth) : 1;
   page.style.width = `${layoutWidth * scale}px`;
   page.style.height = `${pageHeight * scale}px`;
   frame.style.width = `${layoutWidth}px`;
@@ -180,9 +215,11 @@ function fit() {
     canvas.scrollTo({ top: pin.y * pageHeight * scale - canvas.clientHeight / 2, left: pin.x * layoutWidth * scale - canvas.clientWidth / 2 });
     shouldScroll = false;
   }
+  positionEditor();
 }
 function select(id: string) {
   current = id;
+  element<HTMLDetailsElement>("switcher").open = false;
   active = "";
   pageHeight = 1889;
   location();
@@ -265,14 +302,16 @@ for (const [id, direction] of [["previous", -1], ["next", 1]] as const) {
   };
 }
 element("zoom").onclick = () => {
-  actualSize = !actualSize;
-  element("zoom").textContent = actualSize ? "Fit width" : "Actual size";
-  element("zoom").setAttribute("aria-pressed", String(actualSize));
+  fitWidth = !fitWidth;
+  element("zoom").textContent = fitWidth ? "Actual size" : "Fit width";
+  element("zoom").setAttribute("aria-pressed", String(fitWidth));
   shouldScroll = true;
   fit();
 };
 element("retry").onclick = () => void flush();
 new ResizeObserver(() => { shouldScroll = !!active; fit(); }).observe(canvas);
+new ResizeObserver(positionEditor).observe(element("editor"));
+canvas.addEventListener("scroll", positionEditor, { passive: true });
 window.addEventListener("message", (event) => {
   if (event.source !== frame.contentWindow || event.data?.type !== "screen-review:size") return;
   const height = event.data.height;

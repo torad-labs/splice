@@ -1,5 +1,5 @@
 // NEW: local review persistence, discovery, and HTTP boundary controls over synthetic files only.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { discover, parseMutation, ReviewStore } from "./store.ts";
@@ -74,6 +74,21 @@ describe("screen review", () => {
     expect(discover(f.screensRoot).map((screen) => [screen.id, screen.ready])).toEqual([
       ["01-overview", true], ["02-activity", true], ["03-linked", false],
     ]);
+  });
+  test("shell assets stay in the startup bundle snapshot during source edits", async () => {
+    const f = fixture();
+    const server = await startReview({ ...f, port: 0 });
+    const files = spyOn(Bun, "file").mockImplementation(() => { throw new Error("Synthetic source edit after startup"); });
+    try {
+      for (const path of ["/", "/style.css", "/app.js"]) {
+        const result = await fetch(new URL(path, server.url));
+        expect(result.status).toBe(200);
+        expect((await result.text()).length).toBeGreaterThan(0);
+      }
+    } finally {
+      files.mockRestore();
+      server.stop(true);
+    }
   });
   test("the server binds loopback, rejects foreign writes, and retains approved feedback", async () => {
     const f = fixture();

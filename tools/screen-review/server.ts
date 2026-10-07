@@ -38,7 +38,11 @@ export async function startReview(options: ReviewOptions) {
   const store = new ReviewStore(options.feedbackFile);
   const built = await Bun.build({ entrypoints: [join(import.meta.dir, "ui.ts")], target: "browser", format: "esm", minify: false });
   if (!built.success) throw new Error("The review interface could not be built.");
-  const javascript = await built.outputs[0]!.text();
+  const [javascript, html, css] = await Promise.all([
+    built.outputs[0]!.text(),
+    Bun.file(join(import.meta.dir, "index.html")).text(),
+    Bun.file(join(import.meta.dir, "style.css")).text(),
+  ]);
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: options.port ?? 4375,
@@ -62,8 +66,8 @@ export async function startReview(options: ReviewOptions) {
         if (url.pathname === "/api/screens") return response(JSON.stringify(discover(options.screensRoot)));
         if (url.pathname === "/api/feedback") return response(JSON.stringify(store.read()));
         if (url.pathname === "/app.js") return response(javascript, 200, "text/javascript");
-        if (url.pathname === "/style.css") return response(Bun.file(join(import.meta.dir, "style.css")), 200, "text/css");
-        if (url.pathname === "/") return response(Bun.file(join(import.meta.dir, "index.html")), 200, "text/html");
+        if (url.pathname === "/style.css") return response(css, 200, "text/css");
+        if (url.pathname === "/") return response(html, 200, "text/html");
         const match = /^\/screens\/([^/]+)\/index\.html$/.exec(url.pathname);
         const id = match && decodeURIComponent(match[1]!);
         if (id && discover(options.screensRoot).some((screen) => screen.id === id && screen.ready)) {

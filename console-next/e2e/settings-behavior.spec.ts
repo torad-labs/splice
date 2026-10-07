@@ -151,6 +151,23 @@ for (const [key, label] of [['codexAuthPath', 'ChatGPT login file'], ['grokAuthP
   });
 }
 
+for (const width of [1440, 390]) {
+  test(`Storage recording switches explain their actual apply time at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    const faults = await open(page, 'settings/storage');
+    const edges = page.locator('.row').filter({ has: page.getByRole('heading', { name: 'Message edges', exact: true }) });
+    const transcripts = page.locator('.row').filter({ has: page.getByRole('heading', { name: 'Transcript view', exact: true }) });
+    await expect(edges.getByRole('switch', { name: 'Message edges', exact: true })).toBeVisible();
+    await expect(transcripts.getByRole('switch', { name: 'Transcript view', exact: true })).toBeVisible();
+    await expect.soft(edges).toContainText('Applies after splice restarts.');
+    await expect(edges).not.toContainText('Applies at once.');
+    await expect.soft(transcripts).toContainText('Applies at once.');
+    await expect(transcripts).not.toContainText('Applies after splice restarts.');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await assertHealthy(page, faults);
+  });
+}
+
 test('Storage aligns the Turn statistics title with its retention input', async ({ page }, testInfo) => {
   await page.route(url => url.pathname === '/api/kept/turns', route => route.fulfill({ json: {
     store: 'turns', state: 'on', days: 12, rows: 710932, oldest: '2026-09-01', ages_out: '2026-12-01',

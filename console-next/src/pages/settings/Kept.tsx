@@ -97,7 +97,7 @@ export function Kept({ config }: { config: ConfigPayload }) {
       <StoreRow
         store="edges"
         title={K.edges.name}
-        holds={K.edges.holds}
+        holds={`${K.edges.holds} ${K.edges.switchWhy}`}
         why={K.edges.holds}
         config={config}
         extra={() => (
@@ -125,7 +125,7 @@ export function Kept({ config }: { config: ConfigPayload }) {
       <Row title={K.wire.name} why={K.wire.holds} control={<span />} />
       <Row
         title={K.transcripts.name}
-        why={K.transcripts.holds}
+        why={`${K.transcripts.holds} ${K.transcripts.switchWhy}`}
         control={
           <span className="kept-ctl">
             <Switch label={K.transcripts.name} checked={config.effective['transcriptView'] === true} onChange={(next) => transcripts.save(next)} />

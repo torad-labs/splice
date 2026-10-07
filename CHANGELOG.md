@@ -673,8 +673,8 @@ origin.
   start. splice's own figure prices each turn at the card of the model that turn ran on, not the
   model the session is on now. It comes from a running total each head keeps per session as it
   records each turn (`<head>-session-totals.json`), rather than counting only the turns in the
-  last 256 KiB of the perf log. It reads `≥` when a
-  turn's model has no card, or when the session began before its head kept the total and the perf
+  last 256 KiB of the perf log. It reads `≥` when a turn has incomplete or missing usage, when its
+  model has no card, or when the session began before its head kept the total and the perf
   log no longer reaches its start. `splice add` writes the vendors' published API
   rates for gpt-6-sol, grok-4.7, muse-spark-1.3 and claude-opus-5-5. A card can carry a long-context tier (`long_context_over_input_tokens` with
   `long_context_input`, `long_context_cache_read`, `long_context_output` and optionally
@@ -735,6 +735,20 @@ origin.
   (`RETURN_VALUE_NOT_USED`) is an error in tests too.
 
 ### Fixed
+- **Every registered command can show help without running.** `splice <verb> --help` and
+  `splice <verb> -h` print that verb's usage and exit successfully without starting the command.
+- **An explicitly reported cached-token count of zero stays a measurement.** It is not discarded
+  as missing usage.
+- **Permanently rejected completed native input stays retired.** Code mode stops revalidating
+  it on every round, including after restart. Missing history and unfinished input are not
+  retired merely for being incomplete.
+- **Code-mode continuation rounds keep the request prefix already sent.** Within a turn, later
+  results append without rewriting the processed prefix, so its bytes and prompt-cache key stay
+  unchanged.
+- **Usage opens at once while cold history prepares.** The console names commands whose history
+  is still loading and does not present their totals as complete. Once preparation finishes,
+  the existing readers supply the complete totals. Older clients still wait for their complete
+  answer as before.
 - **An older console tab can offer Reload after a daemon restart.** The offer appears when splice
   identifies a different served build from the one the tab loaded.
 - **Storage explains when its switches apply.** Message edges changes apply after restart.
@@ -892,12 +906,15 @@ origin.
   worked in their own sessions read `Nothing sampled today`. splice now samples each session's
   latest tool call from its own turns, at most once every 30 seconds, and the client's answer to its
   own query counts as the sample when one comes.
-- **A seat's API cost includes its priced turns even when others have no rate card.** A turn on
-  a model with no card used to null that seat's dollars. The team page now shows the priced turns'
-  dollars, and shows `–` only when none of the seat's turns was priced.
-- **A project's API cost today counts the turns it could not price.** In the projects API,
-  `cost_today_usd` is the priced turns' dollars and `unpriced_turns_today` counts the rest.
-  The Usage page's API cost says how many turns were left out for having no price.
+- **Unreported usage stays visible in totals.** A turn whose provider never reported usage is
+  counted as unreported, not as a measured zero. Usage hours, project and team totals, budgets
+  and the status line retain reported token amounts and costs as lower bounds. The status line
+  marks its cost estimate `≥`. Incomplete reports keep the amounts that did arrive. A request
+  splice refused without sending it contributes exact zero cost, even without a model rate card.
+  Hourly history and project and team pages count incomplete or missing reports and explain
+  their lower bounds. Known priced amounts stay visible when other turns have no price.
+  Wholly unknown costs stay unknown. The projects API retains its priced portion in
+  `cost_today_usd` and counts incomplete prices in `unpriced_turns_today`.
 - **The claude profile prices every model it lists.** Only Opus 5.5 carried a rate card, so a turn on
   Fable 5.1, Sonnet 5 or Haiku 4.5, Claude Code's own background Haiku calls among them, counted as
   unpriced. Each now carries its card from Anthropic's pricing page, with cache writes at the 1-hour

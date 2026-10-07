@@ -121,6 +121,10 @@ function renderRail() {
 function renderPins(resetEditor = true) {
   layer.replaceChildren();
   const data = review();
+  const hasPins = data.pins.length > 0;
+  element("review").dataset.hasPins = String(hasPins);
+  element("feedback").hidden = !hasPins;
+  element("mockups").hidden = !hasPins;
   const notes = element("notes");
   notes.replaceChildren();
   data.pins.forEach((pin, index) => {

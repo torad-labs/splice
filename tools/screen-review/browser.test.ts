@@ -112,6 +112,33 @@ test("the review chrome fits wide, light, and narrow viewports without horizonta
     await saved(page);
   }
 });
+test("unannotated screens give the wide mock three quarters of the viewport", async () => {
+  await page.setViewportSize({ width: 3394, height: 1889 });
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  const measured = await page.locator("#screen-canvas").evaluate((el) => {
+    const bounds = el.getBoundingClientRect();
+    const verdict = document.getElementById("verdict-bar")!.getBoundingClientRect();
+    const visible = Math.max(0, Math.min(bounds.bottom - 1, verdict.top) - Math.max(bounds.top + 1, 0));
+    return { viewport: innerHeight, visible, share: visible / innerHeight };
+  });
+  console.log("Unannotated mock height:", JSON.stringify(measured));
+  expect(measured.share).toBeGreaterThanOrEqual(.75);
+  for (const view of [{ width: 3394, height: 1889 }, { width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(view);
+    await expect(page.locator(".feedback")).toBeHidden();
+    await expect(page.locator(".footer")).toBeHidden();
+    const canvas = await page.locator("#screen-canvas").boundingBox();
+    const caption = await page.locator(".canvas-caption").boundingBox();
+    expect(caption!.y).toBeCloseTo(canvas!.y + canvas!.height, 0);
+    await page.getByRole("button", { name: "Add a pin", exact: true }).click();
+    await expect(page.locator(".feedback")).toBeVisible();
+    await expect(page.locator(".footer")).toBeVisible();
+    await page.getByRole("button", { name: "Delete pin", exact: true }).click();
+    await saved(page);
+    await expect(page.locator(".feedback")).toBeHidden();
+    await expect(page.locator(".footer")).toBeHidden();
+  }
+});
 test("mocks render at native scale across viewer sizes", async () => {
   const measured = [];
   for (const view of [{ width: 3394, height: 1889 }, { width: 1440, height: 900 }, { width: 390, height: 844 }]) {

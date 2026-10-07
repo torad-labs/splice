@@ -52,6 +52,7 @@ h1, h2, h3 { color: var(--ink); font-weight: 560; }
 .justification p { font-size: 1rem; line-height: 1.6; overflow-wrap: anywhere; }
 .canvas-wrap { position: relative; }
 .canvas-window { position: relative; width: 100%; height: 65vh; min-height: 22rem; overflow: auto; border: 1px solid var(--line); background: #0c1012; }
+@media (min-width: 2400px) { #review[data-has-pins="false"] .canvas-window { height: calc(75vh + 2px); } }
 .screen-page { position: relative; margin: 0; overflow: hidden; min-width: 0; }
 #mock { position: absolute; height: 1889px; border: 0; transform-origin: 0 0; pointer-events: none; background: var(--panel); }
 #pin-layer { position: absolute; inset: 0; cursor: crosshair; }

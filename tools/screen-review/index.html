@@ -42,14 +42,14 @@
           </div>
         </div>
         <div class="canvas-caption"><span>Tap to pin</span><div><button id="zoom" aria-pressed="false">Fit width</button><button id="add-pin">Add a pin</button></div></div>
-        <section class="feedback" aria-label="Saved pins">
+        <section class="feedback" id="feedback" aria-label="Saved pins" hidden>
           <div class="notes-heading"><h2>Feedback</h2><span id="pin-count">No pins</span></div>
           <ul id="notes"></ul>
         </section>
       </section>
       <p id="error" role="alert" hidden></p>
     </main>
-    <footer class="footer"><span>Mockups</span><code>captures/screen-review/feedback.json</code></footer>
+    <footer class="footer" id="mockups" hidden><span>Mockups</span><code>captures/screen-review/feedback.json</code></footer>
     <div class="verdict-row" id="verdict-bar" hidden><p id="verdict-label">Not reviewed</p><div><button id="decline" class="decline">Decline</button><button id="approve" class="approve">Approve</button></div></div>
   </div>
 </body>

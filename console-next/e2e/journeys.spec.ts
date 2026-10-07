@@ -1,10 +1,100 @@
 // NEW: V4-444 — replacement-console journeys over real daemon payloads and explicit synthetic source controls.
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { fingerprint } from '../src/lib/stale-page';
 import { STACK } from './stack';
 import type { SessionsPayload } from '../src/types/sessions';
 import type { ProjectsPayload } from '../src/types/projects';
 import { FINISHED } from './setup';
 import { assertHealthy, env, open, read, watch } from './support';
+
+async function staleFixture(page: Page, untagged = false) {
+  const state = { boot: 1, different: false, rereads: 0, healthReads: 0 };
+  await page.route(url => url.pathname === '/health', async route => {
+    const response = await route.fetch();
+    const health = await response.json() as Record<string, unknown>;
+    await route.fulfill({ response, json: { ...health, bootedAtEpochMillis: state.boot } });
+    state.healthReads++;
+  });
+  await page.route(url => url.pathname === '/', async route => {
+    const response = await route.fetch();
+    const served = await response.text();
+    const loaded = untagged ? served.replace(/<meta name="splice-page-fingerprint" content="[a-f0-9]{64}">/, '') : served;
+    const reread = route.request().resourceType() !== 'document';
+    await route.fulfill({ response, body: reread && state.different ? loaded + '\n<!-- synthetic different page B -->' : loaded });
+    if (reread) state.rereads++;
+  });
+  return state;
+}
+
+const painted = (page: Page) => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+
+for (const width of [1440, 390]) {
+  test(`the packaged document matches its runtime fingerprint and opens without a stale banner at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    const initialRead = page.waitForResponse(response => new URL(response.url()).pathname === '/' && response.request().resourceType() !== 'document');
+    const faults = await open(page, 'accounts');
+    await (await initialRead).finished();
+    const response = await page.request.get(env('CONSOLE_E2E_BASE') + '/');
+    expect(response.ok()).toBe(true);
+    const served = await response.text();
+    await expect(page.locator('meta[name="splice-page-fingerprint"]')).toHaveCount(1);
+    const loaded = await page.locator('meta[name="splice-page-fingerprint"]').getAttribute('content');
+    expect(loaded).toBe(await fingerprint(served));
+    expect(await fingerprint(served + '<!-- synthetic changed bytes with a copied tag -->')).not.toBe(loaded);
+    await painted(page);
+    await expect(page.locator('.stale-page')).toHaveCount(0);
+    expect(faults.pageErrors).toEqual([]);
+    expect(faults.failedReads).toEqual([]);
+  });
+  test(`the loaded document stays current after a different first reread and its own page returns at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    const state = await staleFixture(page);
+    state.different = true;
+    const faults = await open(page, 'accounts');
+    await expect.poll(() => state.rereads).toBe(1);
+    state.different = false;
+    state.boot++;
+    await expect.poll(() => state.rereads, { timeout: 25_000 }).toBe(2);
+    await painted(page);
+    await expect(page.locator('.stale-page')).toHaveCount(0);
+    expect(faults.pageErrors).toEqual([]);
+    expect(faults.failedReads).toEqual([]);
+  });
+  test(`a changed served document offers reload and clears when the loaded page returns at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    const state = await staleFixture(page);
+    const faults = await open(page, 'accounts');
+    await expect.poll(() => state.rereads).toBe(1);
+    await painted(page);
+    await expect(page.locator('.stale-page')).toHaveCount(0);
+    state.different = true;
+    state.boot++;
+    await expect(page.locator('.stale-page')).toHaveCount(1, { timeout: 25_000 });
+    await expect(page.locator('.stale-page')).toContainText('The served page changed after this tab opened');
+    await expect(page.getByRole('button', { name: 'Reload the page', exact: true })).toBeVisible();
+    state.different = false;
+    state.boot++;
+    await expect.poll(() => state.rereads, { timeout: 25_000 }).toBe(3);
+    await expect(page.locator('.stale-page')).toHaveCount(0);
+    expect(faults.pageErrors).toEqual([]);
+    expect(faults.failedReads).toEqual([]);
+  });
+  test(`an unstamped loaded document never claims stale after another boot at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    const state = await staleFixture(page, true);
+    const faults = await open(page, 'accounts');
+    await expect.poll(() => state.healthReads).toBe(1);
+    state.different = true;
+    state.boot++;
+    await expect.poll(() => state.healthReads, { timeout: 25_000 }).toBe(2);
+    await expect.poll(() => state.healthReads, { timeout: 25_000 }).toBe(3);
+    await painted(page);
+    await expect(page.locator('.stale-page')).toHaveCount(0);
+    expect(state.rereads).toBe(0);
+    expect(faults.pageErrors).toEqual([]);
+    expect(faults.failedReads).toEqual([]);
+  });
+}
 
 test('the key-unlock address leaves no key in the address or history entry', async ({ page }) => {
   const faults = watch(page);

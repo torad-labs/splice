@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { servedPage } from '../api/client';
 import { useHealth } from '../api/queries';
-import { fingerprint, pageStale } from '../lib/stale-page';
+import { fingerprint, loadedFingerprint, pageStale } from '../lib/stale-page';
 import { C } from './copy';
 
 /** How long a daemon that has just booted is given before the page is asked for, and how many times a refusal is asked again. */
@@ -14,21 +14,15 @@ export async function servedFingerprint(): Promise<string | null> {
   return html === null ? null : fingerprint(html);
 }
 
-/** Whether the daemon now serves a different page than this tab opened with. The tab fingerprints the page when it opens; each time the
- *  daemon boots again it asks for the page and compares. It says nothing while either answer is missing. */
+/** Compare each boot's served page with the fingerprint embedded in this tab's loaded document.
+ *  It says nothing while either identity is missing. */
 export function useStalePage(): boolean {
   const boot = useHealth().data?.bootedAtEpochMillis ?? null;
-  const [opened, setOpened] = useState<string | null>(null);
+  const [opened] = useState(loadedFingerprint);
   const [seen, setSeen] = useState<number | null>(null);
   const [stale, setStale] = useState(false);
   useEffect(() => {
-    let live = true;
-    void servedFingerprint().then((fingerprint) => { if (live) setOpened(fingerprint); });
-    return () => { live = false; };
-  }, []);
-  useEffect(() => {
-    if (boot === null || seen === boot) return;
-    if (seen === null) { setSeen(boot); return; }
+    if (opened === null || boot === null || seen === boot) return;
     let live = true;
     let timer: number | undefined;
     const ask = (left: number): void => {

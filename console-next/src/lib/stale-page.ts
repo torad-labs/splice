@@ -1,10 +1,17 @@
-// Whether the page in this tab is still the one the daemon serves. The console is one inlined HTML the daemon reads from its jar,
-// so a daemon upgraded under an open tab serves new code while the tab keeps running the old: the tab asks once when it opens and
-// once after the daemon boots again, and the two answers are compared by content, never by a version the two builds may share.
+// The build stamps the final inlined document with its content fingerprint. Rereads omit that self-tag
+// from the hash, so the baseline names the loaded code, not a later response or a shared version.
+const FINGERPRINT_META = /<meta name="splice-page-fingerprint" content="[a-f0-9]{64}">/;
 
-/** A page's identity: the SHA-256 of its text. */
+/** The identity carried by this loaded document; an unstamped page is unknown. */
+export function loadedFingerprint(): string | null {
+  if (typeof document === 'undefined') return null;
+  const value = document.querySelector<HTMLMetaElement>('meta[name="splice-page-fingerprint"]')?.content;
+  return value !== undefined && /^[a-f0-9]{64}$/.test(value) ? value : null;
+}
+
+/** A page's identity: SHA-256 of its text without the build-authored fingerprint tag. */
 export async function fingerprint(html: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(html));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(html.replace(FINGERPRINT_META, '')));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 

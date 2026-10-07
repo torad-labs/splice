@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { servedFingerprint } from '../src/app/StalePage';
 import { fingerprint, loadedFingerprint, pageStale } from '../src/lib/stale-page';
+import { pageFingerprintPlugin } from '../vite.config';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -58,6 +59,32 @@ describe('a page left open across an upgrade', () => {
     expect(await servedFingerprint()).toBeNull();
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 503 })));
     expect(await servedFingerprint()).toBeNull();
+  });
+});
+
+describe('the actual build fingerprint handler', () => {
+  async function stamp(html: string): Promise<string> {
+    const hook = pageFingerprintPlugin.generateBundle;
+    if (hook === undefined) throw new Error('fingerprint plugin has no generateBundle handler');
+    const handler = typeof hook === 'function' ? hook : hook.handler;
+    const asset = { type: 'asset', fileName: 'index.html', names: ['index.html'], originalFileNames: [], source: html };
+    await Reflect.apply(handler, undefined, [{}, { 'index.html': asset }]);
+    return asset.source;
+  }
+  test('rejects a complete fingerprint tag inside an inline script', async () => {
+    const tag = `<meta name="splice-page-fingerprint" content="${'a'.repeat(64)}">`;
+    const html = `<html><head><script>const previous = '${tag}';</script></head><body>A</body></html>`;
+    await expect(stamp(html)).rejects.toThrow('the inlined console document already contains a fingerprint tag');
+  });
+  test('rejects a head close inside an inline script', async () => {
+    const html = '<html><head><script>const previous = "</head>";</script></head><body>A</body></html>';
+    await expect(stamp(html)).rejects.toThrow('the inlined console document contains more than one head close');
+  });
+  test('stamps a single unambiguous head using the runtime fingerprint', async () => {
+    const html = '<html><head></head><body>A</body></html>';
+    const stamped = await stamp(html);
+    expect(stamped).toContain(`content="${await fingerprint(html)}"`);
+    expect(await fingerprint(stamped)).toBe(await fingerprint(html));
   });
 });
 

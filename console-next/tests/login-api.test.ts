@@ -1,25 +1,50 @@
 // The auth api's logic that is not a hook: the paths (every segment the operator chose is URL-encoded),
 // the pending-route rule (404 = the daemon does not serve it), and each write's body and method, against a
 // stubbed fetch. The client keeps module state, so each test loads a fresh copy of both modules.
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test as runTest, vi } from 'vitest';
+
+let active: { signal: AbortSignal; work: Promise<void> } | null = null;
+
+/** Vitest ends its timeout race before the body settles; keep that body's globals until it finishes. */
+function test(name: string, body: () => Promise<void>, timeout?: number): void {
+  runTest(name, ({ signal }) => {
+    const scope = { signal, work: Promise.resolve().then(body) };
+    active = scope;
+    return scope.work;
+  }, timeout);
+}
 
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
 async function fresh() {
+  const signal = active?.signal;
+  signal?.throwIfAborted();
   vi.resetModules();
   const client = await import('../src/api/client');
+  signal?.throwIfAborted();
   client.storeKey('k');
-  return { client, auth: await import('../src/api/auth') };
+  const auth = await import('../src/api/auth');
+  signal?.throwIfAborted();
+  return { client, auth };
 }
 
 const started = { id: 'L1', head: 'claudex', state: 'starting', user_code: null, verification_uri: null, browser_url: null, failure_reason: null, label: null, usage_set_aside: null };
 const sent = (fetchMock: ReturnType<typeof vi.fn>): [string, RequestInit] => fetchMock.mock.calls[0] as unknown as [string, RequestInit];
 
-beforeEach(() => {
+beforeEach(({ signal }) => {
+  active = { signal, work: Promise.resolve() };
   vi.stubGlobal('localStorage', undefined);
 });
-afterEach(() => {
-  vi.unstubAllGlobals();
+afterEach(async () => {
+  const scope = active;
+  try {
+    await scope?.work.catch(() => undefined);
+  } finally {
+    if (active === scope) {
+      active = null;
+      vi.unstubAllGlobals();
+    }
+  }
 });
 
 describe('an account edit', () => {

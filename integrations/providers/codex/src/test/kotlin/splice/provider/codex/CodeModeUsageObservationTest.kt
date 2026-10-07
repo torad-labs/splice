@@ -16,12 +16,16 @@ class CodeModeUsageObservationTest {
     private fun success(usage: Usage) = TurnOutcome.Success(false, false, usage)
 
     @Test
-    fun `every local ending preserves the posted prefix without inventing another request`() {
+    fun `local callbacks and protocol failures preserve the posted prefix without inventing another request`() {
         val prefix = Usage(inputTokens = 100, outputTokens = 3, cachedTokens = 20)
         val endings = listOf(
             success(Usage(localStep = true)),
-            TurnOutcome.Failure("synthetic local", FailureCause.CODE_MODE_PROTOCOL, FailurePhase.MID_OUTPUT),
-            TurnOutcome.ClientAbandoned(),
+            TurnOutcome.Failure(
+                "synthetic local",
+                cause = FailureCause.CODE_MODE_PROTOCOL,
+                phase = FailurePhase.MID_OUTPUT,
+                salvagedUsage = noRequestUsage,
+            ),
         )
         for (ending in endings) {
             val rounds = CodeModeOutcomeAccumulator()
@@ -52,8 +56,20 @@ class CodeModeUsageObservationTest {
     @Test
     fun `a local ending without a prefix cannot own a posted request`() {
         val rounds = CodeModeOutcomeAccumulator()
-        val result = rounds.finishLocal(success(Usage(reported = emptySet()))) as TurnOutcome.Success
+        val result = rounds.finishLocal(success(noRequestUsage)) as TurnOutcome.Success
         assertEquals(noRequestUsage, result.usage)
+    }
+
+    @Test
+    fun `local reanchor suppression cannot erase a posted abandonment's missing bill`() {
+        val prior = Usage(inputTokens = 100, outputTokens = 3, cachedTokens = 20)
+        val ending = TurnOutcome.ClientAbandoned()
+        val rounds = CodeModeOutcomeAccumulator()
+        rounds.absorb(success(prior))
+        val result = rounds.finishLocal(ending) as TurnOutcome.ClientAbandoned
+        assertEquals(prior.finalRound, result.salvagedUsage.absorbed)
+        assertTrue(PerfKeys.IN_TOKENS !in TurnBill.counters(result.salvagedUsage))
+        assertEquals(ending.salvagedUsage.history.request, result.salvagedUsage.history.request)
     }
 
     @Test

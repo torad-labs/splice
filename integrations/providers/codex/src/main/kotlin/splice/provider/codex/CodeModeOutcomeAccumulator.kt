@@ -3,7 +3,6 @@ package splice.provider.codex
 
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.core.turn.UsageRequest
 import splice.core.turn.noRequestUsage
 
 internal class CodeModeOutcomeAccumulator {
@@ -27,17 +26,14 @@ internal class CodeModeOutcomeAccumulator {
         }
     }
 
-    // A local ending posts no additional request and cannot turn prior prose into a source re-anchor.
+    // Suppress the source re-anchor, but keep the request ownership declared by the ending's producer.
     fun finishLocal(outcome: TurnOutcome): TurnOutcome = when (outcome) {
-        is TurnOutcome.Success -> mergeSuccess(success, outcome, localUsage(outcome.usage))
-        is TurnOutcome.Failure -> outcome.copy(partial = null, salvagedUsage = localUsage(outcome.salvagedUsage))
-        is TurnOutcome.ClientAbandoned -> outcome.copy(salvagedUsage = localUsage(outcome.salvagedUsage))
+        is TurnOutcome.Success -> mergeSuccess(success, outcome)
+        is TurnOutcome.Failure -> outcome.copy(partial = null, salvagedUsage = accumulatedUsage(outcome.salvagedUsage))
+        is TurnOutcome.ClientAbandoned -> outcome.copy(salvagedUsage = accumulatedUsage(outcome.salvagedUsage))
     }
 
-    private fun localUsage(latest: Usage): Usage {
-        val local = latest.copy(history = latest.history.copy(request = UsageRequest.NONE))
-        return success?.usage?.followedBy(local) ?: local
-    }
+    private fun accumulatedUsage(latest: Usage): Usage = success?.usage?.followedBy(latest) ?: latest
 
     private fun mergeSuccess(
         prior: TurnOutcome.Success?,

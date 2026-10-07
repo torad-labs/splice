@@ -132,7 +132,7 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     "CodexCodeModeSourceTerminalTest" to
         Disposition("4 @ParameterizedTest methods expand to 12 cases (8 @Test + 12 = 20)", 20),
     "CodeModeDisposedSourceTest" to
-        Disposition("3 @ParameterizedTest methods expand to 2 late-loss + 2 terminal + 3 billing cases (2 @Test + 7 = 9)", 9),
+        Disposition("3 @ParameterizedTest methods expand to 2 late-loss + 2 terminal + 3 billing cases (3 @Test + 7 = 10)", 10),
     // b40f250e8: client baselines across re-anchors add an 8-row CsvSource and two boolean sources.
     "CodexCodeModeReanchorTest" to
         Disposition("5 @ParameterizedTest methods expand to 2 + 3 + 8 + 2 + 2 cases (1 @Test + 17 = 18)", 18),

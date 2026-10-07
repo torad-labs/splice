@@ -63,3 +63,24 @@ The procedure, every time, in this order:
 6. Verify the OPEN file, not the path: sha256 of the jar fd under `/proc/<pid>/fd/` equals the
    artifact jar's sha256. Print both beside the result in one command block.
 7. One ledger note naming the sha, the CI run, the pid, and the backup path.
+
+## Never ask the operator to look at a screen no seat has looked at (2026-10-07)
+
+Operator, after splice-lead asked him to review the console: "Who reviewed and approved the
+console? ... I WANT WHOEVER APPROVED THIS BULLSHIT TO NEVER MAKE THIS MISTAKE AGAIN." Nobody had.
+splice-lead asked after checking only that the page answered 200. The last whole-console approval
+was a week old, and every later walk was at 1440 px in light mode. He uses dark mode on a wide
+screen (his Oct 7 screenshot: 3394 x 1889), where Accounts drew text over its cards, cut controls
+off at the right edge, and read as walls of explanation. Six redesigns reached him this way.
+
+Before any seat asks the operator to look at a UI (a page, the console, a comp), the asking seat:
+1. Opens every page it asks about, on the build he will see, in his setup (dark mode at his
+   width) and at 1440 in both themes, and looks at every screenshot itself.
+2. Fixes what is broken before he sees it: text over text, clipped text, content past the edge,
+   crowding, and sentences where a label or a number would do. Nothing broken goes to him as a
+   list of known issues.
+3. Sends the screenshots it judged, with the sha, in the ask.
+
+A passing test, an HTTP 200, a source review, a copy audit or another seat's older walk is not a
+look. A seat that has not done 1-3 does not ask. A finding that a number could mislead is fixed in
+the number or a label, never by adding a sentence to the page.

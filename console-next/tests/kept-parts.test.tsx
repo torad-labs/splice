@@ -2,13 +2,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { captureState, savedCapture } from '../src/lib/turns-page';
 import { CaptureControl } from '../src/pages/turns/CaptureControl';
 import { Failure, KeptTabs } from '../src/pages/turns/KeptTabs';
 import { PlansKept } from '../src/pages/settings/Kept';
 import type { CaptureWire, KeptTurn, TurnRow } from '../src/types/perf';
 import type { TopologyState } from '../src/types/topology';
+
+afterEach(() => vi.unstubAllEnvs());
 
 const row = (turn: string): TurnRow => ({ head: 'claude-solo', ts: 1_000_000, model: 'm', outcome: 'error:conn-reset', compact: false, turn });
 const kept = (id: string, sentence: string | null): Extract<KeptTurn, { read: unknown }> => ({
@@ -37,6 +39,27 @@ test('a request with a session but no reply says which lookup identity is absent
   const html = page(<KeptTabs row={unanswered} plan="Solo" tab={null} />, () => undefined);
   expect(html).toContain('No response message was recorded for this request');
   expect(html).not.toContain('This request carries no session');
+});
+
+describe('an exhausted request reset', () => {
+  const exhausted: TurnRow = { head: 'synthetic-reset', ts: 1_000_000, model: 'synthetic', outcome: 'error:all-accounts-exhausted', compact: false };
+  test.each([undefined, 'synthetic-pending-trace'])('the recorded reset stays visible without waiting for trace %s', turn => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    const reset = { earliest_reset_epoch_seconds: Date.parse('2027-01-15T18:05:00Z') / 1000 };
+    const shown = page(<Failure row={{ ...exhausted, ...reset, ...(turn === undefined ? {} : { turn }) }} />, () => undefined);
+    expect(shown).toContain('Earliest account reset: Jan 15, 10:05 AM.');
+    expect(shown).not.toMatch(/retry|Invalid Date|NaN/);
+  });
+  test('an absent reset never becomes zero or now', () => {
+    const shown = page(<Failure row={exhausted} />, () => undefined);
+    expect(shown).not.toMatch(/reset|1970|now|Invalid Date|NaN/);
+  });
+  test.each([Number('9223372036854775807'), Number('-9223372036854775808')])('a Long-range reset %s is refused as a date honestly', value => {
+    const reset = { earliest_reset_epoch_seconds: value };
+    const shown = page(<Failure row={{ ...exhausted, ...reset }} />, () => undefined);
+    expect(shown).toContain('The earliest account reset is outside the supported date range.');
+    expect(shown).not.toMatch(/Invalid Date|NaN|retry/);
+  });
 });
 
 describe('a failed turn\'s sentence', () => {

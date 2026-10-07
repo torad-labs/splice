@@ -97,6 +97,7 @@ export function TurnRowView({ line, narrow }: { line: TurnLine; narrow: NarrowTo
           {line.tags.map((tag) => <span key={tag} className="tag">{tag}</span>)}
           {line.session === null ? null : <Link className="same" to={narrow('session', line.session)}>{T.sameSession}</Link>}
         </div>
+        {line.reset === null ? null : <p className="sub">{line.reset}</p>}
       </div>
       <State tone={line.outcome.tone}>{line.outcome.word}</State>
       <span className="took">{tookText(line.tookMs)}</span>

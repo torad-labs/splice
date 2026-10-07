@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { RunningCard, TurnRowView, TurnsPage } from '../src/pages/turns/TurnsPage';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   askAndAnswer, failedCount, lineOf, linesOf, outcomeOf, pageLede, planRows, localStepsOf, runningOf, servedLocally, spokenFailure, stagesOf, turnLede, turnsLede, WINDOW_MS,
 } from '../src/lib/turns-page';
@@ -14,6 +14,8 @@ import { viewOf } from '../src/lib/requests-view';
 import { P, T } from '../src/lib/words-turns';
 import type { PerfSummaryHead, TurnRow } from '../src/types/perf';
 import { rowFromWire } from '../src/api/turns';
+
+afterEach(() => vi.unstubAllEnvs());
 
 const none = () => 'none' as const;
 const row = (over: Partial<TurnRow> = {}): TurnRow => ({ head: 'claude', ts: 1_000_000, model: 'opus-5.5', outcome: 'ok', compact: false, ...over });
@@ -486,6 +488,27 @@ describe('a turn', () => {
   const narrow = (selector: string, value: string) => `/requests?${new URLSearchParams({ [selector]: value }).toString()}`;
   const html = (over: Partial<TurnRow>, plan = 'claude-splice') =>
     renderToStaticMarkup(createElement(MemoryRouter, null, createElement(TurnRowView, { line: lineOf(row(over), () => plan, none, () => null), narrow })));
+  test('an exhausted request row prints its account reset on the viewer clock, not a retry deadline', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    const reset = { earliest_reset_epoch_seconds: Date.parse('2027-01-15T18:05:00Z') / 1000 };
+    const shown = html({ outcome: 'error:all-accounts-exhausted', ...reset });
+    expect(shown).toContain('Earliest account reset: Jan 15, 10:05 AM.');
+    expect(shown).not.toMatch(/retry|Invalid Date|NaN/);
+  });
+  test('an exhausted request row with no reset reports no reset sentence', () => {
+    const shown = html({ outcome: 'error:all-accounts-exhausted' });
+    expect(shown).not.toMatch(/reset|Invalid Date|NaN/);
+  });
+  test.each([Number('9223372036854775807'), Number('-9223372036854775808')])('a Long-range account reset %s cannot become an invalid list date', value => {
+    const reset = { earliest_reset_epoch_seconds: value };
+    const shown = html({ outcome: 'error:all-accounts-exhausted', ...reset });
+    expect(shown).toContain('The earliest account reset is outside the supported date range.');
+    expect(shown).not.toMatch(/Invalid Date|NaN|retry/);
+  });
+  test('a non-exhausted row cannot claim an account reset from a stray counter', () => {
+    const reset = { earliest_reset_epoch_seconds: Date.parse('2027-01-15T18:05:00Z') / 1000 };
+    expect(html({ outcome: 'error:rate-limited', ...reset })).not.toContain('reset');
+  });
   test('the rendered cost column distinguishes unpriced turns from a measured API-rate estimate', () => {
     expect(html({ cost_usd: null })).toContain('<span class="cost">Not priced</span>');
     expect(html({ cost_usd: null })).not.toContain('<span class="cost">–</span>');

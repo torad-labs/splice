@@ -4,7 +4,7 @@ import { useCapture, useConversation, useKeptTurn, useWire } from '../../api/tur
 import { foldTranscript } from '../../lib/conversation';
 import { fmtMs } from '../../lib/format';
 import { readable } from '../../lib/message';
-import { askAndAnswer, isClean, isStopped, outcomeOf, spokenFailure } from '../../lib/turns-page';
+import { accountResetText, askAndAnswer, isClean, isStopped, outcomeOf, spokenFailure } from '../../lib/turns-page';
 import { P } from '../../lib/words-turns';
 import type { TraceRecord, TraceSide, TurnRow } from '../../types/perf';
 import { Markdown } from '../../ui';
@@ -72,7 +72,8 @@ function Attempt({ record }: { record: TraceRecord }) {
 export function Failure({ row }: { row: TurnRow }) {
   const kept = useKeptTurn(row.head, row.turn ?? null, row.turn !== undefined);
   if (isClean(row.outcome) || row.outcome === '?') return null;
-  if (row.turn !== undefined && kept.data === undefined && !kept.isError) return <p className="failure-sentence" role="status">{P.readingFailure}</p>;
+  const reset = accountResetText(row);
+  if (row.turn !== undefined && kept.data === undefined && !kept.isError) return <p className="failure-sentence" role="status">{P.readingFailure}{reset === null ? '' : ` ${reset}`}</p>;
   const summary = kept.data === undefined || 'gone' in kept.data ? null : kept.data.read.turn;
   const refusal = row.cause === 'CONTENT_FILTERED' ? P.contentRefusal : row.cause === 'MODEL_REFUSED' ? P.modelRefusal : null;
   const sentence = refusal !== null && summary?.cause !== row.cause ? refusal : (summary?.failure_sentence ?? refusal);
@@ -80,7 +81,7 @@ export function Failure({ row }: { row: TurnRow }) {
   const spoken = sentence === null ? null : spokenFailure(sentence);
   const reason = spoken?.replace(/^\s*[a-z]/, initial => initial.toUpperCase());
   const problem = kept.isError ? failureText(kept.error) : kept.data !== undefined && 'gone' in kept.data ? kept.data.gone : null;
-  return <p className="failure-sentence">{reason?.trim() ? reason : absent}{problem === null ? '' : ` ${problem}`}</p>;
+  return <p className="failure-sentence">{reason?.trim() ? reason : absent}{problem === null ? '' : ` ${problem}`}{reset === null ? '' : ` ${reset}`}</p>;
 }
 
 function Request({ row, plan }: { row: TurnRow; plan: string }) {

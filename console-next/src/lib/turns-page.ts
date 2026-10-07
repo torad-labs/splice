@@ -109,6 +109,15 @@ function spanSaid(range: Extract<RequestsRange, { kind: 'span' }>): string {
   return range.until === null ? T.sinceTime(from) : T.between(from, new Date(range.until).toLocaleString([], SPAN_INSTANT));
 }
 
+/** The selector's reset, independent of the client retry deadline and of retained request bodies. */
+export function accountResetText(row: TurnRow): string | null {
+  const reset = row.earliest_reset_epoch_seconds;
+  if (row.outcome !== 'error:all-accounts-exhausted' || reset == null) return null;
+  const when = new Date(reset * 1000);
+  if (!Number.isFinite(when.getTime())) return P.resetOutsideDateRange;
+  return P.earliestReset(when.toLocaleString([], SPAN_INSTANT));
+}
+
 /** What the page says first. A window is the summary's sentence and a span is the daemon's count of it; either says it is
  *  reading while its read is in flight, never that the window is empty before the answer came back. `plans` is null and
  *  `matched` undefined while their reads are in flight. */
@@ -134,6 +143,7 @@ export interface TurnLine {
   /** The first 8 of the session id, the daemon's session filter. */
   session: string | null;
   outcome: OutcomeRead;
+  reset: string | null;
   /** What else the row says happened, each only when it did: a compaction, a cache hit, a retry, a switch of account. */
   tags: string[];
   compact: boolean;
@@ -165,6 +175,7 @@ export function lineOf(row: TurnRow, planLabel: (head: string) => string, colour
     account: row.account ?? null,
     session: row.session ?? null,
     outcome,
+    reset: accountResetText(row),
     tags: [
       row.compact === true ? T.compacted : null,
       (row.cached_tokens ?? 0) > 0 ? T.cacheHit : null,

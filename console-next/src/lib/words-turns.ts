@@ -133,6 +133,8 @@ export const P = {
   readingFailure: 'Reading the recorded reason…',
   contentRefusal: 'The provider stopped the answer under its content check; ask for a different task',
   modelRefusal: 'The model declined to answer; ask for a different task',
+  earliestReset: (when: string) => `Earliest account reset: ${when}.`,
+  resetOutsideDateRange: 'The earliest account reset is outside the supported date range.',
   stoppedNoReason: 'This answer stopped before it completed. No detailed stop reason was kept.',
   failureNoReason: (outcome: string) => `This request ended: ${outcome}. No detailed failure reason was kept.`,
   conversationEarlier: (n: number) => `${n} earlier ${n === 1 ? 'message' : 'messages'} not shown.`,

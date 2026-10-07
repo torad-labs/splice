@@ -41,6 +41,49 @@ async function openTurn(page: Page, head: string, at: number): Promise<void> {
   await expect.poll(() => new URL(page.url()).hash.split('?')[0]).toBe(href);
 }
 
+test.describe('the selector account reset on a request', () => {
+  test.use({ timezoneId: 'America/Los_Angeles', locale: 'en-US' });
+  for (const width of [1440, 390]) {
+    for (const shape of ['present', 'absent', 'oversized'] as const) {
+      test(`exhausted account reset ${shape} stays honest on the viewer clock at ${width}`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 1024 });
+        const at = Date.now() - 60_000;
+        const row: TurnRowWire = {
+          ts: at, model: 'synthetic', outcome: 'error:all-accounts-exhausted', compact: false,
+          session: null, account: null, cache_cold: null, turn: null, session_id: null, response_message_id: null,
+          ...(shape === 'absent' ? {} : { earliest_reset_epoch_seconds: shape === 'present'
+            ? Date.parse('2027-01-15T18:05:00Z') / 1000 : Number('9223372036854775807') }),
+        };
+        await page.route('**/api/perf/turns?*', route => {
+          const head = new URL(route.request().url()).searchParams.get('head');
+          return route.fulfill({ json: { since: at, n: 1, heads: [{
+            key: head, label: head, count: head === STACK.soloHead ? 1 : 0,
+            returned: head === STACK.soloHead ? 1 : 0, truncated: false,
+            rows: head === STACK.soloHead ? [row] : [],
+          }] } });
+        });
+        const faults = await open(page, 'requests');
+        const listed = page.locator('li.turn');
+        await expect(listed).toHaveCount(1);
+        const sentence = shape === 'present' ? 'Earliest account reset: Jan 15, 10:05 AM.'
+          : 'The earliest account reset is outside the supported date range.';
+        if (shape === 'absent') await expect(listed).not.toContainText(/reset/i);
+        else await expect(listed).toContainText(sentence);
+        await expect(listed).not.toContainText(/retry|NaN|Invalid Date| CT\./);
+        await listed.getByRole('heading').getByRole('link').click();
+        const failure = page.locator('.hero .failure-sentence');
+        await expect(failure).toBeVisible();
+        if (shape === 'absent') await expect(failure).not.toContainText(/reset/i);
+        else await expect(failure).toContainText(sentence);
+        await expect(failure).not.toContainText(/retry|NaN|Invalid Date| CT\./);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await assertHealthy(page, faults);
+        await page.unrouteAll({ behavior: 'wait' });
+      });
+    }
+  }
+});
+
 for (const width of [1440, 390]) {
   for (const shape of ['ws-refusal', 'frame-past-finish', 'frame-past-stream', 'early-frame'] as const) {
     test(`reviewed timing completion and fallback ${shape} at ${width}`, async ({ page }) => {

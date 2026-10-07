@@ -119,6 +119,8 @@ export interface TurnRow {
   outcome: string;
   /** The daemon's recorded failure cause, independent of the client retry type; absent in older rows. */
   cause?: string | null;
+  /** Exact earliest exhausted-account reset in epoch seconds, never the capped client retry deadline. */
+  earliest_reset_epoch_seconds?: number;
   /** Present only for a proven refused connection to a loopback runtime, never for an ordinary reset. */
   refused_runtime_port?: number;
   /** Null for a legacy or torn row, as `model`. */

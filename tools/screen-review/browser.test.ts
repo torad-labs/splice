@@ -1,7 +1,7 @@
 // NEW: durable full-page pin, below-fold reload, verdict, edit, and delete proofs through the real UI.
 import { afterAll, afterEach, beforeAll, beforeEach, test } from "bun:test";
 import { chromium, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fixture } from "./fixtures/fixture.ts";
 import { startReview } from "./server.ts";
@@ -127,9 +127,10 @@ test("unannotated screens give the wide mock three quarters of the viewport", as
     await page.setViewportSize(view);
     await expect(page.locator(".feedback")).toBeHidden();
     await expect(page.locator(".footer")).toBeHidden();
-    const canvas = await page.locator("#screen-canvas").boundingBox();
+    const bar = await page.locator("#verdict-bar").boundingBox();
     const caption = await page.locator(".canvas-caption").boundingBox();
-    expect(caption!.y).toBeCloseTo(canvas!.y + canvas!.height, 0);
+    expect(caption!.y).toBeGreaterThanOrEqual(bar!.y);
+    expect(caption!.y + caption!.height).toBeLessThanOrEqual(bar!.y + bar!.height);
     await page.getByRole("button", { name: "Add a pin", exact: true }).click();
     await expect(page.locator(".feedback")).toBeVisible();
     await expect(page.locator(".footer")).toBeVisible();
@@ -137,6 +138,48 @@ test("unannotated screens give the wide mock three quarters of the viewport", as
     await saved(page);
     await expect(page.locator(".feedback")).toBeHidden();
     await expect(page.locator(".footer")).toBeHidden();
+  }
+});
+test("pin controls remain reachable with a four-line justification", async () => {
+  writeFileSync(join(data.screensRoot, "01-overview", "justification.json"), JSON.stringify({
+    title: "Overview",
+    why: "Synthetic review of typography and spacing. ".repeat(10).trim(),
+    value: "Synthetic user value.",
+    dashboard: "Synthetic dashboard fit.",
+  }));
+  await page.setViewportSize({ width: 3394, height: 1889 });
+  await page.reload();
+  await expect(page.locator("#why")).toContainText("Synthetic review");
+  const lines = await page.locator("#why").evaluate((el) => Math.round(el.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(el).lineHeight)));
+  console.log("Long justification lines:", lines);
+  expect(lines).toBe(4);
+  for (const view of [{ width: 3394, height: 1889 }, { width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(view);
+    await page.evaluate(() => { window.scrollTo(0, 0); });
+    expect(await page.evaluate(() => scrollY)).toBe(0);
+    const controls = [];
+    for (const selector of [".canvas-caption > span", "#zoom", "#add-pin", "#approve", "#decline"]) {
+      controls.push(await page.locator(selector).evaluate((el) => {
+        const bounds = el.getBoundingClientRect();
+        return {
+          text: el.textContent,
+          visible: bounds.top >= 0 && bounds.bottom <= innerHeight && bounds.left >= 0 && bounds.right <= innerWidth,
+          hit: document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2) === el,
+        };
+      }));
+    }
+    console.log("Pin control reachability:", view.width, JSON.stringify(controls));
+    expect(controls.map((control) => control.visible && control.hit)).toEqual([true, true, true, true, true]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (view.width === 3394) {
+      const share = await page.locator("#screen-canvas").evaluate((el) => {
+        const bounds = el.getBoundingClientRect();
+        const bar = document.getElementById("verdict-bar")!.getBoundingClientRect();
+        return Math.max(0, Math.min(bounds.bottom - 1, bar.top) - Math.max(bounds.top + 1, 0)) / innerHeight;
+      });
+      console.log("Long justification mock share:", share);
+      expect(share).toBeGreaterThanOrEqual(.75);
+    }
   }
 });
 test("mocks render at native scale across viewer sizes", async () => {
@@ -169,6 +212,11 @@ test("shell text stays readable and the editor does not cover its pin", async ()
     const pin = await page.locator(".pin.selected").boundingBox();
     const card = await page.locator("#editor").boundingBox();
     const canvas = await page.locator("#screen-canvas").boundingBox();
+    const bar = await page.locator("#verdict-bar").boundingBox();
+    expect(pin!.y).toBeGreaterThanOrEqual(0);
+    expect(pin!.y + pin!.height).toBeLessThanOrEqual(bar!.y);
+    expect(card!.y).toBeGreaterThanOrEqual(0);
+    expect(card!.y + card!.height).toBeLessThanOrEqual(bar!.y);
     expect(card!.x >= pin!.x + pin!.width || card!.x + card!.width <= pin!.x ||
       card!.y >= pin!.y + pin!.height || card!.y + card!.height <= pin!.y).toBe(true);
     expect(card!.x).toBeGreaterThanOrEqual(canvas!.x);

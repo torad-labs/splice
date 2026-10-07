@@ -168,7 +168,10 @@ function positionEditor() {
   const pin = marker.getBoundingClientRect();
   const gap = 12;
   const margin = 8;
-  editor.style.maxHeight = `${canvas.clientHeight - margin * 2}px`;
+  const barTop = element("verdict-bar").getBoundingClientRect().top;
+  const start = Math.max(margin, -bounds.top + margin);
+  const end = Math.min(canvas.clientHeight - margin, barTop - bounds.top - margin);
+  editor.style.maxHeight = `${Math.max(1, end - start)}px`;
   const width = editor.offsetWidth;
   const height = editor.offsetHeight;
   const left = pin.left - bounds.left;
@@ -176,17 +179,18 @@ function positionEditor() {
   const top = pin.top - bounds.top;
   const bottom = pin.bottom - bounds.top;
   const limit = (value: number, end: number) => Math.max(margin, Math.min(value, end - margin));
+  const vertical = (value: number) => Math.max(start, Math.min(value, end - height));
   let x: number;
   let y: number;
   if (canvas.clientWidth - right >= width + gap + margin) {
     x = right + gap;
-    y = limit(top, canvas.clientHeight - height);
+    y = vertical(top);
   } else if (left >= width + gap + margin) {
     x = left - gap - width;
-    y = limit(top, canvas.clientHeight - height);
+    y = vertical(top);
   } else {
-    const below = canvas.clientHeight - bottom - gap - margin;
-    const above = top - gap - margin;
+    const below = end - bottom - gap;
+    const above = top - gap - start;
     const down = below >= height || below >= above;
     editor.style.maxHeight = `${Math.max(1, down ? below : above)}px`;
     x = limit((left + right - width) / 2, canvas.clientWidth - width);
@@ -206,7 +210,8 @@ function openPin(id: string) {
 function fit() {
   const pin = review().pins.find((p) => p.id === active);
   const width = pin?.width ?? canvas.clientWidth;
-  if (width !== layoutWidth) pageHeight = 1889;
+  const changedWidth = width !== layoutWidth;
+  if (changedWidth) pageHeight = 1889;
   layoutWidth = width;
   const scale = fitWidth ? Math.min(1, canvas.clientWidth / layoutWidth) : 1;
   page.style.width = `${layoutWidth * scale}px`;
@@ -214,10 +219,15 @@ function fit() {
   frame.style.width = `${layoutWidth}px`;
   frame.style.height = `${pageHeight}px`;
   frame.style.transform = `scale(${scale})`;
-  renderPins(false);
+  if (changedWidth) renderPins(false);
   if (shouldScroll && pin) {
     canvas.scrollTo({ top: pin.y * pageHeight * scale - canvas.clientHeight / 2, left: pin.x * layoutWidth * scale - canvas.clientWidth / 2 });
     shouldScroll = false;
+  }
+  if (pin) {
+    const bounds = canvas.getBoundingClientRect();
+    const barTop = element("verdict-bar").getBoundingClientRect().top;
+    if (bounds.top < 0 || bounds.bottom > barTop) canvas.scrollIntoView({ block: "center", inline: "nearest" });
   }
   positionEditor();
 }

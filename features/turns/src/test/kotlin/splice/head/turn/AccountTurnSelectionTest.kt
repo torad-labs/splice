@@ -11,7 +11,12 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -21,6 +26,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.perf.OutcomeTag
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
@@ -269,6 +275,9 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
             assertTrue(rig.authHeaders().isEmpty(), "an exhausted pool must not contact upstream")
             assertTrue(rig.logs().any { it.contains("all-accounts-exhausted") && it.contains("earliest_reset=$reset") })
             assertTrue(rig.perfText().contains("\"outcome\":\"error:all-accounts-exhausted\""))
+            val row = exhaustedRow(rig)
+            assertEquals(resetEpochSeconds, row["earliest_reset_epoch_seconds"]?.jsonPrimitive?.long)
+            assertFalse(row.getValue("earliest_reset_epoch_seconds").jsonPrimitive.isString)
         } finally {
             rig.close()
         }
@@ -296,6 +305,9 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
             // The clamp is the 9999 instant; in Tokyo it reads as the morning of the next January 1.
             assertTrue(response.bodyAsText().contains("earliest reset is Jan 1, 8:59 AM JST"))
             assertTrue(rig.authHeaders().isEmpty(), "an exhausted pool must not contact upstream")
+            val row = exhaustedRow(rig)
+            assertEquals(oversizedReset, row["earliest_reset_epoch_seconds"]?.jsonPrimitive?.long)
+            assertFalse(row.getValue("earliest_reset_epoch_seconds").jsonPrimitive.isString)
         } finally {
             rig.close()
         }
@@ -319,10 +331,16 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
             assertEquals(1L, rig.localErrors())
             assertEquals(0L, rig.providerErrors())
             assertTrue(rig.authHeaders().isEmpty())
+            assertFalse("earliest_reset_epoch_seconds" in exhaustedRow(rig))
         } finally {
             rig.close()
         }
     }
+
+    private fun exhaustedRow(rig: AccountTurnRig) =
+        rig.perfText().lineSequence().filter { it.isNotBlank() }
+            .map { Json.parseToJsonElement(it).jsonObject }
+            .single { it.getValue("outcome").jsonPrimitive.content == OutcomeTag.ALL_ACCOUNTS_EXHAUSTED.wire }
 
     @Test
     fun `head restart clears the cooldown authority used by pooled turns`() = runTest {

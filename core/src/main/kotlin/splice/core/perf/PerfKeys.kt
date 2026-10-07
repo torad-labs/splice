@@ -94,6 +94,9 @@ public object PerfKeys {
 
     public const val RETRIES: String = "retries"
     public const val REFRESHES: String = "refreshes"
+
+    /** The selector's exact earliest exhausted-account reset, never the capped client retry deadline. */
+    public const val EARLIEST_RESET_EPOCH_SECONDS: String = "earliest_reset_epoch_seconds"
     public const val REQ_BYTES: String = "req_bytes"
     public const val UPSTREAM_REQ_BYTES: String = "upstream_req_bytes"
     public const val SSE_BYTES_IN: String = "sse_bytes_in"

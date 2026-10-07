@@ -4,6 +4,7 @@ package splice.head.admission
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
 import splice.core.perf.OutcomeTag
+import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
 import splice.head.HeadDeps
 import splice.head.turn.Preparation
@@ -27,6 +28,9 @@ internal class ExhaustedAccountAdmission(
         exhausted: Selection.Exhausted,
         trace: TurnTrace?,
     ) {
+        exhausted.earliestResetEpochSeconds?.let { reset ->
+            admitted.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, reset)
+        }
         driver.recordLocalRefusal(
             prepared.built.meta,
             admitted.perf,

@@ -14,6 +14,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelRates
 import splice.core.model.TokenCost
 import splice.core.model.TurnBill
+import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTotal
 import splice.core.perf.PerfSessionTurn
@@ -81,7 +82,10 @@ internal class SessionCost(
     private fun fromTail(tail: PerfSessionTail, modelId: String?, sessionStartMs: Long?): SessionSpend? {
         val asked = modelId?.let(::ratesFor)
         val turns = tail.turns.map { turn -> ratesOf(turn, asked) to turn.counters }
-            .filterNot { (_, row) -> TurnBill.isEmpty(row) }
+            .filterNot { (_, row) ->
+                val starts = row[PerfKeys.TRANSPORT_ATTEMPT_STARTS] ?: row[PerfKeys.ATTEMPTS] ?: 0L
+                TurnBill.isEmpty(row) && starts == 0L
+            }
         val priced = turns.mapNotNull { (rates, row) -> rates?.let { TurnBill.usd(row, it, arithmetic) } }
         if (priced.isEmpty()) return null
         val tailStart = tail.tailStartMs

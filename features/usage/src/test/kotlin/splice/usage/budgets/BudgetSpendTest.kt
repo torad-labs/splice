@@ -43,7 +43,12 @@ class BudgetSpendTest {
         return BudgetSeedRuntime(scope, UnconfinedTestDispatcher(scope.testScheduler), Ticker { false })
     }
 
-    private fun tokens(usd: Long): Map<String, Long> = mapOf(PerfKeys.IN_TOKENS to usd * 1_000_000L)
+    private fun tokens(usd: Long): Map<String, Long> = mapOf(
+        PerfKeys.IN_TOKENS to usd * 1_000_000L,
+        PerfKeys.OUT_TOKENS to 0L,
+        PerfKeys.CACHED_TOKENS to 0L,
+        PerfKeys.CACHE_WRITE_TOKENS to 0L,
+    )
 
     @Test
     fun `used and remaining read exactly the admission tally across repeated head wiring and UTC midnight`() {

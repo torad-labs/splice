@@ -49,7 +49,12 @@ private val CATALOG = ModelCatalog(
 )
 
 /** A turn's counters worth [usd] of fresh input at [CATALOG]'s rate. */
-private fun turnOf(usd: Double): Map<String, Long> = mapOf(PerfKeys.IN_TOKENS to (usd * TOKENS_PER_USD).toLong())
+private fun turnOf(usd: Double): Map<String, Long> = mapOf(
+    PerfKeys.IN_TOKENS to (usd * TOKENS_PER_USD).toLong(),
+    PerfKeys.OUT_TOKENS to 0L,
+    PerfKeys.CACHED_TOKENS to 0L,
+    PerfKeys.CACHE_WRITE_TOKENS to 0L,
+)
 
 private class FakeHistory(private val rows: List<PerfRow> = emptyList()) : HeadPerfHistory {
     val asked = CopyOnWriteArrayList<Long>()
@@ -203,7 +208,16 @@ class BudgetEnforcementTest {
         val head = rig.enforcement.forHead("h", CATALOG)
 
         // in_tokens INCLUDES the cached portion (SessionCost.bucketsFor): 2M cached is $0.20, not $2.20.
-        head.spent(rig.now, MODEL, mapOf(PerfKeys.IN_TOKENS to 2_000_000L, PerfKeys.CACHED_TOKENS to 2_000_000L))
+        head.spent(
+            rig.now,
+            MODEL,
+            mapOf(
+                PerfKeys.IN_TOKENS to 2_000_000L,
+                PerfKeys.CACHED_TOKENS to 2_000_000L,
+                PerfKeys.OUT_TOKENS to 0L,
+                PerfKeys.CACHE_WRITE_TOKENS to 0L,
+            ),
+        )
         assertNull(head.admit(), "a cache read billed as fresh input would refuse this turn")
 
         head.spent(rig.now, "no-card", turnOf(100.0))

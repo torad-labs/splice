@@ -154,8 +154,8 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
         val previousLastAt = lastAt
         if (previousLastAt == null || row.ts >= previousLastAt) lastOutcome = row.outcome
         lastAt = maxOf(previousLastAt ?: row.ts, row.ts)
-        val rates = rates(row.model, catalog)
-        if (rates == null) unpricedTurns += 1 else usd += TurnBill.usd(row.fields, rates, cost)
+        val amount = rates(row.model, catalog)?.let { TurnBill.usd(row.fields, it, cost) }
+        if (amount == null) unpricedTurns += 1 else usd += amount
     }
 
     fun json(label: TallyLabel): JsonObject = buildJsonObject {

@@ -6,6 +6,11 @@ package splice.core.turn
 
 import kotlinx.serialization.json.JsonObject
 
+/** Token buckets observed by the provider, distinct from the numeric defaults used on the client wire. */
+public enum class UsageField { INPUT, OUTPUT, CACHED, CACHE_WRITE }
+
+private val ALL_USAGE_FIELDS = UsageField.entries.toSet()
+
 public data class Usage(
     val inputTokens: Long = 0,
     val outputTokens: Long = 0,
@@ -41,6 +46,8 @@ public data class Usage(
     /** Source rounds this usage's turn cut while they still streamed: their backend bill never arrived, so their
      *  tokens are in none of the buckets above. Appended last, as [cacheWriteTokens] was, for positional callers. */
     val cutRounds: Long = 0,
+    /** Only these observed buckets may become retained billing counters. Explicit zeros remain observations. */
+    val reported: Set<UsageField> = ALL_USAGE_FIELDS,
 ) {
     public val unrecordedOutputTokens: Long get() = outputTokens - recordedOutputTokens
 
@@ -65,6 +72,7 @@ public data class Usage(
         clientContext = other.clientContext ?: clientContext,
         absorbed = absorbed + other.absorbed,
         cutRounds = cutRounds + other.cutRounds,
+        reported = reported + other.reported,
     )
 }
 
@@ -194,7 +202,7 @@ public sealed class TurnOutcome {
         /** Output/reasoning genuinely burned by ABSORBED re-anchor rounds when the turn STILL
          *  failed — carried so the usage store and perf row do not under-report the exact turns
          *  that ran the most upstream rounds (review-pr 2026-07-24). Zero when no salvage. */
-        val salvagedUsage: Usage = Usage(),
+        val salvagedUsage: Usage = Usage(reported = emptySet()),
         /** True when the SAME request produces the SAME failure — a verdict the gateway reached on
          *  its own (a code-mode record it cannot resume, a script the runtime cannot admit), which
          *  no retry can change. Rendered as a readable ending the client shows verbatim rather than
@@ -260,7 +268,7 @@ public sealed class TurnOutcome {
         val hasToolUse: Boolean = false,
         val reasoningEnvelopes: List<String> = emptyList(),
         val toolTearOpen: Boolean = false,
-        val usage: Usage = Usage(),
+        val usage: Usage = Usage(reported = emptySet()),
     )
 
     /** Client vanished mid-stream: nothing to emit, seal quietly (never an error frame).
@@ -268,5 +276,5 @@ public sealed class TurnOutcome {
      *  spend the vendor charged whether or not the client stayed to read the answer. The
      *  abandoning round itself reports nothing (its stream died unparsed), so this is the
      *  accumulator alone, and finishTurn stamps it exactly like a Failure's salvage. */
-    public data class ClientAbandoned(val salvagedUsage: Usage = Usage()) : TurnOutcome()
+    public data class ClientAbandoned(val salvagedUsage: Usage = Usage(reported = emptySet())) : TurnOutcome()
 }

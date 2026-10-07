@@ -13,6 +13,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.UsageField
 
 class RoundSpliceSalvageTest {
 
@@ -31,7 +32,14 @@ class RoundSpliceSalvageTest {
             Usage(inputTokens = 100, outputTokens = 3, cachedTokens = 20, reasoningTokens = 2),
         )
         val out = rounds.withFailureSalvage(
-            failure(Usage(inputTokens = 120, outputTokens = 7, reasoningTokens = 1)),
+            failure(
+                Usage(
+                    inputTokens = 120,
+                    outputTokens = 7,
+                    reasoningTokens = 1,
+                    reported = setOf(UsageField.INPUT, UsageField.OUTPUT),
+                ),
+            ),
             acc,
         ) as TurnOutcome.Failure
         // input/cached follow the cumulative law (terminal input wins; cached keeps last known),
@@ -70,10 +78,10 @@ class RoundSpliceSalvageTest {
     }
 
     @Test
-    fun `terminal round reporting zero input keeps the last known input - DR-124`() {
+    fun `terminal round with no input report keeps the last known input - DR-124`() {
         val acc = RoundUsage().plusRound(Usage(inputTokens = 55, outputTokens = 3))
         val out = rounds.withFailureSalvage(
-            failure(Usage(outputTokens = 4)),
+            failure(Usage(outputTokens = 4, reported = setOf(UsageField.OUTPUT))),
             acc,
         ) as TurnOutcome.Failure
         assertEquals(Usage(inputTokens = 55, outputTokens = 7), out.salvagedUsage)
@@ -92,6 +100,52 @@ class RoundSpliceSalvageTest {
     fun `no partial and no absorbed rounds leaves the failure untouched`() {
         val bare = failure(null)
         assertEquals(bare, rounds.withFailureSalvage(bare, RoundUsage()))
+    }
+
+    @Test
+    fun `a reported terminal zero replaces input and bills the previous request once`() {
+        val acc = RoundUsage().plusRound(Usage(inputTokens = 55, outputTokens = 3, cachedTokens = 20))
+        val out = rounds.withFailureSalvage(failure(Usage()), acc) as TurnOutcome.Failure
+        assertEquals(0L, out.salvagedUsage.inputTokens)
+        assertEquals(0L, out.salvagedUsage.cachedTokens)
+        assertEquals(3L, out.salvagedUsage.outputTokens)
+        assertEquals(
+            AbsorbedRounds(rounds = 1, inputTokens = 55, cachedTokens = 20, outputTokens = 3),
+            out.salvagedUsage.absorbed,
+        )
+    }
+
+    @Test
+    fun `a zero-only failure partial retains its observed zeros`() {
+        val out = rounds.withFailureSalvage(failure(Usage()), RoundUsage()) as TurnOutcome.Failure
+        assertEquals(Usage(), out.salvagedUsage)
+    }
+
+    @Test
+    fun `an unreported terminal preserves observations without inventing an extra request`() {
+        val acc = RoundUsage().plusRound(Usage(inputTokens = 55, outputTokens = 3))
+        val out = rounds.withFailureSalvage(failure(Usage(reported = emptySet())), acc) as TurnOutcome.Failure
+        assertEquals(Usage(inputTokens = 55, outputTokens = 3), out.salvagedUsage)
+    }
+
+    @Test
+    fun `single-round provider salvage survives without a continuation partial`() {
+        val known = Usage(inputTokens = 55, outputTokens = 3)
+        val out = rounds.withFailureSalvage(failure(null).copy(salvagedUsage = known), RoundUsage())
+        assertEquals(known, (out as TurnOutcome.Failure).salvagedUsage)
+    }
+
+    @Test
+    fun `a content-only partial cannot hide the terminal provider salvage`() {
+        val acc = RoundUsage().plusRound(Usage(inputTokens = 50, outputTokens = 3))
+        val terminal = failure(null).copy(
+            partial = TurnOutcome.PartialRound(bodyText = "synthetic"),
+            salvagedUsage = Usage(inputTokens = 80, outputTokens = 7),
+        )
+        val out = rounds.withFailureSalvage(terminal, acc) as TurnOutcome.Failure
+        assertEquals(80L, out.salvagedUsage.inputTokens)
+        assertEquals(10L, out.salvagedUsage.outputTokens)
+        assertEquals(AbsorbedRounds(rounds = 1, inputTokens = 50, outputTokens = 3), out.salvagedUsage.absorbed)
     }
 
     // DR-125: a hang-up after absorbed rounds carries the accumulator (the abandoning round's own

@@ -117,7 +117,8 @@ public class SessionTotals(
     /** Fold one appended row into its session's total. Memory plus an enqueue, so it never blocks
      *  the turn; the first row after a head stop writes the file through, marked not clean. */
     public fun add(sessionTag: String, model: String, counters: Map<String, Long>, rowTs: Long) {
-        if (sessionTag.isEmpty() || TOKEN_KEYS.all { (counters[it] ?: 0L) == 0L }) return
+        if (sessionTag.isEmpty()) return
+        if (uncounted(counters)) return
         val usd = price.usd(model, counters)
         val reopened = synchronized(lock) {
             loadUnderLock()
@@ -165,6 +166,11 @@ public class SessionTotals(
             }
             removed
         }
+    }
+
+    private fun uncounted(counters: Map<String, Long>): Boolean {
+        val starts = counters[PerfKeys.TRANSPORT_ATTEMPT_STARTS] ?: counters[PerfKeys.ATTEMPTS] ?: 0L
+        return TOKEN_KEYS.all { (counters[it] ?: 0L) == 0L } && starts == 0L
     }
 
     private fun folded(prev: PerfModelTotal?, counters: Map<String, Long>, usd: Double?): PerfModelTotal {

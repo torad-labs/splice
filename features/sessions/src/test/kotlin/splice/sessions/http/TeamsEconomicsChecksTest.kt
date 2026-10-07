@@ -71,6 +71,13 @@ class TeamsEconomicsChecksTest {
     }
 
     @Test
+    fun `a counted failure missing output usage is unpriced rather than a known zero bill`() {
+        val lead = leadSlot(listOf(row(CHECKS_AT, OutcomeTag.UNEXPECTED.wire)))
+        assertEquals("1", lead.getValue("unpriced_turns").jsonPrimitive.content)
+        assertEquals("null", lead.getValue("cost_usd").toString())
+    }
+
+    @Test
     fun `an ok outcome reads pass`() {
         val lead = leadSlot(listOf(row(CHECKS_AT, OutcomeTag.OK.wire)))
         assertEquals("pass", lead.getValue("checks").jsonPrimitive.content)

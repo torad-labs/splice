@@ -5,6 +5,7 @@ package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
+import splice.core.turn.Usage
 import splice.upstream.ToolSearchController
 import splice.upstream.ToolSearchRound
 
@@ -80,7 +81,9 @@ internal class RoundSplice {
      *  and stamped nothing on a single-round failure with reported usage. */
     fun withFailureSalvage(outcome: TurnOutcome, acc: RoundUsage): TurnOutcome = when (outcome) {
         is TurnOutcome.Failure -> {
-            val total = outcome.partial?.usage?.let { acc.plusTerminal(it) } ?: acc
+            val terminal = outcome.partial?.usage?.takeUnless { it == Usage(reported = emptySet()) }
+                ?: outcome.salvagedUsage
+            val total = acc.plusTerminal(terminal)
             if (burned(total)) outcome.copy(salvagedUsage = total.toUsage()) else outcome
         }
         // An interceptor may have finished billed local continuations before the final stream
@@ -93,7 +96,7 @@ internal class RoundSplice {
     }
 
     private fun burned(total: RoundUsage): Boolean =
-        total.outSum + total.reasoningSum > 0 || total.lastInput > 0
+        total.reported.isNotEmpty() || total.outSum + total.reasoningSum > 0
 
     /** Cross-round merge (code-review 2026-07-24): the post-stream pipeline — empty-model honesty
      *  gate, promote-to-text, reasoning mirror — is round-blind; it sees ONE outcome. A spliced

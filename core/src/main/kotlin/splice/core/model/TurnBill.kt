@@ -4,6 +4,7 @@ package splice.core.model
 import splice.core.perf.PerfKeys
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.Usage
+import splice.core.turn.UsageField
 
 /**
  * The one mapping between a turn's usage and its perf row's billing counters, both ways. Every
@@ -21,10 +22,10 @@ import splice.core.turn.Usage
 public object TurnBill {
     /** The counters a turn's [usage] writes on its perf row. */
     public fun counters(usage: Usage): Map<String, Long> = buildMap {
-        put(PerfKeys.IN_TOKENS, usage.inputTokens)
-        put(PerfKeys.OUT_TOKENS, usage.outputTokens)
-        put(PerfKeys.CACHED_TOKENS, usage.cachedTokens)
-        put(PerfKeys.CACHE_WRITE_TOKENS, usage.cacheWriteTokens)
+        if (UsageField.INPUT in usage.reported) put(PerfKeys.IN_TOKENS, usage.inputTokens)
+        if (UsageField.OUTPUT in usage.reported) put(PerfKeys.OUT_TOKENS, usage.outputTokens)
+        if (UsageField.CACHED in usage.reported) put(PerfKeys.CACHED_TOKENS, usage.cachedTokens)
+        if (UsageField.CACHE_WRITE in usage.reported) put(PerfKeys.CACHE_WRITE_TOKENS, usage.cacheWriteTokens)
         val absorbed = usage.absorbed
         if (absorbed.rounds > 0) {
             put(PerfKeys.ABSORBED_ROUNDS, absorbed.rounds)
@@ -75,8 +76,9 @@ public object TurnBill {
     /** Whether [row] billed nothing at all: a local refusal, or a step with no round. */
     public fun isEmpty(row: Map<String, Long>): Boolean = total(row).isEmpty
 
-    /** USD for every request [row] billed, at [rates]. */
-    public fun usd(row: Map<String, Long>, rates: ModelRates, cost: TokenCost = TokenCost()): Double {
+    /** USD for the reported requests at [rates]; absent input or output makes the price unknown. */
+    public fun usd(row: Map<String, Long>, rates: ModelRates, cost: TokenCost = TokenCost()): Double? {
+        if (PerfKeys.IN_TOKENS !in row || PerfKeys.OUT_TOKENS !in row) return null
         val absorbed = absorbed(row)
         val earlier = if (absorbed.rounds > 0) cost.of(absorbedBuckets(absorbed), rates, absorbed.rounds) else 0.0
         return cost.of(last(row), rates) + earlier

@@ -97,6 +97,20 @@ class SessionTotalsTest {
     }
 
     @Test
+    fun `a posted failure without usage remains an unpriced turn after reload`(@TempDir tmp: Path) {
+        val file = tmp.resolve("t.json")
+        val first = store(file)
+        first.add(TAG, OPUS, COLD, 2_000L)
+        first.add(TAG, OPUS, mapOf(PerfKeys.TRANSPORT_ATTEMPT_STARTS to 1L), 3_000L)
+        first.flushNow()
+        val kept = store(file).totalFor(SESSION)!!.models.getValue(OPUS)
+        assertEquals(2L, kept.turns)
+        assertEquals(1L, kept.unpricedTurns)
+        assertEquals(100_000L, kept.inTokens)
+        assertEquals(0.525, kept.usd, 1e-12, "known dollars remain a labelled lower bound")
+    }
+
+    @Test
     fun `a session's total holds its rows and no other session's`(@TempDir tmp: Path) {
         val totals = store(tmp.resolve("t.json"))
         totals.add(TAG, OPUS, COLD, 2_000L)

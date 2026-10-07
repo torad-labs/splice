@@ -229,7 +229,12 @@ class BudgetSeedTest {
 
     private fun emptyHistory(): HeadPerfHistory = HeadPerfHistory { PerfRowsSource { PerfRowsWindow(emptyList()) } }
 
-    private fun tokens(usd: Long): Map<String, Long> = mapOf(PerfKeys.IN_TOKENS to usd * 1_000_000L)
+    private fun tokens(usd: Long): Map<String, Long> = mapOf(
+        PerfKeys.IN_TOKENS to usd * 1_000_000L,
+        PerfKeys.OUT_TOKENS to 0L,
+        PerfKeys.CACHED_TOKENS to 0L,
+        PerfKeys.CACHE_WRITE_TOKENS to 0L,
+    )
 
     private fun edit(file: Path, text: String) {
         val before = Files.getLastModifiedTime(file).toMillis()

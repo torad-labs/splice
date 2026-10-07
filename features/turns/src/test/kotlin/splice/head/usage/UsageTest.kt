@@ -25,6 +25,7 @@ import splice.core.turn.AbsorbedRounds
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.Usage
+import splice.core.turn.UsageField
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
 import splice.core.util.LogSink
@@ -272,7 +273,7 @@ class UsageTest {
     fun `a superseded round stays billed as a request of its own`() {
         val first = Usage(inputTokens = 1000, outputTokens = 50, cachedTokens = 800, cacheWriteTokens = 100)
         val second = Usage(inputTokens = 1500, outputTokens = 30, cachedTokens = 1200)
-        val third = Usage(outputTokens = 5)
+        val third = Usage(outputTokens = 5, reported = setOf(UsageField.OUTPUT))
         val usage = RoundUsage().plusRound(first).plusRound(second).plusTerminal(third).toUsage()
         val firstRound = AbsorbedRounds(rounds = 1, inputTokens = 1000, cachedTokens = 800, cacheWriteTokens = 100)
             .copy(outputTokens = 50)

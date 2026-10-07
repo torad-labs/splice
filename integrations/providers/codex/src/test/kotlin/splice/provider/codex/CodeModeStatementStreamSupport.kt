@@ -61,12 +61,20 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
         assertEquals(5L, usage.reasoningTokens)
         assertEquals(4L, usage.cacheWriteTokens)
         assertEquals(AbsorbedRounds(rounds = 1, inputTokens = 100, outputTokens = 7), usage.absorbed)
-        val source = TurnBill.usd(TurnBill.counters(Usage(inputTokens = 100, outputTokens = 7)), BILLING_RATES)
-        val continuation = TurnBill.usd(
-            TurnBill.counters(Usage(inputTokens = 150, outputTokens = 5, cacheWriteTokens = 4)),
-            BILLING_RATES,
+        val source = requireNotNull(
+            TurnBill.usd(TurnBill.counters(Usage(inputTokens = 100, outputTokens = 7)), BILLING_RATES),
         )
-        assertEquals(source + continuation, TurnBill.usd(TurnBill.counters(usage), BILLING_RATES), BILLING_DELTA)
+        val continuation = requireNotNull(
+            TurnBill.usd(
+                TurnBill.counters(Usage(inputTokens = 150, outputTokens = 5, cacheWriteTokens = 4)),
+                BILLING_RATES,
+            ),
+        )
+        assertEquals(
+            source + continuation,
+            requireNotNull(TurnBill.usd(TurnBill.counters(usage), BILLING_RATES)),
+            BILLING_DELTA,
+        )
     }
 
     protected fun history(calls: List<SeenTool>): String {

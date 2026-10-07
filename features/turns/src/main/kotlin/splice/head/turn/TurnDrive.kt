@@ -103,8 +103,9 @@ internal data class TurnDrive(
         private fun rawUsageOf(outcome: TurnOutcome): Usage? = when (outcome) {
             is TurnOutcome.Success -> outcome.usage
             is TurnOutcome.Failure ->
-                ((outcome.partial?.usage ?: Usage()) + outcome.salvagedUsage).takeUnless { it == Usage() }
-            is TurnOutcome.ClientAbandoned -> outcome.salvagedUsage.takeUnless { it == Usage() }
+                ((outcome.partial?.usage ?: Usage(reported = emptySet())) + outcome.salvagedUsage)
+                    .takeUnless { it == Usage(reported = emptySet()) }
+            is TurnOutcome.ClientAbandoned -> outcome.salvagedUsage.takeUnless { it == Usage(reported = emptySet()) }
         }
 
         private fun nextRawRoundUsage(previous: RoundUsage?, outcome: TurnOutcome, usage: Usage): RoundUsage {

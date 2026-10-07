@@ -8,6 +8,7 @@ package splice.head.round
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.Usage
+import splice.core.turn.UsageField
 
 /** One position in the round loop: the body to POST plus the two round counters. Serves BOTH
  *  directions — passed INTO FoldRounds.nextRoundBody as the current cursor and returned as the
@@ -38,37 +39,39 @@ internal data class RoundUsage(
     val absorbed: AbsorbedRounds = AbsorbedRounds(),
     /** Source rounds the turn cut while they streamed ([splice.core.turn.Usage.cutRounds]); they accrue. */
     val cutRounds: Long = 0,
+    val reported: Set<UsageField> = emptySet(),
 ) {
     fun plusRound(u: Usage) = RoundUsage(
-        lastInput = u.inputTokens,
-        lastCached = u.cachedTokens,
+        lastInput = if (UsageField.INPUT in u.reported) u.inputTokens else lastInput,
+        lastCached = if (UsageField.CACHED in u.reported) u.cachedTokens else lastCached,
         outSum = outSum + u.outputTokens,
         reasoningSum = reasoningSum + u.reasoningTokens,
-        lastCacheWrite = u.cacheWriteTokens,
+        lastCacheWrite = if (UsageField.CACHE_WRITE in u.reported) u.cacheWriteTokens else lastCacheWrite,
         localStep = localStep || u.localStep,
         codeModeDiverged = codeModeDiverged || u.codeModeDiverged,
         recordedOutputSum = recordedOutputSum + u.recordedOutputTokens,
         clientContext = u.clientContext ?: clientContext,
         absorbed = absorbed + toUsage().finalRound + u.absorbed,
         cutRounds = cutRounds + u.cutRounds,
+        reported = reported + u.reported,
     )
 
-    /** DR-124: fold the TERMINAL failed round's harvested usage (Failure.partial.usage) under the
-     *  same cumulative law — with one difference from [plusRound]: a dying round may report only
-     *  the output side (response.failed payloads vary), and clobbering last-known input/cached
-     *  with 0 would un-account the prior round's prompt, so zero keeps the last known value. */
+    /** Fold a failed round under the same cumulative law. Unreported buckets preserve their
+     *  last observation; a reported zero replaces it just as a positive observation does. */
     fun plusTerminal(u: Usage) = RoundUsage(
-        lastInput = if (u.inputTokens > 0) u.inputTokens else lastInput,
-        lastCached = if (u.cachedTokens > 0) u.cachedTokens else lastCached,
+        lastInput = if (UsageField.INPUT in u.reported) u.inputTokens else lastInput,
+        lastCached = if (UsageField.CACHED in u.reported) u.cachedTokens else lastCached,
         outSum = outSum + u.outputTokens,
         reasoningSum = reasoningSum + u.reasoningTokens,
-        lastCacheWrite = if (u.cacheWriteTokens > 0) u.cacheWriteTokens else lastCacheWrite,
+        lastCacheWrite = if (UsageField.CACHE_WRITE in u.reported) u.cacheWriteTokens else lastCacheWrite,
         localStep = localStep || u.localStep,
         codeModeDiverged = codeModeDiverged || u.codeModeDiverged,
         recordedOutputSum = recordedOutputSum + u.recordedOutputTokens,
         clientContext = u.clientContext ?: clientContext,
-        absorbed = absorbed + (if (u.inputTokens > 0) toUsage().finalRound else AbsorbedRounds()) + u.absorbed,
+        absorbed = absorbed +
+            (if (UsageField.INPUT in u.reported) toUsage().finalRound else AbsorbedRounds()) + u.absorbed,
         cutRounds = cutRounds + u.cutRounds,
+        reported = reported + u.reported,
     )
 
     fun toUsage() = Usage(
@@ -83,5 +86,6 @@ internal data class RoundUsage(
         clientContext = clientContext,
         absorbed = absorbed,
         cutRounds = cutRounds,
+        reported = reported,
     )
 }

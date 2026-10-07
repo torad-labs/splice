@@ -2,10 +2,14 @@
 package splice.core.model
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.perf.PerfKeys
 import splice.core.turn.AbsorbedRounds
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
+import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import kotlin.math.abs
 
@@ -23,6 +27,30 @@ class TurnBillTest {
     )
 
     @Test
+    fun `an unreported failure cannot stamp four measured zeros`() {
+        val unreported = TurnOutcome.Failure(
+            "synthetic failure",
+            cause = FailureCause.UPSTREAM_REPORTED,
+            phase = FailurePhase.MID_OUTPUT,
+        ).salvagedUsage
+        assertTrue(TurnBill.counters(unreported).isEmpty())
+    }
+
+    @Test
+    fun `missing token counts do not become a zero-dollar bill`() {
+        assertNull(TurnBill.usd(emptyMap(), rates))
+        assertNull(TurnBill.usd(mapOf(PerfKeys.IN_TOKENS to 100L), rates), "output is unknown")
+    }
+
+    @Test
+    fun `a reported all-zero usage remains a measured zero-dollar bill`() {
+        val row = TurnBill.counters(Usage())
+        assertEquals(0L, row[PerfKeys.IN_TOKENS])
+        assertEquals(0L, row[PerfKeys.OUT_TOKENS])
+        assertEquals(0.0, priceOf(row))
+    }
+
+    @Test
     fun `a row written before the absorbed counters prices exactly as it did`() {
         val row = mapOf(
             PerfKeys.IN_TOKENS to 150_000L,
@@ -32,7 +60,7 @@ class TurnBillTest {
         )
         val buckets = TokenBuckets(input = 56_000, cacheRead = 90_000, cacheWrite = 4_000, output = 2_000)
         val before = cost.of(buckets, rates)
-        assertEquals(before, TurnBill.usd(row, rates), CENT_FRACTION)
+        assertEquals(before, priceOf(row), CENT_FRACTION)
         assertEquals(AbsorbedRounds(), TurnBill.absorbed(row))
     }
 
@@ -56,7 +84,7 @@ class TurnBillTest {
 
         val row = TurnBill.counters(plain + Usage(cutRounds = 2))
         assertEquals(2L, row[PerfKeys.CUT_SOURCE_ROUNDS], "$row")
-        assertEquals(TurnBill.usd(TurnBill.counters(plain), rates), TurnBill.usd(row, rates), CENT_FRACTION)
+        assertEquals(priceOf(TurnBill.counters(plain)), priceOf(row), CENT_FRACTION)
     }
 
     /** A Responses model reports its reasoning tokens inside its output-token details, so they are already in
@@ -70,7 +98,7 @@ class TurnBillTest {
         val row = TurnBill.counters(plain.copy(reasoningTokens = 1_800))
         assertEquals(1_800L, row[PerfKeys.REASONING_TOKENS], "$row")
         assertEquals(2_000L, row[PerfKeys.OUT_TOKENS], "the reported output still holds the whole output: $row")
-        assertEquals(TurnBill.usd(TurnBill.counters(plain), rates), TurnBill.usd(row, rates), CENT_FRACTION)
+        assertEquals(priceOf(TurnBill.counters(plain)), priceOf(row), CENT_FRACTION)
         assertEquals(TurnBill.total(TurnBill.counters(plain)), TurnBill.total(row), "$row")
     }
 
@@ -80,20 +108,20 @@ class TurnBillTest {
         val final = Usage(inputTokens = 150_000, outputTokens = 500, cachedTokens = 90_000)
         val row = TurnBill.counters(final.copy(outputTokens = 800, absorbed = early.finalRound))
 
-        val separately = TurnBill.usd(TurnBill.counters(early), rates) + TurnBill.usd(TurnBill.counters(final), rates)
-        assertEquals(separately, TurnBill.usd(row, rates), CENT_FRACTION)
+        val separately = priceOf(TurnBill.counters(early)) + priceOf(TurnBill.counters(final))
+        assertEquals(separately, priceOf(row), CENT_FRACTION)
         assertTrue(separately < cost.of(TurnBill.total(row), rates), "one summed request would price at the tier")
     }
 
     @Test
     fun `absorbed rounds on one side of a tier price exactly, and straddling ones within the tier premium`() {
         val small = listOf(round(50_000), round(60_000))
-        assertEquals(separate(small), TurnBill.usd(absorbing(small), rates), CENT_FRACTION, "both under the tier")
+        assertEquals(separate(small), priceOf(absorbing(small)), CENT_FRACTION, "both under the tier")
 
         val straddling = listOf(round(100_000), round(200_000))
         val absorbed = TurnBill.absorbed(absorbing(straddling))
         val premium = (4.0 - 2.0) * absorbed.inputTokens + (15.0 - 10.0) * absorbed.outputTokens
-        val error = abs(TurnBill.usd(absorbing(straddling), rates) - separate(straddling))
+        val error = abs(priceOf(absorbing(straddling)) - separate(straddling))
         assertTrue(error > 0.0, "the mean of 150k prices the 100k round at the tier")
         assertTrue(error <= premium / 1_000_000.0, "error $error is within the tier premium on the absorbed buckets")
     }
@@ -107,7 +135,9 @@ class TurnBillTest {
             ),
         )
 
-    private fun separate(rounds: List<Usage>): Double = rounds.sumOf { TurnBill.usd(TurnBill.counters(it), rates) }
+    private fun priceOf(row: Map<String, Long>): Double = requireNotNull(TurnBill.usd(row, rates))
+
+    private fun separate(rounds: List<Usage>): Double = rounds.sumOf { priceOf(TurnBill.counters(it)) }
 
     private fun round(input: Long) = Usage(inputTokens = input, outputTokens = 100)
 }

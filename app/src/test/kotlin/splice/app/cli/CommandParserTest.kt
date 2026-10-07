@@ -84,6 +84,16 @@ class CommandParserTest {
     }
 
     @Test
+    fun `only exact help flags are reserved and other argument bytes stay unchanged`() {
+        assertEquals(Command.Login("head--help"), parser.parse(arrayOf("login", "head--help")))
+        assertEquals(
+            Command.Login("claudex", "-helpful"),
+            parser.parse(arrayOf("login", "claudex", "--label", "-helpful")),
+        )
+        assertEquals(Command.Models(listOf("provider-h")), parser.parse(arrayOf("models", "provider-h")))
+    }
+
+    @Test
     fun `the words a verb names still parse - V4-309`() {
         assertEquals(Command.Restart(now = false), parser.parse(arrayOf("restart")))
         assertEquals(Command.Restart(now = true), parser.parse(arrayOf("restart", "--now")))

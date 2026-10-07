@@ -14,6 +14,11 @@ public class Cli {
     private val parser = CommandParser()
 
     public fun runCli(args: Array<String>): Int {
+        val help = parser.help(args)
+        if (help != null) {
+            println(help)
+            return 0
+        }
         val command = parser.parse(args) ?: run {
             System.err.println(
                 "usage: splice [setup|add <profile>|add-model|models [provider]|upgrade|status|sessions|perf|" +

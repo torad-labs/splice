@@ -20,6 +20,66 @@ class CliExitCodeTest {
     }
 
     @Test
+    fun `login help prints its usage without producing a command`() {
+        assertHelp(arrayOf("login", "--help"))
+    }
+
+    @Test
+    fun `add-model help prints its usage without producing a command`() {
+        assertHelp(arrayOf("add-model", "--help"))
+    }
+
+    @Test
+    fun `every registered verb prints help before or after other words without producing a command`() {
+        val registered = CommandParser().registeredVerbs
+        assertFalse(registered.isEmpty(), "the parser table must supply the coverage denominator")
+        for (verb in registered) {
+            for (flag in listOf("--help", "-h")) {
+                assertHelp(arrayOf(verb, flag))
+                assertHelp(arrayOf(verb, "synthetic", flag))
+                assertHelp(arrayOf(verb, flag, "synthetic"))
+            }
+        }
+    }
+
+    @Test
+    fun `login help after a named head does not start that login`() {
+        for (flag in listOf("--help", "-h")) assertHelp(arrayOf("login", "claudex", flag))
+    }
+
+    @Test
+    fun `an unknown verb with help remains a usage error`() {
+        val err = stderrOf { assertEquals(2, Cli().runCli(arrayOf("definitely-not-a-command", "--help"))) }
+        assertTrue(err.startsWith("usage: splice ["), err)
+    }
+
+    private fun assertHelp(args: Array<String>) {
+        assertEquals(null, CommandParser().parse(args), "help must never produce a command: ${args.toList()}")
+        val out = java.io.ByteArrayOutputStream()
+        val saved = System.out
+        var code = -1
+        val err: String
+        System.setOut(java.io.PrintStream(out))
+        try {
+            err = stderrOf { code = Cli().runCli(args) }
+        } finally {
+            System.setOut(saved)
+        }
+        val usage = out.toString().trim()
+        val prefix = "usage: splice ${args.first()}"
+        org.junit.jupiter.api.Assertions.assertAll(
+            { assertEquals(0, code, "help exits successfully: ${args.toList()}") },
+            {
+                assertTrue(
+                    usage == prefix || usage.startsWith("$prefix "),
+                    "expected verb-specific usage, was: $usage",
+                )
+            },
+            { assertEquals("", err, "help is not a usage error") },
+        )
+    }
+
+    @Test
     fun `failed command outcomes return nonzero`() {
         // outcomeExitCode moved from a top-level function onto `Command` itself; every case
         // inherits the same mapping, so the receiver here is arbitrary.

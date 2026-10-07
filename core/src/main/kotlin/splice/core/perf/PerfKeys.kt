@@ -77,6 +77,9 @@ public object PerfKeys {
     /** Port of a proven refused connect to a loopback runtime, absent for resets and remote failures. */
     public const val REFUSED_RUNTIME_PORT: String = "refused_runtime_port"
 
+    /** UsageHistory explicitly owns no final upstream request; absent token observations are not missing bills. */
+    public const val NO_REQUEST: String = "no_request"
+
     /** One client-facing code-mode step synthesized without an upstream post, not a turn. */
     public const val LOCAL_STEP: String = "local_step"
 

@@ -7,6 +7,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
+import splice.core.model.ModelRates
 import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
@@ -14,6 +17,7 @@ import splice.core.turn.AbsorbedRounds
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.turn.UsageHistory
+import splice.core.turn.noRequestUsage
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -53,6 +57,48 @@ class SessionTotalsUsageCoverageTest {
         assertEquals(10L, model.cacheWriteTokens)
         assertEquals(7L, model.outTokens)
         assertEquals(1L, model.unreportedUsageTurns)
+        totals.flushNow()
+    }
+
+    private fun priced(file: Path) = SessionTotals(
+        file,
+        TurnPrice(
+            ModelCatalog(
+                discoveryPrefix = "synthetic--",
+                models = listOf(ModelEntry("synthetic", contextWindow = 100_000, rates = ModelRates(2.0, 0.2, 10.0))),
+                defaultContextWindow = 100_000,
+            ),
+        ),
+        WallClock { 1L },
+        LogSink {},
+    )
+
+    @Test
+    fun `a local refusal does not poison a session's exact zero spend`(@TempDir tmp: Path) {
+        val totals = priced(tmp.resolve("refused-session.json"))
+        val zero = TurnBill.counters(Usage()) + (PerfKeys.TRANSPORT_ATTEMPT_STARTS to 1L)
+        totals.add("feed0000", "synthetic", zero, 2L)
+        totals.add("feed0000", "synthetic", TurnBill.counters(noRequestUsage), 3L)
+        val model = checkNotNull(totals.totalFor("feed0000-synthetic")).models.getValue("synthetic")
+        assertEquals(0L, model.unreportedUsageTurns)
+        assertEquals(0L, model.unpricedTurns)
+        assertEquals(0.0, model.usd)
+        totals.flushNow()
+    }
+
+    @Test
+    fun `a no-request ending keeps earlier measured spend exact in session totals`(@TempDir tmp: Path) {
+        val totals = priced(tmp.resolve("local-ending-session.json"))
+        val usage = noRequestUsage.copy(
+            outputTokens = 7,
+            history = noRequestUsage.history.copy(absorbed = AbsorbedRounds(1, 100, 20, 0, 7)),
+            reported = setOf(UsageField.OUTPUT),
+        )
+        totals.add("feed0000", "synthetic", TurnBill.counters(usage), 2L)
+        val model = checkNotNull(totals.totalFor("feed0000-synthetic")).models.getValue("synthetic")
+        assertEquals(0L, model.unreportedUsageTurns)
+        assertEquals(0L, model.unpricedTurns)
+        assertEquals(0.000234, model.usd, 1e-12)
         totals.flushNow()
     }
 

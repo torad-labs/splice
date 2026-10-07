@@ -5,14 +5,17 @@
 // not by the order rows were added — the same robustness lastAt already carries.
 package splice.sessions.http
 
+import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.TurnBill
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
+import splice.core.turn.noRequestUsage
 import splice.sessions.query.SessionPerfRow
 import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
@@ -75,6 +78,19 @@ class TeamsEconomicsChecksTest {
         val lead = leadSlot(listOf(row(CHECKS_AT, OutcomeTag.UNEXPECTED.wire)))
         assertEquals("1", lead.getValue("unpriced_turns").jsonPrimitive.content)
         assertEquals("null", lead.getValue("cost_usd").toString())
+    }
+
+    @Test
+    fun `a local refusal is a complete zero-cost team turn`() {
+        val refusal = row(CHECKS_AT, OutcomeTag.RATE_LIMITED.wire).copy(
+            fields = TurnBill.counters(noRequestUsage) + (PerfKeys.ATTEMPTS to 0L),
+            model = "m",
+        )
+        val lead = leadSlot(listOf(refusal))
+        assertEquals("1", lead.getValue("turns").jsonPrimitive.content)
+        assertEquals("0", lead.getValue("unreported_usage_turns").jsonPrimitive.content)
+        assertEquals("0", lead.getValue("unpriced_turns").jsonPrimitive.content)
+        assertEquals(0.0, lead.getValue("cost_usd").jsonPrimitive.double)
     }
 
     @Test

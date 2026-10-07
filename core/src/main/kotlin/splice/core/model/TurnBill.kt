@@ -5,6 +5,8 @@ import splice.core.perf.PerfKeys
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.UsageHistory
+import splice.core.turn.UsageRequest
 
 /**
  * The one mapping between a turn's usage and its perf row's billing counters, both ways. Every
@@ -30,6 +32,7 @@ public object TurnBill {
 
     /** The counters a turn's [usage] writes on its perf row. */
     public fun counters(usage: Usage): Map<String, Long> = buildMap {
+        if (usage.history.request == UsageRequest.NONE) put(PerfKeys.NO_REQUEST, 1L)
         if (UsageField.INPUT in usage.reported) put(PerfKeys.IN_TOKENS, usage.inputTokens)
         if (UsageField.OUTPUT in usage.reported) put(PerfKeys.OUT_TOKENS, usage.outputTokens)
         if (UsageField.CACHED in usage.reported) put(PerfKeys.CACHED_TOKENS, usage.cachedTokens)
@@ -58,6 +61,13 @@ public object TurnBill {
         outputTokens = row[PerfKeys.ABSORBED_OUT_TOKENS] ?: 0L,
     )
 
+    /** Decode request ownership and retained earlier requests from the same row the stamp wrote. */
+    public fun history(row: Map<String, Long>): UsageHistory = UsageHistory(
+        absorbed = absorbed(row),
+        cutRounds = row[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L,
+        request = if (row[PerfKeys.NO_REQUEST] == 1L) UsageRequest.NONE else UsageRequest.POSTED,
+    )
+
     /** The final round's request: the row's buckets less what its absorbed rounds produced. */
     public fun last(row: Map<String, Long>): TokenBuckets {
         val absorbedOut = row[PerfKeys.ABSORBED_OUT_TOKENS] ?: 0L
@@ -84,9 +94,10 @@ public object TurnBill {
     /** Whether [row] billed nothing at all: a local refusal, or a step with no round. */
     public fun isEmpty(row: Map<String, Long>): Boolean = total(row).isEmpty
 
-    /** Whether all four token buckets were reported, including explicit measured zeros. */
+    /** A no-request final round needs no token observations; earlier missing bills still make it incomplete. */
     public fun fullyReported(row: Map<String, Long>): Boolean =
-        row.keys.containsAll(billingKeys) && (row[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L) == 0L
+        (row[PerfKeys.NO_REQUEST] == 1L || row.keys.containsAll(billingKeys)) &&
+            (row[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L) == 0L
 
     /** Exact USD for the reported requests; every billing bucket must be known. */
     public fun usd(row: Map<String, Long>, rates: ModelRates, cost: TokenCost = TokenCost()): Double? =

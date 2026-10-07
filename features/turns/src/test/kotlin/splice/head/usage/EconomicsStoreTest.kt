@@ -18,6 +18,7 @@ import splice.core.model.TokenCost
 import splice.core.model.TurnPrice
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.UsageHistory
+import splice.core.turn.noRequestUsage
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -75,6 +76,22 @@ private fun turn(
 )
 
 class UnknownFailureEconomicsTest {
+    @Test
+    fun `a no-request refusal is exact zero in the persisted hour`(@TempDir tmp: Path) {
+        val file = tmp.resolve("refusal-economics.json")
+        val store = EconomicsStore(file, FABLE_HEAD, WallClock { 10 * HOUR })
+        val refusal = turn(inTokens = null, cached = null, cacheWrite = null, out = null, model = HAIKU)
+            .copy(history = noRequestUsage.history)
+        store.record(refusal)
+        store.flushNow()
+        val kept = EconomicsStore(file, FABLE_HEAD, WallClock { 10 * HOUR }).read().single()
+        assertEquals(1L, kept.turns)
+        assertEquals(0L, kept.counts.unreportedUsageTurns)
+        assertEquals(0L, kept.unpricedTurns)
+        assertEquals(0.0, kept.costUsd)
+        assertEquals(0.0, FABLE_HEAD.usd(HAIKU, refusal.counters()))
+    }
+
     @Test
     fun `missing cache usage and an unknown earlier bill both mark the hourly totals`(@TempDir tmp: Path) {
         val store = EconomicsStore(tmp.resolve("coverage.json"), FABLE_HEAD, WallClock { 10 * HOUR })

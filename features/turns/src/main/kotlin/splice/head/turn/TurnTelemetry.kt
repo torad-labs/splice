@@ -17,7 +17,7 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.core.turn.UsageHistory
+import splice.core.turn.noRequestUsage
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
@@ -128,7 +128,10 @@ internal class TurnTelemetry(
         val outcomeTag = ending.outcomeTag
         // A held row may carry an interceptor's assembled step, not the raw rounds this drive posted.
         val billed = drive.rawRoundUsage() ?: usage
-        billed?.let { TurnBill.counters(it).forEach { (key, value) -> drive.perf.setCount(key, value) } }
+        billed?.let {
+            drive.perf.setCount(PerfKeys.NO_REQUEST, 0L)
+            TurnBill.counters(it).forEach { (key, value) -> drive.perf.setCount(key, value) }
+        }
         val snap = billingSnapshot(drive)
         // V4-174: the turn record closes on the same snapshot the perf row carries — every ending
         // of a drive goes through here, so the trace never has a turn without its outcome.
@@ -175,7 +178,7 @@ internal class TurnTelemetry(
         val posted = drive.roundInterceptor != null &&
             (snap.counters[PerfKeys.UPSTREAM_REQ_BYTES] ?: 0L) > 0L
         if (!posted) return snap
-        val counters = snap.counters - PerfKeys.LOCAL_STEP
+        val counters = snap.counters - PerfKeys.LOCAL_STEP - PerfKeys.NO_REQUEST
         val observed = drive.rawRoundUsage()?.reported.orEmpty().isNotEmpty()
         return if (TurnBill.isEmpty(counters) && !observed) {
             snap.copy(counters = counters.filterKeys { it !in UNREPORTED_TOKEN_FIELDS })
@@ -228,10 +231,7 @@ internal class TurnTelemetry(
                         toolsEager = snap.counters[PerfKeys.TOOLS_EAGER],
                         toolsDeferred = snap.counters[PerfKeys.TOOLS_DEFERRED],
                         rateLimited = rateLimited,
-                        history = UsageHistory(
-                            absorbed = TurnBill.absorbed(snap.counters),
-                            cutRounds = snap.counters[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L,
-                        ),
+                        history = TurnBill.history(snap.counters),
                     ),
                 )
             },
@@ -258,6 +258,7 @@ internal class TurnTelemetry(
         val session = meta.sessionId?.take(SESSION_TAG_CHARS)
         perf.mark(PerfKeys.TOTAL)
         perf.setCount(PerfKeys.ATTEMPTS, 0)
+        TurnBill.counters(noRequestUsage).forEach { (key, value) -> perf.setCount(key, value) }
         val snap = perf.snapshot()
         closeTrace(trace, tag, snap)
         val rowMeta = PerfRowMeta(

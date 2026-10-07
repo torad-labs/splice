@@ -20,7 +20,9 @@ import splice.core.compaction.CompactionInstructions
 import splice.core.compaction.CompactionProjectConfig
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
+import splice.core.turn.noRequestUsage
 import splice.core.util.EnvReader
 import splice.core.util.WallClock
 import splice.sessions.query.SessionHead
@@ -123,6 +125,20 @@ class ProjectsRoutesTest {
         assertEquals("null", row.getValue("cost_today_usd").toString(), "no rate card is no dollar figure, never zero")
         assertEquals("1", row.getValue("unpriced_turns_today").jsonPrimitive.content)
         assertEquals(HttpStatusCode.NotFound, routes(emptyMap()).project("/nowhere").status)
+    }
+
+    @Test
+    fun `a local refusal has exact zero project cost without unreported usage`() {
+        val refusal = rig.row(AT, BUILDER, input = 0).copy(
+            outcome = "error:local-refusal",
+            fields = TurnBill.counters(noRequestUsage) + (PerfKeys.ATTEMPTS to 0L),
+        )
+        val head = rig.head("codex", listOf(refusal))
+        val project = rig.json(routes(mapOf("codex" to head)).project(rig.repo.toString()).body)
+        assertEquals("1", project.getValue("turns_today").jsonPrimitive.content)
+        assertEquals("0", project.getValue("unreported_usage_turns_today").jsonPrimitive.content)
+        assertEquals("0", project.getValue("unpriced_turns_today").jsonPrimitive.content)
+        assertEquals(0.0, project.getValue("cost_today_usd").jsonPrimitive.double)
     }
 
     @Test

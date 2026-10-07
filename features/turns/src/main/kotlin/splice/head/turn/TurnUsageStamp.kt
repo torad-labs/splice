@@ -71,6 +71,8 @@ internal class TurnUsageStamp(
         // TurnBill emits only observed buckets. An explicit zero is retained, but a failed
         // stream that reported no usage leaves the billing fields absent, not fabricated zeros.
         // Absorbed-round counters appear only when the turn absorbed a measured request.
+        // A later posted bill must replace any earlier no-request ownership.
+        drive.perf.setCount(PerfKeys.NO_REQUEST, 0L)
         TurnBill.counters(usage).forEach { (key, value) -> drive.perf.setCount(key, value) }
     }
 }

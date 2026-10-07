@@ -24,6 +24,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -32,10 +33,14 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
 import splice.core.model.TurnBill
+import splice.core.model.TurnPrice
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.perf.WsAttemptTiming
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
@@ -50,12 +55,14 @@ import splice.core.util.LogSink
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.anthropic.PassthroughStreamTranslator
 import splice.dialect.anthropic.PassthroughTurnContext
+import splice.head.admission.LocalRefusal
 import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.ObservedRoundPost
 import splice.head.round.RunnerSignals
+import splice.head.usage.EconomicsStore
 import splice.head.usage.OutputClamp
 import splice.head.usage.UsageStore
 import splice.head.wire.ClientChannel
@@ -74,10 +81,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
 /** One stamp with an observable perf row; [tag] isolates each test's files. */
-private class UsageStampRig(tmp: Path, private val tag: String) {
+private class UsageStampRig(tmp: Path, private val tag: String, economics: EconomicsStore? = null) {
     val log = LogSink { }
     val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
-    val telemetry = TurnTelemetry("anthropic", PerfStats(perfFile), log, ElapsedClock { 5L })
+    val telemetry = TurnTelemetry("anthropic", PerfStats(perfFile), log, ElapsedClock { 5L }, economics)
     val usageStore = UsageStore(tmp.resolve("u-$tag.json"), tmp.resolve("rl-$tag.json"))
     val stamp = TurnUsageStamp(usageStore, log, telemetry)
 
@@ -115,6 +122,168 @@ private class UsageStampRig(tmp: Path, private val tag: String) {
         toolSearch = null,
         roundInterceptor = interceptor,
     )
+}
+
+class NoRequestAccountingTest(@param:TempDir private val tmp: Path) {
+    private val rates = ModelRates(2.0, 0.2, 10.0)
+    private val price = TurnPrice(
+        ModelCatalog(
+            discoveryPrefix = "synthetic--",
+            models = listOf(ModelEntry("sonnet-4-6", contextWindow = 100_000, rates = rates)),
+            defaultContextWindow = 100_000,
+        ),
+    )
+
+    private fun success(usage: Usage) =
+        TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = usage)
+
+    private fun counters(file: Path): Map<String, Long> {
+        val row = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        return row.filterValues { it.jsonPrimitive.content.toLongOrNull() != null }
+            .mapValues { it.value.jsonPrimitive.long }
+    }
+
+    @Test
+    fun `success and salvage keep no-request ownership through the row and hourly adapter`() = runBlocking {
+        for (salvage in listOf(false, true)) {
+            val economics = EconomicsStore(tmp.resolve("hour-$salvage.json"), price)
+            val rig = UsageStampRig(tmp, "no-request-$salvage", economics)
+            val drive = rig.drive()
+            try {
+                if (salvage) {
+                    rig.stamp.stampSalvaged(drive, noRequestUsage)
+                } else {
+                    rig.stamp.stampSuccess(drive, success(noRequestUsage))
+                }
+                val stamped = drive.perf.snapshot().counters
+                assertTrue(TurnBill.fullyReported(stamped), "the stamp must retain no-request ownership")
+                assertNull(stamped[PerfKeys.IN_TOKENS])
+                assertNull(stamped[PerfKeys.OUT_TOKENS])
+                rig.telemetry.recordPerf(drive, "error:local-refusal")
+                assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+                val row = counters(rig.perfFile)
+                assertEquals(0.0, TurnBill.usd(row, rates))
+                assertNull(row[PerfKeys.CACHED_TOKENS])
+                assertNull(row[PerfKeys.CACHE_WRITE_TOKENS])
+                val hour = economics.read().single()
+                assertEquals(0L, hour.counts.unreportedUsageTurns)
+                assertEquals(0L, hour.unpricedTurns)
+                assertEquals(0.0, hour.costUsd)
+            } finally {
+                drive.slot.release()
+                rig.usageStore.flushNow()
+                economics.flushNow()
+            }
+        }
+    }
+
+    @Test
+    fun `the direct local refusal producer writes a complete zero bill without token observations`() =
+        runBlocking {
+            val rig = UsageStampRig(tmp, "direct-local-refusal")
+            val drive = rig.drive()
+            try {
+                rig.telemetry.recordLocalRefusal(
+                    drive.meta,
+                    drive.perf,
+                    0L,
+                    LocalRefusal("error:local-refusal", "synthetic refusal", null),
+                )
+                assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+                val row = counters(rig.perfFile)
+                assertTrue(TurnBill.fullyReported(row))
+                assertEquals(0.0, TurnBill.usd(row, rates))
+                assertNull(row[PerfKeys.IN_TOKENS])
+                assertNull(row[PerfKeys.OUT_TOKENS])
+            } finally {
+                drive.slot.release()
+                rig.usageStore.flushNow()
+            }
+        }
+
+    @Test
+    fun `a held no-request ending writes ownership through the retained row stamp`() = runBlocking {
+        val rig = UsageStampRig(tmp, "held-no-request")
+        val drive = rig.drive()
+        val held = drive.sourceRow.hold()
+        try {
+            rig.telemetry.recordPerf(drive, "error:local-refusal")
+            held.release(noRequestUsage)
+            assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+            val row = counters(rig.perfFile)
+            assertTrue(TurnBill.fullyReported(row))
+            assertEquals(0.0, TurnBill.usd(row, rates))
+            assertNull(row[PerfKeys.IN_TOKENS])
+        } finally {
+            held.release(null)
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
+
+    @Test
+    fun `a late posted missing report replaces earlier no-request ownership`() = runBlocking {
+        val rig = UsageStampRig(tmp, "held-posted-unknown")
+        val drive = rig.drive()
+        val held = drive.sourceRow.hold()
+        try {
+            rig.stamp.stampSuccess(drive, success(noRequestUsage))
+            rig.telemetry.recordPerf(drive, "error:synthetic")
+            drive.recordRawRound(TurnOutcome.ClientAbandoned())
+            held.release(null)
+            assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+            val row = counters(rig.perfFile)
+            assertFalse(TurnBill.fullyReported(row))
+            assertNull(TurnBill.usd(row, rates))
+        } finally {
+            held.release(null)
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
+
+    @Test
+    fun `a websocket sent then abandoned before its first event remains unreported with zero attempts`() =
+        runBlocking {
+            val economics = EconomicsStore(tmp.resolve("ws-abort-hour.json"), price)
+            val rig = UsageStampRig(tmp, "ws-abort-no-event", economics)
+            val drive = rig.drive()
+            try {
+                WsAttemptTiming(drive.perf).sendAccepted()
+                drive.recordRawRound(TurnOutcome.ClientAbandoned())
+                rig.stamp.stampKnownOnCancellation(drive)
+                rig.telemetry.recordPerf(drive, "client_gone")
+                assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+                val row = counters(rig.perfFile)
+                assertEquals(0L, row[PerfKeys.ATTEMPTS])
+                assertEquals(1L, row[PerfKeys.TRANSPORT_ATTEMPT_STARTS])
+                assertFalse(TurnBill.fullyReported(row))
+                assertNull(TurnBill.usd(row, rates))
+                val hour = economics.read().single()
+                assertEquals(1L, hour.counts.unreportedUsageTurns)
+                assertEquals(1L, hour.unpricedTurns)
+            } finally {
+                drive.slot.release()
+                rig.usageStore.flushNow()
+                economics.flushNow()
+            }
+        }
+
+    @Test
+    fun `posted salvage clears any earlier no-request stamp`() = runBlocking {
+        val rig = UsageStampRig(tmp, "posted-salvage")
+        val drive = rig.drive()
+        try {
+            TurnBill.counters(noRequestUsage).forEach { (key, value) -> drive.perf.setCount(key, value) }
+            rig.stamp.stampSalvaged(drive, Usage(reported = emptySet()))
+            val row = drive.perf.snapshot().counters
+            assertFalse(TurnBill.fullyReported(row))
+            assertNull(TurnBill.usd(row, rates))
+        } finally {
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
 }
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -362,6 +531,7 @@ class TurnUsageStampTest {
             rig.telemetry.recordPerf(drive, "ok")
             assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
             val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
+            assertFalse(row[PerfKeys.NO_REQUEST]?.jsonPrimitive?.long == 1L, "this source was posted")
             assertNull(row[PerfKeys.IN_TOKENS], "the cut source never reported its input")
             assertNull(row[PerfKeys.OUT_TOKENS], "absence is not a measured zero")
             assertNull(row[PerfKeys.CACHED_TOKENS])
@@ -407,6 +577,7 @@ class TurnUsageStampTest {
                 assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
                 val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
                 assertEquals("ok", row.getValue("outcome").jsonPrimitive.content)
+                assertFalse(row[PerfKeys.NO_REQUEST]?.jsonPrimitive?.long == 1L, "unwound content was posted")
                 assertNull(row[PerfKeys.IN_TOKENS], "unwound content without usage is unreported")
                 assertNull(row[PerfKeys.OUT_TOKENS])
                 assertNull(row[PerfKeys.CACHED_TOKENS])

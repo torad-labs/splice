@@ -1,13 +1,16 @@
 package splice.core.model
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.perf.PerfKeys
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.turn.UsageHistory
+import splice.core.turn.noRequestUsage
 
 class TurnBillObservedPriceTest {
     private val rates = ModelRates(2.0, 0.2, 10.0, cacheWrite = 2.5)
@@ -85,6 +88,42 @@ class TurnBillObservedPriceTest {
         val actualKnownSpend = TokenCost().of(TokenBuckets(input = 100_000), tiered) +
             TokenCost().of(TokenBuckets(input = 200_000), tiered)
         assertTrue(TurnBill.lowerBoundUsd(row, tiered)!! <= actualKnownSpend)
+    }
+
+    @Test
+    fun `no request is an exact zero bill without any measured token fields`() {
+        val row = TurnBill.counters(noRequestUsage.copy())
+        assertEquals(1L, row[PerfKeys.NO_REQUEST])
+        assertEquals(noRequestUsage.history, TurnBill.history(row))
+        assertTrue(TurnBill.fullyReported(row))
+        assertEquals(0.0, TurnBill.usd(row, rates))
+        val tokenKeys = setOf(
+            PerfKeys.IN_TOKENS,
+            PerfKeys.OUT_TOKENS,
+            PerfKeys.CACHED_TOKENS,
+            PerfKeys.CACHE_WRITE_TOKENS,
+        )
+        assertTrue(row.keys.none { it in tokenKeys })
+        assertFalse(TurnBill.fullyReported(TurnBill.counters(Usage(reported = emptySet()))))
+    }
+
+    @Test
+    fun `no request cannot hide an earlier missing report`() {
+        val cut = noRequestUsage.copy(history = noRequestUsage.history.copy(cutRounds = 1))
+        val row = TurnBill.counters(cut)
+        assertFalse(TurnBill.fullyReported(row))
+        assertNull(TurnBill.usd(row, rates))
+    }
+
+    @Test
+    fun `no final request retains measured absorbed spend instead of forcing zero`() {
+        val usage = noRequestUsage.copy(
+            outputTokens = 7,
+            history = noRequestUsage.history.copy(absorbed = AbsorbedRounds(1, 100, 20, 0, 7)),
+        )
+        val row = TurnBill.counters(usage)
+        assertTrue(TurnBill.fullyReported(row))
+        assertEquals(0.000234, TurnBill.usd(row, rates)!!, 1e-12)
     }
 
     @Test

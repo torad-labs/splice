@@ -17,14 +17,18 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import splice.core.model.TurnBill
+import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeRedirectablePost
+import splice.provider.codex.stream.CodeModeRuntimeStarter
 import splice.provider.codex.stream.CodeModeSourceCapture
 import splice.provider.codex.stream.CodeModeSourceInterruptedException
 import splice.provider.codex.stream.CodeModeStreamAdmission
 import splice.provider.codex.stream.CodeModeStreamingCell
+import splice.provider.codex.stream.CodeModeStreams
 import splice.upstream.LifecycleScope
 import splice.upstream.PostingTurnRow
 import splice.upstream.RedirectableRoundPost
@@ -34,8 +38,10 @@ import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.codemode.CodeModeStep
+import splice.upstream.failure.CodeModeStartException
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
+import java.io.IOException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -43,6 +49,33 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.hours
 
 class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
+    @Test
+    fun `a typed runtime boot failure bills its completed source receipt exactly once`() {
+        val state = SourceState()
+        assertTrue(
+            state.registry.source.finish(
+                state.record,
+                state.outcome.customCalls.single(),
+                state.wire.continuity(state.outcome),
+                state.outcome.usage,
+            ),
+        )
+        val starter = CodeModeRuntimeStarter(CodeModeRuntimeRun(state.config.runtimes), state.registry, state.config)
+        val failed = starter.failed(state.record, CodeModeStartException(IOException("synthetic boot failed")))
+        val streams = CodeModeStreams(state.config, state.registry, state.wire)
+        try {
+            val billed = streams.billFinished(state.record, failed) as TurnOutcome.Failure
+            assertEquals(state.outcome.usage, billed.salvagedUsage)
+            assertNull(billed.partial, "a local boot failure cannot open a source re-anchor")
+            val counters = TurnBill.counters(billed.salvagedUsage)
+            assertEquals(1_400L, counters[PerfKeys.IN_TOKENS])
+            assertNull(counters[PerfKeys.ABSORBED_ROUNDS], "the completed source is still the final owned request")
+            assertNull(counters[PerfKeys.CUT_SOURCE_ROUNDS], "the runtime failure posted no request")
+        } finally {
+            streams.stop()
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = ["lost", "expired"])
     fun `a terminal losing ownership after its early check closes the live cell as disposal`(

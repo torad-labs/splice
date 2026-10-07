@@ -6,6 +6,7 @@ import splice.core.perf.PerfKeys
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
+import splice.core.turn.noRequestUsage
 import splice.provider.codex.CODE_MODE_RECORD_LOG_CHARS
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeRecord
@@ -85,7 +86,12 @@ internal class CodeModeRuntimeStarter(
             registry.lose(record, interrupted)
             interrupted
         }
-        return TurnOutcome.Failure(detail, cause = FailureCause.INTERNAL, phase = FailurePhase.MID_OUTPUT)
+        return TurnOutcome.Failure(
+            detail,
+            cause = FailureCause.INTERNAL,
+            phase = FailurePhase.MID_OUTPUT,
+            salvagedUsage = noRequestUsage,
+        )
     }
 
     private fun runtime(): CodeModeRuntime = try {

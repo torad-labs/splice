@@ -9,6 +9,7 @@ import splice.core.turn.GatewayCustomCall
 import splice.core.turn.HeadStopKey
 import splice.core.turn.HeadStopSignal
 import splice.core.turn.TurnOutcome
+import splice.core.turn.noRequestUsage
 import splice.core.util.LogSink
 import splice.provider.codex.branch.CodexCodeModeBranch
 import splice.provider.codex.state.CodeModeTurnIdentity
@@ -213,5 +214,6 @@ internal class CodexCodeModeTurn(
             deterministic = true,
             cause = FailureCause.CODE_MODE_PROTOCOL,
             phase = FailurePhase.MID_OUTPUT,
+            salvagedUsage = noRequestUsage,
         )
 }

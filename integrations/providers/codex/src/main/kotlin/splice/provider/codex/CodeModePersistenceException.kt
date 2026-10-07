@@ -4,6 +4,7 @@ package splice.provider.codex
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
+import splice.core.turn.noRequestUsage
 import splice.core.util.SafeFailureText
 import splice.upstream.codemode.CodeModeSourcePersistenceException
 import java.io.IOException
@@ -25,5 +26,6 @@ internal class CodeModePersistenceException(cause: IOException, diskFull: Boolea
         // source is deliberately NOT rerun. No upstream layer can repair a local persistence fault.
         cause = FailureCause.CODE_MODE_PROTOCOL,
         phase = FailurePhase.MID_OUTPUT,
+        salvagedUsage = noRequestUsage,
     )
 }

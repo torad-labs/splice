@@ -1,10 +1,10 @@
 // NEW: aggregates billed upstream outcomes across hidden code-mode continuation rounds.
 package splice.provider.codex
 
-import splice.core.turn.AbsorbedRounds
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.core.turn.UsageField
+import splice.core.turn.UsageRequest
+import splice.core.turn.noRequestUsage
 
 internal class CodeModeOutcomeAccumulator {
     private var success: TurnOutcome.Success? = null
@@ -27,18 +27,28 @@ internal class CodeModeOutcomeAccumulator {
         }
     }
 
-    // Local failures must not turn prior prose into an upstream re-anchor that can regenerate source.
-    fun finishLocal(outcome: TurnOutcome): TurnOutcome = when (val combined = finish(outcome)) {
-        is TurnOutcome.Failure -> combined.copy(partial = null)
-        else -> combined
+    // A local ending posts no additional request and cannot turn prior prose into a source re-anchor.
+    fun finishLocal(outcome: TurnOutcome): TurnOutcome = when (outcome) {
+        is TurnOutcome.Success -> mergeSuccess(success, outcome, localUsage(outcome.usage))
+        is TurnOutcome.Failure -> outcome.copy(partial = null, salvagedUsage = localUsage(outcome.salvagedUsage))
+        is TurnOutcome.ClientAbandoned -> outcome.copy(salvagedUsage = localUsage(outcome.salvagedUsage))
     }
 
-    private fun mergeSuccess(prior: TurnOutcome.Success?, latest: TurnOutcome.Success): TurnOutcome.Success {
-        if (prior == null) return latest
+    private fun localUsage(latest: Usage): Usage {
+        val local = latest.copy(history = latest.history.copy(request = UsageRequest.NONE))
+        return success?.usage?.followedBy(local) ?: local
+    }
+
+    private fun mergeSuccess(
+        prior: TurnOutcome.Success?,
+        latest: TurnOutcome.Success,
+        usage: Usage = prior?.let { mergeRoundUsage(it.usage, latest.usage) } ?: latest.usage,
+    ): TurnOutcome.Success {
+        if (prior == null) return latest.copy(usage = usage)
         return latest.copy(
             hasToolUse = prior.hasToolUse || latest.hasToolUse,
             incomplete = prior.incomplete || latest.incomplete,
-            usage = mergeRoundUsage(prior.usage, latest.usage),
+            usage = usage,
             thinkingText = listOf(prior.thinkingText, latest.thinkingText)
                 .filter(String::isNotEmpty)
                 .joinToString("\n\n"),
@@ -67,42 +77,10 @@ internal class CodeModeOutcomeAccumulator {
         hasToolUse = prior.hasToolUse || latest?.hasToolUse == true,
         reasoningEnvelopes = prior.reasoningEnvelopes + latest?.reasoningEnvelopes.orEmpty(),
         toolTearOpen = latest?.toolTearOpen == true,
-        usage = mergeTerminalUsage(prior.usage, latest?.usage ?: Usage(reported = emptySet())),
+        usage = mergeTerminalUsage(prior.usage, latest?.usage ?: noRequestUsage),
     )
 
-    private fun mergeRoundUsage(prior: Usage, latest: Usage): Usage {
-        val final = if (latest.localStep) prior else latest
-        val observations = final.reported + prior.reported.intersect(setOf(UsageField.OUTPUT))
-        val missingBills = missingBills(prior, latest, observations)
-        return Usage(
-            inputTokens = final.inputTokens,
-            outputTokens = prior.outputTokens + latest.outputTokens,
-            cachedTokens = final.cachedTokens,
-            reasoningTokens = prior.reasoningTokens + latest.reasoningTokens,
-            cacheWriteTokens = final.cacheWriteTokens,
-            localStep = prior.localStep || latest.localStep,
-            codeModeDiverged = prior.codeModeDiverged || latest.codeModeDiverged,
-            recordedOutputTokens = prior.recordedOutputTokens + latest.recordedOutputTokens,
-            clientContext = contextFor(prior, latest, final),
-            absorbed = prior.absorbed +
-                (if (latest.localStep) AbsorbedRounds() else prior.finalRound) + latest.absorbed,
-            cutRounds = prior.cutRounds + latest.cutRounds + missingBills,
-            reported = observations,
-        )
-    }
-
-    private fun missingBills(prior: Usage, latest: Usage, observations: Set<UsageField>): Long {
-        if (latest.localStep || observations.size < UsageField.entries.size) return 0
-        val before = if (prior.reported.size < UsageField.entries.size) 1L else 0L
-        val final = if (latest.reported.size < UsageField.entries.size) 1L else 0L
-        return before + final
-    }
-
-    private fun contextFor(prior: Usage, latest: Usage, final: Usage): Usage? {
-        if (latest.clientContext != null) return latest.clientContext
-        if (UsageField.INPUT in final.reported) return null
-        return prior.takeIf { UsageField.INPUT in it.reported } ?: prior.clientContext
-    }
+    private fun mergeRoundUsage(prior: Usage, latest: Usage): Usage = prior.followedBy(latest)
 
     private fun mergeTerminalUsage(prior: Usage, latest: Usage): Usage = mergeRoundUsage(prior, latest)
 }

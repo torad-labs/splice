@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonElement
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
+import splice.core.turn.noRequestUsage
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
@@ -228,6 +229,7 @@ internal class CodexCodeModeResume(
             deterministic = true,
             cause = FailureCause.CODE_MODE_PROTOCOL,
             phase = FailurePhase.MID_OUTPUT,
+            salvagedUsage = noRequestUsage,
         )
 }
 

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.UsageHistory
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -96,7 +97,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         assertEquals("final", outcome.bodyText)
         // The script round was a request of its own: its input is absorbed beside the final round's.
         val script = AbsorbedRounds(rounds = 1, inputTokens = 10, cachedTokens = 3, outputTokens = 2)
-        assertEquals(Usage(20, 6, 5, 3, absorbed = script), outcome.usage)
+        assertEquals(Usage(20, 6, 5, 3, history = UsageHistory(absorbed = script)), outcome.usage)
     }
 
     @Test

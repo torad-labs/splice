@@ -7,6 +7,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.noRequestUsage
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeOutcomeAccumulator
@@ -138,7 +139,7 @@ internal class CodeModeStreams(
         record.sourceEnd = null
         round?.switching?.detach()
         return when (raw) {
-            is TurnOutcome.Success -> raw.copy(usage = usage ?: Usage(reported = emptySet()))
+            is TurnOutcome.Success -> raw.copy(usage = usage ?: noRequestUsage)
             null -> usage?.let { TurnOutcome.Success(false, false, it) }
             else -> raw
         }
@@ -172,7 +173,8 @@ internal class CodeModeStreams(
         }
     }
 
-    private fun addCuts(usage: Usage, cut: Long): Usage = usage.copy(cutRounds = usage.cutRounds + cut)
+    private fun addCuts(usage: Usage, cut: Long): Usage =
+        usage.copy(history = usage.history.copy(cutRounds = usage.cutRounds + cut))
 
     /** A source round is billed on the client step that posted it. One that finished before the step ended is merged
      *  into the step here. One still streaming then is owed to the step's row, which waits for the round's terminal

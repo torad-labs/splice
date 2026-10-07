@@ -10,9 +10,83 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.noRequestUsage
 
 class CodeModeUsageObservationTest {
     private fun success(usage: Usage) = TurnOutcome.Success(false, false, usage)
+
+    @Test
+    fun `every local ending preserves the posted prefix without inventing another request`() {
+        val prefix = Usage(inputTokens = 100, outputTokens = 3, cachedTokens = 20)
+        val endings = listOf(
+            success(Usage(localStep = true)),
+            TurnOutcome.Failure("synthetic local", FailureCause.CODE_MODE_PROTOCOL, FailurePhase.MID_OUTPUT),
+            TurnOutcome.ClientAbandoned(),
+        )
+        for (ending in endings) {
+            val rounds = CodeModeOutcomeAccumulator()
+            rounds.absorb(success(prefix))
+            val result = rounds.finishLocal(ending)
+            val usage = when (result) {
+                is TurnOutcome.Success -> result.usage
+                is TurnOutcome.Failure -> {
+                    assertEquals(null, result.partial)
+                    result.salvagedUsage
+                }
+                is TurnOutcome.ClientAbandoned -> result.salvagedUsage
+            }
+            assertEquals(TurnBill.counters(prefix), TurnBill.counters(usage))
+            assertEquals(0L, usage.absorbed.rounds)
+            assertEquals(0L, usage.cutRounds)
+        }
+    }
+
+    @Test
+    fun `a local measured zero cannot complete an unreported upstream bill`() {
+        val rounds = CodeModeOutcomeAccumulator()
+        rounds.absorb(success(Usage(reported = emptySet())))
+        val result = rounds.finishLocal(success(Usage(localStep = true))) as TurnOutcome.Success
+        assertTrue(TurnBill.counters(result.usage).isEmpty())
+    }
+
+    @Test
+    fun `a local ending without a prefix cannot own a posted request`() {
+        val rounds = CodeModeOutcomeAccumulator()
+        val result = rounds.finishLocal(success(Usage(reported = emptySet()))) as TurnOutcome.Success
+        assertEquals(noRequestUsage, result.usage)
+    }
+
+    @Test
+    fun `a consumed source owns no missing bill beside the next posted request`() {
+        val rounds = CodeModeOutcomeAccumulator()
+        rounds.absorb(success(noRequestUsage.copy(outputTokens = 0)))
+        val next = Usage(inputTokens = 100, outputTokens = 7)
+        val result = rounds.finish(success(next)) as TurnOutcome.Success
+        assertEquals(next, result.usage)
+        assertEquals(0L, result.usage.cutRounds)
+        assertEquals(0L, result.usage.absorbed.rounds)
+    }
+
+    @Test
+    fun `an already counted source cut cannot become another missing final request`() {
+        val rounds = CodeModeOutcomeAccumulator()
+        val cut = noRequestUsage.copy(history = noRequestUsage.history.copy(cutRounds = 1))
+        rounds.absorb(success(cut))
+        val result = rounds.finish(success(Usage(inputTokens = 100, outputTokens = 7))) as TurnOutcome.Success
+        assertEquals(1L, result.usage.cutRounds)
+        assertEquals(0L, result.usage.absorbed.rounds)
+        assertEquals(100L, result.usage.inputTokens)
+    }
+
+    @Test
+    fun `no-request endings preserve either a known or unknown posted final round`() {
+        for (prefix in listOf(Usage(inputTokens = 100, outputTokens = 7), Usage(reported = emptySet()))) {
+            val rounds = CodeModeOutcomeAccumulator()
+            rounds.absorb(success(prefix))
+            val result = rounds.finish(success(noRequestUsage)) as TurnOutcome.Success
+            assertEquals(prefix, result.usage)
+        }
+    }
 
     @Test
     fun `hidden rounds without usage cannot manufacture observed token zeros`() {

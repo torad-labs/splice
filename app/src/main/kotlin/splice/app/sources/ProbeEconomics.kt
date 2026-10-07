@@ -5,7 +5,6 @@ import splice.core.model.TurnBill
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.head.usage.EconomicsBucket
-import splice.head.usage.EconomicsTurnCounts
 import splice.usage.perf.PerfRow
 import kotlin.time.Duration.Companion.hours
 
@@ -121,7 +120,7 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
     )
 
     private fun subtract(bucket: EconomicsBucket, probes: EconomicsBucket): EconomicsBucket = bucket.copy(
-        counts = EconomicsTurnCounts(remaining(bucket.turns, probes.turns), bucket.localSteps),
+        counts = bucket.counts.copy(turns = remaining(bucket.turns, probes.turns)),
         reqBytes = remaining(bucket.reqBytes, probes.reqBytes),
         upstreamBytes = remaining(bucket.upstreamBytes, probes.upstreamBytes),
         toolsEager = remaining(bucket.toolsEager, probes.toolsEager),

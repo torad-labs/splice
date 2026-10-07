@@ -11,6 +11,7 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.noRequestUsage
 import splice.core.wire.RateLimitReply
 import splice.head.HeadDeps
 import splice.head.perf.SourceRowHold
@@ -103,7 +104,7 @@ internal data class TurnDrive(
         private fun rawUsageOf(outcome: TurnOutcome): Usage? = when (outcome) {
             is TurnOutcome.Success -> outcome.usage
             is TurnOutcome.Failure ->
-                (outcome.partial?.usage ?: Usage(reported = emptySet())) + outcome.salvagedUsage
+                (outcome.partial?.usage ?: noRequestUsage) + outcome.salvagedUsage
             is TurnOutcome.ClientAbandoned -> outcome.salvagedUsage
         }
 

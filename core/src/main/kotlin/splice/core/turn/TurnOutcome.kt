@@ -43,21 +43,27 @@ public data class Usage(
      *  Code reads every assistant message's usage as the context total. Only the client payload reads
      *  it, and only while [inputTokens] is zero; splice's own accounting keeps the raw buckets above. */
     val clientContext: Usage? = null,
-    /** The rounds this usage billed before its final one, each a request of its own ([AbsorbedRounds]). */
-    val absorbed: AbsorbedRounds = AbsorbedRounds(),
-    /** Source rounds this usage's turn cut while they still streamed: their backend bill never arrived, so their
-     *  tokens are in none of the buckets above. Appended last, as [cacheWriteTokens] was, for positional callers. */
-    val cutRounds: Long = 0,
+    /** Requests billed before the final one, missing bills, and whether this value owns a final request. */
+    val history: UsageHistory = UsageHistory(request = if (localStep) UsageRequest.NONE else UsageRequest.POSTED),
     /** Only these observed buckets may become retained billing counters. Explicit zeros remain observations. */
     val reported: Set<UsageField> = ALL_USAGE_FIELDS,
 ) {
+    /** Earlier requests retain their existing read surface and billing shape. */
+    public val absorbed: AbsorbedRounds get() = history.absorbed
+
+    /** Requests cut before their backend bill arrived. */
+    public val cutRounds: Long get() = history.cutRounds
+
     public val unrecordedOutputTokens: Long get() = outputTokens - recordedOutputTokens
+
+    /** Supersede a posted final request, or retain it for a value that owns no request. */
+    public fun followedBy(latest: Usage): Usage = UsageRounds.followedBy(this, latest)
 
     /** This usage's final round as an absorbed round, for the merge that supersedes it. A round that
      *  reported no input of its own is none: its output stays in [outputTokens], billed with the final. */
     public val finalRound: AbsorbedRounds get() {
         if (UsageField.INPUT !in reported) return AbsorbedRounds()
-        if (localStep && inputTokens == 0L) return AbsorbedRounds()
+        if (history.request == UsageRequest.NONE) return AbsorbedRounds()
         return AbsorbedRounds(1, inputTokens, cachedTokens, cacheWriteTokens, outputTokens - absorbed.outputTokens)
     }
 
@@ -72,8 +78,7 @@ public data class Usage(
         codeModeDiverged = codeModeDiverged || other.codeModeDiverged,
         recordedOutputTokens = recordedOutputTokens + other.recordedOutputTokens,
         clientContext = other.clientContext ?: clientContext,
-        absorbed = absorbed + other.absorbed,
-        cutRounds = cutRounds + other.cutRounds,
+        history = history + other.history,
         reported = reported + other.reported,
     )
 }

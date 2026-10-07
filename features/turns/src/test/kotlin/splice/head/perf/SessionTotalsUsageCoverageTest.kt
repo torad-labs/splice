@@ -13,6 +13,7 @@ import splice.core.perf.PerfKeys
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.UsageHistory
 import splice.core.util.LogSink
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -42,7 +43,7 @@ class SessionTotalsUsageCoverageTest {
         val totals = SessionTotals(file, TurnPrice(null), WallClock { 1L }, LogSink {})
         val usage = Usage(
             outputTokens = 7,
-            absorbed = AbsorbedRounds(1, 100, 20, 10, 7),
+            history = UsageHistory(absorbed = AbsorbedRounds(1, 100, 20, 10, 7)),
             reported = setOf(UsageField.OUTPUT),
         )
         totals.add("feed0000", "synthetic", TurnBill.counters(usage), 2L)

@@ -5,6 +5,7 @@ import splice.core.model.TurnBill
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.UsageHistory
 
 /** The per-turn facts the rollup consumes. Nullable where a head genuinely may not report the
  *  field: the chat dialect has no tool deferral at all, and `null` must stay distinguishable from
@@ -42,8 +43,7 @@ public data class TurnEconomics(
             outputTokens = outTokens ?: 0,
             cachedTokens = cachedTokens ?: 0,
             cacheWriteTokens = cacheWriteTokens ?: 0,
-            absorbed = absorbed,
-            cutRounds = cutRounds,
+            history = UsageHistory(absorbed = absorbed, cutRounds = cutRounds),
             reported = buildSet {
                 if (inTokens != null) add(UsageField.INPUT)
                 if (outTokens != null) add(UsageField.OUTPUT)

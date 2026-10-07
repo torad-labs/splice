@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.UsageHistory
 
 class TurnBillObservedPriceTest {
     private val rates = ModelRates(2.0, 0.2, 10.0, cacheWrite = 2.5)
@@ -79,7 +80,7 @@ class TurnBillObservedPriceTest {
             longContext = LongContextRates(120_000L, 4.0, 0.4, 15.0),
         )
         val row = TurnBill.counters(
-            Usage(absorbed = AbsorbedRounds(2, 300_000, 0, 0, 0), reported = emptySet()),
+            Usage(history = UsageHistory(absorbed = AbsorbedRounds(2, 300_000, 0, 0, 0)), reported = emptySet()),
         )
         val actualKnownSpend = TokenCost().of(TokenBuckets(input = 100_000), tiered) +
             TokenCost().of(TokenBuckets(input = 200_000), tiered)

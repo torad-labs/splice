@@ -7,9 +7,19 @@ import splice.core.model.ModelRates
 import splice.core.model.TurnBill
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.noRequestUsage
 
 class RoundUsageUnknownContinuationTest {
     private val rates = ModelRates(2.0, 0.2, 10.0)
+
+    @Test
+    fun `no-request values are identities before and after a posted round`() {
+        for (posted in listOf(Usage(inputTokens = 100, outputTokens = 7), Usage(reported = emptySet()), Usage())) {
+            val total = RoundUsage().plusRound(noRequestUsage).plusRound(posted)
+                .plusTerminal(noRequestUsage.copy(outputTokens = 0)).toUsage()
+            assertEquals(posted, total)
+        }
+    }
 
     @Test
     fun `a genuinely local round keeps its explicit known zero bill`() {

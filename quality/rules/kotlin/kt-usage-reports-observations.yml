@@ -6,13 +6,18 @@ files:
   - "**/src/main/**/*.kt"
 rule:
   any:
-    - pattern: Usage($$$ARGS)
-    - pattern: splice.core.turn.Usage($$$ARGS)
-  not:
-    has:
-      kind: call_suffix
-      has:
-        kind: value_arguments
-        has:
-          kind: value_argument
-          regex: ^reported\s*=
+    - all:
+        - any:
+            - pattern: Usage($$$ARGS)
+            - pattern: splice.core.turn.Usage($$$ARGS)
+        - not:
+            has:
+              kind: call_suffix
+              has:
+                kind: value_arguments
+                has:
+                  kind: value_argument
+                  regex: ^reported\s*=
+    - pattern: import splice.core.turn.Usage as $ALIAS
+    - pattern: typealias $ALIAS = Usage
+    - pattern: typealias $ALIAS = splice.core.turn.Usage

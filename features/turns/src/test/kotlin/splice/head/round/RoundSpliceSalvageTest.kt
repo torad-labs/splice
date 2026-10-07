@@ -17,6 +17,7 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.UsageHistory
 
 class RoundSpliceSalvageTest {
 
@@ -52,7 +53,9 @@ class RoundSpliceSalvageTest {
                 inputTokens = 120,
                 outputTokens = 10,
                 reasoningTokens = 3,
-                absorbed = AbsorbedRounds(rounds = 1, inputTokens = 100, cachedTokens = 20, outputTokens = 3),
+                history = UsageHistory(
+                    absorbed = AbsorbedRounds(rounds = 1, inputTokens = 100, cachedTokens = 20, outputTokens = 3),
+                ),
                 reported = setOf(UsageField.INPUT, UsageField.OUTPUT),
             ),
             out.salvagedUsage,
@@ -64,10 +67,11 @@ class RoundSpliceSalvageTest {
     @Test
     fun `source rounds a turn cut accrue across its folded rounds and its dying one`() {
         val acc = RoundUsage()
-            .plusRound(Usage(inputTokens = 100, outputTokens = 3, cutRounds = 1))
-            .plusRound(Usage(inputTokens = 120, outputTokens = 2, cutRounds = 2))
+            .plusRound(Usage(inputTokens = 100, outputTokens = 3, history = UsageHistory(cutRounds = 1)))
+            .plusRound(Usage(inputTokens = 120, outputTokens = 2, history = UsageHistory(cutRounds = 2)))
         assertEquals(3L, acc.toUsage().cutRounds)
-        val out = rounds.withFailureSalvage(failure(Usage(outputTokens = 1, cutRounds = 1)), acc) as TurnOutcome.Failure
+        val terminal = failure(Usage(outputTokens = 1, history = UsageHistory(cutRounds = 1)))
+        val out = rounds.withFailureSalvage(terminal, acc) as TurnOutcome.Failure
         assertEquals(4L, out.salvagedUsage.cutRounds)
     }
 
@@ -184,7 +188,7 @@ class RoundSpliceSalvageTest {
                 outputTokens = 13,
                 cachedTokens = 20,
                 reasoningTokens = 3,
-                absorbed = AbsorbedRounds(rounds = 1, inputTokens = 50, outputTokens = 6),
+                history = UsageHistory(absorbed = AbsorbedRounds(rounds = 1, inputTokens = 50, outputTokens = 6)),
             ),
             out.salvagedUsage,
         )

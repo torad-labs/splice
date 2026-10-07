@@ -4,6 +4,7 @@ package splice.provider.codex.stream
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
+import splice.core.turn.noRequestUsage
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.provider.codex.CodeModePersistenceException
@@ -19,6 +20,7 @@ internal object CodeModeRejection {
             cause = FailureCause.CODE_MODE_PROTOCOL,
             phase = FailurePhase.MID_OUTPUT,
             deterministic = true,
+            salvagedUsage = noRequestUsage,
         )
     }
 

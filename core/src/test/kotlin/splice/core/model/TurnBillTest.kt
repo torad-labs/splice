@@ -11,6 +11,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.UsageHistory
 import kotlin.math.abs
 
 private const val TIER_OVER = 120_000L
@@ -71,7 +72,8 @@ class TurnBillTest {
 
         val rounds =
             AbsorbedRounds(rounds = 2, inputTokens = 30, cachedTokens = 5, cacheWriteTokens = 1, outputTokens = 4)
-        val row = TurnBill.counters(Usage(inputTokens = 20, outputTokens = 9, absorbed = rounds))
+        val usage = Usage(inputTokens = 20, outputTokens = 9, history = UsageHistory(absorbed = rounds))
+        val row = TurnBill.counters(usage)
         assertEquals(rounds, TurnBill.absorbed(row), "the row reads back what the turn wrote")
         assertEquals(9L, row[PerfKeys.OUT_TOKENS], "out_tokens stays the turn's whole output")
     }
@@ -82,7 +84,7 @@ class TurnBillTest {
         val plain = Usage(inputTokens = 10, outputTokens = 2)
         assertTrue(PerfKeys.CUT_SOURCE_ROUNDS !in TurnBill.counters(plain), "${TurnBill.counters(plain)}")
 
-        val row = TurnBill.counters(plain + Usage(cutRounds = 2))
+        val row = TurnBill.counters(plain + Usage(history = UsageHistory(cutRounds = 2)))
         assertEquals(2L, row[PerfKeys.CUT_SOURCE_ROUNDS], "$row")
         assertNull(TurnBill.usd(row, rates), "the cut source bill is unknown")
         assertEquals(priceOf(TurnBill.counters(plain)), TurnBill.lowerBoundUsd(row, rates)!!, CENT_FRACTION)
@@ -107,7 +109,7 @@ class TurnBillTest {
     fun `each absorbed round is priced as a request of its own, at its own tier`() {
         val early = Usage(inputTokens = 100_000, outputTokens = 300, cachedTokens = 60_000)
         val final = Usage(inputTokens = 150_000, outputTokens = 500, cachedTokens = 90_000)
-        val row = TurnBill.counters(final.copy(outputTokens = 800, absorbed = early.finalRound))
+        val row = TurnBill.counters(final.copy(outputTokens = 800, history = UsageHistory(absorbed = early.finalRound)))
 
         val separately = priceOf(TurnBill.counters(early)) + priceOf(TurnBill.counters(final))
         assertEquals(separately, priceOf(row), CENT_FRACTION)
@@ -132,7 +134,7 @@ class TurnBillTest {
         TurnBill.counters(
             Usage(
                 outputTokens = rounds.sumOf(Usage::outputTokens),
-                absorbed = rounds.map(Usage::finalRound).reduce(AbsorbedRounds::plus),
+                history = UsageHistory(absorbed = rounds.map(Usage::finalRound).reduce(AbsorbedRounds::plus)),
             ),
         )
 

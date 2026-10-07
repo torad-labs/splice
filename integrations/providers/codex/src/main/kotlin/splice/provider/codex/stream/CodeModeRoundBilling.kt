@@ -3,6 +3,7 @@ package splice.provider.codex.stream
 
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.noRequestUsage
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.provider.codex.CodeModePersistenceException
@@ -77,7 +78,9 @@ internal class CodeModeRoundBilling(
             }
             if (usage == null && !readerEnd) return
             owed = null
-            due to (usage ?: Usage(cutRounds = 1, reported = emptySet()).takeIf { unreported && !clientCut })
+            val missing = noRequestUsage.copy(history = noRequestUsage.history.copy(cutRounds = 1))
+                .takeIf { unreported && !clientCut }
+            due to (usage ?: missing)
         }
         Cancellables.runCatchingBestEffort { due.settle(usage) }.onFailure { failure ->
             log("[code-mode] the posting turn's row was not released (${failure::class.simpleName})")

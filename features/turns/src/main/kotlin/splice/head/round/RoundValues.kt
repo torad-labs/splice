@@ -9,6 +9,8 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.UsageHistory
+import splice.core.turn.UsageRequest
 
 /** One position in the round loop: the body to POST plus the two round counters. Serves BOTH
  *  directions — passed INTO FoldRounds.nextRoundBody as the current cursor and returned as the
@@ -43,43 +45,26 @@ internal data class RoundUsage(
     private val hasRound: Boolean = false,
 ) {
     fun plusRound(u: Usage): RoundUsage {
-        val prior = toUsage()
-        val latest = if (u.localStep && hasRound) prior else u
-        val priorOutput = if (hasRound) reported.intersect(setOf(UsageField.OUTPUT)) else emptySet()
-        val observations = latest.reported + priorOutput
-        val missingBills = missingBills(u, observations)
+        val total = toUsage().followedBy(u)
         return RoundUsage(
-            lastInput = latest.inputTokens,
-            lastCached = latest.cachedTokens,
-            outSum = outSum + u.outputTokens,
-            reasoningSum = reasoningSum + u.reasoningTokens,
-            lastCacheWrite = latest.cacheWriteTokens,
-            localStep = localStep || u.localStep,
-            codeModeDiverged = codeModeDiverged || u.codeModeDiverged,
-            recordedOutputSum = recordedOutputSum + u.recordedOutputTokens,
-            clientContext = contextFor(u, latest, prior),
-            absorbed = absorbed + (if (u.localStep) AbsorbedRounds() else prior.finalRound) + u.absorbed,
-            cutRounds = cutRounds + u.cutRounds + missingBills,
-            reported = observations,
-            hasRound = hasRound || !u.localStep,
+            lastInput = total.inputTokens,
+            lastCached = total.cachedTokens,
+            outSum = total.outputTokens,
+            reasoningSum = total.reasoningTokens,
+            lastCacheWrite = total.cacheWriteTokens,
+            localStep = total.localStep,
+            codeModeDiverged = total.codeModeDiverged,
+            recordedOutputSum = total.recordedOutputTokens,
+            clientContext = total.clientContext,
+            absorbed = total.absorbed,
+            cutRounds = total.cutRounds,
+            reported = total.reported,
+            hasRound = total.history.request == UsageRequest.POSTED,
         )
     }
 
     /** A failed continuation is a distinct request too: never inherit the previous round's bill. */
     fun plusTerminal(u: Usage): RoundUsage = plusRound(u)
-
-    private fun missingBills(u: Usage, observations: Set<UsageField>): Long {
-        if (u.localStep || observations.size < UsageField.entries.size) return 0
-        val prior = if (hasRound && reported.size < UsageField.entries.size) 1L else 0L
-        val latest = if (u.reported.size < UsageField.entries.size) 1L else 0L
-        return prior + latest
-    }
-
-    private fun contextFor(u: Usage, latest: Usage, prior: Usage): Usage? {
-        if (u.clientContext != null) return u.clientContext
-        if (UsageField.INPUT in latest.reported) return null
-        return prior.takeIf { UsageField.INPUT in reported } ?: clientContext
-    }
 
     fun toUsage() = Usage(
         inputTokens = lastInput,
@@ -91,8 +76,11 @@ internal data class RoundUsage(
         codeModeDiverged = codeModeDiverged,
         recordedOutputTokens = recordedOutputSum,
         clientContext = clientContext,
-        absorbed = absorbed,
-        cutRounds = cutRounds,
+        history = UsageHistory(
+            absorbed = absorbed,
+            cutRounds = cutRounds,
+            request = if (hasRound) UsageRequest.POSTED else UsageRequest.NONE,
+        ),
         reported = reported,
     )
 }

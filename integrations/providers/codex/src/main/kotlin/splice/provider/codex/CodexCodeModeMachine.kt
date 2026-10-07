@@ -5,8 +5,8 @@ import kotlinx.coroutines.CancellationException
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
-import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.noRequestUsage
 import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
 import splice.provider.codex.state.CodeModeWorkerRecovery
@@ -93,6 +93,7 @@ internal class CodexCodeModeMachine(
             return TurnOutcome.Failure(
                 "code-mode has no client calls to emit",
                 deterministic = true,
+                salvagedUsage = noRequestUsage,
                 cause = FailureCause.CODE_MODE_PROTOCOL,
                 phase = FailurePhase.MID_OUTPUT,
             )
@@ -127,7 +128,7 @@ internal class CodexCodeModeMachine(
         return TurnOutcome.Success(
             hasToolUse = true,
             incomplete = false,
-            usage = Usage(localStep = true, reported = UsageField.entries.toSet()),
+            usage = noRequestUsage.copy(localStep = true, reported = UsageField.entries.toSet()),
         )
     }
 
@@ -137,7 +138,7 @@ internal class CodexCodeModeMachine(
         return TurnOutcome.Success(
             hasToolUse = false,
             incomplete = false,
-            usage = Usage(localStep = true, reported = UsageField.entries.toSet()),
+            usage = noRequestUsage.copy(localStep = true, reported = UsageField.entries.toSet()),
         )
     }
 
@@ -153,6 +154,7 @@ internal class CodexCodeModeMachine(
         return TurnOutcome.Failure(
             message,
             deterministic = true,
+            salvagedUsage = noRequestUsage,
             cause = FailureCause.CODE_MODE_PROTOCOL,
             phase = FailurePhase.MID_OUTPUT,
         )
@@ -271,7 +273,7 @@ internal class CodexCodeModeMachine(
         return TurnOutcome.Success(
             hasToolUse = false,
             incomplete = false,
-            usage = Usage(localStep = true, reported = UsageField.entries.toSet()),
+            usage = noRequestUsage.copy(localStep = true, reported = UsageField.entries.toSet()),
         )
     }
 }

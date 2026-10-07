@@ -3,10 +3,12 @@ package splice.head.turn
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -19,6 +21,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
@@ -50,6 +53,8 @@ import splice.upstream.ProviderTuning
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.TurnSignals
+import splice.upstream.WsRound
+import splice.upstream.WsRoundRunner
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
@@ -116,6 +121,79 @@ class AccountTurnTimeoutTest {
         }
     }
 
+    @Test
+    fun `an expired unsent continuation preserves the prior observed raw bill`() = runBlocking {
+        val rig = Rig(tmp)
+        val drive = rig.drive()
+        val turnJob = Job()
+        try {
+            val first = rig.inputs(drive, this, turnJob)
+            val known = rig.post.post(first) as TurnOutcome.Success
+            drive.recordRawRound(known)
+            val expected = TurnBill.counters(known.usage)
+            rig.expire()
+            val continuation = rig.inputs(drive, this, turnJob)
+            val before = drive.perf.snapshot().counters[PerfKeys.TRANSPORT_ATTEMPT_STARTS]
+            val ended = rig.post.post(continuation)
+            drive.recordRawRound(ended)
+            assertEquals(1, rig.calls, "the expired continuation never reached HTTP")
+            assertEquals(before, drive.perf.snapshot().counters[PerfKeys.TRANSPORT_ATTEMPT_STARTS])
+            assertEquals(expected, TurnBill.counters(checkNotNull(drive.rawRoundUsage())))
+            assertEquals(0L, drive.rawRoundUsage()!!.cutRounds)
+            assertEquals(0L, drive.rawRoundUsage()!!.absorbed.rounds)
+        } finally {
+            turnJob.cancel()
+            drive.slot.release()
+            rig.client.close()
+            rig.mock.stop()
+        }
+    }
+
+    @Test
+    fun `a started websocket before the HTTP skip remains a request with missing usage`() = runBlocking {
+        val rig = Rig(tmp)
+        val drive = rig.drive()
+        val turnJob = Job()
+        try {
+            val first = rig.inputs(drive, this, turnJob)
+            val known = rig.post.post(first) as TurnOutcome.Success
+            drive.recordRawRound(known)
+            rig.expire()
+            val continuation = rig.inputs(drive, this, turnJob)
+            var websocketCalls = 0
+            val runner = object : WsRoundRunner {
+                override suspend fun attempt(
+                    bodyJson: String,
+                    meta: TurnMeta,
+                    turnHeaders: Map<String, String>,
+                    creds: Credentials,
+                ): WsRound? {
+                    websocketCalls++
+                    return null
+                }
+
+                override fun isFailureTerminal(event: JsonObject): Boolean = false
+                override fun roundEnded(meta: TurnMeta, ok: Boolean) = Unit
+                override fun roundBypassed(meta: TurnMeta) = Unit
+            }
+            runner.attempt("{}", drive.meta, emptyMap(), Credentials.Bearer("synthetic"), drive.perf)
+            val ended = rig.post.post(continuation)
+            assertEquals(1, websocketCalls, "the WebSocket attempt began before its HTTP fallback was skipped")
+            drive.recordRawRound(ended)
+            val total = checkNotNull(drive.rawRoundUsage())
+            assertEquals(1, rig.calls, "the expired HTTP fallback still makes no send")
+            assertNull(TurnBill.counters(total)[PerfKeys.IN_TOKENS], "the started WebSocket's input is unknown")
+            assertEquals(known.usage.inputTokens, total.absorbed.inputTokens)
+            assertEquals(1L, total.absorbed.rounds, "only the earlier known request is absorbed")
+            assertEquals(0L, total.cutRounds, "absence remains visible in the final request, not a fabricated zero")
+        } finally {
+            turnJob.cancel()
+            drive.slot.release()
+            rig.client.close()
+            rig.mock.stop()
+        }
+    }
+
     private class Rig(tmp: Path) {
         val mock = MockChatGptUpstream()
         val calls: Int get() = mock.upstreamBodies.size
@@ -173,6 +251,16 @@ class AccountTurnTimeoutTest {
                 TearAwareEvents(provider, log = {}),
             ),
             RetryNotice {},
+        )
+
+        fun inputs(drive: TurnDrive, scope: CoroutineScope, turnJob: Job): WsRoundInputs = WsRoundInputs(
+            drive,
+            RoundBody.Text("{}"),
+            terminal,
+            scope,
+            turnJob,
+            ClientFrameEmitted { false },
+            0L,
         )
 
         fun newTerminal(): CollectingTerminal =

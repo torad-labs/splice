@@ -8,6 +8,7 @@ import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
+import splice.core.turn.noRequestUsage
 import splice.head.admission.TurnQuota
 import splice.head.usage.TurnProviderAnswers
 import splice.head.usage.UsageStore
@@ -116,6 +117,14 @@ internal class SseRoundPost(
         )
         val outcome = provider.streamTranslator(drive.meta, signals).driveTurn(emptyFlow(), inputs.sink)
         drive.perf.mark(PerfKeys.STREAM_END)
-        return outcome
+        if (inputs.requestStartedThisRound()) return outcome
+        return when (outcome) {
+            is TurnOutcome.Success -> outcome.copy(usage = noRequestUsage)
+            is TurnOutcome.Failure -> outcome.copy(
+                partial = outcome.partial?.copy(usage = noRequestUsage),
+                salvagedUsage = noRequestUsage,
+            )
+            is TurnOutcome.ClientAbandoned -> outcome.copy(salvagedUsage = noRequestUsage)
+        }
     }
 }

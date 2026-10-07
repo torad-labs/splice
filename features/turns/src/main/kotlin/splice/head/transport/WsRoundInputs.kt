@@ -23,6 +23,10 @@ internal data class WsRoundInputs(
     // The turn's count when this round's inputs are made, before its WebSocket attempt. Never copied: a copy
     // would take the count again, after the attempt.
     private val sizeRefusalsBefore = drive.perfCounter(PerfKeys.WS_REFUSED_TOO_LARGE)
+    private val attemptsBefore = drive.perfCounter(PerfKeys.TRANSPORT_ATTEMPT_STARTS)
+
+    /** A WebSocket or HTTP attempt actually began for this round, not merely an earlier continuation. */
+    fun requestStartedThisRound(): Boolean = drive.perfCounter(PerfKeys.TRANSPORT_ATTEMPT_STARTS) > attemptsBefore
 
     /** This round's WebSocket peer refused its body as too large (a 1009 before any event), so the same body's
      *  HTTP 4xx is that refusal again (WsSizeRefusal). */

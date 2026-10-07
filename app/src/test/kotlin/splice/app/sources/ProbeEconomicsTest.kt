@@ -44,6 +44,32 @@ private const val LOCAL_WORK_ROW =
 
 class ProbeEconomicsTest {
     @Test
+    fun `a reconciled probe cannot erase a real request whose usage is unreported`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        val unreported =
+            """{"ts":3600123,"model":"synthetic","outcome":"failed","req_bytes":100,"upstream_req_bytes":50,""" +
+                """"tools_eager":3,"tools_deferred":2}"""
+        Files.writeString(file, SYNTHETIC_PROBE_ROW + "\n" + unreported + "\n")
+        val store = store(dir)
+        store.record(turn("", 0, 30, 15, 2L to 1L))
+        store.record(
+            turn("synthetic", 0, 100, 50, 3L to 2L).copy(
+                inTokens = null,
+                cachedTokens = null,
+                cacheWriteTokens = null,
+                outTokens = null,
+            ),
+        )
+        val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
+        val heads = UsageHeads { listOf(head("synthetic", source)) }
+        val payload = Json.parseToJsonElement(EconomicsPayloads(heads).economicsJson()).jsonObject
+        val hour = payload.getValue("heads").jsonArray.single().jsonObject
+            .getValue("buckets").jsonArray.single().jsonObject
+        assertEquals("1", hour.getValue("unreported_usage_turns").jsonPrimitive.content)
+        assertEquals("1", hour.getValue("turns").jsonPrimitive.content)
+    }
+
+    @Test
     fun `probes are subtracted once while modeled and local work survive polls and reload`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
         Files.writeString(

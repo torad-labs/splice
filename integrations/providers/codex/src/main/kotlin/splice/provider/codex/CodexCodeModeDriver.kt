@@ -10,7 +10,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
-import splice.core.turn.Usage
+import splice.core.turn.noRequestUsage
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeRecordFactory
 import splice.provider.codex.stream.CodeModeRedirectablePost
@@ -47,7 +47,7 @@ internal class CodexCodeModeDriver(
             driveProblem(context, listOf(call), call)?.let { error(it) }
             validation.outer(call.copy(input = call.input.ifBlank { "source pending" }))?.let { error(it) }
             context.scripts++
-            val pending = TurnOutcome.Success(false, false, Usage(reported = emptySet()))
+            val pending = TurnOutcome.Success(false, false, noRequestUsage)
             val record = checkNotNull(factory.create(context, call, body, pending))
             record.sourceState = CodeModeSourceState()
             check(registry.add(record)) { "code-mode registry capacity reached" }
@@ -108,7 +108,7 @@ internal class CodexCodeModeDriver(
                 TurnOutcome.Success(
                     false,
                     false,
-                    (generated.partial?.usage ?: Usage(reported = emptySet())) + generated.salvagedUsage,
+                    (generated.partial?.usage ?: noRequestUsage) + generated.salvagedUsage,
                 ),
             )
             is TurnOutcome.ClientAbandoned -> accumulated.absorb(
@@ -231,7 +231,12 @@ internal class CodexCodeModeDriver(
         } else if (stream?.sourceInterrupted == true) {
             stream.outcome()
         } else {
-            TurnOutcome.Failure(record.error.orEmpty(), cause = FailureCause.INTERNAL, phase = FailurePhase.MID_OUTPUT)
+            TurnOutcome.Failure(
+                record.error.orEmpty(),
+                cause = FailureCause.INTERNAL,
+                phase = FailurePhase.MID_OUTPUT,
+                salvagedUsage = noRequestUsage,
+            )
         }
 
     private suspend fun startRuntime(
@@ -295,6 +300,7 @@ internal class CodexCodeModeDriver(
             // is exactly the second author the derived type removes.
             cause = FailureCause.CODE_MODE_PROTOCOL,
             phase = FailurePhase.MID_OUTPUT,
+            salvagedUsage = noRequestUsage,
         )
 }
 

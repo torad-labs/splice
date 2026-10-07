@@ -36,11 +36,14 @@ import splice.core.model.ModelRates
 import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.turn.FailureCause
+import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
+import splice.core.turn.noRequestUsage
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
@@ -285,7 +288,7 @@ class TurnUsageStampTest {
             val own = Usage(inputTokens = 11, outputTokens = 3)
             drive.recordRawRound(success(own))
             val generated = splice.head.round.RoundUsage().plusRound(source.usage).plusRound(own).toUsage()
-            rig.stamp.stampSuccess(drive, success(generated.copy(cutRounds = 1)))
+            rig.stamp.stampSuccess(drive, success(generated.copy(history = generated.history.copy(cutRounds = 1))))
             val counters = drive.perf.snapshot().counters
             assertEquals(11L, counters[PerfKeys.IN_TOKENS])
             assertEquals(3L, counters[PerfKeys.OUT_TOKENS], "the earlier source is billed only on its posting row")
@@ -317,6 +320,33 @@ class TurnUsageStampTest {
             assertEquals(7L, rig.usageStore.readState().outputTokens5h, "the independent source's output stays once")
         } finally {
             held.release(null)
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
+
+    @Test
+    fun `a local boot failure and raw overlay retain one completed source request`() = runBlocking {
+        val rig = UsageStampRig(tmp, "synthetic-boot-overlay")
+        val drive = rig.drive()
+        val source = Usage(inputTokens = 1_400, outputTokens = 12, cachedTokens = 1_100)
+        val local = TurnOutcome.Failure(
+            "synthetic boot failure",
+            cause = FailureCause.INTERNAL,
+            phase = FailurePhase.MID_OUTPUT,
+            salvagedUsage = source.followedBy(noRequestUsage),
+        )
+        try {
+            drive.recordRawRound(success(source))
+            rig.stamp.stampSalvaged(drive, local.salvagedUsage)
+            rig.telemetry.recordPerf(drive, "failed")
+            assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+            val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
+            assertEquals(1_400L, row.getValue(PerfKeys.IN_TOKENS).jsonPrimitive.long)
+            assertEquals(12L, row.getValue(PerfKeys.OUT_TOKENS).jsonPrimitive.long)
+            assertNull(row[PerfKeys.ABSORBED_ROUNDS], "the raw overlay cannot leave a second copy in absorbed input")
+            assertNull(row[PerfKeys.CUT_SOURCE_ROUNDS])
+        } finally {
             drive.slot.release()
             rig.usageStore.flushNow()
         }

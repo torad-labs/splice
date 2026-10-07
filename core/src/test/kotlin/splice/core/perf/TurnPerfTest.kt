@@ -20,6 +20,35 @@ class TurnPerfTest {
     }
 
     @Test
+    fun `transport starts survive timing resets without changing accepted-round attempts`() {
+        val perf = TurnPerf { 0L }
+        perf.setCount(PerfKeys.ATTEMPTS, 4)
+        val ws = WsAttemptTiming(perf)
+        assertEquals(1L, perf.snapshot().counters["transport_attempt_starts"])
+        ws.sendAccepted()
+        val sse = UpstreamAttemptTiming(perf)
+        assertEquals(2L, perf.snapshot().counters["transport_attempt_starts"])
+        assertFalse(PerfKeys.ARRIVAL_TO_WS_SEND_ACCEPTED_MS in perf.snapshot().counters)
+        ws.firstFragment()
+        ws.sendAccepted()
+        sse.written()
+        sse.firstByte()
+        assertEquals(2L, perf.snapshot().counters["transport_attempt_starts"], "callbacks are not starts")
+        assertEquals(4L, perf.snapshot().counters[PerfKeys.ATTEMPTS], "accepted rounds keep their own meaning")
+    }
+
+    @Test
+    fun `a single SSE attempt retains one transport start`() {
+        val perf = TurnPerf { 0L }
+        assertFalse("transport_attempt_starts" in perf.snapshot().counters, "no transport has started yet")
+        val sse = UpstreamAttemptTiming(perf)
+        sse.written()
+        sse.firstByte()
+        assertEquals(1L, perf.snapshot().counters["transport_attempt_starts"])
+        assertFalse(PerfKeys.ATTEMPTS in perf.snapshot().counters)
+    }
+
+    @Test
     fun `upstream milestones retain measured zero and never reuse an earlier attempt`() {
         val clock = FakeClock()
         val perf = TurnPerf { clock.now }

@@ -86,13 +86,15 @@ public class TurnPerf(private val clock: ElapsedClock, wallClock: WallClock) {
         return synchronized(lock) { at + arrivalOffsetMs }
     }
 
-    /** Claim the next wire attempt and atomically discard its predecessor's measurements. */
+    /** Retain each attempt start while atomically discarding its predecessor's timing measurements. */
     public fun beginUpstreamAttempt(): Long = synchronized(lock) {
         for (milestones in UpstreamMilestones.entries) {
             counters.remove(milestones.arrival)
             counters.remove(milestones.wait)
         }
         ++upstreamAttempt
+        counters[PerfKeys.TRANSPORT_ATTEMPT_STARTS] = upstreamAttempt
+        upstreamAttempt
     }
 
     /** Publish only the current attempt's observed pair. Legacy SSE parameter names and JVM overload remain. */

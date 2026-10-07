@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -35,6 +36,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.jupiter.api.AfterAll
@@ -59,6 +61,7 @@ import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.perf.WsAttemptTiming
 import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
@@ -1298,6 +1301,94 @@ class WsRoundDriverTest {
 
         assertEquals(0, runner.endedOk, "a failure outcome is not a clean terminal")
         assertEquals(1, runner.endedNotOk, "so the chain must be cleared, not committed")
+    }
+}
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class TransportAttemptStartsTest(@param:TempDir private val tmp: Path) {
+    private val mock = MockChatGptUpstream()
+    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+    private var built = 0
+
+    @AfterAll
+    fun close() {
+        client.close()
+        mock.stop()
+    }
+
+    private fun head(runner: WsRoundRunner): HeadServer = HeadServer(
+        provider = WsDriverFixture(tmp, mock.baseUrl).provider(runner),
+        listenPort = 0,
+        deps = headDeps(
+            tmp = tmp,
+            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+            seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
+        ).copy(stores = headStores(tmp, suffix = "-${++built}")),
+    )
+
+    private fun turn(port: Int): String = runBlocking {
+        client.post("http://127.0.0.1:$port/v1/messages") {
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":100,
+                    "messages":[{"role":"user","content":"hi"}]}""",
+            )
+        }.bodyAsText()
+    }
+
+    @Test
+    fun `a websocket first-event timeout followed by SSE success retains two transport starts`() {
+        val runner = object : WsRoundRunner by ScriptedRunner(emptyList()) {
+            override suspend fun attempt(
+                bodyJson: String,
+                meta: TurnMeta,
+                turnHeaders: Map<String, String>,
+                creds: Credentials,
+                perf: TurnPerf?,
+            ): WsRound? {
+                // ResponsesWsRunnerTest pins the real runner's matching first-event timeout.
+                checkNotNull(perf).let(::WsAttemptTiming).sendAccepted()
+                withTimeoutOrNull(1) { awaitCancellation() }
+                return null
+            }
+        }
+        val h = head(runner)
+        runBlocking { h.start() }
+        try {
+            val before = mock.upstreamBodies.size
+            assertTrue(turn(h.port).contains("event: message_stop"), "SSE completed the client turn")
+            assertEquals(before + 1, mock.upstreamBodies.size, "one HTTP fallback was sent")
+            assertTrue(AsyncFileIo.drain(), "the count reached its retained perf row")
+            val row = ev(Files.readString(tmp.resolve("perf-$built.jsonl")).trim())
+            assertEquals("2", row["transport_attempt_starts"]?.toString())
+            assertEquals("1", row.getValue("attempts").toString(), "only SSE was accepted")
+            assertFalse(PerfKeys.WS_REFUSED_TOO_LARGE in row, "this was not a 1009 refusal")
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    @Test
+    fun `a plain SSE success retains one transport start and one accepted attempt`() {
+        val runner = object : WsRoundRunner by ScriptedRunner(emptyList()) {
+            override suspend fun attempt(
+                bodyJson: String,
+                meta: TurnMeta,
+                turnHeaders: Map<String, String>,
+                creds: Credentials,
+                perf: TurnPerf?,
+            ): WsRound? = null // no wire attempt was started
+        }
+        val h = head(runner)
+        runBlocking { h.start() }
+        try {
+            assertTrue(turn(h.port).contains("event: message_stop"))
+            assertTrue(AsyncFileIo.drain())
+            val row = ev(Files.readString(tmp.resolve("perf-$built.jsonl")).trim())
+            assertEquals("1", row["transport_attempt_starts"]?.toString())
+            assertEquals("1", row.getValue("attempts").toString())
+        } finally {
+            runBlocking { h.stop() }
+        }
     }
 }
 

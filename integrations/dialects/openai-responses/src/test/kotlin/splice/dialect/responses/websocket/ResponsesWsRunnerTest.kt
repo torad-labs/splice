@@ -377,6 +377,19 @@ class ResponsesWsTurnStateTest {
 }
 
 class ResponsesWsRunnerTest {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a first-event timeout retains the started websocket attempt without a size refusal`() = runTest {
+        val rig = Rig { emptyList() }
+        val perf = TurnPerf { testScheduler.currentTime }
+        val before = testScheduler.currentTime
+        assertNull(rig.runner.attempt(BODY, meta(), emptyMap(), Credentials.Bearer("synthetic", "synthetic"), perf))
+        assertEquals(15_000L, testScheduler.currentTime - before, "the actual first-event budget expired")
+        assertEquals(1, rig.rounds, "the request frame was sent once")
+        assertEquals(1L, perf.snapshot().counters["transport_attempt_starts"])
+        assertNull(perf.snapshot().counters[PerfKeys.WS_REFUSED_TOO_LARGE])
+        assertNull(perf.snapshot().counters[PerfKeys.ATTEMPTS], "no round reached the head's accept point")
+    }
 
     @Test
     fun `source item completion never commits a response id before the response terminal`() {

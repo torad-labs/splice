@@ -123,7 +123,7 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
     // Legacy capacity hints run at one and two while shared-host scripts remain independent.
     "CodeModeCapacityTest" to Disposition("1 @ParameterizedTest expands to 2 cases (3 @Test + 2 = 5)", 5),
     "ResponsesWsRunnerTest" to
-        Disposition("3 @ParameterizedTest methods expand to 9 cases (13 @Test + 9 = 22)", 22),
+        Disposition("3 @ParameterizedTest methods expand to 9 cases (14 @Test + 9 = 23)", 23),
     // Source-slot adoption and retained WS cancellation each expand into two XML-observed cases.
     "IndependentSourceRoundTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (4 @Test + 4 = 8)", 8),
     // V4-447: reject changed source prefix, call ID, tool name, item ID and incomplete completion.

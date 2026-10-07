@@ -71,6 +71,9 @@ public object PerfKeys {
     public const val USAGE_MS: String = "usage_ms"
     public const val ATTEMPTS: String = "attempts"
 
+    /** Transport attempts begun, including attempts abandoned before their first event. */
+    public const val TRANSPORT_ATTEMPT_STARTS: String = "transport_attempt_starts"
+
     /** Port of a proven refused connect to a loopback runtime, absent for resets and remote failures. */
     public const val REFUSED_RUNTIME_PORT: String = "refused_runtime_port"
 

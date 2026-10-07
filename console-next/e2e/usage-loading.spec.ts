@@ -1,8 +1,9 @@
 // NEW: V4-444 — Usage publishes settled command totals and distinguishes loading from partial or failed reads.
 import { expect, test } from '@playwright/test';
-import type { HeadsPayload } from '../src/types/core';
+import type { HeadsPayload, UsagePayload } from '../src/types/core';
+import type { EconomicsBucket } from '../src/types/economics';
 import type { TurnUsageStats, TurnUsageWire } from '../src/types/perf';
-import { open, read } from './support';
+import { assertHealthy, open, read } from './support';
 import { STACK } from './stack';
 
 const stats: TurnUsageStats = {
@@ -15,6 +16,61 @@ const empty: TurnUsageWire = {
   totals: { ...stats, requests: 0, input_tokens: null, cached_tokens: null, output_tokens: null, cost_usd: null, cache_share: null },
   models: [], accounts: [], days: [], sessions: [],
 };
+
+for (const width of [1440, 390]) {
+  for (const shape of ['absent', 'zero', 'positive', 'quota-only', 'outside'] as const) {
+    test(`hourly missing usage ${shape} stays separate from request totals at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      const at = Date.now();
+      const hour = Math.floor(at / 3_600_000) * 3_600_000;
+      const heads = await read<HeadsPayload>(page, '/api/heads');
+      heads.heads = heads.heads.filter(head => head.key === STACK.soloHead);
+      await page.route('**/api/heads', route => route.fulfill({ json: heads }));
+      const ago = shape === 'quota-only' ? 30 : shape === 'outside' ? 169 : 1;
+      const missing = shape === 'absent' ? {} : { unreported_usage_turns: shape === 'zero' ? 0 : 2 };
+      const bucket: EconomicsBucket = {
+        hour: hour - ago * 3_600_000, turns: 5, in_tokens: 1000, cached_tokens: 0, cache_write_tokens: 0,
+        out_tokens: 200, req_bytes: 0, upstream_req_bytes: 0, tools_eager: 0, tools_deferred: 0,
+        deferral_turns: 0, rate_limited: 0, cost_usd: 2, unpriced_turns: 3, ...missing,
+      };
+      const recent: EconomicsBucket = { ...bucket, hour: hour - 3_600_000, turns: 1, unpriced_turns: 0, unreported_usage_turns: 0 };
+      await page.route('**/api/economics', route => route.fulfill({ json: { retention_hours: 168, generated_at: at,
+        heads: [{ key: STACK.soloHead, label: STACK.soloHead, ceiling_tokens: 10000, buckets: ago === 1 ? [bucket] : [recent, bucket] }] } }));
+      const quota: UsagePayload = { window_hours: 5, warn_pct: 80, warn_tokens_5h: 0, heads: [{ key: STACK.soloHead, label: STACK.soloHead, usage: {
+        output_tokens_5h: 0, entries: 0, ratelimit: null, warn: { pct: 0, level: 'ok', source: 'none', reset: null },
+        quota: { five_hour: { used_pct: 25, resets_at: at / 1000 + 3600 } },
+      } }] };
+      await page.route(url => url.pathname === '/api/usage' || url.pathname === '/api/usage/probe', route => route.fulfill({ json: quota }));
+      await page.route(url => url.pathname === '/api/perf/turns', route => {
+        const query = new URL(route.request().url()).searchParams;
+        return route.fulfill({ json: { since: Number(query.get('since')), n: 1, heads: [{
+          key: STACK.soloHead, label: STACK.soloHead, count: stats.requests, usage, rows: [],
+        }] } });
+      });
+      const faults = await open(page, 'usage');
+      const plan = page.locator('.uplan');
+      await expect(plan).toHaveCount(1);
+      await expect(plan.locator('.use')).toContainText('25% on its short-window reading');
+      await expect(plan.getByRole('img', { name: 'Tokens per hour, last 24 hours', exact: true })).toBeVisible();
+      const history = plan.locator('.hourly-history');
+      if (shape === 'positive') {
+        await expect(history).toContainText('2 turns reported no usage and are not in these hourly totals, which are lower bounds.');
+      } else await expect(history).not.toContainText('reported no usage');
+      if (shape === 'positive' || shape === 'quota-only') {
+        await expect(plan.locator('.use')).toContainText('Recorded usage pace is a lower bound because usage was not reported for every turn.');
+      } else await expect(plan.locator('.use')).not.toContainText('lower bound');
+      const totals = page.locator('.totals');
+      await expect(totals.locator('.n').first()).toHaveText('2,502');
+      await expect(totals.locator('.n').nth(1)).toHaveText('2.50M');
+      await expect(totals.locator('.n').nth(3)).toHaveText('$1.48');
+      await expect(totals).not.toContainText(/At least|reported no usage/);
+      await expect(history).not.toContainText('unpriced');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await assertHealthy(page, faults);
+      await page.unrouteAll({ behavior: 'wait' });
+    });
+  }
+}
 
 for (const width of [1440, 390]) {
   for (const interruption of ['partial', 'pending-route'] as const) {

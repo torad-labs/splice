@@ -14,7 +14,7 @@ const bucket = (agoHours: number, over: Partial<EconomicsBucket> = {}): Economic
 });
 const head = (key: string, buckets: EconomicsBucket[], ceiling: number | null = null): HeadEconomics => ({ key, label: key, ceiling_tokens: ceiling, buckets });
 const plan = (over: Partial<PlanUsage>): PlanUsage => ({
-  key: 'a', label: 'A', colour: 'none', pct: null, full: false, reset: null, limitWindow: null, reading: null, pace: null, turns: 1, inTokens: 1, cache: null, cost: null, spark: [], spentToday: null, ...over,
+  key: 'a', label: 'A', colour: 'none', pct: null, full: false, reset: null, limitWindow: null, reading: null, pace: null, turns: 1, inTokens: 1, cache: null, cost: null, spark: [], historyUnreportedTurns: 0, spentToday: null, ...over,
 });
 
 describe('windows', () => {

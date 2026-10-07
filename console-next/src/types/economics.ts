@@ -25,9 +25,11 @@ export interface EconomicsBucket {
    *  "not priced then", an hour recorded before the daemon priced turns, and never $0. Absent from
    *  a daemon older than V4-221, which read the same: not priced. */
   cost_usd?: number | null;
-  /** V4-221: turns whose model had no rate card; their dollars are not in cost_usd. Absent beside
-   *  an absent cost_usd, when every turn of the hour is unpriced. */
+  /** Turns whose usage or declared prices could not support pricing; their dollars are not in cost_usd.
+   *  Absent beside an absent cost_usd, when every turn of the hour is unpriced. */
   unpriced_turns?: number;
+  /** Turns with no usage report, excluded from token and dollar sums. Absent on older daemons. */
+  unreported_usage_turns?: number;
 }
 
 export interface HeadEconomics {

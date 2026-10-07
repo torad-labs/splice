@@ -29,6 +29,34 @@ function head(buckets: EconomicsBucket[], ceiling: number | null = null): HeadEc
   return { key: 'claudex', label: 'claudex', ceiling_tokens: ceiling, buckets };
 }
 
+describe('hourly usage reports', () => {
+  test.each([undefined, 0, 2])('the missing-report count %s is separate from nonzero sums and unpriced turns', missing => {
+    const extra = missing === undefined ? {} : { unreported_usage_turns: missing };
+    const totals = sum([
+      bucket(1, { turns: 5, in_tokens: 1000, out_tokens: 200, cost_usd: 1.25, unpriced_turns: 3, ...extra }),
+      bucket(2, { turns: 1, in_tokens: 500, out_tokens: 100, cost_usd: 0.5 }),
+    ]);
+    expect(totals).toMatchObject({ unreportedUsageTurns: missing ?? 0, turns: 6, inTokens: 1500, outTokens: 300, costUsd: 1.75, unpricedTurns: 3 });
+  });
+  test('multiple missing-report buckets add their counts without using the unpriced count', () => {
+    const first = { unreported_usage_turns: 2 };
+    const second = { unreported_usage_turns: 3 };
+    const totals = sum([bucket(1, { turns: 4, unpriced_turns: 4, ...first }), bucket(2, { turns: 5, unpriced_turns: 4, ...second })]);
+    expect(totals).toMatchObject({ unreportedUsageTurns: 5, unpricedTurns: 8 });
+  });
+  test.each([1, 30])('a missing usage report %s hours ago makes the quota calculation incomplete', ago => {
+    const missing = { unreported_usage_turns: 2 };
+    const projected = burn(head([bucket(1, { in_tokens: 1000 }), bucket(ago, { turns: 2, ...missing })], 10000), NOW);
+    expect(projected).toMatchObject({ usagePartial: true });
+    expect(projected.ratePerHour).toBeGreaterThan(0);
+  });
+  test('a missing usage report outside both quota windows cannot mark their calculation incomplete', () => {
+    const missing = { unreported_usage_turns: 2 };
+    const projected = burn(head([bucket(1, { in_tokens: 1000 }), bucket(169, { ...missing })], 10000), NOW);
+    expect(projected).toMatchObject({ usagePartial: false });
+  });
+});
+
 describe('the dollars, as the daemon priced each turn (V4-221)', () => {
   test('a window sums the priced dollars and counts every turn whose dollars are not in them', () => {
     const totals = sum([

@@ -1,6 +1,6 @@
 // The arithmetic and words of the Usage page: the window choices the daemon's retention allows, one row per plan
 // against its limit, and the totals. Pure over /api/economics, /api/usage and /api/heads; the page only draws what this returns.
-import { burn, costOf, hitRate, hourly, sum, within } from './economics';
+import { burn, costOf, hitRate, hourly, hourlyUnreportedUsage, sum, within } from './economics';
 import type { Totals } from './economics';
 import { ABSENT, fmtShare, fmtTokens, fmtUsd } from './format';
 import { nearestWindow, planWindows, rateLimitAge } from './usage';
@@ -56,6 +56,8 @@ export interface PlanUsage {
   /** Dollars of the priced turns, null when none was priced. */
   cost: number | null;
   spark: number[];
+  /** Missing usage reports within this sparkline's fixed 24-hour history. */
+  historyUnreportedTurns: number;
   /** Why the daemon shows no hours for this plan, said in its own sentence; the row prints it in place of the spark. */
   hourlyReason?: string;
   /** Dollars of the last 24 hours, the figure a daily budget is measured against. */
@@ -66,6 +68,8 @@ export function planUsage(head: HeadEconomics, label: string, colour: ModelColou
   const totals = sum(within(head.buckets, hours, now));
   const window = nearestWindow(usage === null ? null : { ...usage, heads: usage.heads.filter(row => row.key === head.key) }, null, now);
   const day = sum(within(head.buckets, 24, now));
+  const projected = window === null ? null : burn(head, now);
+  const pace = paceText(projected?.hoursToExhaustion ?? null);
   const age = rateLimitAge(usage?.heads.find((row) => row.key === head.key)?.usage ?? null, now);
   return {
     key: head.key,
@@ -77,12 +81,13 @@ export function planUsage(head: HeadEconomics, label: string, colour: ModelColou
     limitWindow: window?.window ?? null,
     reading: age === null ? null : U.rateLimitReading(age),
     observations: planWindows(usage?.heads.find(row => row.key === head.key)?.usage ?? null, now),
-    pace: window === null ? null : paceText(burn(head, now).hoursToExhaustion),
+    pace: pace !== null && projected?.usagePartial ? `${pace}. ${U.paceLowerBound}` : pace,
     turns: totals.turns,
     inTokens: totals.inTokens,
     cache: hitRate(totals),
     cost: totals.turns === 0 ? null : costOf(totals),
     spark: hourly(head.buckets, 24, now),
+    historyUnreportedTurns: hourlyUnreportedUsage(head.buckets, 24, now),
     ...(head.unavailable === undefined ? {} : { hourlyReason: head.unavailable }),
     spentToday: costOf(day),
   };

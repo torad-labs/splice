@@ -28,15 +28,17 @@ export interface Totals {
   rateLimited: number;
   /** The dollars of the priced turns, as the daemon priced each at its own model's card. */
   costUsd: number;
-  /** Turns whose dollars are not in costUsd: those whose model had no card, and every turn of an
+  /** Turns whose dollars are not in costUsd: missing usage or model prices, and every turn of an
    *  hour recorded before the daemon priced turns. */
   unpricedTurns: number;
+  /** Turns excluded from usage sums, distinct from whether a recorded turn could be priced. */
+  unreportedUsageTurns: number;
 }
 
 const ZERO: Totals = {
   turns: 0, inTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, outTokens: 0, reqBytes: 0,
   upstreamBytes: 0, toolsEager: 0, toolsDeferred: 0, deferralTurns: 0, rateLimited: 0,
-  costUsd: 0, unpricedTurns: 0,
+  costUsd: 0, unpricedTurns: 0, unreportedUsageTurns: 0,
 };
 
 export function sum(buckets: readonly EconomicsBucket[]): Totals {
@@ -55,6 +57,7 @@ export function sum(buckets: readonly EconomicsBucket[]): Totals {
     costUsd: a.costUsd + (b.cost_usd ?? 0),
     // An hour not priced then, or served by a daemon that prices none, is every one of its turns.
     unpricedTurns: a.unpricedTurns + (b.cost_usd == null ? b.turns : b.unpriced_turns ?? 0),
+    unreportedUsageTurns: a.unreportedUsageTurns + (b.unreported_usage_turns ?? 0),
   }), ZERO);
 }
 
@@ -123,6 +126,8 @@ export interface Burn {
   hoursToExhaustion: number | null;
   /** Wall-clock ms of exhaustion, or null when not projectable. */
   exhaustsAt: number | null;
+  /** Either the accumulated usage or the recent-rate window excludes unreported turns. */
+  usagePartial: boolean;
 }
 
 /**
@@ -153,6 +158,7 @@ export function burn(
     ratePerHour,
     hoursToExhaustion: hours,
     exhaustsAt: hours !== null && Number.isFinite(hours) ? now + hours * HOUR_MS : null,
+    usagePartial: week.unreportedUsageTurns > 0 || recent.unreportedUsageTurns > 0,
   };
 }
 
@@ -169,10 +175,20 @@ export function costOf(totals: Totals): number | null {
   return totals.turns > 0 && totals.unpricedTurns >= totals.turns ? null : totals.costUsd;
 }
 
+/** The exact bins the hourly plot reads, shared with its missing-report count. */
+function hourlyBuckets(buckets: readonly EconomicsBucket[], hours: number, now: number): (EconomicsBucket | undefined)[] {
+  const end = Math.floor(now / HOUR_MS) * HOUR_MS;
+  const byHour = new Map(buckets.map((b) => [b.hour, b]));
+  return Array.from({ length: hours }, (_, i) => byHour.get(end - (hours - 1 - i) * HOUR_MS));
+}
+
 /** Per-hour input tokens over the last [hours], oldest first, with missing hours as 0 so the
  * sparkline shows idle gaps as gaps instead of silently closing them up. */
 export function hourly(buckets: EconomicsBucket[], hours: number, now: number): number[] {
-  const end = Math.floor(now / HOUR_MS) * HOUR_MS;
-  const byHour = new Map(buckets.map((b) => [b.hour, b.in_tokens]));
-  return Array.from({ length: hours }, (_, i) => byHour.get(end - (hours - 1 - i) * HOUR_MS) ?? 0);
+  return hourlyBuckets(buckets, hours, now).map(bucket => bucket?.in_tokens ?? 0);
+}
+
+/** Missing usage reports in the displayed hourly bins, never in a wider rolling window. */
+export function hourlyUnreportedUsage(buckets: readonly EconomicsBucket[], hours: number, now: number): number {
+  return hourlyBuckets(buckets, hours, now).reduce((count, bucket) => count + (bucket?.unreported_usage_turns ?? 0), 0);
 }

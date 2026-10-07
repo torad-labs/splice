@@ -32,6 +32,7 @@ private val OWNED_TYPES = setOf("function_call", "function_call_output", "custom
 internal class CodeModeHistoryIndex(
     val items: List<JsonElement>,
     private val codec: CodexCodeModeHistoryCodec,
+    private val emitted: Set<CodeModeRecord> = emptySet(),
 ) {
     val payloads = JsonElementInterner()
     private val matching = CodeModeNativeMatching(payloads)
@@ -204,7 +205,7 @@ internal class CodeModeHistoryIndex(
         return when {
             owned.any { it < prior } -> null
             first == null -> afterParent(record, expected)
-            else -> minOf(expected, continuityEcho(record).firstOrNull() ?: first)
+            else -> beforeOwned(record, expected, first)
         }
     }
 
@@ -218,6 +219,15 @@ internal class CodeModeHistoryIndex(
             start until first
         } else {
             IntRange.EMPTY
+        }
+    }
+
+    private fun beforeOwned(record: CodeModeRecord, expected: Int, first: Int): Int {
+        val observed = continuityEcho(record).firstOrNull() ?: first
+        return if (record in emitted && codec.callId(items[first]) == record.outerCallId) {
+            observed
+        } else {
+            minOf(expected, observed)
         }
     }
 

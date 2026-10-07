@@ -97,7 +97,7 @@ internal class CodeModeCanonicalOrderTest {
     }
 
     @Test
-    fun `already posted no-capture histories are idempotent but the raw callback-free case is excluded`() {
+    fun `already posted and raw callback-free no-capture histories are idempotent`() {
         for (callbacks in listOf(0, 4)) {
             val fixture = fixture(emptyList(), callbacks)
             val first = history.canonicalize(body(fixture.expected), fixture.completed)
@@ -106,12 +106,60 @@ internal class CodeModeCanonicalOrderTest {
         }
         val excluded = fixture(emptyList(), 4)
         val first = history.canonicalize(body(excluded.client), excluded.completed)
+        val posted = prefix + emitted(excluded.completed[0], emptyList()) +
+            emitted(excluded.completed[2], laterNative) + emitted(excluded.completed[3], emptyList()) +
+            emitted(excluded.completed[1], earlierNative) + callbacks(excluded.owner)
+        assertTrue(first.bodyJson == bodyText(posted), "raw first-pass bytes must keep their posted permutation")
         val second = history.canonicalize(checkNotNull(first.body), excluded.completed)
-        assertNotEquals(
-            first.bodyJson,
-            second.bodyJson,
-            "the committed no-capture raw callback-free case stays unchanged",
+        assertTrue(
+            first.bodyJson == second.bodyJson,
+            "no-capture raw callback-free history must emit identical bytes on both passes",
         )
+    }
+
+    @Test
+    fun `request-local emission evidence cannot cross trees or record owners`() {
+        val fixture = fixture(emptyList(), 4)
+        val first = checkNotNull(history.canonicalize(body(fixture.client), fixture.completed).body)
+        val root = checkNotNull(first.request).first
+        val evidence = checkNotNull(first.emission)
+        val changed = JsonObject(root + ("prompt_cache_key" to JsonPrimitive("synthetic changed key")))
+        val foreign = fixture(emptyList(), 4).completed
+        val cases = listOf(
+            root to fixture.completed,
+            JsonObject(root) to fixture.completed,
+            changed to fixture.completed,
+        )
+        for ((request, records) in cases + (root to foreign)) {
+            val fallback = history.canonicalize(CodeModeBody(RoundBody.Tree(request), Json), records)
+            val echoed = history.canonicalize(CodeModeBody(RoundBody.Tree(request), Json, evidence), records)
+            assertNull(echoed.error, "foreign emission evidence must not refuse the request")
+            if (request === root && records === fixture.completed) {
+                assertTrue(first.round.text == echoed.bodyJson, "the exact emitted body keeps its posted bytes")
+            } else {
+                assertTrue(fallback.bodyJson == echoed.bodyJson, "foreign evidence must use the original planner")
+            }
+        }
+    }
+
+    @Test
+    fun `repeated default emissions retain bytes and cache keys across callback widths and stable anchors`() {
+        val next = item("""{"role":"user","content":"synthetic newer request"}""")
+        val cacheKey = JsonPrimitive("splice-synthetic-canonical-order")
+        for (callbacks in listOf(0, 1, 4, 9)) {
+            for (afterParent in listOf(emptyList(), listOf(next))) {
+                val fixture = fixture(afterParent, callbacks)
+                val root = JsonObject(mapOf("input" to JsonArray(fixture.client), "prompt_cache_key" to cacheKey))
+                val first = history.canonicalize(CodeModeBody(RoundBody.Tree(root), Json), fixture.completed)
+                var current = checkNotNull(first.body)
+                repeat(3) {
+                    val rewritten = history.canonicalize(current, fixture.completed)
+                    assertTrue(first.bodyJson == rewritten.bodyJson, "each continuation must retain first-pass bytes")
+                    current = checkNotNull(rewritten.body)
+                    assertEquals(cacheKey, checkNotNull(current.request).first["prompt_cache_key"])
+                }
+            }
+        }
     }
 
     private fun assertCaptured(fixture: Fixture) {

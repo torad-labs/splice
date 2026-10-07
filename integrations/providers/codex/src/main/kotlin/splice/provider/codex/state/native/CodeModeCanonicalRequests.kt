@@ -45,7 +45,9 @@ internal class CodeModeCanonicalRequests(private val codec: CodexCodeModeHistory
             eligible.filter { it.metadataVersion == CODE_MODE_METADATA_VERSION },
             replayMedia,
             capture,
+            body.emission?.records(root.first).orEmpty(),
         )
-        return codec.rebuilt(root.first, conversation, anchored.input, body).copy(omitted = omitted + anchored.omitted)
+        return codec.rebuilt(root.first, conversation, anchored.input, body, eligible)
+            .copy(omitted = omitted + anchored.omitted)
     }
 }

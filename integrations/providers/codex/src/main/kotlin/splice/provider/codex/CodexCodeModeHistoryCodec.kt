@@ -15,6 +15,7 @@ import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.dialect.responses.request.ResponsesContextMessage
 import splice.provider.codex.state.CodeModeHistoryIndex
 import splice.upstream.RoundBody
+import java.util.IdentityHashMap
 
 /**
  * Every persisted count, digest and offset is CONVERSATION-relative: the lite preamble (the leading
@@ -96,6 +97,7 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         conversation: CodeModeConversation,
         body: ResponsesCodeModeInput,
         original: CodeModeBody? = null,
+        emitted: List<CodeModeRecord> = emptyList(),
     ): CodeModeRewrite {
         val offset = conversation.preamble.size
         val joined = ResponsesCodeModeInput(
@@ -108,7 +110,9 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         val unchanged = original != null && input != null && rebuilt.size == input.size &&
             rebuilt.indices.all { rebuilt[it] === input[it] }
         if (unchanged) return CodeModeRewrite(original)
-        return CodeModeRewrite(CodeModeBody(RoundBody.Tree(JsonObject(root + (FIELD_INPUT to rebuilt))), json))
+        val request = JsonObject(root + (FIELD_INPUT to rebuilt))
+        val emission = emitted.takeIf(List<CodeModeRecord>::isNotEmpty)?.let { CodeModeEmission(request, it) }
+        return CodeModeRewrite(CodeModeBody(RoundBody.Tree(request), json, emission))
     }
 
     fun root(bodyJson: String): Pair<JsonObject, JsonArray>? = CodeModeBody(RoundBody.Text(bodyJson), json).request
@@ -158,7 +162,7 @@ internal data class CodeModeConversation(
 
 /** One round's request as code mode reads it: [round] is what it posts, and [request] is what every reader
  *  of the round reads. An unchanged history posts [round] as it arrived. */
-internal class CodeModeBody(val round: RoundBody, json: Json) {
+internal class CodeModeBody(val round: RoundBody, json: Json, val emission: CodeModeEmission? = null) {
     /** The body parsed once: its root and input array, or null when it is not a Responses request. A tree
      *  is read as itself; only text is parsed. */
     val request: Pair<JsonObject, JsonArray>? = run {
@@ -169,6 +173,15 @@ internal class CodeModeBody(val round: RoundBody, json: Json) {
         val input = root?.get(FIELD_INPUT) as? JsonArray
         if (root != null && input != null) root to input else null
     }
+}
+
+/** Only the exact tree and record instances emitted in this turn can reuse their observed opaque positions. */
+internal class CodeModeEmission(private val request: JsonObject, records: List<CodeModeRecord>) {
+    private val owners = IdentityHashMap<CodeModeRecord, Unit>().apply {
+        records.forEach { put(it, Unit) }
+    }
+
+    fun records(request: JsonObject): Set<CodeModeRecord> = owners.keys.takeIf { this.request === request }.orEmpty()
 }
 
 internal const val CODE_MODE_FIELD_CALL_ID = "call_id"

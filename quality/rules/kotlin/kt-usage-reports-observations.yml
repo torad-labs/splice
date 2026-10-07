@@ -7,9 +7,16 @@ files:
 rule:
   any:
     - all:
+        - kind: call_expression
         - any:
-            - pattern: Usage($$$ARGS)
-            - pattern: splice.core.turn.Usage($$$ARGS)
+            - has:
+                kind: simple_identifier
+                regex: ^`?Usage`?$
+            - has:
+                kind: navigation_expression
+                has:
+                  kind: navigation_suffix
+                  regex: ^\.\s*`?Usage`?$
         - not:
             has:
               kind: call_suffix
@@ -17,19 +24,28 @@ rule:
                 kind: value_arguments
                 has:
                   kind: value_argument
-                  regex: ^reported\s*=
-    - pattern: import splice.core.turn.Usage as $ALIAS
+                  regex: ^`?reported`?\s*=
+    - all:
+        - kind: import_header
+        - has:
+            kind: import_alias
+        - has:
+            kind: identifier
+            has:
+              kind: simple_identifier
+              regex: ^`?Usage`?$
+              stopBy: end
     - all:
         - kind: type_alias
         - has:
             kind: type_identifier
-            regex: ^Usage$
+            regex: ^`?Usage`?$
             stopBy: end
     - all:
         - kind: callable_reference
         - has:
             kind: simple_identifier
-            regex: ^Usage$
+            regex: ^`?Usage`?$
     - all:
         - kind: navigation_suffix
-        - regex: ^::\s*Usage$
+        - regex: ^::\s*`?Usage`?$

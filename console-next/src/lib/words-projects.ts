@@ -1,4 +1,6 @@
 // What the Projects pages say. Copy lives in modules like this one, never inline in a component.
+import { fmtInt } from './format';
+
 export const P = {
   back: 'Sessions',
   reading: 'Reading the project.',
@@ -11,6 +13,8 @@ export const P = {
   noTurnsSince: (since: string): string => `No turns since ${since}.`,
   turnsSince: (n: number, since: string): string => `${n.toLocaleString('en-US')} ${n === 1 ? 'turn' : 'turns'} since ${since}.`,
   costToday: (usd: string): string => `About ${usd} of API cost.`,
+  costLowerBound: (usd: string): string => `At least ${usd} of API cost.`,
+  unreportedUsage: (n: number) => `${fmtInt(n)} ${n === 1 ? 'turn has an incomplete or missing usage report' : 'turns have incomplete or missing usage reports'}, so these totals include only reported usage and are lower bounds.`,
   costUnpriced: 'No turn in this window was priced.',
   showFolder: 'Show the folder',
   showPath: 'Show the path',

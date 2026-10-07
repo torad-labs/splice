@@ -1,5 +1,5 @@
 // What the Teams pages say. Copy lives in modules like this one, never inline in a component.
-import { countWord } from './format';
+import { countWord, fmtInt } from './format';
 
 export const M = {
   back: 'Teams',
@@ -32,6 +32,8 @@ export const M = {
   lastFinished: 'last turn finished',
   lastFailed: 'last turn failed',
   cost: (usd: string): string => `API est. ${usd}`,
+  costLowerBound: (usd: string): string => `API est. at least ${usd}`,
+  unreportedUsage: (n: number) => `${fmtInt(n)} ${n === 1 ? 'turn has an incomplete or missing usage report' : 'turns have incomplete or missing usage reports'}, so these totals include only reported usage and are lower bounds.`,
   talkTitle: 'Message requests',
   talkWhy: 'Recorded message requests, newest first. Delivery is not confirmed here.',
   talkNone: 'No message requests are recorded for this day.',

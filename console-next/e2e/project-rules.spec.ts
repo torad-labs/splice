@@ -115,3 +115,35 @@ test('Settings lists each actual effective compaction rule with its length and a
   expect(faults.pageErrors).toEqual([]);
   expect(faults.failedReads).toEqual([]);
 });
+
+for (const width of [1440, 390]) {
+  for (const shape of ['absent', 'zero', 'one', 'two', 'price-only', 'both', 'unknown'] as const) {
+    test(`project usage completeness ${shape} at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      const repo = env('CONSOLE_E2E_REPO');
+      const count = shape === 'one' || shape === 'unknown' ? 1 : shape === 'two' || shape === 'both' ? 2 : 0;
+      const unpriced = shape === 'price-only' || shape === 'both' ? 2 : shape === 'unknown' ? 3 : 0;
+      const extra = shape === 'absent' ? {} : { unreported_usage_turns_today: count };
+      await page.route(url => url.pathname === '/api/projects/' + encodeURIComponent(repo), route => route.fulfill({ json: {
+        id: repo, root: repo, live_sessions: 2, teams: 0, turns_today: 3,
+        cost_today_usd: shape === 'unknown' ? null : 0.25, unpriced_turns_today: unpriced, ...extra,
+        day_start: Date.now() - 3600_000, last_activity: null, compaction: [], statusline_roots: [],
+      } }));
+      const faults = await open(page, 'projects/' + encodeURIComponent(repo));
+      const lede = page.locator('.page-head .lede');
+      await expect(lede).toContainText('3 turns since ');
+      await expect(lede).toContainText(shape === 'unknown' ? 'No turn in this window was priced.'
+        : count > 0 || unpriced > 0 ? 'At least $0.250 of API cost.' : 'About $0.250 of API cost.');
+      if (count > 0) await expect(lede).toContainText(count === 1
+        ? '1 turn has an incomplete or missing usage report, so these totals include only reported usage and are lower bounds.'
+        : '2 turns have incomplete or missing usage reports, so these totals include only reported usage and are lower bounds.');
+      else await expect(lede).not.toContainText('incomplete or missing usage report');
+      await expect(lede).not.toContainText(/reported no usage|not in these|requests failed/);
+      if (shape === 'unknown') await expect(lede).not.toContainText(/\$0\.00|At least \$/);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      expect(faults.pageErrors).toEqual([]);
+      expect(faults.failedReads).toEqual([]);
+      await page.unrouteAll({ behavior: 'wait' });
+    });
+  }
+}

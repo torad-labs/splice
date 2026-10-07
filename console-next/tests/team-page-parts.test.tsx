@@ -171,3 +171,61 @@ describe('the team page', () => {
     expect(html).toContain('No such team.');
   });
 });
+
+function usageTallyPage(fields: { unreported_usage_turns?: number; unpriced_turns?: number; cost_usd?: number | null } = {}): string {
+  const base = { turns: 31, tokens: { input: 1000, cache_read: 0, cache_write: 0, output: 200 },
+    cost_usd: 1.9, unpriced_turns: 0, last_turn_at_epoch_millis: null, checks: 'fail', checks_source: 'synthetic' };
+  return render(client => client.setQueryData(['team-panels', 'economics', teamEconomicsPath('t1')], {
+    team_id: 't1', heads_read: [], unattributed_turns: 7, oldest_turn_epoch_millis: null,
+    roles: [{ ...base, role: 'Builder', unreported_usage_turns: 99 }],
+    slots: [{ ...base, slot: 's1', ...fields }, { ...base, slot: 's2', cost_usd: 4, unreported_usage_turns: 0 }],
+  }));
+}
+
+describe('team usage completeness', () => {
+  test.each([undefined, 0])('an absent or zero usage-gap count %s preserves the recorded price', count => {
+    const html = usageTallyPage(count === undefined ? {} : { unreported_usage_turns: count });
+    expect(html).toContain('31 turns · API est. $1.90 · last turn failed');
+    expect(html).not.toContain('incomplete or missing usage report');
+    expect(html).not.toContain('at least');
+  });
+  test.each([1, 2])('a usage-gap count %s qualifies only its slot and does not recount turns', count => {
+    const html = usageTallyPage({ unreported_usage_turns: count });
+    expect(html).toContain('31 turns · API est. at least $1.90 · last turn failed');
+    expect(html).toContain(count === 1
+      ? '1 turn has an incomplete or missing usage report, so these totals include only reported usage and are lower bounds.'
+      : '2 turns have incomplete or missing usage reports, so these totals include only reported usage and are lower bounds.');
+    const neighbor = html.match(/<li[^>]*aria-label="Planner"[^>]*>(.*?)<\/li>/s)?.[1];
+    expect(neighbor).toContain('31 turns · API est. $4.00 · last turn failed');
+    expect(neighbor).not.toContain('lower bound');
+    expect(neighbor).not.toContain('incomplete or missing');
+    expect(html).toContain('7 turns on these commands carry no session and are counted apart.');
+    expect(html).not.toContain('99 turns');
+    expect(html).not.toContain('reported no usage');
+    expect(html).not.toContain('not in these');
+  });
+  test('a price-only gap qualifies dollars without manufacturing a missing-usage sentence', () => {
+    const html = usageTallyPage({ unpriced_turns: 3, unreported_usage_turns: 0 });
+    expect(html).toContain('API est. at least $1.90');
+    expect(html).not.toContain('incomplete or missing usage report');
+  });
+  test('overlapping usage and price gaps retain their separate counts', () => {
+    const html = usageTallyPage({ unreported_usage_turns: 2, unpriced_turns: 3 });
+    expect(html).toContain('2 turns have incomplete or missing usage reports');
+    expect(html).toContain('API est. at least $1.90');
+    expect(html).not.toContain('3 turns have incomplete');
+  });
+  test('recorded zero dollars remain a known lower bound rather than becoming unknown', () => {
+    const html = usageTallyPage({ unreported_usage_turns: 1, unpriced_turns: 1, cost_usd: 0 });
+    expect(html).toContain('31 turns · API est. at least $0.00 · last turn failed');
+    expect(html).toContain('1 turn has an incomplete or missing usage report');
+  });
+  test('a missing usage report with unknown dollars never manufactures zero or a numeric lower bound', () => {
+    const html = usageTallyPage({ unreported_usage_turns: 1, unpriced_turns: 31, cost_usd: null });
+    expect(html).toContain('31 turns · – · last turn failed');
+    expect(html).toContain('1 turn has an incomplete or missing usage report');
+    const own = html.match(/<li[^>]*aria-label="Builder"[^>]*>(.*?)<\/li>/s)?.[1];
+    expect(own).not.toContain('API est.');
+    expect(own).not.toContain('$0.00');
+  });
+});

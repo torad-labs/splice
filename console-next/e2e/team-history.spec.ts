@@ -242,3 +242,49 @@ test('reentering a team after its empty read shows a newly landed real turn befo
   expect(faults.pageErrors).toEqual([]);
   await page.unrouteAll({ behavior: 'wait' });
 });
+
+for (const width of [1440, 390]) {
+  for (const shape of ['absent', 'zero', 'one', 'two', 'price-only', 'both', 'unknown'] as const) {
+    test(`team usage completeness ${shape} at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1024 });
+      const count = shape === 'one' || shape === 'unknown' ? 1 : shape === 'two' || shape === 'both' ? 2 : 0;
+      const extra = shape === 'absent' ? {} : { unreported_usage_turns: count };
+      const unpriced = shape === 'price-only' || shape === 'both' ? 3 : shape === 'unknown' ? 31 : 0;
+      const tally = { turns: 31, tokens: { input: 1000, cache_read: 0, cache_write: 0, output: 200 },
+        cost_usd: shape === 'unknown' ? null : 1.9, unpriced_turns: unpriced,
+        last_turn_at_epoch_millis: null, checks: 'fail', checks_source: 'synthetic' };
+      await page.route('**/api/teams', route => route.fulfill({ json: { teams: [TEAM] } }));
+      await page.route('**/api/sessions', route => route.fulfill({ json: { sessions: [] } }));
+      await page.route('**/api/teams/' + TEAM.id + '/chat*', route => route.fulfill({ json: {
+        team_id: TEAM.id, day_start_epoch_millis: days().today, packet_note: '', messages: [],
+      } }));
+      await page.route('**/api/teams/' + TEAM.id + '/activity*', route => route.fulfill({ json: {
+        team_id: TEAM.id, day_start_epoch_millis: days().today, entries: [],
+      } }));
+      await page.route('**/api/teams/' + TEAM.id + '/economics', route => route.fulfill({ json: {
+        team_id: TEAM.id, heads_read: [], unattributed_turns: 7, oldest_turn_epoch_millis: null,
+        roles: [{ ...tally, role: 'lead', unreported_usage_turns: 99 }],
+        slots: [{ ...tally, slot: 'lead', ...extra }, { ...tally, slot: 'peer',
+          cost_usd: 4, unpriced_turns: 0, unreported_usage_turns: 0 }],
+      } }));
+      const faults = await open(page, 'teams/' + TEAM.id);
+      const own = page.getByRole('listitem', { name: 'lead', exact: true });
+      const neighbor = page.getByRole('listitem', { name: 'builder', exact: true });
+      await expect(own).toContainText('31 turns');
+      await expect(own).toContainText(shape === 'unknown' ? '31 turns · –'
+        : count > 0 || unpriced > 0 ? 'API est. at least $1.90' : 'API est. $1.90');
+      if (count > 0) await expect(own).toContainText(count === 1
+        ? '1 turn has an incomplete or missing usage report, so these totals include only reported usage and are lower bounds.'
+        : '2 turns have incomplete or missing usage reports, so these totals include only reported usage and are lower bounds.');
+      else await expect(own).not.toContainText('incomplete or missing usage report');
+      await expect(neighbor).toContainText('API est. $4.00');
+      await expect(neighbor).not.toContainText(/at least|incomplete or missing/);
+      await expect(page.getByRole('region', { name: 'Seats', exact: true }).locator('.team-note')).toContainText('7 turns on these commands carry no session');
+      await expect(page.getByRole('main')).not.toContainText(/99 turns|reported no usage|not in these/);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      expect(faults.pageErrors).toEqual([]);
+      expect(faults.failedReads).toEqual([]);
+      await page.unrouteAll({ behavior: 'wait' });
+    });
+  }
+}

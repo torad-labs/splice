@@ -129,3 +129,52 @@ describe('the project page', () => {
     expect(render(() => undefined)).toContain('Reading the project.');
   });
 });
+
+function usageProjectPage(fields: Partial<ProjectRow> = {}): string {
+  return render(client => client.setQueryData(['projects', 'row', projectPath(ROOT)], { ...project, ...fields }));
+}
+
+describe('project usage completeness', () => {
+  test.each([undefined, 0])('an absent or zero usage-gap count %s leaves the source-window cost unchanged', count => {
+    const html = usageProjectPage(count === undefined ? {} : { unreported_usage_turns_today: count });
+    expect(html).toContain('3 turns since ');
+    expect(html).toContain('About $0.250 of API cost.');
+    expect(html).not.toContain('incomplete or missing usage report');
+    expect(html).not.toContain('At least');
+  });
+  test.each([1, 2])('a usage-gap count %s preserves recorded dollars as a lower bound', count => {
+    const html = usageProjectPage({ unreported_usage_turns_today: count });
+    expect(html).toContain('3 turns since ');
+    expect(html).toContain('At least $0.250 of API cost.');
+    expect(html).toContain(count === 1
+      ? '1 turn has an incomplete or missing usage report, so these totals include only reported usage and are lower bounds.'
+      : '2 turns have incomplete or missing usage reports, so these totals include only reported usage and are lower bounds.');
+    expect(html).not.toContain('reported no usage');
+    expect(html).not.toContain('not in these');
+    expect(html).not.toContain('requests failed');
+  });
+  test('a price-only gap marks the dollar lower bound without manufacturing a usage gap', () => {
+    const html = usageProjectPage({ unpriced_turns_today: 2, unreported_usage_turns_today: 0 });
+    expect(html).toContain('At least $0.250 of API cost.');
+    expect(html).not.toContain('incomplete or missing usage report');
+  });
+  test('overlapping price and usage gaps do not replace the count of incomplete reports', () => {
+    const html = usageProjectPage({ unpriced_turns_today: 2, unreported_usage_turns_today: 1 });
+    expect(html).toContain('At least $0.250 of API cost.');
+    expect(html).toContain('1 turn has an incomplete or missing usage report');
+    expect(html).not.toContain('2 turns have incomplete');
+  });
+  test('recorded zero dollars remain a known lower bound rather than becoming unpriced', () => {
+    const html = usageProjectPage({ cost_today_usd: 0, unpriced_turns_today: 1, unreported_usage_turns_today: 1 });
+    expect(html).toContain('At least $0.00 of API cost.');
+    expect(html).toContain('1 turn has an incomplete or missing usage report');
+    expect(html).not.toContain('No turn in this window was priced.');
+  });
+  test('unknown cost remains unpriced while its incomplete-report count stays visible', () => {
+    const html = usageProjectPage({ cost_today_usd: null, unpriced_turns_today: 3, unreported_usage_turns_today: 1 });
+    expect(html).toContain('No turn in this window was priced.');
+    expect(html).toContain('1 turn has an incomplete or missing usage report');
+    expect(html).not.toContain('$0.00');
+    expect(html).not.toContain('At least $');
+  });
+});

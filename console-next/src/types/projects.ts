@@ -35,6 +35,8 @@ export interface ProjectRow {
   /** USD today of the priced turns, null when there are turns and none was priced: never a cost of zero. */
   cost_today_usd: number | null;
   unpriced_turns_today?: number;
+  /** Turns with incomplete or missing usage reports; totals retain reported amounts. Absent on older daemons. */
+  unreported_usage_turns_today?: number;
   /** The start of the day those counts cover, epoch ms. */
   day_start: number;
   last_activity: number | null;

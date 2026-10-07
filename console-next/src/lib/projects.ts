@@ -15,8 +15,11 @@ export function projectLede(row: ProjectRow, runningSessions = row.live_sessions
   const running = runningSessions === 0 ? P.noneRunning : P.running(runningSessions);
   const teams = row.teams === 0 ? '' : ` ${P.teams(row.teams)}`;
   const since = clockTime(row.day_start);
-  const window = row.turns_today === 0 ? P.noTurnsSince(since) : row.cost_today_usd === null ? `${P.turnsSince(row.turns_today, since)} ${P.costUnpriced}` : `${P.turnsSince(row.turns_today, since)} ${P.costToday(fmtUsd(row.cost_today_usd))}`;
-  return `${running}${teams}. ${window}`;
+  const missing = row.unreported_usage_turns_today ?? 0;
+  const cost = row.cost_today_usd === null ? P.costUnpriced : missing > 0 || (row.unpriced_turns_today ?? 0) > 0
+    ? P.costLowerBound(fmtUsd(row.cost_today_usd)) : P.costToday(fmtUsd(row.cost_today_usd));
+  const window = row.turns_today === 0 ? P.noTurnsSince(since) : `${P.turnsSince(row.turns_today, since)} ${cost}`;
+  return `${running}${teams}. ${window}${missing > 0 ? ` ${P.unreportedUsage(missing)}` : ''}`;
 }
 
 export const costText = (row: ProjectRow): string => (row.cost_today_usd === null ? ABSENT : fmtUsd(row.cost_today_usd));

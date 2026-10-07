@@ -112,13 +112,15 @@ export interface TeamActivityPayload {
   entries: TeamActivityEntry[];
 }
 
-/** One lifetime tally (TeamsEconomics.kt PerfTally.json). `cost_usd` is null when any turn in it
- *  had no rate card: a partial sum would be a confident wrong number. */
+/** One lifetime tally (TeamsEconomics.kt PerfTally.json). Dollars retain the priced portion;
+ *  `cost_usd` is null when there are turns and none could be priced. */
 export interface TeamTally {
   turns: number;
   tokens: { input: number; cache_read: number; cache_write: number; output: number };
   cost_usd: number | null;
   unpriced_turns: number;
+  /** Turns with incomplete or missing usage reports; totals retain reported amounts. Absent on older daemons. */
+  unreported_usage_turns?: number;
   last_turn_at_epoch_millis: number | null;
 }
 

@@ -22,8 +22,9 @@ rule:
     - all:
         - kind: type_alias
         - has:
-            kind: user_type
-            regex: ^(splice\s*\.\s*core\s*\.\s*turn\s*\.\s*)?Usage$
+            kind: type_identifier
+            regex: ^Usage$
+            stopBy: end
     - all:
         - kind: callable_reference
         - has:

@@ -28,6 +28,7 @@ import org.junit.jupiter.params.provider.ValueSource
 import splice.core.auth.Credentials
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.perf.UpstreamAttemptTiming
 import splice.core.turn.ReasoningDisplayParser
 import splice.core.turn.TurnMeta
 import splice.core.util.LogSink
@@ -377,6 +378,29 @@ class ResponsesWsTurnStateTest {
 }
 
 class ResponsesWsRunnerTest {
+    @Test
+    fun `a missing websocket identity followed by SSE retains only the SSE transport start`() = runTest {
+        val rig = Rig { error("an ineligible websocket must not send") }
+        val perf = TurnPerf { 0L }
+        assertNull(
+            rig.runner.attempt(
+                BODY,
+                meta(session = null, conversation = null),
+                emptyMap(),
+                Credentials.Bearer("synthetic", "synthetic"),
+                perf,
+            ),
+        )
+        assertTrue(rig.handshakes.isEmpty(), "eligibility declined before connecting")
+        assertEquals(0, rig.rounds, "no websocket request was sent")
+        // The SSE producer begins at the same constructor used by UpstreamRequest.
+        val sse = UpstreamAttemptTiming(perf)
+        sse.written()
+        sse.firstByte()
+        assertEquals(1L, perf.snapshot().counters["transport_attempt_starts"])
+        assertNull(perf.snapshot().counters[PerfKeys.ARRIVAL_TO_WS_SEND_ACCEPTED_MS])
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `a first-event timeout retains the started websocket attempt without a size refusal`() = runTest {

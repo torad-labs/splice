@@ -68,12 +68,12 @@ internal class ResponsesWsRunner(
         creds: Credentials,
         perf: TurnPerf?,
     ): WsRound? {
-        val timing = perf?.let(::WsAttemptTiming)
         // No parseable body, or no isolation identity => ride SSE. The second is not a weaker key
         // but NO key: without it, conversations sharing a first message would share a chain.
         val request = identity.parseRequest(bodyJson)
         val chain = identity.chainKey(meta)
         if (request == null || chain == null) return null
+        val timing = perf?.let(::WsAttemptTiming)
         val headers = handshakeHeaders(creds) + turnHeaders + handshakeOnlyHeaders(turnHeaders)
         val key = identity.connectionKey(chain, meta, headers)
         // Committed at SEND time, read at TERMINAL time: the frame the chaining layer just built

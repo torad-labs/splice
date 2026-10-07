@@ -11,7 +11,7 @@
 //             window the server actually allocated: its own default when num_ctx is unset — measured
 //             2026-09-13 on Ollama 0.30.5: qwen3:4b card 262144, served 32768). A loaded window beats
 //             num_ctx (the server may cap or override it); until the model is loaded num_ctx stands in
-//             and, absent both, only the ceiling can refuse a declared row. Undeclared rows infer the card.
+//             and, absent both, only the ceiling can refuse a declared row. Undeclared rows take the card last.
 //   LM Studio GET /api/v0/models -> data[].max_context_length (+ loaded_context_length when loaded)
 //   vLLM      GET /v1/models -> data[].max_model_len
 //   llama     GET /props -> default_generation_settings.n_ctx, else /v1/models -> data[].meta.n_ctx_train
@@ -88,7 +88,7 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
     public fun models(runtime: LocalRuntime, only: Set<String>? = null): List<LocalModel>? =
         models(runtime, only, emptySet())
 
-    /** Undeclared [inferred] rows use the card when unloaded; declarations retain num_ctx validation. */
+    /** Undeclared [inferred] rows take num_ctx before the card; declarations retain num_ctx validation. */
     public fun models(runtime: LocalRuntime, only: Set<String>?, inferred: Set<String>): List<LocalModel>? =
         when (runtime.kind) {
             LocalRuntimeKind.LM_STUDIO -> get("$root/api/v0/models")?.let { body ->
@@ -252,8 +252,9 @@ private class LocalRuntimeShapes {
             numCtx?.let { "num_ctx $it" },
             served?.let { "loaded with context $it" },
         ).joinToString(", ")
-        // Declarations still validate against num_ctx when unloaded. An undeclared row takes the card.
-        val fallback = if (id in inferred || id.removeSuffix(":latest") in inferred) max else numCtx
+        // num_ctx is the best unloaded window. Only an undeclared row falls back to the card.
+        val fallback = numCtx?.takeIf { it > 0 }
+            ?: max.takeIf { id in inferred || id.removeSuffix(":latest") in inferred }
         return LocalModel(id, served ?: fallback?.takeIf { it > 0 }, detail.ifEmpty { null }, ceiling = max)
     }
 

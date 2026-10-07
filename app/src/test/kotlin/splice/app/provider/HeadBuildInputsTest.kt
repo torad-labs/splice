@@ -81,7 +81,7 @@ class HeadBuildInputsTest {
     }
 
     @Test
-    fun `unloaded runtimes use card or maximum windows and configured llama aliases use props`(@TempDir tempDir: Path) {
+    fun `unloaded runtimes use settings then card windows and llama aliases use props`(@TempDir tempDir: Path) {
         val fallbacks = listOf(
             metadata[0] - "GET /api/ps" + (
                 "POST /api/show" to
@@ -90,6 +90,7 @@ class HeadBuildInputsTest {
             mapOf("GET /api/v0/models" to """{"data":[{"id":"synthetic","max_context_length":131072}]}"""),
             metadata[3] - "GET /props",
             metadata[3] + ("GET /v1/models" to """{"data":[{"id":"synthetic.gguf","meta":{"n_ctx_train":131072}}]}"""),
+            metadata[0] - "GET /api/ps",
         )
         assertAll(
             fallbacks.mapIndexed { index, routes ->
@@ -102,7 +103,11 @@ class HeadBuildInputsTest {
                         localProbe = probe,
                     )
                     val ctx = inputs.providerContext("local", localHead, local, false)
-                    val expected = if (index == 3) 8192L else 131072L
+                    val expected = when (index) {
+                        0 -> 4096L
+                        3 -> 8192L
+                        else -> 131072L
+                    }
                     assertEquals(expected, ctx.catalog.clientLaunchWindow)
                     assertEquals(expected, LiveRosterCatalog(ctx, LiveWindows { null }).current().clientLaunchWindow)
                 }
@@ -119,7 +124,7 @@ class HeadBuildInputsTest {
         val probe = LocalProbeInputs(fake(routes, mutableListOf()))
         val inferred = probe.check(local, null, local.catalogFor(localHead)) as LocalRowsCheck.Checked
         assertTrue(inferred.refused.isEmpty())
-        assertEquals(131072L, inferred.rows.getValue("synthetic"))
+        assertEquals(4096L, inferred.rows.getValue("synthetic"))
         val declared = local.copy(models = listOf(ModelEntry("synthetic", contextWindow = 8192)))
         val checked = probe.check(declared, null, declared.catalogFor(localHead)) as LocalRowsCheck.Checked
         assertTrue(checked.refused.single().reason.contains("declares context_window 8192, runtime serves 4096"))

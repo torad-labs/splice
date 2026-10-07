@@ -31,7 +31,7 @@ export interface Totals {
   /** Turns whose dollars are not in costUsd: missing usage or model prices, and every turn of an
    *  hour recorded before the daemon priced turns. */
   unpricedTurns: number;
-  /** Turns excluded from usage sums, distinct from whether a recorded turn could be priced. */
+  /** Turns with incomplete or missing usage reports, distinct from whether a recorded turn could be priced. */
   unreportedUsageTurns: number;
 }
 

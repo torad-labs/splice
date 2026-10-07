@@ -53,7 +53,7 @@ export const U = {
   cached: (pct: string) => `${pct} cached`,
   noCache: 'Cache share not reported',
   sparkLabel: 'Tokens per hour, last 24 hours',
-  hourlyUnreported: (n: number) => `${fmtInt(n)} ${n === 1 ? 'turn reported' : 'turns reported'} no usage and ${n === 1 ? 'is' : 'are'} not in these hourly totals, which are lower bounds.`,
+  hourlyUnreported: (n: number) => `${fmtInt(n)} ${n === 1 ? 'turn has an incomplete or missing usage report' : 'turns have incomplete or missing usage reports'}, so these totals include only reported usage and are lower bounds.`,
   paceLowerBound: 'Recorded usage pace is a lower bound because usage was not reported for every turn.',
   budgetsTitle: 'Budgets',
   budgetsWhy: 'A budget is your own daily ceiling in dollars. splice tells you, or stops the turn, when a command reaches it.',

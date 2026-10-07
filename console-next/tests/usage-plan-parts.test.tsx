@@ -18,14 +18,14 @@ test('an empty Usage page explains its client-request scope and excluded Playgro
   expect(html).toContain('Playground sends are not counted on this page.');
 });
 
-function hourlyPage(missing: number | undefined, ago = 1): string {
+function hourlyPage(missing: number | undefined, ago = 1, fields: Partial<EconomicsBucket> = {}): string {
   const at = Date.now();
   const hour = Math.floor(at / 3_600_000) * 3_600_000;
   const extra = missing === undefined ? {} : { unreported_usage_turns: missing };
   const bucket: EconomicsBucket = {
     hour: hour - ago * 3_600_000, turns: 5, in_tokens: 1000, cached_tokens: 0, cache_write_tokens: 0,
     out_tokens: 200, req_bytes: 0, upstream_req_bytes: 0, tools_eager: 0, tools_deferred: 0, deferral_turns: 0,
-    rate_limited: 0, cost_usd: 2, unpriced_turns: 3, ...extra,
+    rate_limited: 0, cost_usd: 2, unpriced_turns: 3, ...extra, ...fields,
   };
   const recent = { ...bucket, hour: hour - 3_600_000, turns: 1, unpriced_turns: 0, unreported_usage_turns: 0 };
   const client = new QueryClient();
@@ -47,13 +47,22 @@ function hourlyPage(missing: number | undefined, ago = 1): string {
   return renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><UsagePage /></MemoryRouter></QueryClientProvider>);
 }
 
+test('an input-only hourly report stays plotted without claiming the turn is excluded', () => {
+  const html = hourlyPage(1, 1, { turns: 1, out_tokens: 0, cost_usd: null, unpriced_turns: 1 });
+  expect(html).toContain('x="133" y="2" width="4" height="30"');
+  expect(html).not.toContain('reported no usage');
+  expect(html).not.toContain('not in these hourly totals');
+  expect(html).toContain('1 turn has an incomplete or missing usage report, so these totals include only reported usage and are lower bounds.');
+  expect(html).toContain('Recorded usage pace is a lower bound because usage was not reported for every turn.');
+});
+
 test.each([undefined, 0, 2])('hourly missing-report count %s changes only the hourly history and quota-pace notices', missing => {
   const html = hourlyPage(missing);
   if ((missing ?? 0) > 0) {
-    expect(html).toContain('2 turns reported no usage and are not in these hourly totals, which are lower bounds.');
+    expect(html).toContain('2 turns have incomplete or missing usage reports, so these totals include only reported usage and are lower bounds.');
     expect(html).toContain('Recorded usage pace is a lower bound because usage was not reported for every turn.');
   } else {
-    expect(html).not.toContain('reported no usage');
+    expect(html).not.toContain('incomplete or missing usage report');
     expect(html).not.toContain('Recorded usage pace is a lower bound');
   }
   expect(html).toContain('<div class="n">700</div>');
@@ -65,7 +74,7 @@ test.each([undefined, 0, 2])('hourly missing-report count %s changes only the ho
 
 test('a missing report outside the 24-hour history still labels the weekly quota calculation', () => {
   const html = hourlyPage(2, 30);
-  expect(html).not.toContain('not in these hourly totals');
+  expect(html).not.toContain('incomplete or missing usage report');
   expect(html).toContain('Recorded usage pace is a lower bound because usage was not reported for every turn.');
 });
 
@@ -74,7 +83,7 @@ test('a report at the excluded hourly boundary does not enter the fixed history 
   vi.setSystemTime(new Date('2026-10-06T18:00:00Z'));
   try {
     const html = hourlyPage(2, 24);
-    expect(html).not.toContain('not in these hourly totals');
+    expect(html).not.toContain('incomplete or missing usage report');
     expect(html).toContain('Recorded usage pace is a lower bound because usage was not reported for every turn.');
   } finally {
     vi.useRealTimers();
@@ -83,7 +92,7 @@ test('a report at the excluded hourly boundary does not enter the fixed history 
 
 test('a missing report outside the quota calculation changes neither notice', () => {
   const html = hourlyPage(2, 169);
-  expect(html).not.toContain('not in these hourly totals');
+  expect(html).not.toContain('incomplete or missing usage report');
   expect(html).not.toContain('Recorded usage pace is a lower bound');
 });
 

@@ -18,7 +18,7 @@ const empty: TurnUsageWire = {
 };
 
 for (const width of [1440, 390]) {
-  for (const shape of ['absent', 'zero', 'positive', 'quota-only', 'outside'] as const) {
+  for (const shape of ['absent', 'zero', 'positive', 'input-only', 'quota-only', 'outside'] as const) {
     test(`hourly missing usage ${shape} stays separate from request totals at ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 1024 });
       const at = Date.now();
@@ -27,11 +27,11 @@ for (const width of [1440, 390]) {
       heads.heads = heads.heads.filter(head => head.key === STACK.soloHead);
       await page.route('**/api/heads', route => route.fulfill({ json: heads }));
       const ago = shape === 'quota-only' ? 30 : shape === 'outside' ? 169 : 1;
-      const missing = shape === 'absent' ? {} : { unreported_usage_turns: shape === 'zero' ? 0 : 2 };
+      const missing = shape === 'absent' ? {} : { unreported_usage_turns: shape === 'zero' ? 0 : shape === 'input-only' ? 1 : 2 };
       const bucket: EconomicsBucket = {
-        hour: hour - ago * 3_600_000, turns: 5, in_tokens: 1000, cached_tokens: 0, cache_write_tokens: 0,
-        out_tokens: 200, req_bytes: 0, upstream_req_bytes: 0, tools_eager: 0, tools_deferred: 0,
-        deferral_turns: 0, rate_limited: 0, cost_usd: 2, unpriced_turns: 3, ...missing,
+        hour: hour - ago * 3_600_000, turns: shape === 'input-only' ? 1 : 5, in_tokens: 1000, cached_tokens: 0, cache_write_tokens: 0,
+        out_tokens: shape === 'input-only' ? 0 : 200, req_bytes: 0, upstream_req_bytes: 0, tools_eager: 0, tools_deferred: 0,
+        deferral_turns: 0, rate_limited: 0, cost_usd: shape === 'input-only' ? null : 2, unpriced_turns: shape === 'input-only' ? 1 : 3, ...missing,
       };
       const recent: EconomicsBucket = { ...bucket, hour: hour - 3_600_000, turns: 1, unpriced_turns: 0, unreported_usage_turns: 0 };
       await page.route('**/api/economics', route => route.fulfill({ json: { retention_hours: 168, generated_at: at,
@@ -53,17 +53,21 @@ for (const width of [1440, 390]) {
       await expect(plan.locator('.use')).toContainText('25% on its short-window reading');
       await expect(plan.getByRole('img', { name: 'Tokens per hour, last 24 hours', exact: true })).toBeVisible();
       const history = plan.locator('.hourly-history');
-      if (shape === 'positive') {
-        await expect(history).toContainText('2 turns reported no usage and are not in these hourly totals, which are lower bounds.');
-      } else await expect(history).not.toContainText('reported no usage');
-      if (shape === 'positive' || shape === 'quota-only') {
+      if (shape === 'positive' || shape === 'input-only') {
+        await expect(history).toContainText(shape === 'input-only'
+          ? '1 turn has an incomplete or missing usage report, so these totals include only reported usage and are lower bounds.'
+          : '2 turns have incomplete or missing usage reports, so these totals include only reported usage and are lower bounds.');
+        await expect(history.locator('rect').nth(22)).toHaveAttribute('height', '30');
+      } else await expect(history).not.toContainText('incomplete or missing usage report');
+      await expect(history).not.toContainText(/reported no usage|not in these hourly totals/);
+      if (shape === 'positive' || shape === 'input-only' || shape === 'quota-only') {
         await expect(plan.locator('.use')).toContainText('Recorded usage pace is a lower bound because usage was not reported for every turn.');
       } else await expect(plan.locator('.use')).not.toContainText('lower bound');
       const totals = page.locator('.totals');
       await expect(totals.locator('.n').first()).toHaveText('2,502');
       await expect(totals.locator('.n').nth(1)).toHaveText('2.50M');
       await expect(totals.locator('.n').nth(3)).toHaveText('$1.48');
-      await expect(totals).not.toContainText(/At least|reported no usage/);
+      await expect(totals).not.toContainText(/At least|incomplete or missing usage report/);
       await expect(history).not.toContainText('unpriced');
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await assertHealthy(page, faults);

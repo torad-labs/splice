@@ -28,7 +28,7 @@ export interface EconomicsBucket {
   /** Turns whose usage or declared prices could not support pricing; their dollars are not in cost_usd.
    *  Absent beside an absent cost_usd, when every turn of the hour is unpriced. */
   unpriced_turns?: number;
-  /** Turns with no usage report, excluded from token and dollar sums. Absent on older daemons. */
+  /** Turns with incomplete or missing usage reports; sums retain reported amounts. Absent on older daemons. */
   unreported_usage_turns?: number;
 }
 

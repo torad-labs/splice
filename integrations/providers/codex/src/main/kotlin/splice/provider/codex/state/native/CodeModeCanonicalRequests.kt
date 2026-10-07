@@ -31,23 +31,25 @@ internal class CodeModeCanonicalRequests(private val codec: CodexCodeModeHistory
         legacy: CodeModeLegacyCanonicalization,
     ): CodeModeRewrite {
         val root = body.request ?: return CodeModeRewrite(null, "code mode requires a Responses input array")
+        val previous = body.emission?.previous(root.first, records)
         val conversation = codec.conversation(codec.projection.project(root.second))
         var input = conversation.body
-        val omitted = mutableListOf<CodeModeOmission>()
+        val omitted = previous?.omitted.orEmpty().toMutableList()
         val eligible = records.filter(CodeModeNativeChain::rewritable)
-        eligible.filter { it.metadataVersion != CODE_MODE_METADATA_VERSION }.forEach { record ->
+        val pending = eligible.filterNot { previous?.processed(it) == true }
+        pending.filter { it.metadataVersion != CODE_MODE_METADATA_VERSION }.forEach { record ->
             val rewritten = legacy(input, record, replayMedia)
             val error = rewritten.error
             if (error == null) input = checkNotNull(rewritten.input) else omitted += CodeModeOmission(record, error)
         }
         val anchored = CodeModeCanonicalHistory(codec).rewrite(
             input,
-            eligible.filter { it.metadataVersion == CODE_MODE_METADATA_VERSION },
+            pending.filter { it.metadataVersion == CODE_MODE_METADATA_VERSION },
             replayMedia,
             capture,
-            body.emission?.records(root.first).orEmpty(),
         )
-        return codec.rebuilt(root.first, conversation, anchored.input, body, eligible)
-            .copy(omitted = omitted + anchored.omitted)
+        omitted += anchored.omitted
+        return codec.rebuilt(root.first, conversation, anchored.input, body, eligible, omitted)
+            .copy(omitted = omitted)
     }
 }

@@ -162,6 +162,60 @@ internal class CodeModeCanonicalOrderTest {
         }
     }
 
+    @Test
+    fun `retained duplicate-owner history has identical bytes and omissions on every pass`() {
+        val fixture = fixture(emptyList(), 0)
+        val later = fixture.completed[2]
+        val raw = body(fixture.client + later.outer + later.outer)
+        val first = history.canonicalize(raw, fixture.completed)
+        assertEquals(listOf(2), first.omitted.map { fixture.completed.indexOf(it.record) })
+        val emitted = checkNotNull(first.body)
+        val baseline = history.canonicalize(CodeModeBody(emitted.round, Json), fixture.completed)
+        assertTrue(
+            first.bodyJson != baseline.bodyJson,
+            "the baf214d72 planner is also non-idempotent on this reconstructed duplicate-owner history",
+        )
+        val second = history.canonicalize(emitted, fixture.completed)
+        assertEquals(listOf(2), second.omitted.map { fixture.completed.indexOf(it.record) })
+        assertTrue(first.bodyJson == second.bodyJson, "a duplicate owner must not change the next emitted request")
+    }
+
+    @Test
+    fun `a completed continuation appends its tail without changing the posted prefix`() {
+        for (callbacks in listOf(0, 4)) {
+            val fixture = fixture(emptyList(), callbacks)
+            val later = fixture.completed[2]
+            val first = history.canonicalize(body(fixture.client + later.outer + later.outer), fixture.completed)
+            val posted = checkNotNull(first.body)
+            val prefix = input(posted)
+            val completed = record(prefix, fixture.completed, "continuation", reasoning("continuation"), 0).apply {
+                continuity = listOf(item("""{"role":"assistant","content":"synthetic continuation tail"}"""))
+            }
+            val records = fixture.completed + completed
+            val isolated = history.canonicalize(
+                CodeModeBody(posted.round, Json),
+                listOf(completed),
+                emptyMap(),
+                completed,
+            )
+            assertTrue(isolated.omitted.isEmpty(), "the new completion must place against the actual posted body")
+            assertTrue(
+                bodyText(prefix) == bodyText(input(checkNotNull(isolated.body)).take(prefix.size)),
+                "placing only the new completion must leave the prior posted prefix unchanged",
+            )
+            val appended = history.canonicalize(posted, records, emptyMap(), completed)
+            val continued = checkNotNull(appended.body)
+            assertTrue(appended.omitted.none { it.record === completed }, "the new completion must actually emit")
+            assertTrue(input(continued).size > prefix.size, "the completion must add a real tail")
+            assertTrue(
+                bodyText(prefix) == bodyText(input(continued).take(prefix.size)),
+                "the completed continuation must retain every byte of its already posted prefix",
+            )
+            val repeated = history.canonicalize(continued, records, emptyMap(), completed)
+            assertTrue(appended.bodyJson == repeated.bodyJson, "the extended continuation must remain idempotent")
+        }
+    }
+
     private fun assertCaptured(fixture: Fixture) {
         val rewritten = history.canonicalize(body(fixture.client), fixture.completed, emptyMap(), fixture.owner)
         assertTrue(rewritten.omitted.isEmpty())

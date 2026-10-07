@@ -98,6 +98,7 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         body: ResponsesCodeModeInput,
         original: CodeModeBody? = null,
         emitted: List<CodeModeRecord> = emptyList(),
+        omitted: List<CodeModeOmission> = emptyList(),
     ): CodeModeRewrite {
         val offset = conversation.preamble.size
         val joined = ResponsesCodeModeInput(
@@ -105,13 +106,15 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
             body.replayItems.map { it.copy(logicalOffset = it.logicalOffset + offset) },
         )
         val rebuilt = projection.rebuild(joined)
-        val input = root[FIELD_INPUT] as? JsonArray
         // Only the same borrowed items in the same order earn the original transport spelling.
-        val unchanged = original != null && input != null && rebuilt.size == input.size &&
-            rebuilt.indices.all { rebuilt[it] === input[it] }
+        val received = original?.request?.second
+        val unchanged = original != null && received != null && rebuilt.size == received.size &&
+            rebuilt.indices.all { rebuilt[it] === received[it] }
         if (unchanged) return CodeModeRewrite(original)
         val request = JsonObject(root + (FIELD_INPUT to rebuilt))
-        val emission = emitted.takeIf(List<CodeModeRecord>::isNotEmpty)?.let { CodeModeEmission(request, it) }
+        val emission = emitted.takeIf(List<CodeModeRecord>::isNotEmpty)?.let {
+            CodeModeEmission(request, omitted.toList(), it)
+        }
         return CodeModeRewrite(CodeModeBody(RoundBody.Tree(request), json, emission))
     }
 
@@ -175,13 +178,23 @@ internal class CodeModeBody(val round: RoundBody, json: Json, val emission: Code
     }
 }
 
-/** Only the exact tree and record instances emitted in this turn can reuse their observed opaque positions. */
-internal class CodeModeEmission(private val request: JsonObject, records: List<CodeModeRecord>) {
+/** The exact emitted tree preserves earlier placements and omissions; only new records can append a tail. */
+internal class CodeModeEmission(
+    private val request: JsonObject,
+    val omitted: List<CodeModeOmission>,
+    records: List<CodeModeRecord>,
+) {
     private val owners = IdentityHashMap<CodeModeRecord, Unit>().apply {
         records.forEach { put(it, Unit) }
     }
 
-    fun records(request: JsonObject): Set<CodeModeRecord> = owners.keys.takeIf { this.request === request }.orEmpty()
+    fun previous(request: JsonObject, records: List<CodeModeRecord>): CodeModeEmission? {
+        if (this.request !== request) return null
+        val incoming = IdentityHashMap<CodeModeRecord, Unit>().apply { records.forEach { put(it, Unit) } }
+        return takeIf { owners.keys.all(incoming::containsKey) }
+    }
+
+    fun processed(record: CodeModeRecord): Boolean = owners.containsKey(record)
 }
 
 internal const val CODE_MODE_FIELD_CALL_ID = "call_id"

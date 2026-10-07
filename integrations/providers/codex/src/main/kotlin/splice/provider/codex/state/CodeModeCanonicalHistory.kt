@@ -46,7 +46,6 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         records: List<CodeModeRecord>,
         media: Map<String, List<JsonElement>>,
         capture: CodeModeRecord? = null,
-        emitted: Set<CodeModeRecord> = emptySet(),
     ): CodeModeCanonicalResult {
         if (records.none { it.replayAnchors != null }) {
             val replay = CodeModeNativeChain.normalizedReplay(input.replayItems.filter { it.items.isNotEmpty() })
@@ -55,7 +54,7 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
             }
             return CodeModeCanonicalResult(input.copy(replayItems = replay), omitted)
         }
-        val index = CodeModeHistoryIndex(input.logicalItems, codec, emitted)
+        val index = CodeModeHistoryIndex(input.logicalItems, codec)
         val inputOwners = records.filterNot(CodeModeNativeChain::retired)
         val natives = CodeModeNativeReplay(codec, input, index, inputOwners)
         val omitted = mutableListOf<CodeModeOmission>()

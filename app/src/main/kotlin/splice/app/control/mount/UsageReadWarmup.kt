@@ -1,3 +1,4 @@
+// NEW: (ledger lines 495, 519) prepares each head's Usage reads at startup, one cold scan at a time.
 package splice.app.control.mount
 
 import kotlinx.coroutines.CoroutineDispatcher

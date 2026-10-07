@@ -1,3 +1,4 @@
+// NEW: (ledger lines 495, 519) the seam by which the app tells Usage readers whether history is prepared.
 package splice.usage
 
 /** Optional cold-read preparation; missing preparation keeps the existing synchronous reads. */

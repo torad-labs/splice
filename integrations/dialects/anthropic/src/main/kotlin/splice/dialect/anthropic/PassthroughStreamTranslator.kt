@@ -132,7 +132,7 @@ public class PassthroughStreamTranslator(
     // Ordering enforced by the shared spi.terminalPrecedence (a FINISHED turn beats a late
     // watchdog fire — preferring watchdog here discarded successful kimi turns and burned quota).
     private fun terminalOutcome(): TurnOutcome = TerminalStates(
-        providerFailure = terminal.providerFailure(),
+        providerFailure = terminal.providerFailure()?.copy(salvagedUsage = usage.toUsage()),
         finished = terminal.finished,
         watchdogFired = ctx.watchdogFired(),
     ).terminalPrecedence(

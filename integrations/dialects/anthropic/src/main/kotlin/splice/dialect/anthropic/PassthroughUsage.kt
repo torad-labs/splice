@@ -6,6 +6,7 @@ package splice.dialect.anthropic
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.Usage
+import splice.core.turn.UsageField
 import splice.core.util.JsonScalars
 
 /** The passthrough dialect's usage accounting: the four Anthropic token buckets, the CX-18 alias
@@ -16,6 +17,7 @@ internal class PassthroughUsage {
     private var cacheRead = 0L
     private var cacheCreation = 0L
     private var outputTokens = 0L
+    private val reported = mutableSetOf<UsageField>()
 
     /** Anthropic usage is disjoint; re-add the cache buckets so HeadServer's cached-subtraction
      *  reproduces the correct disjoint numbers. cachedTokens carries the prompt-cache-read hit.
@@ -31,6 +33,7 @@ internal class PassthroughUsage {
         outputTokens = outputTokens,
         cachedTokens = cacheRead,
         cacheWriteTokens = cacheCreation,
+        reported = reported.toSet(),
     )
 
     /** The backend's disjoint counts, before the outcome's inclusive input normalization. */
@@ -40,10 +43,22 @@ internal class PassthroughUsage {
 
     internal fun harvestUsage(u: JsonObject?) {
         u ?: return
-        JsonScalars.firstLong(u, "input_tokens")?.let { inputTokens = it }
-        JsonScalars.firstLong(u, "cache_read_input_tokens")?.let { cacheRead = it }
-        cacheCreationTokens(u)?.let { cacheCreation = it }
-        JsonScalars.firstLong(u, "output_tokens")?.let { outputTokens = it }
+        JsonScalars.firstLong(u, "input_tokens")?.let {
+            inputTokens = it
+            reported += setOf(UsageField.INPUT, UsageField.CACHED, UsageField.CACHE_WRITE)
+        }
+        JsonScalars.firstLong(u, "cache_read_input_tokens")?.let {
+            cacheRead = it
+            reported += UsageField.CACHED
+        }
+        cacheCreationTokens(u)?.let {
+            cacheCreation = it
+            reported += UsageField.CACHE_WRITE
+        }
+        JsonScalars.firstLong(u, "output_tokens")?.let {
+            outputTokens = it
+            reported += UsageField.OUTPUT
+        }
     }
 
     /** CX-18: the flat total, else the sum of Anthropic's newer per-TTL `cache_creation` buckets.

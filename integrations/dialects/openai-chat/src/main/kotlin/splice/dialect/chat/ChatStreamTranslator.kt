@@ -102,7 +102,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     // Ordering enforced by the shared spi.terminalPrecedence (a FINISHED turn beats a late
     // watchdog fire — the poller can sit on the socket-EOF read AFTER finish_reason arrived).
     private fun terminalOutcome(): TurnOutcome = TerminalStates(
-        providerFailure = terminal.providerFailure(),
+        providerFailure = terminal.providerFailure()?.copy(salvagedUsage = usage.toUsage()),
         finished = terminal.finished,
         watchdogFired = ctx.watchdogFired(),
     ).terminalPrecedence(

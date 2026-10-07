@@ -6,10 +6,29 @@ package splice.dialect.chat
 
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.model.TurnBill
+import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 
 class ChatUsageTest {
+
+    @Test
+    fun `chat usage without a provider report has no observed billing counters`() {
+        assertTrue(TurnBill.counters(ChatUsage().toUsage()).isEmpty())
+    }
+
+    @Test
+    fun `chat input-only usage leaves output unreported and explicit zero stays observed`() {
+        val usage = ChatUsage()
+        usage.usage(ev("""{"usage":{"prompt_tokens":100}}"""))
+        assertTrue(PerfKeys.OUT_TOKENS !in TurnBill.counters(usage.toUsage()))
+        usage.usage(ev("""{"usage":{"prompt_tokens":0,"completion_tokens":0}}"""))
+        val zero = TurnBill.counters(usage.toUsage())
+        assertEquals(0L, zero[PerfKeys.IN_TOKENS])
+        assertEquals(0L, zero[PerfKeys.OUT_TOKENS])
+    }
 
     @Test
     fun `usage captures cached tokens from prompt_tokens_details`() = runTest {

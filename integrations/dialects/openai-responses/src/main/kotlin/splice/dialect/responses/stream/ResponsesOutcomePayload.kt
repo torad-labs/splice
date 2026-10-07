@@ -21,6 +21,7 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
             state.outputTokens,
             state.cachedTokens,
             state.reasoningTokens,
+            reported = state.reportedUsage.toSet(),
         ),
         thinkingText = state.thinkingBuf.toString(),
         bodyText = state.textBuf.toString(),
@@ -66,5 +67,6 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
         outputTokens = state.outputTokens,
         cachedTokens = state.cachedTokens,
         reasoningTokens = state.reasoningTokens,
+        reported = state.reportedUsage.toSet(),
     )
 }

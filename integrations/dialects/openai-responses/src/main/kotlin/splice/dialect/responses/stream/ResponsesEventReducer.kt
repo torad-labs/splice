@@ -131,6 +131,7 @@ internal class ResponsesEventReducer(
      *  payload never zeroes an earlier one. */
     private fun accumulateUsage(resp: JsonObject) {
         val u = harvest.usageFrom(resp)
+        state.reportedUsage += u.reported
         if (u.inputTokens > 0) state.inputTokens = u.inputTokens
         if (u.outputTokens > 0) state.outputTokens = u.outputTokens
         if (u.cachedTokens > 0) state.cachedTokens = u.cachedTokens

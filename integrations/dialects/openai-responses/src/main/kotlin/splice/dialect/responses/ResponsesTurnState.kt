@@ -6,6 +6,7 @@ package splice.dialect.responses
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.ToolSearchCall
+import splice.core.turn.UsageField
 import splice.core.util.JsonScalars
 import splice.dialect.responses.request.BlockState
 import splice.dialect.responses.request.ToolSalvage
@@ -89,6 +90,7 @@ internal class ResponsesTurnState {
     var outputTokens = 0L
     var cachedTokens = 0L
     var reasoningTokens = 0L
+    val reportedUsage = mutableSetOf<UsageField>()
 
     // splice-reasoning envelopes of this round's encrypted reasoning items (fold replay). Collected
     // only when ctx.collectReasoningEnvelopes — otherwise stays empty, pre-fold behaviour intact.

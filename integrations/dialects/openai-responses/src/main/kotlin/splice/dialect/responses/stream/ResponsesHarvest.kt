@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.Usage
+import splice.core.turn.UsageField
 import splice.core.util.JsonScalars
 import splice.dialect.responses.tools.ResponsesToolSearchParse
 
@@ -171,10 +172,16 @@ internal class ResponsesHarvest {
             .toList()
     }
 
+    private fun reportedFields(input: Long?, output: Long?, cached: Long): Set<UsageField> = buildSet {
+        if (input != null) addAll(setOf(UsageField.INPUT, UsageField.CACHED, UsageField.CACHE_WRITE))
+        if (output != null) add(UsageField.OUTPUT)
+        if (cached > 0) add(UsageField.CACHED)
+    }
+
     /** Usage extraction: input/output plus the prompt-cache read (input_tokens_details.cached_tokens,
      *  with the flat cache_read_input_tokens as the fallback) — so the real cache hit rate is visible. */
     public fun usageFrom(resp: JsonObject?): Usage {
-        val usage = resp?.get("usage") as? JsonObject ?: return Usage()
+        val usage = resp?.get("usage") as? JsonObject ?: return Usage(reported = emptySet())
         val details = usage["input_tokens_details"] as? JsonObject
         val cached = JsonScalars.firstLong(details, "cached_tokens")?.takeIf { it > 0 }
             ?: JsonScalars.firstLong(usage, "cache_read_input_tokens") ?: 0L
@@ -182,11 +189,14 @@ internal class ResponsesHarvest {
         // non-reasoning backends (→ 0 → never fold).
         val reasoning =
             JsonScalars.firstLong(usage["output_tokens_details"] as? JsonObject, "reasoning_tokens") ?: 0L
+        val input = JsonScalars.firstLong(usage, "input_tokens", "prompt_tokens")
+        val output = JsonScalars.firstLong(usage, "output_tokens", "completion_tokens")
         return Usage(
-            inputTokens = JsonScalars.firstLong(usage, "input_tokens", "prompt_tokens") ?: 0L,
-            outputTokens = JsonScalars.firstLong(usage, "output_tokens", "completion_tokens") ?: 0L,
+            inputTokens = input ?: 0L,
+            outputTokens = output ?: 0L,
             cachedTokens = cached,
             reasoningTokens = reasoning,
+            reported = reportedFields(input, output, cached),
         )
     }
 }

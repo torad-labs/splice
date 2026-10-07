@@ -14,9 +14,11 @@
 package splice.head.turn
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -40,6 +42,9 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.dialect.anthropic.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughStreamTranslator
+import splice.dialect.anthropic.PassthroughTurnContext
 import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
@@ -63,9 +68,52 @@ import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class TurnUsageStampTest {
+/** One stamp with an observable perf row; [tag] isolates each test's files. */
+private class UsageStampRig(tmp: Path, private val tag: String) {
+    val log = LogSink { }
+    val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
+    val telemetry = TurnTelemetry("anthropic", PerfStats(perfFile), log, ElapsedClock { 5L })
+    val usageStore = UsageStore(tmp.resolve("u-$tag.json"), tmp.resolve("rl-$tag.json"))
+    val stamp = TurnUsageStamp(usageStore, log, telemetry)
 
+    suspend fun drive(interceptor: RoundInterceptor? = null): TurnDrive = TurnDrive(
+        requestBody = buildJsonObject { },
+        meta = TurnMeta(
+            compact = false,
+            showReasoning = ReasoningDisplay.TEXT,
+            stream = false,
+            originalModel = "claude-anthropic--sonnet-4-6",
+            upstreamModel = "sonnet-4-6",
+            clientMaxTokens = 100,
+            effort = "high",
+            summary = "detailed",
+            budgetTokens = null,
+        ),
+        emitter = CollectingTerminal("sonnet-4-6", UsagePayloadBuilder { buildJsonObject { } }),
+        watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
+        slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+        pipeline = TurnPipeline(
+            CompactStats(perfFile.resolveSibling("compact-$tag.jsonl")),
+            log = log,
+            clampOutput = OutputClamp { it },
+        ),
+        t0 = 0,
+        trace = null,
+        perf = TurnPerf(),
+        turnHeaders = emptyMap(),
+        signals = RunnerSignals(),
+        channel = ClientChannel(
+            ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
+            Mutex(),
+            AtomicBoolean(false),
+        ),
+        toolSearch = null,
+        roundInterceptor = interceptor,
+    )
+}
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class PassthroughFailureUsageTest {
     private lateinit var tmp: Path
 
     @BeforeAll
@@ -73,48 +121,132 @@ class TurnUsageStampTest {
         tmp = tempDir
     }
 
-    /** One stamp with an observable perf row; [tag] isolates each test's files. */
-    private class Rig(tmp: Path, private val tag: String) {
-        val log = LogSink { }
-        val perfFile: Path = tmp.resolve("perf-$tag.jsonl")
-        val telemetry = TurnTelemetry("anthropic", PerfStats(perfFile), log, ElapsedClock { 5L })
-        val usageStore = UsageStore(tmp.resolve("u-$tag.json"), tmp.resolve("rl-$tag.json"))
-        val stamp = TurnUsageStamp(usageStore, log, telemetry)
+    private fun event(text: String): JsonObject = Json.parseToJsonElement(text).jsonObject
 
-        suspend fun drive(interceptor: RoundInterceptor? = null): TurnDrive = TurnDrive(
-            requestBody = buildJsonObject { },
-            meta = TurnMeta(
-                compact = false,
-                showReasoning = ReasoningDisplay.TEXT,
-                stream = false,
-                originalModel = "claude-anthropic--sonnet-4-6",
-                upstreamModel = "sonnet-4-6",
-                clientMaxTokens = 100,
-                effort = "high",
-                summary = "detailed",
-                budgetTokens = null,
-            ),
-            emitter = CollectingTerminal("sonnet-4-6", UsagePayloadBuilder { buildJsonObject { } }),
-            watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
-            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
-            pipeline = TurnPipeline(
-                CompactStats(perfFile.resolveSibling("compact-$tag.jsonl")),
-                log = log,
-                clampOutput = OutputClamp { it },
-            ),
-            t0 = 0,
-            trace = null,
-            perf = TurnPerf(),
-            turnHeaders = emptyMap(),
-            signals = RunnerSignals(),
-            channel = ClientChannel(
-                ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
-                Mutex(),
-                AtomicBoolean(false),
-            ),
-            toolSearch = null,
-            roundInterceptor = interceptor,
-        )
+    private suspend fun providerFailure(drive: TurnDrive, vararg events: JsonObject): TurnOutcome.Failure =
+        PassthroughStreamTranslator(
+            PassthroughTurnContext({ false }, { null }, 180_000, 900_000),
+            PassthroughQuirks(providerTag = "synthetic"),
+        ).driveTurn(events.toList().asFlow(), drive.emitter) as TurnOutcome.Failure
+
+    @Test
+    fun `usage reported before a passthrough error survives into the retained row`() = runBlocking {
+        val rig = UsageStampRig(tmp, "reported-provider-failure")
+        val drive = rig.drive()
+        try {
+            val failure = providerFailure(
+                drive,
+                event(
+                    """{"type":"message_start","message":{"usage":{"input_tokens":100,
+                        "cache_read_input_tokens":20,"cache_creation_input_tokens":5}}}""",
+                ),
+                event("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+                event("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"synthetic"}}"""),
+                event("""{"type":"content_block_stop","index":0}"""),
+                event("""{"type":"message_delta","delta":{},"usage":{"output_tokens":7}}"""),
+                event("""{"type":"error","error":{"type":"api_error","message":"synthetic failure"}}"""),
+            )
+            rig.stamp.stampSalvaged(drive, failure.salvagedUsage)
+            rig.telemetry.recordPerf(drive, "failure:api_error")
+            assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+            val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
+            assertEquals(125L, row.getValue(PerfKeys.IN_TOKENS).jsonPrimitive.long)
+            assertEquals(7L, row.getValue(PerfKeys.OUT_TOKENS).jsonPrimitive.long)
+            assertEquals(20L, row.getValue(PerfKeys.CACHED_TOKENS).jsonPrimitive.long)
+            assertEquals(5L, row.getValue(PerfKeys.CACHE_WRITE_TOKENS).jsonPrimitive.long)
+            assertEquals(7L, rig.usageStore.readState().outputTokens5h)
+        } finally {
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
+
+    @Test
+    fun `a passthrough failure with no usage leaves retained token fields absent`() = runBlocking {
+        val rig = UsageStampRig(tmp, "unreported-provider-failure")
+        val drive = rig.drive()
+        try {
+            val failure = providerFailure(
+                drive,
+                event("""{"type":"message_start","message":{}}"""),
+                event("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+                event("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"synthetic"}}"""),
+                event("""{"type":"content_block_stop","index":0}"""),
+                event("""{"type":"error","error":{"type":"api_error","message":"synthetic failure"}}"""),
+            )
+            rig.stamp.stampSalvaged(drive, failure.salvagedUsage)
+            rig.telemetry.recordPerf(drive, "failure:api_error")
+            assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+            val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
+            assertNull(row[PerfKeys.IN_TOKENS], "no input count was reported")
+            assertNull(row[PerfKeys.OUT_TOKENS], "streamed content is not a reported token count")
+            assertNull(row[PerfKeys.CACHED_TOKENS])
+            assertNull(row[PerfKeys.CACHE_WRITE_TOKENS])
+        } finally {
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
+
+    @Test
+    fun `a reported zero on a failed stream is retained as zero rather than unknown`() = runBlocking {
+        val rig = UsageStampRig(tmp, "reported-zero-provider-failure")
+        val drive = rig.drive()
+        try {
+            val failure = providerFailure(
+                drive,
+                event(
+                    """{"type":"message_start","message":{"usage":{"input_tokens":0,
+                        "cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}""",
+                ),
+                event("""{"type":"message_delta","delta":{},"usage":{"output_tokens":0}}"""),
+                event("""{"type":"error","error":{"type":"api_error","message":"synthetic failure"}}"""),
+            )
+            rig.stamp.stampSalvaged(drive, failure.salvagedUsage)
+            rig.telemetry.recordPerf(drive, "failure:api_error")
+            assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+            val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
+            assertEquals(0L, row.getValue(PerfKeys.IN_TOKENS).jsonPrimitive.long)
+            assertEquals(0L, row.getValue(PerfKeys.OUT_TOKENS).jsonPrimitive.long)
+        } finally {
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
+
+    @Test
+    fun `an input-only report before failure cannot invent an output token count`() = runBlocking {
+        val rig = UsageStampRig(tmp, "input-only-provider-failure")
+        val drive = rig.drive()
+        try {
+            val failure = providerFailure(
+                drive,
+                event(
+                    """{"type":"message_start","message":{"usage":{"input_tokens":100,
+                        "cache_read_input_tokens":20,"cache_creation_input_tokens":5}}}""",
+                ),
+                event("""{"type":"error","error":{"type":"api_error","message":"synthetic failure"}}"""),
+            )
+            rig.stamp.stampSalvaged(drive, failure.salvagedUsage)
+            rig.telemetry.recordPerf(drive, "failure:api_error")
+            assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+            val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
+            assertEquals(125L, row.getValue(PerfKeys.IN_TOKENS).jsonPrimitive.long)
+            assertNull(row[PerfKeys.OUT_TOKENS], "the message_delta never reported output")
+        } finally {
+            drive.slot.release()
+            rig.usageStore.flushNow()
+        }
+    }
+}
+
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class TurnUsageStampTest {
+    private lateinit var tmp: Path
+
+    @BeforeAll
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
     }
 
     private fun success(usage: Usage) =
@@ -122,7 +254,7 @@ class TurnUsageStampTest {
 
     @Test
     fun `a successful zero usage step cannot erase the raw round its turn posted`() = runBlocking {
-        val rig = Rig(tmp, "owned-claim-refused")
+        val rig = UsageStampRig(tmp, "owned-claim-refused")
         val drive = rig.drive()
         try {
             val raw = rig.stamp.stampIndependent(success(Usage(inputTokens = 100, outputTokens = 7, cachedTokens = 40)))
@@ -141,7 +273,7 @@ class TurnUsageStampTest {
 
     @Test
     fun `a later successful turn cannot bill a source round another turn posted`() = runBlocking {
-        val rig = Rig(tmp, "owned-continuation")
+        val rig = UsageStampRig(tmp, "owned-continuation")
         val drive = rig.drive()
         try {
             val source = rig.stamp.stampIndependent(success(Usage(inputTokens = 100, outputTokens = 7)))
@@ -164,7 +296,7 @@ class TurnUsageStampTest {
 
     @Test
     fun `a held posting row keeps its completed raw usage when a source claim releases with none`() = runBlocking {
-        val rig = Rig(tmp, "owned-held-claim-refused")
+        val rig = UsageStampRig(tmp, "owned-held-claim-refused")
         val drive = rig.drive()
         val held = drive.sourceRow.hold()
         try {
@@ -188,7 +320,7 @@ class TurnUsageStampTest {
 
     @Test
     fun `a posted source with no terminal usage is unreported rather than a zero bill`() = runBlocking {
-        val rig = Rig(tmp, "owned-unreported-source")
+        val rig = UsageStampRig(tmp, "owned-unreported-source")
         val drive = rig.drive(RoundInterceptor { _, _, _ -> error("no source is executed by this fixture") })
         try {
             drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, 123)
@@ -210,7 +342,7 @@ class TurnUsageStampTest {
     fun `a successful content step whose raw post unwound before reporting has no invented zero bill`() = runBlocking {
         val endings = listOf(IOException("synthetic source threw"), CancellationException("synthetic source cancelled"))
         for ((index, ending) in endings.withIndex()) {
-            val rig = Rig(tmp, "owned-unwound-source-$index")
+            val rig = UsageStampRig(tmp, "owned-unwound-source-$index")
             val drive = rig.drive(RoundInterceptor { _, _, _ -> error("the fixture dispatches only its raw post") })
             var frames = 0
             val observed = ObservedRoundPost(
@@ -255,7 +387,7 @@ class TurnUsageStampTest {
 
     @Test
     fun `a local step with no post keeps its explicit zero bill`() = runBlocking {
-        val rig = Rig(tmp, "owned-no-source")
+        val rig = UsageStampRig(tmp, "owned-no-source")
         val drive = rig.drive(RoundInterceptor { _, _, _ -> error("a local step must not post") })
         try {
             rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
@@ -284,7 +416,7 @@ class TurnUsageStampTest {
         )
         val endings = listOf(failure, split, TurnOutcome.ClientAbandoned(Usage(inputTokens = 50, outputTokens = 7)))
         for ((index, ending) in endings.withIndex()) {
-            val rig = Rig(tmp, "owned-raw-salvage-$index")
+            val rig = UsageStampRig(tmp, "owned-raw-salvage-$index")
             val drive = rig.drive()
             val held = drive.sourceRow.hold()
             try {
@@ -308,7 +440,7 @@ class TurnUsageStampTest {
     @Test
     fun `raw completion after a local step bills once and a later continuation bills only new output`() =
         runBlocking {
-            val rig = Rig(tmp, "independent")
+            val rig = UsageStampRig(tmp, "independent")
             val first = rig.drive()
             val resumed = rig.drive()
             try {
@@ -335,7 +467,7 @@ class TurnUsageStampTest {
     @Test
     fun `a torn independent round records partial billing without billing its salvage twice`() =
         runBlocking {
-            val rig = Rig(tmp, "independent-torn")
+            val rig = UsageStampRig(tmp, "independent-torn")
             val resumed = rig.drive()
             try {
                 val failure = TurnOutcome.Failure(
@@ -356,7 +488,7 @@ class TurnUsageStampTest {
 
     @Test
     fun `a success stamp writes cache_write_tokens from the usage's cacheWriteTokens`() = runBlocking {
-        val rig = Rig(tmp, "success")
+        val rig = UsageStampRig(tmp, "success")
         val drive = rig.drive()
         try {
             // The shape PassthroughUsage.toUsage() produces for a turn that read a 40k cached prefix
@@ -391,7 +523,7 @@ class TurnUsageStampTest {
     @Test
     fun `a dialect that reports no cache-creation bucket stamps a literal zero, not an absent key`() =
         runBlocking {
-            val rig = Rig(tmp, "chat-shaped")
+            val rig = UsageStampRig(tmp, "chat-shaped")
             val drive = rig.drive()
             try {
                 // ChatUsage.toUsage() builds Usage(inputTokens, outputTokens, cachedTokens) positionally,
@@ -414,7 +546,7 @@ class TurnUsageStampTest {
 
     @Test
     fun `a salvaged stamp carries the cache-write bucket too, so billed tokens are not lost`() = runBlocking {
-        val rig = Rig(tmp, "salvaged")
+        val rig = UsageStampRig(tmp, "salvaged")
         val drive = rig.drive()
         try {
             // Salvaged usage from absorbed rounds of an ultimately-failed turn is REAL billed spend —
@@ -430,7 +562,7 @@ class TurnUsageStampTest {
 
     @Test
     fun `a cancellation with no completed raw round leaves the cache-write counter absent`() = runBlocking {
-        val rig = Rig(tmp, "cancelled-empty")
+        val rig = UsageStampRig(tmp, "cancelled-empty")
         val drive = rig.drive()
         try {
             // Nothing recorded, nothing stamped — the new counter must not appear as a confident 0 on a
@@ -448,7 +580,7 @@ class TurnUsageStampTest {
     @Test
     fun `a cancelled turn's completed raw rounds keep the LATEST cache-write count, never their sum`() =
         runBlocking {
-            val rig = Rig(tmp, "cancelled-prefix")
+            val rig = UsageStampRig(tmp, "cancelled-prefix")
             val drive = rig.drive()
             try {
                 // Each code-mode continuation re-sends the whole conversation, so round N's

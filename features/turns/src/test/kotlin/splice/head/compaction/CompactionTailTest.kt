@@ -2,6 +2,7 @@ package splice.head.compaction
 
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -82,7 +83,7 @@ class CompactionTailTest {
     }
 
     @Test
-    fun `compact statistics retain the effective text and source`() {
+    fun `compact statistics retain the effective source without recording instruction text`() {
         val stats = CompactStats(tmp.resolve("compact.jsonl"))
         val meta = TurnMeta(
             compact = true,
@@ -104,7 +105,8 @@ class CompactionTailTest {
         assertTrue(AsyncFileIo.drain())
         val row = stats.read().tail.single()
 
-        assertEquals("retain decisions", row.getValue("instructions").jsonPrimitive.content)
+        assertFalse("instructions" in row)
+        assertFalse(row.toString().contains("retain decisions"))
         assertEquals("model:astra", row.getValue("instructions_source").jsonPrimitive.content)
     }
 }

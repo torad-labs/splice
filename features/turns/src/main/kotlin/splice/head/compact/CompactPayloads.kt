@@ -16,6 +16,9 @@ private const val COMPACT_TAIL = 50
 // rebuilt per CompactPayloads instance.
 private val COMPACT_NUMERIC_FIELDS = setOf("ts", "chars", "ms", "status")
 
+// CompactionInstructionsRoute permits metadata, never prompt text, including in historical rows.
+private val COMPACT_POLL_FIELDS = COMPACT_NUMERIC_FIELDS + setOf("outcome", "error", "instructions_source")
+
 public class CompactPayloads(private val heads: TurnsHeads) {
 
     // Aggregate every head while retaining a head tag on each tail row. This is the dashboard's
@@ -40,7 +43,9 @@ public class CompactPayloads(private val heads: TurnsHeads) {
                     tail.forEach { (head, row) ->
                         addJsonObject {
                             put("head", head)
-                            row.forEach { (key, value) -> putCompactScalar(this, key, value) }
+                            row.forEach { (key, value) ->
+                                if (key in COMPACT_POLL_FIELDS) putCompactScalar(this, key, value)
+                            }
                         }
                     }
                 }

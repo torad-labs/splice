@@ -13,6 +13,7 @@ import { topologyKey } from './config';
 import { failureText, MgmtError, request } from './client';
 import { keys } from './queries';
 import { awaitRefetch } from './refetch';
+import { awaitPendingRead, PENDING_READ_HEADERS } from './pending-read';
 import { inflightFrom } from '../lib/perf';
 import { U } from '../lib/words-usage';
 import type { CompactPayload, InstructionRule, InstructionScopeWire, InstructionsState, InstructionsWire } from '../types/compaction';
@@ -186,18 +187,24 @@ function readableRow(row: unknown): row is TurnRowWire {
 function readableHistory(wire: unknown, head: string): wire is PerfTurnsWire {
   if (!record(wire) || !Array.isArray(wire.heads)) return false;
   return wire.heads.every(block => record(block) && typeof block.key === 'string' &&
+    (block.read_pending === undefined || typeof block.read_pending === 'boolean') &&
     (block.count === undefined || numeric(block.count)) &&
     (block.rows === undefined || Array.isArray(block.rows) && block.rows.every(readableRow)) &&
     (block.usage === undefined || usageWire(block.usage))) && wire.heads.some(block => block.key === head);
 }
 
-async function readHeadTurns(head: string, n: number, window: TurnsWindow, signal?: AbortSignal): Promise<HeadRead> {
+async function readHeadTurns(head: string, n: number, window: TurnsWindow, signal?: AbortSignal, progressive = false): Promise<HeadRead> {
   try {
-    const wire = await request<PerfTurnsWire>(perfTurnsPath(head, n, window), { method: 'GET', ...(signal === undefined ? {} : { signal }) });
-    if (!readableHistory(wire, head)) {
-      throw new Error(U.historyUnreadable);
+    while (true) {
+      signal?.throwIfAborted();
+      const wire = await request<PerfTurnsWire>(perfTurnsPath(head, n, window), {
+        method: 'GET', ...(signal === undefined ? {} : { signal }),
+        ...(progressive ? { headers: PENDING_READ_HEADERS } : {}),
+      });
+      if (!readableHistory(wire, head)) throw new Error(U.historyUnreadable);
+      if (!wire.heads.some(block => block.read_pending === true)) return { ok: true, wire };
+      await awaitPendingRead(signal);
     }
-    return { ok: true, wire };
   } catch (err) {
     return { ok: false, head, err };
   }
@@ -253,8 +260,9 @@ export async function fetchTurns({ head, n = DEFAULT_TAIL, since, until, last, f
     const window = { n, since: from, until: to, filter, timeZone };
     const settled: HeadRead[] = [];
     const pending = new Set(asked);
+    if (!signal?.aborted) publish?.(settledTurns(heads, settled, window, [...pending]));
     const reads = await Promise.all(asked.map(async key => {
-      const read = await readHeadTurns(key, n, window, signal);
+      const read = await readHeadTurns(key, n, window, signal, publish !== undefined);
       settled.push(read);
       pending.delete(key);
       if (!signal?.aborted) publish?.(settledTurns(heads, settled, window, [...pending]));

@@ -25,6 +25,7 @@ import kotlinx.serialization.json.putJsonArray
 import splice.core.perf.ECONOMICS_RETENTION_HOURS
 import splice.core.util.WallClock
 import splice.usage.UsageHeads
+import splice.usage.UsageReadPreparation
 
 private const val KEY = "key"
 private const val LABEL = "label"
@@ -40,7 +41,9 @@ public class EconomicsPayloads(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
 
-    public fun economicsJson(): String = buildJsonObject {
+    public fun economicsJson(): String = economicsJson(null)
+
+    public fun economicsJson(preparation: UsageReadPreparation?): String = buildJsonObject {
         put("retention_hours", ECONOMICS_RETENTION_HOURS)
         put("generated_at", clock())
         putJsonArray(HEADS) {
@@ -50,11 +53,17 @@ public class EconomicsPayloads(
                     put(LABEL, m.label)
                     val ceiling = m.usage.snapshot().ratelimit?.limitTokens
                     if (ceiling == null) put("ceiling_tokens", JsonNull) else put("ceiling_tokens", ceiling)
-                    when (val read = m.economics?.read() ?: EconomicsRead.Rows(emptyList())) {
-                        is EconomicsRead.Rows -> buckets(this, read.rows)
-                        is EconomicsRead.Unavailable -> {
-                            buckets(this, emptyList())
-                            put("unavailable", read.reason)
+                    if (preparation?.economicsReady(m) == false) {
+                        buckets(this, emptyList())
+                        put("read_pending", true)
+                        put("unavailable", "Reading saved request history before showing this command's hourly totals.")
+                    } else {
+                        when (val read = m.economics?.read() ?: EconomicsRead.Rows(emptyList())) {
+                            is EconomicsRead.Rows -> buckets(this, read.rows)
+                            is EconomicsRead.Unavailable -> {
+                                buckets(this, emptyList())
+                                put("unavailable", read.reason)
+                            }
                         }
                     }
                 }

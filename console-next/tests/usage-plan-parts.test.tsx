@@ -47,6 +47,39 @@ function hourlyPage(missing: number | undefined, ago = 1, fields: Partial<Econom
   return renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><UsagePage /></MemoryRouter></QueryClientProvider>);
 }
 
+test('pending hourly history names the cold command and qualifies otherwise complete window totals', () => {
+  const at = Date.now();
+  const client = new QueryClient();
+  const totals = { requests: 9, input_tokens: 900, cached_tokens: 0, output_tokens: 90, cost_usd: 1.25,
+    cache_share: 0, unpriced_requests: 0, missing_input_requests: 0, missing_output_requests: 0, missing_cache_requests: 0 };
+  const counted: TurnUsageWire = {
+    totals,
+    models: [{ key: 'synthetic-model', ...totals }],
+    accounts: [{ key: 'synthetic-account', ...totals }],
+    days: [{ key: new Date(at).toISOString().slice(0, 10), ...totals }],
+    sessions: [],
+  };
+  client.setQueryData([...economicsKey, '/api/economics'], {
+    retention_hours: 168, generated_at: at, heads: [{
+      key: 'synthetic', label: 'Cold command', ceiling_tokens: null, buckets: [], read_pending: true,
+      unavailable: "Reading saved request history before showing this command's hourly totals.",
+    }],
+  });
+  client.setQueryData([...keys.heads, '/api/heads'], { heads: [{ key: 'synthetic', label: 'Cold command' }] });
+  client.setQueryData(['usage-requests', 24, Intl.DateTimeFormat().resolvedOptions().timeZone], {
+    landed: [], inflight: [], unread: [], truncated: [], matched: 9, matchedBy: { synthetic: 9 },
+    usageBy: { synthetic: counted }, pendingHeads: [], window: { since: at - 86_400_000, until: at },
+  });
+  const html = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter><UsagePage /></MemoryRouter></QueryClientProvider>);
+  expect(html).toContain('Still loading hourly history for Cold command.');
+  expect(html).toContain('<div class="n">At least 9</div>');
+  expect(html).toContain('<div class="n">At least 900</div>');
+  expect(html).toContain('<div class="n">At least 90</div>');
+  expect(html).toContain('At least $1.25');
+  expect(html).not.toContain('No requests in');
+  expect(html).not.toContain('<div class="n">0</div>');
+});
+
 test('an input-only hourly report stays plotted without claiming the turn is excluded', () => {
   const html = hourlyPage(1, 1, { turns: 1, out_tokens: 0, cost_usd: null, unpriced_turns: 1 });
   expect(html).toContain('x="133" y="2" width="4" height="30"');

@@ -118,6 +118,74 @@ describe('the filtered read', () => {
     expect(read.landed).toHaveLength(1);
   });
 
+  test('a cold fleet publishes every loading head before any request scan finishes', async () => {
+    const held: ((response: Response) => void)[] = [];
+    vi.stubGlobal('localStorage', undefined);
+    vi.stubGlobal('fetch', (url: string) => {
+      if (url === '/api/heads') return json({ heads: [{ key: 'a', gate: null }, { key: 'b', gate: null }] });
+      return new Promise<Response>(resolve => { held.push(resolve); });
+    });
+    const published: TurnsState[] = [];
+    const completed = fetchTurns({ last: 3_600_000 }, () => 10_000_000, state => { published.push(state); });
+    try {
+      await vi.waitFor(() => expect(held).toHaveLength(2));
+      expect(published[0]?.pendingHeads).toEqual(['a', 'b']);
+      expect(published[0]?.matched).toBeNull();
+      expect(published[0]?.usageBy).toEqual({});
+      expect(published[0]?.window).toEqual({ since: 6_400_000, until: 10_000_000 });
+    } finally {
+      held.forEach((resolve, index) => resolve(new Response(JSON.stringify({
+        since: 6_400_000, n: 200, heads: [{ key: index === 0 ? 'a' : 'b', label: 'Synthetic', count: 0, rows: [] }],
+      }))));
+      await completed;
+    }
+  });
+
+  test('pending reads keep the same pinned window until the complete count arrives', async () => {
+    const urls: string[] = [];
+    const headers: Headers[] = [];
+    vi.stubGlobal('localStorage', undefined);
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      if (url === '/api/heads') return json({ heads: [{ key: 'a', gate: null }] });
+      urls.push(url);
+      headers.push(new Headers(init?.headers));
+      return json({ since: 6_400_000, n: 200, heads: [{
+        key: 'a', label: 'Synthetic', ...(urls.length === 1 ? { read_pending: true } : { count: 7 }), rows: [],
+      }] });
+    });
+    const published: TurnsState[] = [];
+    const result = await fetchTurns({ last: 3_600_000 }, () => 10_000_000, state => { published.push(state); });
+    if ('pending' in result) throw new Error('not a pending route');
+    expect(result.matched).toBe(7);
+    expect(urls).toHaveLength(2);
+    expect(urls[1]).toBe(urls[0]);
+    expect(headers.every(value => value.get('x-splice-read-pending') === '1')).toBe(true);
+    expect(published[0]?.matched).toBeNull();
+    expect(published.at(-1)?.pendingHeads).toEqual([]);
+  });
+
+  test('aborting a pending read cancels its poll without publishing a complete zero', async () => {
+    const controller = new AbortController();
+    let began!: () => void;
+    const started = new Promise<void>(resolve => { began = resolve; });
+    let reads = 0;
+    vi.stubGlobal('localStorage', undefined);
+    vi.stubGlobal('fetch', (url: string) => {
+      if (url === '/api/heads') return json({ heads: [{ key: 'a', gate: null }] });
+      reads++;
+      began();
+      return json({ since: 100, n: 200, heads: [{ key: 'a', label: 'Synthetic', read_pending: true, rows: [] }] });
+    });
+    const published: TurnsState[] = [];
+    const completed = fetchTurns({ since: 100, until: 200 }, Date.now, state => { published.push(state); }, controller.signal);
+    const rejected = expect(completed).rejects.toMatchObject({ name: 'AbortError' });
+    await started;
+    controller.abort();
+    await rejected;
+    expect(reads).toBe(1);
+    expect(published.every(state => state.matched === null && state.pendingHeads?.includes('a'))).toBe(true);
+  });
+
   test('a completed head publishes before a pending sibling and every snapshot keeps one window', async () => {
     let release!: (value: Response) => void;
     const slow = new Promise<Response>(resolve => { release = resolve; });
@@ -165,7 +233,10 @@ describe('the filtered read', () => {
     release(new Response(JSON.stringify({ since: 100, n: 1, heads: [{ key: 'a', label: 'A', count: 7, rows: [] }] })));
     await rejected;
     expect(signals).toEqual([controller.signal, controller.signal]);
-    expect(published).toEqual([]);
+    expect(published).toHaveLength(1);
+    expect(published[0]?.pendingHeads).toEqual(['a']);
+    expect(published[0]?.matched).toBeNull();
+    expect(published[0]?.usageBy).toEqual({});
   });
 
   test('a malformed successful history names that head without discarding a readable sibling', async () => {

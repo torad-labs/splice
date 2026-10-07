@@ -539,6 +539,51 @@ test('a settled command keeps fleet totals when its sibling has no counts or agg
   await expect(unavailable).not.toContainText('Reading');
 });
 
+for (const width of [1440, 390]) {
+  test(`a cold Usage open names pending heads and replaces pending replies with exact totals at ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1024 });
+    await page.clock.install();
+    const heads = await read<HeadsPayload>(page, '/api/heads');
+    heads.heads = heads.heads.filter(head => head.key === STACK.oauthHead);
+    await page.route('**/api/heads', route => route.fulfill({ json: heads }));
+    let ready = false;
+    const windows: string[] = [];
+    await page.route('**/api/economics', route => {
+      expect(route.request().headers()['x-splice-read-pending']).toBe('1');
+      return route.fulfill({ json: { retention_hours: 168, heads: [{
+        key: STACK.oauthHead, label: STACK.oauthHead, ceiling_tokens: null, buckets: [],
+        ...(ready ? {} : { read_pending: true, unavailable: "Reading saved request history before showing this command's hourly totals." }),
+      }] } });
+    });
+    await page.route(url => url.pathname === '/api/perf/turns', route => {
+      expect(route.request().headers()['x-splice-read-pending']).toBe('1');
+      const query = new URL(route.request().url()).searchParams;
+      windows.push(query.get('since') + ':' + query.get('until'));
+      return route.fulfill({ json: { since: Number(query.get('since')), n: 1, heads: [{
+        key: STACK.oauthHead, label: STACK.oauthHead, rows: [],
+        ...(ready ? { count: stats.requests, usage } : { read_pending: true }),
+      }] } });
+    });
+    const faults = await open(page, 'usage');
+    await expect(page.locator('.lede')).toContainText('Still reading requests for');
+    await expect(page.locator('.lede')).toContainText('Still loading hourly history for');
+    await expect(page.locator('.lede')).toContainText(STACK.oauthHead);
+    await expect(page.locator('.totals .n').first()).toHaveText('Reading…');
+    await expect(page.getByRole('main')).not.toContainText('No requests in');
+    await expect(page.locator('.totals .n')).not.toHaveText(['0', '0', '0', '$0.00']);
+    ready = true;
+    await page.clock.runFor(1100);
+    await expect(page.locator('.totals .n').first()).toHaveText('2,502');
+    await expect(page.locator('.totals .n').nth(1)).toHaveText('2.50M');
+    await expect(page.locator('.totals .n').nth(3)).toHaveText('$1.48');
+    expect(windows.length).toBeGreaterThan(1);
+    expect(new Set(windows).size).toBe(1);
+    await expect(page.locator('.lede')).not.toContainText('Still');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await assertHealthy(page, faults);
+  });
+}
+
 test('a settled partial history keeps its numbers and never calls itself loading', async ({ page }) => {
   await page.route('**/api/economics', route => route.fulfill({ json: { retention_hours: 168, heads: [] } }));
   await page.route(url => url.pathname === '/api/perf/turns', route => {

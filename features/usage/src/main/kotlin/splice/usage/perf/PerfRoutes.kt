@@ -34,8 +34,10 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.model.TurnPrice
 import splice.core.util.WallClock
+import splice.usage.USAGE_READ_PENDING_HEADER
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
+import splice.usage.UsageReadPreparation
 import java.time.DateTimeException
 import java.time.ZoneId
 
@@ -69,6 +71,9 @@ public class PerfRoutes(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val readFilter = TurnsFilterReader()
+
+    /** Installed by the application before serving routes; older readers never consult it. */
+    public var preparation: UsageReadPreparation? = null
 
     public suspend fun turns(call: ApplicationCall) {
         val name = call.request.queryParameters["head"].orEmpty()
@@ -104,6 +109,15 @@ public class PerfRoutes(
                                 put("key", head.key)
                                 put("label", head.label)
                                 put("error", UNWIRED_TURNS)
+                            }
+                        } else if (call.request.headers[USAGE_READ_PENDING_HEADER] == "1" &&
+                            preparation?.requestsReady(head, asked.since) == false
+                        ) {
+                            addJsonObject {
+                                put("key", head.key)
+                                put("label", head.label)
+                                put("read_pending", true)
+                                putJsonArray("rows") { }
                             }
                         } else {
                             add(turnsFor(head, source, asked))

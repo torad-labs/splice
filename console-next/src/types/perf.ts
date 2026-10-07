@@ -260,6 +260,8 @@ export interface TurnUsageWire {
 export interface PerfTurnsHeadWire {
   key: string;
   label: string;
+  /** The opted-in read is preparing this head. No count or usage is complete yet. */
+  read_pending?: boolean;
   count?: number;
   returned?: number;
   /** Whether the newest-n clamp cut rows from this head's window. */

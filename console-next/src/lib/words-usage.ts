@@ -14,6 +14,7 @@ export const U = {
   countNotReported: 'The request count was not reported.',
   historyUnreadable: 'The daemon returned an unreadable request history.',
   commandsReading: (names: string) => `Still reading requests for ${names}.`,
+  hourlyCommandsReading: (names: string) => `Still loading hourly history for ${names}.`,
   window: 'Window',
   notRetained: (asked: string, shown: string) => `The full range of ${asked} is not retained. Showing ${shown}.`,
   totalsTurns: 'Requests',

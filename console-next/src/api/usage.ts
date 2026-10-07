@@ -12,6 +12,7 @@ import { modelsKey } from './models';
 import { topologyKey } from './config';
 import { keys, read } from './queries';
 import { refetch } from './refetch';
+import { PENDING_READ_HEADERS, PENDING_READ_POLL_MS } from './pending-read';
 import type { AlertSettings, AlertsSlice } from '../types/alerts';
 import type { Budget, BudgetsPayload, BudgetsSlice, PendingRoute } from '../types/budget';
 import type { AddChecked, AddChecksFailed, AddCheck, AddModelOffers, AddModelsAdded, AddProfilesPayload, AddRequest, AddView } from '../types/add';
@@ -39,7 +40,11 @@ export const ADD_POLL_MS = 2500;
 // ── economics ────────────────────────────────────────────────────────────────────────────────────
 
 /** GET /api/economics: one hour of SUMS per head; every ratio is derived (lib/economics). */
-export const useEconomics = () => useQuery(read<EconomicsPayload>(economicsKey, '/api/economics', { refetchInterval: ECONOMICS_POLL_MS }));
+export const useEconomics = () => useQuery(read<EconomicsPayload>(economicsKey, '/api/economics', {
+  queryFn: ({ signal }) => request<EconomicsPayload>('/api/economics', { headers: PENDING_READ_HEADERS, signal }),
+  refetchInterval: query => query.state.data?.heads.some(head => head.read_pending === true)
+    ? PENDING_READ_POLL_MS : ECONOMICS_POLL_MS,
+}));
 
 // ── budgets and alerts ───────────────────────────────────────────────────────────────────────────
 

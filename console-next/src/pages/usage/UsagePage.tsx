@@ -85,7 +85,7 @@ export function UsagePage() {
     const pending = loading || recorded?.pendingHeads?.includes(key) === true;
     const turns = values?.requests ?? recorded?.matchedBy[key] ?? null;
     const requestState = pending ? 'loading' as const : turns === null ? 'unavailable' as const : 'ready' as const;
-    return { ...plan, requestState, ...(reason === undefined ? {} : { requestReason: reason }), turns, inTokens: values?.input_tokens ?? null, cost: values?.cost_usd ?? null, cache: values?.cache_share ?? null, partial: reason !== undefined || (values?.missing_input_requests ?? 0) > 0, costPartial: reason !== undefined || (values?.unpriced_requests ?? 0) > 0, models: recorded?.usageBy?.[key]?.models.flatMap(model => model.key === null ? [] : [model.key]) ?? [], subscription: usage.data?.heads.find(row => row.key === key)?.usage?.quota?.plan, spark: head.buckets.length === 0 ? [] : plan.spark };
+    return { ...plan, requestState, ...(reason === undefined ? {} : { requestReason: reason }), turns, inTokens: values?.input_tokens ?? null, cost: values?.cost_usd ?? null, cache: values?.cache_share ?? null, partial: head.read_pending === true || reason !== undefined || (values?.missing_input_requests ?? 0) > 0, costPartial: head.read_pending === true || reason !== undefined || (values?.unpriced_requests ?? 0) > 0, models: recorded?.usageBy?.[key]?.models.flatMap(model => model.key === null ? [] : [model.key]) ?? [], subscription: usage.data?.heads.find(row => row.key === key)?.usage?.quota?.plan, spark: head.buckets.length === 0 ? [] : plan.spark };
   }));
   const { active, idle } = splitIdle(plans);
   const totals = totalsOf(economicHeads, hours, now);
@@ -93,7 +93,8 @@ export function UsagePage() {
   const count = reportedRequestCount(recorded);
   const usedCommands = plans.filter(plan => plan.turns !== null && plan.turns > 0).length;
   const awaiting = loading || (recorded?.pendingHeads?.length ?? 0) > 0;
-  const partial = recorded !== null && !hasCompleteUsage(recorded);
+  const hourlyPending = economicHeads.filter(head => head.read_pending === true).map(head => label(head.key));
+  const partial = recorded !== null && (!hasCompleteUsage(recorded) || hourlyPending.length > 0);
   const measured = (value: number | null | undefined, missing: number): string => value == null ? awaiting ? U.readingMetric : B.unknown : partial || missing > 0 ? B.atLeast(tokensText(value)) : tokensText(value);
   const cost = values?.cost_usd ?? null;
   const lede = count === null && awaiting ? U.reading : requests.isError ? U.requestsUnavailable : usageLede(totals, plans, hours, count, cost, partial || (values?.unpriced_requests ?? 0) > 0, partial);
@@ -103,7 +104,7 @@ export function UsagePage() {
     <div className="usage-page">
       <PageHead
         title={U.title}
-        lede={pendingNames.length === 0 ? lede : `${lede} ${U.commandsReading(pendingNames.join(', '))}`}
+        lede={[lede, pendingNames.length === 0 ? null : U.commandsReading(pendingNames.join(', ')), hourlyPending.length === 0 ? null : U.hourlyCommandsReading(hourlyPending.join(', '))].filter(Boolean).join(' ')}
         tools={choices.length < 2 ? undefined : <Segmented label={U.window} value={String(hours)} options={choices} onChange={(next) => setParams(next === '24' ? {} : { window: next }, { replace: true })} />}
       />
       <p className="why">{U.requestScope}</p>

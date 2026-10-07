@@ -2,8 +2,10 @@
 // statusline (features/usage).
 package splice.app.control.mount
 
+import io.ktor.server.application.ApplicationStarted
 import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.application
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -20,6 +22,7 @@ import splice.core.version.ClientVersionTracker
 import splice.head.perf.TurnKeptRoutes
 import splice.models.roster.DeclaredHeads
 import splice.upstream.codemode.ProcessDispatchers
+import splice.usage.USAGE_READ_PENDING_HEADER
 import splice.usage.alerts.AlertRoutes
 import splice.usage.alerts.AlertSource
 import splice.usage.budgets.BudgetRoutes
@@ -65,6 +68,9 @@ internal class UsageMount(
     private val alertRoutes = AlertRoutes(AlertSource { ports.alerts })
 
     fun register(route: Route) {
+        val warmup = UsageReadWarmup(route.application, usageHeads, fileIo)
+        perfRoutes.preparation = warmup
+        route.application.monitor.subscribe(ApplicationStarted) { warmup.start() }
         route.get("/api/usage") { guard.guarded(call) { ControlReplies.respond(call, usagePayloads.usageJson()) } }
         route.post("/api/usage/probe") {
             guard.guarded(call) { ControlReplies.respond(call, usagePayloads.probeNowJson()) }
@@ -93,12 +99,7 @@ internal class UsageMount(
                 withContext(fileIo) { TurnKeptRoutes(ports.turnStatistics, liveTotals).delete() }.send(call)
             }
         }
-        route.get("/api/economics") {
-            guard.guarded(call) {
-                val result = withContext(fileIo) { economicsPayloads.economicsJson() }
-                ControlReplies.respond(call, result)
-            }
-        }
+        registerEconomics(route, warmup)
         route.get("/api/budgets") { guard.guarded(call) { budgetRoutes.read(ports.budgetSpending).send(call) } }
         route.put("/api/budgets") {
             guard.guarded(call) { budgetRoutes.write(call.receiveText(), ports.budgetSpending).send(call) }
@@ -109,5 +110,20 @@ internal class UsageMount(
         // A SESSION's statusline command calls these, so its turn key opens them (with the resume hook).
         route.post("/statusline/{head}") { guard.guarded(call, Door.SESSION) { statuslineRoute.statusline(call) } }
         route.get("/statusline/{head}") { guard.guarded(call, Door.SESSION) { statuslineRoute.statusline(call) } }
+    }
+
+    private fun registerEconomics(route: Route, warmup: UsageReadWarmup) {
+        route.get("/api/economics") {
+            guard.guarded(call) {
+                val result = withContext(fileIo) {
+                    if (call.request.headers[USAGE_READ_PENDING_HEADER] == "1") {
+                        economicsPayloads.economicsJson(warmup)
+                    } else {
+                        economicsPayloads.economicsJson()
+                    }
+                }
+                ControlReplies.respond(call, result)
+            }
+        }
     }
 }

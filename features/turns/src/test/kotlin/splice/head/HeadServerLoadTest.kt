@@ -48,6 +48,7 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -65,6 +66,7 @@ private class HoldingSseUpstream {
 
     val held = AtomicInteger(0)
     val peak = AtomicInteger(0)
+    private val parked = ConcurrentHashMap<Int, ParkedConnection>()
 
     @Volatile
     var release = CountDownLatch(1)
@@ -75,8 +77,12 @@ private class HoldingSseUpstream {
         Thread.ofVirtual().name("hold-accept").start {
             while (!closed.get()) {
                 val sock = runCatching { server.accept() }.getOrNull() ?: break
+                val acceptedAtNanos = System.nanoTime()
                 Thread.ofVirtual().start {
-                    Cancellables.discard(runCatching { serve(sock) }, "load-test peer: serve errors are the scenario")
+                    Cancellables.discard(
+                        runCatching { serve(sock, acceptedAtNanos) },
+                        "load-test peer: serve errors are the scenario",
+                    )
                     Cancellables.discard(runCatching { sock.close() }, "test-socket teardown")
                 }
             }
@@ -89,28 +95,39 @@ private class HoldingSseUpstream {
         Cancellables.discard(runCatching { server.close() }, "test-server teardown")
     }
 
-    /** Consume the request head + body; returns false when the socket closed early. */
-    private fun drainRequest(input: BufferedReader): Boolean {
+    fun parkedAfterCancel(cancelledAtNanos: Long, cancelledMarkers: Set<String>): String {
+        val now = System.nanoTime()
+        return parked.values.sortedBy { it.remotePort }.joinToString("; ") {
+            "marker=${it.marker} cancelled=${it.marker != null && it.marker in cancelledMarkers} " +
+                "remote_port=${it.remotePort} accepted_age_ms=${TimeUnit.NANOSECONDS.toMillis(now - it.acceptedAtNanos)} " +
+                "after_cancel_ms=${TimeUnit.NANOSECONDS.toMillis(now - maxOf(cancelledAtNanos, it.acceptedAtNanos))}"
+        }
+    }
+
+    /** Consume the request head + body; returns null when the socket closed early. */
+    private fun drainRequest(input: BufferedReader): String? {
         var contentLength = 0
         while (true) {
-            val line = input.readLine() ?: return false
+            val line = input.readLine() ?: return null
             if (line.isEmpty()) break
             if (line.startsWith("Content-Length:", ignoreCase = true)) {
                 contentLength = line.substringAfter(':').trim().toInt()
             }
         }
-        var toSkip = contentLength.toLong()
-        while (toSkip > 0) {
-            val skipped = input.skip(toSkip)
-            if (skipped <= 0) break
-            toSkip -= skipped
+        val body = CharArray(contentLength)
+        var consumed = 0
+        while (consumed < body.size) {
+            val read = input.read(body, consumed, body.size - consumed)
+            if (read < 0) return null
+            consumed += read
         }
-        return true
+        return String(body)
     }
 
-    private fun serve(sock: Socket) {
+    private fun serve(sock: Socket, acceptedAtNanos: Long) {
         val input = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.ISO_8859_1))
-        if (!drainRequest(input)) return
+        val body = drainRequest(input) ?: return
+        val connection = ParkedConnection(HOLD_MARKER.find(body)?.value, acceptedAtNanos, sock.port)
 
         val out = sock.getOutputStream()
         fun sse(json: String) {
@@ -124,10 +141,11 @@ private class HoldingSseUpstream {
         // liveness latch — else the test can sample `peak` in the window between "delta on the wire"
         // and this increment for the last turn, reading n-1 despite all n being concurrently live.
         val gate = release
-        val now = held.incrementAndGet()
-        peak.updateAndGet { maxOf(it, now) }
-        sse("""{"type":"response.output_text.delta","output_index":0,"delta":"held"}""")
         try {
+            val now = held.incrementAndGet()
+            peak.updateAndGet { maxOf(it, now) }
+            parked[sock.port] = connection
+            sse("""{"type":"response.output_text.delta","output_index":0,"delta":"held"}""")
             // Park with a keepalive heartbeat: a gateway that ABORTS this connection (client
             // disconnect propagation) makes the next write throw, ending the hold — that is the
             // disconnect test's upstream-teardown observable.
@@ -137,6 +155,7 @@ private class HoldingSseUpstream {
                 sse("""{"type":"noop"}""")
             }
         } finally {
+            parked.remove(sock.port)
             held.decrementAndGet()
         }
 
@@ -148,7 +167,10 @@ private class HoldingSseUpstream {
         out.flush()
     }
 
+    private data class ParkedConnection(val marker: String?, val acceptedAtNanos: Long, val remotePort: Int)
+
     private companion object {
+        val HOLD_MARKER = Regex("\\bhold \\d+\\b")
         const val BACKLOG = 4096
         const val HOLD_CAP_S = 150L
         const val KEEPALIVE_MS = 200L
@@ -307,12 +329,17 @@ class HeadServerLoadTest {
         assertEquals(dn, gate.snapshot().inflight, "gate must hold $dn slots mid-stream")
 
         // Kill every CLIENT — the gateway must notice and tear down its upstream legs.
+        val cancelledMarkers = (1..dn).map { "hold $it" }.toSet()
+        val cancelledAtNanos = System.nanoTime()
         turns.forEach { it.cancel() }
 
         val slotsFreed = waitFor(30_000) { gate.snapshot().inflight == 0 }
         assertTrue(slotsFreed, "gate slots leaked after client disconnects: ${gate.snapshot()}")
         val upstreamTorn = waitFor(30_000) { mock.held.get() == 0 }
-        assertTrue(upstreamTorn, "upstream connections still parked: ${mock.held.get()} — cancel did not propagate")
+        assertTrue(upstreamTorn) {
+            "upstream connections still parked: ${mock.held.get()} — cancel did not propagate; " +
+                mock.parkedAfterCancel(cancelledAtNanos, cancelledMarkers)
+        }
     }
 
     // A deadline poll, the rule's sanctioned shape: gate slots and parked upstream connections are

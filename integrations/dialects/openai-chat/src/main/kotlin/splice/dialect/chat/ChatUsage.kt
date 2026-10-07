@@ -38,11 +38,10 @@ internal class ChatUsage {
         // then DeepSeek's `prompt_cache_hit_tokens`. RAW here: prompt_tokens already INCLUDES this
         // cached portion and HeadServer disjoints them, so subtracting here would double-subtract.
         val details = u["prompt_tokens_details"] as? JsonObject
-        val cached = JsonScalars.firstLong(details, "cached_tokens")?.takeIf { it > 0 }
-            ?: JsonScalars.firstLong(u, "cached_tokens", "prompt_cache_hit_tokens") ?: 0L
-        if (cached > 0) {
-            cachedTokens = cached
-            reported += UsageField.CACHED
-        }
+        val nestedCached = JsonScalars.firstLong(details, "cached_tokens")
+        val flatCached = JsonScalars.firstLong(u, "cached_tokens", "prompt_cache_hit_tokens")
+        val cached = nestedCached?.takeIf { it > 0 } ?: flatCached ?: 0L
+        if (cached > 0) cachedTokens = cached
+        if (nestedCached != null || flatCached != null) reported += UsageField.CACHED
     }
 }

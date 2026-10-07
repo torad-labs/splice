@@ -172,10 +172,10 @@ internal class ResponsesHarvest {
             .toList()
     }
 
-    private fun reportedFields(input: Long?, output: Long?, cached: Long): Set<UsageField> = buildSet {
+    private fun reportedFields(input: Long?, output: Long?, cached: Long?): Set<UsageField> = buildSet {
         if (input != null) addAll(setOf(UsageField.INPUT, UsageField.CACHED, UsageField.CACHE_WRITE))
         if (output != null) add(UsageField.OUTPUT)
-        if (cached > 0) add(UsageField.CACHED)
+        if (cached != null) add(UsageField.CACHED)
     }
 
     /** Usage extraction: input/output plus the prompt-cache read (input_tokens_details.cached_tokens,
@@ -183,8 +183,9 @@ internal class ResponsesHarvest {
     public fun usageFrom(resp: JsonObject?): Usage {
         val usage = resp?.get("usage") as? JsonObject ?: return Usage(reported = emptySet())
         val details = usage["input_tokens_details"] as? JsonObject
-        val cached = JsonScalars.firstLong(details, "cached_tokens")?.takeIf { it > 0 }
-            ?: JsonScalars.firstLong(usage, "cache_read_input_tokens") ?: 0L
+        val nestedCached = JsonScalars.firstLong(details, "cached_tokens")
+        val flatCached = JsonScalars.firstLong(usage, "cache_read_input_tokens")
+        val cached = nestedCached?.takeIf { it > 0 } ?: flatCached ?: 0L
         // output_tokens_details.reasoning_tokens carries the 518n-2 truncation fingerprint; absent on
         // non-reasoning backends (→ 0 → never fold).
         val reasoning =
@@ -196,7 +197,7 @@ internal class ResponsesHarvest {
             outputTokens = output ?: 0L,
             cachedTokens = cached,
             reasoningTokens = reasoning,
-            reported = reportedFields(input, output, cached),
+            reported = reportedFields(input, output, nestedCached ?: flatCached),
         )
     }
 }

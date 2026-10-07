@@ -21,6 +21,22 @@ class ChatUsageTest {
     }
 
     @Test
+    fun `nested cached zero without input remains an observed cache bucket`() {
+        val usage = ChatUsage()
+        usage.usage(ev("""{"usage":{"prompt_tokens_details":{"cached_tokens":0}}}"""))
+        assertEquals(mapOf(PerfKeys.CACHED_TOKENS to 0L), TurnBill.counters(usage.toUsage()))
+    }
+
+    @Test
+    fun `flat cached zero aliases without input remain observed cache buckets`() {
+        listOf("cached_tokens", "prompt_cache_hit_tokens").forEach { key ->
+            val usage = ChatUsage()
+            usage.usage(ev("""{"usage":{"$key":0}}"""))
+            assertEquals(mapOf(PerfKeys.CACHED_TOKENS to 0L), TurnBill.counters(usage.toUsage()), key)
+        }
+    }
+
+    @Test
     fun `chat input-only usage leaves output unreported and explicit zero stays observed`() {
         val usage = ChatUsage()
         usage.usage(ev("""{"usage":{"prompt_tokens":100}}"""))

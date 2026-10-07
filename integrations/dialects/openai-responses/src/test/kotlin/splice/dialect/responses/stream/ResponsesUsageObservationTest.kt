@@ -19,6 +19,18 @@ class ResponsesUsageObservationTest {
     }
 
     @Test
+    fun `nested cached zero without input remains an observed cache bucket`() {
+        val response = Json.parseToJsonElement("""{"usage":{"input_tokens_details":{"cached_tokens":0}}}""")
+        assertEquals(mapOf(PerfKeys.CACHED_TOKENS to 0L), TurnBill.counters(harvest.usageFrom(response.jsonObject)))
+    }
+
+    @Test
+    fun `flat cached zero without input remains an observed cache bucket`() {
+        val response = Json.parseToJsonElement("""{"usage":{"cache_read_input_tokens":0}}""")
+        assertEquals(mapOf(PerfKeys.CACHED_TOKENS to 0L), TurnBill.counters(harvest.usageFrom(response.jsonObject)))
+    }
+
+    @Test
     fun `an input-only failed response never invents an output observation`() {
         val usage = harvest.usageFrom(Json.parseToJsonElement("""{"usage":{"input_tokens":100}}""").jsonObject)
         val counters = TurnBill.counters(usage)

@@ -13,27 +13,33 @@ import kotlinx.serialization.json.put
 import splice.app.auth.SignInPlanner
 import splice.core.config.ConfigService
 import splice.core.config.SpliceConfig
+import splice.core.model.DiscoveredModel
 import splice.core.model.HeadDiscoveredModels
 import splice.core.model.ModelCatalog
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.turn.WatchdogBudget
+import splice.core.util.EnvReader
 import splice.provider.codex.CodexLegacyKnobs
 import splice.provider.grok.GrokLegacyKnobs
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Declared data -> the typed inputs a provider or launch spec needs. Every member is a pure
- * function of its arguments except [providerContext], which reads [config] against a head KEY —
- * heads share one ConfigService (one JVM), so every value here must come from `getConfig(key)`.
+ * function of its arguments except [providerContext], which reads per-head config and local metadata
+ * before publication. Catalog reads only join already-held facts; they never ask an endpoint.
  */
 internal class HeadBuildInputs(
     private val config: ConfigService,
     private val signInPlanner: SignInPlanner,
     /** 2026-09-22: what each head's endpoint serves beyond its declared rows (ModelRosters). */
     private val discovered: HeadDiscoveredModels = HeadDiscoveredModels { emptyList() },
+    private val localProbe: LocalProbeInputs = LocalProbeInputs(),
 ) {
+    private val localModels = ConcurrentHashMap<String, List<DiscoveredModel>>()
+    private val headModels = HeadDiscoveredModels { key -> localModels[key] ?: discovered.forHead(key) }
 
     internal fun resolveHeadConfig(
         head: HeadConfig,
@@ -86,6 +92,18 @@ internal class HeadBuildInputs(
         val headCfg = config.getConfig(key)
         val resolvedHead = if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head
         val resolvedProvider = if (legacyKnobsGovern) resolveProviderConfig(providerCfg, headCfg) else providerCfg
+        val localRows = if (resolvedProvider.isLocal) {
+            val base = resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride)
+            localProbe.check(
+                resolvedProvider,
+                localProbe.bearer(key, resolvedProvider, EnvReader(System::getenv)),
+                base,
+            ).also { found ->
+                localModels[key] = (found as? LocalRowsCheck.Checked)?.models.orEmpty()
+            }
+        } else {
+            null
+        }
         return ProviderBuild(
             key = key,
             head = resolvedHead,
@@ -102,7 +120,8 @@ internal class HeadBuildInputs(
             ),
             cfg = headCfg,
             loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).credentialFix,
-            discovered = discovered,
+            discovered = headModels,
+            localRows = localRows,
         )
     }
 
@@ -119,7 +138,7 @@ internal class HeadBuildInputs(
         val headCfg = config.getConfig(key)
         val resolvedHead = if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head
         val resolvedProvider = effectiveProvider(key, providerCfg, legacyKnobsGovern)
-        return resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride, discovered.forHead(key))
+        return resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride, headModels.forHead(key))
     }
 
     /** The provider head [key]'s turns dial — the legacy knob remap applied exactly as

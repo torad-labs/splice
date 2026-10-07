@@ -1,6 +1,8 @@
 package splice.diagnostics.doctor
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -46,6 +48,55 @@ class DoctorLocalRuntimeTest {
                 LocalHttpReply(200, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[$PING_CALL]}}]}\n")
             else -> null
         }
+    }
+
+    @Test
+    fun `an undeclared local row reports its runtime window without claiming a declaration`() {
+        val undeclared = """
+            [providers.ollama]
+            dialect = "openai-chat"
+            base_url = "http://localhost:11434/v1"
+            auth = { kind = "api-key", env = "NONE" }
+            [heads.local]
+            provider = "ollama"
+            port = 3901
+            discovery_prefix = "claude-local--"
+            pinned_model = "qwen3:4b"
+        """.trimIndent()
+        val loaded = LocalHttp { method, url, body ->
+            if (url.endsWith("/api/ps")) {
+                LocalHttpReply(200, """{"models":[{"name":"qwen3:4b","context_length":8192}]}""")
+            } else {
+                up(method, url, body)
+            }
+        }
+        val checks = DoctorLocalRuntime(DoctorTestPorts.local(loaded), override = { _, _ -> null })
+            .localChecks(TopologyLoader.parse(undeclared), live = false)
+        val row = checks.first { it.name == "local:ollama/qwen3:4b" }
+        assertEquals(CheckStatus.OK, row.status, row.detail)
+        assertTrue(row.detail.contains("8192"), row.detail)
+        assertFalse(row.detail.contains("declare"), row.detail)
+        assertNull(row.fix)
+        val card = DoctorLocalRuntime(DoctorTestPorts.local(up), override = { _, _ -> null })
+            .localChecks(TopologyLoader.parse(undeclared), live = false)
+            .first { it.name == "local:ollama/qwen3:4b" }
+        assertEquals(CheckStatus.OK, card.status, card.detail)
+        assertTrue(card.detail.contains("40960"), card.detail)
+        assertFalse(card.detail.contains("declare"), card.detail)
+        assertNull(card.fix)
+        val missing = LocalHttp { method, url, body ->
+            if (url.endsWith("/v1/models")) {
+                LocalHttpReply(200, """{"data":[{"id":"synthetic-other"}]}""")
+            } else {
+                loaded(method, url, body)
+            }
+        }
+        val absent = DoctorLocalRuntime(DoctorTestPorts.local(missing), override = { _, _ -> null })
+            .localChecks(TopologyLoader.parse(undeclared), live = false)
+            .first { it.name == "local:ollama/qwen3:4b" }
+        assertEquals(CheckStatus.FAIL, absent.status)
+        assertTrue(checkNotNull(absent.fix).contains("runtime"), absent.fix)
+        assertFalse(checkNotNull(absent.fix).contains("[[providers"), absent.fix)
     }
 
     @Test

@@ -22,4 +22,6 @@ internal data class ProviderBuild(
     /** What the head's endpoint publishes, read when asked and never copied (V4-441): the roster is
      *  refreshed while the daemon runs, so a reader that wants the current answer holds this, not a list. */
     val discovered: HeadDiscoveredModels = HeadDiscoveredModels { emptyList() },
+    /** Metadata already read before publishing the catalog; provider construction never repeats it. */
+    val localRows: LocalRowsCheck? = null,
 )

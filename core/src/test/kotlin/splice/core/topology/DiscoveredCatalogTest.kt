@@ -212,6 +212,48 @@ class DiscoveredCatalogTest {
     }
 
     @Test
+    fun `an undeclared local pinned row takes its runtime window without growing the picker`() {
+        val local = provider.copy(local = true, models = emptyList())
+        val catalog = local.catalogFor(
+            head,
+            discovered = listOf(
+                DiscoveredModel(head.pinnedModel, contextWindow = 32768),
+                DiscoveredModel("synthetic-unselected-model", contextWindow = 65536),
+            ),
+        )
+        assertEquals(listOf(head.pinnedModel), catalog.availableModelIds())
+        assertEquals(32768L, catalog.contextWindowFor(head.pinnedModel))
+        assertEquals(32768L, catalog.clientLaunchWindow)
+        assertEquals(listOf(head.pinnedModel), catalog.tierModelIds())
+        assertEquals(200000L, local.catalogFor(head).clientLaunchWindow)
+    }
+
+    @Test
+    fun `a local runtime never replaces an explicit window declaration`() {
+        val local = provider.copy(local = true, models = emptyList())
+        val facts = listOf(DiscoveredModel(head.pinnedModel, contextWindow = 8192))
+        val variants = listOf(
+            local.copy(extraWindows = listOf(ExtraWindow(head.pinnedModel, 16384))),
+            local.copy(windowRules = listOf(WindowRule("grok-", 16384))),
+            local.copy(defaultContextWindow = 16384),
+        )
+        for (declared in variants) {
+            assertEquals(16384L, declared.catalogFor(head, discovered = facts).contextWindowFor(head.pinnedModel))
+        }
+        assertEquals(
+            16384L,
+            local.catalogFor(head.copy(contextWindow = 16384), discovered = facts).contextWindowFor(head.pinnedModel),
+        )
+        val declaredRows = listOf(
+            ModelEntry(head.pinnedModel, contextWindow = 8192),
+            ModelEntry(head.pinnedModel + "[64k]", contextWindow = 65536),
+            ModelEntry(head.pinnedModel + "[128k]", contextWindow = 131072),
+        )
+        val picker = local.copy(models = declaredRows).catalogFor(head, discovered = facts)
+        assertEquals(declaredRows.map { it.contextWindow }, picker.models.map { it.contextWindow })
+    }
+
+    @Test
     fun `only declared rows are tier candidates`() {
         val catalog = provider.catalogFor(head, discovered = listOf(DiscoveredModel("grok-code-mini")))
         assertEquals(provider.models.map { it.id }, catalog.tierModelIds())

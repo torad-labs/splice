@@ -51,7 +51,7 @@ internal class ChatArm(
                 envVar = providerCfg.auth.effectiveApiKeyEnv(key),
                 keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
             )
-        if (providerCfg.isLocal) refuseContradictedRows(ctx, (auth as? ApiKeyAuthProvider)?.keyNow())
+        if (providerCfg.isLocal) refuseContradictedRows(ctx)
         val provider = OpenAiChatProvider(
             tuning = ProviderTuning(
                 key = key,
@@ -87,10 +87,10 @@ internal class ChatArm(
     /** v0.4.0 (FEATURES.md §10): a local runtime that is UP and contradicts the row refuses the
      *  head with the runtime's own words; a runtime that is down boots as today (per-turn errors),
      *  because refusing every head whose runtime is not yet started would be below the status quo. */
-    private fun refuseContradictedRows(ctx: ProviderBuild, bearer: String?) {
+    private fun refuseContradictedRows(ctx: ProviderBuild) {
         val key = ctx.key
         val providerCfg = ctx.providerCfg
-        when (val found = probeInputs.check(providerCfg, bearer, ctx.catalog)) {
+        when (val found = ctx.localRows ?: LocalRowsCheck.Down) {
             LocalRowsCheck.Down -> log(
                 "[$key] local runtime at ${providerCfg.baseUrl} is not answering; " +
                     "the head boots, turns fail until it is up\n",

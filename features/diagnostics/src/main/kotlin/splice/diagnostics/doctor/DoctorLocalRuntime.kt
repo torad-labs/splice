@@ -54,19 +54,22 @@ internal class DoctorLocalRuntime(
 
     /** Every head on the provider contributes its effective rows — the head's TOML window under the
      *  daemon's own per-head override, exactly as boot builds the catalog; the widest window per id is checked. */
-    private fun effectiveRows(topology: Topology, key: String): Map<String, Long> = topology.heads
+    private fun effectiveRows(topology: Topology, key: String): Map<String, Long?> = topology.heads
         .filterValues { it.provider == key }
         .flatMap { (headKey, head) ->
-            val catalog = topology.providers.getValue(key).catalogFor(head, override(topology, headKey))
-            UpstreamWindows(catalog).byId().entries
+            val provider = topology.providers.getValue(key)
+            val catalog = provider.catalogFor(head, override(topology, headKey))
+            UpstreamWindows(catalog).byId().map { (id, window) ->
+                id to window.takeIf { provider.declaredWindowFor(id, catalog.headWindow) != null }
+            }
         }
-        .groupBy({ it.key }, { it.value })
-        .mapValues { (_, windows) -> windows.max() }
+        .groupBy({ it.first }, { it.second })
+        .mapValues { (_, windows) -> windows.filterNotNull().maxOrNull() }
 
     private fun checks(
         key: String,
         provider: ProviderConfig,
-        rows: Map<String, Long>,
+        rows: Map<String, Long?>,
         live: Boolean,
     ): List<DoctorCheck> {
         val name = "local:$key"
@@ -86,7 +89,8 @@ internal class DoctorLocalRuntime(
         // a reader asking who depends on this surface. Naming them is the same code with the boundary
         // stated, which is the fix the ratchet asks for — not a baseline bump.
         val kind: LocalRuntimeKind = runtime.kind
-        val listed = probe.models(runtime)
+        val inferred = rows.filterValues { it == null }.keys
+        val listed = probe.models(runtime, null, inferred)
             ?: return listOf(
                 DoctorCheck(
                     name,
@@ -100,14 +104,18 @@ internal class DoctorLocalRuntime(
         val probes = probed.map { id -> liveCheck(name, probe, id) }
         // The probe loaded the model: read the list again so the verdicts see the window the runtime
         // actually allocated, not the pre-load snapshot (review 2026-09-14).
-        val current = if (probed.isEmpty()) listed else probe.models(runtime) ?: listed
+        val current = if (probed.isEmpty()) listed else probe.models(runtime, null, inferred) ?: listed
         // The type is bound on the SEAM, not on the mapped result: `map` yields DoctorChecks, and
         // annotating that as List<LocalRowVerdict> was a compile error I hit and read. Binding the
         // boundary type where it actually crosses is the same evidence with the types honest.
         val verdicts: List<LocalRowVerdict> = probe.validate(rows, current, kind)
         val checks = verdicts.map { v ->
-            val fix = "fix [[providers.$key.models]] (or the head's context_window) to a model the runtime " +
-                "lists, at or under its context"
+            val fix = if (rows[v.id] == null) {
+                "check the runtime's model and context window; the configured model is not listed"
+            } else {
+                "fix [[providers.$key.models]] (or the head's context_window) to a model the runtime " +
+                    "lists, at or under its context"
+            }
             DoctorCheck("$name/${v.id}", if (v.ok) CheckStatus.OK else CheckStatus.FAIL, v.reason, fix.takeIf { !v.ok })
         }
         return listOf(summary(name, provider, runtime, current)) + checks + probes

@@ -11,10 +11,11 @@
 //             window the server actually allocated: its own default when num_ctx is unset — measured
 //             2026-09-13 on Ollama 0.30.5: qwen3:4b card 262144, served 32768). A loaded window beats
 //             num_ctx (the server may cap or override it); until the model is loaded num_ctx stands in
-//             and, absent both, only the ceiling can refuse a row.
+//             and, absent both, only the ceiling can refuse a declared row. Undeclared rows infer the card.
 //   LM Studio GET /api/v0/models -> data[].max_context_length (+ loaded_context_length when loaded)
 //   vLLM      GET /v1/models -> data[].max_model_len
-//   other     GET /v1/models only; context unknown, so a declared window is trusted but reported as such
+//   llama     GET /props -> default_generation_settings.n_ctx, else /v1/models -> data[].meta.n_ctx_train
+//   other     GET /v1/models; absent runtime context, only an explicitly authored window is declared
 package splice.upstream.local
 
 import kotlinx.serialization.json.Json
@@ -39,8 +40,8 @@ private const val LIVE_PROMPT = "You must call the ping tool now."
 
 public data class LocalRuntime(val kind: LocalRuntimeKind, val version: String?)
 
-/** A model the runtime lists; [contextLength] is the window the runtime SERVES (null when it does not
- *  say), [ceiling] the most it could serve (the model card) when that is all it reports. */
+/** A model the runtime lists; [contextLength] is its reported allocation or metadata fallback, null
+ *  when unknown. [ceiling] retains an Ollama card limit independently of declaration validation. */
 public data class LocalModel(
     val id: String,
     val contextLength: Long?,
@@ -56,6 +57,7 @@ public data class LocalLiveProbe(val streams: Boolean, val toolCalls: Boolean, v
 
 public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val shapes = LocalRuntimeShapes()
     private val v1 = baseUrl.trimEnd('/')
     private val root = v1.removeSuffix("/v1")
 
@@ -66,7 +68,7 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
      *  server that answers every ...-/models path with the OpenAI shape is a generic one). */
     public fun detect(): LocalRuntime? {
         val ollama = get("$root/api/version")?.takeIf { it["version"] != null }
-        val lmStudio = if (ollama == null) get("$root/api/v0/models")?.takeIf(::lmStudioShaped) else null
+        val lmStudio = if (ollama == null) get("$root/api/v0/models")?.takeIf(shapes::lmStudioShaped) else null
         val generic = if (ollama == null && lmStudio == null) get("$v1/models") else null
         return when {
             ollama != null -> LocalRuntime(LocalRuntimeKind.OLLAMA, JsonScalars.str(ollama, "version"))
@@ -79,43 +81,58 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
         }
     }
 
-    private fun lmStudioShaped(body: JsonObject): Boolean =
-        body["data"] != null && data(body).any { it["max_context_length"] != null }
-
     /** The runtime's model list, or null when the list call itself did not answer — a runtime still
      *  starting is not one that "lists nothing", and callers must not refuse every row for it
      *  (review 2026-09-14). [only] bounds Ollama's per-model /api/show reads to the ids the caller
      *  validates; the other listed ids come back without a window. */
-    public fun models(runtime: LocalRuntime, only: Set<String>? = null): List<LocalModel>? = when (runtime.kind) {
-        LocalRuntimeKind.LM_STUDIO -> get("$root/api/v0/models")?.let { body ->
-            data(body).map { m ->
-                val loaded = JsonScalars.long(m, "loaded_context_length")
-                val max = JsonScalars.long(m, "max_context_length")
-                LocalModel(JsonScalars.strOrEmpty(m["id"]), loaded ?: max, JsonScalars.str(m, "state"))
+    public fun models(runtime: LocalRuntime, only: Set<String>? = null): List<LocalModel>? =
+        models(runtime, only, emptySet())
+
+    /** Undeclared [inferred] rows use the card when unloaded; declarations retain num_ctx validation. */
+    public fun models(runtime: LocalRuntime, only: Set<String>?, inferred: Set<String>): List<LocalModel>? =
+        when (runtime.kind) {
+            LocalRuntimeKind.LM_STUDIO -> get("$root/api/v0/models")?.let { body ->
+                data(body).map { m ->
+                    val loaded = JsonScalars.long(m, "loaded_context_length")?.takeIf { it > 0 }
+                    val max = JsonScalars.long(m, "max_context_length")?.takeIf { it > 0 }
+                    LocalModel(JsonScalars.strOrEmpty(m["id"]), loaded ?: max, JsonScalars.str(m, "state"))
+                }
             }
+            LocalRuntimeKind.OLLAMA -> get("$v1/models")?.let { body ->
+                val running = ollamaRunning()
+                data(body).map { m -> ollamaModel(JsonScalars.strOrEmpty(m["id"]), running, only, inferred) }
+            }
+            else -> genericModels(runtime)
         }
-        LocalRuntimeKind.OLLAMA -> get("$v1/models")?.let { body ->
-            val running = ollamaRunning()
-            data(body).map { m -> ollamaModel(JsonScalars.strOrEmpty(m["id"]), running, only) }
+
+    private fun genericModels(runtime: LocalRuntime): List<LocalModel>? = get("$v1/models")?.let { body ->
+        val settings = if (runtime.kind == LocalRuntimeKind.OPENAI_COMPATIBLE) {
+            get("$root/props")?.get("default_generation_settings") as? JsonObject
+        } else {
+            null
         }
-        else -> get("$v1/models")?.let { body ->
-            data(body).map { m -> LocalModel(JsonScalars.strOrEmpty(m["id"]), JsonScalars.long(m, "max_model_len")) }
+        val allocated = JsonScalars.long(settings, "n_ctx")?.takeIf { it > 0 }
+        data(body).map { m ->
+            val trained = JsonScalars.long(m["meta"] as? JsonObject, "n_ctx_train")?.takeIf { it > 0 }
+            val served = JsonScalars.long(m, "max_model_len")?.takeIf { it > 0 } ?: allocated ?: trained
+            LocalModel(JsonScalars.strOrEmpty(m["id"]), served)
         }
     }
 
-    /** Refuse a row the runtime does not list, or that declares more context than the runtime reports.
+    /** Refuse an unlisted row or a declaration exceeding the runtime. A null window means undeclared.
      *  An untagged id names its `:latest` tag (Ollama lists `qwen3:latest` and serves `qwen3`). A
      *  generic OpenAI-compatible server's list is not authoritative (a proxy lists aliases, llama-server
      *  lists a file path, listing may be off), so there an unlisted row is trusted, never refused
      *  (review 2026-09-14: heads that served on 0.3.x refused to boot). */
     public fun validate(
-        rows: Map<String, Long>,
+        rows: Map<String, Long?>,
         listed: List<LocalModel>,
         kind: LocalRuntimeKind = LocalRuntimeKind.OLLAMA,
     ): List<LocalRowVerdict> = rows.map { (id, window) -> verdict(id, window, listed, kind) }
 
-    private fun verdict(id: String, window: Long, listed: List<LocalModel>, kind: LocalRuntimeKind): LocalRowVerdict {
+    private fun verdict(id: String, window: Long?, listed: List<LocalModel>, kind: LocalRuntimeKind): LocalRowVerdict {
         val model = listed.firstOrNull { it.id == id } ?: listed.firstOrNull { it.id == "$id:latest" }
+            ?: listed.singleOrNull()?.takeIf { kind == LocalRuntimeKind.OPENAI_COMPATIBLE && it.contextLength != null }
         if (model == null) {
             val ids = listed.joinToString { it.id }
             return if (kind == LocalRuntimeKind.OPENAI_COMPATIBLE) {
@@ -128,7 +145,7 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
                 LocalRowVerdict(id, false, "not listed by the runtime (listed: $ids)")
             }
         }
-        val refusal = refusal(window, model)
+        val refusal = window?.let { refusal(it, model) }
         return if (refusal != null) {
             LocalRowVerdict(id, false, refusal)
         } else {
@@ -147,7 +164,8 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
         }
     }
 
-    private fun acceptance(window: Long, model: LocalModel): String = when {
+    private fun acceptance(window: Long?, model: LocalModel): String = when {
+        window == null -> "listed; runtime context window ${model.contextLength ?: "unknown"}"
         model.contextLength != null -> "listed; serves ${model.contextLength} >= declared $window"
         model.ceiling != null ->
             "listed; served window unknown until loaded (at most ${model.ceiling}), $window trusted"
@@ -171,7 +189,7 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
                     )
                 },
             )
-            put("tools", buildJsonArray { add(pingTool()) })
+            put("tools", buildJsonArray { add(shapes.pingTool()) })
         }
         val reply = http("POST", "$v1/chat/completions", body.toString())
             ?: return LocalLiveProbe(false, false, "no answer from $v1/chat/completions")
@@ -188,12 +206,40 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
             ?.toMap()
             .orEmpty()
 
-    private fun ollamaModel(id: String, running: Map<String, Long>, only: Set<String>?): LocalModel {
-        // Unvalidated ids are listed without a window: no /api/show for models nobody configured.
-        if (only != null && id !in only) return LocalModel(id, null)
+    private fun ollamaModel(
+        id: String,
+        running: Map<String, Long>,
+        only: Set<String>?,
+        inferred: Set<String>,
+    ): LocalModel {
+        // A bare configured id is served under :latest, including its metadata.
+        val bare = id.removeSuffix(":latest")
+        val spellings = setOf(id, bare)
+        if (only != null && spellings.none { it in only }) return LocalModel(id, null)
         val show = http("POST", "$root/api/show", buildJsonObject { put("model", id) }.toString())
             ?.takeIf { it.status == HTTP_OK }
             ?.let { parse(it.body) }
+        val served = (running[id] ?: running[bare] ?: running["$id:latest"])?.takeIf { it > 0 }
+        return shapes.ollamaReading(id, show, served, inferred)
+    }
+
+    private fun get(url: String): JsonObject? =
+        http("GET", url, null)?.takeIf { it.status == HTTP_OK }?.let { parse(it.body) }
+
+    private fun data(obj: JsonObject?): List<JsonObject> =
+        (obj?.get("data") as? JsonArray)?.map { it.jsonObject }.orEmpty()
+
+    private fun parse(text: String): JsonObject? =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): kind discrimination by shape: a runtime that is not the kind being probed answers with a body that is not a JSON object, which is the normal negative the ?.takeIf guards above consume.
+        Cancellables.runCatchingCancellable { json.parseToJsonElement(text).jsonObject }.getOrNull()
+}
+
+/** Runtime JSON shapes, separate from the transport and declaration verdicts. */
+private class LocalRuntimeShapes {
+    fun lmStudioShaped(body: JsonObject): Boolean =
+        (body["data"] as? JsonArray)?.filterIsInstance<JsonObject>()?.any { it["max_context_length"] != null } == true
+
+    fun ollamaReading(id: String, show: JsonObject?, served: Long?, inferred: Set<String>): LocalModel {
         val info = show?.get("model_info") as? JsonObject
         val architecture = info?.entries?.firstOrNull { it.key.endsWith(".context_length") }
         val max = (architecture?.value as? JsonPrimitive)?.longOrNull
@@ -201,18 +247,17 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
             ?.lineSequence()
             ?.firstOrNull { it.trim().startsWith("num_ctx") }
             ?.substringAfter("num_ctx")?.trim()?.toLongOrNull()
-        val served = running[id]
         val detail = listOfNotNull(
             max?.let { "model card context_length $it" },
             numCtx?.let { "num_ctx $it" },
             served?.let { "loaded with context $it" },
         ).joinToString(", ")
-        // The loaded window is the one the server allocated; num_ctx is only what the modelfile asks
-        // for, and OLLAMA_CONTEXT_LENGTH or a request can override it. Exact beats declared.
-        return LocalModel(id, served ?: numCtx, detail.ifEmpty { null }, ceiling = max)
+        // Declarations still validate against num_ctx when unloaded. An undeclared row takes the card.
+        val fallback = if (id in inferred || id.removeSuffix(":latest") in inferred) max else numCtx
+        return LocalModel(id, served ?: fallback?.takeIf { it > 0 }, detail.ifEmpty { null }, ceiling = max)
     }
 
-    private fun pingTool(): JsonObject = buildJsonObject {
+    fun pingTool(): JsonObject = buildJsonObject {
         put("type", "function")
         put(
             "function",
@@ -230,16 +275,6 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
             },
         )
     }
-
-    private fun get(url: String): JsonObject? =
-        http("GET", url, null)?.takeIf { it.status == HTTP_OK }?.let { parse(it.body) }
-
-    private fun data(obj: JsonObject?): List<JsonObject> =
-        (obj?.get("data") as? JsonArray)?.map { it.jsonObject }.orEmpty()
-
-    private fun parse(text: String): JsonObject? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): kind discrimination by shape: a runtime that is not the kind being probed answers with a body that is not a JSON object, which is the normal negative the ?.takeIf guards above consume.
-        Cancellables.runCatchingCancellable { json.parseToJsonElement(text).jsonObject }.getOrNull()
 }
 
 // Room for a thinking model to reason before it calls the tool: at 32 tokens qwen3:4b spent the

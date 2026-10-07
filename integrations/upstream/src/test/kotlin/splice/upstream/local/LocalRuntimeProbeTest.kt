@@ -202,6 +202,32 @@ class LocalRuntimeProbeTest {
     }
 
     @Test
+    fun `llama-server reports its allocated context from props before its trained ceiling`() {
+        val listed = """{"data":[{"id":"synthetic.gguf","meta":{"n_ctx_train":131072}}]}"""
+        val routes = mapOf(
+            "GET /v1/models" to listed,
+            "GET /props" to """{"default_generation_settings":{"n_ctx":8192}}""",
+        )
+        val warm = LocalRuntimeProbe("http://localhost:1/v1", http(routes))
+        assertEquals(8192L, warm.listed(checkNotNull(warm.detect())).single().contextLength)
+        val refused = warm.validate(
+            mapOf("synthetic.gguf" to 16384L),
+            warm.listed(checkNotNull(warm.detect())),
+        ).single()
+        assertFalse(refused.ok)
+        assertTrue(refused.reason.contains("declares context_window 16384, runtime serves 8192"))
+    }
+
+    @Test
+    fun `llama-server without props uses its trained context`() {
+        val cold = LocalRuntimeProbe(
+            "http://localhost:1/v1",
+            http(mapOf("GET /v1/models" to """{"data":[{"id":"synthetic.gguf","meta":{"n_ctx_train":131072}}]}""")),
+        )
+        assertEquals(131072L, cold.listed(checkNotNull(cold.detect())).single().contextLength)
+    }
+
+    @Test
     fun `the live probe reads streaming and tool calls from the reply`() {
         val streamed = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"name\":\"ping\"}}]}}]}\n\n" +
             "data: [DONE]\n"

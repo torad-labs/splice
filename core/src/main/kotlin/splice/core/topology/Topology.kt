@@ -212,6 +212,17 @@ public data class ProviderConfig(
         defaultContextWindow = 0,
     )
 
+    /** An authored window, excluding the synthesized fallback. Picker spellings share an upstream id. */
+    public fun declaredWindowFor(id: String, headWindow: Long? = null): Long? {
+        val bare = ModelTierSuffix.strip(id)
+        return headWindow?.takeIf { it > 0 }
+            ?: models.firstOrNull { it.id == id }?.contextWindow
+            ?: models.filter { ModelTierSuffix.strip(it.id) == bare }.maxOfOrNull { it.contextWindow }
+            ?: extraWindows.firstOrNull { ModelTierSuffix.strip(it.id) == bare }?.contextWindow
+            ?: windowRules.firstOrNull { bare.startsWith(it.prefix) }?.contextWindow
+            ?: defaultContextWindow.takeIf { it > 0 }
+    }
+
     /** A catalog is the JOIN of this provider's models with the head's [HeadConfig.discoveryPrefix]
      *  — which is why it lives on the provider and takes the head, and why the two types stay in one
      *  file. A non-empty [HeadConfig.models] is an ordered per-head allowlist; an absent list preserves
@@ -283,7 +294,12 @@ public data class ProviderConfig(
         return entries.map { entry ->
             val model = listed[ModelTierSuffix.strip(entry.id)]
             val ceiling = model?.maxContextWindow?.takeIf { it > 0 } ?: model?.contextWindow?.takeIf { it > 0 }
-            entry.copy(rates = entry.rates ?: model?.rates, maxContextWindow = ceiling)
+            val window = if (isLocal) {
+                declaredWindowFor(entry.id) ?: model?.contextWindow?.takeIf { it > 0 } ?: entry.contextWindow
+            } else {
+                entry.contextWindow
+            }
+            entry.copy(contextWindow = window, rates = entry.rates ?: model?.rates, maxContextWindow = ceiling)
         }
     }
 
@@ -292,6 +308,7 @@ public data class ProviderConfig(
      *  [discovery] admits, in the endpoint's order. A declared row always wins its model: its window,
      *  label, rates and place carry decisions no endpoint can supply. */
     private fun rosterWith(discovered: List<DiscoveredModel>): List<ModelEntry> {
+        if (isLocal) return models // Local metadata supplies windows, not new picker rows.
         val extra = undeclared(discovered)
             .filter { discovery.admits(it.id) }
             .map { ModelEntry(id = it.id, label = it.label, contextWindow = windowFor(it), discovered = true) }
@@ -349,7 +366,7 @@ public data class ProviderConfig(
      *  window takes the head's. The client uses each resulting row window as its usage-scaling divisor. */
     private fun headWindow(entry: ModelEntry, window: Long, discovered: List<DiscoveredModel>): Long {
         if (clientPicksModels && entry.contextWindow > 0) return minOf(window, entry.contextWindow)
-        if (models.any { it.id == entry.id }) return window
+        if (isLocal || models.any { it.id == entry.id }) return window
         val model = discovered.firstOrNull { it.id == entry.id }
         val published = model?.maxContextWindow?.takeIf { it > 0 } ?: model?.contextWindow?.takeIf { it > 0 }
         return published?.let { minOf(window, it) } ?: window

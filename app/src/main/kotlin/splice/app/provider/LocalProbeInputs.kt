@@ -6,6 +6,7 @@
 // widest row per upstream id), never the raw provider table.
 package splice.app.provider
 
+import splice.core.model.DiscoveredModel
 import splice.core.model.ModelCatalog
 import splice.core.model.UpstreamWindows
 import splice.core.topology.ProviderConfig
@@ -14,10 +15,12 @@ import splice.provider.openai.ApiKeyAuthProvider
 import splice.topology.TopologyLoader
 import splice.upstream.local.LocalRowVerdict
 import splice.upstream.local.LocalRuntime
+import splice.upstream.local.LocalRuntimeKind
 import splice.upstream.local.LocalRuntimeProbe
+import splice.upstream.transport.LocalHttp
 import java.nio.file.Paths
 
-internal class LocalProbeInputs {
+internal class LocalProbeInputs(private val http: LocalHttp? = null) {
 
     fun headers(provider: ProviderConfig, bearer: String?): Map<String, String> =
         provider.staticHeaders + (bearer?.let { mapOf("Authorization" to "Bearer $it") } ?: emptyMap())
@@ -37,13 +40,28 @@ internal class LocalProbeInputs {
      *  cannot come to disagree about what the runtime allows. Blocking network: never on a request
      *  thread. */
     fun check(provider: ProviderConfig, bearer: String?, catalog: ModelCatalog): LocalRowsCheck {
-        val probe = LocalRuntimeProbe(provider.baseUrl, JdkLocalHttp(headers(provider, bearer)))
+        val probe = LocalRuntimeProbe(provider.baseUrl, http ?: JdkLocalHttp(headers(provider, bearer)))
         val runtime = probe.detect() ?: return LocalRowsCheck.Down
         // The HEAD's effective rows, not the provider's: a head context_window override and a picker
         // suffix ("[64k]") both change what the head advertises, and the wire sees the stripped id.
         val rows = UpstreamWindows(catalog).byId()
-        val listed = probe.models(runtime, rows.keys) ?: return LocalRowsCheck.Unlisted(runtime)
-        return LocalRowsCheck.Checked(runtime, rows, probe.validate(rows, listed, runtime.kind).filterNot { it.ok })
+        val declared = rows.mapValues { (id, window) ->
+            window.takeIf { provider.declaredWindowFor(id, catalog.headWindow) != null }
+        }
+        val inferred = declared.filterValues { it == null }.keys
+        val listed = probe.models(runtime, rows.keys, inferred) ?: return LocalRowsCheck.Unlisted(runtime)
+        val models = rows.keys.map { id ->
+            val model = listed.firstOrNull { it.id == id } ?: listed.firstOrNull { it.id == "$id:latest" }
+                ?: listed.singleOrNull()?.takeIf { runtime.kind == LocalRuntimeKind.OPENAI_COMPATIBLE }
+            DiscoveredModel(id, contextWindow = model?.contextLength?.takeIf { it > 0 })
+        }
+        val windows = models.associate { it.id to it.contextWindow }
+        return LocalRowsCheck.Checked(
+            runtime,
+            rows.mapValues { (id, window) -> declared[id] ?: windows[id] ?: window },
+            probe.validate(declared, listed, runtime.kind).filterNot { it.ok },
+            models,
+        )
     }
 }
 
@@ -60,5 +78,6 @@ internal sealed class LocalRowsCheck {
         val runtime: LocalRuntime,
         val rows: Map<String, Long>,
         val refused: List<LocalRowVerdict>,
+        val models: List<DiscoveredModel> = emptyList(),
     ) : LocalRowsCheck()
 }

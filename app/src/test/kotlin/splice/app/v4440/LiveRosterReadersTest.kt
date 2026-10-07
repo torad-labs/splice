@@ -106,7 +106,13 @@ class LiveRosterReadersTest {
         assertTrue(catalog.discoveryRows().any { it.id == catalog.wrap(NEW_MODEL) }, "/v1/models")
         assertEquals("New synthetic", catalog.labelFor(NEW_MODEL), "status line name")
         assertEquals(256_000L, catalog.contextWindowFor(NEW_MODEL))
-        assertEquals(10.0, price.usd(NEW_MODEL, mapOf("in_tokens" to 1_000_000L, "out_tokens" to 1_000_000L)))
+        val counters = mapOf(
+            "in_tokens" to 1_000_000L,
+            "out_tokens" to 1_000_000L,
+            "cached_tokens" to 0L,
+            "cache_write_tokens" to 0L,
+        )
+        assertEquals(10.0, price.usd(NEW_MODEL, counters))
     }
 
     private fun assertPicker(spec: splice.launch.LaunchSpec, catalog: ModelCatalog, label: String = "New synthetic") {

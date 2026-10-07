@@ -148,8 +148,12 @@ class PerfTurnsProjectionTest {
         assertEquals(2_000L, full.fields[PerfKeys.IN_TOKENS])
     }
 
-    private val tokens =
-        mapOf(PerfKeys.IN_TOKENS to 1_000L, PerfKeys.OUT_TOKENS to 100L, PerfKeys.CACHED_TOKENS to 900L)
+    private val tokens = mapOf(
+        PerfKeys.IN_TOKENS to 1_000L,
+        PerfKeys.OUT_TOKENS to 100L,
+        PerfKeys.CACHED_TOKENS to 900L,
+        PerfKeys.CACHE_WRITE_TOKENS to 0L,
+    )
 
     @Test
     fun `projection keeps every pricing gap cause and arbitrary displayed numeric field`(@TempDir dir: Path) {

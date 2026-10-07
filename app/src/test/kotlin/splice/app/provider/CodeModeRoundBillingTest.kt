@@ -1594,9 +1594,15 @@ private fun assertBilledOnce(rows: List<JsonObject>) {
     val source = mapOf(
         PerfKeys.IN_TOKENS to SOURCE_INPUT,
         PerfKeys.CACHED_TOKENS to SOURCE_CACHED,
+        PerfKeys.CACHE_WRITE_TOKENS to 0L,
         PerfKeys.OUT_TOKENS to SOURCE_OUTPUT,
     )
-    val answered = mapOf(PerfKeys.IN_TOKENS to ANSWER_INPUT, PerfKeys.OUT_TOKENS to ANSWER_OUTPUT)
+    val answered = mapOf(
+        PerfKeys.IN_TOKENS to ANSWER_INPUT,
+        PerfKeys.CACHED_TOKENS to 0L,
+        PerfKeys.CACHE_WRITE_TOKENS to 0L,
+        PerfKeys.OUT_TOKENS to ANSWER_OUTPUT,
+    )
     val expected = listOf(price.usd(MODEL, source), 0.0, price.usd(MODEL, answered)).map(::checkNotNull)
     expected.sorted().zip(spent.sorted()).forEach { (want, got) -> assertEquals(want, got, SPEND_EPSILON, "$spent") }
 }

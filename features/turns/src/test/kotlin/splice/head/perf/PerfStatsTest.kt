@@ -460,6 +460,8 @@ class PerfStatsTest {
         fun turn(): PerfSnapshot = TurnPerf { 0L }.apply {
             setCount(PerfKeys.IN_TOKENS, 100_000)
             setCount(PerfKeys.OUT_TOKENS, 1_000)
+            setCount(PerfKeys.CACHED_TOKENS, 0)
+            setCount(PerfKeys.CACHE_WRITE_TOKENS, 0)
             // about 1 KiB a row, so 400 rows pass the tail's 256 KiB bound
             (0 until 40).forEach { setCount("pad_%02d".format(it), 1_234_567_890_123L) }
         }.snapshot()
@@ -473,5 +475,6 @@ class PerfStatsTest {
         val total = totals.totalFor(session)!!.models.getValue(opus)
         assertEquals(400L, total.turns, "every row of the session, and not the one with no session")
         assertEquals(400 * price.usd(opus, turn().counters)!!, total.usd, 1e-9)
+        assertEquals(null, price.usd(opus, mapOf(PerfKeys.IN_TOKENS to 100_000L, PerfKeys.OUT_TOKENS to 1_000L)))
     }
 }

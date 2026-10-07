@@ -46,7 +46,12 @@ private const val DAY = 1_790_467_200_000L
 // why: USD per million tokens on the priced model's card: fresh input, cache read, output
 private val CARD = ModelRates(input = 1.0, cacheRead = 0.1, output = 4.0)
 
-private val COUNTERS = mapOf("in_tokens" to 12_000L, "cached_tokens" to 9_000L, "out_tokens" to 340L)
+private val COUNTERS = mapOf(
+    "in_tokens" to 12_000L,
+    "cached_tokens" to 9_000L,
+    "cache_write_tokens" to 0L,
+    "out_tokens" to 340L,
+)
 
 // why: the card over COUNTERS by hand: 3,000 fresh input at $1, 9,000 cache reads at $0.10 and 340 output at
 // $4, per million: (3,000 + 900 + 1,360) / 1,000,000
@@ -84,7 +89,7 @@ class TraceTurnCostTest {
     )
 
     /** turn-1 ran on the priced model and turn-2 on one with no card, both ended; turn-3 is still open. */
-    private fun writeTrace(dir: Path) {
+    private fun writeTrace(dir: Path, counters: Map<String, Long> = COUNTERS) {
         val ids = ArrayDeque(listOf("turn-1", "turn-2", "turn-3", "turn-4"))
         val days = ActivityDays(dir, HEAD, 7, WallClock { DAY }, true)
         val store = splice.head.syntheticTraceStore(
@@ -96,7 +101,7 @@ class TraceTurnCostTest {
         )
         listOf("kimi-k3", "unlisted-model").forEach { model ->
             store.begin(meta(model), ClientInbound("POST", "/v1/messages", emptyMap(), "{}"))
-                .finish("ok", PerfSnapshot(mapOf("total" to 900L), COUNTERS))
+                .finish("ok", PerfSnapshot(mapOf("total" to 900L), counters))
         }
         val _ = store.begin(meta("kimi-k3"), ClientInbound("POST", "/v1/messages", emptyMap(), "{}"))
         store.begin(meta("kimi-k3"), ClientInbound("POST", "/v1/messages", emptyMap(), "{}"))
@@ -131,6 +136,12 @@ class TraceTurnCostTest {
         writeTrace(dir)
 
         assertEquals(JsonNull, read(dir, "turn-4")["cost_usd"])
+    }
+
+    @Test
+    fun `input and output without cache observations do not claim an exact cost`(@TempDir dir: Path) {
+        writeTrace(dir, mapOf("in_tokens" to 12_000L, "out_tokens" to 340L))
+        assertEquals(JsonNull, read(dir, "turn-1")["cost_usd"])
     }
 
     @Test

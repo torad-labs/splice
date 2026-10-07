@@ -18,6 +18,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 // A cold reconciliation retains decoded facts; one scan at a time avoids the measured fleet contention.
 private const val COLD_READS_AT_ONCE = 1
+
+// why: without hourly history, prepare the same 24-hour window a request with no explicit cutoff defaults to.
 private const val DEFAULT_REQUEST_WINDOW_MS = 86_400_000L
 
 /** Application-owned preparation changes only when readers may answer, never their stored facts or arithmetic. */

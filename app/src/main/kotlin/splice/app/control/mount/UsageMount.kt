@@ -2,10 +2,8 @@
 // statusline (features/usage).
 package splice.app.control.mount
 
-import io.ktor.server.application.ApplicationStarted
 import io.ktor.server.request.receiveText
 import io.ktor.server.routing.Route
-import io.ktor.server.routing.application
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -22,14 +20,11 @@ import splice.core.version.ClientVersionTracker
 import splice.head.perf.TurnKeptRoutes
 import splice.models.roster.DeclaredHeads
 import splice.upstream.codemode.ProcessDispatchers
-import splice.usage.USAGE_READ_PENDING_HEADER
 import splice.usage.alerts.AlertRoutes
 import splice.usage.alerts.AlertSource
 import splice.usage.budgets.BudgetRoutes
 import splice.usage.budgets.BudgetSource
-import splice.usage.economics.EconomicsPayloads
 import splice.usage.perf.PerfPayloads
-import splice.usage.perf.PerfRoutes
 import splice.usage.quota.UsagePayloads
 import splice.usage.statusline.StatuslineRoute
 
@@ -55,12 +50,11 @@ internal class UsageMount(
     )
     private val usagePayloads = UsagePayloads(usageHeads, config)
     private val perfPayloads = PerfPayloads(usageHeads)
-    private val economicsPayloads = EconomicsPayloads(usageHeads)
-    private val perfRoutes = PerfRoutes(usageLookup)
     private val statuslineRoute = StatuslineRoute(usageLookup, config, clientVersions)
 
     // File scans, cache-monitor waits and folds must not occupy Netty's control request event loops.
     private val fileIo = ProcessDispatchers().io()
+    private val usageReads = UsageReadRoutes(usageHeads, usageLookup, fileIo, guard)
 
     // V4-133 (FEATURES.md §5/§6): read at CALL time through the same BudgetSource/AlertSource
     // discipline every other console port keeps — see ConsolePorts.
@@ -68,9 +62,7 @@ internal class UsageMount(
     private val alertRoutes = AlertRoutes(AlertSource { ports.alerts })
 
     fun register(route: Route) {
-        val warmup = UsageReadWarmup(route.application, usageHeads, fileIo)
-        perfRoutes.preparation = warmup
-        route.application.monitor.subscribe(ApplicationStarted) { warmup.start() }
+        usageReads.register(route)
         route.get("/api/usage") { guard.guarded(call) { ControlReplies.respond(call, usagePayloads.usageJson()) } }
         route.post("/api/usage/probe") {
             guard.guarded(call) { ControlReplies.respond(call, usagePayloads.probeNowJson()) }
@@ -86,9 +78,6 @@ internal class UsageMount(
         route.get("/api/perf/summary") {
             guard.guarded(call) { withContext(fileIo) { perfPayloads.summary(call) } }
         }
-        route.get("/api/perf/turns") {
-            guard.guarded(call) { withContext(fileIo) { perfRoutes.turns(call) } }
-        }
         route.get("/api/kept/turns") {
             guard.guarded(call) {
                 withContext(fileIo) { TurnKeptRoutes(ports.turnStatistics).kept() }.send(call)
@@ -99,7 +88,6 @@ internal class UsageMount(
                 withContext(fileIo) { TurnKeptRoutes(ports.turnStatistics, liveTotals).delete() }.send(call)
             }
         }
-        registerEconomics(route, warmup)
         route.get("/api/budgets") { guard.guarded(call) { budgetRoutes.read(ports.budgetSpending).send(call) } }
         route.put("/api/budgets") {
             guard.guarded(call) { budgetRoutes.write(call.receiveText(), ports.budgetSpending).send(call) }
@@ -110,20 +98,5 @@ internal class UsageMount(
         // A SESSION's statusline command calls these, so its turn key opens them (with the resume hook).
         route.post("/statusline/{head}") { guard.guarded(call, Door.SESSION) { statuslineRoute.statusline(call) } }
         route.get("/statusline/{head}") { guard.guarded(call, Door.SESSION) { statuslineRoute.statusline(call) } }
-    }
-
-    private fun registerEconomics(route: Route, warmup: UsageReadWarmup) {
-        route.get("/api/economics") {
-            guard.guarded(call) {
-                val result = withContext(fileIo) {
-                    if (call.request.headers[USAGE_READ_PENDING_HEADER] == "1") {
-                        economicsPayloads.economicsJson(warmup)
-                    } else {
-                        economicsPayloads.economicsJson()
-                    }
-                }
-                ControlReplies.respond(call, result)
-            }
-        }
     }
 }

@@ -491,7 +491,7 @@ class RateLimitCooldownBudgetTest {
     }
 
     @Test
-    fun `a backoff refused by the remaining budget still counts the retry decision`() = runTest {
+    fun `a backoff refused by the remaining budget records the refusal but no retry`() = runTest {
         val calls = AtomicInteger()
         val notices = mutableListOf<String>()
         val waiter = RecordingWaiter()
@@ -520,7 +520,7 @@ class RateLimitCooldownBudgetTest {
 
         assertEquals(1, calls.get())
         assertTrue(waiter.waits.isEmpty())
-        assertEquals(1L, perf.snapshot().counters[PerfKeys.RETRIES])
+        assertEquals(null, perf.snapshot().counters[PerfKeys.RETRIES])
         assertTrue(notices.contains("upstream backoff up to 220ms does not fit the remaining 100ms budget"))
     }
 

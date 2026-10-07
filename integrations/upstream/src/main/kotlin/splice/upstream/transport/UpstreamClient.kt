@@ -169,12 +169,24 @@ public class UpstreamClient(
         return retryRules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry)
     }
 
+    private enum class RetryKind { ORDINARY, POST_SEND }
+
     /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
      *  under detekt's LongMethod/CyclomaticComplexMethod ceilings (G4d follow-up to bb8553f). */
     private class RetryState(var cooldown: RateLimitCooldown) {
         var attempt: Int = 0
         var refreshedOnce: Boolean = false
         var lastErr: RetryOutcome.Failed? = null
+
+        // A retry plan counts only when dispatch survives the next attempt's budget, auth and hold checks.
+        var pendingRetry: RetryKind? = null
+
+        fun markResend(ctx: PostContext) {
+            val retry = pendingRetry ?: return
+            pendingRetry = null
+            ctx.markRetry()
+            if (retry == RetryKind.POST_SEND) ctx.markPostSendRetry()
+        }
 
         // V4-174: every SEND, whichever budget paid for it (a backoff attempt, the refresh's free
         // retry, a G5 reissue, the RC-4 amended resend) — the ordinal the wire observer sees.
@@ -287,6 +299,7 @@ public class UpstreamClient(
         // with attempts=1 and end a turn a retry would have completed.
         val attempted = try {
             transportFailures.catchCancellable {
+                state.markResend(ctx)
                 request.execute(ctx, body.bytes, auth, onStreamStart = { streamHandedOff = true }, block, recorder)
             }
         } catch (e: StreamTornBeforeClient) {
@@ -351,8 +364,8 @@ public class UpstreamClient(
                 "stream torn before first client frame, reissue ${state.streamReissues}/$MAX_STREAM_REISSUES: " +
                     "${e::class.simpleName} ${TransportFailureReason.of(e, ctx.url).take(ERR_SNIPPET)}",
             )
-            ctx.markRetry()
             applyTransportBackoff(e, ctx, state.attempt, t0)
+            state.pendingRetry = RetryKind.ORDINARY
             return LoopStep.Continue // does NOT increment `attempt` — this budget is separate
         }
         val phase = transportFailures.rethrowUnlessRetryableTransport(
@@ -366,9 +379,8 @@ public class UpstreamClient(
             "$label ${e::class.simpleName} attempt ${state.attempt + 1}/$maxRetries: " +
                 TransportFailureReason.of(e, ctx.url).take(ERR_SNIPPET),
         )
-        if (phase == TransportFailurePhase.POST_SEND) ctx.markPostSendRetry()
-        ctx.markRetry()
         applyTransportBackoff(e, ctx, state.attempt, t0)
+        state.pendingRetry = if (phase == TransportFailurePhase.POST_SEND) RetryKind.POST_SEND else RetryKind.ORDINARY
         state.attempt += 1
         return LoopStep.Continue
     }
@@ -381,7 +393,6 @@ public class UpstreamClient(
         state: RetryState,
         t0: Long,
     ): LoopStep<Nothing> {
-        ctx.markRetry()
         if (deadlineExceeded(ctx, t0)) {
             ctx.onRetry(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before backoff, " +
@@ -394,6 +405,7 @@ public class UpstreamClient(
             retryRules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry)
         }
         ctx.timedBackoff { backoff(state.attempt, plan.minDelayMs) }
+        state.pendingRetry = RetryKind.ORDINARY
         state.attempt += 1
         return LoopStep.Continue
     }

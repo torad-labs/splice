@@ -13,12 +13,17 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.perf.PerfKeys
+import splice.core.perf.TurnPerf
+import splice.core.util.ElapsedClock
+import splice.upstream.Waiter
 import java.net.ConnectException
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -47,6 +52,78 @@ class UpstreamClientDeadlineTest {
         PostContext(url = "https://api.example.test/v1", auth = fakeAuth, extraHeaders = { emptyMap() }),
         "{}",
     ) { "ok" }
+
+    @Test
+    fun `an HTTP backoff rejected by the remaining budget records no retry`() = runTest {
+        val calls = AtomicInteger()
+        val waits = mutableListOf<Long>()
+        val perf = TurnPerf { 0L }
+        var now = 0L
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            now = 900L
+            respond("busy", HttpStatusCode.ServiceUnavailable, headersOf())
+        }
+        val client = budgetBackoffClient(engine, ElapsedClock { now }, Waiter { waits.add(it) })
+
+        val failure = assertThrows<UpstreamFailed> {
+            client.posted(
+                PostContext("https://api.example.test/v1", fakeAuth, { emptyMap() }, perf = perf),
+                "{}",
+            ) { "ok" }
+        }
+
+        assertEquals(503, failure.status)
+        assertEquals(1, calls.get())
+        assertTrue(waits.isEmpty(), "800 ms cannot fit the remaining 100 ms")
+        assertEquals(1L, perf.snapshot().counters[PerfKeys.ATTEMPTS])
+        assertNull(perf.snapshot().counters[PerfKeys.RETRIES])
+    }
+
+    @Test
+    fun `a retry whose deadline expires during backoff records no resend`() = runTest {
+        val calls = AtomicInteger()
+        val waits = mutableListOf<Long>()
+        val perf = TurnPerf { 0L }
+        var now = 0L
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            now = 100L
+            respond("busy", HttpStatusCode.ServiceUnavailable, headersOf())
+        }
+        val client = budgetBackoffClient(
+            engine,
+            ElapsedClock { now },
+            Waiter { ms ->
+                waits.add(ms)
+                now += ms + 100L
+            },
+        )
+
+        assertThrows<UpstreamFailed> {
+            client.posted(
+                PostContext("https://api.example.test/v1", fakeAuth, { emptyMap() }, perf = perf),
+                "{}",
+            ) { "ok" }
+        }
+
+        assertEquals(listOf(800L), waits)
+        assertEquals(1, calls.get())
+        assertEquals(1L, perf.snapshot().counters[PerfKeys.ATTEMPTS])
+        assertNull(perf.snapshot().counters[PerfKeys.RETRIES])
+    }
+
+    private fun budgetBackoffClient(engine: MockEngine, clock: ElapsedClock, waiter: Waiter): UpstreamClient =
+        UpstreamClient(
+            totalTimeoutMs = 1_000,
+            maxRetries = 3,
+            client = HttpClient(engine),
+            backoffBaseMs = 800,
+            backoffCapMs = 800,
+            backoffJitterPct = 0,
+            clock = clock,
+            waiter = waiter,
+        )
 
     @Test
     fun `deadline exceeded gives up before exhausting maxRetries on repeated 5xx failures`() = runTest {

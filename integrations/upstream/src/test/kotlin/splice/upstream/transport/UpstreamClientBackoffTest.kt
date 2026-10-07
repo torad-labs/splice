@@ -22,6 +22,7 @@ import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.upstream.RoundBody
 import splice.upstream.Waiter
+import splice.upstream.retry.RateLimitCooldown
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketException
@@ -134,11 +135,8 @@ class UpstreamClientBackoffTest {
                     fixture.assertFailure(failure)
                     assertEquals(1, fixture.calls.get())
                     assertTrue(fixture.waits.isEmpty())
-                    assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
-                    assertEquals(
-                        if (kind == FailureKind.POST_SEND) 1L else null,
-                        fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES],
-                    )
+                    assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+                    assertNull(fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES])
                     assertTrue(fixture.notices.first().startsWith(kind.noticeLabel))
                     assertEquals(
                         "upstream backoff up to ${kind.ceilingMs}ms does not fit the remaining ${remaining}ms budget",
@@ -175,7 +173,7 @@ class UpstreamClientBackoffTest {
                     assertTrue(fixture.waits.isEmpty())
                     fixture.assertFailure(failure)
                     assertEquals(2, fixture.calls.get(), "the second round may try once but must not retry")
-                    assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+                    assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
                     assertEquals(
                         "upstream backoff up to ${kind.ceilingMs}ms does not fit the remaining 100ms budget",
                         fixture.notices.last(),
@@ -201,7 +199,7 @@ class UpstreamClientBackoffTest {
                 fixture.assertFailure(failure)
                 assertEquals(1, fixture.calls.get())
                 assertTrue(fixture.waits.isEmpty())
-                assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+                assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
                 assertEquals(
                     "upstream backoff up to ${kind.ceilingMs}ms does not fit the remaining 0ms budget",
                     fixture.notices.last(),
@@ -221,6 +219,10 @@ class UpstreamClientBackoffTest {
             assertEquals(2, fixture.calls.get())
             assertTrue(fixture.waits.single() in 1L..kind.ceilingMs)
             assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+            assertEquals(
+                if (kind == FailureKind.POST_SEND) 1L else null,
+                fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES],
+            )
             assertTrue(fixture.notices.single().startsWith(kind.noticeLabel))
         }
     }
@@ -237,7 +239,7 @@ class UpstreamClientBackoffTest {
             fixture.assertFailure(failure)
             assertEquals(1, fixture.calls.get())
             assertTrue(fixture.waits.isEmpty())
-            assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+            assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
             assertNull(fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES])
             assertTrue(fixture.notices.first().startsWith("stream torn before first client frame, reissue 1/2:"))
             assertEquals(
@@ -259,7 +261,63 @@ class UpstreamClientBackoffTest {
             assertEquals(2, fixture.calls.get())
             assertTrue(fixture.waits.single() in 1L..kind.ceilingMs)
             assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+            assertNull(fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES])
             assertTrue(fixture.notices.single().startsWith("stream torn before first client frame, reissue 1/2:"))
+        }
+    }
+
+    @Test
+    fun `a transport or stream retry whose budget expires during backoff records no resend`() = runTest {
+        for (kind in FailureKind.entries) {
+            for (stream in listOf(false, true)) {
+                val fixture = Fixture(kind)
+                fixture.failuresLeft = if (stream) 0 else 1
+                fixture.afterWait = { fixture.elapsed = 5_000L }
+
+                assertThrows<Exception> {
+                    if (stream) fixture.postWithTornStream() else fixture.post()
+                }
+
+                assertEquals(1, fixture.calls.get())
+                assertEquals(1, fixture.waits.size)
+                assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.ATTEMPTS])
+                assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+                assertNull(fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES])
+            }
+        }
+    }
+
+    @Test
+    fun `a planned retry refused by missing credentials records no resend`() = runTest {
+        for (kind in FailureKind.entries) {
+            val fixture = Fixture(kind)
+            fixture.afterWait = { fixture.credentialsAvailable = false }
+
+            assertThrows<UpstreamAuthMissing> { fixture.post() }
+
+            assertEquals(1, fixture.calls.get())
+            assertEquals(1, fixture.waits.size)
+            assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.ATTEMPTS])
+            assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+            assertNull(fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES])
+        }
+    }
+
+    @Test
+    fun `a planned retry refused by a new credential hold records no resend`() = runTest {
+        for (kind in FailureKind.entries) {
+            val fixture = Fixture(kind)
+            val hold = RateLimitCooldown(ElapsedClock { fixture.elapsed })
+            fixture.afterWait = { hold.arm(60_000L) }
+
+            val failure = assertThrows<UpstreamFailed> { fixture.postWithHold(hold) }
+
+            assertEquals(429, failure.status)
+            assertEquals(1, fixture.calls.get())
+            assertEquals(1, fixture.waits.size)
+            assertEquals(1L, fixture.perf.snapshot().counters[PerfKeys.ATTEMPTS])
+            assertNull(fixture.perf.snapshot().counters[PerfKeys.RETRIES])
+            assertNull(fixture.perf.snapshot().counters[PerfKeys.POST_SEND_RETRIES])
         }
     }
 
@@ -293,13 +351,16 @@ class UpstreamClientBackoffTest {
         var elapsed = 0L
         var consumeOnAttemptMs = 0L
         var failuresLeft = 1
+        var afterWait: () -> Unit = {}
+        var credentialsAvailable = true
         val failure = kind.error()
         val calls = AtomicInteger()
         val notices = mutableListOf<String>()
         val waits = mutableListOf<Long>()
         val perf = TurnPerf { 0L }
         private val auth = object : RefreshableAuthProvider {
-            override suspend fun credentials(): Credentials = Credentials.Bearer("test")
+            override suspend fun credentials(): Credentials? =
+                if (credentialsAvailable) Credentials.Bearer("test") else null
             override suspend fun refresh(): Credentials? = null
             override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
         }
@@ -319,6 +380,7 @@ class UpstreamClientBackoffTest {
             waiter = Waiter { ms ->
                 waits.add(ms)
                 elapsed += ms
+                afterWait()
             },
             clock = ElapsedClock { elapsed },
         )
@@ -339,6 +401,9 @@ class UpstreamClientBackoffTest {
         }
 
         suspend fun post(): String = client.posted(context, "{}") { "ok" }
+
+        suspend fun postWithHold(hold: RateLimitCooldown): String =
+            client.posted(context.copy(rateLimitCooldown = hold), "{}") { "ok" }
 
         /** The un-narrowed answer, for the one test whose subject IS the refusal (V4-114). */
         suspend fun postRaw(): UpstreamPost<String> = client.post(context, RoundBody.Text("{}")) { "ok" }

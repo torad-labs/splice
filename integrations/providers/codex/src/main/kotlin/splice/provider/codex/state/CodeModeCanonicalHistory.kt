@@ -55,12 +55,14 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
             return CodeModeCanonicalResult(input.copy(replayItems = replay), omitted)
         }
         val index = CodeModeHistoryIndex(input.logicalItems, codec)
-        val natives = CodeModeNativeReplay(codec, input, index, records)
+        val inputOwners = records.filterNot(CodeModeNativeChain::retired)
+        val natives = CodeModeNativeReplay(codec, input, index, inputOwners)
         val omitted = mutableListOf<CodeModeOmission>()
         val placements = placements(records, index, natives, media, omitted)
-        val captured = capture?.takeIf { it.replayAnchors != null }?.let { CodeModeCapturedOrder(it, index, codec) }
+        val captured = capture?.takeUnless(CodeModeNativeChain::retired)?.takeIf { it.replayAnchors != null }
+            ?.let { CodeModeCapturedOrder(it, index, codec) }
         val order = captured?.takeIf { it.accepts(input) }
-        order?.support(records, placements)
+        order?.support(inputOwners, placements)
         val refused = captured?.takeUnless { it === order }
         return CodeModeCanonicalResult(emit(input, placements, natives, order, refused), omitted)
     }
@@ -82,11 +84,14 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         if (error != null) omitted += CodeModeOmission(record, error, natives.rejection(record, error))
         when {
             invalid != null -> null
-            error != null || natives.retainedResponse(record) ->
+            error != null || responseOnly(record, natives) ->
                 continuityPlacement(index, record, checkNotNull(boundary))
             else -> placement(index, record, checkNotNull(boundary))
         }
     }
+
+    private fun responseOnly(record: CodeModeRecord, natives: CodeModeNativeReplay): Boolean =
+        CodeModeNativeChain.retired(record) || natives.retainedResponse(record)
 
     private fun metadataProblem(record: CodeModeRecord): String? = when {
         record.nativeSegments.any { it.logicalOffset !in 0..record.baselineLogicalCount } ->

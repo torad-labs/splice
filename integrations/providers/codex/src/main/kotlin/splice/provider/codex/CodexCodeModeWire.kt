@@ -15,18 +15,22 @@ import splice.dialect.responses.ResponsesFunctionNamespace
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesCodeModeProjection
-import splice.provider.codex.state.diagnostics.CodeModeHistoryLog
+import splice.provider.codex.state.diagnostics.CodeModeHistoryOmissions
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
+import splice.provider.codex.state.diagnostics.CodeModeNativeRetirement
 import splice.upstream.RoundBody
 import splice.upstream.codemode.CodeModeManual
 import java.util.concurrent.ConcurrentHashMap
 
-internal class CodexCodeModeWire(private val json: Json, private val log: LogSink) {
+internal class CodexCodeModeWire(
+    private val json: Json,
+    private val log: LogSink,
+    retireNative: CodeModeNativeRetirement = CodeModeNativeRetirement {},
+) {
     private val history = CodexCodeModeHistory(json)
     private val namespace = ResponsesFunctionNamespace()
 
-    /** Record ids whose omission was already logged — one line per record, not one per turn. */
-    private val announced: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    private val omissions = CodeModeHistoryOmissions(log, retireNative)
 
     /** Client tool names already logged as losing a code-mode name collision. */
     private val announcedCollisions: MutableSet<String> = ConcurrentHashMap.newKeySet()
@@ -131,14 +135,7 @@ internal class CodexCodeModeWire(private val json: Json, private val log: LogSin
         capture: CodeModeRecord? = null,
     ): CodeModeRewrite {
         val rewrite = history.canonicalize(body, records, replayMedia, capture)
-        rewrite.omitted.filter { announced.add(it.record.id) }.forEach { omission ->
-            log(
-                "[code-mode] history rewrite skipped record ${omission.record.id.take(RECORD_ID_LOG_CHARS)} " +
-                    "(outer ${omission.record.outerCallId}): ${omission.reason}; its client calls stay in " +
-                    "the history as ordinary tool calls; " +
-                    CodeModeHistoryLog.context(omission.record, omission.nativeRejection),
-            )
-        }
+        omissions.observe(rewrite)
         return rewrite
     }
 
@@ -228,7 +225,6 @@ internal const val CODE_MODE_LEGACY_METADATA_VERSION = 4
 
 // why: v5 placements are independently anchored; v4 keeps its persisted-prefix compatibility reader.
 internal const val CODE_MODE_METADATA_VERSION = 5
-private const val RECORD_ID_LOG_CHARS = 8
 private const val FIELD_INPUT = "input"
 private const val FIELD_TYPE = "type"
 private const val FIELD_NAME = "name"

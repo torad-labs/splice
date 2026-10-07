@@ -9,13 +9,25 @@ import splice.provider.codex.CodeModeNativeSegment
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
 
+/** Durable input retirement is not execution failure or active-script abandonment. */
+internal const val CODE_MODE_NATIVE_RETIRED: String = "code-mode completed native input retired"
+
 internal object CodeModeNativeChain {
+    fun retired(record: CodeModeRecord): Boolean = record.error == CODE_MODE_NATIVE_RETIRED
+
+    fun rewritable(record: CodeModeRecord): Boolean = when {
+        record.abandoned() -> false
+        !retired(record) -> true
+        else -> record.continuity.isNotEmpty() || record.continuityReplay.isNotEmpty()
+    }
+
     data class Capture(val segments: List<CodeModeNativeSegment>, val parent: CodeModeRecord?)
 
     fun capture(current: List<CodeModeNativeSegment>, prior: CodeModeRecord?): Capture {
         val projected = normalized(current)
-        if (prior == null) return Capture(projected, null)
-        val inherited = normalized(replay(prior) + continuity(prior)).associateBy(CodeModeNativeSegment::logicalOffset)
+        val parent = prior?.takeUnless { retired(it) || it.abandoned() } ?: return Capture(projected, null)
+        val inherited = normalized(replay(parent) + continuity(parent))
+            .associateBy(CodeModeNativeSegment::logicalOffset)
         val indexed = projected.associateBy(CodeModeNativeSegment::logicalOffset)
         val compatible = inherited.all { (offset, segment) ->
             startsWith(indexed[offset]?.items.orEmpty(), segment.items)
@@ -26,7 +38,7 @@ internal object CodeModeNativeChain {
             val delta = segment.items.drop(before.size)
             delta.takeIf(List<JsonElement>::isNotEmpty)?.let { segment.copy(items = it) }
         }
-        return Capture(additions, prior)
+        return Capture(additions, parent)
     }
 
     /** Only earlier records of the same conversation can be a parent. Missing parents stay unknown. */
@@ -34,7 +46,7 @@ internal object CodeModeNativeChain {
         val prior = mutableMapOf<Pair<String, String>, CodeModeRecord>()
         records.forEach { record ->
             record.nativeParent = record.nativeBaseId?.let { prior[record.key to it] }
-            prior[record.key to record.id] = record
+            if (!retired(record) && !record.abandoned()) prior[record.key to record.id] = record
         }
     }
 
@@ -42,6 +54,7 @@ internal object CodeModeNativeChain {
         val chain = mutableListOf<CodeModeRecord>()
         var cursor: CodeModeRecord? = record
         while (cursor != null) {
+            if (retired(cursor) || cursor.abandoned()) break
             chain += cursor
             cursor = cursor.nativeParent
         }

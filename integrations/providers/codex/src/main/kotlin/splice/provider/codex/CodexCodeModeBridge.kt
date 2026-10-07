@@ -8,6 +8,7 @@ import splice.core.turn.GatewayCustomCall
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.provider.codex.state.CodeModeSessionEnd
+import splice.provider.codex.state.diagnostics.CodeModeNativeRetirement
 import splice.provider.codex.stream.CodeModeRoundInterceptor
 import splice.upstream.RoundInterceptor
 import splice.upstream.codemode.CodeModeResult
@@ -124,7 +125,6 @@ public class CodexCodeModeBridge(
         encodeDefaults = true
         ignoreUnknownKeys = true
     }
-    private val wire = CodexCodeModeWire(json, config.log)
     private val run = CodeModeRuntimeRun(config.runtimes)
     private val registry = CodexCodeModeRegistry(
         config,
@@ -132,6 +132,7 @@ public class CodexCodeModeBridge(
         sweepInterval,
         closeSession = CodeModeSessionEnd(run::closeSession),
     )
+    private val wire = CodexCodeModeWire(json, config.log, CodeModeNativeRetirement(registry.changes::retireNative))
     private val validation = CodexCodeModeValidation(config)
     private val machine = CodexCodeModeMachine(config, registry, validation)
     private val driver = CodexCodeModeDriver(config, run, registry, wire, validation, machine)

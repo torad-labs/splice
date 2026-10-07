@@ -22,7 +22,7 @@ import splice.upstream.RoundBodyPost
 import splice.upstream.sse.WireSink
 
 internal class CodeModeUpstreamPostTest : CodeModeBridgeTestSupport() {
-    private val wire = CodexCodeModeWire(Json) {}
+    private val wire = CodexCodeModeWire(Json, log = {})
     private val record = TurnPerf()
     private val done = TurnOutcome.Success(false, false, Usage())
     private val tree = Json.parseToJsonElement("""{"input":[{"role":"user","content":"go"}]}""").jsonObject

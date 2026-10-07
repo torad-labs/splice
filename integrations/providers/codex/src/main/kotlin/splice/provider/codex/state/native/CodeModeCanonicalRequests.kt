@@ -10,6 +10,7 @@ import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRewrite
 import splice.provider.codex.CodexCodeModeHistoryCodec
 import splice.provider.codex.state.CodeModeCanonicalHistory
+import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.diagnostics.CodeModeProjectedRewrite
 
 internal fun interface CodeModeLegacyCanonicalization {
@@ -33,7 +34,7 @@ internal class CodeModeCanonicalRequests(private val codec: CodexCodeModeHistory
         val conversation = codec.conversation(codec.projection.project(root.second))
         var input = conversation.body
         val omitted = mutableListOf<CodeModeOmission>()
-        val eligible = records.filterNot(CodeModeRecord::abandoned)
+        val eligible = records.filter(CodeModeNativeChain::rewritable)
         eligible.filter { it.metadataVersion != CODE_MODE_METADATA_VERSION }.forEach { record ->
             val rewritten = legacy(input, record, replayMedia)
             val error = rewritten.error

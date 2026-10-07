@@ -94,7 +94,7 @@ internal class CodeModeRoundAllocationTest : CodeModeBridgeTestSupport() {
         val size = JsonWire.byteSize(plain)
         reporter.publishEntry("codemode_body_bytes", size.toString())
         assertTrue(size in 900_000L..1_300_000L, "fixture is $size bytes")
-        val wire = CodexCodeModeWire(Json) {}
+        val wire = CodexCodeModeWire(Json, log = {})
         val tree = Json.parseToJsonElement(plain).jsonObject
         val body = wire.body(RoundBody.Tree(tree))
         val identity = CodeModeTurnIdentity()
@@ -144,7 +144,7 @@ internal class CodeModeRoundAllocationTest : CodeModeBridgeTestSupport() {
         val manager = bridge(QueuedRuntime(ArrayDeque(listOf(script))))
         try {
             val next = completeOneScript(manager)
-            val wire = CodexCodeModeWire(Json) {}
+            val wire = CodexCodeModeWire(Json, log = {})
             val size = JsonWire.byteSize(next)
             val tree = Json.parseToJsonElement(next).jsonObject
             assertEquals(next, JsonWire.string(tree), "the measured input preserves every wire byte")

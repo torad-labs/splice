@@ -470,10 +470,6 @@
       "features/turns/src/main/kotlin/splice/head/compact/Compact.kt",
       "features/turns/src/main/kotlin/splice/head/perf/PerfStats.kt"
     ],
-    "COPY RECORD_ID_LOG_CHARS": [
-      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeSweeper.kt",
-      "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexCodeModeWire.kt"
-    ],
     "COPY RED": [
       "core/src/main/kotlin/splice/core/terminal/CliStyle.kt",
       "features/usage/src/main/kotlin/splice/usage/statusline/StatuslineRenderer.kt"

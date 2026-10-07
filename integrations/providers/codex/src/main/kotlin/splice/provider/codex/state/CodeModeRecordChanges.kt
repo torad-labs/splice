@@ -4,10 +4,12 @@ package splice.provider.codex.state
 import kotlinx.coroutines.CancellationException
 import splice.core.memory.HeapCapacityException
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeOmission
 import splice.provider.codex.CodeModePersistenceException
 import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodexCodeModeStore
+import splice.provider.codex.state.diagnostics.CodeModeNativeBranch
 import splice.upstream.codemode.CodeModeCell
 import kotlin.concurrent.withLock
 
@@ -62,6 +64,53 @@ internal class CodeModeRecordChanges(
                 cancellation.addSuppressed(error)
             }
         }
+
+    /** Only witnessed edits retire completed input. Missing history and partial ancestry remain retryable views. */
+    fun retireNative(omissions: List<CodeModeOmission>) {
+        omissions.filter(::permanentNative).groupBy { it.record.key }.forEach { (key, rejected) ->
+            access.withKey(key) {
+                val ids = rejected.map { it.record.id }.toSet()
+                val retired = records.filter { it.key == key && it.phase == CodeModePhase.COMPLETED }
+                    .filter(::sourceSettled).filterNot(CodeModeNativeChain::retired).filter { record ->
+                        generateSequence(record) { it.nativeParent }.takeWhile { it.key == key }.any { it.id in ids }
+                    }
+                if (retired.isEmpty()) return@withKey
+                val stored = CodeModeWeight.STORED
+                retired.forEach { record ->
+                    CodeModeHeap.grow(
+                        record,
+                        (stored.text(CODE_MODE_NATIVE_RETIRED) - stored.text(record.error.orEmpty())).coerceAtLeast(0L),
+                    )
+                }
+                retired.forEach { record ->
+                    startup.entries.remove(record.id)
+                    record.error = CODE_MODE_NATIVE_RETIRED
+                    record.nativeSegments = emptyList()
+                    record.nativeParent = null
+                    record.nativeBaseId = null
+                    record.replayAnchors = record.replayAnchors?.copy(native = emptyMap(), nativeFollowing = emptyMap())
+                }
+                // Remaining active descendants retain an unknown-parent witness, never the retired payload.
+                records.filter { it.key == key && it.nativeParent?.let(CodeModeNativeChain::retired) == true }
+                    .forEach { it.nativeParent = null }
+                store.save(records, history.entries, dirtyKeys = setOf(key))
+            }
+        }
+    }
+
+    private fun sourceSettled(record: CodeModeRecord): Boolean {
+        val state = record.sourceState ?: return true
+        return state.complete && (state.usage == null || state.consumed)
+    }
+
+    private fun permanentNative(omission: CodeModeOmission): Boolean {
+        val rejected = omission.nativeRejection ?: return false
+        return when (rejected.branch) {
+            CodeModeNativeBranch.PAYLOAD, CodeModeNativeBranch.NATIVE_ORDER -> true
+            CodeModeNativeBranch.UNEXPECTED -> rejected.following == true && rejected.evidence?.witnessResolved == true
+            CodeModeNativeBranch.ABSENT, CodeModeNativeBranch.COUNT -> false
+        }
+    }
 
     /** A stop is not a use. Every live cell closes without changing its record's last-use timestamp. */
     fun onHeadStop() {

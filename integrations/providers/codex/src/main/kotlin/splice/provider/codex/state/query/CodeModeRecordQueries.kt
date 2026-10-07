@@ -6,6 +6,7 @@ import splice.provider.codex.CodeModePhase
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeResultOwners
 import splice.provider.codex.state.CodeModeExpiredHistory
+import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.state.CodeModeRegistryAccess
 
 /** The one conversation whose query is about to read live or durable owners. */
@@ -41,6 +42,7 @@ internal class CodeModeRecordQueries(
 
     fun completed(key: String): List<CodeModeRecord> = withKey(key) {
         records.filter { it.key == key && it.phase == CodeModePhase.COMPLETED }
+            .filterNot { CodeModeNativeChain.retired(it) && !CodeModeNativeChain.rewritable(it) }
     }
 
     fun expiredHistory(key: String, digest: String, ids: Set<String>): Boolean = withKey(key) {

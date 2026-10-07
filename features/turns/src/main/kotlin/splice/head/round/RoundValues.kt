@@ -17,6 +17,12 @@ import splice.core.turn.UsageRequest
  *  next one (detekt 2026-07-24: the 8-arg form tripped LongParameterList). */
 internal data class RoundCursor(val body: JsonObject, val roundIndex: Int, val searchIndex: Int)
 
+/** Whether the final request exists and which token fields its provider reported. */
+internal data class RoundObservations(
+    val reported: Set<UsageField> = emptySet(),
+    val request: UsageRequest = UsageRequest.NONE,
+)
+
 /** The round-usage law, ONE implementation for both runners (2026-07-20, unified in the
  *  code-review 2026-07-24): each continuation re-sends the ENTIRE conversation, so input/cached
  *  are CUMULATIVE — round N already includes round N-1's; summing them (the old `Usage.plus`)
@@ -41,9 +47,10 @@ internal data class RoundUsage(
     val absorbed: AbsorbedRounds = AbsorbedRounds(),
     /** Source rounds the turn cut while they streamed ([splice.core.turn.Usage.cutRounds]); they accrue. */
     val cutRounds: Long = 0,
-    val reported: Set<UsageField> = emptySet(),
-    private val hasRound: Boolean = false,
+    val observations: RoundObservations = RoundObservations(),
 ) {
+    val reported: Set<UsageField> get() = observations.reported
+
     fun plusRound(u: Usage): RoundUsage {
         val total = toUsage().followedBy(u)
         return RoundUsage(
@@ -58,8 +65,7 @@ internal data class RoundUsage(
             clientContext = total.clientContext,
             absorbed = total.absorbed,
             cutRounds = total.cutRounds,
-            reported = total.reported,
-            hasRound = total.history.request == UsageRequest.POSTED,
+            observations = RoundObservations(total.reported, total.history.request),
         )
     }
 
@@ -79,8 +85,8 @@ internal data class RoundUsage(
         history = UsageHistory(
             absorbed = absorbed,
             cutRounds = cutRounds,
-            request = if (hasRound) UsageRequest.POSTED else UsageRequest.NONE,
+            request = observations.request,
         ),
-        reported = reported,
+        reported = observations.reported,
     )
 }

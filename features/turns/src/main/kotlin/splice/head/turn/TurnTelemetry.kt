@@ -17,6 +17,7 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.UsageHistory
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
@@ -227,8 +228,10 @@ internal class TurnTelemetry(
                         toolsEager = snap.counters[PerfKeys.TOOLS_EAGER],
                         toolsDeferred = snap.counters[PerfKeys.TOOLS_DEFERRED],
                         rateLimited = rateLimited,
-                        absorbed = TurnBill.absorbed(snap.counters),
-                        cutRounds = snap.counters[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L,
+                        history = UsageHistory(
+                            absorbed = TurnBill.absorbed(snap.counters),
+                            cutRounds = snap.counters[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L,
+                        ),
                     ),
                 )
             },

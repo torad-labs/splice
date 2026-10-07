@@ -42,6 +42,7 @@ import splice.core.model.TokenBuckets
 import splice.core.model.TokenCost
 import splice.core.model.TurnPrice
 import splice.core.turn.AbsorbedRounds
+import splice.core.turn.UsageHistory
 import splice.core.util.WallClock
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
@@ -117,14 +118,20 @@ class EconomicsCostRouteTest {
         store.record(turn(HAIKU, inTokens = 100_000, cached = 60_000, cacheWrite = 10_000, out = 2_000))
         store.record(turn(FABLE, inTokens = 1_000, cached = 0, cacheWrite = 0, out = 100))
         store.record(turn("gpt-5.6-sol", inTokens = 1_000, cached = 0, cacheWrite = 0, out = 100))
-        val local = TurnEconomics(FABLE, 0, 0, 0, 0, null, null, null, null, localStep = true, absorbed = NONE)
+        val local = TurnEconomics(
+            FABLE, 0, 0, 0, 0, null, null, null, null, localStep = true, history = UsageHistory(absorbed = NONE),
+        )
         store.record(local)
         return store
     }
 
     private fun unknownStore(): EconomicsStore {
         val store = EconomicsStore(tmp.resolve("unknown.json"), TurnPrice(catalog), WallClock { 10 * HOUR_MS })
-        store.record(TurnEconomics(HAIKU, null, null, null, null, null, null, null, null, absorbed = NONE))
+        store.record(
+            TurnEconomics(
+                HAIKU, null, null, null, null, null, null, null, null, history = UsageHistory(absorbed = NONE),
+            ),
+        )
         store.record(turn(HAIKU, inTokens = 100, cached = 0, cacheWrite = 0, out = 7))
         return store
     }
@@ -185,7 +192,9 @@ class EconomicsCostRouteTest {
     }
 
     private fun turn(model: String, inTokens: Long, cached: Long, cacheWrite: Long, out: Long) =
-        TurnEconomics(model, inTokens, cached, cacheWrite, out, null, null, null, null, absorbed = NONE)
+        TurnEconomics(
+            model, inTokens, cached, cacheWrite, out, null, null, null, null, history = UsageHistory(absorbed = NONE),
+        )
 
     private fun managedHead(name: String, store: EconomicsStore): ManagedHead = ManagedHead(
         head = object : Head {

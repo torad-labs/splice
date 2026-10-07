@@ -17,6 +17,7 @@ import splice.core.model.TokenBuckets
 import splice.core.model.TokenCost
 import splice.core.model.TurnPrice
 import splice.core.turn.AbsorbedRounds
+import splice.core.turn.UsageHistory
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -70,7 +71,7 @@ private fun turn(
     deferred,
     rateLimited,
     localStep,
-    absorbed,
+    UsageHistory(absorbed = absorbed),
 )
 
 class UnknownFailureEconomicsTest {
@@ -78,7 +79,7 @@ class UnknownFailureEconomicsTest {
     fun `missing cache usage and an unknown earlier bill both mark the hourly totals`(@TempDir tmp: Path) {
         val store = EconomicsStore(tmp.resolve("coverage.json"), FABLE_HEAD, WallClock { 10 * HOUR })
         store.record(turn(inTokens = 100, cached = null, out = 7, model = HAIKU))
-        store.record(turn(inTokens = 100, out = 7, model = HAIKU).copy(cutRounds = 1))
+        store.record(turn(inTokens = 100, out = 7, model = HAIKU).copy(history = UsageHistory(cutRounds = 1)))
         val bucket = store.read().single()
         assertEquals(200L, bucket.inTokens)
         assertEquals(14L, bucket.outTokens)

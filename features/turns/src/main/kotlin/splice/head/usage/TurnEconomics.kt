@@ -31,10 +31,14 @@ public data class TurnEconomics(
     /** The rounds this turn billed before its final one (PerfKeys.ABSORBED_*). Their input is metered
      *  and billed like the final round's, so it joins the hour's input sums and its dollars. NO default,
      *  for the reason [cacheWriteTokens] has none: a call site that forgot it would drop billed input. */
-    val absorbed: AbsorbedRounds,
-    /** Source requests whose complete bill never arrived. */
-    val cutRounds: Long = 0,
+    val history: UsageHistory,
 ) {
+    /** Earlier billed requests retain their reader surface. */
+    public val absorbed: AbsorbedRounds get() = history.absorbed
+
+    /** Source requests whose complete bill never arrived. */
+    public val cutRounds: Long get() = history.cutRounds
+
     /** The turn's tokens as the perf-row counters [splice.core.model.TurnPrice] prices, written the way the
      *  row is. */
     public fun counters(): Map<String, Long> = TurnBill.counters(
@@ -43,7 +47,7 @@ public data class TurnEconomics(
             outputTokens = outTokens ?: 0,
             cachedTokens = cachedTokens ?: 0,
             cacheWriteTokens = cacheWriteTokens ?: 0,
-            history = UsageHistory(absorbed = absorbed, cutRounds = cutRounds),
+            history = history,
             reported = buildSet {
                 if (inTokens != null) add(UsageField.INPUT)
                 if (outTokens != null) add(UsageField.OUTPUT)

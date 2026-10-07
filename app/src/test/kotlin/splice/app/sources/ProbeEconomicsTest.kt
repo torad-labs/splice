@@ -17,6 +17,7 @@ import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
 import splice.core.model.TurnPrice
 import splice.core.turn.AbsorbedRounds
+import splice.core.turn.UsageHistory
 import splice.core.util.WallClock
 import splice.head.usage.EconomicsStore
 import splice.head.usage.TurnEconomics
@@ -312,6 +313,6 @@ class ProbeEconomicsTest {
         tools.first,
         tools.second,
         rateLimited = input > 0,
-        absorbed = absorbed,
+        history = UsageHistory(absorbed = absorbed),
     )
 }

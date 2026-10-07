@@ -94,6 +94,20 @@ class TeamsEconomicsChecksTest {
     }
 
     @Test
+    fun `a refusal-only team needs no rate card to price zero`() {
+        val refusal = row(CHECKS_AT, OutcomeTag.RATE_LIMITED.wire).copy(
+            fields = TurnBill.counters(noRequestUsage),
+            model = "m",
+        )
+        val head = rig.head("claude", listOf(refusal), rates = null)
+        val lead = TeamEconomics(team(), mapOf("claude" to head))
+            .json().getValue("slots").jsonArray.single().jsonObject
+        assertEquals("0", lead.getValue("unpriced_turns").jsonPrimitive.content)
+        assertEquals("0", lead.getValue("unreported_usage_turns").jsonPrimitive.content)
+        assertEquals(0.0, lead.getValue("cost_usd").jsonPrimitive.double)
+    }
+
+    @Test
     fun `a wholly unreported team turn labels its token totals as incomplete`() {
         val missing = row(CHECKS_AT, OutcomeTag.UNEXPECTED.wire).copy(fields = emptyMap())
         val lead = leadSlot(listOf(missing))

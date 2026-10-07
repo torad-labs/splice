@@ -108,6 +108,45 @@ class TurnBillObservedPriceTest {
     }
 
     @Test
+    fun `an empty no-request bill needs no rate card or model id`() {
+        val row = TurnBill.counters(noRequestUsage)
+        val price = TurnPrice(null)
+        assertEquals(0.0, price.usd(null, row))
+        assertEquals(0.0, price.lowerBoundUsd("synthetic-no-card", row))
+    }
+
+    @Test
+    fun `explicit refusal ownership is counted without counting local code-mode steps`() {
+        val refusal = TurnBill.counters(noRequestUsage)
+        assertTrue(TurnBill.isCounted(refusal))
+        assertFalse(TurnBill.isCounted(refusal + (PerfKeys.LOCAL_STEP to 1L)))
+        assertFalse(TurnBill.isCounted(emptyMap()))
+        val websocket = mapOf(PerfKeys.ATTEMPTS to 0L, PerfKeys.TRANSPORT_ATTEMPT_STARTS to 1L)
+        assertTrue(TurnBill.isCounted(websocket))
+    }
+
+    @Test
+    fun `observed posted zeros still need a rate card`() {
+        val price = TurnPrice(null)
+        val row = TurnBill.counters(Usage())
+        assertNull(price.usd("synthetic-no-card", row))
+        assertNull(price.lowerBoundUsd("synthetic-no-card", row))
+    }
+
+    @Test
+    fun `absorbed or cut no-request history cannot bypass pricing without rates`() {
+        val histories = listOf(
+            noRequestUsage.history.copy(absorbed = AbsorbedRounds(rounds = 1)),
+            noRequestUsage.history.copy(cutRounds = 1),
+        )
+        for (history in histories) {
+            val row = TurnBill.counters(noRequestUsage.copy(history = history))
+            assertNull(TurnPrice(null).usd(null, row))
+            assertNull(TurnPrice(null).lowerBoundUsd(null, row))
+        }
+    }
+
+    @Test
     fun `no request cannot hide an earlier missing report`() {
         val cut = noRequestUsage.copy(history = noRequestUsage.history.copy(cutRounds = 1))
         val row = TurnBill.counters(cut)

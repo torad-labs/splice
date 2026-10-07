@@ -202,6 +202,34 @@ class NoRequestAccountingTest(@param:TempDir private val tmp: Path) {
         }
 
     @Test
+    fun `an intercepted pre-send refusal retains ownership despite a prepared request body`() = runBlocking {
+        val economics = EconomicsStore(tmp.resolve("intercepted-refusal-hour.json"), price)
+        val rig = UsageStampRig(tmp, "intercepted-refusal", economics)
+        val drive = rig.drive(RoundInterceptor { _, _, _ -> error("no transport is called") })
+        try {
+            drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, 128L)
+            drive.perf.setCount(PerfKeys.TRANSPORT_ATTEMPT_STARTS, 0L)
+            drive.recordRawRound(success(noRequestUsage))
+            rig.stamp.stampSalvaged(drive, noRequestUsage)
+            rig.telemetry.recordPerf(drive, "error:local-refusal")
+            assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
+            val row = counters(rig.perfFile)
+            assertEquals(1L, row[PerfKeys.NO_REQUEST])
+            assertEquals(0L, row[PerfKeys.ATTEMPTS])
+            assertEquals(0L, row[PerfKeys.TRANSPORT_ATTEMPT_STARTS])
+            assertEquals(0.0, TurnBill.usd(row, rates))
+            assertNull(row[PerfKeys.IN_TOKENS])
+            val hour = economics.read().single()
+            assertEquals(0L, hour.counts.unreportedUsageTurns)
+            assertEquals(0L, hour.unpricedTurns)
+        } finally {
+            drive.slot.release()
+            rig.usageStore.flushNow()
+            economics.flushNow()
+        }
+    }
+
+    @Test
     fun `a held no-request ending writes ownership through the retained row stamp`() = runBlocking {
         val rig = UsageStampRig(tmp, "held-no-request")
         val drive = rig.drive()
@@ -527,6 +555,7 @@ class TurnUsageStampTest {
         val drive = rig.drive(RoundInterceptor { _, _, _ -> error("no source is executed by this fixture") })
         try {
             drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, 123)
+            drive.perf.beginUpstreamAttempt()
             rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
             rig.telemetry.recordPerf(drive, "ok")
             assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
@@ -552,6 +581,7 @@ class TurnUsageStampTest {
             val observed = ObservedRoundPost(
                 dispatch = { body, sink ->
                     drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, body.byteSize())
+                    drive.perf.beginUpstreamAttempt()
                     val block = sink.openText()
                     repeat(58) {
                         sink.textDelta(block, "synthetic content")

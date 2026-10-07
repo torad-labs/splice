@@ -28,7 +28,7 @@ private const val HOUR = 3_600_000L
 private const val FABLE = "claude-fable-5"
 private const val HAIKU = "claude-haiku-4-5"
 
-/** A store that prices nothing: every turn is unpriced (the tests below that are not about dollars). */
+/** A store with no rate cards for posted requests (the tests below that are not about dollars). */
 private val UNPRICED = TurnPrice(null)
 
 private val FABLE_RATES = ModelRates(input = 15.0, cacheRead = 1.5, output = 75.0, cacheWrite = 18.75)
@@ -90,6 +90,19 @@ class UnknownFailureEconomicsTest {
         assertEquals(0L, kept.unpricedTurns)
         assertEquals(0.0, kept.costUsd)
         assertEquals(0.0, FABLE_HEAD.usd(HAIKU, refusal.counters()))
+    }
+
+    @Test
+    fun `a no-request hour remains priced when the head has no rate card`(@TempDir tmp: Path) {
+        val store = EconomicsStore(tmp.resolve("no-card-hour.json"), UNPRICED, WallClock { 10 * HOUR })
+        val refusal = turn(inTokens = null, cached = null, cacheWrite = null, out = null)
+            .copy(history = noRequestUsage.history)
+        store.record(refusal)
+        store.flushNow()
+        val hour = store.read().single()
+        assertEquals(0L, hour.counts.unreportedUsageTurns)
+        assertEquals(0L, hour.unpricedTurns)
+        assertEquals(0.0, hour.costUsd)
     }
 
     @Test

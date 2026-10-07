@@ -87,6 +87,20 @@ class SessionTotalsUsageCoverageTest {
     }
 
     @Test
+    fun `a refusal-only session persists exact zero without a rate card`(@TempDir tmp: Path) {
+        val file = tmp.resolve("refusal-only-session.json")
+        val totals = SessionTotals(file, TurnPrice(null), WallClock { 1L }, LogSink {})
+        totals.add("feed0000", "synthetic-no-card", TurnBill.counters(noRequestUsage), 2L)
+        totals.flushNow()
+        val kept = SessionTotals(file, TurnPrice(null), WallClock { 3L }, LogSink {})
+        val model = checkNotNull(kept.totalFor("feed0000-synthetic")).models.getValue("synthetic-no-card")
+        assertEquals(1L, model.turns)
+        assertEquals(0L, model.unreportedUsageTurns)
+        assertEquals(0L, model.unpricedTurns)
+        assertEquals(0.0, model.usd)
+    }
+
+    @Test
     fun `a no-request ending keeps earlier measured spend exact in session totals`(@TempDir tmp: Path) {
         val totals = priced(tmp.resolve("local-ending-session.json"))
         val usage = noRequestUsage.copy(

@@ -25,9 +25,9 @@ class SessionCostUnknownUsageTest {
         pinnedModel = model,
     )
 
-    private fun cost(rows: List<Map<String, Long>>) = SessionCost(
+    private fun cost(rows: List<Map<String, Long>>, cards: ModelCatalog? = catalog) = SessionCost(
         HeadSessionPerfSource { PerfSessionTail(rows.map { PerfSessionTurn(model, it) }, null) },
-        catalog,
+        cards,
     )
 
     @Test
@@ -43,6 +43,30 @@ class SessionCostUnknownUsageTest {
         val spend = cost(listOf(zero, refusal)).spendFor(session, model, null)!!
         assertFalse(spend.lowerBound)
         assertEquals(0.0, spend.usd)
+    }
+
+    @Test
+    fun `a refusal-only session has exact zero without a seeded posted row`() {
+        val spend = cost(listOf(TurnBill.counters(noRequestUsage))).spendFor(session, model, null)!!
+        assertEquals(0.0, spend.usd)
+        assertFalse(spend.lowerBound)
+    }
+
+    @Test
+    fun `a refusal-only session needs no rate card`() {
+        val spend = cost(listOf(TurnBill.counters(noRequestUsage)), cards = null)
+            .spendFor(session, model, null)!!
+        assertEquals(0.0, spend.usd)
+        assertFalse(spend.lowerBound)
+    }
+
+    @Test
+    fun `a no-card refusal cannot hide a posted unknown bill in the same session`() {
+        val posted = mapOf(PerfKeys.TRANSPORT_ATTEMPT_STARTS to 1L, PerfKeys.ATTEMPTS to 0L)
+        val spend = cost(listOf(TurnBill.counters(noRequestUsage), posted), cards = null)
+            .spendFor(session, model, null)!!
+        assertEquals(0.0, spend.usd)
+        assertTrue(spend.lowerBound)
     }
 
     @Test

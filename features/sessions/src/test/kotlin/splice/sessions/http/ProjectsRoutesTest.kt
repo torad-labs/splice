@@ -142,6 +142,17 @@ class ProjectsRoutesTest {
     }
 
     @Test
+    fun `a refusal-only project has exact zero even when its model has no card`() {
+        val refusal = rig.row(AT, BUILDER, input = 0).copy(fields = TurnBill.counters(noRequestUsage))
+        val head = rig.head("codex", listOf(refusal), rates = null)
+        val project = rig.json(routes(mapOf("codex" to head)).project(rig.repo.toString()).body)
+        assertEquals("1", project.getValue("turns_today").jsonPrimitive.content)
+        assertEquals("0", project.getValue("unpriced_turns_today").jsonPrimitive.content)
+        assertEquals("0", project.getValue("unreported_usage_turns_today").jsonPrimitive.content)
+        assertEquals(0.0, project.getValue("cost_today_usd").jsonPrimitive.double)
+    }
+
+    @Test
     fun `a project counts upstream turns, not code-mode steps served without upstream`() {
         val turn = rig.row(AT, BUILDER, input = 1_000_000)
         val step = rig.row(AT + 1, BUILDER, input = 0).copy(fields = mapOf(PerfKeys.LOCAL_STEP to 1L))

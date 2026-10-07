@@ -76,6 +76,34 @@ class BudgetPartialUsageTest {
     }
 
     @Test
+    fun `a no-card no-request refusal keeps current budget spend exact`(@TempDir tmp: Path) {
+        val owner = owner(tmp)
+        owner.forHead("synthetic", catalog).spent(
+            PARTIAL_BOOT,
+            "synthetic-no-card",
+            TurnBill.counters(noRequestUsage),
+        )
+        val spend = owner.spending("synthetic")!!
+        assertTrue(spend.complete)
+        assertEquals(0.0, spend.usedUsd)
+    }
+
+    @Test
+    fun `historical no-card no-request refusals keep budget spend exact`(@TempDir tmp: Path) {
+        val row = PerfRow(
+            PARTIAL_BOOT - 1,
+            "error:local-refusal",
+            TurnBill.counters(noRequestUsage),
+            model = "synthetic-no-card",
+        )
+        val owner = owner(tmp, listOf(row))
+        assertNull(owner.forHead("synthetic", catalog).admit())
+        val spend = owner.spending("synthetic")!!
+        assertTrue(spend.complete)
+        assertEquals(0.0, spend.usedUsd)
+    }
+
+    @Test
     fun `a posted request with no report still makes budget spend incomplete`(@TempDir tmp: Path) {
         val owner = owner(tmp)
         owner.forHead("synthetic", catalog).spent(

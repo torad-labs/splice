@@ -17,6 +17,7 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.UsageRequest
 import splice.core.turn.noRequestUsage
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
@@ -175,11 +176,12 @@ internal class TurnTelemetry(
 
     private fun billingSnapshot(drive: TurnDrive): PerfSnapshot {
         val snap = drive.perf.snapshot()
-        val posted = drive.roundInterceptor != null &&
-            (snap.counters[PerfKeys.UPSTREAM_REQ_BYTES] ?: 0L) > 0L
-        if (!posted) return snap
+        val raw = drive.rawRoundUsage()
+        val started = (snap.counters[PerfKeys.TRANSPORT_ATTEMPT_STARTS] ?: 0L) > 0L
+        val posted = raw?.history?.request?.let { it == UsageRequest.POSTED } ?: started
+        if (drive.roundInterceptor == null || !posted) return snap
         val counters = snap.counters - PerfKeys.LOCAL_STEP - PerfKeys.NO_REQUEST
-        val observed = drive.rawRoundUsage()?.reported.orEmpty().isNotEmpty()
+        val observed = raw?.reported.orEmpty().isNotEmpty()
         return if (TurnBill.isEmpty(counters) && !observed) {
             snap.copy(counters = counters.filterKeys { it !in UNREPORTED_TOKEN_FIELDS })
         } else {

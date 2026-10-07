@@ -29,6 +29,7 @@ public object TurnBill {
         PerfKeys.CACHE_WRITE_TOKENS,
     )
     private val inputBillingKeys = setOf(PerfKeys.IN_TOKENS, PerfKeys.CACHED_TOKENS, PerfKeys.CACHE_WRITE_TOKENS)
+    private val earlierRequestKeys = setOf(PerfKeys.ABSORBED_ROUNDS, PerfKeys.CUT_SOURCE_ROUNDS)
 
     /** The counters a turn's [usage] writes on its perf row. */
     public fun counters(usage: Usage): Map<String, Long> = buildMap {
@@ -94,19 +95,37 @@ public object TurnBill {
     /** Whether [row] billed nothing at all: a local refusal, or a step with no round. */
     public fun isEmpty(row: Map<String, Long>): Boolean = total(row).isEmpty
 
+    /** Retain explicit no-request turns and posted spend, but not unowned empty rows or local code-mode steps. */
+    public fun isCounted(row: Map<String, Long>): Boolean {
+        if (row[PerfKeys.LOCAL_STEP] == 1L) return false
+        val starts = row[PerfKeys.TRANSPORT_ATTEMPT_STARTS] ?: row[PerfKeys.ATTEMPTS] ?: 0L
+        val earlier = earlierRequestKeys.any { row.getOrDefault(it, 0L) > 0L }
+        return row[PerfKeys.NO_REQUEST] == 1L || !isEmpty(row) || starts > 0L || earlier
+    }
+
+    /** Only an empty, complete no-request bill with no earlier requests has a rate-independent price. */
+    private fun noRequestZero(row: Map<String, Long>): Boolean =
+        row[PerfKeys.NO_REQUEST] == 1L && fullyReported(row) &&
+            earlierRequestKeys.none { row.getOrDefault(it, 0L) > 0L } && isEmpty(row)
+
     /** A no-request final round needs no token observations; earlier missing bills still make it incomplete. */
     public fun fullyReported(row: Map<String, Long>): Boolean =
         (row[PerfKeys.NO_REQUEST] == 1L || row.keys.containsAll(billingKeys)) &&
             (row[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L) == 0L
 
-    /** Exact USD for the reported requests; every billing bucket must be known. */
-    public fun usd(row: Map<String, Long>, rates: ModelRates, cost: TokenCost = TokenCost()): Double? =
-        if (fullyReported(row)) lowerBoundUsd(row, rates, cost) else null
+    /** Exact USD for accounted requests; an empty no-request bill requires no rate card. */
+    public fun usd(row: Map<String, Long>, rates: ModelRates?, cost: TokenCost = TokenCost()): Double? = when {
+        noRequestZero(row) -> 0.0
+        rates != null && fullyReported(row) -> lowerBoundUsd(row, rates, cost)
+        else -> null
+    }
 
     /** Charge only observed buckets. An inclusive input group must be complete or entirely absent,
      *  or its cache subtraction cannot be priced safely. Missing output contributes no charge.
      *  With nonnegative rates, this never exceeds the cost of the unreported tokens as well. */
-    public fun lowerBoundUsd(row: Map<String, Long>, rates: ModelRates, cost: TokenCost = TokenCost()): Double? {
+    public fun lowerBoundUsd(row: Map<String, Long>, rates: ModelRates?, cost: TokenCost = TokenCost()): Double? {
+        val noRequest = noRequestZero(row)
+        if (noRequest || rates == null) return if (noRequest) 0.0 else null
         val inputKeys = inputBillingKeys.count(row::containsKey)
         if (inputKeys != 0 && inputKeys != inputBillingKeys.size) return null
         val absorbed = absorbed(row)

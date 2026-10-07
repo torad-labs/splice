@@ -39,7 +39,6 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
-import splice.core.perf.PerfKeys
 import splice.core.perf.PerfModelTotal
 import splice.core.perf.PerfSessionTotal
 import splice.core.util.Cancellables
@@ -68,14 +67,6 @@ private const val TOTALS_MAX_FILE_BYTES = 4L * 1024 * 1024
 
 // why: EconomicsStore's debounce, so a burst of turns costs one write a second, not one write a turn.
 private const val TOTALS_FLUSH_DELAY_MS = 1_000L
-
-/** The perf-row counters a turn spends through; a turn with none of them spent nothing. */
-private val TOKEN_KEYS = listOf(
-    PerfKeys.IN_TOKENS,
-    PerfKeys.CACHED_TOKENS,
-    PerfKeys.CACHE_WRITE_TOKENS,
-    PerfKeys.OUT_TOKENS,
-)
 
 /** One session's total as the store keeps it, with the ts of its newest row. */
 private data class Kept(val total: PerfSessionTotal, val lastMs: Long)
@@ -119,7 +110,7 @@ public class SessionTotals(
      *  the turn; the first row after a head stop writes the file through, marked not clean. */
     public fun add(sessionTag: String, model: String, counters: Map<String, Long>, rowTs: Long) {
         if (sessionTag.isEmpty()) return
-        if (uncounted(counters)) return
+        if (!TurnBill.isCounted(counters)) return
         val usd = price.usd(model, counters)
         val reopened = synchronized(lock) {
             loadUnderLock()
@@ -167,11 +158,6 @@ public class SessionTotals(
             }
             removed
         }
-    }
-
-    private fun uncounted(counters: Map<String, Long>): Boolean {
-        val starts = counters[PerfKeys.TRANSPORT_ATTEMPT_STARTS] ?: counters[PerfKeys.ATTEMPTS] ?: 0L
-        return TOKEN_KEYS.all { (counters[it] ?: 0L) == 0L } && starts == 0L
     }
 
     private fun folded(prev: PerfModelTotal?, counters: Map<String, Long>, usd: Double?): PerfModelTotal {

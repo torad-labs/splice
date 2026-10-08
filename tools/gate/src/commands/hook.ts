@@ -5,8 +5,8 @@
 // A RED CHECK BLOCKS. A gradle run that exits nonzero stops the commit or the push. Nothing is waived by the
 // file a failure names or by who holds that file: the output names each failing file and the seat that holds it
 // (.git/seat-locks), so the blocked seat knows whom to message. The one exception is a COLLISION, a failure
-// another gradle run in this checkout leaves behind (see isCollision). A collision reruns the same tasks once;
-// a red after the rerun, or a second collision, fails.
+// another gradle run in this checkout leaves behind (see isCollision). A collision reruns the tasks that failed or
+// were never reached, once; a red after the rerun, or a second collision, fails.
 //
 // ONE SET OF BYTES. The walls read the index and gradle reads the worktree. `git commit -- <paths>` writes the
 // worktree's bytes, so the two agree; a path whose index blob is not what `git add` would store from the
@@ -22,8 +22,9 @@
 // here: the pre-push tier compiles every module.
 //
 // PRE-PUSH judges the WORKTREE, and the verdict line says so. The worktree must be the pushed tip's HEAD, or the
-// push is refused. It lints the tip's subject, then runs gradle gateOfRecord (every module, every ladder row,
-// up-to-date checks, no clean) through the slot.
+// push is refused. It lints the tip's subject, then scopes the push to its own diff (prepush-scope.ts): the ladder
+// rows whose inputs the diff touches run, and gradle runs only what the diff needs, through the slot. The full
+// ladder and every module's tests are CI's, on the pushed sha.
 //
 // NOTHING HERE IS SKIPPABLE. There is no environment switch and no flag. `--no-verify` is the only bypass, and
 // it is forbidden to seats.
@@ -35,7 +36,8 @@ import { astGrepBin } from "../lib/astgrep.ts";
 import { resolveJdk21 } from "../lib/jdk.ts";
 import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
-import { cancelledBySignal, GATE_OF_RECORD_TASKS, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
+import { LAW_READS, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
+import { cancelledBySignal, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
 import { title } from "./title.ts";
 
 export const usage =
@@ -44,10 +46,8 @@ export const usage =
 export const SHIM_BEGIN = "# >>> splice gate hook >>> written by `bun tools/gate hook install`; reinstall replaces it";
 export const SHIM_END = "# <<< splice gate hook <<<";
 export const HOOK_VERBS = ["pre-commit", "pre-push"] as const;
-/** The gate of record's tasks without `clean`: gradle's up-to-date checks decide what runs, and the build cache stays off. */
-export const PRE_PUSH_GATE_TASKS = GATE_OF_RECORD_TASKS.filter((task) => task !== "clean" && task !== "--profile");
-
 const ZERO_SHA = /^0+$/;
+const LADDER = "tools/gate/config/ladder.json";
 const KOTLIN = /\.kts?$/;
 /** A root script: configuration evaluates it, so the `help` task checks it. */
 const ROOT_SCRIPT = /^[^/]+\.gradle\.kts$/;
@@ -58,6 +58,7 @@ const BUILD_LOGIC_TEST = /^build-logic\/src\/test\//;
 const BUILD_LOGIC_SCRIPT = /^build-logic\/[^/]+\.gradle\.kts$/;
 const ROOT_SCRIPT_TASKS = ["help"];
 const FAILED_TASK = /^> Task (\S+) FAILED$/gm;
+const TASK_LINE = /^> Task (\S+)/gm;
 const LINES_SHOWN_ON_FAILURE = 60;
 const CLASS_DIRS = ["kotlin/main", "kotlin/test", "kotlin/testFixtures", "java/main", "java/test", "java/testFixtures"];
 
@@ -92,6 +93,10 @@ export type GateRunner = (tasks: readonly string[]) => Promise<GateRun>;
 export interface HookDeps {
   readonly gate?: GateRunner;
   readonly openRun?: (head: string) => ReturnType<typeof acquireRunSentinel>;
+  /** The ladder rows pre-push scopes by. Read from the checkout when absent. */
+  readonly legs?: readonly Leg[];
+  /** The law suites' reads pre-push scopes by. LAW_READS when absent. */
+  readonly lawReads?: Readonly<Record<string, readonly string[]>>;
   /** Whether another gradle process is live: the evidence a collision needs. The default reads the process list. */
   readonly rivalLive?: () => boolean;
 }
@@ -354,8 +359,9 @@ export function isCollision(
   return false;
 }
 
-/** Runs the tasks; a collision reruns them once. A red after the rerun is the answer. A run ended by a signal is
- *  cancelled, not a collision, and is not rerun (run.ts ends a cancelled gate the same way). */
+/** Runs the tasks; a collision reruns the ones that failed or were never reached, once. A red after the rerun is the
+ *  answer. A run ended by a signal is cancelled, not a collision, and is not rerun (run.ts ends a cancelled gate the
+ *  same way). */
 export async function judgedRun(
   run: GateRunner,
   root: string,
@@ -367,10 +373,31 @@ export async function judgedRun(
   if (first.status === 0 || cancelledBySignal(first.status) || !isCollision(first.output, root, modules, rivalLive)) {
     return { ...first, reran: false, collidedAgain: false };
   }
-  console.error("  ! collision: another gradle run in this checkout held a shared file; rerunning the tasks once");
-  const second = await run(tasks);
+  const again = rerunTasks(tasks, first.output);
+  console.error(`  ! collision: another gradle run in this checkout held a shared file; rerunning ${again.length} task(s) once`);
+  const second = await run(again);
   const collidedAgain = second.status !== 0 && !cancelledBySignal(second.status) && isCollision(second.output, root, modules, rivalLive);
   return { ...second, reran: true, collidedAgain };
+}
+
+/** The tasks a collision's rerun runs: the requested tasks that failed, and those with no line in the output, each with
+ *  the options that follow it (an option belongs to the task before it). Gradle's --continue prints nothing for a task a
+ *  failure kept from running, so a task with no line was never judged. A rerun that names none reruns them all. */
+export function rerunTasks(requested: readonly string[], output: string): string[] {
+  const failed = new Set(failedTasks(output).map(taskPath));
+  const reached = new Set([...output.matchAll(TASK_LINE)].map((m) => taskPath(m[1] ?? "")));
+  const again: string[] = [];
+  let inUnit = false;
+  for (const token of requested) {
+    if (!token.startsWith("-")) inUnit = failed.has(taskPath(token)) || !reached.has(taskPath(token));
+    if (inUnit) again.push(token);
+  }
+  return again.length > 0 ? again : [...requested];
+}
+
+/** Gradle prints a task's path with its leading colon; a requested name may omit it. */
+function taskPath(task: string): string {
+  return task.startsWith(":") ? task : `:${task}`;
 }
 
 /** What a red judgement adds to its message: a cancellation, or a collision that came again on the rerun. */
@@ -619,6 +646,31 @@ export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): 
     return 1;
   }
 
+  let changed: string[];
+  let legs: readonly Leg[];
+  try {
+    changed = pushedPaths(lay.repoRoot, pushedRefs(stdin));
+    legs = deps.legs ?? readLadder(lay.repoRoot);
+  } catch (error) {
+    console.error(`pre-push: ✗ cannot scope the push: ${errorText(error)}`);
+    return 1;
+  }
+  const missing = legsWithoutInputs(legs);
+  if (missing.length > 0) {
+    console.error(`pre-push: ✗ ladder rows declare no inputs, so the push cannot be scoped: ${missing.join(", ")}`);
+    return 1;
+  }
+  const modules = gradleModules(lay.repoRoot);
+  const scope = prePushScope({
+    legs,
+    modules: modules.map((module) => module.path),
+    moduleOf: (file) => moduleOf(modules, file),
+    lawReads: deps.lawReads ?? LAW_READS,
+    changed,
+  });
+  const scopeClause = `; scope: ${scope.summary}`;
+  console.error(`── scope: ${scope.summary} ──`);
+
   const dirty = dirtyPaths(lay.repoRoot);
   const sha = head.slice(0, 7);
   const judgedWhat =
@@ -636,24 +688,100 @@ export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): 
     return RUN_ALREADY_OPEN_EXIT;
   }
 
-  console.error("── gate tier (gradle gateOfRecord, up-to-date checks) ──");
-  const judged = await judgedRun(
-    deps.gate ?? slotRunner(lay, "pre-push", true),
-    lay.repoRoot,
-    gradleModules(lay.repoRoot),
-    [...PRE_PUSH_GATE_TASKS],
-    deps.rivalLive,
-  );
+  // The direct legs run alongside gradle, so a leg never waits for the slot. The verdict reads both.
+  if (scope.direct.length > 0) console.error("── direct legs (no gradle) ──");
+  const direct = runDirectLegs(lay.repoRoot, scope.direct);
+  let judged: Judged | undefined;
+  if (scope.gradle.length > 0) {
+    console.error("── gate tier (gradle, scoped to the push) ──");
+    judged = await judgedRun(deps.gate ?? slotRunner(lay, "pre-push", true), lay.repoRoot, modules, scope.gradle, deps.rivalLive);
+  }
+  const failedLegs = await direct;
   const elapsed = seconds(started);
-  if (judged.status === 0) {
-    console.log(`PRE-PUSH: PASS — judged ${judgedWhat}${judged.reran ? "; passed on the rerun after a collision" : ""}`);
-    console.error(`pre-push: ✓ gate tier — ${elapsed}`);
+  const gradleRed = judged !== undefined && judged.status !== 0;
+  if (!gradleRed && failedLegs.length === 0) {
+    const rerun = judged?.reran ? "; passed on the rerun after a collision" : "";
+    console.log(`PRE-PUSH: PASS — judged ${judgedWhat}${rerun}${scopeClause}`);
+    console.error(`pre-push: ✓ ${scope.direct.length} direct leg(s)${judged ? " and gradle" : ", no gradle"} — ${elapsed}`);
     return 0;
   }
-  console.log(`PRE-PUSH: FAIL — judged ${judgedWhat}`);
-  for (const line of failureLines(lay.repoRoot, judged.output)) console.error(line);
-  console.error(`pre-push: ✗ gate tier${redNote(judged)} — ${elapsed}`);
+  console.log(`PRE-PUSH: FAIL — judged ${judgedWhat}${scopeClause}`);
+  if (judged !== undefined && gradleRed) for (const line of failureLines(lay.repoRoot, judged.output)) console.error(line);
+  const red = [...failedLegs.map((leg) => leg.task), ...(gradleRed ? ["gradle"] : [])];
+  console.error(`pre-push: ✗ ${red.join(", ")}${judged && gradleRed ? redNote(judged) : ""} — ${elapsed}`);
   return 1;
+}
+
+/** The refs a push moves, from git's stdin: the tip each one points at and the remote sha it moves from (zero for a new
+ *  branch). A deletion has no tip and is not here. */
+function pushedRefs(stdin: string): { tip: string; remote: string }[] {
+  return stdin
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/))
+    .filter((fields) => fields.length === 4)
+    .map((fields) => ({ tip: fields[1] ?? "", remote: fields[3] ?? "" }))
+    .filter((ref) => !ZERO_SHA.test(ref.tip));
+}
+
+/** The paths the pushed refs change, each ref against the sha it moves from. A new branch has no such sha, so it is
+ *  compared with its merge base with origin/main. Throws when a base or a diff cannot be read: pre-push refuses rather
+ *  than judge a scope it cannot name. Renames list both paths, so a moved file's old module is judged too. */
+export function pushedPaths(root: string, refs: readonly { tip: string; remote: string }[]): string[] {
+  const paths = new Set<string>();
+  for (const ref of refs) {
+    const base = ZERO_SHA.test(ref.remote) ? gitText(root, ["merge-base", "origin/main", ref.tip]) : ref.remote;
+    const diff = git(root, ["diff", "--name-only", "--no-renames", "-z", base, ref.tip]);
+    if (diff.status !== 0) throw new Error(`git diff ${base} ${ref.tip} failed: ${diff.stderr.trim()}`);
+    for (const path of diff.stdout.toString("utf8").split("\0")) if (path !== "") paths.add(path);
+  }
+  return [...paths].sort();
+}
+
+/** The ladder's rows, read from the checkout. A missing or malformed ladder throws: pre-push refuses rather than judge a
+ *  scope it cannot name. */
+export function readLadder(root: string): Leg[] {
+  const parsed = JSON.parse(readFileSync(join(root, LADDER), "utf8")) as { legs?: unknown };
+  if (!Array.isArray(parsed.legs)) throw new Error(`${LADDER} has no legs array`);
+  const legs = parsed.legs as Leg[];
+  const malformed = legs.filter((leg) => typeof leg?.task !== "string" || !Array.isArray(leg.command));
+  if (malformed.length > 0) throw new Error(`${LADDER} has ${malformed.length} row(s) without a task and a command`);
+  return legs;
+}
+
+/** Runs each direct leg from the repository root, all at once. A leg that exits nonzero, or cannot start, fails; its
+ *  output tail is shown only then. Returns the failed legs. */
+async function runDirectLegs(root: string, legs: readonly Leg[]): Promise<Leg[]> {
+  const runs = await Promise.all(
+    legs.map(async (leg) => {
+      const started = performance.now();
+      try {
+        const proc = Bun.spawn([...leg.command], { cwd: root, env: spawnEnv({}), stdout: "pipe", stderr: "pipe" });
+        const [stdout, stderr, status] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
+        return { leg, status, output: stdout + stderr, started };
+      } catch (error) {
+        return { leg, status: 127, output: errorText(error), started };
+      }
+    }),
+  );
+  const failed: Leg[] = [];
+  for (const run of runs) {
+    if (run.status === 0) {
+      console.error(`  ✓ ${run.leg.task} — ${seconds(run.started)}`);
+      continue;
+    }
+    failed.push(run.leg);
+    console.error(`  ✗ ${run.leg.task} (exit ${run.status})`);
+    console.error(tailOf(run.output));
+  }
+  return failed;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function shellQuote(text: string): string {

@@ -8,11 +8,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { AFTER_THE_SLOT, GATE_OF_RECORD_LABEL, GATE_OF_RECORD_TASKS, cancelledBySignal } from "../src/commands/run.ts";
 import { layout } from "../src/lib/repo.ts";
+import { legsWithoutInputs } from "../src/lib/prepush-scope.ts";
 
 const { repoRoot } = layout();
 const read = (rel: string) => readFileSync(join(repoRoot, rel), "utf8");
 const scripts = (JSON.parse(read("package.json")) as { scripts: Record<string, string> }).scripts;
-interface Leg { task: string; why: string; command: string[] }
+interface Leg { task: string; why: string; command: string[]; inputs?: string[] }
 
 function validateCommand(argv: string[], task: string): void {
   let at = 0;
@@ -76,6 +77,11 @@ describe("gate run", () => {
       expect(leg.why.length, `${leg.task}: needs a reason`).toBeGreaterThan(0);
       validateCommand(leg.command, leg.task);
     }
+  });
+
+  test("every ladder row declares the path globs its leg reads, so pre-push can scope it", () => {
+    const legs = (JSON.parse(read("tools/gate/config/ladder.json")) as { legs: Leg[] }).legs;
+    expect(legsWithoutInputs(legs), "ladder rows with no inputs: pre-push cannot scope them").toEqual([]);
   });
 
   test("env cannot hide an unapproved runtime, unknown flag, missing command or absent target", () => {

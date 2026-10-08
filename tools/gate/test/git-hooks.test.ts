@@ -26,11 +26,14 @@ import {
   parseScan,
   preCommit,
   prePush,
+  rerunTasks,
   SHIM_BEGIN,
   scanMirror,
   shimText,
 } from "../src/commands/hook.ts";
 import { resolveJdk21 } from "../src/lib/jdk.ts";
+import { lockPath } from "../src/lib/slot.ts";
+import type { Leg } from "../src/lib/prepush-scope.ts";
 import { type Layout, layout } from "../src/lib/repo.ts";
 
 const { repoRoot } = layout();
@@ -114,6 +117,8 @@ function wallsRepo(): string {
   writeFileSync(join(root, "settings.gradle.kts"), MODULE_SETTINGS);
   git(root, ["add", "--", "sgconfig.yml", "quality", "settings.gradle.kts"]);
   commit(root, "chore(test): scratch scaffold");
+  // The scaffold is what origin/main is in this repository, so a new branch's base is the scaffold.
+  git(root, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
   return root;
 }
 
@@ -156,17 +161,29 @@ function compiler(root: string, calls: string[][] = []): GateRunner {
   };
 }
 
-/** The real gradle wrapper, run in a scratch repository: the root script's configuration pass is the thing under test. */
+/** The real gradle wrapper, run through the gradle slot in a scratch repository: the root script's configuration pass is
+ *  the thing under test. The slot is runUnderSlot, the function `bun tools/gate slot` calls. The verb finds its layout
+ *  from its own location, so a child process runs the function on the scratch layout, and the slot's lock is the
+ *  checkout's: this run queues behind every other gradle run here, as a seat's does. */
 function gradleHere(root: string): GateRunner {
   return async (tasks) => {
     const jdk = resolveJdk21();
     if ("error" in jdk) throw new Error(jdk.error);
-    const proc = Bun.spawn(["./gradlew", "--no-daemon", "--console=plain", ...tasks], {
-      cwd: root,
-      env: { ...Bun.env, JAVA_HOME: jdk.javaHome },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const runner = join(dir("splice-hook-slot-"), "run-slot.ts");
+    writeFileSync(
+      runner,
+      [
+        `import { runUnderSlot } from ${JSON.stringify(join(repoRoot, "tools", "gate", "src", "lib", "slot.ts"))};`,
+        `const status = await runUnderSlot({`,
+        `  layout: { repoRoot: ${JSON.stringify(root)}, buildRoot: ${JSON.stringify(root)} },`,
+        `  label: "root-script-test",`,
+        `  args: ${JSON.stringify(tasks)},`,
+        `  env: { JAVA_HOME: ${JSON.stringify(jdk.javaHome)}, GRADLE_SLOT_LOCK: ${JSON.stringify(lockPath(layout()))} },`,
+        `});`,
+        `process.exit(status);`,
+      ].join("\n"),
+    );
+    const proc = Bun.spawn([process.execPath, runner], { cwd: root, stdout: "pipe", stderr: "pipe" });
     const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
     return { status: await proc.exited, output: out + err };
   };
@@ -188,6 +205,10 @@ async function captured<T>(fn: () => Promise<T>): Promise<{ result: T; text: str
 }
 
 const pushOf = (sha: string): string => `refs/heads/feat/x ${sha} refs/heads/feat/x 0000000000000000000000000000000000000000\n`;
+/** The fixtures have no ladder and no law suites beyond their one module: a pre-push test that is not about either
+ *  injects these empty ones. */
+const NO_LEGS: Leg[] = [];
+const NO_LAW_READS: Record<string, string[]> = {};
 
 describe("pre-commit judges the bytes the commit holds", () => {
   test("RED: a staged violation blocks the commit, and gradle is never asked", async () => {
@@ -557,7 +578,7 @@ describe("pre-push judges the tip", () => {
     writeFile(root, TARGET, VIOLATION);
     git(root, ["add", TARGET]);
     commit(root, "chore(test): probe tip");
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS, lawReads: NO_LAW_READS }));
     expect(result).toBe(1);
     expect(text).toContain("PRE-PUSH: FAIL — judged the worktree, which matches the pushed sha");
   });
@@ -570,7 +591,7 @@ describe("pre-push judges the tip", () => {
     writeFile(root, TARGET, CLEAN);
     git(root, ["add", TARGET]);
     commit(root, "chore(test): fixed tip");
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS, lawReads: NO_LAW_READS }));
     expect(result).toBe(0);
     expect(text).toContain("PRE-PUSH: PASS — judged the worktree, which matches the pushed sha");
   });
@@ -581,10 +602,118 @@ describe("pre-push judges the tip", () => {
     git(root, ["add", TARGET]);
     commit(root, "chore(test): probe tip");
     writeFile(root, SEAT_FILE, VIOLATION);
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS, lawReads: NO_LAW_READS }));
     expect(result).toBe(1);
     expect(text).toContain("PRE-PUSH: FAIL — judged the worktree (1 uncommitted path(s)), not the pushed sha");
     expect(text).toContain(`${SEAT_FILE} — seat lock: no seat lock`);
+  });
+});
+
+describe("pre-push scopes the gate to the pushed diff", () => {
+  const docsCommit = (root: string) => {
+    writeFile(root, "docs/NOTES.md", "notes\n");
+    git(root, ["add", "docs/NOTES.md"]);
+    commit(root, "docs(test): notes");
+  };
+
+  test("a one-module push runs that module's compile and check, and the public-source test", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): one module");
+    const calls: string[][] = [];
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS, lawReads: NO_LAW_READS }));
+    expect(result).toBe(0);
+    expect(calls).toEqual([[":core:compileKotlin", ":core:compileTestKotlin", ":core:check", ":app:test", "--tests=*PublicSourceNamesNoHostToolTest"]]);
+    expect(text).toContain("; scope: no legs; gradle: compile of 1 module(s), check of :core; PublicSourceNamesNoHostToolTest via :app:test");
+  });
+
+  test("a Kotlin push also runs the law suite that reads every module's main sources", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): one module");
+    const calls: string[][] = [];
+    const lawReads = { ":quality-architecture": ["**/src/main/**/*.kt"] };
+    const { result } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS, lawReads }));
+    expect(result).toBe(0);
+    expect(calls).toEqual([[":core:compileKotlin", ":core:compileTestKotlin", ":core:check", ":quality-architecture:check", ":app:test", "--tests=*PublicSourceNamesNoHostToolTest"]]);
+  });
+
+  test("a docs push runs no compile, only the public-source test, and says so in the verdict", async () => {
+    const root = wallsRepo();
+    docsCommit(root);
+    const calls: string[][] = [];
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS, lawReads: NO_LAW_READS }));
+    expect(result).toBe(0);
+    expect(calls).toEqual([[":app:test", "--tests=*PublicSourceNamesNoHostToolTest"]]);
+    expect(text).toContain("PRE-PUSH: PASS — judged the worktree, which matches the pushed sha");
+    expect(text).toContain("; scope: no legs; gradle: no compile, check of no module; PublicSourceNamesNoHostToolTest via :app:test");
+  });
+
+  test("a new branch is compared with its merge base with origin/main", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): new branch");
+    const calls: string[][] = [];
+    expect(await prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS, lawReads: NO_LAW_READS })).toBe(0);
+    expect(calls[0]).toContain(":core:check");
+  });
+
+  test("RED: a new branch with no origin/main to compare against is refused before any gate runs", async () => {
+    const root = wallsRepo();
+    git(root, ["update-ref", "-d", "refs/remotes/origin/main"]);
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): new branch");
+    const calls: string[][] = [];
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS, lawReads: NO_LAW_READS }));
+    expect(result).toBe(1);
+    expect(calls).toEqual([]);
+    expect(text).toContain("pre-push: ✗ cannot scope the push:");
+  });
+
+  test("RED: a checkout with no ladder refuses the push rather than judge a guessed scope", async () => {
+    const root = wallsRepo();
+    docsCommit(root);
+    const calls: string[][] = [];
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null }));
+    expect(result).toBe(1);
+    expect(calls).toEqual([]);
+    expect(text).toContain("pre-push: ✗ cannot scope the push:");
+    expect(text).toContain("ladder.json");
+  });
+
+  test("RED: a ladder row that declares no inputs refuses the push by name", async () => {
+    const root = wallsRepo();
+    docsCommit(root);
+    const bare: Leg[] = [{ task: "bareRow", command: ["true"] }];
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: bare }));
+    expect(result).toBe(1);
+    expect(text).toContain("ladder rows declare no inputs, so the push cannot be scoped: bareRow");
+  });
+
+  test("RED: a direct leg that exits nonzero fails the push, and the verdict names it with its scope", async () => {
+    const root = wallsRepo();
+    docsCommit(root);
+    const red: Leg[] = [{ task: "redLeg", command: ["bun", "-e", "process.exit(3)"], inputs: ["**"] }];
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: red }));
+    expect(result).toBe(1);
+    expect(text).toContain("PRE-PUSH: FAIL — judged the worktree, which matches the pushed sha ");
+    expect(text).toContain("; scope: legs redLeg; gradle: no compile, check of no module; PublicSourceNamesNoHostToolTest via :app:test");
+    expect(text).toContain("redLeg");
+  });
+
+  test("GREEN: a direct leg that passes lets a docs-only push through", async () => {
+    const root = wallsRepo();
+    docsCommit(root);
+    const calls: string[][] = [];
+    const green: Leg[] = [{ task: "greenLeg", command: ["bun", "-e", "process.exit(0)"], inputs: ["**"] }];
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: green }));
+    expect(result).toBe(0);
+    expect(calls).toEqual([[":app:test", "--tests=*PublicSourceNamesNoHostToolTest"]]);
+    expect(text).toContain("; scope: legs greenLeg; gradle: no compile, check of no module; PublicSourceNamesNoHostToolTest via :app:test");
   });
 });
 
@@ -601,7 +730,7 @@ describe("a collision reruns the tasks once, and a second collision fails", () =
       calls.push([...tasks]);
       return calls.length === 1 ? { status: 1, output: EOF_TRACE } : { status: 0, output: "BUILD SUCCESSFUL\n" };
     };
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null, rivalLive: () => true }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null, legs: NO_LEGS, lawReads: NO_LAW_READS, rivalLive: () => true }));
     expect(result).toBe(0);
     expect(calls.length).toBe(2);
     expect(text).toContain("passed on the rerun after a collision");
@@ -617,7 +746,7 @@ describe("a collision reruns the tasks once, and a second collision fails", () =
       calls.push([...tasks]);
       return { status: 1, output: RESULTS_TRACE };
     };
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null, rivalLive: () => true }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null, legs: NO_LEGS, lawReads: NO_LAW_READS, rivalLive: () => true }));
     expect(result).toBe(1);
     expect(calls.length).toBe(2);
     expect(text).toContain("a collision again on the rerun");
@@ -633,8 +762,32 @@ describe("a collision reruns the tasks once, and a second collision fails", () =
       calls.push([...tasks]);
       return { status: 1, output: COMPILE_RED };
     };
-    expect(await prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null })).toBe(1);
+    expect(await prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null, legs: NO_LEGS, lawReads: NO_LAW_READS })).toBe(1);
     expect(calls.length).toBe(1);
+  });
+
+  test("RED: a collision reruns the tasks that failed or were never reached, not the ones that passed", async () => {
+    const calls: string[][] = [];
+    const output = `${LOCK_TRACE}> Task :core:compileKotlin\n> Task :core:test FAILED\n`;
+    const gate: GateRunner = async (tasks) => {
+      calls.push([...tasks]);
+      return calls.length === 1 ? { status: 1, output } : { status: 0, output: "BUILD SUCCESSFUL\n" };
+    };
+    const judged = await judgedRun(gate, repoRoot, [], [":core:compileKotlin", ":core:test", ":core:check"], () => true);
+    expect(calls[1]).toEqual([":core:test", ":core:check"]);
+    expect(judged.reran).toBe(true);
+    expect(judged.status).toBe(0);
+  });
+
+  test("a rerun that can name no task reruns them all", () => {
+    expect(rerunTasks([":a", ":b"], "> Task :a\n> Task :b\n")).toEqual([":a", ":b"]);
+    expect(rerunTasks(["build-logic:test"], "> Task :build-logic:test FAILED\n")).toEqual(["build-logic:test"]);
+  });
+
+  test("RED: a rerun carries each option with the task it follows, and reruns no option alone", () => {
+    const requested = [":app:test", "--tests=*PublicSourceNamesNoHostToolTest", ":core:check"];
+    expect(rerunTasks(requested, "> Task :app:test\n> Task :core:check FAILED\n")).toEqual([":core:check"]);
+    expect(rerunTasks(requested, "> Task :app:test FAILED\n")).toEqual([":app:test", "--tests=*PublicSourceNamesNoHostToolTest", ":core:check"]);
   });
 
   test("the real EOF trace and the real results-file trace are collisions", () => {

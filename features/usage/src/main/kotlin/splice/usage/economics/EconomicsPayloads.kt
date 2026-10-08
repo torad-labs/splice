@@ -24,12 +24,11 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.perf.ECONOMICS_RETENTION_HOURS
 import splice.core.util.WallClock
+import splice.core.wire.ControlFields.HEADS
+import splice.core.wire.ControlFields.KEY
+import splice.core.wire.ControlFields.LABEL
 import splice.usage.UsageHeads
 import splice.usage.UsageReadPreparation
-
-private const val KEY = "key"
-private const val LABEL = "label"
-private const val HEADS = "heads"
 
 // V4-122: this was 192 with a comment claiming it mirrored EconomicsStore's RETENTION_MS — an
 // equality asserted in PROSE, which nothing enforced and which :daemon-control could not import even if it

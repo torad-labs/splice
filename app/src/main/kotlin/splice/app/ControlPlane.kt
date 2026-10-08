@@ -13,16 +13,20 @@ import splice.app.auth.claude.ClaudeAccountsSource
 import splice.app.auth.claude.ClaudeLoginOwner
 import splice.app.auth.claude.ClaudeLoginWiring
 import splice.app.cli.AdminSupport
-import splice.app.control.ControlHealthProbes
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
+import splice.app.control.RuntimeNotAnswering
 import splice.app.control.TopologyDigest
 import splice.app.control.TurnPathStalled
+import splice.app.control.api.ControlHealthReport
+import splice.app.control.api.HeadReadiness
+import splice.app.control.api.HeadSignals
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.DaemonMaterializer
 import splice.app.daemon.TopologyStaleness
+import splice.app.head.HeadProbeReadings
 import splice.app.launch.HookProcessExec
 import splice.app.probe.PlaygroundProviders
 import splice.app.probe.UpstreamPlaygroundProbe
@@ -223,7 +227,7 @@ internal class ControlPlane(
         // Configured total so readyHeads + failedHeads == heads holds even when a head fails to
         // ASSEMBLE (it never enters `heads`) — review 2026-07-23.
         headCount: Int,
-        turnPathStalled: TurnPathStalled,
+        probes: HeadProbeReadings,
     ): ControlServer? {
         // Knob.DEBUG is the daemon-wide verbose-logging switch (env CLAUDEX_DEBUG / CODEX_PROXY_DEBUG):
         // when it is on, the daemon marks its own log so the extra verbosity can be told apart. This
@@ -237,24 +241,15 @@ internal class ControlPlane(
             bearer = McpAccessKey(mgmtKey::get),
         )
         val mcpHost = mcpHost(home, sharing, heads.values.mapNotNull { it.launchSpec })
-        // V4-162: the version the daemon RUNS, which a window-only edit moves (TopologyWindows). A
-        // control plane built without one publishes the booted digest and compares bytes, as before.
-        val running = topology.running
+        val signals = HeadSignals(heads, RuntimeNotAnswering { probes.runtimeNotAnswering() })
         val srv = ControlServer(
             controlPort,
             heads,
             config,
             mgmtKey,
             log,
-            probes = ControlHealthProbes(
-                failedHeads = failedHeads,
-                configuredHeads = headCount,
-                topologyDigest = TopologyDigest { running?.digest() ?: topology.digest },
-                configPath = topology.path?.toString().orEmpty(),
-                topologyStale = running?.let { TopologyStale(it::stale) }
-                    ?: TopologyStaleness.probe(topology.path, topology.digest),
-                turnPathStalled = turnPathStalled,
-            ),
+            health = healthReport(heads, failedHeads, headCount, probes, signals),
+            signals = signals,
             runtime = ControlRuntime(
                 launchService = launchService(home, sharing, controlPort),
                 shutdownDaemon = shutdownDaemon,
@@ -294,6 +289,29 @@ internal class ControlPlane(
      *  V4-131: the SAME stores/team store the heads already write through. V4-133:
      *  [ConsoleWiring.wireV4133] carries the same hazard for the budget/alert stores and the
      *  playground probe, and V4-239's [ConsoleWiring.wireVerbReads] for the models, trace and wire reads. */
+    /** The /health body: the head set's verdict, the per-head readings, and the booted config's identity. */
+    private fun healthReport(
+        heads: Map<String, ManagedHead>,
+        failedHeads: FailedHeads,
+        headCount: Int,
+        probes: HeadProbeReadings,
+        signals: HeadSignals,
+    ): ControlHealthReport {
+        // V4-162: the version the daemon RUNS, which a window-only edit moves (TopologyWindows). A
+        // control plane built without one publishes the booted digest and compares bytes, as before.
+        val running = topology.running
+        return ControlHealthReport(
+            readiness = HeadReadiness(heads, failedHeads, headCount, TurnPathStalled { probes.stalledKeys() }),
+            signals = signals,
+            topologyDigest = TopologyDigest { running?.digest() ?: topology.digest },
+            configPath = topology.path?.toString().orEmpty(),
+            topologyStale = running?.let { TopologyStale(it::stale) }
+                ?: TopologyStaleness.probe(topology.path, topology.digest),
+            clientVersions = clientVersions,
+            bootedAtEpochMillis = System.currentTimeMillis(),
+        )
+    }
+
     private fun wireConsolePorts(srv: ControlServer) {
         srv.ports.foreground = foregroundTools
         srv.ports.compaction = compactionInstructions

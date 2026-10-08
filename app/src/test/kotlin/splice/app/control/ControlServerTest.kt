@@ -133,16 +133,17 @@ class ControlServerTest {
             perfRows = fakePerfRows,
         )
         val launchSpec = launchSpecFixture(tmp, mgmt.get())
+        val heads = mapOf(
+            "codex" to managed.copy(launchSpec = launchSpec),
+            "openrouter" to openrouterHead(managed, launchSpec),
+            // Two heads sharing one wrapper command `dup` — a misconfigured topology used to
+            // exercise the ambiguous-launch path (distinct 409, not an unknown-head 404).
+            "dupA" to sharedCommandHead(managed, launchSpec, "dupA"),
+            "dupB" to sharedCommandHead(managed, launchSpec, "dupB"),
+        )
         control = controlServerFor(
             port = 0,
-            heads = mapOf(
-                "codex" to managed.copy(launchSpec = launchSpec),
-                "openrouter" to openrouterHead(managed, launchSpec),
-                // Two heads sharing one wrapper command `dup` — a misconfigured topology used to
-                // exercise the ambiguous-launch path (distinct 409, not an unknown-head 404).
-                "dupA" to sharedCommandHead(managed, launchSpec, "dupA"),
-                "dupB" to sharedCommandHead(managed, launchSpec, "dupB"),
-            ),
+            heads = heads,
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = {},
@@ -155,7 +156,8 @@ class ControlServerTest {
                     shutdownRequested.countDown()
                 },
             ),
-            probes = ControlHealthProbes(
+            health = healthFor(
+                heads,
                 topologyDigest = TopologyDigest { "boot-digest-abc" },
                 configPath = "/tmp/splice.toml",
                 topologyStale = { true },
@@ -238,7 +240,7 @@ class ControlServerTest {
             config = ConfigService(paths),
             mgmtKey = MgmtKey(paths),
             log = {},
-            probes = ControlHealthProbes(failedHeads = { 1 }, configuredHeads = 1),
+            health = healthFor(emptyMap(), failedHeads = { 1 }, configuredHeads = 1),
         )
         degraded.start()
         try {

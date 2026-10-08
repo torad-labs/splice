@@ -1,9 +1,8 @@
-// NEW: V4-417 — the wiring pin for the runtime-reach port, for the reason V4-127's pin exists: the port
-// arrives by ASSIGNMENT after ControlServer is constructed (its constructor is at the width ceiling), so
-// nothing in the compiler connects the daemon's watch to /health and the heads route. Delete a line and
-// everything still builds, and every local head reads OK beside a silent runtime again, which is the
-// defect. The assertions are on the SOURCE for the reason V4-136 gave: the property is public and
-// settable, so no runtime observation tells "the daemon set it" from "something set it".
+// NEW: V4-417 — the wiring pin for the runtime-reach readings. They reach /health and the heads route only
+// through the `probes` the daemon passes ControlPlane.start, and the signals ControlPlane builds from them, so
+// nothing in the compiler connects the daemon's watch to those readers. Delete a line and everything still
+// builds, and every local head reads OK beside a silent runtime again, which is the defect. The assertions are
+// on the SOURCE: no runtime observation tells "the daemon passed the probes" from "something passed a stub".
 package splice.app.v4417
 
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -19,7 +18,7 @@ class RuntimeWatchWiringPinTest {
     private data class Pin(val file: String, val line: String, val harm: String)
 
     @Test
-    fun `the daemon starts the watch and assigns its answer to the server, which the payloads read`() {
+    fun `the daemon starts the watch and hands its readings to the control plane, which the health body reads`() {
         listOf(
             Pin(
                 DAEMON,
@@ -28,13 +27,13 @@ class RuntimeWatchWiringPinTest {
             ),
             Pin(
                 DAEMON,
-                "srv.ports.runtimeNotAnswering = RuntimeNotAnswering { headProbes.runtimeNotAnswering() }",
-                "/health and /api/heads would never carry a silent runtime",
+                "probes = headProbes,",
+                "the control plane would never receive the watch's readings",
             ),
             Pin(
-                "app/src/main/kotlin/splice/app/control/ControlServer.kt",
-                "ports.runtimeNotAnswering?.invoke()",
-                "the payloads would read a port nothing feeds",
+                "app/src/main/kotlin/splice/app/ControlPlane.kt",
+                "RuntimeNotAnswering { probes.runtimeNotAnswering() }",
+                "/health and /api/heads would read no runtime answer",
             ),
         ).forEach { pin ->
             assertTrue(source(pin.file).contains(pin.line), "${pin.file} must contain `${pin.line}`, or ${pin.harm}")

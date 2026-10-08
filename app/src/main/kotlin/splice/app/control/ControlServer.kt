@@ -16,6 +16,7 @@
 // 37 slice packages, which made this one file every feature's edit.
 package splice.app.control
 
+import io.ktor.http.ContentType
 import io.ktor.server.application.pluginOrNull
 import io.ktor.server.application.serverConfig
 import io.ktor.server.engine.EmbeddedServer
@@ -23,13 +24,16 @@ import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.RoutingNode
 import io.ktor.server.routing.RoutingRoot
+import io.ktor.server.routing.get
 import io.ktor.server.routing.getAllRoutes
 import io.ktor.server.routing.routing
 import splice.app.control.api.ControlAudit
-import splice.app.control.api.ControlPayloads
+import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadResolver
+import splice.app.control.api.HeadSignals
 import splice.app.control.mount.AccountsMount
 import splice.app.control.mount.AddMount
 import splice.app.control.mount.BoundResource
@@ -52,7 +56,6 @@ import splice.app.control.mount.TeamsMount
 import splice.app.control.mount.TraceMount
 import splice.app.control.mount.TurnsMount
 import splice.app.control.mount.UsageMount
-import splice.configuration.topology.TopologyStale
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
@@ -70,29 +73,20 @@ import splice.upstream.memory.JvmHeap
 private const val STOP_GRACE_MS = 100L
 private const val STOP_TIMEOUT_MS = 500L
 
-public class ControlServer(
+internal class ControlServer(
     private val port: Int,
     private val heads: Map<String, ManagedHead>,
     private val config: ConfigService,
     private val mgmtKey: MgmtKey,
     private val log: LogSink,
-    /** The health probes this server reads per request: readyHeads vs failedHeads on /health, the
-     *  booted config identity and its staleness, and the turn-path stall. See [ControlHealthProbes]. */
-    probes: ControlHealthProbes = ControlHealthProbes(),
+    /** The /health body this server serves on its liveness row, read per request. */
+    private val health: ControlHealthReport,
+    /** The per-head readings the heads route and the doctor read: a silent runtime, a quota reset, a full window. */
+    signals: HeadSignals,
     /** The runtime collaborators the mounts share: launch, shutdown, the session registry, shared MCP
      *  hosting (null keeps the control plane exactly as before) and the client version tracker. */
     runtime: ControlRuntime = ControlRuntime(),
 ) {
-    private val failedHeads: FailedHeads = probes.failedHeads
-
-    // Total CONFIGURED heads. The readyHeads + failedHeads == heads invariant only holds against the
-    // configured total: an assembly-failed head is counted in failedHeads but is NEVER in the `heads`
-    // map, so reporting heads.size broke the invariant for it (review 2026-07-23).
-    private val configuredHeads: Int = probes.configuredHeads ?: heads.size
-    private val topologyDigest: TopologyDigest = probes.topologyDigest
-    private val configPath: String = probes.configPath
-    private val topologyStale: TopologyStale = probes.topologyStale
-    private val turnPathStalled: TurnPathStalled = probes.turnPathStalled
     private val launchService: LaunchService? = runtime.launchService
     private val shutdownDaemon: ShutdownDaemon = runtime.shutdownDaemon
     private val sessions: SessionSource? = runtime.sessions
@@ -102,26 +96,14 @@ public class ControlServer(
      *  discipline they share and why they left this file (V4-161). Read at CALL time, never captured. */
     public val ports: ConsolePorts = ConsolePorts()
 
-    private val payloads =
-        ControlPayloads(
-            heads,
-            failedHeads,
-            configuredHeads,
-            topologyDigest,
-            configPath,
-            topologyStale,
-            turnPathStalled,
-            clientVersions,
-            runtimeNotAnswering = RuntimeNotAnswering { ports.runtimeNotAnswering?.invoke().orEmpty() },
-        )
-    private val resolver = HeadResolver(heads, payloads)
+    private val resolver = HeadResolver(heads, signals)
     private val audit = ControlAudit(log)
     private val guard = ControlGuard(mgmtKey, audit, log)
 
     // One mount per capability. Every mount reads [ports] at CALL time, never at construction:
     // ControlPlane assigns them after this server exists, so a captured port would be null forever.
-    private val fleet = FleetMount(payloads, resolver, audit, guard, ports)
-    private val lifecycle = LifecycleMount(payloads, shutdownDaemon, ports, guard, heads, log)
+    private val fleet = FleetMount(heads, resolver, audit, guard, ports)
+    private val lifecycle = LifecycleMount(shutdownDaemon, ports, guard, heads, log)
 
     /** The control plane arms the raw successor before binding; both Restart and add-save share it. */
     public fun wireRestartSuccessor(successor: DaemonSuccessor) {
@@ -130,7 +112,7 @@ public class ControlServer(
 
     // V4-220 item 3: the add's save restarts through lifecycle's own restarts, never a second path.
     private val add = AddMount(ports, guard, lifecycle.restarts, shutdownDaemon, log)
-    private val configuration = ConfigurationMount(config, topologyStale, ports, guard)
+    private val configuration = ConfigurationMount(config, health.staleness(), ports, guard)
     private val usage = UsageMount(heads, resolver, config, clientVersions, ports, guard)
     private val accounts = AccountsMount(heads, resolver, ports, guard, log)
     private val turns = TurnsMount(heads, resolver, config, ports, guard)
@@ -148,7 +130,7 @@ public class ControlServer(
         ports,
         guard,
         log,
-        DaemonSelfAnswers(heads, config, payloads, fleet, accounts),
+        DaemonSelfAnswers(heads, config, health, fleet, accounts),
     )
 
     private val models = ModelsMount(heads, ports, guard)
@@ -223,6 +205,7 @@ public class ControlServer(
                     ingress.install(this)
                     guard.refuseForeignHosts(this)
                     routing {
+                        get("/health") { call.respondText(health.json(), ContentType.Application.Json) }
                         mounts.forEach { it.register(this) }
                     }
                 }

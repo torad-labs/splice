@@ -11,7 +11,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
-import splice.app.control.api.ControlPayloads
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.diagnostics.logs.HeadLogSource
@@ -52,14 +51,13 @@ class ControlHealthTest {
         authKind = "x",
     )
 
-    private fun payloads(
+    private fun health(
         heads: Map<String, ManagedHead>,
         stalled: List<String>,
         failed: Int = 0,
-    ) = ControlPayloads(
-        heads = heads,
+    ) = healthFor(
+        heads,
         failedHeads = { failed },
-        configuredHeads = heads.size,
         turnPathStalled = { stalled },
     )
 
@@ -68,7 +66,7 @@ class ControlHealthTest {
 
     @Test
     fun `zero configured heads is healthy but explicitly awaits plan setup`() {
-        val h = Json.parseToJsonElement(payloads(emptyMap(), emptyList()).controlHealthJson()).jsonObject
+        val h = Json.parseToJsonElement(health(emptyMap(), emptyList()).json()).jsonObject
         assertEquals(true, ok(h), "an unconfigured install is not a degraded daemon")
         assertEquals("0", h.getValue("heads").jsonPrimitive.content)
         assertEquals("0", h.getValue("readyHeads").jsonPrimitive.content)
@@ -80,7 +78,7 @@ class ControlHealthTest {
     @Test
     fun `ok stays a plain true when every turn path is live`() {
         val h = Json.parseToJsonElement(
-            payloads(mapOf("codex" to managed("codex", running = true)), emptyList()).controlHealthJson(),
+            health(mapOf("codex" to managed("codex", running = true)), emptyList()).json(),
         ).jsonObject
         assertEquals(true, ok(h))
         assertNull(h["turnPathStalled"], "no stall array on the happy path — consumers see the old shape")
@@ -89,7 +87,7 @@ class ControlHealthTest {
     @Test
     fun `a stalled RUNNING head flips ok false and names itself`() {
         val h = Json.parseToJsonElement(
-            payloads(mapOf("codex" to managed("codex", running = true)), listOf("codex")).controlHealthJson(),
+            health(mapOf("codex" to managed("codex", running = true)), listOf("codex")).json(),
         ).jsonObject
         assertEquals(false, ok(h))
         assertEquals(listOf("codex"), h["turnPathStalled"]!!.jsonArray.map { it.jsonPrimitive.content })
@@ -101,10 +99,10 @@ class ControlHealthTest {
         // maintenance stop must never flip global ok:false. F4. Note the OTHER head is up: what
         // makes this benign is that the daemon can still serve, not merely that a head is down.
         val h = Json.parseToJsonElement(
-            payloads(
+            health(
                 mapOf("codex" to managed("codex", running = false), "grok" to managed("grok", running = true)),
                 listOf("codex"),
-            ).controlHealthJson(),
+            ).json(),
         ).jsonObject
         assertEquals(true, ok(h), "a stopped head alongside a live one is intentional, not the wedge")
         assertNull(h["turnPathStalled"])
@@ -118,11 +116,11 @@ class ControlHealthTest {
     @Test
     fun `heads that FAILED to start flip ok false even though none is running`() {
         val h = Json.parseToJsonElement(
-            payloads(
+            health(
                 mapOf("codex" to managed("codex", running = false)),
                 stalled = listOf("codex"),
                 failed = 1,
-            ).controlHealthJson(),
+            ).json(),
         ).jsonObject
         assertEquals(false, ok(h), "every head dead on boot is an outage, not a maintenance window")
     }
@@ -132,7 +130,7 @@ class ControlHealthTest {
         // No recorded failure (the heads were stopped one by one) but zero capacity remains: a turn
         // cannot complete, so ok must not say it can.
         val h = Json.parseToJsonElement(
-            payloads(mapOf("codex" to managed("codex", running = false)), emptyList()).controlHealthJson(),
+            health(mapOf("codex" to managed("codex", running = false)), emptyList()).json(),
         ).jsonObject
         assertEquals(false, ok(h))
     }

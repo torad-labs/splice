@@ -171,8 +171,10 @@ internal object Concentration {
     // 2026-10-07: removing the console UI shrank splice.app (DashboardHtml.kt gone, Daemon, ControlPlane and
     // AppPorts smaller). Unchanged PerfRowsFileSource.kt enters HIGH by neighbourhood: C 220.0, denominator
     // 73.9 -> 73.1, ratio 2.98 -> 3.01, measured with this law's own scan on HEAD's text and the tree. 11 -> 12.
-    const val RATCHET_RECORDED = "2026-10-07"
-    const val RATCHET_MAX_HIGH = 12
+    // 2026-10-08: measured by this law on the tree after the control split's step 2 (ControlPayloads deleted, its
+    // readers in HeadReadiness, HeadSignals and ControlHealthReport). Band HIGH fell 12 -> 10; the limit follows it.
+    const val RATCHET_RECORDED = "2026-10-08"
+    const val RATCHET_MAX_HIGH = 10
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

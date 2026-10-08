@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.status.StatusTable
 import splice.app.control.ManagedHead
-import splice.app.control.api.ControlPayloads
+import splice.app.control.healthFor
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.head.Head
@@ -106,8 +106,8 @@ class ProviderResetStatusTest {
             warnPct = 80,
             warnTokens5h = 0,
         )
-        val payloads = ControlPayloads(mapOf(head.key to source), { 0 }, configuredHeads = 1)
-        val body = payloads.controlHealthJson(nowEpochMillis = NOW_MS)
+        val payloads = healthFor(mapOf(head.key to source), configuredHeads = 1)
+        val body = payloads.json(NOW_MS)
         val health = Json.parseToJsonElement(body).jsonObject
         assertEquals("0", health.getValue("failedHeads").jsonPrimitive.content)
         assertEquals(
@@ -116,7 +116,7 @@ class ProviderResetStatusTest {
         )
         assertEquals(RESET_SECONDS, DaemonProbe.parseHealth(body).quota.refusedUntil[head.key])
         head.remainingMs = 0
-        val ready = payloads.controlHealthJson(nowEpochMillis = NOW_MS)
+        val ready = payloads.json(NOW_MS)
         assertNull(Json.parseToJsonElement(ready).jsonObject["quotaResetAtEpochSeconds"])
         assertEquals(emptyMap<String, Long>(), DaemonProbe.parseHealth(ready).quota.refusedUntil)
     }

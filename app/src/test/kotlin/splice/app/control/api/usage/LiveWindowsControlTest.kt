@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.control.TopologyDigest
-import splice.app.control.api.ControlPayloads
+import splice.app.control.healthFor
 import splice.client.ClaudePolicy
 import splice.configuration.topology.TopologyRoutes
 import splice.configuration.topology.TopologyStale
@@ -178,13 +178,12 @@ class LiveWindowsControlTest {
     @Test
     fun `health reads the running digest per request`() {
         var running = "boot"
-        val payloads = ControlPayloads(
-            heads = emptyMap(),
-            failedHeads = { 0 },
+        val payloads = healthFor(
+            emptyMap(),
             configuredHeads = 0,
             topologyDigest = TopologyDigest { running },
         )
-        fun digest() = Json.parseToJsonElement(payloads.controlHealthJson()).jsonObject
+        fun digest() = Json.parseToJsonElement(payloads.json()).jsonObject
             .getValue("topologyDigest").jsonPrimitive.content
 
         assertEquals("boot", digest())

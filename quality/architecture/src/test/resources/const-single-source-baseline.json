@@ -310,12 +310,6 @@
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsRunner.kt",
       "integrations/providers/codex/src/main/kotlin/splice/provider/codex/CodexRoutingHeaders.kt"
     ],
-    "COPY HEADS": [
-      "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt",
-      "features/usage/src/main/kotlin/splice/usage/economics/EconomicsPayloads.kt",
-      "features/usage/src/main/kotlin/splice/usage/perf/PerfPayloads.kt",
-      "features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt"
-    ],
     "COPY HEX_RADIX": [
       "integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/tools/ToolSchemaDefPrune.kt",
       "features/turns/src/main/kotlin/splice/head/wire/JsonStringEscaper.kt"
@@ -338,19 +332,6 @@
     "COPY INACTIVE_PAD": [
       "integrations/terminal/src/main/kotlin/splice/terminal/MultiSelectPrompt.kt",
       "integrations/terminal/src/main/kotlin/splice/terminal/SelectPrompt.kt"
-    ],
-    "COPY KEY": [
-      "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt",
-      "features/usage/src/main/kotlin/splice/usage/economics/EconomicsPayloads.kt",
-      "features/heads/src/main/kotlin/splice/heads/HeadOperations.kt",
-      "features/usage/src/main/kotlin/splice/usage/perf/PerfPayloads.kt",
-      "features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt"
-    ],
-    "COPY LABEL": [
-      "app/src/main/kotlin/splice/app/control/api/ControlPayloads.kt",
-      "features/usage/src/main/kotlin/splice/usage/economics/EconomicsPayloads.kt",
-      "features/usage/src/main/kotlin/splice/usage/perf/PerfPayloads.kt",
-      "features/usage/src/main/kotlin/splice/usage/quota/UsagePayloads.kt"
     ],
     "COPY LOCK_POLL_MS": [
       "core/src/main/kotlin/splice/core/config/KeyStore.kt",

@@ -20,15 +20,15 @@ import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarn
 import splice.core.usage.UsageWarnPolicy
 import splice.core.util.WallClock
+import splice.core.wire.ControlFields.HEADS
+import splice.core.wire.ControlFields.KEY
+import splice.core.wire.ControlFields.LABEL
 import splice.usage.UsageHead
 import splice.usage.UsageHeads
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlin.time.Duration.Companion.milliseconds
 
-private const val KEY = "key"
-private const val LABEL = "label"
-private const val HEADS = "heads"
 private const val USAGE_WINDOW_HOURS = 5
 
 // A provider refusal until a known instant is a fully spent window: the warn reads 100 percent.

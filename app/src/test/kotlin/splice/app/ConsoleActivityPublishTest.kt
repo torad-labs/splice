@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.auth.SignInPlanner
-import splice.app.control.TurnPathStalled
+import splice.app.control.SilentHeadProbes
 import splice.app.head.LaunchSpecFactory
 import splice.app.provider.HeadBuildInputs
 import splice.core.config.ConfigService
@@ -268,7 +268,7 @@ class ConsoleActivityPublishTest {
                     heads = emptyMap(),
                     failedHeads = { 0 },
                     headCount = 0,
-                    turnPathStalled = TurnPathStalled { emptyList() },
+                    probes = SilentHeadProbes,
                 )
             },
         ) { "the control plane did not bind" }
@@ -311,7 +311,7 @@ class ConsoleActivityPublishTest {
                     heads = emptyMap(),
                     failedHeads = { 0 },
                     headCount = 0,
-                    turnPathStalled = TurnPathStalled { emptyList() },
+                    probes = SilentHeadProbes,
                 )
             },
         ) { "the control plane did not bind" }

@@ -103,7 +103,7 @@ class TopologyRoutesTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = { },
-            probes = ControlHealthProbes(topologyStale = TopologyStale { true }),
+            health = healthFor(emptyMap(), topologyStale = TopologyStale { true }),
         )
         if (wired) {
             control.ports.topology = TopologyWriter(

@@ -12,7 +12,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
-import splice.app.control.api.ControlPayloads
+import splice.app.control.api.ControlBodies
 import splice.core.util.LogSink
 import splice.lifecycle.restart.CompactionsInFlight
 import splice.lifecycle.restart.DaemonRestarts
@@ -29,7 +29,6 @@ import splice.upstream.codemode.ProcessDispatchers
 /** [ports] is read at CALL time: ControlPlane assigns [ConsolePorts.supervised] and
  *  [ConsolePorts.upgrade] after the server is constructed. */
 internal class LifecycleMount(
-    private val payloads: ControlPayloads,
     private val shutdownDaemon: ShutdownDaemon,
     private val ports: ConsolePorts,
     private val guard: ControlGuard,
@@ -52,7 +51,7 @@ internal class LifecycleMount(
     fun register(route: Route) {
         route.post("/api/daemon/shutdown") {
             guard.guarded(call) {
-                call.respondText(payloads.okJson(), ContentType.Application.Json, HttpStatusCode.Accepted)
+                call.respondText(ControlBodies.okJson(), ContentType.Application.Json, HttpStatusCode.Accepted)
                 shutdownDaemon()
             }
         }

@@ -3,7 +3,7 @@
 // ok / readyHeads / failedHeads stay what they were, because launch shims wait on
 // readyHeads + failedHeads == heads and a silent runtime is the operator's machine, not a broken daemon.
 // The last test is the real chain: a refused loopback port and one that answers, probed by the real
-// LocalRuntimeReach, held by the real watch, and read back through the real payloads.
+// LocalRuntimeReach, held by the real watch, and read back through the real health body and heads route.
 package splice.app.v4417
 
 import com.sun.net.httpserver.HttpServer
@@ -22,8 +22,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.function.ThrowingSupplier
 import splice.app.control.ManagedHead
 import splice.app.control.RuntimeNotAnswering
-import splice.app.control.api.ControlPayloads
 import splice.app.control.api.HeadResolver
+import splice.app.control.api.HeadSignals
+import splice.app.control.healthFor
 import splice.app.probe.LocalRuntimeWatch
 import splice.core.head.Head
 import splice.core.head.HeadHealth
@@ -77,15 +78,13 @@ class RuntimeNotAnsweringRoutesTest {
         authKind = "x",
     )
 
-    private fun payloads(heads: Map<String, ManagedHead>, silent: RuntimeNotAnswering?) = ControlPayloads(
-        heads = heads,
-        failedHeads = { 0 },
-        configuredHeads = heads.size,
-        runtimeNotAnswering = silent ?: RuntimeNotAnswering { emptyMap() },
-    )
+    /** The one signals value a test reads both surfaces through, so the health body and the heads route
+     *  are given the same silent runtimes. */
+    private fun signals(heads: Map<String, ManagedHead>, silent: RuntimeNotAnswering?) =
+        HeadSignals(heads, silent ?: RuntimeNotAnswering { emptyMap() })
 
-    private fun health(payloads: ControlPayloads): JsonObject =
-        Json.parseToJsonElement(payloads.controlHealthJson()).jsonObject
+    private fun health(heads: Map<String, ManagedHead>, silent: RuntimeNotAnswering?): JsonObject =
+        Json.parseToJsonElement(healthFor(heads, signals = signals(heads, silent)).json()).jsonObject
 
     private fun local(port: Int) = ProviderConfig(
         dialect = Dialect.OPENAI_CHAT,
@@ -109,7 +108,7 @@ class RuntimeNotAnsweringRoutesTest {
 
     @Test
     fun `health names the head whose runtime is silent, and its ready count is what it was`() {
-        val body = health(payloads(heads, RuntimeNotAnswering { mapOf("bonsai" to ":8099") }))
+        val body = health(heads, RuntimeNotAnswering { mapOf("bonsai" to ":8099") })
         assertEquals(":8099", body.getValue(FIELD).jsonObject.getValue("bonsai").jsonPrimitive.content)
         assertEquals(setOf("bonsai"), body.getValue(FIELD).jsonObject.keys)
         assertTrue(body.getValue("ok").jsonPrimitive.boolean, "a silent runtime is not a broken daemon")
@@ -119,13 +118,13 @@ class RuntimeNotAnsweringRoutesTest {
 
     @Test
     fun `health without a silent runtime has no such field, so its shape is what it was`() {
-        assertFalse(health(payloads(heads, null)).containsKey(FIELD))
-        assertFalse(health(payloads(heads, RuntimeNotAnswering { emptyMap() })).containsKey(FIELD))
+        assertFalse(health(heads, null).containsKey(FIELD))
+        assertFalse(health(heads, RuntimeNotAnswering { emptyMap() }).containsKey(FIELD))
     }
 
     @Test
     fun `the heads route marks the silent runtime's head and no other`() {
-        val silent = payloads(heads, RuntimeNotAnswering { mapOf("bonsai" to ":8099") })
+        val silent = signals(heads, RuntimeNotAnswering { mapOf("bonsai" to ":8099") })
         val statuses = HeadResolver(heads, silent).headStatuses()
             .associateBy { it.getValue("key").jsonPrimitive.content }
         assertEquals(":8099", statuses.getValue("bonsai").getValue(FIELD).jsonPrimitive.content)
@@ -151,12 +150,12 @@ class RuntimeNotAnsweringRoutesTest {
             )
             val watch = LocalRuntimeWatch(topology, LogSink {})
             watch.tick()
-            val payloads = payloads(heads, RuntimeNotAnswering(watch::notAnswering))
+            val silent = RuntimeNotAnswering(watch::notAnswering)
             val bound = Duration.ofMillis(READ_BOUND_MS)
-            val body = assertTimeoutPreemptively(bound, ThrowingSupplier { health(payloads) })
+            val body = assertTimeoutPreemptively(bound, ThrowingSupplier { health(heads, silent) })
             assertEquals(setOf("bonsai"), body.getValue(FIELD).jsonObject.keys)
             assertEquals(":$refused", body.getValue(FIELD).jsonObject.getValue("bonsai").jsonPrimitive.content)
-            val marks = HeadResolver(heads, payloads).headStatuses()
+            val marks = HeadResolver(heads, signals(heads, silent)).headStatuses()
                 .filter { it.containsKey(FIELD) }.map { it.getValue("key").jsonPrimitive.content }
             assertEquals(listOf("bonsai"), marks)
         } finally {

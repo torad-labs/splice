@@ -12,7 +12,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.control.TurnPathStalled
+import splice.app.control.SilentHeadProbes
 import splice.app.daemon.BootedTopology
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -43,7 +43,7 @@ class TopologyWiringTest {
                     heads = emptyMap(),
                     failedHeads = { 0 },
                     headCount = 0,
-                    turnPathStalled = TurnPathStalled { emptyList() },
+                    probes = SilentHeadProbes,
                 )
             },
         ) { "the control plane did not bind" }

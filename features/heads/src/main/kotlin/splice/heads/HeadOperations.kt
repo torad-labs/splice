@@ -9,9 +9,8 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.core.wire.ControlFields.KEY
 import splice.heads.start.StartHead
-
-private const val KEY = "key"
 
 /** Owns the lifecycle and log-retrieval sequences for a named head route. */
 public class HeadOperations(

@@ -17,7 +17,6 @@ import kotlinx.coroutines.sync.withLock
 import splice.app.control.ControlServer
 import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
-import splice.app.control.RuntimeNotAnswering
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
@@ -239,12 +238,8 @@ public class Daemon(
                 override fun reasons(): Map<String, String> = failed.toMap()
             },
             headCount = topology.heads.size,
-            turnPathStalled = { headProbes.stalledKeys() },
+            probes = headProbes,
         ) ?: return
-        // V4-417: assigned here, right after the control plane binds, because ControlPlane.start is at
-        // its parameter ceiling. Until this line runs /health and /api/heads carry no runtime claim,
-        // which is what a daemon that has measured nothing says.
-        srv.ports.runtimeNotAnswering = RuntimeNotAnswering { headProbes.runtimeNotAnswering() }
         control = srv
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")

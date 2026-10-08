@@ -5,20 +5,19 @@ package splice.app.control.api.fleet
 
 import io.ktor.server.application.ApplicationCall
 import splice.app.control.api.ControlAudit
-import splice.app.control.api.ControlPayloads
+import splice.app.control.api.ControlBodies
 import splice.app.control.api.HeadResolver
 import splice.heads.HeadAudit
 import splice.heads.HeadOperations
 
 internal class HeadRoutes(
     resolver: HeadResolver,
-    payloads: ControlPayloads,
     audit: ControlAudit,
 ) {
     private val operations: HeadOperations = HeadOperations(
         HeadFeatureAdapter(resolver),
         HeadAudit { name, action -> audit.headAction(name, action) },
-        payloads.errorJson("unknown action"),
+        ControlBodies.errorJson("unknown action"),
     )
 
     suspend fun headAction(call: ApplicationCall) {

@@ -9,7 +9,7 @@ import io.ktor.server.routing.post
 import splice.app.control.ConsolePorts
 import splice.app.control.ManagedHead
 import splice.app.control.PlaygroundHeadAdapter
-import splice.app.control.api.ControlPayloads
+import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadResolver
 import splice.core.config.ConfigService
 import splice.core.util.LogSink
@@ -27,12 +27,12 @@ import splice.diagnostics.playground.PlaygroundSource
 internal class DaemonSelfAnswers(
     private val heads: Map<String, ManagedHead>,
     private val config: ConfigService,
-    private val payloads: ControlPayloads,
+    private val health: ControlHealthReport,
     private val fleet: FleetMount,
     private val accounts: AccountsMount,
 ) : DaemonAnswersSource {
     override suspend fun invoke(): DaemonAnswers = DaemonAnswers(
-        payloads.controlHealthJson(),
+        health.json(),
         fleet.headsJson(),
         accounts.authJson(),
         heads.mapValues { (key, _) -> DaemonProbe.HeadTrace(config.getConfig(key).trace) },

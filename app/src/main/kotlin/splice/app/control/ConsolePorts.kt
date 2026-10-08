@@ -80,15 +80,6 @@ public class ConsolePorts {
      *  400-not-404 rule exists to prevent. */
     public var compaction: CompactionInstructions? = null
 
-    /** V4-417: the daemon's held answer to "which local runtimes are silent", assigned by the daemon
-     *  right after ControlPlane.start returns (the constructor and that function are both at their width
-     *  ceilings, so it is an assignment like [events], not a parameter).
-     *
-     *  UNSET IS NOT THE ONE DISCIPLINE ABOVE, on purpose: null does not answer a named 5xx, it leaves
-     *  `/health` and `/api/heads` exactly as they were before this port existed, because the field they
-     *  would carry is a claim about a runtime, and an unwired daemon has measured nothing to claim. */
-    public var runtimeNotAnswering: RuntimeNotAnswering? = null
-
     /** V4-130: the console's activity stores (message edges, activity labels), assigned by ControlPlane
      *  after construction like [events]. Null answers the two edges routes with a named 503. */
     public var activity: ActivityStores? = null

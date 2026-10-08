@@ -14,11 +14,10 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
+import splice.core.wire.ControlFields.HEADS
+import splice.core.wire.ControlFields.KEY
+import splice.core.wire.ControlFields.LABEL
 import splice.usage.UsageHeads
-
-private const val KEY = "key"
-private const val LABEL = "label"
-private const val HEADS = "heads"
 
 public class PerfPayloads(
     private val heads: UsageHeads,

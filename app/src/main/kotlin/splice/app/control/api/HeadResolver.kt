@@ -17,7 +17,7 @@ import splice.heads.HeadStatus
 
 internal class HeadResolver(
     private val heads: Map<String, ManagedHead>,
-    private val payloads: ControlPayloads,
+    private val signals: HeadSignals,
 ) {
     // The shim names a head by its wrapper command (argv[0]); the topology keys heads independently
     // (starter: head `openrouter`, command `claude-openrouter`). Accept either name — a map-KEY match (unique)
@@ -39,7 +39,7 @@ internal class HeadResolver(
         return when {
             byLabel.size > 1 -> {
                 call.respondText(
-                    payloads.errorJson(TopologyMessages.ambiguousHeadMessage(name, byLabel.map { it.head.key })),
+                    ControlBodies.errorJson(TopologyMessages.ambiguousHeadMessage(name, byLabel.map { it.head.key })),
                     ContentType.Application.Json,
                     HttpStatusCode.Conflict,
                 )
@@ -47,7 +47,7 @@ internal class HeadResolver(
             }
             byLabel.isEmpty() -> {
                 call.respondText(
-                    payloads.errorJson("unknown head"),
+                    ControlBodies.errorJson("unknown head"),
                     ContentType.Application.Json,
                     HttpStatusCode.NotFound,
                 )
@@ -73,15 +73,15 @@ internal class HeadResolver(
      *  The console reads the first as down and the second as out of quota. A provider reading that names a
      *  window fully used rides apart as `quotaFull` (V4-452): a reading, beside a head that stays ready. */
     fun headStatuses(nowEpochMillis: Long = System.currentTimeMillis()): List<JsonObject> {
-        val silent = payloads.silentRuntimes()
-        val quotaResets = payloads.quotaResets(nowEpochMillis)
-        val quotaFull = payloads.quotaFull()
+        val silent = signals.silentRuntimes()
+        val quotaResets = signals.quotaResets(nowEpochMillis)
+        val quotaFull = signals.quotaFull()
         return heads.values.map { managed ->
             val key = managed.head.key
             val marks = listOfNotNull(
                 silent[key]?.let { "runtimeNotAnswering" to JsonPrimitive(it) },
                 quotaResets[key]?.let { "quotaResetAtEpochSeconds" to JsonPrimitive(it) },
-                quotaFull[key]?.let { "quotaFull" to payloads.quotaFullJson(it) },
+                quotaFull[key]?.let { "quotaFull" to signals.quotaFullJson(it) },
             )
             JsonObject(HeadStatus.json(managed.head, managed.authKind) + marks)
         }

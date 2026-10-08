@@ -17,7 +17,15 @@ import splice.core.topology.Topology
 import splice.core.util.LogSink
 import java.util.concurrent.ConcurrentHashMap
 
-internal class HeadProbes {
+/** What the control plane reads from the daemon's probes, per request: the heads whose turn path stalled, and the
+ *  local runtimes that did not answer at the last background probe. [HeadProbes] is the one implementation. */
+internal interface HeadProbeReadings {
+    fun stalledKeys(): List<String>
+
+    fun runtimeNotAnswering(): Map<String, String>
+}
+
+internal class HeadProbes : HeadProbeReadings {
 
     private val boundary = DaemonBoundary()
 
@@ -76,7 +84,7 @@ internal class HeadProbes {
         authProbes.values.forEach { it.stop() }
     }
 
-    internal fun stalledKeys(): List<String> = turnPathStalled.filterValues { it }.keys.sorted()
+    override fun stalledKeys(): List<String> = turnPathStalled.filterValues { it }.keys.sorted()
 
-    internal fun runtimeNotAnswering(): Map<String, String> = runtimeWatch?.notAnswering().orEmpty()
+    override fun runtimeNotAnswering(): Map<String, String> = runtimeWatch?.notAnswering().orEmpty()
 }

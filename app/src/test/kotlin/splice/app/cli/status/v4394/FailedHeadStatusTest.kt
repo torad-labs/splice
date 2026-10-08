@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.status.StatusTable
 import splice.app.control.FailedHeads
-import splice.app.control.api.ControlPayloads
+import splice.app.control.healthFor
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepth
 import splice.core.topology.AuthConfig
@@ -78,7 +78,7 @@ class FailedHeadStatusTest {
             override fun invoke(): Int = 1
             override fun reasons(): Map<String, String> = mapOf("claude-muse" to reason)
         }
-        val body = ControlPayloads(heads = emptyMap(), failedHeads = failed, configuredHeads = 1).controlHealthJson()
+        val body = healthFor(emptyMap(), failedHeads = failed, configuredHeads = 1).json()
         val health = Json.parseToJsonElement(body).jsonObject
 
         assertEquals("1", health.getValue("failedHeads").jsonPrimitive.content)
@@ -89,7 +89,7 @@ class FailedHeadStatusTest {
 
     @Test
     fun `a healthy boot carries no reasons object, so older readers see the old shape`() {
-        val body = ControlPayloads(heads = emptyMap(), failedHeads = { 0 }, configuredHeads = 0).controlHealthJson()
+        val body = healthFor(emptyMap(), configuredHeads = 0).json()
 
         assertNull(Json.parseToJsonElement(body).jsonObject["failedHeadReasons"], body)
         assertEquals(emptyMap<String, String>(), DaemonProbe.parseHealth(body).failedHeadReasons)

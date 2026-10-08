@@ -17,8 +17,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.app.control.ManagedHead
-import splice.app.control.api.ControlPayloads
 import splice.app.control.api.HeadResolver
+import splice.app.control.healthFor
+import splice.app.control.signalsFor
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.diagnostics.logs.HeadLogSource
@@ -73,9 +74,10 @@ class OutOfQuotaHeadsRouteTest {
         ProviderHead("muse", running = false, refusedForMs = THREE_DAYS_MS),
     ).associate { it.key to managed(it) }
 
-    private val payloads = ControlPayloads(heads = heads, failedHeads = { 0 }, configuredHeads = heads.size)
+    private val signals = signalsFor(heads)
+    private val payloads = healthFor(heads, signals = signals)
 
-    private fun statuses(): Map<String, JsonObject> = HeadResolver(heads, payloads).headStatuses(NOW_MS)
+    private fun statuses(): Map<String, JsonObject> = HeadResolver(heads, signals).headStatuses(NOW_MS)
         .associateBy { it.getValue("key").jsonPrimitive.content }
 
     @Test
@@ -95,7 +97,7 @@ class OutOfQuotaHeadsRouteTest {
 
     @Test
     fun `the instant is the one health carries, and health's counts are what they were`() {
-        val health = Json.parseToJsonElement(payloads.controlHealthJson(NOW_MS)).jsonObject
+        val health = Json.parseToJsonElement(payloads.json(NOW_MS)).jsonObject
         assertEquals(
             statuses().getValue("claudex").getValue(FIELD).jsonPrimitive.long,
             health.getValue(FIELD).jsonObject.getValue("claudex").jsonPrimitive.long,

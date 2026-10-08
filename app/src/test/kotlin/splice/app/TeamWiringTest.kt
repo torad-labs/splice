@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.control.TurnPathStalled
+import splice.app.control.SilentHeadProbes
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -74,7 +74,7 @@ class TeamWiringTest {
                     heads = emptyMap(),
                     failedHeads = { 0 },
                     headCount = 0,
-                    turnPathStalled = TurnPathStalled { emptyList() },
+                    probes = SilentHeadProbes,
                 )
             },
         ) { "the control plane did not bind" }

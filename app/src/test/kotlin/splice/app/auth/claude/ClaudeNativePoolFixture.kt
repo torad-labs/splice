@@ -22,7 +22,7 @@ import splice.app.DaemonEnvironment
 import splice.app.TokenUrlRefreshCall
 import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
-import splice.app.control.TurnPathStalled
+import splice.app.control.SilentHeadProbes
 import splice.app.daemon.BootedTopology
 import splice.app.head.HeadServerFactory
 import splice.app.head.LaunchSpecFactory
@@ -192,7 +192,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
         val head = factory.assembleHead(ctx, 0)
         head.head.start()
         val server = requireNotNull(
-            plane.start(0, mapOf(NATIVE_HEAD to head), { 0 }, 1, TurnPathStalled { emptyList() }),
+            plane.start(0, mapOf(NATIVE_HEAD to head), { 0 }, 1, SilentHeadProbes),
         )
         return Rig(plane, head, server, key)
     }

@@ -5,18 +5,15 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import splice.app.control.api.ControlPayloads
+import splice.app.control.api.ControlHealthReport
+import splice.app.control.healthFor
 
 class RestartBootIdentityTest {
     @Test
     fun `health holds one boot identity and a replacement daemon gets another`() {
-        fun health(bootedAt: Long): ControlPayloads = ControlPayloads(
-            heads = emptyMap(),
-            failedHeads = { 0 },
-            configuredHeads = 0,
-            bootedAtEpochMillis = bootedAt,
-        )
-        fun stamp(payloads: ControlPayloads): Long = Json.parseToJsonElement(payloads.controlHealthJson())
+        fun health(bootedAt: Long): ControlHealthReport =
+            healthFor(emptyMap(), configuredHeads = 0, bootedAtEpochMillis = bootedAt)
+        fun stamp(payloads: ControlHealthReport): Long = Json.parseToJsonElement(payloads.json())
             .jsonObject.getValue("bootedAtEpochMillis").jsonPrimitive.content.toLong()
 
         val first = health(1_000L)

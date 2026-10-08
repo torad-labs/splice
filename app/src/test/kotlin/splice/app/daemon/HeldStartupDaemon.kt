@@ -6,6 +6,7 @@ package splice.app.daemon
 import kotlinx.coroutines.CompletableDeferred
 import splice.app.Daemon
 import splice.app.DaemonProcess
+import splice.app.DaemonRun
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import splice.topology.TopologyLoader
@@ -33,5 +34,5 @@ suspend fun main(args: Array<String>) {
     val daemon = Daemon(topology = topology, statePaths = paths, log = log)
     val lock = DaemonLock(paths.daemonLockFile)
     check(lock.tryAcquire()) { "the child could not take its own lock" }
-    DaemonProcess().serve(daemon, lock, CompletableDeferred())
+    DaemonRun(DaemonProcess()).serve(daemon, lock, CompletableDeferred())
 }

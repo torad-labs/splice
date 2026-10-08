@@ -512,6 +512,16 @@ describe("the census leg judges the commit's own bytes and refuses a finding the
     expect(text).toContain("census could not judge");
   });
 
+  test("RED: a row with an empty source is a finding no path places, so the commit that adds it is refused", async () => {
+    const root = censusRepo([claim(SEAT)], [SEAT]);
+    const blank = `\t${"0".repeat(64)}\tcreated\t\tsynthetic row with no source`;
+    writeFile(root, CENSUS_ROWS, `${[CENSUS_HEADER, claim(SEAT), blank].join("\n")}\n`);
+    git(root, ["add", "--", CENSUS_ROWS]);
+    const { result, text } = await captured(() => censusLeg(lay(root)));
+    expect(result).toBe(1);
+    expect(text).toContain("created but not tracked: ");
+  });
+
   test("RED: a commit whose index holds no census script is refused: the census cannot judge", async () => {
     const root = dir("splice-hook-census-");
     git(root, ["init", "-q"]);

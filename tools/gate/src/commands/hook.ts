@@ -579,9 +579,10 @@ export async function censusLeg(lay: Layout): Promise<number> {
       return 1;
     }
     const named = namedByCommit(root);
-    // A finding is this commit's when a path it carries is one the commit names. A finding that carries no path cannot be
-    // placed, so it counts as this commit's until shown otherwise.
-    const hits = verdict.findings.filter((finding) => finding.paths.length === 0 || finding.paths.some((path) => named.has(path)));
+    // A finding is this commit's when a path it carries is one the commit names. A finding that carries no path, or an empty
+    // one (a row whose source column is blank), names no file the commit could be leaving alone, so no path places it: it
+    // counts as this commit's until shown otherwise.
+    const hits = verdict.findings.filter((finding) => finding.paths.length === 0 || finding.paths.some((path) => path === "" || named.has(path)));
     const elsewhere = verdict.findings.filter((finding) => !hits.includes(finding));
     for (const finding of hits) console.error(`  ✗ census: ${finding.message}`);
     for (const finding of elsewhere) console.error(`  · census, not this commit's path: ${finding.message}`);

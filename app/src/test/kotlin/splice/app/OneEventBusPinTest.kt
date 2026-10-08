@@ -53,10 +53,7 @@ class OneEventBusPinTest {
         val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(paths)
         val plane = ControlPlane(
-            paths,
-            ConfigService(paths),
-            mgmt,
-            { },
+            DaemonEnvironment(paths, ConfigService(paths), mgmt, { }),
             { },
         )
         val srv = checkNotNull(

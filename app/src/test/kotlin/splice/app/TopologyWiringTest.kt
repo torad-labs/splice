@@ -32,10 +32,7 @@ class TopologyWiringTest {
         val file = tmp.resolve("splice.toml").also { Files.writeString(it, FILE) }
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val plane = ControlPlane(
-            paths,
-            ConfigService(paths),
-            MgmtKey(paths),
-            { },
+            DaemonEnvironment(paths, ConfigService(paths), MgmtKey(paths), { }),
             { },
             BootedTopology(path = file),
         )

@@ -64,10 +64,7 @@ class TeamWiringTest {
     fun `the routes and the heads share one team store (EXPECTED-RED until ControlPlane is applied)`() {
         val paths = StatePaths(baseOverride = tmp.resolve("plane-state"))
         val plane = ControlPlane(
-            paths,
-            ConfigService(paths),
-            MgmtKey(paths),
-            { },
+            DaemonEnvironment(paths, ConfigService(paths), MgmtKey(paths), { }),
             { },
         )
         val srv = checkNotNull(

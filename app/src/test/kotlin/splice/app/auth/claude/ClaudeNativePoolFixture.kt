@@ -18,6 +18,7 @@ import kotlinx.coroutines.CompletableDeferred
 import org.junit.jupiter.api.Assertions.assertEquals
 import splice.accounts.claude.ClaudeAccountIdentity
 import splice.app.ControlPlane
+import splice.app.DaemonEnvironment
 import splice.app.TokenUrlRefreshCall
 import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
@@ -137,10 +138,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
     )
 
     private fun plane(file: Path, config: ConfigService, key: MgmtKey): ControlPlane = ControlPlane(
-        paths,
-        config,
-        key,
-        {},
+        DaemonEnvironment(paths, config, key, {}),
         {},
         BootedTopology(
             path = file,

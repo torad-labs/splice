@@ -35,7 +35,7 @@ class BudgetWiringPinTest {
     @Test
     fun `a budgeted admission never waits for its perf file writer`(@TempDir tempDir: Path) {
         val paths = StatePaths(baseOverride = tempDir.resolve("state"))
-        val plane = ControlPlane(paths, ConfigService(paths), MgmtKey(paths), { }, { })
+        val plane = ControlPlane(DaemonEnvironment(paths, ConfigService(paths), MgmtKey(paths), { }), { })
         val file = paths.perfStatsFile("slow-head")
         val started = CountDownLatch(1)
         val release = CountDownLatch(1)
@@ -78,7 +78,7 @@ class BudgetWiringPinTest {
         @TempDir tempDir: Path,
     ) {
         val paths = StatePaths(baseOverride = tempDir.resolve("state"))
-        val plane = ControlPlane(paths, ConfigService(paths), MgmtKey(paths), { }, { })
+        val plane = ControlPlane(DaemonEnvironment(paths, ConfigService(paths), MgmtKey(paths), { }), { })
         try {
             plane.budgets.replace(listOf(Budget("pinned-head", 0.0, BudgetActions.BLOCK)))
             val enforcement = plane.console.budgets

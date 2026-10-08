@@ -104,7 +104,7 @@ public class Daemon(
     )
 
     private val controlPlane = ControlPlane(
-        statePaths, config, mgmtKey, log, shutdownDaemon,
+        DaemonEnvironment(statePaths, config, mgmtKey, log), shutdownDaemon,
         // The booted config's identity and what it declared, as one value — three parameters until
         // the width ratchet caught this constructor at 13. declaredHeads is still built HERE and not
         // in ControlPlane, because this is the only place that holds the Topology: ControlPlane

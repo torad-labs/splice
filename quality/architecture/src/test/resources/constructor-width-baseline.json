@@ -23,10 +23,6 @@
       "params": 10,
       "subsystems": 7
     },
-    "app/src/main/kotlin/splice/app/ControlPlane.kt ControlPlane": {
-      "params": 10,
-      "subsystems": 7
-    },
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeMaterializeTypes.kt MaterializeSpec": {
       "params": 13,
       "subsystems": 1

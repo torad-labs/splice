@@ -44,13 +44,9 @@ import splice.control.mcp.APP_MCP_SLICE
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpHostConfig
 import splice.core.compaction.CompactionInstructions
-import splice.core.config.ConfigService
 import splice.core.config.Knob
-import splice.core.config.MgmtKey
-import splice.core.config.StatePaths
 import splice.core.config.TurnKey
 import splice.core.config.UserHome
-import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
 import splice.head.HeadDeps
 import splice.launch.LaunchSpec
@@ -68,10 +64,8 @@ import java.nio.file.Path
 import kotlin.time.Duration.Companion.milliseconds
 
 internal class ControlPlane(
-    private val statePaths: StatePaths,
-    private val config: ConfigService,
-    private val mgmtKey: MgmtKey,
-    private val log: LogSink,
+    /** The daemon's shared environment: its state, its settings, its management key and its log sink. */
+    daemon: DaemonEnvironment,
     private val shutdownDaemon: ShutdownDaemon,
     /** JW-04 + V4-127: the booted config's identity (sha-256 of the parsed bytes, the resolved
      *  path) and what it declared, as one value. These were three separate parameters until
@@ -79,7 +73,7 @@ internal class ControlPlane(
      *  width ratchet's max of 12 — see BootedTopology.kt for why these three and not some other
      *  three. Still never the Topology object itself: only Daemon holds that. */
     private val topology: BootedTopology = BootedTopology(),
-    refreshCall: TokenUrlRefreshCall = TokenUrlRefreshCall(CodexRefresh(log)::refresh),
+    refreshCall: TokenUrlRefreshCall = TokenUrlRefreshCall(CodexRefresh(daemon.log)::refresh),
     /** v0.4.0 shared MCP hosting knobs ([daemon] mcp_hosting / mcp_hosting_exclude). */
     private val mcpHosting: McpHostingSettings = McpHostingSettings(),
     private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
@@ -87,6 +81,10 @@ internal class ControlPlane(
      *  /api/compaction/instructions reports the resolver the daemon actually compacts with. */
     private val compactionInstructions: CompactionInstructions = CompactionInstructions(),
 ) {
+    private val statePaths = daemon.statePaths
+    private val config = daemon.config
+    private val mgmtKey = daemon.mgmtKey
+    private val log = daemon.log
     private val boundary = DaemonBoundary()
     private val environment = ProcessEnvironment()
     private var claudeLoginOwner: ClaudeLoginOwner? = null

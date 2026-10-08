@@ -237,10 +237,7 @@ class ConsoleActivityPublishTest {
         val paths = StatePaths(baseOverride = tmp.resolve("home/.splice/state"))
         register(paths, "s-gpt", "gpt", ProcessHandle.current().pid())
         val plane = ControlPlane(
-            paths,
-            ConfigService(paths),
-            MgmtKey(paths),
-            { },
+            DaemonEnvironment(paths, ConfigService(paths), MgmtKey(paths), { }),
             { },
         )
         try {
@@ -261,10 +258,7 @@ class ConsoleActivityPublishTest {
         val old = System.currentTimeMillis() - 12 * 3_600_000L
         register(paths, "s-busy", "builder", ProcessHandle.current().pid(), updatedAt = old)
         val plane = ControlPlane(
-            paths,
-            ConfigService(paths),
-            MgmtKey(paths),
-            { },
+            DaemonEnvironment(paths, ConfigService(paths), MgmtKey(paths), { }),
             { },
         )
         val srv = checkNotNull(
@@ -307,10 +301,7 @@ class ConsoleActivityPublishTest {
     fun `the control plane's sessions routes read the same stores its heads write`() {
         val paths = StatePaths(baseOverride = tmp.resolve("plane-state"))
         val plane = ControlPlane(
-            paths,
-            ConfigService(paths),
-            MgmtKey(paths),
-            { },
+            DaemonEnvironment(paths, ConfigService(paths), MgmtKey(paths), { }),
             { },
         )
         val srv = checkNotNull(

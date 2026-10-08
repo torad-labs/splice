@@ -17,15 +17,27 @@ import splice.upstream.RetryNotice
 import splice.upstream.ToolSearchPolicy
 
 internal class FoldRounds(
-    key: String,
-    log: RetryNotice,
-    private val reanchor: ReanchorPolicy?,
+    private val key: String,
+    private val log: RetryNotice,
     private val signals: RunnerSignals,
-    toolSearch: ToolSearchPolicy?,
     private val finish: FinishTurn,
-    private val rounds: RoundSplice,
+    private val reanchor: ReanchorPolicy? = null,
+    toolSearch: ToolSearchPolicy? = null,
 ) {
+    private val rounds = RoundSplice()
     private val continuations = FoldContinuations(key, log, signals, toolSearch, rounds)
+
+    /** [outcome] with the tokens a failed round billed carried onto it (DR-124), [summed] being the
+     *  usage of the rounds absorbed so far. */
+    fun withFailureSalvage(outcome: TurnOutcome, summed: RoundUsage): TurnOutcome =
+        rounds.withFailureSalvage(outcome, summed)
+
+    /** The fold re-anchor line: round [attempt] (zero-based) died mid-stream and is being retried. */
+    fun noteReanchor(attempt: Int, failure: TurnOutcome.Failure) =
+        log("[$key] fold re-anchor ${attempt + 1}: ${failure.type.wireName} mid-round; retrying\n")
+
+    /** Health for the rounds this fold absorbed, once the turn ends on something other than a failure. */
+    fun reportAbsorbed(failures: List<TurnOutcome.Failure>) = failures.forEach(signals.onRoundFailure::invoke)
 
     fun nextRoundBody(
         fold: FoldPolicy,

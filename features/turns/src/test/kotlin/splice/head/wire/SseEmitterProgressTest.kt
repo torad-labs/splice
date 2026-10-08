@@ -94,7 +94,7 @@ class SseEmitterProgressTest {
             model = "m",
             usagePayload = { buildJsonObject { put("input_tokens", 0) } },
             messageId = "msg_fixed",
-            progressWrite = { pinger.add(it) },
+            streaming = StreamWiring(progressWrite = { pinger.add(it) }),
         )
 
         e.progress {
@@ -142,13 +142,15 @@ class SseEmitterProgressTest {
             model = "m",
             usagePayload = { buildJsonObject { put("input_tokens", 0) } },
             messageId = "msg_fixed",
-            progressWrite = { frame ->
-                if (frame.startsWith("event: content_block_start")) {
-                    holding.complete(Unit)
-                    release.await()
-                }
-                pinger.add(frame)
-            },
+            streaming = StreamWiring(
+                progressWrite = { frame ->
+                    if (frame.startsWith("event: content_block_start")) {
+                        holding.complete(Unit)
+                        release.await()
+                    }
+                    pinger.add(frame)
+                },
+            ),
         )
         e.ensureStarted()
 
@@ -190,7 +192,7 @@ class SseEmitterProgressTest {
             model = "m",
             usagePayload = { buildJsonObject { put("input_tokens", 0) } },
             messageId = "msg_fixed",
-            progressWrite = { pinger.add(it) },
+            streaming = StreamWiring(progressWrite = { pinger.add(it) }),
         )
 
         e.ensureStarted()

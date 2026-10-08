@@ -15,30 +15,19 @@ import splice.core.perf.TurnPerfTiming
 import splice.core.turn.TurnOutcome
 import splice.head.wire.BufferingWireSink
 import splice.upstream.FoldPolicy
-import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryBackoff
-import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
-import splice.upstream.ToolSearchPolicy
 import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamTransport
 
 internal class FoldRunner(
-    // Only the buffer's `real` sink — never a terminal here (L3: FoldRunner finishes via [finish]).
+    // Only the buffer's `real` sink — never a terminal here (L3: FoldRunner finishes via [FoldRounds.finalize]).
     private val emitter: WireSink,
-    private val key: String,
-    private val log: RetryNotice,
     private val postRound: PostRoundToSink,
-    private val finish: FinishTurn,
-    private val reanchor: ReanchorPolicy? = null,
-    private val signals: RunnerSignals = RunnerSignals(),
-    private val toolSearch: ToolSearchPolicy? = null,
+    private val foldRounds: FoldRounds,
     private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(ProcessWaiter()),
 ) {
-    private val rounds = RoundSplice()
-    private val foldRounds = FoldRounds(key, log, reanchor, signals, toolSearch, finish, rounds)
-
     suspend fun run(initialBody: JsonObject, fold: FoldPolicy) {
         run(initialBody, fold, null)
     }
@@ -85,8 +74,8 @@ internal class FoldRunner(
             if (retry == null || outcome !is TurnOutcome.Failure) {
                 // health for absorbed rounds unless the final outcome is itself a Failure
                 // (attributed once by finishTurn) — see ReanchorRunner; DR-125 added abandoned.
-                if (outcome !is TurnOutcome.Failure) absorbedFailures.forEach(signals.onRoundFailure::invoke)
-                foldRounds.finalize(rounds.withFailureSalvage(outcome, acc), buffer, salvaged, acc.toUsage())
+                if (outcome !is TurnOutcome.Failure) foldRounds.reportAbsorbed(absorbedFailures)
+                foldRounds.finalize(foldRounds.withFailureSalvage(outcome, acc), buffer, salvaged, acc.toUsage())
                 return
             }
             val failure = outcome
@@ -102,7 +91,7 @@ internal class FoldRunner(
                 acc = acc.plusRound(p.usage)
             }
             buffer.discard()
-            log("[$key] fold re-anchor ${reanchorAttempt + 1}: ${failure.type.wireName} mid-round; retrying\n")
+            foldRounds.noteReanchor(reanchorAttempt, failure)
             TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { backoff(reanchorAttempt, 0) }
             body = retry
             reanchorAttempt++

@@ -23,6 +23,7 @@ import splice.core.turn.Usage
 import splice.head.compact.CompactStats
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RoundInterception
+import splice.head.round.RoundRunners
 import splice.head.round.RoundStrategy
 import splice.head.round.RunnerSignals
 import splice.head.wire.SseEmitterFactory
@@ -63,16 +64,18 @@ class CodeModeStepContextTest {
             val usage = wiring.usagePayloadBuilderFor(catalog, MODEL)
             val emitter = SseEmitterFactory().create({ frames += it }, MODEL, usage)
             RoundStrategy(
-                key = "test",
-                log = {},
                 emitter = emitter,
-                signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),
+                runners = RoundRunners(
+                    key = "test",
+                    log = {},
+                    signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),
+                    finish = { finished ->
+                        outcome = finished
+                        pipeline.finishStream(emitter, finished, meta, 0)
+                    },
+                ),
                 postRoundToSink = { _, _ -> post() },
                 postRound = { post() },
-                finish = { finished ->
-                    outcome = finished
-                    pipeline.finishStream(emitter, finished, meta, 0)
-                },
                 interception = RoundInterception(interceptor = bridge.interceptor(turn, disableParallel = false)),
             ).run(body, null, null)
         }

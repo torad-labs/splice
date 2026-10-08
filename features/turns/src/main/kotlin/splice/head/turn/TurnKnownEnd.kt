@@ -76,13 +76,13 @@ internal class TurnKnownEnd(
             try {
                 drive.emitter.emitError(failure.type, message, permanent = !failure.transient)
             } finally {
+                drive.markPermanent(!failure.transient)
                 telemetry.recordPerf(
                     drive,
                     outcome.wire,
                     failure.type == ErrorType.RATE_LIMIT,
                     cause = failure.cause.name,
                     layers = e.layers,
-                    permanent = !failure.transient,
                 )
             }
             true

@@ -17,10 +17,13 @@ class UnsupportedCustomCallTest {
         val billed = Usage(80, 7, 20, 3)
         val finishes = mutableListOf<TurnOutcome>()
         RoundStrategy(
-            key = "test",
-            log = {},
             emitter = UnusedSink(),
-            signals = RunnerSignals(),
+            runners = RoundRunners(
+                key = "test",
+                log = {},
+                signals = RunnerSignals(),
+                finish = { finishes += it },
+            ),
             postRoundToSink = { _, _ -> error("single round must not buffer") },
             postRound = {
                 TurnOutcome.Success(
@@ -30,7 +33,6 @@ class UnsupportedCustomCallTest {
                     customCalls = listOf(GatewayCustomCall("custom-1", "unknown", "", JsonObject(emptyMap()))),
                 )
             },
-            finish = { finishes += it },
         ).run(JsonObject(emptyMap()), fold = null, reanchor = null)
         assertEquals(1, finishes.size)
         val failure = finishes.single() as TurnOutcome.Failure

@@ -52,27 +52,18 @@ private fun turn(
     cached: Long? = 0,
     cacheWrite: Long? = 0,
     out: Long? = 0,
-    req: Long? = null,
-    upstream: Long? = null,
-    eager: Long? = null,
-    deferred: Long? = null,
-    rateLimited: Boolean = false,
     model: String? = null,
-    localStep: Boolean = false,
-    absorbed: AbsorbedRounds = AbsorbedRounds(),
 ) = TurnEconomics(
-    model,
-    inTokens,
-    cached,
-    cacheWrite,
-    out,
-    req,
-    upstream,
-    eager,
-    deferred,
-    rateLimited,
-    localStep,
-    UsageHistory(absorbed = absorbed),
+    model = model,
+    inTokens = inTokens,
+    cachedTokens = cached,
+    cacheWriteTokens = cacheWrite,
+    outTokens = out,
+    reqBytes = null,
+    upstreamBytes = null,
+    toolsEager = null,
+    toolsDeferred = null,
+    history = UsageHistory(),
 )
 
 class UnknownFailureEconomicsTest {
@@ -203,7 +194,8 @@ class EconomicsStoreTest {
     fun `a turn's absorbed rounds are metered and priced as requests of their own`(@TempDir tmp: Path) {
         val store = EconomicsStore(tmp.resolve("e.json"), FABLE_HEAD, WallClock { 10 * HOUR })
         val script = AbsorbedRounds(rounds = 1, inputTokens = 40_000, cachedTokens = 30_000, outputTokens = 500)
-        store.record(turn(inTokens = 60_000, cached = 50_000, out = 1_500, model = HAIKU, absorbed = script))
+        val absorbing = turn(inTokens = 60_000, cached = 50_000, out = 1_500, model = HAIKU)
+        store.record(absorbing.copy(history = UsageHistory(absorbed = script)))
 
         val b = store.read().single()
         assertEquals(100_000, b.inTokens, "both requests' input is metered")
@@ -276,7 +268,7 @@ class EconomicsStoreTest {
         val file = tmp.resolve("e.json")
         val store = EconomicsStore(file, FABLE_HEAD, WallClock { 10 * HOUR })
         store.record(turn(inTokens = 1_000, out = 10, model = FABLE))
-        store.record(turn(inTokens = 70, out = 0, model = FABLE, localStep = true))
+        store.record(turn(inTokens = 70, out = 0, model = FABLE).copy(localStep = true))
         store.record(turn(inTokens = 20, model = null)) // legacy without a marker is a turn
         store.flushNow()
         AsyncFileIo.drain()
@@ -338,8 +330,8 @@ class EconomicsStoreTest {
     @Test
     fun `only turns that reported a tool partition count toward deferralTurns`(@TempDir tmp: Path) {
         val store = EconomicsStore(tmp.resolve("e.json"), UNPRICED, WallClock { 10 * HOUR })
-        store.record(turn(eager = 28, deferred = 48)) // a responses-dialect turn
-        store.record(turn(eager = null, deferred = null)) // a chat-dialect turn: no deferral at all
+        store.record(turn().copy(toolsEager = 28, toolsDeferred = 48)) // a responses-dialect turn
+        store.record(turn()) // a chat-dialect turn: no deferral at all
 
         val b = store.read().single()
         assertEquals(2, b.turns)
@@ -360,17 +352,17 @@ class EconomicsStoreTest {
     @Test
     fun `rate-limited turns are counted`(@TempDir tmp: Path) {
         val store = EconomicsStore(tmp.resolve("e.json"), UNPRICED, WallClock { 10 * HOUR })
-        store.record(turn(rateLimited = true))
-        store.record(turn(rateLimited = false))
-        store.record(turn(rateLimited = true))
+        store.record(turn().copy(rateLimited = true))
+        store.record(turn())
+        store.record(turn().copy(rateLimited = true))
         assertEquals(2, store.read().single().rateLimited)
     }
 
     @Test
     fun `wire bytes accumulate on both sides of the seam`(@TempDir tmp: Path) {
         val store = EconomicsStore(tmp.resolve("e.json"), UNPRICED, WallClock { 10 * HOUR })
-        store.record(turn(req = 100, upstream = 140))
-        store.record(turn(req = 200, upstream = 180))
+        store.record(turn().copy(reqBytes = 100, upstreamBytes = 140))
+        store.record(turn().copy(reqBytes = 200, upstreamBytes = 180))
         val b = store.read().single()
         assertEquals(300, b.reqBytes)
         assertEquals(320, b.upstreamBytes)
@@ -394,7 +386,7 @@ class EconomicsStoreTest {
     fun `state survives a restart`(@TempDir tmp: Path) {
         val file = tmp.resolve("e.json")
         val first = EconomicsStore(file, UNPRICED, WallClock { 10 * HOUR })
-        first.record(turn(inTokens = 500, cached = 400, eager = 14, deferred = 52, rateLimited = true))
+        first.record(turn(inTokens = 500, cached = 400).copy(toolsEager = 14, toolsDeferred = 52, rateLimited = true))
         first.flushNow()
         AsyncFileIo.drain()
         assertTrue(Files.exists(file), "flushNow must land the snapshot on disk")

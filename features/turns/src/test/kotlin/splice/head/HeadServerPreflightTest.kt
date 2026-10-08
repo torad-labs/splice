@@ -58,6 +58,13 @@ private val CALIBRATED = mapOf(
     "gpt-6-sol" to CompactionReserve(1_290, 11_602),
 )
 
+/** The system prompt and model one preflight request names, and the request body they make. */
+internal class PreflightPrompt(private val system: String = "test", private val model: String = "gpt-5.6-sol") {
+    fun body(previous: String, content: String): String =
+        """{"model":"claude-codex--$model","stream":true,"max_tokens":64,"system":"$system","messages":[""" +
+            previous + """{"role":"user","content":"$content"}]}"""
+}
+
 class HeadServerPreflightTest {
     internal fun head(
         root: Path,
@@ -65,27 +72,46 @@ class HeadServerPreflightTest {
         window: Long = 272_000,
         stats: PerfStats = PerfStats(root.resolve("perf-preflight.jsonl")),
         model: String = "gpt-5.6-sol",
-        servedWindow: Long? = null,
     ): HeadServer {
-        val catalog = if (servedWindow != null) {
-            ProviderConfig(
-                dialect = Dialect.OPENAI_RESPONSES,
-                baseUrl = upstream.baseUrl,
-                auth = AuthConfig("chatgpt-oauth"),
-                extraWindows = listOf(ExtraWindow(model, window)),
-            ).catalogFor(
-                HeadConfig("codex", 3101, "claude-codex--", model),
-                discovered = listOf(DiscoveredModel(model, contextWindow = servedWindow)),
-            )
-        } else {
-            ModelCatalog(
-                discoveryPrefix = "claude-codex--",
-                models = listOf(ModelEntry(model, contextWindow = window)),
-                defaultContextWindow = window,
-                pinnedModel = model,
-                compactionReserveDefaults = CompactionReserveDefaults { id, _ -> CALIBRATED[id] },
-            )
-        }
+        val catalog = ModelCatalog(
+            discoveryPrefix = "claude-codex--",
+            models = listOf(ModelEntry(model, contextWindow = window)),
+            defaultContextWindow = window,
+            pinnedModel = model,
+            compactionReserveDefaults = CompactionReserveDefaults { id, _ -> CALIBRATED[id] },
+        )
+        return assembled(root, upstream, catalog, stats, model)
+    }
+
+    /** A head whose configured window is [configured] while the backend serves [served], so a compact is
+     *  judged against the published ceiling. */
+    internal fun servedHead(
+        root: Path,
+        upstream: MockChatGptUpstream,
+        stats: PerfStats,
+        configured: Long,
+        served: Long,
+    ): HeadServer {
+        val model = "gpt-5.6-sol"
+        val catalog = ProviderConfig(
+            dialect = Dialect.OPENAI_RESPONSES,
+            baseUrl = upstream.baseUrl,
+            auth = AuthConfig("chatgpt-oauth"),
+            extraWindows = listOf(ExtraWindow(model, configured)),
+        ).catalogFor(
+            HeadConfig("codex", 3101, "claude-codex--", model),
+            discovered = listOf(DiscoveredModel(model, contextWindow = served)),
+        )
+        return assembled(root, upstream, catalog, stats, model)
+    }
+
+    private fun assembled(
+        root: Path,
+        upstream: MockChatGptUpstream,
+        catalog: ModelCatalog,
+        stats: PerfStats,
+        model: String,
+    ): HeadServer {
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(
                 key = "codex",
@@ -116,18 +142,15 @@ class HeadServerPreflightTest {
         port: Int,
         previous: String,
         content: String,
-        system: String = "test",
-        model: String = "gpt-5.6-sol",
+        prompt: PreflightPrompt = PreflightPrompt(),
     ): HttpResponse = client.post("http://127.0.0.1:$port/v1/messages") {
         header("Content-Type", "application/json")
         header("x-claude-code-session-id", "preflight-session")
-        val body = """{"model":"claude-codex--$model","stream":true,"max_tokens":64,"system":"$system","messages":[""" +
-            previous + """{"role":"user","content":"$content"}]}"""
-        setBody(body)
+        setBody(prompt.body(previous, content))
     }
 
     private suspend fun compact(client: HttpClient, port: Int, previous: String, content: String): HttpResponse =
-        send(client, port, previous, content, "SCENARIO:basic tasked with summarizing conversations")
+        send(client, port, previous, content, PreflightPrompt("SCENARIO:basic tasked with summarizing conversations"))
 
     private fun measured(
         stats: PerfStats,
@@ -251,7 +274,7 @@ class HeadServerPreflightTest {
         val upstream = MockChatGptUpstream()
         val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
         val stats = PerfStats(root.resolve("perf-preflight.jsonl"))
-        val server = head(root, upstream, window = 400_000, stats = stats, servedWindow = 872_000)
+        val server = servedHead(root, upstream, stats, configured = 400_000, served = 872_000)
         try {
             server.start()
             compact(client, server.port, "", "seed").bodyAsText()
@@ -283,7 +306,7 @@ class HeadServerPreflightTest {
         val server = head(root, upstream, window = 872_000, stats = stats, model = "gpt-6-sol")
         try {
             server.start()
-            val seed = send(client, server.port, "", "seed", model = "gpt-6-sol")
+            val seed = send(client, server.port, "", "seed", PreflightPrompt(model = "gpt-6-sol"))
             assertEquals(200, seed.status.value)
             seed.bodyAsText()
             awaitRows(stats, 1)
@@ -294,7 +317,7 @@ class HeadServerPreflightTest {
                 server.port,
                 history,
                 "tasked with summarizing conversations",
-                model = "gpt-6-sol",
+                prompt = PreflightPrompt(model = "gpt-6-sol"),
             )
             assertEquals(200, compact.status.value, "p99 output is not a required output minimum")
             compact.bodyAsText()
@@ -314,14 +337,14 @@ class HeadServerPreflightTest {
         val server = head(root, upstream, window = 872_000, stats = stats, model = "gpt-6-sol")
         try {
             server.start()
-            val seed = send(client, server.port, "", "seed", model = "gpt-6-sol")
+            val seed = send(client, server.port, "", "seed", PreflightPrompt(model = "gpt-6-sol"))
             assertEquals(200, seed.status.value)
             seed.bodyAsText()
             awaitRows(stats, 1)
             measured(stats, upstream, "seed", tokens = 800_000, model = "gpt-6-sol")
             val history = """{"role":"user","content":"seed"},{"role":"assistant","content":"earlier"},"""
             val addedText = "x".repeat(70_000)
-            val ordinary = send(client, server.port, history, addedText, model = "gpt-6-sol")
+            val ordinary = send(client, server.port, history, addedText, PreflightPrompt(model = "gpt-6-sol"))
             assertEquals(400, ordinary.status.value, "upper text bound should request compaction")
             assertTrue("prompt is too long" in ordinary.bodyAsText())
             val compact = send(
@@ -329,7 +352,7 @@ class HeadServerPreflightTest {
                 server.port,
                 history,
                 addedText + " tasked with summarizing conversations",
-                model = "gpt-6-sol",
+                prompt = PreflightPrompt(model = "gpt-6-sol"),
             )
             assertEquals(200, compact.status.value, "measured lower bound leaves room for compact")
             assertTrue("event: message_stop" in compact.bodyAsText())
@@ -349,19 +372,19 @@ class HeadServerPreflightTest {
         val server = head(root, upstream, window = 872_000, stats = stats, model = "gpt-6-sol")
         try {
             server.start()
-            val seed = send(client, server.port, "", "seed", model = "gpt-6-sol")
+            val seed = send(client, server.port, "", "seed", PreflightPrompt(model = "gpt-6-sol"))
             assertEquals(200, seed.status.value)
             seed.bodyAsText()
             awaitRows(stats, 1)
             measured(stats, upstream, "seed", tokens = 800_000, model = "gpt-6-sol")
             val previous = """{"role":"user","content":"seed"},"""
-            val response = send(client, server.port, previous, "x".repeat(90_000), model = "gpt-6-sol")
+            val response = send(client, server.port, previous, "x".repeat(90_000), PreflightPrompt(model = "gpt-6-sol"))
             assertEquals(200, response.status.value, "the first exchange has no compaction to fall back on")
             response.bodyAsText()
             awaitRows(stats, 2)
             measured(stats, upstream, "seed", tokens = 873_000, model = "gpt-6-sol")
             val grown = previous + """{"role":"user","content":"${"x".repeat(90_000)}"},"""
-            val oversized = send(client, server.port, grown, "continue", model = "gpt-6-sol")
+            val oversized = send(client, server.port, grown, "continue", PreflightPrompt(model = "gpt-6-sol"))
             assertEquals(400, oversized.status.value, "measured input alone exceeds W")
             val firstRefusal = oversized.bodyAsText()
             assertRecovery(firstRefusal, inputTokens = 873_000, window = 872_000)
@@ -424,7 +447,7 @@ class HeadServerOverflowStatusTest {
         previous: String,
         content: String,
         system: String,
-    ): HttpResponse = fixture.send(client, port, previous, content, system)
+    ): HttpResponse = fixture.send(client, port, previous, content, PreflightPrompt(system))
 
     private fun recorded(root: Path): String = fixture.recorded(root)
 

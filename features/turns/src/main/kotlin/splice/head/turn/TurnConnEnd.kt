@@ -51,7 +51,8 @@ internal class TurnConnEnd(
             // DR-128: account BEFORE the emit — a dead-client write makes emitError rethrow after
             // sealing, and the turn must not vanish from the perf JSONL and G20 counters (the
             // 2026-07-19 storm shape: dead clients + failing upstream). Same law on every surface.
-            telemetry.recordPerf(drive, OutcomeTag.UPSTREAM_FRAME_TOO_LARGE.wire, permanent = false)
+            drive.markPermanent(false)
+            telemetry.recordPerf(drive, OutcomeTag.UPSTREAM_FRAME_TOO_LARGE.wire)
             health.provider()
             // V4-81: the wire type is the EMITTER's decision now, so this arm passes permanence
             // explicitly — and this is the one arm where the answer needed deciding rather than

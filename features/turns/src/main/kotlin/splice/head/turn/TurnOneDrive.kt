@@ -77,9 +77,7 @@ internal class TurnOneDrive(
                         self,
                         turnJob,
                         deps.seams.ticker,
-                        provider.key,
-                        deps.log,
-                        drive.sessionTag(),
+                        LostClient(provider.key, deps.log, drive.sessionTag()),
                         // The pinger's two frames (ClientChannel.HEARTBEAT_EVERY_TICKS): the ping
                         // that re-arms the client's stall watchdog, and — unless the operator turned
                         // it off — the status line that makes the wait visible instead of blank.

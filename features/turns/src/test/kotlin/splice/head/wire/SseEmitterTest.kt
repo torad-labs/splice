@@ -396,7 +396,7 @@ class SseEmitterTest {
                 model = "claude-codex--gpt-5.6-sol",
                 usagePayload = { buildJsonObject { } },
                 messageId = "msg_fixed",
-                contentReached = { false },
+                streaming = StreamWiring(contentReached = { false }),
             )
             e.emitError(ErrorType.API_ERROR, "upstream: broke")
 
@@ -419,7 +419,7 @@ class SseEmitterTest {
             model = "claude-codex--gpt-5.6-sol",
             usagePayload = { buildJsonObject { } },
             messageId = "msg_fixed",
-            contentReached = { reached },
+            streaming = StreamWiring(contentReached = { reached }),
         )
         e.openText()
         reached = true
@@ -439,7 +439,7 @@ class SseEmitterTest {
             model = "claude-codex--gpt-5.6-sol",
             usagePayload = { buildJsonObject { } },
             messageId = "msg_fixed",
-            contentReached = { false },
+            streaming = StreamWiring(contentReached = { false }),
         )
         e.emitError(ErrorType.API_ERROR, "upstream: model refused", permanent = true)
 

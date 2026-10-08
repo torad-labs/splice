@@ -8,6 +8,7 @@ import kotlinx.coroutines.Job
 import splice.core.perf.PerfKeys
 import splice.core.util.LogSink
 import splice.head.round.RoundInterception
+import splice.head.round.RoundRunners
 import splice.head.round.RoundStrategy
 import splice.head.transport.IndependentSourcePost
 import splice.head.transport.SseRoundDriver
@@ -36,10 +37,14 @@ internal class TurnRoundRun(
         val fold = provider.foldPolicy(drive.meta)
         val reanchor = provider.reanchorPolicy(drive.meta)
         RoundStrategy(
-            key = provider.key,
-            log = log,
             emitter = drive.emitter,
-            signals = drive.signals,
+            runners = RoundRunners(
+                key = provider.key,
+                log = log,
+                signals = drive.signals,
+                finish = { outcome -> turnFinish.finishTurn(drive, outcome) },
+                toolSearch = drive.toolSearch,
+            ),
             // V4-173: THE choke point. Every upstream request of every runner — the single round,
             // each fold round, each re-anchor, each tool-search continuation — and whatever an
             // interceptor substituted, passes through one of these two lambdas as the string the
@@ -52,8 +57,6 @@ internal class TurnRoundRun(
                 recordPost(drive, body)
                 sseRoundDriver.postRound(drive, body, drive.emitter, self, turnJob)
             },
-            finish = { outcome -> turnFinish.finishTurn(drive, outcome) },
-            toolSearch = drive.toolSearch,
             interception = RoundInterception(
                 interceptor = drive.roundInterceptor,
                 rawRoundObserved = drive::recordRawRound,

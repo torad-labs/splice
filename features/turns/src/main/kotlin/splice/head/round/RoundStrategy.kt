@@ -11,16 +11,13 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
-import splice.core.util.LogSink
 import splice.upstream.FoldPolicy
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.PostingTurnRow
 import splice.upstream.ReanchorPolicy
-import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.RoundBodyInterceptor
 import splice.upstream.RoundInterceptor
-import splice.upstream.ToolSearchPolicy
 import splice.upstream.sse.WireSink
 
 /** Receives terminal outcomes from raw code-mode posts before the interceptor can expand them. */
@@ -37,20 +34,12 @@ internal data class RoundInterception(
 )
 
 internal class RoundStrategy(
-    private val key: String,
-    private val log: LogSink,
     private val emitter: WireSink,
-    private val signals: RunnerSignals,
+    private val runners: RoundRunners,
     private val postRoundToSink: PostRoundToSink,
     private val postRound: PostRound,
-    private val finish: FinishTurn,
-    // Defaulted (not just nullable): the 8th required param tripped the constructor-length wall
-    // (max 7 required) — always passed explicitly at the one call site (driveOneTurn).
-    private val toolSearch: ToolSearchPolicy? = null,
     private val interception: RoundInterception = RoundInterception(),
 ) {
-    private val rounds = RoundSplice()
-
     suspend fun run(requestBody: JsonObject, fold: FoldPolicy?, reanchor: ReanchorPolicy?) {
         run(requestBody, fold, reanchor, null)
     }
@@ -61,41 +50,17 @@ internal class RoundStrategy(
         reanchor: ReanchorPolicy?,
         perf: TurnPerf?,
     ) {
-        val notice = RetryNotice { log(it) }
         val recovery = observedReanchor(reanchor)
         val interceptedPost = PostRound { body -> intercept(body, emitter, postRound, perf) }
         val interceptedPostToSink = PostRoundToSink { body, sink ->
             intercept(body, sink, PostRound { posted -> postRoundToSink(posted, sink) }, perf)
         }
         if (fold != null) {
-            FoldRunner(
-                emitter = emitter,
-                key = key,
-                log = notice,
-                postRound = interceptedPostToSink,
-                finish = finish,
-                reanchor = recovery,
-                signals = signals,
-                toolSearch = toolSearch,
-            ).run(requestBody, fold, perf)
-        } else if (reanchor == null && toolSearch == null) {
-            // DR-130: the runners salvage a failed round's own burn through withFailureSalvage
-            // (DR-124); this path handed the raw outcome to finishTurn, which stamps ONLY
-            // salvagedUsage — so the tokens the vendor billed went unrecorded. Every compact turn
-            // came through here until 2026-09-02 (re-anchor was null for compact; it no longer is),
-            // which made the most expensive turn class the one that recorded nothing. There are no
-            // absorbed rounds on this path, so the accumulator is empty by construction and a
-            // Success or a clean abandonment passes through untouched.
-            finish(rounds.withFailureSalvage(interceptedPost(RoundBody.Tree(requestBody)), RoundUsage()))
+            runners.fold(emitter, interceptedPostToSink, recovery).run(requestBody, fold, perf)
+        } else if (reanchor == null && !runners.searchesTools()) {
+            runners.finishAlone(interceptedPost(RoundBody.Tree(requestBody)))
         } else {
-            ReanchorRunner(
-                key = key,
-                log = notice,
-                postRound = interceptedPost,
-                finish = finish,
-                signals = signals,
-                toolSearch = toolSearch,
-            ).run(requestBody, recovery, perf)
+            runners.reanchoring(interceptedPost).run(requestBody, recovery, perf)
         }
     }
 

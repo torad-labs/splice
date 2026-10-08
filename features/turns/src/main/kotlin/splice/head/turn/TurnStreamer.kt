@@ -39,9 +39,12 @@ import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
 import splice.head.turn.detached.DetachedCompaction
 import splice.head.turn.stream.PendingSse
+import splice.head.wire.ContentReached
 import splice.head.wire.FrameRecording
+import splice.head.wire.SseEmitter
 import splice.head.wire.SseEmitterFactory
 import splice.head.wire.SseResponse
+import splice.head.wire.StreamWiring
 import splice.head.wire.TurnWiring
 import splice.upstream.LifecycleScope
 import splice.upstream.Provider
@@ -71,6 +74,22 @@ internal class TurnStreamer(
             deps.log("[${provider.key}] detached compaction crashed (${e::class.simpleName})\n")
         }
 
+    /** The emitter whose pinger frames go through the pending response's progress port and whose
+     *  content-reached answer reads what this turn has actually written to the client. */
+    private fun streamingEmitter(call: ApplicationCall, inputs: TurnInputs, pending: PendingSse): SseEmitter {
+        val meta = inputs.built.meta
+        val perf = inputs.perf
+        return emitters.create(
+            write = pending::model,
+            streaming = StreamWiring(
+                pending::progress,
+                ContentReached { (perf.snapshot().counters[PerfKeys.CONTENT_FRAMES_OUT] ?: 0L) > 0 },
+            ),
+            model = meta.originalModel,
+            usagePayload = wiring.usagePayloadBuilder(provider.catalog, meta, clientWindow.of(call, meta.sessionId)),
+        )
+    }
+
     /** Drive the turn while holding HTTP status, then attach the SSE writer or return HTTP 400.
      * A detached compaction takes its slot as soon as its drive starts; [TurnInputs.markHandedOff]
      * is the durable cancellation-path signal, and this return reports the same handoff. */
@@ -89,17 +108,7 @@ internal class TurnStreamer(
             // Structural message_start/ping are staged, not counted as sent.
             val pending = pending(inputs, recording)
             val channel = pending.channel
-            val emitter = emitters.create(
-                write = pending::model,
-                progressWrite = pending::progress,
-                contentReached = { (perf.snapshot().counters[PerfKeys.CONTENT_FRAMES_OUT] ?: 0L) > 0 },
-                model = built.meta.originalModel,
-                usagePayload = wiring.usagePayloadBuilder(
-                    provider.catalog,
-                    built.meta,
-                    clientWindow.of(call, built.meta.sessionId),
-                ),
-            )
+            val emitter = streamingEmitter(call, inputs, pending)
             val drive = driveFactory.assembleDrive(inputs, emitter, channel)
             drive.rateLimitRelay = TurnDrive.RateLimitRelay(pending::refuse)
             drive.upstreamAccepted = splice.upstream.StreamStart(pending::accepted)

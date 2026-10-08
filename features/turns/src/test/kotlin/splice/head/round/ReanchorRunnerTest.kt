@@ -85,7 +85,6 @@ private fun retryableFailure(
     outputTokens: Long = 0,
     bodyText: String = "partial",
     thinkingText: String = "",
-    emittedText: Boolean = bodyText.isNotEmpty(),
     // V4-76: the tool shape of the cut. hasToolUse with toolTearOpen FALSE means the tool block's
     // content_block_stop already reached the client (PartialRound's own contract); toolTearOpen
     // means the client holds half a tool call nothing can complete.
@@ -99,7 +98,7 @@ private fun retryableFailure(
     partial = TurnOutcome.PartialRound(
         thinkingText = thinkingText,
         bodyText = bodyText,
-        emittedText = emittedText,
+        emittedText = bodyText.isNotEmpty(),
         hasToolUse = hasToolUse,
         toolTearOpen = toolTearOpen,
         usage = Usage(outputTokens = outputTokens),
@@ -344,15 +343,17 @@ class FoldRunnerReanchorTest {
         }
         FoldRunner(
             emitter = h.emitter,
-            key = "t",
-            log = { },
             postRound = { _, _ -> rounds.removeFirst().invoke() },
-            finish = { h.finish(it) },
-            reanchor = ReanchorPolicy { round ->
-                seenPartialBodies.add(round.failure.partial?.bodyText)
-                continuationBody()
-            },
-            signals = h.signals(),
+            foldRounds = FoldRounds(
+                key = "t",
+                log = { },
+                reanchor = ReanchorPolicy { round ->
+                    seenPartialBodies.add(round.failure.partial?.bodyText)
+                    continuationBody()
+                },
+                signals = h.signals(),
+                finish = { h.finish(it) },
+            ),
             backoff = RetryBackoff { attempt, minDelayMs ->
                 assertEquals(0, minDelayMs)
                 waits += attempt
@@ -376,7 +377,7 @@ class FoldRunnerReanchorTest {
         // turn's real emptiness instead of a clean empty end-of-turn.
         val h = Harness()
         val rounds = ArrayDeque<suspend () -> TurnOutcome>()
-        rounds.add { retryableFailure(bodyText = "buffered prose", emittedText = true) }
+        rounds.add { retryableFailure(bodyText = "buffered prose") }
         rounds.add {
             TurnOutcome.Success(
                 hasToolUse = false,
@@ -387,12 +388,14 @@ class FoldRunnerReanchorTest {
         }
         FoldRunner(
             emitter = h.emitter,
-            key = "t",
-            log = { },
             postRound = { _, _ -> rounds.removeFirst().invoke() },
-            finish = { h.finish(it) },
-            reanchor = ReanchorPolicy { continuationBody() },
-            signals = h.signals(),
+            foldRounds = FoldRounds(
+                key = "t",
+                log = { },
+                reanchor = ReanchorPolicy { continuationBody() },
+                signals = h.signals(),
+                finish = { h.finish(it) },
+            ),
         ).run(continuationBody()) { null }
         val success = h.finished as TurnOutcome.Success
         assertEquals(false, success.emittedText, "a discarded buffer must not vouch for emitted text")
@@ -460,15 +463,17 @@ class FoldRunnerReanchorTest {
         var asks = 0
         FoldRunner(
             emitter = h.emitter,
-            key = "t",
-            log = { },
             postRound = { _, _ -> retryableFailure() },
-            finish = { h.finish(it) },
-            reanchor = ReanchorPolicy {
-                asks++
-                continuationBody()
-            },
-            signals = h.signals(gone = true),
+            foldRounds = FoldRounds(
+                key = "t",
+                log = { },
+                reanchor = ReanchorPolicy {
+                    asks++
+                    continuationBody()
+                },
+                signals = h.signals(gone = true),
+                finish = { h.finish(it) },
+            ),
         ).run(continuationBody()) { null }
         assertEquals(0, asks)
         assertNull(h.finished as? TurnOutcome.Success)
@@ -498,11 +503,13 @@ class FoldRunnerReanchorTest {
         rounds.add { _ -> TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }
         FoldRunner(
             emitter = h.emitter,
-            key = "t",
-            log = { },
             postRound = { _, sink -> rounds.removeFirst().invoke(sink) },
-            finish = { h.finish(it) },
-            signals = h.signals(gone = true),
+            foldRounds = FoldRounds(
+                key = "t",
+                log = { },
+                signals = h.signals(gone = true),
+                finish = { h.finish(it) },
+            ),
         ).run(continuationBody(), fold)
         assertEquals(0, asked, "a gone client must not be asked for more fold rounds")
     }
@@ -718,12 +725,14 @@ class FoldRunnerAbandonTest {
         rounds.add { TurnOutcome.ClientAbandoned() }
         FoldRunner(
             emitter = h.emitter,
-            key = "t",
-            log = { },
             postRound = { _, _ -> rounds.removeFirst().invoke() },
-            finish = { h.finish(it) },
-            reanchor = ReanchorPolicy { continuationBody() },
-            signals = h.signals(),
+            foldRounds = FoldRounds(
+                key = "t",
+                log = { },
+                reanchor = ReanchorPolicy { continuationBody() },
+                signals = h.signals(),
+                finish = { h.finish(it) },
+            ),
         ).run(continuationBody()) { null }
         assertEquals(1, h.absorbed.size, "the fold-absorbed failure must reach the health hook")
         val abandoned = h.finished as TurnOutcome.ClientAbandoned
@@ -762,12 +771,14 @@ class FoldRunnerSearchTest {
         }
         FoldRunner(
             emitter = h.emitter,
-            key = "t",
-            log = { },
             postRound = { _, sink -> rounds.removeFirst().invoke(sink) },
-            finish = { h.finish(it) },
-            signals = h.signals(),
-            toolSearch = search,
+            foldRounds = FoldRounds(
+                key = "t",
+                log = { },
+                signals = h.signals(),
+                toolSearch = search,
+                finish = { h.finish(it) },
+            ),
         ).run(continuationBody()) { null }
 
         val success = h.finished as TurnOutcome.Success
@@ -799,12 +810,14 @@ class FoldRunnerSearchTest {
         rounds.add { _ -> TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }
         FoldRunner(
             emitter = h.emitter,
-            key = "t",
-            log = { },
             postRound = { _, sink -> rounds.removeFirst().invoke(sink) },
-            finish = { h.finish(it) },
-            signals = h.signals(),
-            toolSearch = search,
+            foldRounds = FoldRounds(
+                key = "t",
+                log = { },
+                signals = h.signals(),
+                toolSearch = search,
+                finish = { h.finish(it) },
+            ),
         ).run(continuationBody(), fold)
 
         assertEquals(
@@ -826,14 +839,16 @@ class RoundStrategySingleRoundTest {
     fun `the single-round path carries the failed round's own burn - DR-130`() = runTest {
         val h = Harness()
         RoundStrategy(
-            key = "t",
-            log = { },
             emitter = h.emitter,
-            signals = h.signals(),
+            runners = RoundRunners(
+                key = "t",
+                log = { },
+                signals = h.signals(),
+                finish = { h.finish(it) },
+                toolSearch = null,
+            ),
             postRoundToSink = { _, _ -> error("the single-round path must not buffer") },
             postRound = { retryableFailure(outputTokens = 11) },
-            finish = { h.finish(it) },
-            toolSearch = null,
         ).run(continuationBody(), fold = null, reanchor = null)
         val failure = h.finished as TurnOutcome.Failure
         assertEquals(
@@ -857,10 +872,13 @@ class RoundStrategyUsageObservationTest {
 
         val thrown = try {
             RoundStrategy(
-                key = "t",
-                log = { },
                 emitter = h.emitter,
-                signals = h.signals(),
+                runners = RoundRunners(
+                    key = "t",
+                    log = { },
+                    signals = h.signals(),
+                    finish = { h.finish(it) },
+                ),
                 postRoundToSink = { _, _ -> error("the direct code-mode path must not buffer") },
                 postRound = {
                     when (++posts) {
@@ -877,7 +895,6 @@ class RoundStrategyUsageObservationTest {
                         else -> throw cancellation
                     }
                 },
-                finish = { h.finish(it) },
                 interception = RoundInterception(
                     rawRoundObserved = { observed += it },
                     interceptor = RoundInterceptor { _, _, post ->
@@ -906,13 +923,15 @@ class RoundStrategyUsageObservationTest {
         val perf = TurnPerf()
         var seen: TurnPerf? = null
         RoundStrategy(
-            key = "t",
-            log = { },
             emitter = h.emitter,
-            signals = h.signals(),
+            runners = RoundRunners(
+                key = "t",
+                log = { },
+                signals = h.signals(),
+                finish = { h.finish(it) },
+            ),
             postRoundToSink = { _, _ -> error("the direct code-mode path must not buffer") },
             postRound = { TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage()) },
-            finish = { h.finish(it) },
             interception = RoundInterception(
                 interceptor = RoundInterceptor { _, _, post ->
                     seen = post.perf
@@ -929,10 +948,13 @@ class RoundStrategyUsageObservationTest {
         val h = Harness()
         val observed = mutableListOf<TurnOutcome>()
         RoundStrategy(
-            key = "t",
-            log = { },
             emitter = h.emitter,
-            signals = h.signals(),
+            runners = RoundRunners(
+                key = "t",
+                log = { },
+                signals = h.signals(),
+                finish = { h.finish(it) },
+            ),
             postRoundToSink = { _, _ -> error("the direct path must not buffer") },
             postRound = {
                 TurnOutcome.Success(
@@ -941,7 +963,6 @@ class RoundStrategyUsageObservationTest {
                     usage = Usage(outputTokens = 3),
                 )
             },
-            finish = { h.finish(it) },
             interception = RoundInterception(rawRoundObserved = { observed += it }),
         ).run(continuationBody(), fold = null, reanchor = null)
 
@@ -976,26 +997,30 @@ class RoundRoutingEquivalenceTest {
 
         val plain = Harness()
         RoundStrategy(
-            key = "t",
-            log = { },
             emitter = plain.emitter,
-            signals = plain.signals(),
+            runners = RoundRunners(
+                key = "t",
+                log = { },
+                signals = plain.signals(),
+                finish = { plain.finish(it) },
+                toolSearch = null,
+            ),
             postRoundToSink = { _, _ -> error("neither branch may buffer on this path") },
             postRound = { success },
-            finish = { plain.finish(it) },
-            toolSearch = null,
         ).run(continuationBody(), fold = null, reanchor = null)
 
         val wired = Harness()
         RoundStrategy(
-            key = "t",
-            log = { },
             emitter = wired.emitter,
-            signals = wired.signals(),
+            runners = RoundRunners(
+                key = "t",
+                log = { },
+                signals = wired.signals(),
+                finish = { wired.finish(it) },
+                toolSearch = null,
+            ),
             postRoundToSink = { _, _ -> error("neither branch may buffer on this path") },
             postRound = { success },
-            finish = { wired.finish(it) },
-            toolSearch = null,
         ).run(continuationBody(), fold = null, reanchor = controller)
 
         assertEquals(plain.frames, wired.frames, "the client must see identical SSE bytes on a first-round Success")

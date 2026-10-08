@@ -617,7 +617,8 @@ class TurnFailurePermanenceTest {
             val drive = rig.drive(ConnectedTerminal(), clientGone = false)
             val release = drive.sourceRow.hold()
             try {
-                rig.telemetry.recordPerf(drive, "ok", permanent = permanent)
+                permanent?.let { drive.markPermanent(it) }
+                rig.telemetry.recordPerf(drive, "ok")
                 AsyncFileIo.drain()
                 assertFalse(Files.exists(rig.perfFile))
                 release.release(Usage(inputTokens = 7, outputTokens = 1))

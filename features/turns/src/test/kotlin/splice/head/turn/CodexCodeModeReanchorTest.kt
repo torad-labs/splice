@@ -31,6 +31,7 @@ import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.responsesTestReanchor
 import splice.dialect.responses.responsesTestTranslator
 import splice.head.round.RoundInterception
+import splice.head.round.RoundRunners
 import splice.head.round.RoundStrategy
 import splice.head.round.RunnerSignals
 import splice.head.wire.SseEmitterFactory
@@ -257,13 +258,15 @@ class CodexCodeModeReanchorTest {
         recovery: RecoveryCase,
         finish: suspend (TurnOutcome) -> Unit,
     ) = RoundStrategy(
-        key = "test",
-        log = {},
         emitter = sink,
-        signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),
+        runners = RoundRunners(
+            key = "test",
+            log = {},
+            signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),
+            finish = { finish(it) },
+        ),
         postRoundToSink = { request, target -> recovery.post(request, target) },
         postRound = { error("redirectable post expected") },
-        finish = { finish(it) },
         interception = RoundInterception(interceptor = bridge.interceptor(turn, disableParallel = false)),
     )
 
@@ -441,13 +444,15 @@ class CodexCodeModeReanchorTest {
         val turn = CodexCodeModeBridge.Turn("session", "conversation", "gpt-6-astra", setOf("Read"), emptyList())
         val emitter = SseEmitterFactory().create({}, "model", { buildJsonObject { } })
         return RoundStrategy(
-            key = "test",
-            log = {},
             emitter = emitter,
-            signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),
+            runners = RoundRunners(
+                key = "test",
+                log = {},
+                signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),
+                finish = { finish(it) },
+            ),
             postRoundToSink = { request, _ -> post(request.text) },
             postRound = { post(it.text) },
-            finish = { finish(it) },
             interception = RoundInterception(interceptor = bridge.interceptor(turn, disableParallel = false)),
         )
     }

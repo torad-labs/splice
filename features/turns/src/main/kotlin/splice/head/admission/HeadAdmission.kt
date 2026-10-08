@@ -29,11 +29,11 @@ internal class HeadAdmission(
     private val preparation: TurnPreparation,
     private val responses: AdmissionResponses,
     private val driver: TurnDriver,
-    /** V4-50 reads a WALL instant because a reset is a calendar fact the client must be told in
-     *  epoch seconds; [HeadDeps.clock] is an ElapsedClock and cannot answer that. Defaulted so no
-     *  construction site changes, injectable so the refusal is testable without sleeping. */
-    private val wallClock: WallClock = WallClock(System::currentTimeMillis),
 ) {
+    // V4-50 reads a WALL instant because a reset is a calendar fact the client must be told in epoch
+    // seconds; [HeadDeps.clock] is an ElapsedClock and cannot answer that. The two admissions below take
+    // the clock as their own parameter, which is where a test injects one to refuse without sleeping.
+    private val wallClock = WallClock(System::currentTimeMillis)
     private val credentialHolds = CredentialHoldAdmission(preparation.provider, deps, responses, driver, wallClock)
     private val exhaustedAccounts = ExhaustedAccountAdmission(deps, responses, driver, wallClock)
 

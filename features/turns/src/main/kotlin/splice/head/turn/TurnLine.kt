@@ -18,11 +18,10 @@ internal class TurnLine(
         model: String,
         outcome: TurnOutcome,
         latencyMs: Long,
-        fired: WatchdogFired? = null,
-        held: WatchdogHeld? = null,
+        watchdog: WatchdogVerdict = WatchdogVerdict(),
     ): String {
         val base = "[$headKey] turn compact=${meta.compact} model=$model latency=${latencyMs}ms"
-        return base + verdict(fired) + heldClause(held) + when (outcome) {
+        return base + watchdog.clauses() + when (outcome) {
             is TurnOutcome.Success ->
                 " ok out=${outcome.usage.outputTokens} tool=${outcome.hasToolUse} incomplete=${outcome.incomplete}\n"
             is TurnOutcome.Failure ->
@@ -30,6 +29,15 @@ internal class TurnLine(
             is TurnOutcome.ClientAbandoned -> " client-abandoned\n"
         }
     }
+}
+
+/** The watchdog's [fired] sentinel and its [held] mark, each absent when the poller never set it. */
+internal class WatchdogVerdict(
+    private val fired: WatchdogFired? = null,
+    private val held: WatchdogHeld? = null,
+) {
+    /** The log-line clauses, empty when the watchdog neither fired nor held the round. */
+    fun clauses(): String = verdict() + heldClause()
 
     /** The watchdog's own verdict, in the numbers it actually judged on.
      *
@@ -44,7 +52,7 @@ internal class TurnLine(
      *  compared against — was never written down. The production-path test for exactly this case
      *  passes, so the harness does not reproduce whatever the live path does; the next occurrence
      *  has to answer for itself. Absent a fire this adds nothing to the line. */
-    private fun verdict(fired: WatchdogFired?): String = when (fired) {
+    private fun verdict(): String = when (fired) {
         null -> ""
         is WatchdogFired.Idle -> {
             val tier = if (fired.sawClientFrame) "mid-output" else "first-output"
@@ -57,7 +65,7 @@ internal class TurnLine(
     /** The poller saw the round past its tier and held it because the socket was still being
      *  pinged (2026-09-06). On the line whether or not something later fired, so a turn that ran
      *  long is distinguishable from one the watchdog never looked at. */
-    private fun heldClause(held: WatchdogHeld?): String {
+    private fun heldClause(): String {
         if (held == null) return ""
         val tier = if (held.sawClientFrame) "mid-output" else "first-output"
         return " watchdog=held(tier=$tier limit=${held.limitMs}ms idle=${held.idleMs}ms ping=${held.pingAgoMs}ms)"

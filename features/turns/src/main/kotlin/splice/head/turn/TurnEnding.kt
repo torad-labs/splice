@@ -43,7 +43,8 @@ internal class TurnEnding(
                 // after sealing, and the turn must not vanish from the perf JSONL and G20
                 // counters. Same law on every failure surface (TurnConnEnd, TurnKnownEnd).
                 val permanent = e is URLParserException
-                telemetry.recordPerf(drive, OutcomeTag.UNEXPECTED.wire, permanent = permanent)
+                drive.markPermanent(permanent)
+                telemetry.recordPerf(drive, OutcomeTag.UNEXPECTED.wire)
                 health.local() // internal gateway bug (e.g. bad base_url parse)
                 // V4-81, NARROWED BY THE ORCHESTRATOR'S RULING. This arm catches EVERY non-Error
                 // RuntimeException at the turn boundary, and the operator law (V4-62) is retry on

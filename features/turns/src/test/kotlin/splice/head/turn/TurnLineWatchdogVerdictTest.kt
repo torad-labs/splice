@@ -49,7 +49,9 @@ class TurnLineWatchdogVerdictTest {
             "gpt-5.6-sol",
             stalled,
             latencyMs = 235011,
-            fired = WatchdogFired.Idle(idleMs = 180004, sawClientFrame = true, limitMs = 180000),
+            watchdog = WatchdogVerdict(
+                fired = WatchdogFired.Idle(idleMs = 180004, sawClientFrame = true, limitMs = 180000),
+            ),
         )
         assertTrue("watchdog=idle(tier=mid-output limit=180000ms idle=180004ms)" in rendered, rendered)
     }
@@ -61,7 +63,9 @@ class TurnLineWatchdogVerdictTest {
             "gpt-5.6-sol",
             stalled,
             latencyMs = 300_120,
-            fired = WatchdogFired.Idle(idleMs = 300_001, sawClientFrame = false, limitMs = 300_000),
+            watchdog = WatchdogVerdict(
+                fired = WatchdogFired.Idle(idleMs = 300_001, sawClientFrame = false, limitMs = 300_000),
+            ),
         )
         assertTrue("watchdog=idle(tier=first-output limit=300000ms idle=300001ms)" in rendered, rendered)
         assertFalse("mid-output" in rendered, "a turn the client never saw output from is not mid-output: $rendered")
@@ -74,7 +78,7 @@ class TurnLineWatchdogVerdictTest {
             "gpt-5.6-sol",
             stalled,
             latencyMs = 900_030,
-            fired = WatchdogFired.TotalCap(elapsedMs = 900_002),
+            watchdog = WatchdogVerdict(fired = WatchdogFired.TotalCap(elapsedMs = 900_002)),
         )
         assertTrue("watchdog=progress-timeout(idle=900002ms elapsed=900002ms)" in rendered, rendered)
         assertFalse("first-output" in rendered, "a compact turn has no pre-output idle tier: $rendered")
@@ -91,7 +95,9 @@ class TurnLineWatchdogVerdictTest {
             "gpt-6-astra",
             ok,
             latencyMs = 345_491,
-            held = WatchdogHeld(idleMs = 300_003, limitMs = 300_000, pingAgoMs = 8_120, sawClientFrame = false),
+            watchdog = WatchdogVerdict(
+                held = WatchdogHeld(idleMs = 300_003, limitMs = 300_000, pingAgoMs = 8_120, sawClientFrame = false),
+            ),
         )
         assertTrue(
             "watchdog=held(tier=first-output limit=300000ms idle=300003ms ping=8120ms)" in rendered,

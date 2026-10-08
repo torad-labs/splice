@@ -32,8 +32,7 @@ internal class TurnFinish(
                 drive.upstreamModel,
                 outcome,
                 latencyMs,
-                drive.watchdog.fired,
-                drive.watchdog.held,
+                WatchdogVerdict(drive.watchdog.fired, drive.watchdog.held),
             ),
         )
         // DR-129: terminal frames still go FIRST (the header invariant — usage I/O must never sit
@@ -92,7 +91,7 @@ internal class TurnFinish(
 
     /** The classified decision survives a terminal write that escapes to the conn-reset recorder. */
     private fun markPermanence(drive: TurnDrive, failure: TurnOutcome.Failure?) {
-        failure?.let { drive.perf.setCount(PerfKeys.FAILURE_PERMANENT, if (it.permanent) 1L else 0L) }
+        failure?.let { drive.markPermanent(it.permanent) }
     }
 
     private fun markCodeMode(drive: TurnDrive, outcome: TurnOutcome) {

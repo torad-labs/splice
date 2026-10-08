@@ -30,6 +30,7 @@ import splice.core.turn.WatchdogBudget
 import splice.head.HeadHealthCounters
 import splice.head.admission.admittedSlot
 import splice.head.headDeps
+import splice.head.round.RoundRunners
 import splice.head.round.RoundStrategy
 import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
@@ -169,13 +170,15 @@ private class SerializationRig(tmp: Path) {
         try {
             val success = TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage())
             RoundStrategy(
-                key = provider.key,
-                log = {},
                 emitter = terminal,
-                signals = drive.signals,
+                runners = RoundRunners(
+                    key = provider.key,
+                    log = {},
+                    signals = drive.signals,
+                    finish = {},
+                ),
                 postRoundToSink = { _, _ -> error("the direct round must not fold") },
                 postRound = { success },
-                finish = {},
             ).run(drive.requestBody, null, null, drive.perf)
         } finally {
             drive.slot.release()
@@ -189,16 +192,18 @@ private class SerializationRig(tmp: Path) {
             MessagesHash.of(body)
             val success = TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage())
             RoundStrategy(
-                key = provider.key,
-                log = {},
                 emitter = terminal,
-                signals = drive.signals,
+                runners = RoundRunners(
+                    key = provider.key,
+                    log = {},
+                    signals = drive.signals,
+                    finish = {},
+                ),
                 postRoundToSink = { _, _ -> error("the direct round must not fold") },
                 postRound = { wire ->
                     posted = wire.text
                     success
                 },
-                finish = {},
             ).run(drive.requestBody, null, null, drive.perf)
         } finally {
             drive.slot.release()

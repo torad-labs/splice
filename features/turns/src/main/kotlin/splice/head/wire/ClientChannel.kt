@@ -105,12 +105,13 @@ internal class ClientChannel(
     val trace: TurnTrace? = null,
     /** Flipped once for good by [detachIfRecording]: writes are recorded, none reach the socket. */
     val detached: AtomicBoolean = AtomicBoolean(false),
+) {
     /** Frames that reached the socket: the pinger's silence gauge (unchanged tick after tick =
      *  a silent wire, time for a heartbeat). */
-    val socketFrames: AtomicLong = AtomicLong(0),
+    val socketFrames = AtomicLong(0)
+
     /** V4-456: holds a burst's deltas for [launchPacer]'s loop; inert until that loop runs. */
-    private val pacer: DeltaPacer = DeltaPacer(),
-) {
+    private val pacer = DeltaPacer()
     private var lastWriteMs: Long? = null
     private var pacingJob: Job? = null
 
@@ -295,9 +296,7 @@ internal class ClientChannel(
         scope: CoroutineScope,
         turnJob: Job,
         ticker: Ticker,
-        headKey: String,
-        log: LogSink,
-        session: String? = null,
+        lost: LostClient,
         heartbeat: Heartbeat = Heartbeat {},
     ): Job =
         scope.launch {
@@ -310,7 +309,8 @@ internal class ClientChannel(
                 if (!ticker.awaitTick(CLIENT_PING_INTERVAL_MS)) return@launch
                 if (detached.get()) {
                     // A frame write detached the channel before this tick: the one log line for it.
-                    log("[$headKey] client gone (${who(session)}a frame write failed); $DETACHED_NOTE\n")
+                    val note = "client gone (${who(lost.session)}a frame write failed); $DETACHED_NOTE"
+                    lost.log("[${lost.headKey}] $note\n")
                     return@launch
                 }
                 val frames = socketFrames.get()
@@ -338,7 +338,7 @@ internal class ClientChannel(
                     }
                 }.exceptionOrNull()
                 if (pingFailure != null) {
-                    clientLost(turnJob, LostClient(headKey, log, session), KEEPALIVE_FAILURE)
+                    clientLost(turnJob, lost, KEEPALIVE_FAILURE)
                     return@launch
                 }
             }

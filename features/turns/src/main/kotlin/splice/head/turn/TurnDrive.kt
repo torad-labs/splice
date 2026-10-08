@@ -7,6 +7,7 @@ package splice.head.turn
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
+import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -170,6 +171,10 @@ internal data class TurnDrive(
     // `internal`, not `private`: TurnDrive is an internal type and TurnDriver (a different class)
     // reads this — a private member would be unreachable. Reads only this drive's own `perf`.
     internal fun perfCounter(key: String): Long = perf.snapshot().counters[key] ?: 0L
+
+    /** Stamps, before the row is written, whether the ending about to be recorded can be retried. */
+    internal fun markPermanent(permanent: Boolean) =
+        perf.setCount(PerfKeys.FAILURE_PERMANENT, if (permanent) 1L else 0L)
 
     /** Records exactly the usage an intercepted raw post returned before code mode can use it to
      *  assemble another hidden round. Input/cache are cumulative snapshots; output/reasoning accrue. */

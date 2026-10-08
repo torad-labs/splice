@@ -27,6 +27,7 @@ import splice.head.turn.LiveTurnsRoutes
 import splice.head.turn.LiveTurnsSource
 import splice.head.wire.ClientChannel
 import splice.head.wire.ImmediateSseWriter
+import splice.head.wire.LostClient
 import splice.upstream.Ticker
 import splice.upstream.retry.InflightGate
 import java.util.concurrent.atomic.AtomicBoolean
@@ -156,7 +157,7 @@ class LiveTurnIdleTest {
             }
         }
         try {
-            channel.launchClientPinger(this, Job(), ticker, "test", {}, null) {
+            channel.launchClientPinger(this, Job(), ticker, LostClient("test", {})) {
                 channel.timedClientWrite("event: ping\n\n", TurnPerf(), clock)
             }.join()
             assertEquals(28, written.count { it.startsWith(": ping") })

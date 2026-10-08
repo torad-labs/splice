@@ -31,8 +31,6 @@ import splice.head.perf.PerfStats
 import splice.head.usage.EconomicsStore
 import splice.head.usage.TurnEconomics
 import splice.head.wire.TurnTrace
-import splice.upstream.retry.WatchdogFired
-import splice.upstream.retry.WatchdogHeld
 
 // V4-122: ERR_SNIPPET lives in splice.core.util now, at the same 200 this declaration carried.
 // It was declared three times — here at 200, in UpstreamClient.kt and WsLogKeys.kt at 160 — for one
@@ -85,9 +83,7 @@ internal class TurnTelemetry(
         rateLimited: Boolean = false,
         cause: String? = null,
         layers: Int = 0,
-        permanent: Boolean? = null,
     ) = withContext(NonCancellable) {
-        permanent?.let { drive.perf.setCount(PerfKeys.FAILURE_PERMANENT, if (it) 1L else 0L) }
         // Cancellation still owes its row, even if a paced socket write itself throws cancellation.
         try {
             drive.channel.finishPacing(clock = clock)
@@ -297,9 +293,8 @@ internal class TurnTelemetry(
         model: String,
         outcome: TurnOutcome,
         latencyMs: Long,
-        fired: WatchdogFired? = null,
-        held: WatchdogHeld? = null,
-    ): String = line.render(meta, model, outcome, latencyMs, fired, held)
+        watchdog: WatchdogVerdict = WatchdogVerdict(),
+    ): String = line.render(meta, model, outcome, latencyMs, watchdog)
 
     /** MOVED out of finishTurn (HD-24): a log line is telemetry, and moving it here is what lets
      *  TurnFinish drop its dependency on UsageHud. [model] is the drive's upstream model; [headKey]

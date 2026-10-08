@@ -40,7 +40,7 @@ class ClientChannelHeartbeatTest {
         val ch = channel { written += it }
         var beats = 0
         val turnJob = Job()
-        ch.launchClientPinger(this, turnJob, CountedTicker(30), "codex", {}, null) {
+        ch.launchClientPinger(this, turnJob, CountedTicker(30), LostClient("codex", {})) {
             beats += 1
             ch.timedClientWrite("event: ping\n\n", TurnPerf(), clock)
         }.join()
@@ -64,7 +64,7 @@ class ClientChannelHeartbeatTest {
                 return true
             }
         }
-        ch.launchClientPinger(this, Job(), ticker, "codex", {}, null) { beats += 1 }.join()
+        ch.launchClientPinger(this, Job(), ticker, LostClient("codex", {})) { beats += 1 }.join()
         assertEquals(0, beats)
         assertEquals(40, written.count { it.startsWith(": ping") })
     }
@@ -75,7 +75,7 @@ class ClientChannelHeartbeatTest {
         val ch = channel { if (dead) throw IOException("Broken pipe") }
         val turnJob = Job()
         val logs = mutableListOf<String>()
-        ch.launchClientPinger(this, turnJob, CountedTicker(15), "codex", { logs += it }, null) {
+        ch.launchClientPinger(this, turnJob, CountedTicker(15), LostClient("codex", { logs += it })) {
             dead = true
             ch.timedClientWrite("event: ping\n\n", TurnPerf(), clock)
         }.join()
@@ -88,7 +88,7 @@ class ClientChannelHeartbeatTest {
         val ch = channel { error("Channel is already closed") }
         val turnJob = Job()
         val logs = mutableListOf<String>()
-        ch.launchClientPinger(this, turnJob, CountedTicker(1), "codex", { logs += it }, null) {}.join()
+        ch.launchClientPinger(this, turnJob, CountedTicker(1), LostClient("codex", { logs += it })) {}.join()
         assertTrue(ch.clientGone.get())
         assertTrue(turnJob.isCancelled, "the closed-channel keepalive cancels the turn: $logs")
     }

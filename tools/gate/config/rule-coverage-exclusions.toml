@@ -89,7 +89,7 @@ rules = [
   "kt-no-delay-in-production", "kt-no-exception-as-outcome", "kt-no-extension-functions",
   "kt-no-global-scope", "kt-no-hardcoded-dispatchers", "kt-no-lambda-seam", "kt-no-lateinit",
   "kt-no-object-command", "kt-no-println", "kt-no-raw-thread", "kt-no-reflection-in-production",
-  "kt-no-request-body-gzip", "kt-no-runblocking-exported-bridge", "kt-no-runblocking-in-daemon",
+  "kt-no-request-body-gzip", "kt-no-runblocking-in-daemon",
   "kt-no-runcatching-in-coroutine", "kt-no-sealed-interface", "kt-no-secondary-constructor",
   "kt-no-silent-result-collapse", "kt-no-stream-options-request", "kt-no-system-getenv",
   "kt-no-todo-throws", "kt-no-top-level-functions", "kt-no-unsafe-bang-bang", "kt-no-unsafe-cast",
@@ -235,22 +235,6 @@ lost-file set, so this row cannot excuse a finding in app/control.
 """
 
 [[exclusion]]
-rule = "kt-no-runblocking-exported-bridge"
-modules = [
-  "core", "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
-  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
-  "integrations-providers-openai", "features-turns", "quality-compiler-plugin",
-  "features-models", "features-sessions",
-]
-sourceSets = ["main"]
-date = "2026-09-22"
-reason = """
-The bridge wall grades only :app's Main.kt and cli/ process-entry paths, where runBlocking is allowed.
-Every listed module, including :integrations-claude-code, is outside that boundary; elsewhere the
-companion runBlocking wall bans the call outright, leaving no exported bridge to grade.
-"""
-
-[[exclusion]]
 rule = "kt-no-runcatching-in-coroutine"
 modules = ["integrations-claude-code", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse", "integrations-providers-openai", "quality-compiler-plugin"]
 sourceSets = ["main"]
@@ -334,7 +318,7 @@ configuration adapter, not a features-turns turn or socket owner.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-mcp"]
@@ -538,16 +522,6 @@ the rest of :integrations-claude-code file-for-file.
 """
 
 [[exclusion]]
-rule = "kt-no-runblocking-exported-bridge"
-files = ["app/src/main/kotlin/**/*.kt"]
-date = "2026-09-20"
-reason = """
-Inside :app the wall binds the entry path only — Main.kt and cli/** — because that is the only place
-runBlocking may appear at all (kt-no-runblocking-in-daemon bans it everywhere else, so no other file
-can export a bridge to it).
-"""
-
-[[exclusion]]
 rule = "kt-turn-finally-flush-quietly"
 files = ["features/turns/src/main/kotlin/**/*.kt"]
 date = "2026-09-20"
@@ -591,7 +565,7 @@ name Ktor's WriterContent: it delegates to it and adds the clean close in a fina
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly",
   "kt-wire-catch-ioexception-alone",
 ]
@@ -650,7 +624,7 @@ extraction and covers only it.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-http"]
@@ -666,7 +640,7 @@ carry its rules too; this row does not authorize losing their coverage.
 
 [[exclusion]]
 rules = [
-  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-no-vanilla-config-dir",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-usage"]
@@ -727,7 +701,7 @@ suppress a finding in the selected ModelsRoute.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-quota-tracker-single-resolution",
+  "kt-no-exception-as-outcome", "kt-quota-tracker-single-resolution",
   "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-launch"]
@@ -743,7 +717,7 @@ only Launch*.kt, now binds the whole module.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-lifecycle", "features-diagnostics", "features-configuration", "features-events"]
@@ -760,7 +734,7 @@ to these roots instead of being excluded.
 [[exclusion]]
 rules = [
   "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
-  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
+  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-topology"]
@@ -777,7 +751,7 @@ integrations/topology instead of being excluded, and kt-no-println now reaches t
 [[exclusion]]
 rules = [
   "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
-  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
+  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-codemode"]
@@ -795,7 +769,7 @@ widened to integrations/codemode instead, and kt-no-println, which ignored app/c
 [[exclusion]]
 rules = [
   "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
-  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
+  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-oauth"]
@@ -816,7 +790,7 @@ widened to integrations/oauth, and kt-no-println, which ignored app/auth and app
 [[exclusion]]
 rules = [
   "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
-  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
+  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-terminal"]
@@ -837,7 +811,7 @@ widened to integrations/terminal, and kt-no-println, which ignored app/cli, now 
 [[exclusion]]
 rules = [
   "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
-  "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
+  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-daemon-client"]
@@ -858,7 +832,7 @@ reaches them.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-runblocking-exported-bridge", "kt-no-vanilla-config-dir",
+  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir",
   "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-accounts"]

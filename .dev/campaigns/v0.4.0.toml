@@ -10775,6 +10775,7 @@ claimed_at = "2026-09-30T00:02:11.949Z"
 # [2026-10-08] Oct 7, 8:49 PM CT, splice-lead: the Agents screen is on the operator's review page. It passed splice-lead and marlin after four rounds. They tapped every control at 3828 dark, 1440 in both themes and 390, against its element table v3.7 and layout v2.5. Its rounds fixed two Deny buttons, blank waiting lines, lost typed words, a sign-in that skipped its code, a false restart after sign-in, and acts that vanished after one tap. A companion page sets it beside its references and the Oct 7 version. The other seven screens follow one at a time, starting with Session.
 # [2026-10-08] Oct 7, 10:01 PM CT splice-lead: cancelled by the operator's order (Oct 7, 9:20 PM CT): every console UI removed from the repo. 6a8342d4e deletes console-next, the old dashboard page and splice dashboard; / and /dashboard answer 404, /api/* stays. Local: tools suites 511/511, typecheck clean, :app/:quality-architecture/:features-diagnostics check green, campaign walls pass.
 # [2026-10-08] Oct 7, 10:02 PM CT splice-lead: closed as done only because the ledger has no cancelled status (V4-442's precedent). No redesign outcome was delivered; the console no longer exists.
+# [2026-10-08] Oct 7, 10:32 PM CT splice-lead: installed c8b888836 from CI run 37720808499 (gate success); pid 1902247, open jar fd hash equals the artifact; / and /dashboard answer 404, /health 200; backup splice.jar.bak-20261007-2232-pre-c8b888836.
 
 [[items]]
 id = "V4-445"

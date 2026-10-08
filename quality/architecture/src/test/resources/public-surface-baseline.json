@@ -4,7 +4,6 @@
   "offenders": [
     ":integrations-claude-code splice.client.portKeys",
     ":integrations-claude-code splice.client.sharedLinkItems",
-    ":integrations-mcp splice.control.mcp.McpHostException",
     ":core splice.core.config.knobsByKey",
     ":core splice.core.media.ImageHeaderProbe",
     ":core splice.core.media.ImagePx",

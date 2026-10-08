@@ -65,6 +65,6 @@ internal class McpStderr(private val log: LogSink) {
     }
 }
 
-public class McpHostException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+internal class McpHostException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
 
 private const val STDERR_BUFFER = 512

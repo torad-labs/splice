@@ -514,6 +514,64 @@ describe("the census leg judges the commit's own bytes and refuses a finding the
   });
 });
 
+describe("the contract holds until the gate has judged the bytes it reads", () => {
+  test("RED: a worktree file swapped while gradle runs is refused by name, though the gate passed", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    const gate: GateRunner = async () => {
+      writeFile(root, TARGET, VIOLATION);
+      return { status: 0, output: "BUILD SUCCESSFUL\n" };
+    };
+    const { result, text } = await captured(() => preCommit(lay(root), { gate }));
+    expect(result).toBe(1);
+    expect(text).toContain(`${TARGET}: the index and the worktree hold different content or mode`);
+  });
+
+  test("RED: a file changed and changed back while gradle runs is refused, since the bytes it read are not known", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    const gate: GateRunner = async () => {
+      writeFile(root, TARGET, VIOLATION);
+      await Bun.sleep(20);
+      writeFile(root, TARGET, CLEAN);
+      return { status: 0, output: "BUILD SUCCESSFUL\n" };
+    };
+    const { result, text } = await captured(() => preCommit(lay(root), { gate }));
+    expect(result).toBe(1);
+    expect(text).toContain(`${TARGET}: changed while the gate judged it`);
+  });
+
+  test("RED: a directory replaced by a file: deleting its old child is absent, not a crash", async () => {
+    const root = wallsRepo();
+    writeFile(root, "old/item.txt", "item\n");
+    git(root, ["add", "old/item.txt"]);
+    commit(root, "chore(test): base with a directory");
+    git(root, ["rm", "-q", "old/item.txt"]);
+    rmSync(join(root, "old"), { recursive: true, force: true });
+    writeFile(root, "old", "a file now\n");
+    git(root, ["add", "old"]);
+    const { result } = await captured(() => preCommit(lay(root), { gate: compiler(root) }));
+    expect(result).toBe(0);
+  });
+
+  test.skipIf(process.getuid?.() === 0)("an I/O error other than a missing parent is not absence: the contract throws", () => {
+    const root = wallsRepo();
+    writeFile(root, "locked/item.txt", "item\n");
+    writeFile(root, "locked/keep.txt", "keep\n");
+    git(root, ["add", "locked"]);
+    commit(root, "chore(test): base with a locked directory");
+    git(root, ["rm", "-q", "locked/item.txt"]);
+    chmodSync(join(root, "locked"), 0o000);
+    try {
+      expect(() => breaches(root, ["locked/item.txt"])).toThrow();
+    } finally {
+      chmodSync(join(root, "locked"), 0o755);
+    }
+  });
+});
+
 describe("every Kotlin file maps to a check", () => {
   const modules = [{ path: ":app", dir: "app" }, { path: ":app:core", dir: "app/core" }];
 

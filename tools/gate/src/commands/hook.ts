@@ -29,7 +29,7 @@
 // NOTHING HERE IS SKIPPABLE. There is no environment switch and no flag. `--no-verify` is the only bypass, and
 // it is forbidden to seats.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, type Stats, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { astGrepBin } from "../lib/astgrep.ts";
@@ -166,12 +166,34 @@ function hashBytes(root: string, bytes: Buffer): string {
 /** What each worktree path holds as an index entry, the way `git add` would store it. A symlink is its raw link bytes,
  *  never the file it names. A file is its raw bytes, and only the owner execute bit makes it 100755, as git does. A
  *  missing path has no entry; a directory or another kind is OTHER_KIND. */
+/** The stat of a worktree path, or undefined when it is absent. A parent that is now a regular file (ENOTDIR) means the
+ *  path is absent, which is what a commit that deletes it requires; any other error is thrown, and the caller refuses. */
+function lstatAt(abs: string): Stats | undefined {
+  try {
+    return lstatSync(abs, { throwIfNoEntry: false });
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOTDIR") return undefined;
+    throw error;
+  }
+}
+
+/** Each path's worktree signature: inode, size, mode and change times, or "absent". Two signatures that differ mean the
+ *  path changed in between, even when it changed back, so the bytes the gate read are not known to be the commit's. */
+function worktreeSignature(root: string, paths: readonly string[]): Map<string, string> {
+  return new Map(
+    paths.map((path) => {
+      const st = lstatAt(join(root, path));
+      return [path, st === undefined ? "absent" : `${st.ino}:${st.size}:${st.mode}:${st.mtimeMs}:${st.ctimeMs}`];
+    }),
+  );
+}
+
 function worktreeEntries(root: string, paths: readonly string[]): Map<string, string> {
   const entries = new Map<string, string>();
   const files = new Map<string, string>();
   for (const path of paths) {
     const abs = join(root, path);
-    const stat = lstatSync(abs, { throwIfNoEntry: false });
+    const stat = lstatAt(abs);
     if (stat === undefined) continue;
     if (stat.isSymbolicLink()) {
       entries.set(path, `${SYMLINK_MODE} ${hashBytes(root, readlinkSync(abs, { encoding: "buffer" }))}`);
@@ -195,6 +217,17 @@ function worktreeEntries(root: string, paths: readonly string[]): Map<string, st
 export interface Breach {
   readonly path: string;
   readonly reason: string;
+}
+
+/** What changed while the gate judged the commit's paths: the contract again, and each path whose signature moved. */
+function driftedSince(root: string, changed: readonly string[], judgedAt: ReadonlyMap<string, string>): Breach[] {
+  const refused = breaches(root, changed);
+  const named = new Set(refused.map((breach) => breach.path));
+  const now = worktreeSignature(root, changed);
+  const moved = changed
+    .filter((path) => !named.has(path) && now.get(path) !== judgedAt.get(path))
+    .map((path) => ({ path, reason: `${path}: changed while the gate judged it; the bytes it judged are not known to be the commit's` }));
+  return [...refused, ...moved];
 }
 
 /** THE CONTRACT. For every path a commit changes, the worktree holds the entry the commit holds, in existence, type,
@@ -571,6 +604,8 @@ export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<numbe
     return 0;
   }
   console.error(`══ pre-commit ══  ${touched.length} Kotlin file(s) in this commit`);
+  // The bytes the gate judges are the bytes the commit holds at this point; gradle runs after, so the check below re-reads.
+  const judgedAt = worktreeSignature(root, changed);
 
   // The walls scan the bytes a commit holds: a deletion has none to scan. Module selection covers every change.
   const indexed = indexEntries(root);
@@ -608,6 +643,12 @@ export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<numbe
 
   const judged = await judgedRun(deps.gate ?? slotRunner(lay, "pre-commit", false), root, modules, [...tasks], deps.rivalLive);
   if (judged.status === 0) {
+    const late = driftedSince(root, changed, judgedAt);
+    if (late.length > 0) {
+      for (const breach of late) console.error(`  ✗ ${breach.reason}`);
+      console.error(`pre-commit: ✗ ${late.length} path(s) changed while the gate judged them — ${seconds(started)}`);
+      return 1;
+    }
     console.error(`  ✓ ${[...tasks].join(" ")}`);
     console.error(`pre-commit: PASS — ${seconds(started)}${judged.reran ? " (after one collision rerun)" : ""}`);
     return 0;

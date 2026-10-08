@@ -10,8 +10,6 @@
     ":core splice.core.parse.lenientJson",
     ":core splice.core.reasoning.REASONING_ENVELOPE_TAG",
     ":core splice.core.reasoning.REASONING_ENVELOPE_VERSION",
-    ":features-sessions splice.sessions.registry.PidIdentity",
-    ":features-sessions splice.sessions.registry.ProcPidIdentity",
     ":core splice.core.wire.ContentBlockSerializer",
     ":integrations-dialects-anthropic splice.dialect.anthropic.BuiltPassthroughRequest",
     ":integrations-dialects-anthropic splice.dialect.anthropic.MfjsSanitizer",

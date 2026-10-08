@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 
 class SessionRegistryTest {
 
@@ -16,32 +17,55 @@ class SessionRegistryTest {
         Files.writeString(dir.resolve("$pid.json"), body)
     }
 
-    private val hostDomain = "linux:652c492b8aae4140b9d078835b2ed12a:pid:[4026531836]"
+    private val hostMachineId = "652c492b8aae4140b9d078835b2ed12a"
+    private val hostPidNamespace = "pid:[4026531836]"
+    private val hostDomain = "linux:$hostMachineId:$hostPidNamespace"
 
-    private fun identity(
+    /** The host the registry reads its pid identity from: a /proc tree and a machine-id file written under [root]
+     *  as the kernel and Claude Code write them. A null [machineId] is a host whose domain is not readable. */
+    private fun fakeHost(
+        root: Path,
         procStarts: Map<Long, String> = emptyMap(),
-        domain: String? = hostDomain,
-    ) = object : PidIdentity {
-        override fun hostDomain(): String? = domain
-        override fun procStart(pid: Long): String? = procStarts[pid]
+        machineId: String? = hostMachineId,
+    ): Pair<Path, Path> {
+        val proc = Files.createDirectories(root.resolve("proc"))
+        val machineFile = root.resolve("machine-id")
+        if (machineId != null) {
+            Files.writeString(machineFile, "$machineId\n")
+            val link = Files.createDirectories(proc.resolve("self/ns")).resolve("pid")
+            Files.deleteIfExists(link)
+            Files.createSymbolicLink(link, Paths.get(hostPidNamespace))
+        }
+        // Field 22 of /proc/<pid>/stat, the start time, is the 19th field after the parenthesised comm.
+        for ((pid, start) in procStarts) {
+            val stat = Files.createDirectories(proc.resolve(pid.toString())).resolve("stat")
+            Files.writeString(stat, "$pid (claude) S ${List(18) { "0" }.joinToString(" ")} $start\n")
+        }
+        return proc to machineFile
     }
 
     private fun registry(
         dir: Path,
         alive: Set<Long>,
         started: Map<Long, Long> = emptyMap(),
-        identity: PidIdentity = identity(),
+        procStarts: Map<Long, String> = emptyMap(),
+        machineId: String? = hostMachineId,
         heard: Map<String, Long> = emptyMap(),
-    ) = SessionRegistry(
-        sessionsDir = dir,
-        routeOf = { pid -> if (pid == 11L) SessionRoute.Head("claudex") else SessionRoute.Direct },
-        pidAlive = { it in alive },
-        pidStartedAt = { started[it] },
-        clock = { now },
-        staleAfterMs = 60_000L,
-        identity = identity,
-        heard = { heard },
-    )
+        host: Path = dir.resolve("host"),
+    ): SessionRegistry {
+        val (proc, machineFile) = fakeHost(host, procStarts, machineId)
+        return SessionRegistry(
+            sessionsDir = dir,
+            routeOf = { pid -> if (pid == 11L) SessionRoute.Head("claudex") else SessionRoute.Direct },
+            pidAlive = { it in alive },
+            pidStartedAt = { started[it] },
+            clock = { now },
+            staleAfterMs = 60_000L,
+            heard = { heard },
+            procRoot = proc,
+            machineIdFile = machineFile,
+        )
+    }
 
     /** Claude Code writes pidDomain and procStart; they decide before the start-time tolerance does. */
     @Test
@@ -55,13 +79,19 @@ class SessionRegistryTest {
         write(dir, 13, """{"pid":13,"updatedAt":$now,"startedAt":$now,"pidDomain":"$host","procStart":"100"}""")
         write(dir, 14, """{"pid":14,"updatedAt":$now,"startedAt":$now,"pidDomain":"$host","procStart":"555"}""")
         val starts = mapOf(11L to "187740", 12L to "187740", 13L to "187740")
-        val rows = registry(dir, alive = setOf(11L, 12L, 13L, 14L), identity = identity(starts)).read()
+        val rows = registry(dir, alive = setOf(11L, 12L, 13L, 14L), procStarts = starts).read()
             .associateBy { it.pid }
         assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability, "same domain, same start")
         assertEquals(SessionAvailability.GONE, rows.getValue(12L).availability, "a container's pid: not this host's")
         assertEquals(SessionAvailability.GONE, rows.getValue(13L).availability, "the pid was reused since")
         assertEquals(SessionAvailability.LIVE, rows.getValue(14L).availability, "start unreadable here: trusted")
-        val noHost = registry(dir, alive = setOf(12L), identity = identity(starts, domain = null)).read()
+        val noHost = registry(
+            dir,
+            alive = setOf(12L),
+            procStarts = starts,
+            machineId = null,
+            host = dir.resolve("host-unreadable"),
+        ).read()
         val unjudged = noHost.single { it.pid == 12L }.availability
         assertEquals(SessionAvailability.LIVE, unjudged, "no host domain: not judged")
     }
@@ -169,10 +199,10 @@ class SessionRegistryTest {
     @Test
     fun `a directory that cannot be listed is an error, a missing one is genuinely no sessions`(@TempDir dir: Path) {
         val file = Files.writeString(dir.resolve("sessions"), "not a directory")
-        val blocked = registry(file, alive = emptySet()).list()
+        val blocked = registry(file, alive = emptySet(), host = dir.resolve("host")).list()
         assertTrue(blocked.sessions.isEmpty())
         assertTrue(checkNotNull(blocked.error).contains("sessions"), "names the directory: ${blocked.error}")
-        val absent = registry(dir.resolve("never"), alive = emptySet()).list()
+        val absent = registry(dir.resolve("never"), alive = emptySet(), host = dir.resolve("host")).list()
         assertTrue(absent.sessions.isEmpty())
         assertNull(absent.error, "absence is quiet")
     }

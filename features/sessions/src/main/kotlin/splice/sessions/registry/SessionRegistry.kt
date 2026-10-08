@@ -18,6 +18,7 @@ import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.Paths
 
 private const val DEFAULT_STALE_MS = 30L * 60L * 1000L
 
@@ -113,10 +114,13 @@ public class SessionRegistry(
     },
     private val clock: WallClock = WallClock { System.currentTimeMillis() },
     private val staleAfterMs: Long = DEFAULT_STALE_MS,
-    private val identity: PidIdentity = ProcPidIdentity(),
     private val heard: SessionsHeard = SessionsHeard { emptyMap() },
     private val foreground: ForegroundTools? = null,
+    /** The /proc tree and machine-id file this host's pid identity is read from: production's, or a test's fake. */
+    procRoot: Path = Paths.get("/proc"),
+    machineIdFile: Path = Paths.get("/etc/machine-id"),
 ) : SessionSource {
+    private val identity = ProcPidIdentity(procRoot, machineIdFile)
     private val json = Json { ignoreUnknownKeys = true }
 
     /** Every readable registration, newest activity first. */

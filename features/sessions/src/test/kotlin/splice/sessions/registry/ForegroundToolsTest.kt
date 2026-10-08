@@ -34,10 +34,9 @@ class ForegroundToolsTest {
             pidAlive = { alive },
             pidStartedAt = { null },
             clock = { now },
-            identity = object : PidIdentity {
-                override fun hostDomain(): String? = null
-                override fun procStart(pid: Long): String? = null
-            },
+            // Absent roots: this host's pid identity reads as unknown, which is all this test needs.
+            procRoot = dir.resolve("no-proc"),
+            machineIdFile = dir.resolve("no-machine-id"),
             foreground = tools,
         )
     }

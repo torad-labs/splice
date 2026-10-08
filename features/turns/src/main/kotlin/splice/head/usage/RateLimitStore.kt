@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicReference
 internal class RateLimitStore(
     private val file: RateLimitFile,
     private val headers: RateLimitHeaders,
-    private val writeLock: Any,
+    private val writeLock: UsageWriteLock,
     private val log: LogSink = LogSink(DaemonLog::write),
 ) {
     // Latest-wins pending ratelimit payload; consumed by the coalesced lane, flushNow, or a read.

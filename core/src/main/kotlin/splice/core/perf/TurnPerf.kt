@@ -44,7 +44,7 @@ public class TurnPerf(private val clock: ElapsedClock, wallClock: WallClock) {
 
     private val startedAt: Long = clock()
     private val startedAtEpochMs: Long = wallClock()
-    private val lock = Any()
+    private val lock = TurnPerfLock()
     private val marks = LinkedHashMap<String, Long>()
     private val counters = LinkedHashMap<String, Long>()
     private var arrivalOffsetMs = 0L

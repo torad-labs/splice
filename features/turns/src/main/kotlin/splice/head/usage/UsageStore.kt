@@ -39,6 +39,9 @@ internal const val FIVE_HOURS_MS: Long = 5 * 60 * 60 * 1000
 // same 1s lane.
 internal const val USAGE_FLUSH_DELAY_MS: Long = 1_000L
 
+/** The usage files' write monitor: the ring and the rate-limit file serialize their disk writes under it. */
+internal class UsageWriteLock
+
 /** 5h output-token window + ratelimit header persistence — the HUD contract files. */
 public class UsageStore(
     usageFile: Path,
@@ -49,7 +52,7 @@ public class UsageStore(
     // Shared by flushRateLimit and persistSnapshot (review 2026-07-22): one Any() serializes both
     // lanes' disk writes across UsageRingFile and RateLimitStore. Splitting it into two locks
     // would be a logic change (out of scope here).
-    private val writeLock = Any()
+    private val writeLock = UsageWriteLock()
     private val ringFile = UsageRingFile(usageFile, writeLock, log)
     private val ring = UsageRing(ringFile, clock() - FIVE_HOURS_MS)
     private val rateLimitStore = RateLimitStore(RateLimitFile(ratelimitFile), RateLimitHeaders(clock), writeLock)

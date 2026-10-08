@@ -31,7 +31,7 @@ class UsageFileDiagnosticsTest {
         val file = tmp.resolve("usage.json")
         Files.writeString(file, """[{"t":"$sentinel""")
         val log = mutableListOf<String>()
-        assertTrue(UsageRingFile(file, Any(), LogSink { log += it }).readEntriesFromDisk().isEmpty())
+        assertTrue(UsageRingFile(file, UsageWriteLock(), LogSink { log += it }).readEntriesFromDisk().isEmpty())
         val joined = log.joinToString("\n")
         assertTrue(!joined.contains(sentinel), "state bytes must never surface: $joined")
         assertTrue(log.any { it.contains("unreadable/corrupt") }, joined)
@@ -52,7 +52,7 @@ class UsageFileDiagnosticsTest {
         val usageFile = Files.createDirectories(tmp.resolve("usage.json"))
         Files.writeString(usageFile.resolve("occupant"), "x")
         val log = mutableListOf<String>()
-        UsageRingFile(usageFile, Any(), LogSink { log += it }).persistSnapshot(emptyList(), 1L)
+        UsageRingFile(usageFile, UsageWriteLock(), LogSink { log += it }).persistSnapshot(emptyList(), 1L)
         val joined = log.joinToString("\n")
         assertTrue(joined.contains("persist FAILED"), "a failed write must leave a trace: $joined")
         assertTrue(

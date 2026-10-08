@@ -19,11 +19,14 @@ public data class JsonlFileVersion(
     public val regular: Boolean,
 )
 
+/** One writer chain's identity: receipts compare it with ===, so each chain is its own token. */
+internal class AppendChain
+
 /** One uninterrupted product-writer append chain, not a promise that arbitrary growth is append-only. */
 public class JsonlAppendReceipt internal constructor(
     private val first: JsonlFileVersion,
     private val last: JsonlFileVersion,
-    private val chain: Any,
+    private val chain: AppendChain,
 ) {
     /** Both source snapshots must belong to this exact writer chain. External edits, stamp restoration,
      * rotation and truncation break it and require the reader's original prefix-byte proof. */
@@ -74,7 +77,7 @@ public object JsonlAppendProof {
         val path = file.toAbsolutePath().normalize()
         val previous = receipts.remove(path)
         if (before == null || !valid(before, after)) return
-        receipts[path] = previous?.extend(before, after) ?: JsonlAppendReceipt(before, after, Any())
+        receipts[path] = previous?.extend(before, after) ?: JsonlAppendReceipt(before, after, AppendChain())
         if (receipts.size > APPEND_PROOF_PATHS) receipts.remove(receipts.keys.first())
     }
 

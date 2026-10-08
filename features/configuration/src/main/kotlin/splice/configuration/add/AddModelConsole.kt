@@ -38,7 +38,7 @@ internal sealed class AddModelOutcome {
 }
 
 /** [writes] is the console add's own lock (AddConsole), so an add's save and an add-model never interleave. */
-internal class AddModelConsole(private val env: EnvReader, private val writes: Any) {
+internal class AddModelConsole(private val env: EnvReader, private val writes: AddConsoleLock) {
     private val offers = AddModelOffers()
     private val compose = AddModelCompose(RosterEditor(HeadModelArray()::withAdded))
     private val texts = AddRefusalText()

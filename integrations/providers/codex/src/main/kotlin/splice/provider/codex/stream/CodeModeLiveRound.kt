@@ -40,7 +40,7 @@ internal class CodeModeLiveRound(
     val source = capture.source
     val ready = capture.ready
     private val record: CodeModeRecord? get() = capture.record
-    private val lifecycle = Any()
+    private val lifecycle = CodeModeRoundLifecycle()
     val billing = CodeModeRoundBilling(lifecycle, registry, CodeModeRoundRecord { record }, config.log)
     val switching = CodeModeSwitchingSink(sink, CodeModeSourceObserver(::observe))
     val cut = CodeModeCutClaim()

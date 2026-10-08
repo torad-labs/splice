@@ -24,7 +24,7 @@ private const val MAX_USAGE_FILE_BYTES = 8L * 1024 * 1024
  *  [UsageRing]'s concern, not this file's. */
 internal class UsageRingFile(
     private val usageFile: Path,
-    private val writeLock: Any,
+    private val writeLock: UsageWriteLock,
     private val log: LogSink,
 ) {
     private val json = Json { ignoreUnknownKeys = true }

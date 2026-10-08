@@ -606,7 +606,7 @@ class UsageScalingTest {
         // so absence is not an injection — denial is).
         val usageFile = dir.resolve("usage.json")
         val log = mutableListOf<String>()
-        val ring = splice.head.usage.UsageRingFile(usageFile, Any(), LogSink { log += it })
+        val ring = splice.head.usage.UsageRingFile(usageFile, UsageWriteLock(), LogSink { log += it })
         val denied = PosixFilePermissions.fromString("r-x------")
         val writable = PosixFilePermissions.fromString("rwx------")
         Files.setPosixFilePermissions(dir, denied)
@@ -640,7 +640,7 @@ class UsageScalingTest {
         val link = dir.resolve("usage.json").also { Files.createSymbolicLink(it, target) }
         Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("---------"))
         val log = mutableListOf<String>()
-        val ring = splice.head.usage.UsageRingFile(link, Any(), LogSink { log += it })
+        val ring = splice.head.usage.UsageRingFile(link, UsageWriteLock(), LogSink { log += it })
         try {
             assertTrue(ring.readEntriesFromDisk().isEmpty(), "an unreadable ring degrades to empty")
             assertEquals(
@@ -659,7 +659,7 @@ class UsageScalingTest {
     @Test
     fun `a genuinely absent usage file reads empty and quiet - DR-58`(@TempDir dir: Path) {
         val log = mutableListOf<String>()
-        val ring = splice.head.usage.UsageRingFile(dir.resolve("nope.json"), Any(), LogSink { log += it })
+        val ring = splice.head.usage.UsageRingFile(dir.resolve("nope.json"), UsageWriteLock(), LogSink { log += it })
         assertTrue(ring.readEntriesFromDisk().isEmpty())
         assertTrue(log.isEmpty(), "genuine first-run absence must not warn: $log")
     }
@@ -673,7 +673,7 @@ class UsageScalingTest {
         val file = Files.writeString(externalDir.resolve("usage.json"), "[]")
         Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("---------"))
         val log = mutableListOf<String>()
-        val ring = splice.head.usage.UsageRingFile(file, Any(), LogSink { log += it })
+        val ring = splice.head.usage.UsageRingFile(file, UsageWriteLock(), LogSink { log += it })
         try {
             assertTrue(ring.readEntriesFromDisk().isEmpty())
             assertEquals(1, log.count { it.contains("unreadable") }, "parent denial must log: $log")
@@ -689,7 +689,7 @@ class UsageScalingTest {
     fun `a dangling usage symlink logs the read failure, not a quiet first run - DR-58`(@TempDir dir: Path) {
         val link = dir.resolve("usage.json").also { Files.createSymbolicLink(it, dir.resolve("never-created")) }
         val log = mutableListOf<String>()
-        val ring = splice.head.usage.UsageRingFile(link, Any(), LogSink { log += it })
+        val ring = splice.head.usage.UsageRingFile(link, UsageWriteLock(), LogSink { log += it })
         assertTrue(ring.readEntriesFromDisk().isEmpty())
         assertEquals(1, log.count { it.contains("unreadable") }, "a dangling ring link must log: $log")
     }

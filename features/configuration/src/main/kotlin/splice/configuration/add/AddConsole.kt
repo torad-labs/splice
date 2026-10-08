@@ -84,6 +84,9 @@ internal sealed class AddSaveOutcome {
     data object AlreadySaved : AddSaveOutcome()
 }
 
+/** The console add's own monitor: an add's save and an add-model never interleave under it. */
+internal class AddConsoleLock
+
 /** [output] takes the lines the add's pieces print (an unreadable credential file, CredentialPresence). */
 public class AddConsole(
     private val signIn: AddSignIn,
@@ -102,7 +105,7 @@ public class AddConsole(
     // Two forms open at once share one splice.toml and one temp name (AddWrite's is per process), so one
     // save's re-read and rename never interleave with another's: the second then sees the first's
     // tables and refuses as stale, never renaming over them.
-    private val writes = Any()
+    private val writes = AddConsoleLock()
     private val saver = Saver()
 
     /** `splice add-model` as the console runs it, under the same [writes] lock as a save. */

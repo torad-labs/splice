@@ -19,9 +19,12 @@ internal fun interface IntervalMaximum {
     operator fun invoke(counter: String, value: Long, end: UpstreamGapEnd)
 }
 
+/** The monitor a turn's perf counters and paired intervals publish under, so one observation lands atomically. */
+internal class TurnPerfLock
+
 /** Paired interval observations share their owner's lock and snapshot; no second clock is sampled. */
 public class PerfIntervals internal constructor(
-    private val lock: Any,
+    private val lock: TurnPerfLock,
     private val counters: MutableMap<String, Long>,
     private val epochOriginMs: Long,
     private val accepts: CurrentUpstreamAttempt,

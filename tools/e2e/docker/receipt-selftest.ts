@@ -37,7 +37,7 @@ function match(path: string, pattern: RegExp, label: string): string {
 function sourcePin(): string {
   const tested = match(
     VERSIONS,
-    /public const val TESTED_CLAUDE_CODE: String = "([0-9]+(?:\.[0-9]+)+)"/,
+    /(?:public|internal )?const val TESTED_CLAUDE_CODE: String = "([0-9]+(?:\.[0-9]+)+)"/,
     "TESTED_CLAUDE_CODE",
   );
   const image = match(DOCKERFILE, /ARG CLAUDE_CODE_VERSION=([0-9]+(?:\.[0-9]+)+)/, "Dockerfile pin");

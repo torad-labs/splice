@@ -28,7 +28,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-TESTED_CLAUDE_CODE="$(sed -nE 's/^public const val TESTED_CLAUDE_CODE: String = "([0-9]+(\.[0-9]+)+)"$/\1/p' \
+TESTED_CLAUDE_CODE="$(sed -nE 's/^((public|internal) )?const val TESTED_CLAUDE_CODE: String = "([0-9]+(\.[0-9]+)+)"$/\3/p' \
   "$ROOT/core/src/main/kotlin/splice/core/Versions.kt" | head -1)"
 [ -n "$TESTED_CLAUDE_CODE" ] || { echo "run.sh: TESTED_CLAUDE_CODE is missing or malformed" >&2; exit 2; }
 IMAGE="splice-e2e-fresh:local"

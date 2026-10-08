@@ -12,11 +12,13 @@
 // argv inside gateOfRecord's dependency closure, so a row the plugin dropped or a dependsOn somebody
 // removed is a red leg, not a silently narrower gate.
 //
-// NEVER UP-TO-DATE, ON PURPOSE (a stated deviation from P10). A leg's output is a verdict, not an
-// artifact: the gate of record runs `clean` with `--no-build-cache` because Kotlin's compile
-// avoidance once handed it a mixture of two source states, and an up-to-date verdict is the same
-// hole one layer up. Fingerprinting the tree every checker reads (all of it, plus git) would also
-// cost more than most legs. So each leg declares no inputs and refuses up-to-date.
+// NEVER UP-TO-DATE, ON PURPOSE (a stated deviation from P10), except a leg that reads the fat jar. A leg's output is a
+// verdict, not an artifact: the gate of record runs `clean` with `--no-build-cache` because Kotlin's compile avoidance
+// once handed it a mixture of two source states, and an up-to-date verdict is the same hole one layer up. Fingerprinting
+// the tree every checker reads (all of it, plus git) would also cost more than most legs. So a leg with no jar dependency
+// declares no inputs and refuses up-to-date. A leg that depends on `:app:shadowJar` declares what its verdict reads: the
+// jar's own output (a rebuilt jar re-runs it) and the e2e files its row names (an edit re-runs it). A stamp records each
+// run, so the leg has an output for gradle to judge.
 //
 // WHAT IS NOT HERE: the release rehearsal (`bun tools/release verify`). It builds and stages a
 // release through the slot, and the slot is held by the gate for the whole of this graph — a
@@ -43,23 +45,49 @@ require(legs.isNotEmpty()) { "$ladderPath names no legs — a gate with no legs 
 /** Every Test task of every subproject, resolved when the graph is built, after every project is configured. */
 val everyTestTask = provider { subprojects.flatMap { it.tasks.withType<Test>() } }
 
+val repository = layout.projectDirectory
+
 @Suppress("UNCHECKED_CAST")
 val legTasks = legs.map { leg ->
     val name = leg["task"] as String
     val command = leg["command"] as List<String>
+    val dependsOnTasks = (leg["dependsOn"] as List<String>?).orEmpty()
+    val readsJar = ":app:shadowJar" in dependsOnTasks
+    val stamp = layout.buildDirectory.file("gate/$name.stamp")
     tasks.register<Exec>(name) {
         group = "gate"
         description = leg["why"] as String
         workingDir = rootDir
         commandLine(command)
-        outputs.upToDateWhen { false }
-        (leg["dependsOn"] as List<String>?)?.forEach { dependsOn(it) }
+        dependsOnTasks.forEach { dependsOn(it) }
         if (leg["afterAllTests"] == true) dependsOn(everyTestTask)
+        if (readsJar) {
+            // The verdict reads the jar and the files the row's `inputs` globs name. Both are inputs, so an unchanged tree stays
+            // UP-TO-DATE, and a rebuilt jar or an edited e2e file re-runs the leg. The stamp is the output gradle judges.
+            val e2eGlobs = leg["inputs"] as List<String>
+            require(e2eGlobs.isNotEmpty()) { "$name reads the jar and names no inputs in $ladderPath" }
+            // The fat jar's task is looked up when the inputs are read, after every project is configured: :app is not
+            // configured yet while this root plugin is applied, so a lookup here would fail the whole configuration.
+            inputs.files(provider { project(":app").tasks.named("shadowJar").get() }).withPropertyName("fatJar")
+            inputs.files(repository.asFileTree.matching { include(e2eGlobs) }).withPropertyName("ladderInputs")
+            outputs.file(stamp)
+            doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("$name\n") }
+        } else {
+            outputs.upToDateWhen { false }
+        }
         (leg["creates"] as String?)?.let { dir -> doFirst { rootDir.resolve(dir).mkdirs() } }
         // The one file a leg writes and owns is removed as the leg starts: a rerun of the leg must not find its own
         // previous output. Only the file the row names is removed, never a directory, and a failed removal stops the leg.
         (leg["owns"] as String?)?.let { file -> doFirst { OwnedFile(rootDir.resolve(file).toPath()).release() } }
     }
+}
+
+// THE LAW SUITES, one task for the pre-push gate. Each suite grades a tree its own sources do not hold, and declares that tree
+// as its test task's inputs, so gradle runs a suite only when one of those inputs changed or on its first run.
+tasks.register("lawSuites") {
+    group = "gate"
+    description = "Every law suite that reads outside its own sources. Pre-push requests this one task; gradle's up-to-date check skips each suite whose declared inputs did not change."
+    dependsOn(":quality-architecture:test", ":app:test", ":features-diagnostics:test", ":features-lifecycle:test", ":integrations-topology:test", ":integrations-upstream:test")
 }
 
 val gateOfRecord = tasks.register("gateOfRecord") {

@@ -80,8 +80,35 @@ class CompactionReplayTest {
         replay.begin(key, kept)
         replay.finish(key, kept, keep = true)
         assertSame(kept, replay.lookup(key))
-        replay.consumed(key)
+        replay.consumed(key, kept)
         assertNull(replay.lookup(key), "a delivered replay is spent")
+    }
+
+    @Test
+    fun `a late consumption of a delivered replay leaves a newer compaction under the same key alone`() {
+        val key = checkNotNull(replay.key("s", "{}"))
+        val delivered = whole()
+        replay.begin(key, delivered)
+        replay.finish(key, delivered, keep = true)
+        assertSame(delivered, replay.lookup(key))
+        val newer = FrameRecording().apply { append("event: message_start\n\n") }
+        replay.begin(key, newer)
+        replay.consumed(key, delivered)
+        assertSame(newer, replay.lookup(key), "the retry of the newer compaction still finds its recording")
+    }
+
+    @Test
+    fun `RED control - consuming whatever is under the key, the old behavior, does remove the newer compaction's recording`() {
+        val key = checkNotNull(replay.key("s", "{}"))
+        val delivered = whole()
+        replay.begin(key, delivered)
+        replay.finish(key, delivered, keep = true)
+        val newer = FrameRecording().apply { append("event: message_start\n\n") }
+        replay.begin(key, newer)
+
+        replay.consumed(key, newer)
+
+        assertNull(replay.lookup(key), "the loss the delivered check prevents")
     }
 
     @Test

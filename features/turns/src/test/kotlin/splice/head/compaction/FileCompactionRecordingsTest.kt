@@ -50,7 +50,7 @@ class FileCompactionRecordingsTest(@TempDir tempDir: Path) {
         assertTrue(restored.follow { served += it })
         assertEquals(frames, served, "byte-identical frames, in order")
 
-        next.consumed(key)
+        next.consumed(key, restored)
         assertNull(CompactionReplay(store()).lookup(key), "a delivered replay is spent on disk too")
         assertTrue(lines.isEmpty(), lines.joinToString())
     }

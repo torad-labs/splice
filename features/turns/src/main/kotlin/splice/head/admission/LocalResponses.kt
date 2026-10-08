@@ -91,7 +91,7 @@ internal class LocalResponses(
             }
         }
         call.respond(stream)
-        replay.consumed(replayed.key)
+        replay.consumed(replayed.key, replayed.recording)
         val who = replayed.sessionId?.let { "session ${it.take(SESSION_TAG_CHARS)}" } ?: "no session"
         deps.log(
             if (whole) {

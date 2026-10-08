@@ -200,6 +200,8 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
         val sse = post(body)
         assertTrue(sse.contains("held") && sse.contains("event: message_stop"))
         assertEquals(before + 1, mock.upstreamBodies.size, "the ledger refusal never reruns the source")
+        // The replay spends its entry after the response is written; the next test must not begin under a consumption in flight.
+        assertTrue(waitFor(5_000) { logged("the retry cost no upstream turn", mark) }, lines.drop(mark).joinToString())
     }
 
     private fun runningRecording(): FrameRecording {

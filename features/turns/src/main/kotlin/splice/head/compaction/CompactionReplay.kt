@@ -94,9 +94,13 @@ internal class CompactionReplay(
         entries[key]?.recording ?: restored(key)
     }
 
-    /** A delivered replay has served its purpose; a second identical request runs upstream. */
-    fun consumed(key: String) {
+    /** A delivered replay has served its purpose; a second identical request runs upstream. It spends [delivered], not the key:
+     *  consumption runs after the response is written, so a newer compaction may have begun under the same key meanwhile, and
+     *  its recording (and its stored copy) is not this replay's to remove. */
+    fun consumed(key: String, delivered: FrameRecording) {
         synchronized(lock) {
+            val current = entries[key]?.recording
+            if (current != null && current !== delivered) return
             entries.remove(key)
             recordings?.remove(key)
         }

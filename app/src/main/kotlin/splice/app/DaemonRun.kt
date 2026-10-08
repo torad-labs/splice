@@ -1,4 +1,4 @@
-// The daemon's run and its ordered stop, moved out of Main.kt unchanged: the shutdown hook, the startup job beside the
+// NEW: the daemon's run and its ordered stop, moved out of Main.kt unchanged: the shutdown hook, the startup job beside the
 // signal wait, the halt watchdog that arms when the signal fires, and the cooperative stop with its drain and lock close.
 package splice.app
 

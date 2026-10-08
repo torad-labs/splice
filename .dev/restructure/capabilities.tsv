@@ -2231,7 +2231,7 @@ tools/e2e/test/console-wire-keys.test.ts	39fdbf6289becc2b30cd5d4a1034d7993e58901
 tools/e2e/test/heads.test.ts	1d52acbfe98f86fa87952f0a899d654a961a12e70fbe2316d4556512ac7155d9	retain	tools/e2e/test/heads.test.ts	Cohesive engineering tooling
 tools/e2e/test/oracle.test.ts	4fea53ca87894e790f1a89811cb7427554d0bdf3840e9701b6c8b7c3cf32695d	retain	tools/e2e/test/oracle.test.ts	Cohesive engineering tooling
 tools/e2e/tsconfig.json	05b56b7ebdf7989245573b81321d94a26ae8d76f5f8fd62590e7ee4aa3e131a4	retain	tools/e2e/tsconfig.json	Cohesive engineering tooling
-tools/gate/config/ladder.json	558e91c45d315f3f0752ebe61d5fec99c3023968cf0ff23461990867ef93105d	retain	tools/gate/config/ladder.json	Cohesive engineering tooling
+tools/gate/config/ladder.json	58bc369c77c81256c2d2c921f7114b164ffda122cc8b1a48bde0b8f401779e60	retain	tools/gate/config/ladder.json	Cohesive engineering tooling
 tools/gate/config/python-burndown.json	38859c335b2d66a45c71a909b4575f4ecc4e19f281efab46e45fcc84412e532f	retain	tools/gate/config/python-burndown.json	Cohesive engineering tooling
 tools/gate/config/rule-coverage-exclusions.toml	e57b5e743d173d2dc905adbac8322b8de7d846c2b4b4864735a8d4a18f63d79b	retain	tools/gate/config/rule-coverage-exclusions.toml	Cohesive engineering tooling
 tools/gate/index.ts	ee08af14bfd578fe166a1170d1bb34e38075ea301193ba0d9567e30e01bc91ed	retain	tools/gate/index.ts	Cohesive engineering tooling
@@ -3903,3 +3903,4 @@ tools/gate/src/lib/prepush-scope.ts	8769ffedd2c6876de890cb7a02f4e2cafe55cf90d592
 tools/gate/test/prepush-scope.test.ts	9ee86ee667dc0a61962db1cea6309b5664cc78169ffa7184d2755d2e1f90678b	created		Pins the pre-push scope: one-module, core, docs, law-suite and app pushes run what they need, and every ladder row declares inputs
 build-logic/src/main/kotlin/splice/ladder/OwnedFile.kt	ea4576ab34dcc723bb697a8ff42cd34b20d141f5821d5981e666b203a1e5f928	created		The one file a gate leg owns, removed as the leg starts: a directory at the path is refused by name, and a failed removal throws
 build-logic/src/test/kotlin/splice/ladder/OwnedFileTest.kt	7e1190c158146f8064138fb38a69c0b1ce71da3668c3bd7a9f9dbdbf29b928ab	created		Pins OwnedFile: the owned file is removed, an empty or populated directory at the path is refused and kept, a missing path is nothing to remove
+tools/gate/test/census-tip.test.ts	ccedd62fe8b4589d9b7a885b6c3c05c2ae058424a3a2ba4a46c818c31bdfe0c1	created		Pins the tip census: a push's census reads the commit's tree and rows, so another seat's staged file never blocks it, and a committed file with no row still fails

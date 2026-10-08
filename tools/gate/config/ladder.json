@@ -149,8 +149,8 @@
     {
       "task": "census",
       "inputs": ["**"],
-      "why": "Every tracked product path has a capabilities.tsv row with a disposition, the denominator taken from git ls-files rather than from the census. It was run by hand until 2026-09-24 and missed twice: three e2e docker files (train 1) and eight console files (#220), each passing its PR's gate unclaimed.",
-      "command": ["bun", ".dev/restructure/census.ts"]
+      "why": "Every tracked product path has a capabilities.tsv row with a disposition, the denominator taken from git ls-files rather than from the census. It judges the tip (`--rev HEAD`), so a push is judged by what it pushes, never by another seat's staged file. It was run by hand until 2026-09-24 and missed twice: three e2e docker files (train 1) and eight console files (#220), each passing its PR's gate unclaimed.",
+      "command": ["bun", ".dev/restructure/census.ts", "--rev", "HEAD"]
     },
     {
       "task": "censusSelftest",

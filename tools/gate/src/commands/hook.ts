@@ -35,7 +35,7 @@ import { astGrepBin } from "../lib/astgrep.ts";
 import { resolveJdk21 } from "../lib/jdk.ts";
 import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
-import { GATE_OF_RECORD_TASKS, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
+import { cancelledBySignal, GATE_OF_RECORD_TASKS, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
 import { title } from "./title.ts";
 
 export const usage =
@@ -92,6 +92,8 @@ export type GateRunner = (tasks: readonly string[]) => Promise<GateRun>;
 export interface HookDeps {
   readonly gate?: GateRunner;
   readonly openRun?: (head: string) => ReturnType<typeof acquireRunSentinel>;
+  /** Whether another gradle process is live: the evidence a collision needs. The default reads the process list. */
+  readonly rivalLive?: () => boolean;
 }
 
 export interface Judged extends GateRun {
@@ -270,34 +272,64 @@ export function failedTasks(output: string): string[] {
   return [...output.matchAll(FAILED_TASK)].map((m) => m[1] ?? "");
 }
 
-/** Whether a red run is a collision: a shared file another gradle run in this checkout held, not a red of the code.
- *  The signatures are a test task's EOF or missing results file, a lock timeout, and a NoClassDefFoundError for a
- *  class whose .class file is on disk. */
-export function isCollision(output: string, root: string, modules: readonly GradleModule[]): boolean {
-  if (TEST_RESULT_COLLISION.test(output) || LOCK_TIMEOUT.test(output)) return true;
+/** A gradle wrapper or launcher process: the one kind of process another gradle run in this checkout can be. */
+const GRADLE_PROCESS = /GradleWrapperMain|gradle-wrapper\.jar|org\.gradle\.launcher\./;
+
+/** Whether another gradle process is live on this machine, the evidence an EOF or a missing results file needs before
+ *  it is taken for another run's collision. Read from the process list, every process but this one. A list that cannot
+ *  be read is no evidence. */
+export function liveGradleElsewhere(): boolean {
+  const listed = spawnSync("ps", ["-eo", "pid=,args="], { encoding: "utf8" });
+  if (listed.status !== 0) return false;
+  return listed.stdout.split("\n").some((line) => {
+    const fields = /^\s*(\d+)\s+(.*)$/.exec(line);
+    return fields !== null && Number(fields[1]) !== process.pid && GRADLE_PROCESS.test(fields[2] ?? "");
+  });
+}
+
+/** Whether a red run is a collision: a shared file another gradle run in this checkout held, not a red of the code. A
+ *  lock timeout names its holder itself. A test task's EOF or missing results file, and a NoClassDefFoundError for a
+ *  class whose .class file is on disk, are collisions only while [rivalLive] says another gradle process is live. */
+export function isCollision(
+  output: string,
+  root: string,
+  modules: readonly GradleModule[],
+  rivalLive: () => boolean = liveGradleElsewhere,
+): boolean {
+  if (LOCK_TIMEOUT.test(output)) return true;
+  if (TEST_RESULT_COLLISION.test(output)) return rivalLive();
   for (const m of output.matchAll(MISSING_CLASS)) {
     const classFile = `${(m[1] ?? "").replaceAll(".", "/")}.class`;
     if (modules.some((mod) => CLASS_DIRS.some((dir) => existsSync(join(root, mod.dir, "build", "classes", dir, classFile))))) {
-      return true;
+      return rivalLive();
     }
   }
   return false;
 }
 
-/** Runs the tasks; a collision reruns them once. A red after the rerun is the answer. */
+/** Runs the tasks; a collision reruns them once. A red after the rerun is the answer. A run ended by a signal is
+ *  cancelled, not a collision, and is not rerun (run.ts ends a cancelled gate the same way). */
 export async function judgedRun(
   run: GateRunner,
   root: string,
   modules: readonly GradleModule[],
   tasks: readonly string[],
+  rivalLive: () => boolean = liveGradleElsewhere,
 ): Promise<Judged> {
   const first = await run(tasks);
-  if (first.status === 0 || !isCollision(first.output, root, modules)) {
+  if (first.status === 0 || cancelledBySignal(first.status) || !isCollision(first.output, root, modules, rivalLive)) {
     return { ...first, reran: false, collidedAgain: false };
   }
   console.error("  ! collision: another gradle run in this checkout held a shared file; rerunning the tasks once");
   const second = await run(tasks);
-  return { ...second, reran: true, collidedAgain: second.status !== 0 && isCollision(second.output, root, modules) };
+  const collidedAgain = second.status !== 0 && !cancelledBySignal(second.status) && isCollision(second.output, root, modules, rivalLive);
+  return { ...second, reran: true, collidedAgain };
+}
+
+/** What a red judgement adds to its message: a cancellation, or a collision that came again on the rerun. */
+function redNote(judged: Judged): string {
+  if (cancelledBySignal(judged.status)) return ` (cancelled: gradle ended by a signal, exit ${judged.status})`;
+  return judged.collidedAgain ? " (a collision again on the rerun)" : "";
 }
 
 /** The seat that holds a repo-relative file's lock in .git/seat-locks, or "no seat lock". */
@@ -411,7 +443,7 @@ export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<numbe
     return 1;
   }
 
-  const judged = await judgedRun(deps.gate ?? slotRunner(lay, "pre-commit", false), root, modules, [...tasks]);
+  const judged = await judgedRun(deps.gate ?? slotRunner(lay, "pre-commit", false), root, modules, [...tasks], deps.rivalLive);
   if (judged.status === 0) {
     console.error(`  ✓ ${[...tasks].join(" ")}`);
     console.error(`pre-commit: PASS — ${seconds(started)}${judged.reran ? " (after one collision rerun)" : ""}`);
@@ -419,8 +451,7 @@ export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<numbe
   }
   console.error(tailOf(judged.output));
   for (const line of failureLines(root, judged.output)) console.error(line);
-  const again = judged.collidedAgain ? " (a collision again on the rerun)" : "";
-  console.error(`pre-commit: ✗ gradle red${again} — ${seconds(started)}`);
+  console.error(`pre-commit: ✗ gradle red${redNote(judged)} — ${seconds(started)}`);
   return 1;
 }
 
@@ -475,6 +506,7 @@ export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): 
     lay.repoRoot,
     gradleModules(lay.repoRoot),
     [...PRE_PUSH_GATE_TASKS],
+    deps.rivalLive,
   );
   const elapsed = seconds(started);
   if (judged.status === 0) {
@@ -484,8 +516,7 @@ export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): 
   }
   console.log(`PRE-PUSH: FAIL — judged ${judgedWhat}`);
   for (const line of failureLines(lay.repoRoot, judged.output)) console.error(line);
-  const again = judged.collidedAgain ? " (a collision again on the rerun)" : "";
-  console.error(`pre-push: ✗ gate tier${again} — ${elapsed}`);
+  console.error(`pre-push: ✗ gate tier${redNote(judged)} — ${elapsed}`);
   return 1;
 }
 

@@ -17,6 +17,7 @@ import {
   installShims,
   isCollision,
   judgedRun,
+  liveGradleElsewhere,
   moduleOf,
   namedFiles,
   parseScan,
@@ -430,7 +431,7 @@ describe("a collision reruns the tasks once, and a second collision fails", () =
       calls.push([...tasks]);
       return calls.length === 1 ? { status: 1, output: EOF_TRACE } : { status: 0, output: "BUILD SUCCESSFUL\n" };
     };
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null, rivalLive: () => true }));
     expect(result).toBe(0);
     expect(calls.length).toBe(2);
     expect(text).toContain("passed on the rerun after a collision");
@@ -446,7 +447,7 @@ describe("a collision reruns the tasks once, and a second collision fails", () =
       calls.push([...tasks]);
       return { status: 1, output: RESULTS_TRACE };
     };
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null, rivalLive: () => true }));
     expect(result).toBe(1);
     expect(calls.length).toBe(2);
     expect(text).toContain("a collision again on the rerun");
@@ -467,8 +468,8 @@ describe("a collision reruns the tasks once, and a second collision fails", () =
   });
 
   test("the real EOF trace and the real results-file trace are collisions", () => {
-    expect(isCollision(EOF_TRACE, repoRoot, modulesOf(repoRoot))).toBe(true);
-    expect(isCollision(RESULTS_TRACE, repoRoot, modulesOf(repoRoot))).toBe(true);
+    expect(isCollision(EOF_TRACE, repoRoot, modulesOf(repoRoot), () => true)).toBe(true);
+    expect(isCollision(RESULTS_TRACE, repoRoot, modulesOf(repoRoot), () => true)).toBe(true);
   });
 
   test("a lock timeout is a collision; a compile red is not", () => {
@@ -480,7 +481,7 @@ describe("a collision reruns the tasks once, and a second collision fails", () =
     const root = wallsRepo();
     writeFile(root, "core/build/classes/kotlin/test/splice/core/FooTest.class", "");
     const modules = gradleModules(root);
-    expect(isCollision("java.lang.NoClassDefFoundError: splice/core/FooTest\n", root, modules)).toBe(true);
+    expect(isCollision("java.lang.NoClassDefFoundError: splice/core/FooTest\n", root, modules, () => true)).toBe(true);
     expect(isCollision("java.lang.NoClassDefFoundError: splice/core/Missing\n", root, modules)).toBe(false);
   });
 
@@ -491,10 +492,45 @@ describe("a collision reruns the tasks once, and a second collision fails", () =
       calls.push([...tasks]);
       return calls.length === 1 ? { status: 1, output: EOF_TRACE } : { status: 1, output: COMPILE_RED };
     };
-    const judged = await judgedRun(gate, root, gradleModules(root), [":app:test"]);
+    const judged = await judgedRun(gate, root, gradleModules(root), [":app:test"], () => true);
     expect(judged.reran).toBe(true);
     expect(judged.collidedAgain).toBe(false);
     expect(judged.status).toBe(1);
+  });
+  test("RED: a run ended by a signal is cancelled: it is not rerun, and its exit stands", async () => {
+    const root = wallsRepo();
+    const calls: string[][] = [];
+    const gate: GateRunner = async (tasks) => {
+      calls.push([...tasks]);
+      return { status: 143, output: EOF_TRACE };
+    };
+    const judged = await judgedRun(gate, root, gradleModules(root), [":app:test"], () => true);
+    expect(calls.length).toBe(1);
+    expect(judged.reran).toBe(false);
+    expect(judged.status).toBe(143);
+  });
+
+  test("RED: an EOF or a missing results file with no other gradle process live is not a collision", async () => {
+    const root = wallsRepo();
+    expect(isCollision(EOF_TRACE, root, gradleModules(root), () => false)).toBe(false);
+    expect(isCollision(RESULTS_TRACE, root, gradleModules(root), () => false)).toBe(false);
+    const calls: string[][] = [];
+    const gate: GateRunner = async (tasks) => {
+      calls.push([...tasks]);
+      return { status: 1, output: EOF_TRACE };
+    };
+    const judged = await judgedRun(gate, root, gradleModules(root), [":app:test"], () => false);
+    expect(calls.length).toBe(1);
+    expect(judged.status).toBe(1);
+  });
+
+  test("the live-gradle check sees a gradle process running on this machine", async () => {
+    const gradle = Bun.spawn(["bash", "-c", "exec -a GradleWrapperMain sleep 30"]);
+    try {
+      expect(liveGradleElsewhere()).toBe(true);
+    } finally {
+      gradle.kill();
+    }
   });
 });
 

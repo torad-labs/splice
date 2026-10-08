@@ -38,6 +38,10 @@ internal class CompactionReplay(
     private val lock = Any()
     private val entries = LinkedHashMap<String, Entry>()
 
+    /** Who owns each key's stored copy: the kept recording whose frames were saved (or restored) under it. Unlike [entries] it is
+     *  not an eviction target for capacity, so a memory miss never reads as "the file is nobody's". Bounded by age and capacity. */
+    private val stored = LinkedHashMap<String, Entry>()
+
     /** Null without a session: a retry cannot be tied to its first attempt. The hash is the body
      *  BEFORE the compaction tail when the preparation recorded one (TurnMeta.compactionRequestHash):
      *  a project resolved late or an instructions file edited between attempts changes the tail,
@@ -85,24 +89,34 @@ internal class CompactionReplay(
         synchronized(lock) {
             val superseded = entries[key]?.recording !== recording
             if (!superseded && !keep) entries.remove(key)
-            if (!superseded && keep) recordings?.save(key, recording.frames())
+            if (!superseded && keep) {
+                recordings?.save(key, recording.frames())
+                stored[key] = Entry(recording, clock())
+            }
         }
     }
 
     fun lookup(key: String): FrameRecording? = synchronized(lock) {
         sweep()
-        entries[key]?.recording ?: restored(key)
+        // A kept recording evicted from memory is found again as ITSELF, so the delivery that follows spends its own file.
+        entries[key]?.recording ?: ownedStored(key) ?: restored(key)
     }
+
+    private fun ownedStored(key: String): FrameRecording? =
+        stored[key]?.recording?.also { entries[key] = Entry(it, clock()) }
 
     /** A delivered replay has served its purpose; a second identical request runs upstream. It spends [delivered], not the key:
      *  consumption runs after the response is written, so a newer compaction may have begun under the same key meanwhile, and
      *  its recording (and its stored copy) is not this replay's to remove. */
     fun consumed(key: String, delivered: FrameRecording) {
         synchronized(lock) {
-            val current = entries[key]?.recording
-            if (current != null && current !== delivered) return
-            entries.remove(key)
-            recordings?.remove(key)
+            if (entries[key]?.recording === delivered) entries.remove(key)
+            // The stored copy is removed only for the recording that owns it. An absent memory entry proves nothing about the
+            // file: capacity may have evicted a newer kept recording whose file still stands under this key.
+            if (stored[key]?.recording === delivered) {
+                stored.remove(key)
+                recordings?.remove(key)
+            }
         }
     }
 
@@ -113,6 +127,7 @@ internal class CompactionReplay(
         frames.forEach(recording::append)
         recording.complete(whole = true)
         entries[key] = Entry(recording, clock())
+        stored[key] = Entry(recording, clock())
         return recording
     }
 
@@ -127,6 +142,9 @@ internal class CompactionReplay(
             val victim = entries.entries.firstOrNull { it.value.recording.isComplete }?.key ?: entries.keys.first()
             entries.remove(victim)
         }
+        // A stored copy's file expires by its own age; the ownership record goes with it, and past capacity the oldest goes first.
+        stored.entries.removeIf { now - it.value.startedAtMs > ttlMs }
+        while (stored.size > capacity) stored.remove(stored.keys.first())
     }
 
     private fun sha256Hex(text: String): String =

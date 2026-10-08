@@ -98,17 +98,60 @@ class CompactionReplayTest {
     }
 
     @Test
-    fun `RED control - consuming whatever is under the key, the old behavior, does remove the newer compaction's recording`() {
+    fun `control - the delivery of the recording that owns the key spends it, so the tests above can fail`() {
         val key = checkNotNull(replay.key("s", "{}"))
         val delivered = whole()
         replay.begin(key, delivered)
         replay.finish(key, delivered, keep = true)
-        val newer = FrameRecording().apply { append("event: message_start\n\n") }
+        val newer = whole()
         replay.begin(key, newer)
+        replay.finish(key, newer, keep = true)
 
         replay.consumed(key, newer)
 
-        assertNull(replay.lookup(key), "the loss the delivered check prevents")
+        assertNull(replay.lookup(key), "the owner's delivery is spent")
+    }
+
+    private class MapRecordings : CompactionRecordings {
+        val files = mutableMapOf<String, List<String>>()
+
+        override fun save(key: String, frames: List<String>) {
+            files[key] = frames
+        }
+
+        override fun load(key: String): List<String>? = files[key]
+
+        override fun remove(key: String) {
+            files.remove(key)
+        }
+    }
+
+    @Test
+    fun `a late consumption of an older delivery leaves the newer kept answer's file after capacity evicted its memory entry`() {
+        val store = MapRecordings()
+        val withStore = CompactionReplay(store, clock = ElapsedClock { now }, ttlMs = 1_000, capacity = 2)
+        val key = checkNotNull(withStore.key("s", "{}"))
+        val older = whole()
+        withStore.begin(key, older)
+        withStore.finish(key, older, keep = true)
+        val newer = FrameRecording().apply {
+            append("event: message_start\n\n")
+            append("event: newer\n\n")
+            complete(whole = true)
+        }
+        withStore.begin(key, newer)
+        withStore.finish(key, newer, keep = true)
+        // Two compactions still driving: capacity evicts the settled newer entry from memory, its file stays.
+        withStore.begin("other-1", FrameRecording().apply { append("event: running\n\n") })
+        withStore.begin("other-2", FrameRecording().apply { append("event: running\n\n") })
+        assertNull(withStore.lookup("absent"), "the lookup sweeps")
+
+        withStore.consumed(key, older)
+
+        assertEquals(newer.frames(), store.load(key), "the older delivery spent a file that is not its own")
+        assertSame(newer, withStore.lookup(key), "the retry of the newer compaction finds that recording, as itself")
+        withStore.consumed(key, newer)
+        assertNull(store.load(key), "the owner's delivery spends its file")
     }
 
     @Test

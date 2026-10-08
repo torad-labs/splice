@@ -37,16 +37,10 @@ class ModelsProbeTest {
         dialect: Dialect = Dialect.OPENAI_CHAT,
         baseUrl: String = "$TEST_BASE/v1",
         kind: String = "api-key",
-        modelsUrl: String? = null,
-        headers: Map<String, String> = emptyMap(),
-        local: Boolean? = null,
     ) = ProviderConfig(
         dialect = dialect,
         baseUrl = baseUrl,
         auth = AuthConfig(kind = kind, env = "TEST_API_KEY"),
-        extraHeaders = headers,
-        modelsUrl = modelsUrl,
-        local = local,
     )
 
     private fun probeWith(answer: ModelsAnswer) = ModelsProbe(
@@ -79,11 +73,8 @@ class ModelsProbeTest {
         // A provider that declares its own version header is not silently overridden by the default:
         // the operator's splice.toml is the same source a TURN reads.
         roster(
-            provider(
-                dialect = Dialect.ANTHROPIC_PASSTHROUGH,
-                baseUrl = TEST_BASE,
-                headers = mapOf("anthropic-version" to "2026-01-01"),
-            ),
+            provider(dialect = Dialect.ANTHROPIC_PASSTHROUGH, baseUrl = TEST_BASE)
+                .copy(extraHeaders = mapOf("anthropic-version" to "2026-01-01")),
             ok(EMPTY_LIST),
         )
         assertEquals("2026-01-01", asked.single().second["anthropic-version"])
@@ -92,11 +83,8 @@ class ModelsProbeTest {
     @Test
     fun `models_url outranks the dialect path`() {
         roster(
-            provider(
-                dialect = Dialect.ANTHROPIC_PASSTHROUGH,
-                baseUrl = "$TEST_BASE/anthropic",
-                modelsUrl = "$TEST_BASE/models",
-            ),
+            provider(dialect = Dialect.ANTHROPIC_PASSTHROUGH, baseUrl = "$TEST_BASE/anthropic")
+                .copy(modelsUrl = "$TEST_BASE/models"),
             ok(EMPTY_LIST),
         )
         assertEquals("$TEST_BASE/models", asked.single().first)

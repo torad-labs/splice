@@ -216,6 +216,15 @@ describe("pre-commit judges the bytes the commit holds", () => {
     expect(await preCommit(lay(root), { gate: compiler(root) })).toBe(1);
   });
 
+  test("a clean filter does not hide the difference: the index holds the filtered blob, the worktree its raw bytes", () => {
+    const root = wallsRepo();
+    writeFile(root, ".gitattributes", "*.kt filter=upper\n");
+    git(root, ["config", "filter.upper.clean", "tr a-z A-Z"]);
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", ".gitattributes", TARGET]);
+    expect(unequalBytes(root, [TARGET])).toEqual([TARGET]);
+  });
+
   test("a Kotlin file no check covers is refused, and gradle is never asked", async () => {
     const root = wallsRepo();
     writeFile(root, "scripts/Helper.kts", "val x = 1\n");

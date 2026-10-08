@@ -127,7 +127,8 @@ export function dirtyPaths(root: string): string[] {
 }
 
 /** The staged paths whose index blob is not the blob `git add` would store from the worktree file. A staged path
- *  missing from the worktree differs too. */
+ *  missing from the worktree differs too. The worktree bytes are hashed raw (`--no-filters`): a clean filter would
+ *  turn them into the filtered blob the index holds, and so hide the difference. */
 export function unequalBytes(root: string, staged: readonly string[]): string[] {
   if (staged.length === 0) return [];
   const indexed = new Map<string, string>();
@@ -139,7 +140,7 @@ export function unequalBytes(root: string, staged: readonly string[]): string[] 
   const present = staged.filter((path) => existsSync(join(root, path)));
   const worktree = new Map<string, string>();
   if (present.length > 0) {
-    const hashed = spawnSync("git", ["hash-object", "--stdin-paths"], { cwd: root, encoding: "utf8", input: `${present.join("\n")}\n` });
+    const hashed = spawnSync("git", ["hash-object", "--no-filters", "--stdin-paths"], { cwd: root, encoding: "utf8", input: `${present.join("\n")}\n` });
     if (hashed.status !== 0) throw new Error(`git hash-object failed: ${hashed.stderr.trim()}`);
     const hashes = hashed.stdout.trim().split("\n");
     present.forEach((path, i) => worktree.set(path, hashes[i] ?? ""));

@@ -24,7 +24,7 @@ import kotlin.coroutines.jvm.internal.CoroutineStackFrame
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
-private fun stagingStorage(continuation: Any): Any {
+private fun <C : Any> stagingStorage(continuation: C): Any {
     var frame = continuation as? CoroutineStackFrame
     while (frame != null) {
         val storage = frame.javaClass.declaredFields.filter { it.name.startsWith("L$") }.firstNotNullOfOrNull { field ->
@@ -38,7 +38,7 @@ private fun stagingStorage(continuation: Any): Any {
     error("the reader must expose a real staging owner on its suspended read frame")
 }
 
-private fun storageOf(owner: Any): Any? = owner.javaClass.declaredFields.firstNotNullOfOrNull { field ->
+private fun <O : Any> storageOf(owner: O): Any? = owner.javaClass.declaredFields.firstNotNullOfOrNull { field ->
     field.isAccessible = true
     when (val item = field.get(owner)) {
         is ByteArrayOutputStream -> item

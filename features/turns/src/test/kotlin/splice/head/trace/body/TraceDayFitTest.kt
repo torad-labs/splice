@@ -198,7 +198,9 @@ class TraceDayFitTest {
         )
     }
 
-    private fun record(id: String, body: Any): JsonObject = buildJsonObject {
+    private fun record(id: String, body: String): JsonObject = record(id, JsonPrimitive(body))
+
+    private fun record(id: String, body: JsonElement): JsonObject = buildJsonObject {
         put("kind", "turn")
         put("turn", id)
         put("ts", 1_791_158_400_000L)
@@ -207,7 +209,7 @@ class TraceDayFitTest {
         put(
             "client",
             buildJsonObject {
-                if (body is JsonElement) put("body", body) else put("body", body.toString())
+                put("body", body)
             },
         )
     }

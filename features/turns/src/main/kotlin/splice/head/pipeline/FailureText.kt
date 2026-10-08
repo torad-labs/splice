@@ -24,6 +24,7 @@
 package splice.head.pipeline
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.ErrorType
@@ -87,7 +88,7 @@ internal class FailurePresenter {
      *  upstream of this and still reads the dash as a clause boundary in the raw text. */
     private fun clauseBreaks(text: String): String = text.replace(EM_DASH_CLAUSE, CLAUSE_BREAK)
 
-    private fun firstNonBlank(vararg candidates: Any?): String? {
+    private fun firstNonBlank(vararg candidates: JsonElement?): String? {
         val found = candidates.firstNotNullOfOrNull { (it as? JsonPrimitive)?.takeIf(JsonPrimitive::isString) }
         return found?.content?.takeIf { it.isNotBlank() }
     }

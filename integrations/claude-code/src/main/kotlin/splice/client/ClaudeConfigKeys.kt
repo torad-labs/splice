@@ -13,13 +13,13 @@ package splice.client
  *  covers head CONFIGURATION (settings, rosters, hooks, MCP); transcripts are shared session state,
  *  and the operator named their removal a regression. Whether a head shares them is the operator's
  *  share/isolate policy, never a forced link or a forced un-link (ProjectsLink's header). */
-public val sharedLinkItems: List<String> = listOf(
+internal val sharedLinkItems: List<String> = listOf(
     Keys.SETTINGS, "agents", "commands", "skills", "hooks", "plugins", Keys.CLAUDE_MD, Keys.MCPS, Keys.SESSIONS,
     Keys.PROJECTS,
 )
 
 /** ~/.claude.json keys carried into a head's isolated state (only when absent locally). */
-public val portKeys: List<String> = listOf(
+internal val portKeys: List<String> = listOf(
     "verbose", "showSpinnerTree", "tipsHistory", "effortCalloutV2Dismissed",
     "unpinOpus47LaunchEffort", "unpinOpus48LaunchEffort", "unpinFable5LaunchEffort",
     "opusProMigrationComplete", "sonnet1m45MigrationComplete", Keys.ONBOARDING,

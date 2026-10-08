@@ -54,6 +54,7 @@ import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 
@@ -311,13 +312,15 @@ public class ResumeAcrossHeads(public val rewriter: TranscriptModelRewrite = Tra
         }
     }
 
-    /** A missing or unreadable projects dir is an ordinary miss for a search (a head that has never
-     *  run a session has none), so it is named once and read as empty — never a thrown launch. */
+    /** A projects dir that does not exist is an ordinary miss for a search: a head that has never run a
+     *  session has none, so it is read as empty and logs nothing. Any other failure to list it (access
+     *  denied, an I/O error, a path that is not a directory) is named once and read as empty, never a
+     *  thrown launch. */
     private fun directoryEntries(path: Path, log: LogSink): List<Path> {
         val entries = Cancellables.runCatchingCancellable {
             Files.newDirectoryStream(path).use { stream -> stream.toList() }
         }
-        entries.exceptionOrNull()?.let { cause ->
+        entries.exceptionOrNull()?.takeUnless { it is NoSuchFileException }?.let { cause ->
             log(
                 "[resume] could not list $path (${SafeFailureText.render(cause)}), so that tree was NOT " +
                     "searched for the session; fix its permissions and relaunch to search it\n",

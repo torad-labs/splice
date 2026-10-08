@@ -14,15 +14,18 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.Keys
 import splice.client.resume.originals.TranscriptOriginals
 import splice.core.config.StatePaths
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.isSymbolicLink
 
 class ResumeAcrossHeadsTest {
@@ -255,5 +258,66 @@ class ResumeAcrossHeadsTest {
         assertTrue(adoption is SessionAdoption.Invalid)
         assertFalse(adoption.toString().contains("passwd"), "the rejected argument is not reproduced: $adoption")
         assertFalse(Files.exists(calling.resolve(Keys.PROJECTS), NOFOLLOW_LINKS))
+    }
+
+    /** A log that keeps its lines, so a test can say what a launch named and what it stayed silent about. */
+    private fun logged(): Pair<List<String>, LogSink> {
+        val lines = mutableListOf<String>()
+        return lines to LogSink { lines += it }
+    }
+
+    /** Oct 7 CT: a head that has never run a session has no projects dir, and every launch's search named that
+     *  absence once per head. A missing projects dir is an ordinary miss for a search, so it logs nothing. */
+    @Test
+    fun `a head that has never run a session copies a foreign one in without naming its missing projects dir`(
+        @TempDir home: Path,
+    ) {
+        register(home, "kimi", encodedCwd("app"), "s1", "gpt-5.6-sol")
+        val calling = headConfig(home, "codex")
+        val (lines, log) = logged()
+
+        val adoption = resumer().adopt(calling, listOf(home.resolve(".claude-kimi")), "s1", pinned, listOf(pinned), log)
+
+        assertTrue(adoption is SessionAdoption.Adopted, "$adoption")
+        assertTrue(lines.none { "could not list" in it }, "a missing projects dir is an ordinary miss: $lines")
+    }
+
+    @Test
+    fun `a session in no head's tree names no missing projects dir either`(@TempDir home: Path) {
+        val calling = headConfig(home, "codex")
+        val (lines, log) = logged()
+
+        val adoption = resumer().adopt(calling, listOf(headConfig(home, "kimi")), "s1", pinned, listOf(pinned), log)
+
+        assertTrue(adoption is SessionAdoption.Absent, "$adoption")
+        assertTrue(lines.none { "could not list" in it }, "a missing projects dir is an ordinary miss: $lines")
+    }
+
+    @Test
+    fun `a projects path that is not a directory is still named in the log`(@TempDir home: Path) {
+        val calling = headConfig(home, "codex")
+        write(calling.resolve(Keys.PROJECTS), "not a directory")
+        val (lines, log) = logged()
+
+        resumer().plan(calling, emptyList(), "s1", log)
+
+        assertTrue(lines.any { "could not list" in it }, "a real failure to list is named: $lines")
+    }
+
+    @Test
+    fun `a projects dir this user cannot read is still named in the log`(@TempDir home: Path) {
+        val calling = headConfig(home, "codex")
+        val projects = Files.createDirectories(calling.resolve(Keys.PROJECTS))
+        Files.setPosixFilePermissions(projects, PosixFilePermissions.fromString("---------"))
+        try {
+            assumeFalse(Files.isReadable(projects), "this user can read a directory with no permissions")
+            val (lines, log) = logged()
+
+            resumer().plan(calling, emptyList(), "s1", log)
+
+            assertTrue(lines.any { "could not list" in it }, "an access failure is named: $lines")
+        } finally {
+            Files.setPosixFilePermissions(projects, PosixFilePermissions.fromString("rwxr-xr-x"))
+        }
     }
 }

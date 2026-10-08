@@ -589,7 +589,7 @@ public enum class Knob(
     ;
 
     /** The untyped default the config layers read. A reader that expects a kind uses [count], [text] or [flag]. */
-    public val default: Any? get() = typedDefault.raw()
+    internal val default: Any? get() = typedDefault.raw()
 
     /** The count this knob defaults to. A knob whose default is another kind fails here, by name. */
     public fun count(): Long = (typedDefault as? KnobDefault.Count)?.value ?: kindError("a count")

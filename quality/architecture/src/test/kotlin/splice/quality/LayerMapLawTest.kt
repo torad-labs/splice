@@ -26,6 +26,7 @@ internal fun mayImport(layer: Layer): Set<Layer> = when (layer) {
     Layer.ADAPTER -> setOf(Layer.DOMAIN, Layer.ADAPTER)
     Layer.FEATURE -> setOf(Layer.DOMAIN, Layer.ADAPTER, Layer.FEATURE)
     Layer.COMPOSITION -> Layer.entries.toSet()
+    // Measured 2026-10-08: no splice.* import in the tooling modules' main sources.
     Layer.TOOLING -> emptySet()
 }
 
@@ -128,7 +129,6 @@ class LayerMapLawTest {
     }
 
     private fun scanned(): List<ScannedFile> = layerMap.modulesOf
-        .filterKeys { it != Layer.TOOLING }
         .flatMap { (layer, modules) -> modules.flatMap { scanModule(it, layer) } }
 
     private fun scanModule(module: String, layer: Layer): List<ScannedFile> {
@@ -174,6 +174,12 @@ class LayerMapLawTest {
         val (owners, _) = packageOwners(files)
         val breaches = importBreaches(files, owners)
         assertTrue(breaches.isEmpty()) { "LAYER DIRECTION: ${breaches.joinToString("; ")}" }
+    }
+
+    @Test
+    fun `tooling sources are scanned, so their imports are graded too`() {
+        val tooling = scanned().filter { it.layer == Layer.TOOLING }
+        assertTrue(tooling.isNotEmpty()) { "no tooling file was scanned, so the tooling layer is not graded" }
     }
 
     // Red proofs: each checker must fail on a synthetic violation before its green run means anything.

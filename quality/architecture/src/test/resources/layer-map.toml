@@ -12,7 +12,7 @@
 #   feature      the features/* modules. Behaviour built from domain and adapters, with the
 #                composition root above them. They import domain, adapter and feature code.
 #   composition  :app, the one process entry. It may import everything.
-#   tooling      the quality modules. They are not product code and are classified, not graded.
+#   tooling      the quality modules. They are not product code, and their imports are graded: they may import no product module.
 #
 # A MODULE IS CLASSIFIED BY ITS DEPENDENCIES, NOT BY ITS NAME. A module that depends on a feature is a
 # feature, because an adapter may not reach up into a feature. integrations-claude-code depends on

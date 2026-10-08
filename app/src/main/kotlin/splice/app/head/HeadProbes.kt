@@ -6,6 +6,8 @@
 package splice.app.head
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import splice.app.DaemonBoundary
 import splice.app.auth.AuthProbeLoop
 import splice.app.control.ManagedHead
@@ -33,6 +35,9 @@ internal class HeadProbes : HeadProbeReadings {
     // [stalledKeys] and by Daemon.stop() via [stop].
     private val authProbes = LinkedHashMap<String, AuthProbeLoop>()
 
+    private val startGate = Mutex()
+    private var startsOpen = true
+
     // Turn-path liveness (2026-08-12): key -> stalled. The 91h wedge proved head liveness and head
     // CONFIGURATION are different facts.
     private val turnPathStalled = ConcurrentHashMap<String, Boolean>()
@@ -47,14 +52,29 @@ internal class HeadProbes : HeadProbeReadings {
         probeScope: CoroutineScope,
         log: LogSink,
     ) {
-        heads.forEach { (key, managed) ->
-            boundary.runCatchingDaemonBoundary { managed.head.start() }.onFailure {
-                failed[key] = "start failed: ${it.message}"
-                log("[$key][boot] failed to start: ${it.message}\n")
+        for ((key, managed) in heads) {
+            // One gate for the start and the probes beside it, shared with [closeStarts]: a head is started before the
+            // daemon's stop closes the gate, or not at all. A start that began first finishes first, so the stop that
+            // follows finds the head it has to stop.
+            val admitted = startGate.withLock {
+                if (!startsOpen) return@withLock false
+                boundary.runCatchingDaemonBoundary { managed.head.start() }.onFailure {
+                    failed[key] = "start failed: ${it.message}"
+                    log("[$key][boot] failed to start: ${it.message}\n")
+                }
+                startAuthProbeIfRefreshable(key, managed.auth, probeScope, log)
+                TurnPathProbeLoop(key, managed.head.port, turnPathStalled, log).start(probeScope)
+                true
             }
-            startAuthProbeIfRefreshable(key, managed.auth, probeScope, log)
-            TurnPathProbeLoop(key, managed.head.port, turnPathStalled, log).start(probeScope)
+            if (!admitted) return
         }
+    }
+
+    /** The daemon's stop boundary for head starts: after this returns, [startDaemonHeads] starts nothing. It waits for
+     *  a start already in flight, so the heads the stop then stops include every head that was started. A head restart
+     *  the operator asks for while the daemon runs does not come through here. */
+    internal suspend fun closeStarts() {
+        startGate.withLock { startsOpen = false }
     }
 
     /** V4-417: starts the background probe of every local head's runtime. Off the request path: nothing

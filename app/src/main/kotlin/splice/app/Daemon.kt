@@ -251,6 +251,7 @@ public class Daemon(
             // can't cancel the siblings' drains/flushes nor skip control.stop — it surfaces on
             // stderr/daemon.log instead of the JVM default, a black hole once production redirects
             // stderr to /dev/null.
+            headProbes.closeStarts()
             headShutdown.stopHeads(
                 heads.values.map { it.head },
                 HEAD_STOP_BUDGET_MS,

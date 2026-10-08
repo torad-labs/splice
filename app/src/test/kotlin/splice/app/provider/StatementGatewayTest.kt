@@ -37,7 +37,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
-import splice.codemode.DEFAULT_WORKER_START_TIMEOUT_MS
+import splice.codemode.WORKER_START_TIMEOUT_MS
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -544,4 +544,4 @@ class StatementGatewayTest {
 
 // why: the first step boots a real code-mode worker JVM, which the product allows 30 s to start; a 5 s bound
 // failed under CI compile load (run 37112725473). The worker's own bound plus 5 s still catches a hang.
-private const val WORKER_START_BOUND_MS: Long = DEFAULT_WORKER_START_TIMEOUT_MS + 5_000L
+private const val WORKER_START_BOUND_MS: Long = WORKER_START_TIMEOUT_MS + 5_000L

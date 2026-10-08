@@ -10,3 +10,7 @@
 package splice.codemode
 
 const val SCRIPT_DEADLINE_MS: Long = 30_000
+
+/** How long the worker host waits for a worker to start. The default is this module's own (`internal` in
+ *  main), so a sibling module's test that bounds a turn by it reads it here and not from a second copy. */
+const val WORKER_START_TIMEOUT_MS: Long = DEFAULT_WORKER_START_TIMEOUT_MS

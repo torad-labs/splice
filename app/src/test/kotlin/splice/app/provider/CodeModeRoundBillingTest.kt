@@ -46,7 +46,7 @@ import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.ValueSource
-import splice.codemode.DEFAULT_WORKER_START_TIMEOUT_MS
+import splice.codemode.WORKER_START_TIMEOUT_MS
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -126,7 +126,7 @@ private const val SPEND_EPSILON = 1e-12
 
 // why: the first turn boots a real code-mode worker JVM, which the product allows its own bound to start.
 private const val BILLING_TEST_SECONDS = 60L
-private const val TURN_BOUND_MS: Long = DEFAULT_WORKER_START_TIMEOUT_MS + 5_000L
+private const val TURN_BOUND_MS: Long = WORKER_START_TIMEOUT_MS + 5_000L
 
 // How often the slot test reads the admission gate while it waits for the source round's permit to return.
 private const val GATE_POLL_MS = 10L

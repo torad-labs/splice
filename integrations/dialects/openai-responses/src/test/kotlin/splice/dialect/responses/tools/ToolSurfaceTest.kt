@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.turn.ReasoningDisplayParser
+import splice.core.turn.ReasoningDisplay
 import splice.core.wire.AnthropicMessage
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ToolChoice
@@ -38,7 +38,7 @@ private fun opts(
     upstreamModel = model,
     configEffort = null,
     configSummary = null,
-    showReasoning = ReasoningDisplayParser.from("text"),
+    showReasoning = ReasoningDisplay.TEXT,
     replayReasoning = InjectPriorReasoning(false),
     includeEncryptedReasoning = RequestEncryptedReasoning(true),
     sessionId = null,

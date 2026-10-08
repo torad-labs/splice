@@ -42,7 +42,7 @@ public const val DEFAULT_MAX_WORKERS: Int = 6
 public const val DEFAULT_ADVANCE_TIMEOUT_MS: Long = 5_000
 
 // why: JVM and native-isolate warm-up get a separate boot budget, never a script execution deadline.
-public const val DEFAULT_WORKER_START_TIMEOUT_MS: Long = 30_000
+internal const val DEFAULT_WORKER_START_TIMEOUT_MS: Long = 30_000
 
 // why: each host's protocol JVM has 512 MiB, independent of its sessions' native guest heaps.
 public const val DEFAULT_HEAP_MB: Int = 512

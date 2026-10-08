@@ -14,7 +14,6 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
-import splice.core.turn.ReasoningDisplayParser
 import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ResponsesProvider
@@ -36,7 +35,7 @@ private class CompactProbeProvider : ResponsesProvider(
         baseUrl = "https://chatgpt.com/backend-api/codex",
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
-    showReasoning = ReasoningDisplayParser.from("text"),
+    showReasoning = ReasoningDisplay.TEXT,
     replayReasoning = false,
     configEffort = null,
     configSummary = null,
@@ -69,8 +68,8 @@ class ResponsesCompactReanchorSeamTest {
     @Test
     fun `a compact turn is re-anchor eligible - the same policy every other round gets`() {
         val provider = CompactProbeProvider()
-        val compact = provider.reanchorController(meta(compact = true))
+        val compact = provider.reanchorPolicy(meta(compact = true))
         assertNotNull(compact, "a torn compaction must restart in the proxy, not surface as overloaded_error")
-        assertSame(provider.reanchorController(meta(compact = false)), compact, "one policy, no compact special case")
+        assertSame(provider.reanchorPolicy(meta(compact = false)), compact, "one policy, no compact special case")
     }
 }

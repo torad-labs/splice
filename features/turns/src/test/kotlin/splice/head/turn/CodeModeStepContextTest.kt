@@ -16,7 +16,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.GatewayCustomCall
-import splice.core.turn.ReasoningDisplayParser
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -132,7 +132,7 @@ class CodeModeStepContextTest {
 
     private val meta = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplayParser.from("text"),
+        showReasoning = ReasoningDisplay.TEXT,
         stream = true,
         originalModel = MODEL,
         upstreamModel = MODEL,

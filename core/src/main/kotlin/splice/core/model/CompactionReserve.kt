@@ -57,7 +57,7 @@ public fun interface CompactionReserveDefaults {
  * predecessors and its generation is the pooled nearest-rank p99 over 832 GPT-5 successes.
  * Other unsampled model ids keep their old scaling until measured; no worst-case family transfer.
  * Sparse samples are empirical, not output caps; preflight guards new deltas. */
-public object CodexCompactionReserves : CompactionReserveDefaults {
+internal object CodexCompactionReserves : CompactionReserveDefaults {
     private val samples: Map<String, CompactionReserve> by lazy {
         val resource = checkNotNull(javaClass.getResourceAsStream(CALIBRATION_RESOURCE)) {
             "missing $CALIBRATION_RESOURCE"

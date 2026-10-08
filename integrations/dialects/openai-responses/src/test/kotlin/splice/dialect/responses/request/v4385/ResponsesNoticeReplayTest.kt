@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.core.turn.ReasoningDisplayParser
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.SpliceNotice
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
@@ -31,7 +31,7 @@ class ResponsesNoticeReplayTest {
             upstreamModel = "m",
             configEffort = null,
             configSummary = null,
-            showReasoning = ReasoningDisplayParser.from("text"),
+            showReasoning = ReasoningDisplay.TEXT,
             replayReasoning = InjectPriorReasoning(false),
             decodeReasoningEnvelope = { null },
         )

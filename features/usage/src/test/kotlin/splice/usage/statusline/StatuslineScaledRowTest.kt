@@ -12,10 +12,14 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.model.ClientWindows
-import splice.core.model.CodexCompactionReserves
+import splice.core.model.CompactionReserve
+import splice.core.model.CompactionReserveDefaults
 import splice.core.model.LiveWindows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+
+/** gpt-6.1-sol's row in core's bundled calibration table (growth p95, generation p99). */
+private val SOL_6_1_RESERVE = CompactionReserve(1_303, 22_844)
 
 class StatuslineScaledRowTest {
 
@@ -91,7 +95,7 @@ class StatuslineScaledRowTest {
             discoveryPrefix = "claude-codex--",
             models = listOf(ModelEntry("gpt-6.1-sol", contextWindow = 272_000)),
             pinnedModel = "gpt-6.1-sol",
-            compactionReserveDefaults = CodexCompactionReserves,
+            compactionReserveDefaults = CompactionReserveDefaults { _, _ -> SOL_6_1_RESERVE }, // core's calibrated row
         )
         var current = boot
         val renderer = StatuslineRenderer(label = "codex", catalog = boot.copy(liveWindows = LiveWindows { current }))

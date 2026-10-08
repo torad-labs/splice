@@ -21,7 +21,7 @@ import kotlinx.serialization.json.jsonArray
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.core.turn.ReasoningDisplayParser
+import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.ReasoningCache
@@ -40,7 +40,7 @@ private fun opts(lookup: (String) -> List<String>?) = BuildOptions(
     upstreamModel = "gpt-5.6-sol",
     configEffort = null,
     configSummary = null,
-    showReasoning = ReasoningDisplayParser.from("text"),
+    showReasoning = ReasoningDisplay.TEXT,
     replayReasoning = InjectPriorReasoning(false),
     includeEncryptedReasoning = RequestEncryptedReasoning(true),
     decodeReasoningEnvelope = { data ->

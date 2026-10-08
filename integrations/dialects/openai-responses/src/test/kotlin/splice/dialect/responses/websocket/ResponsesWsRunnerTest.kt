@@ -29,7 +29,7 @@ import splice.core.auth.Credentials
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.UpstreamAttemptTiming
-import splice.core.turn.ReasoningDisplayParser
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.LogSink
 import splice.dialect.responses.request.responsesRequestJson
@@ -45,7 +45,7 @@ private const val BODY = """{"model":"gpt-5.6-sol","input":[{"role":"user","cont
 
 private fun meta(session: String? = "sess-1", conversation: String? = "splice-abc") = TurnMeta(
     compact = false,
-    showReasoning = ReasoningDisplayParser.from("text"),
+    showReasoning = ReasoningDisplay.TEXT,
     stream = true,
     originalModel = "claude-codex--gpt-5.6-sol",
     upstreamModel = "gpt-5.6-sol",

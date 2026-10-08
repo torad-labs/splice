@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.core.turn.ReasoningDisplayParser
+import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.GrokEffortFixture
 import splice.dialect.responses.PromptCachePolicy
@@ -45,6 +45,10 @@ private val GROK = ResponsesQuirks(
     emitStrict = true,
 )
 
+/** A config word as the display it names; anything else reads as OFF, as the config reader does. */
+private fun displayOf(raw: String): ReasoningDisplay =
+    ReasoningDisplay.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: ReasoningDisplay.OFF
+
 private fun opts(
     compact: Boolean = false,
     effort: String? = null,
@@ -60,7 +64,7 @@ private fun opts(
     upstreamModel = model,
     configEffort = effort,
     configSummary = summary,
-    showReasoning = ReasoningDisplayParser.from(show),
+    showReasoning = displayOf(show),
     replayReasoning = InjectPriorReasoning(replay),
     // Default: include when reasoning is shown (independent of input-replay, and of compact —
     // ResponsesTurnOptions derives it the same way, so a compaction's request matches a turn's).
@@ -501,7 +505,7 @@ private fun cacheOpts(
     upstreamModel = "gpt-5.6-sol",
     configEffort = null,
     configSummary = null,
-    showReasoning = ReasoningDisplayParser.from("text"),
+    showReasoning = ReasoningDisplay.TEXT,
     replayReasoning = InjectPriorReasoning(replay),
     includeEncryptedReasoning = RequestEncryptedReasoning(true),
     sessionId = null,
@@ -542,7 +546,7 @@ private fun preCacheOpts() = BuildOptions(
     upstreamModel = "gpt-5.6-sol",
     configEffort = null,
     configSummary = null,
-    showReasoning = ReasoningDisplayParser.from("text"),
+    showReasoning = ReasoningDisplay.TEXT,
     replayReasoning = InjectPriorReasoning(false),
     includeEncryptedReasoning = RequestEncryptedReasoning(true),
     sessionId = null,

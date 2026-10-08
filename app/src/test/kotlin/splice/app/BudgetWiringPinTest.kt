@@ -21,7 +21,6 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.util.AsyncFileIo
 import splice.usage.budgets.Budget
-import splice.usage.budgets.BudgetActions
 import splice.usage.budgets.BudgetRoutes
 import java.nio.file.Files
 import java.nio.file.Path
@@ -47,7 +46,7 @@ class BudgetWiringPinTest {
         )
         try {
             assertTrue(started.await(5, TimeUnit.SECONDS), "the owned file write is deliberately slow")
-            plane.budgets.replace(listOf(Budget("slow-head", 1.0, BudgetActions.BLOCK)))
+            plane.budgets.replace(listOf(Budget("slow-head", 1.0, "block")))
             val head = plane.console.budgets!!.forHead("slow-head", null)
             val admitted = CompletableFuture.supplyAsync { head.admit() }
             assertNull(
@@ -80,7 +79,7 @@ class BudgetWiringPinTest {
         val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val plane = ControlPlane(DaemonEnvironment(paths, ConfigService(paths), MgmtKey(paths), { }), { })
         try {
-            plane.budgets.replace(listOf(Budget("pinned-head", 0.0, BudgetActions.BLOCK)))
+            plane.budgets.replace(listOf(Budget("pinned-head", 0.0, "block")))
             val enforcement = plane.console.budgets
             assertNotNull(enforcement, "the publisher every head is built from must carry the daemon's enforcement")
             assertNotNull(

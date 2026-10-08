@@ -31,13 +31,17 @@ import org.junit.jupiter.api.assertThrows
 import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
-import splice.core.turn.WireType
+import splice.core.turn.TurnOutcome
 import splice.upstream.failure.FailureSource
 import splice.upstream.failure.UpstreamFailureClassifier
 import splice.upstream.transport.UpstreamFailed
 import splice.upstream.transport.clientOver
 import splice.upstream.transport.postOnce
 import java.util.concurrent.atomic.AtomicInteger
+
+/** The wire type a failure of this cause at this phase carries. The outcome derives it, so the test asks the outcome. */
+private fun wireTypeOf(cause: FailureCause, phase: FailurePhase): ErrorType =
+    TurnOutcome.Failure(message = "", cause = cause, phase = phase).type
 
 class RetryMatrixCoverageTest {
 
@@ -161,7 +165,7 @@ class RetryMatrixCoverageTest {
         // defaulting to something plausible — the same fail-closed shape as the ceiling map.
         for (cause in FailureCause.entries) {
             for (phase in FailurePhase.entries) {
-                assertNotNull(WireType.of(cause, phase), "$cause at $phase has no wire type")
+                assertNotNull(wireTypeOf(cause, phase), "$cause at $phase has no wire type")
             }
         }
     }
@@ -175,7 +179,7 @@ class RetryMatrixCoverageTest {
         for (cause in unattributable) {
             for (phase in FailurePhase.entries) {
                 assertFalse(
-                    WireType.of(cause, phase) == ErrorType.INVALID_REQUEST,
+                    wireTypeOf(cause, phase) == ErrorType.INVALID_REQUEST,
                     "$cause at $phase must not be wired as the client's bad request, which it will not retry",
                 )
             }
@@ -188,7 +192,7 @@ class RetryMatrixCoverageTest {
         for (phase in FailurePhase.entries) {
             assertEquals(
                 ErrorType.OVERLOADED,
-                WireType.of(FailureCause.INTERNAL, phase),
+                wireTypeOf(FailureCause.INTERNAL, phase),
                 "an unattributable failure must be retryable at $phase, not merely pre-content",
             )
         }
@@ -205,7 +209,7 @@ class RetryMatrixCoverageTest {
             for (phase in FailurePhase.entries) {
                 assertEquals(
                     ErrorType.INVALID_REQUEST,
-                    WireType.of(cause, phase),
+                    wireTypeOf(cause, phase),
                     "$cause is a verdict on the request itself, at any phase",
                 )
             }
@@ -222,10 +226,10 @@ class RetryMatrixCoverageTest {
         //
         // UPSTREAM_REPORTED is the cause used here, NOT INTERNAL: INTERNAL is retryable at every
         // phase by design (asserted above), so it cannot demonstrate a phase-sensitive rule at all.
-        assertEquals(ErrorType.OVERLOADED, WireType.of(FailureCause.UPSTREAM_REPORTED, FailurePhase.CONNECT))
-        assertEquals(ErrorType.OVERLOADED, WireType.of(FailureCause.UPSTREAM_REPORTED, FailurePhase.FIRST_BYTE))
-        assertEquals(ErrorType.API_ERROR, WireType.of(FailureCause.UPSTREAM_REPORTED, FailurePhase.MID_OUTPUT))
-        assertEquals(ErrorType.API_ERROR, WireType.of(FailureCause.UPSTREAM_REPORTED, FailurePhase.TERMINAL))
+        assertEquals(ErrorType.OVERLOADED, wireTypeOf(FailureCause.UPSTREAM_REPORTED, FailurePhase.CONNECT))
+        assertEquals(ErrorType.OVERLOADED, wireTypeOf(FailureCause.UPSTREAM_REPORTED, FailurePhase.FIRST_BYTE))
+        assertEquals(ErrorType.API_ERROR, wireTypeOf(FailureCause.UPSTREAM_REPORTED, FailurePhase.MID_OUTPUT))
+        assertEquals(ErrorType.API_ERROR, wireTypeOf(FailureCause.UPSTREAM_REPORTED, FailurePhase.TERMINAL))
     }
 
     @Test
@@ -249,7 +253,7 @@ class RetryMatrixCoverageTest {
             for (phase in FailurePhase.entries) {
                 assertEquals(
                     ErrorType.INVALID_REQUEST,
-                    WireType.of(cause, phase),
+                    wireTypeOf(cause, phase),
                     "$cause is the vendor's verdict on the request, never retried, at $phase",
                 )
             }
@@ -259,7 +263,7 @@ class RetryMatrixCoverageTest {
         for (phase in FailurePhase.entries) {
             assertEquals(
                 ErrorType.OVERLOADED,
-                WireType.of(FailureCause.UPSTREAM_STATUS_5XX, phase),
+                wireTypeOf(FailureCause.UPSTREAM_STATUS_5XX, phase),
                 "a backend 5xx is the one class Claude Code retries on its own, at $phase",
             )
         }

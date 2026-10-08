@@ -21,7 +21,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
-import splice.core.model.CodexCompactionReserves
+import splice.core.model.CompactionReserve
+import splice.core.model.CompactionReserveDefaults
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.usage.UsageHead
@@ -29,6 +30,9 @@ import splice.usage.UsageHeadLookup
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import java.nio.file.Path
+
+/** gpt-6.1-sol's row in core's bundled calibration table (growth p95, generation p99). */
+private val SOL_6_1_RESERVE = CompactionReserve(1_303, 22_844)
 
 class StatuslineRouteBodyTest {
     @TempDir
@@ -75,7 +79,7 @@ class StatuslineRouteBodyTest {
             models = listOf(ModelEntry("gpt-6.1-sol", contextWindow = 272_000)),
             defaultContextWindow = 272_000,
             pinnedModel = "gpt-6.1-sol",
-            compactionReserveDefaults = CodexCompactionReserves,
+            compactionReserveDefaults = CompactionReserveDefaults { _, _ -> SOL_6_1_RESERVE }, // core's calibrated row
         )
         val route = StatuslineRoute(
             UsageHeadLookup {

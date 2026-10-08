@@ -19,8 +19,7 @@ import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.MIRROR_MIN_CHARS
-import splice.core.turn.PROMOTE_MIN_CHARS
-import splice.core.turn.ReasoningDisplayParser
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -76,6 +75,16 @@ private class RecTerminal : TurnTerminal {
     override suspend fun addRedactedThinking(data: String) = Unit
 }
 
+/** Between the mirror floor (20) and the promote floor (40): long enough to mirror, too short to promote. */
+private const val BAND_CHARS = 30
+
+/** Past the promote floor (40), so the turn's own thinking is picked as the text. */
+private const val PROMOTED_CHARS = 45
+
+/** A config word as the display it names; anything else reads as OFF, as the config reader does. */
+private fun displayOf(raw: String): ReasoningDisplay =
+    ReasoningDisplay.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: ReasoningDisplay.OFF
+
 class TurnPipelineTest {
 
     @TempDir
@@ -90,7 +99,7 @@ class TurnPipelineTest {
 
     private fun meta(showReasoning: String, compact: Boolean = false) = TurnMeta(
         compact = compact,
-        showReasoning = ReasoningDisplayParser.from(showReasoning),
+        showReasoning = displayOf(showReasoning),
         stream = true,
         originalModel = "claude-codex--gpt-5.6-sol",
         upstreamModel = "gpt-5.6-sol",
@@ -120,7 +129,7 @@ class TurnPipelineTest {
     )
 
     /** In the uncovered band by construction: too short to promote, too long for the old check. */
-    private val bandThinking = "x".repeat((MIRROR_MIN_CHARS + PROMOTE_MIN_CHARS) / 2)
+    private val bandThinking = "x".repeat(BAND_CHARS)
 
     private suspend fun run(
         mirrorReasoning: Boolean,
@@ -454,7 +463,7 @@ class TurnPipelineTest {
 
     @Test
     fun `above the promote floor still promotes to text and never errors`() = runTest {
-        val long = "x".repeat(PROMOTE_MIN_CHARS + 5)
+        val long = "x".repeat(PROMOTED_CHARS)
         val rec = run(mirrorReasoning = false, showReasoning = "text", thinking = long)
         assertEquals("terminal", rec.ending)
         assertTrue(rec.texts.any { it == long }, "promote-to-text must emit the thinking verbatim")
@@ -521,7 +530,7 @@ class TurnPipelineTest {
     fun `a compact turn with promotable reasoning promotes and ends clean`() = runTest {
         // The never-when half: the gate keys on "nothing to put in the text channel", not on
         // `compact` itself — a promotable summary is what compaction is FOR.
-        val summary = "x".repeat(PROMOTE_MIN_CHARS + 5)
+        val summary = "x".repeat(PROMOTED_CHARS)
         val (rec, tag) = runCompact(thinking = summary)
         assertEquals("ok", tag)
         assertEquals("terminal", rec.ending)

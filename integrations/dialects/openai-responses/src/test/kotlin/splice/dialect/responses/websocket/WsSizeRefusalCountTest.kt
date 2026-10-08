@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
-import splice.core.turn.ReasoningDisplayParser
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import java.io.IOException
 import java.net.http.WebSocket
@@ -65,7 +65,7 @@ class WsSizeRefusalCountTest {
 
         private fun turnMeta() = TurnMeta(
             compact = false,
-            showReasoning = ReasoningDisplayParser.from("text"),
+            showReasoning = ReasoningDisplay.TEXT,
             stream = true,
             originalModel = "claudex--gpt-6.1-sol",
             upstreamModel = "gpt-6.1-sol",

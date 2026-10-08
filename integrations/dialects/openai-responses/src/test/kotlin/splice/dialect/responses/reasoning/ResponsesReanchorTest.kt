@@ -28,7 +28,7 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
-import splice.core.turn.ReasoningDisplayParser
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
@@ -82,7 +82,7 @@ private class ReanchorProbe(lite: Boolean) : ResponsesProvider(
         baseUrl = "https://chatgpt.com/backend-api/codex",
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
-    showReasoning = ReasoningDisplayParser.from("text"),
+    showReasoning = ReasoningDisplay.TEXT,
     replayReasoning = false,
     configEffort = null,
     configSummary = null,
@@ -101,7 +101,7 @@ private fun replayedProse(provider: ResponsesProvider): JsonObject {
         compact = false,
         sessionId = null,
     )
-    val next = checkNotNull(provider.reanchorController(built.meta))
+    val next = checkNotNull(provider.reanchorPolicy(built.meta))
         .continuationForFailure(ReanchorRound(built.requestBody, failureWith(), attempt = 0))
     return checkNotNull(next).getValue("input").jsonArray.map { it.jsonObject }
         .single { (it["content"] as? JsonPrimitive)?.content == "The fix is to" }

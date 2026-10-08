@@ -9,4 +9,4 @@
 package splice.core.turn
 
 public const val MIRROR_MIN_CHARS: Int = 20
-public const val PROMOTE_MIN_CHARS: Int = 40
+internal const val PROMOTE_MIN_CHARS: Int = 40

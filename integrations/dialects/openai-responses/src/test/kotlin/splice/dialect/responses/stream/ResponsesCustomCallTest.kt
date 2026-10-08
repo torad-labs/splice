@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.parse.AnthropicParse
-import splice.core.turn.ReasoningDisplayParser
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnOutcome
@@ -299,7 +299,7 @@ class ResponsesCustomCallTest {
             upstreamModel = "m",
             configEffort = null,
             configSummary = null,
-            showReasoning = ReasoningDisplayParser.from("text"),
+            showReasoning = ReasoningDisplay.TEXT,
             replayReasoning = InjectPriorReasoning(false),
             decodeReasoningEnvelope = { null },
         )

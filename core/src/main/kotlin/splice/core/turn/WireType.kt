@@ -26,7 +26,7 @@
 package splice.core.turn
 
 /** The retry class a failure is wired with, from what went wrong and how far the turn had got. */
-public object WireType {
+internal object WireType {
 
     /** The type the client keys its own retry behaviour on. See [PRE_CONTENT] for the one rule. */
     public fun of(cause: FailureCause, phase: FailurePhase): ErrorType {

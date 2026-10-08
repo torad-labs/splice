@@ -25,7 +25,7 @@ import splice.core.index.WireBlockIndex
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
-import splice.core.turn.ReasoningDisplayParser
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ResponsesProvider
@@ -68,7 +68,7 @@ private class RestartProbe(
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         stateDir = stateDir,
     ),
-    showReasoning = ReasoningDisplayParser.from("text"),
+    showReasoning = ReasoningDisplay.TEXT,
     replayReasoning = false,
     configEffort = null,
     configSummary = null,

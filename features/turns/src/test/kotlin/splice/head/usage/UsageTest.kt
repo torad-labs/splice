@@ -18,7 +18,8 @@ import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.head.ProviderAnswer
-import splice.core.model.CodexCompactionReserves
+import splice.core.model.CompactionReserve
+import splice.core.model.CompactionReserveDefaults
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.AbsorbedRounds
@@ -517,7 +518,9 @@ class UsageScalingTest {
             models = listOf(ModelEntry("gpt-5.6-luna", contextWindow = 272_000)),
             defaultContextWindow = 272_000,
             pinnedModel = "gpt-5.6-luna",
-            compactionReserveDefaults = CodexCompactionReserves,
+            compactionReserveDefaults = CompactionReserveDefaults { _, _ ->
+                CompactionReserve(7_830, 31_791) // luna's calibrated row
+            },
         )
         // C=200k gives T=153k. W=272k minus luna's clean growth p99 7830 and generation
         // p99 31791 leaves 232379: 20000*T/232379 truncates to 13168, not the old 13192.

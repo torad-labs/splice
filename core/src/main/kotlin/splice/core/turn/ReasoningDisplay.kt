@@ -16,7 +16,7 @@ public enum class ReasoningDisplay {
 /** The tolerant config-string reader for [ReasoningDisplay]. A named object since the 2026-08-16
  *  style migration (HD-M8) made the companion illegal; same name, same table, same fallback to OFF
  *  for a legacy or malformed value (never a throw on a typo). */
-public object ReasoningDisplayParser {
+internal object ReasoningDisplayParser {
 
     public fun from(raw: String?): ReasoningDisplay = when (raw?.lowercase()) {
         "text" -> ReasoningDisplay.TEXT

@@ -22,7 +22,8 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.model.CodexCompactionReserves
+import splice.core.model.CompactionReserve
+import splice.core.model.CompactionReserveDefaults
 import splice.core.model.DiscoveredModel
 import splice.core.model.ExtraWindow
 import splice.core.model.ModelCatalog
@@ -51,6 +52,12 @@ private class PreflightAuth : RefreshableAuthProvider {
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
 }
 
+/** The calibrated rows this test's models read (core's bundled table, growth p95 and generation p99). */
+private val CALIBRATED = mapOf(
+    "gpt-5.6-sol" to CompactionReserve(7_830, 19_781),
+    "gpt-6-sol" to CompactionReserve(1_290, 11_602),
+)
+
 class HeadServerPreflightTest {
     internal fun head(
         root: Path,
@@ -76,7 +83,7 @@ class HeadServerPreflightTest {
                 models = listOf(ModelEntry(model, contextWindow = window)),
                 defaultContextWindow = window,
                 pinnedModel = model,
-                compactionReserveDefaults = CodexCompactionReserves,
+                compactionReserveDefaults = CompactionReserveDefaults { id, _ -> CALIBRATED[id] },
             )
         }
         val provider = TestResponsesProvider(

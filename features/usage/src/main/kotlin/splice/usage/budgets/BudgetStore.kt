@@ -49,7 +49,7 @@ private data class BudgetsDocument(val budgets: List<Budget> = emptyList())
 internal class BudgetRefusal(message: String) : IllegalArgumentException(message)
 
 /** The actions a budget may name. [BudgetStore.replace] refuses any other spelling. */
-public object BudgetActions {
+internal object BudgetActions {
     public const val WARN: String = "warn"
     public const val BLOCK: String = "block"
     public val VALID: Set<String> = setOf(WARN, BLOCK)

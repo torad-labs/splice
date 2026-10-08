@@ -16,12 +16,12 @@ public class HeapText private constructor(
     public val text: String,
     private val lease: HeapLease,
 ) : AutoCloseable {
-    public fun retain(owner: Any) {
+    public fun <O : Any> retain(owner: O) {
         HeapOwners.keep(owner, lease.share())
     }
 
     /** Keep only the adopted graph's charge; the rest remains charged until this stage closes. */
-    public fun retain(owner: Any, bytes: Long) {
+    public fun <O : Any> retain(owner: O, bytes: Long) {
         HeapOwners.keep(owner, lease.split(bytes))
     }
 

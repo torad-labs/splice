@@ -9,14 +9,14 @@ import java.lang.ref.Cleaner
 public object HeapOwners {
     private val cleaner = Cleaner.create()
 
-    public fun charge(owner: Any, heap: HeapReservations, bytes: Long): HeapLease {
+    public fun <O : Any> charge(owner: O, heap: HeapReservations, bytes: Long): HeapLease {
         val lease = heap.reserve(bytes) ?: throw HeapCapacityException()
         keep(owner, lease)
         return lease
     }
 
     /** Transfer a shared charge to an escaped container before releasing the previous owner. */
-    public fun keep(owner: Any, lease: HeapLease) {
+    public fun <O : Any> keep(owner: O, lease: HeapLease) {
         val _ = cleaner.register(owner, Runnable { lease.close() })
     }
 }

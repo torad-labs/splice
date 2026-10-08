@@ -117,7 +117,7 @@ public class ConfigService(
                     synchronized(runtimeLock) { runtimeLayer.remove(key) }
                 }
                 else -> {
-                    val coerced = coercion.coerce(knob, raw)
+                    val coerced = coercion.coerce(knob, raw.toString())
                     if (coerced == null) {
                         rejected[key] = "invalid value"
                     } else {
@@ -261,7 +261,7 @@ public class ConfigService(
     private fun fileScalar(parsed: JsonObject, knob: Knob): Any? {
         val el = parsed[knob.key] ?: return null
         val scalar = coercion.jsonScalar(el) ?: return null
-        return coercion.coerce(knob, scalar)
+        return coercion.coerce(knob, scalar.toString())
     }
 
     private fun envLayer(): Map<String, Any?> {

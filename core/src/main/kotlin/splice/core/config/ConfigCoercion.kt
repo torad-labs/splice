@@ -204,7 +204,8 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
 
     // One dispatch line per KnobKind. The three arms share nothing — not a value, not a helper, not
     // a failure mode — so they are three functions rather than three inlined blocks (HD-25).
-    fun coerce(knob: Knob, raw: Any?): Any? = if (knob == Knob.MIRROR_REASONING) {
+    /** [raw] is the spelling a source gave: its text, or null when the source had no value. Each arm reads only the text. */
+    fun coerce(knob: Knob, raw: String?): Any? = if (knob == Knob.MIRROR_REASONING) {
         false
     } else {
         when (knob.kind) {
@@ -214,12 +215,9 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         }
     }
 
-    private fun coerceBool(raw: Any?): Boolean? = when (raw) {
-        is Boolean -> raw
-        else -> BoolKnobWords.of(raw.toString())
-    }
+    private fun coerceBool(raw: String?): Boolean? = BoolKnobWords.of(raw.toString())
 
-    private fun coerceNumber(knob: Knob, raw: Any?): Long? {
+    private fun coerceNumber(knob: Knob, raw: String?): Long? {
         val s = raw.toString().trim().lowercase()
         // maxInflight AND maxQueued both treat <=0 as unlimited in InflightGate — accept
         // the same named sentinels so PATCH/env maxQueued=unlimited is not rejected.
@@ -231,7 +229,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
     }
 
     // raw?. not raw. — Kotlin's null.toString() is the same four-char "null" trap (DR-48).
-    private fun coerceString(raw: Any?): String? = raw?.toString()?.trim()?.ifEmpty { null }
+    private fun coerceString(raw: String?): String? = raw?.trim()?.ifEmpty { null }
 
     // Shared reads over the merged map — one place each so `normalize` stays a flat clamp table.
     fun str(out: Map<String, Any?>, k: Knob): String? = out[k.key]?.toString()

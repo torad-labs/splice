@@ -42,7 +42,7 @@ internal fun interface CodeModeStateWrite {
 /**
  * V4-340: a head's code-mode state is one owner-only file per conversation in [dir], so a save writes the
  * conversations that changed and never the others. The single file every older daemon wrote,
- * [legacyFile], held every record of the head (8.8 MB for 128 records on 2026-09-26) and was rewritten
+ * the legacy file, held every record of the head (8.8 MB for 128 records on 2026-09-26) and was rewritten
  * whole on each save.
  *
  * A conversation's file holds that conversation's records and its expiry markers in the shape the single
@@ -57,7 +57,7 @@ internal fun interface CodeModeStateWrite {
  * atomic across files. A failed write marks disk uncertain, and the next save replaces the full state,
  * even if every live field rolled back to [kept]'s last successfully committed snapshot.
  *
- * FIRST LOAD ON AN UPGRADE. A file that reads back whole is the copy [load] trusts. [legacyFile] fills only
+ * FIRST LOAD ON AN UPGRADE. A file that reads back whole is the copy [load] trusts. The legacy file fills only
  * the conversations that have no such file, each is written to its own file, and it is deleted once every
  * one is written. So a crash between the writes and the delete loads each conversation once, from its own
  * file where it has one and from the legacy copy where it has not; nothing is loaded twice or lost. A
@@ -76,7 +76,6 @@ internal class CodexCodeModeStore(
     private val heap: HeapReservations = JvmHeap.budget,
 ) {
     private val dir = location.dir
-    private val legacyFile = location.legacyFile
     private val files = CodeModeStateDirectory(dir, json, log, heap)
 
     @Volatile private var needsSave = false
@@ -118,12 +117,12 @@ internal class CodexCodeModeStore(
     /** A conversation as its file will hold it. */
     private data class Encoded(val key: String, val indexed: CodeModeKeptState, val text: String)
 
-    /** Every conversation the directory holds, then the ones only [legacyFile] holds, written to their files. */
+    /** Every conversation the directory holds, then the ones only the legacy file holds, written to their files. */
     fun load(): CodeModePersistedState {
         readDirectory()
         val legacy = readLegacy()
         val carried = legacy.orEmpty().filterKeys { !kept.containsKey(it) }
-        val stays = "${legacyFile.fileName} stays"
+        val stays = "${location.legacyFile.fileName} stays"
         val written = carried.count { (key, conversation) -> checkpoint(key, conversation, stays) }
         if (legacy != null && written == carried.size) {
             removeLegacy()
@@ -205,7 +204,7 @@ internal class CodexCodeModeStore(
                     val text = CodeModeStateJournal.encode(item.key, prior, conversation, json, fileOf(item.key), peak)
                     peak.retain(text)
                     bytes = CodeModeStateText(text).bytes
-                    val indexed = CodeModeKeptState(conversation, heap)
+                    val indexed = CodeModeKeptState(conversation.version, conversation, heap)
                     secureDirectory()
                     write(Encoded(item.key, indexed, text))
                 }
@@ -220,23 +219,26 @@ internal class CodexCodeModeStore(
 
     private fun readDirectory() {
         files.load().forEach { (key, selected) ->
-            kept[key] = CodeModeKeptState(selected.state, heap)
+            kept[key] = CodeModeKeptState(selected.state.version, selected.state, heap)
             if (selected.checkpoint) checkpoint(key, selected.state, "the selected conversation stays")
         }
     }
 
-    /** Every conversation [legacyFile] holds, or null when there is none or it could not be read. */
+    /** Every conversation the legacy file holds, or null when there is none or it could not be read. */
     private fun readLegacy(): Map<String, CodeModePersistedState>? {
-        if (Files.notExists(legacyFile)) return null
+        if (Files.notExists(location.legacyFile)) return null
         return try {
-            HeapText.Reader.read(legacyFile, heap).use { staged ->
+            HeapText.Reader.read(location.legacyFile, heap).use { staged ->
                 grouped(json.decodeFromString(staged.text)).also { states -> states.values.forEach(staged::retain) }
             }
         } catch (failure: IOException) {
-            log("[code-mode] ${legacyFile.fileName} not read (${SafeFailureText.render(failure)}): it stays")
+            log("[code-mode] ${location.legacyFile.fileName} not read (${SafeFailureText.render(failure)}): it stays")
             null
         } catch (_: IllegalArgumentException) {
-            log("[code-mode] ${legacyFile.fileName} is not code-mode state: removed, so its scripts are dropped")
+            log(
+                "[code-mode] ${location.legacyFile.fileName} is not code-mode state: " +
+                    "removed, so its scripts are dropped",
+            )
             removeLegacy()
             null
         }
@@ -248,7 +250,7 @@ internal class CodexCodeModeStore(
         capacity.full(conversation).use { peak ->
             val text = CodeModeStateJournal.encode(key, null, conversation, json, capacity = peak)
             peak.retain(text)
-            val indexed = CodeModeKeptState(conversation, heap)
+            val indexed = CodeModeKeptState(conversation.version, conversation, heap)
             secureDirectory()
             write(Encoded(key, indexed, text))
         }
@@ -264,9 +266,9 @@ internal class CodexCodeModeStore(
 
     private fun removeLegacy() {
         try {
-            Files.deleteIfExists(legacyFile)
+            Files.deleteIfExists(location.legacyFile)
         } catch (failure: IOException) {
-            log("[code-mode] ${legacyFile.fileName} not removed (${SafeFailureText.render(failure)})")
+            log("[code-mode] ${location.legacyFile.fileName} not removed (${SafeFailureText.render(failure)})")
         }
     }
 

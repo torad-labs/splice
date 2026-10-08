@@ -12,7 +12,11 @@ import splice.upstream.memory.JvmHeap
 // why: keyed index references, map nodes and backing-table growth beyond the separately owned snapshot.
 private const val KEPT_INDEX_ENTRY_BYTES = 128L
 
-internal class CodeModeKeptState(state: CodeModePersistedState, private val heap: HeapReservations = JvmHeap.budget) {
+internal class CodeModeKeptState(
+    private val version: Int,
+    state: CodeModePersistedState,
+    private val heap: HeapReservations = JvmHeap.budget,
+) {
     init {
         state.records.forEach { CodeModeHeap.own(it, heap) }
         state.expired.forEach { CodeModeHeap.own(it, heap) }
@@ -52,7 +56,6 @@ internal class CodeModeKeptState(state: CodeModePersistedState, private val heap
 
     /** Failed saves keep live references, so a rolled-back acceptance is never resurrected on retry. */
     val dirty: MutableMap<String, CodeModeRecord> = linkedMapOf()
-    private val version = state.version
 
     /** Full materialization is for load, deletion compaction and missing-file recovery only. */
     fun snapshot(): CodeModePersistedState =

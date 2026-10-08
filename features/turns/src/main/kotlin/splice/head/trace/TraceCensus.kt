@@ -142,7 +142,11 @@ internal class TraceCensus(
         val _ = file.lines(known?.end ?: 0L, settled, whole)
         val torn = Tally(stamps, null, heap)
         val _ = file.lines(settled, file.size, torn)
-        val keep = if (settled < KNOWN_BYTES) null else Counted(settled, first, lastBefore(file, settled), whole)
+        val keep = if (settled < KNOWN_BYTES) {
+            null
+        } else {
+            Counted(settled, first, lastBefore(file, settled), whole.placed, whole.skipped)
+        }
         return FileCount(keep, whole.placed + torn.placed, whole.skipped + torn.skipped)
     }
 
@@ -157,10 +161,13 @@ internal class TraceCensus(
 
     /** A file's whole lines before [end]: the turn ids they placed, how many placed none, and the file's [first]
      *  bytes and its [last] ones before [end], by which it is known again. */
-    private class Counted(val end: Long, val first: String, val last: String, tally: Tally) {
-        val placed: Set<String> = tally.placed
-        val skipped: Int = tally.skipped
-    }
+    private data class Counted(
+        val end: Long,
+        val first: String,
+        val last: String,
+        val placed: Set<String>,
+        val skipped: Int,
+    )
 
     /** One file's part of a count: what to keep of it, and every turn id it placed and line it skipped. */
     private data class FileCount(val kept: Counted?, val placed: Set<String>, val skipped: Int)

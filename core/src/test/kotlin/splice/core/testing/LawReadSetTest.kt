@@ -71,6 +71,23 @@ class LawReadSetTest {
         assertTrue(thrown.message.orEmpty().contains(".dev/gone.sh"))
     }
 
+    @Test
+    fun `RED a path through a link and dot-dot that opens an undeclared file is refused`(@TempDir root: Path) {
+        val outside = Files.createDirectories(root.resolve("outside/sub"))
+        Files.writeString(root.resolve("outside/declared.txt"), "outside")
+        val repo = Files.createDirectories(root.resolve("repo"))
+        Files.writeString(repo.resolve("declared.txt"), "inside")
+        Files.createSymbolicLink(repo.resolve("link"), outside)
+        val set = LawReadSet(repo, declare(repo, "declared.txt"))
+
+        val throughLink = repo.resolve("link/../declared.txt")
+        val thrown = assertThrows(IllegalStateException::class.java) { set.readText(throughLink) }
+
+        assertTrue(thrown.message.orEmpty().contains("outside/declared.txt"), thrown.message)
+        assertEquals("inside", set.readText(repo.resolve("declared.txt")))
+        UndeclaredReads.drain()
+    }
+
     /** The list file from raw bytes, as a hostile or damaged writer could leave it. */
     private fun raw(root: Path, vararg bytes: Int): Path =
         Files.write(root.resolve("raw-read-set.txt"), ByteArray(bytes.size) { bytes[it].toByte() })

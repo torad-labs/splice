@@ -66,14 +66,26 @@ class LawReadSet(
         file
     }
 
-    /** The text of [path], which must be in the declared set. Anything else is recorded for [LawReadGuard] and throws, naming
-     *  the path. Bytes that are not UTF-8 decode lossily: a binary file in the set is read, never an error. */
+    private val realRoot: Path by lazy { if (Files.exists(root)) root.toRealPath() else root.toAbsolutePath().normalize() }
+
+    /** The declared files that exist, as real paths (symlinks and `..` resolved). A declared file that is missing is files()'s
+     *  to report, by name. */
+    private val declaredReal: Set<Path> by lazy {
+        declared.map { root.resolve(it) }.filter { Files.exists(it) }.map { it.toRealPath() }.toSet()
+    }
+
+    /** The text of [path], which must be in the declared set. The path is resolved to its real path ONCE, that real path is what is
+     *  compared with the declared files, and that same Path object is what is opened: a link or a `..` cannot make the check and
+     *  the read mean different files. Anything else is recorded for [LawReadGuard] and throws, naming the path. Bytes that are
+     *  not UTF-8 decode lossily: a binary file in the set is read, never an error. */
     fun readText(path: Path): String {
-        val relative = root.relativize(path.toAbsolutePath().normalize()).toString()
-        if (relative !in declared) {
-            UndeclaredReads.record(relative)
-            error("a law read $relative, which is not in the read set the build declared for it")
+        val requested = path.toAbsolutePath()
+        val real = if (Files.exists(requested)) requested.toRealPath() else requested.normalize()
+        if (real !in declaredReal) {
+            val shown = realRoot.relativize(real).toString()
+            UndeclaredReads.record(shown)
+            error("a law read $shown, which is not in the read set the build declared for it")
         }
-        return String(Files.readAllBytes(path), StandardCharsets.UTF_8)
+        return String(Files.readAllBytes(real), StandardCharsets.UTF_8)
     }
 }

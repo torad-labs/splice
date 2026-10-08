@@ -15,10 +15,10 @@ private const val FIXTURE_LIST = "splice.lawReadGuardFixtureList"
 
 class LawReadGuardTest {
 
-    private fun run(emptySet: Path): SummaryGeneratingListener {
+    private fun run(emptySet: Path, fixture: Class<*> = FixtureLaws::class.java): SummaryGeneratingListener {
         val listener = SummaryGeneratingListener()
         val request = LauncherDiscoveryRequestBuilder.request()
-            .selectors(selectClass(FixtureLaws::class.java))
+            .selectors(selectClass(fixture))
             .configurationParameter("junit.jupiter.extensions.autodetection.enabled", "true")
             .build()
         System.setProperty(FIXTURE_LIST, emptySet.toString())
@@ -41,6 +41,16 @@ class LawReadGuardTest {
         assertTrue(name.contains("swallows the refusal"), name)
         val message = failure.exception.message.orEmpty()
         assertTrue(message.contains("tools/undeclared.sh"), message)
+    }
+
+    @Test
+    fun `RED a refusal swallowed in AfterAll fails the class`(@TempDir dir: Path) {
+        val list = Files.writeString(dir.resolve("empty-read-set.txt"), "")
+        val summary = run(list, TaggedCleanupLaw::class.java).summary
+
+        assertEquals(1, summary.containersFailedCount, "the class fails after its own AfterAll")
+        val message = summary.failures.single().exception.message.orEmpty()
+        assertTrue(message.contains("tools/cleanup-undeclared.sh"), message)
     }
 
     @Test

@@ -20,6 +20,7 @@ import splice.core.memory.HeapWeights
 import splice.core.wire.HttpStatus
 import java.util.concurrent.atomic.AtomicBoolean
 
+private const val CODEC_HANDLER = "codec"
 private val connectionKey = io.netty.util.AttributeKey.valueOf<IngressOwnership>("splice.heap.ingress")
 private val leaseKey = AttributeKey<HeapLease>("splice.heap.request")
 
@@ -46,9 +47,17 @@ public class HeapIngress(
         val ownership = IngressOwnership(heap.reserve(HeapWeights.CONNECTION_BYTES))
         pipeline.channel().attr(connectionKey).set(ownership)
         // A read requested by the decoder also crosses this guard.
-        pipeline.addBefore("codec", "splice-heap-read", IngressReadGuard(ownership))
-        pipeline.addBefore("codec", "splice-heap-close", IngressShutdown(ownership, stopping))
-        pipeline.addAfter("codec", "splice-heap-body", IngressHandler(heap, maxBodyBytes, requestLimit, ownership))
+        pipeline.addBefore(CODEC_HANDLER, "splice-heap-read", IngressReadGuard(ownership))
+        // Order is load-bearing: input shutdown sits before IngressShutdown, so its ctx.close() travels toward the
+        // head and never re-enters the staged close.
+        pipeline.addBefore(CODEC_HANDLER, "splice-heap-input-shutdown", IngressInputShutdown(ownership))
+        pipeline.addBefore(CODEC_HANDLER, "splice-heap-close", IngressShutdown(ownership, stopping))
+        pipeline.addBefore(CODEC_HANDLER, "splice-heap-drain", IngressDrain(ownership))
+        pipeline.addAfter(
+            CODEC_HANDLER,
+            "splice-heap-body",
+            IngressHandler(heap, maxBodyBytes, requestLimit, ownership),
+        )
         // Physical close settles ownership even when a retired registration emits no channelInactive.
         pipeline.channel().closeFuture().addListener { ownership.disconnect() }
         val _ = connections.add(pipeline.channel())

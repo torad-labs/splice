@@ -41,8 +41,7 @@ class UpgradeDaemonRestartTest {
             true
         },
         healthVersion = { VERSION },
-        pollMs = 1,
-        confirmPollMs = 1,
+        pacing = UpgradePacing(pollMs = 1, confirmPollMs = 1),
         userUnit = "splice.service",
     )
 

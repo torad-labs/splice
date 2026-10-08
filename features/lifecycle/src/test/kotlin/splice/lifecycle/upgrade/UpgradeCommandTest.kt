@@ -99,9 +99,7 @@ class UpgradeCommandTest {
                 true
             },
             healthVersion = { servingVersion?.invoke(home) ?: link(home, "current") },
-            pollMs = 1,
-            maxWaitMs = maxWaitMs,
-            confirmPollMs = 1,
+            pacing = UpgradePacing(pollMs = 1, maxWaitMs = maxWaitMs, confirmPollMs = 1),
             userUnit = "splice.service",
         )
         return UpgradeCommand(

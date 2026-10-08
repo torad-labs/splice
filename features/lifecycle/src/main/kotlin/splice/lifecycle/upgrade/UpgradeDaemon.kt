@@ -15,6 +15,23 @@ private const val NANOS_PER_MS = 1_000_000L
 private const val CONFIRM_POLLS = 60
 private const val CONFIRM_POLL_MS = 250L
 
+/** How long the upgrade waits and how often it looks: for in-flight turns to drain, and for the restarted daemon to
+ *  answer. One policy, because a rig that wants speed wants all three fast. */
+internal class UpgradePacing(
+    val pollMs: Long = INFLIGHT_POLL_MS,
+    private val maxWaitMs: Long = MAX_WAIT_MS,
+    private val confirmPollMs: Long = CONFIRM_POLL_MS,
+) {
+    /** True once the idle wait that began at [startNanos] has used up its allowance. */
+    fun idleWaitSpent(startNanos: Long): Boolean = (System.nanoTime() - startNanos) / NANOS_PER_MS >= maxWaitMs
+
+    /** The pause between two looks at the in-flight turns. */
+    fun pause() = Thread.sleep(pollMs)
+
+    /** The pause between two looks at the restarted daemon. */
+    fun confirmPause() = Thread.sleep(confirmPollMs)
+}
+
 /** Restarts the daemon the plain way (`splice restart`: stop, then cold start from this shell),
  *  waiting for a daemon that reports [expectedVersion]. The restart verb is app's; it arrives here. */
 public fun interface VersionedRestart {
@@ -44,9 +61,7 @@ internal class UpgradeDaemon(
     private val inflight: UpgradeInflight,
     private val restartVerb: VersionedRestart,
     private val healthVersion: DaemonVersionRead,
-    private val pollMs: Long = INFLIGHT_POLL_MS,
-    private val maxWaitMs: Long = MAX_WAIT_MS,
-    private val confirmPollMs: Long = CONFIRM_POLL_MS,
+    private val pacing: UpgradePacing = UpgradePacing(),
     /** V4-176: the unit that supervises this install, by name, from the knob layer. splice does not
      *  own it and cannot assume one is there — an absent or inactive unit is the "started by hand"
      *  arm below, which the restart verb handles. Hardcoding the name made a box whose packager
@@ -62,9 +77,9 @@ internal class UpgradeDaemon(
         if (now) return true
         val start = System.nanoTime()
         var read = inflight()
-        while (!idle(read) && (System.nanoTime() - start) / NANOS_PER_MS < maxWaitMs) {
+        while (!idle(read) && !pacing.idleWaitSpent(start)) {
             output.line("  ${"waiting".padEnd(UPGRADE_PAD)} ${describe(read)}")
-            Thread.sleep(pollMs)
+            pacing.pause()
             read = inflight()
         }
         if (read is InflightRead.Unknown) {
@@ -90,7 +105,7 @@ internal class UpgradeDaemon(
      *  turn a restart must not cut, so either path first takes the wait the console's restart and `splice
      *  restart` take (CompactionWait). [now] skips it, as `--now` skips [waitIdle]. */
     fun restart(liveJar: Path, version: String, now: Boolean): DaemonRestarted {
-        if (!now) CompactionWait(output, inflight, pollMs).await()
+        if (!now) CompactionWait(output, inflight, pacing.pollMs).await()
         if (unit.supervises(liveJar)) {
             unit.restart()
         } else {
@@ -104,7 +119,7 @@ internal class UpgradeDaemon(
         repeat(CONFIRM_POLLS) {
             seen = healthVersion()
             if (seen == version) return DaemonRestarted.Serving
-            Thread.sleep(confirmPollMs)
+            pacing.confirmPause()
         }
         return seen?.let { DaemonRestarted.StillOld(it) } ?: DaemonRestarted.NotAnswering
     }

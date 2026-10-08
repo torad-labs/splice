@@ -21,10 +21,7 @@ public fun interface DaemonSuccessor {
  *  earlier would see this daemon's /health and stop it from inside its own restart request. */
 public class DetachedDaemonSuccessor(
     private val jar: Path?,
-    private val home: Path,
-    private val config: Path?,
-    private val state: Path,
-    private val controlPort: Int,
+    private val install: SuccessorInstall,
     private val logs: Path,
     private val log: LogSink,
     private val parentPid: Long = ProcessHandle.current().pid(),
@@ -42,7 +39,7 @@ public class DetachedDaemonSuccessor(
         return Cancellables.runCatchingCancellable {
             val _ = SecureFile.ownerOnlyDirectory(logs)
             val builder = ProcessBuilder(command(jar))
-                .directory(home.toFile())
+                .directory(install.home.toFile())
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(logs.resolve("daemon-boot.log").toFile()))
                 .redirectErrorStream(true)
             builder.environment().putAll(selectors(jar))
@@ -66,10 +63,7 @@ public class DetachedDaemonSuccessor(
     )
 
     internal fun selectors(jar: Path): Map<String, String> = buildMap {
-        put("HOME", home.toString())
-        config?.let { put("SPLICE_CONFIG", it.toString()) }
-        put("SPLICE_STATE_DIR", state.toString())
-        put("SPLICE_CONTROL_PORT", controlPort.toString())
+        putAll(install.selectors())
         // Forces SupervisedStart's Raw route even if this host has a unit for another install.
         put("SPLICE_JAR", jar.toString())
         // JAVA_TOOL_OPTIONS is read by BOTH the CLI JVM and the daemon it cold-starts. Flags
@@ -78,7 +72,7 @@ public class DetachedDaemonSuccessor(
             "JAVA_TOOL_OPTIONS",
             inheritedJvmOptions(
                 env("JAVA_TOOL_OPTIONS").orEmpty(),
-                home.toString(),
+                install.home.toString(),
                 System.getProperty("splice.noSystemBrowser"),
             ),
         )
@@ -103,3 +97,20 @@ private const val WAIT_FOR_EXIT =
     "while kill -0 \"\$1\" 2>/dev/null; do " +
         "case \$(ps -o stat= -p \"\$1\" 2>/dev/null) in *Z*) break;; esac; " +
         "sleep 0.25; done; exec java -jar \"\$2\" restart --now"
+
+/** The install the successor starts in: this daemon's home, config, state directory and bound control port. They
+ *  select one install together, so the successor reads them as one answer. */
+public class SuccessorInstall(
+    public val home: Path,
+    private val config: Path?,
+    private val state: Path,
+    private val controlPort: Int,
+) {
+    /** The environment selectors that point a cold start at this install. */
+    internal fun selectors(): Map<String, String> = buildMap {
+        put("HOME", home.toString())
+        config?.let { put("SPLICE_CONFIG", it.toString()) }
+        put("SPLICE_STATE_DIR", state.toString())
+        put("SPLICE_CONTROL_PORT", controlPort.toString())
+    }
+}

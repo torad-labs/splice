@@ -22,6 +22,7 @@ import splice.lifecycle.restart.RestartCommand
 import splice.lifecycle.restart.RestartPhase
 import splice.lifecycle.restart.RestartTaken
 import splice.lifecycle.restart.ShutdownDaemon
+import splice.lifecycle.restart.SuccessorInstall
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -84,10 +85,7 @@ class UnsupervisedRestartTest {
         val failures = mutableListOf<String>()
         val successor = DetachedDaemonSuccessor(
             jar,
-            home,
-            null,
-            home.resolve("state"),
-            TestPorts.reserve(),
+            SuccessorInstall(home, null, home.resolve("state"), TestPorts.reserve()),
             logs,
             LogSink { failures += it },
             Long.MAX_VALUE,
@@ -120,10 +118,7 @@ class UnsupervisedRestartTest {
         val home = Path.of("/synthetic/home")
         val successor = DetachedDaemonSuccessor(
             null,
-            home,
-            null,
-            home.resolve("state"),
-            31999,
+            SuccessorInstall(home, null, home.resolve("state"), 31999),
             home.resolve("logs"),
             LogSink {},
             123L,
@@ -155,10 +150,7 @@ class UnsupervisedRestartTest {
         val config = home.resolve("custom.toml")
         val successor = DetachedDaemonSuccessor(
             jar,
-            home,
-            config,
-            home.resolve("state"),
-            31999,
+            SuccessorInstall(home, config, home.resolve("state"), 31999),
             home.resolve("logs"),
             LogSink {},
             123L,

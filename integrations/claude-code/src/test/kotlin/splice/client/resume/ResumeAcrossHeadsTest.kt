@@ -19,6 +19,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.client.Keys
 import splice.client.resume.originals.TranscriptOriginals
 import splice.core.config.StatePaths
+import splice.core.util.DirectoryListing
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import java.nio.file.AccessDeniedException
@@ -308,7 +309,7 @@ class ResumeAcrossHeadsTest {
     @Test
     fun `a projects dir whose listing is denied is still named in the log`(@TempDir home: Path) {
         val calling = headConfig(home, "codex")
-        val denied = ProjectsListing { path -> throw AccessDeniedException(path.toString()) }
+        val denied = DirectoryListing { dir -> throw AccessDeniedException(dir.toString()) }
         val (lines, log) = logged()
         val rewriter = TranscriptModelRewrite(originals = TranscriptOriginals(StatePaths(baseOverride = state)))
 

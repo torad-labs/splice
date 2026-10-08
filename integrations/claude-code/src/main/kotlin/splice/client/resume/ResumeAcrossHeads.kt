@@ -49,6 +49,8 @@ package splice.client.resume
 import splice.client.Keys
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.DirectoryListing
+import splice.core.util.FilesListing
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import java.io.IOException
@@ -135,17 +137,9 @@ public sealed class SessionAdoption {
     public data class Invalid(public val cause: String) : SessionAdoption()
 }
 
-/** The one read a search makes of a projects dir: its entries. A seam, so a test can refuse a listing the way an
- *  access denial does, whoever runs the test. */
-public fun interface ProjectsListing {
-    public fun list(path: Path): List<Path>
-}
-
 public class ResumeAcrossHeads(
     public val rewriter: TranscriptModelRewrite = TranscriptModelRewrite(),
-    private val listing: ProjectsListing = ProjectsListing { path ->
-        Files.newDirectoryStream(path).use { stream -> stream.toList() }
-    },
+    private val listing: DirectoryListing = FilesListing,
 ) {
 
     /** Resolve `-r [sessionId]` for the head launching from [callingConfigDir], looking in every

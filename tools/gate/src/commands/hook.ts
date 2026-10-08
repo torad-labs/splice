@@ -42,7 +42,7 @@ import { astGrepBin } from "../lib/astgrep.ts";
 import { resolveJdk21 } from "../lib/jdk.ts";
 import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
-import { type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
+import { commitLegs, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
 import { cancelledBySignal, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
 import { title } from "./title.ts";
 
@@ -600,10 +600,36 @@ export async function censusLeg(lay: Layout): Promise<number> {
   }
 }
 
-/** The pre-commit verb: the census leg, then the commit's Kotlin judgement. A census refusal stops it before gradle. */
+/** The ladder legs a commit can turn red and that need no gradle: every row whose `commit` globs match a path this commit
+ *  changes runs here, from the repository root. A touched path already equals the index (breaches, in preCommit), so the
+ *  worktree these legs read holds the commit's bytes for it. An unreadable ladder fails the commit: no leg could be chosen. */
+export async function commitLegsLeg(lay: Layout, deps: HookDeps = {}): Promise<number> {
+  const started = performance.now();
+  let legs: readonly Leg[];
+  try {
+    legs = deps.legs ?? readLadder(lay.repoRoot);
+  } catch (error) {
+    console.error(`pre-commit: ✗ cannot choose the ladder legs: ${errorText(error)}`);
+    return 1;
+  }
+  const due = commitLegs(legs, changedPaths(lay.repoRoot));
+  if (due.length === 0) return 0;
+  console.error(`── ladder legs this commit can turn red: ${due.map((leg) => leg.task).join(", ")} ──`);
+  const failed = await runDirectLegs(lay.repoRoot, due);
+  if (failed.length > 0) {
+    console.error(`pre-commit: ✗ ${failed.map((leg) => leg.task).join(", ")} — ${seconds(started)}`);
+    return 1;
+  }
+  return 0;
+}
+
+/** The pre-commit verb: the census leg, the ladder legs the commit's paths trigger, then the commit's Kotlin judgement. A
+ *  refusal stops it before gradle. */
 export async function commitGate(lay: Layout, deps: HookDeps = {}): Promise<number> {
   const census = await censusLeg(lay);
   if (census !== 0) return census;
+  const legs = await commitLegsLeg(lay, deps);
+  if (legs !== 0) return legs;
   return preCommit(lay, deps);
 }
 

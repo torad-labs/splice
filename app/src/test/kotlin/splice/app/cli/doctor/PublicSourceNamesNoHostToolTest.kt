@@ -37,7 +37,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.AdminSupport
 import splice.core.config.Knob
+import splice.core.testing.LawReadSet
 import splice.core.util.EnvReader
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -59,9 +61,9 @@ private val SKIP_DIRS = setOf("build", "node_modules", ".git", ".gradle")
 /** Generated output, images and archives are not prose and carry no requirement to state. */
 private val SKIP_EXTENSIONS = setOf("jar", "png", "ico", "woff2")
 
-private fun findingsIn(root: Path, file: Path): List<String> {
+private fun findingsIn(root: Path, file: Path, read: (Path) -> String = Path::readText): List<String> {
     if (file.extension in SKIP_EXTENSIONS) return emptyList()
-    val text = runCatching { file.readText() }.getOrNull() ?: return emptyList()
+    val text = read(file)
     val relative = file.relativeTo(root).toString()
     return text.lineSequence().withIndex().flatMap { (index, line) ->
         BANNED.filter { it in line }.map { "$relative:${index + 1} names '$it'" }
@@ -80,40 +82,17 @@ private fun scan(root: Path, roots: List<Path>): List<String> =
 @Tag("law")
 class PublicSourceNamesNoHostToolTest {
 
-    private val repo: Path = run {
-        // The roots this row owns are named relative to the repository root, found by walking up.
-        var dir = Path.of("").toAbsolutePath()
-        while (!Files.exists(dir.resolve("install.sh")) && dir.parent != null) dir = dir.parent
-        dir
-    }
+    /** The files the build declared as this law's inputs (app/build.gradle.kts): the modules, the architecture laws and compiler
+     *  plugin, and the build files, listed once by git's own rule. A root that moves fails the build's listing by name, and the
+     *  scan below reads nothing outside the list. */
+    private val readSet = LawReadSet()
+    private val repo: Path = readSet.root
 
     @Test
     fun `no public source names a host tool`() {
-        assertTrue(Files.exists(repo.resolve("install.sh")), "repo root not found from ${Path.of("").toAbsolutePath()}")
+        assertTrue(Files.exists(repo.resolve("install.sh")), "repo root not found at $repo")
 
-        // The row's roots are what gateway/ held when it was opened — the whole Gradle tree — under
-        // their homes since the restructure: the modules (app, core, features, integrations), the
-        // architecture laws and compiler plugin (quality/), and the build files. A root that moves
-        // again fails the scan below rather than quietly dropping out of it.
-        val roots = listOf(
-            "app",
-            "core",
-            "features",
-            "integrations",
-            "quality/architecture",
-            "quality/compiler-plugin",
-            "build-logic",
-            "quality/detekt",
-            "gradle",
-            "settings.gradle.kts",
-            "build.gradle.kts",
-            "gradle.properties",
-            "gradlew",
-            "gradlew.bat",
-            "install.sh",
-            ".gitignore",
-        ).map { repo.resolve(it) }
-        val findings = scan(repo, roots)
+        val findings = readSet.files().flatMap { findingsIn(repo, it, readSet::readText) }.sorted()
 
         assertEquals(
             emptyList<String>(),
@@ -122,6 +101,29 @@ class PublicSourceNamesNoHostToolTest {
                 "it here. Say the requirement (a unit that restarts this process; a slice with a " +
                 "memory ceiling) and let the host be whatever the reader runs.",
         )
+    }
+
+    @Test
+    fun `a read that fails leaves findingsIn instead of becoming no findings`() {
+        val root = Path.of("/r")
+        val file = Path.of("/r/A.kt")
+        val unreadable: (Path) -> String = { throw IOException("unreadable") }
+
+        assertThrows(IOException::class.java) { findingsIn(root, file, unreadable) }
+    }
+
+    @Test
+    fun `RED the control catches a scan that swallows the failed read`() {
+        val root = Path.of("/r")
+        val file = Path.of("/r/A.kt")
+        val unreadable: (Path) -> String = { throw IOException("unreadable") }
+        val swallowing = { runCatching { findingsIn(root, file, unreadable) }.getOrDefault(emptyList()) }
+
+        assertThrows(AssertionError::class.java) {
+            assertThrows(IOException::class.java) {
+                assertEquals(emptyList<String>(), swallowing())
+            }
+        }
     }
 
     // The mutant: a comment that names the tool. Without this arm the test above is green on a clean

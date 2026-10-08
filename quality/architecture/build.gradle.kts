@@ -5,6 +5,9 @@ plugins {
 
 dependencies {
     testImplementation(libs.konsist)
+    // The Kotlin PSI the unpack law parses initializers with. Konsist already puts this exact compiler on the test
+    // runtime classpath (2.0.21 at konsist 0.17.3), so compile against that version and add nothing to the runtime.
+    testCompileOnly("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.0.21")
     // Restructure PR 6 §4.3: the two ratchet laws (silent constants, public surface) read their
     // recorded census off a JSON resource on the test classpath — the same document their checkers
     // read off disk. The tree's own JSON reader, rather than a hand parser per law: a second reading
@@ -76,8 +79,17 @@ val gitIndex = providers.exec {
     commandLine("git", "rev-parse", "--git-path", "index")
 }.standardOutput.asText.map { path -> repoRoot.asFile.resolve(path.trim()) }
 
+// THE ROOTS A MOVED LAW MAY READ (DaemonStopOrderTest, NoBrowserOnTurnFailureTest): every module's production tree, plus
+// build-logic's, which is a separate build and so in no module map. ONE list: it is fingerprinted below and handed to the test
+// JVM as splice.declaredReadRoots, where declaredRead() throws on a read outside it, so an undeclared read is a failing test
+// and never a green served from the cache.
+val declaredReadRoots: List<String> = moduleDirectories.values.map { "$it/src/main" } + "build-logic/src/main/kotlin"
+
 tasks.withType<Test>().configureEach {
     systemProperty("splice.root", repoRoot.asFile.absolutePath)
+    systemProperty("splice.declaredReadRoots", declaredReadRoots.joinToString(";"))
+    inputs.files(declaredReadRoots.map { root -> repoRoot.dir(root).asFileTree.matching { include("**/*.kt") } })
+        .withPropertyName("declaredReadRoots")
     // THE CHANNEL: `:path=directory` pairs, ';'-separated, parsed by ProjectMap.kt and nowhere
     // else, which fails BY NAME when it is absent or malformed. A system property is a declared
     // input of this task by construction, so adding, moving or removing a module re-runs the laws
@@ -148,7 +160,7 @@ tasks.withType<Test>().configureEach {
     // testFixtures edit leaves the task UP-TO-DATE and the ratchet grades a tree it never re-read.
     inputs.files(
         moduleDirectories.values.map { dir ->
-            repoRoot.dir("$dir/src/testFixtures/kotlin").asFileTree.matching { include("**/*.kt") }
+            repoRoot.dir("$dir/src/testFixtures").asFileTree
         },
     ).withPropertyName("scannedTestFixtureSources")
     // V4-297: three laws walk TEST trees too: CompactionIsATurnLawTest every module's src/test
@@ -157,12 +169,7 @@ tasks.withType<Test>().configureEach {
     // (ArchitectureLawsTest.kt:325-330). None was an input, so a test-only edit left this task
     // UP-TO-DATE and those laws graded a tree they never re-read.
     inputs.files(
-        moduleDirectories.values.map { dir ->
-            repoRoot.dir("$dir/src/test").asFileTree.matching {
-                include("**/*.kt")
-                include("resources/contract/*.json")
-            }
-        },
+        moduleDirectories.values.map { dir -> repoRoot.dir("$dir/src/test").asFileTree },
     ).withPropertyName("scannedTestSources")
     // The ratchets' recorded censuses, moved here from checks/config/ with their checkers. They are
     // the OTHER half of every one of those laws' verdicts: a baseline lowered by hand must re-run
@@ -184,6 +191,8 @@ tasks.withType<Test>().configureEach {
     inputs.files(
         repoRoot.file("install.sh"),
         repoRoot.file("README.md"),
+        repoRoot.file("CHANGELOG.md"),
+        repoRoot.dir("docs").asFileTree,
         repoRoot.file(".gitignore"),
         repoRoot.file("THIRD_PARTY_NOTICES.md"),
         repoRoot.file("package.json"),

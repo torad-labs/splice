@@ -4,6 +4,7 @@
     {
       "task": "gateRules",
       "inputs": ["**"],
+      "commit": ["sgconfig.yml","quality/rules/**","tools/gate/config/rule-coverage-exclusions.toml"],
       "why": "The ast-grep walls, then RULE ROUTING (the walls prove the routed rules pass and cannot prove they are ALL routed; .rules/kotlin sat unreferenced for a month reporting zero findings), then the CONFIG GUARD (no detekt baseline, maxIssues 0, every rule document severity:error, the dependabot scope, the concentration leg's routing), then the P1 coverage proof.",
       "command": ["bun", "tools/gate", "rules", "--prove-coverage"]
     },
@@ -16,6 +17,7 @@
     {
       "task": "campaignWalls",
       "inputs": [".dev/campaigns/**","tools/gate/src/lib/sources.ts","settings.gradle.kts","**/src/main/kotlin/**/*.kt","package.json"],
+      "commit": [".dev/campaigns/**","tools/gate/src/lib/sources.ts"],
       "why": "Campaign enforcement, BLOCKING half only (C1/C2/C3/C5/C6/C7/C9): a wall that lies, a status that lies, a fence collision, or a broken law are never acceptable. The ADVISORY half (C4 unwalled / C8 unlawed) is the standing worklist, reported without failing under `npm run gate:campaign:strict`. Split 2026-07-26: lumping them together kept the whole check out of the ladder, which meant nothing ran it at all.",
       "command": ["npm", "run", "--silent", "gate:campaign"]
     },
@@ -130,6 +132,7 @@
     {
       "task": "typescriptTypecheck",
       "inputs": ["**/*.ts","**/*.tsx","**/*.mts","**/*.cts","tools/gate/config/typecheck.json","package.json","bun.lock"],
+      "commit": ["**/*.ts","**/*.tsx","**/*.mts","**/*.cts","tools/gate/config/typecheck.json"],
       "why": "Nothing in the gate ran tsc: bun executes TypeScript without checking it, so a campaign wall carried 19 errors the gate's own tsconfig reported and no leg read, and 49 of 437 tracked .ts files sat in no program (2026-09-23). Every tracked .ts is now in a program or excused by name, and tools/gate/config/typecheck.json's per-file baseline is the older debt, which may only shrink.",
       "command": ["bun", "tools/gate", "typecheck"]
     },
@@ -155,6 +158,7 @@
     {
       "task": "censusSelftest",
       "inputs": [".dev/restructure/census.ts"],
+      "commit": [".dev/restructure/census.ts"],
       "why": "The census's own red arms (an unclaimed path, a pending row, a relocate whose source still exists, ...), so the leg above cannot pass because the checker lost its ability to find anything.",
       "command": ["bun", ".dev/restructure/census.ts", "--selftest"]
     },
@@ -167,6 +171,7 @@
     {
       "task": "secretScanAllowlist",
       "inputs": ["tools/gate/index.ts","tools/gate/src/**",".github/secret-scan-allow.toml",".github/secret-scan-allow.txt"],
+      "commit": [".github/secret-scan-allow.toml",".github/secret-scan-allow.txt"],
       "why": "Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.",
       "command": ["bun", "tools/gate", "allowlist", "--check"]
     }

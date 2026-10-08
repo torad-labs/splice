@@ -69,7 +69,9 @@ val legTasks = legs.map { leg ->
             // The fat jar's task is looked up when the inputs are read, after every project is configured: :app is not
             // configured yet while this root plugin is applied, so a lookup here would fail the whole configuration.
             inputs.files(provider { project(":app").tasks.named("shadowJar").get() }).withPropertyName("fatJar")
-            inputs.files(repository.asFileTree.matching { include(e2eGlobs) }).withPropertyName("ladderInputs")
+            // The row's globs are expanded by git (tracked, plus untracked and not ignored), never by walking the tree: a walk reads
+            // ignored directories and throws on a dangling link under them.
+            inputs.files(provider { splice.lawsuite.ReadSet.globbed(rootDir, e2eGlobs).map { rootDir.resolve(it) } }).withPropertyName("ladderInputs")
             outputs.file(stamp)
             doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("$name\n") }
         } else {
@@ -82,12 +84,15 @@ val legTasks = legs.map { leg ->
     }
 }
 
-// THE LAW SUITES, one task for the pre-push gate. Each suite grades a tree its own sources do not hold, and declares that tree
-// as its test task's inputs, so gradle runs a suite only when one of those inputs changed or on its first run.
+// THE LAW SUITES, one task for the pre-push gate. Each suite grades files its own sources do not hold, and declares them as the
+// inputs of its law task (`lawTest`, from splice.law-suite), so gradle runs a suite only when one of those inputs changed or on
+// its first run. The unit suites are not here: a unit suite reruns only when its own classpath changes. The law tasks are not
+// listed here: every project that applies splice.law-suite adds its own `lawTest` to this task. The one name below is the
+// architecture module, whose whole `test` task is laws and so applies no tag.
 tasks.register("lawSuites") {
     group = "gate"
     description = "Every law suite that reads outside its own sources. Pre-push requests this one task; gradle's up-to-date check skips each suite whose declared inputs did not change."
-    dependsOn(":quality-architecture:test", ":app:test", ":features-diagnostics:test", ":features-lifecycle:test", ":integrations-topology:test", ":integrations-upstream:test")
+    dependsOn(":quality-architecture:test")
 }
 
 val gateOfRecord = tasks.register("gateOfRecord") {

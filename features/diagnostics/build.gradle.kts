@@ -1,5 +1,6 @@
 plugins {
     id("splice.kotlin-common")
+    id("splice.law-suite")
     id("splice.module-law")
 }
 
@@ -23,3 +24,8 @@ dependencies {
     // TestPorts: a port a test must know before anything binds it, reserved below the ephemeral range.
     testImplementation(testFixtures(project(":core")))
 }
+
+// THE LAW HERE (StateDirAgreementTest) reads three trees outside this module as text: the shipped dist, tools and .dev. The
+// build computes the files in them once, by git's own rule (tracked, or untracked and not ignored), fingerprints exactly that
+// list, and hands it to the test, which reads nothing else. The three files it pins by path all sit inside those roots.
+splice.lawsuite.ReadSet.declare(project, tasks.named<Test>("lawTest"), listOf("app/src/main/dist", "tools", ".dev"))

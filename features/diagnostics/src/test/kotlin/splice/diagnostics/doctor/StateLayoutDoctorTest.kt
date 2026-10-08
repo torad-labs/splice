@@ -5,18 +5,20 @@ package splice.diagnostics.doctor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.StatePaths
+import splice.core.testing.LawReadSet
 import splice.core.util.EnvReader
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
-import kotlin.io.path.readText
 
 private val NO_ENV = EnvReader { null }
 
@@ -192,35 +194,56 @@ class StateLayoutDoctorTest {
  * (`Files.exists` said true, `[ -d ]` said false), and an unreadable current root (`[ ! -d ]` is
  * true for "cannot stat", so bash adopted where Kotlin declines).
  */
+@Tag("law")
 class StateDirAgreementTest {
 
-    private val repo: Path = run {
-        var dir = Path.of("").toAbsolutePath()
-        while (!Files.exists(dir.resolve("install.sh")) && dir.parent != null) dir = dir.parent
-        dir
-    }
+    /** The files the build declared as this law's inputs (features/diagnostics/build.gradle.kts). The law reads nothing else. */
+    private val readSet = LawReadSet()
+    private val repo: Path = readSet.root
 
     private fun shellResolvers(): List<Path> =
-        listOf("app/src/main/dist", "checks", "tools", ".dev").map(repo::resolve).filter { Files.exists(it) }
-            .flatMap { start -> Files.walk(start).use { walk -> walk.toList() } }
-            .filter { it.isRegularFile() && declaresResolver(it) }
+        readSet.files()
+            .filter { file -> declaresResolver(file, readSet::readText) }
             .sorted()
 
-    private fun declaresResolver(file: Path): Boolean =
-        runCatching { file.readText() }.getOrNull()?.let { text ->
-            "\nresolve_state_dir() {" in text || "export function liveStateDir(" in text ||
-                "\nfunction liveStateDir(" in text
-        } ?: false
+    /** A read that fails is a failure, never `false`: the files walked are regular files the build declared. */
+    private fun declaresResolver(file: Path, read: (Path) -> String): Boolean {
+        val text = read(file)
+        return "\nresolve_state_dir() {" in text || "export function liveStateDir(" in text ||
+            "\nfunction liveStateDir(" in text
+    }
+
+    private val unreadable: (Path) -> String = { throw IOException("unreadable") }
+
+    @Test
+    fun `a read that fails leaves declaresResolver and isNodeScript instead of becoming false`() {
+        assertThrows(IOException::class.java) { declaresResolver(Path.of("x.sh"), unreadable) }
+        assertThrows(IOException::class.java) { isNodeScript(Path.of("x"), unreadable) }
+    }
+
+    @Test
+    fun `RED the control catches a classifier that swallows the failed read`() {
+        val script = Path.of("x.sh")
+        val swallowing: ((Path) -> String) -> Boolean = { read ->
+            runCatching { read(script) }.getOrNull()?.contains("resolve_state_dir") == true
+        }
+
+        assertThrows(AssertionError::class.java) {
+            assertThrows(IOException::class.java) {
+                assertEquals(false, swallowing(unreadable))
+            }
+        }
+    }
 
     /** The launch shim is a Node script with no extension (its installed name is the contract), so
      *  its runtime is read off its first line rather than its suffix. */
-    private fun isNodeScript(script: Path): Boolean =
-        runCatching { script.readText() }.getOrNull()?.startsWith("#!/usr/bin/env node") ?: false
+    private fun isNodeScript(script: Path, read: (Path) -> String): Boolean =
+        read(script).startsWith("#!/usr/bin/env node")
 
     /** A bash copy is sourced out of its file; a TS copy is imported and called; the Node shim is
      *  `require`d and called. Same contract, three runtimes — which is the point: the rule is not
      *  bash's, it is splice's. */
-    private fun resolveWith(script: Path, home: Path, env: Map<String, String>): String {
+    private fun resolveWith(script: Path, home: Path, env: Map<String, String>, read: (Path) -> String): String {
         val absolute = script.toAbsolutePath().toString()
         val command = if (script.name.endsWith(".ts") || script.name.endsWith(".mjs")) {
             // Through the ENVIRONMENT, not argv: `bun -e` does not shift argv the way a file
@@ -231,7 +254,7 @@ class StateDirAgreementTest {
                 "const m = await import(process.env.PIN_MODULE); " +
                     "console.log(m.liveStateDir(process.env.PIN_HOME, JSON.parse(process.env.PIN_ENV)))",
             )
-        } else if (isNodeScript(script)) {
+        } else if (isNodeScript(script, read)) {
             // `require`, not `import`: an extensionless file is CommonJS to Node's loader and the
             // shim exports through module.exports for exactly this read. Its main() runs only when
             // it is the entry module, so requiring it launches nothing.
@@ -283,7 +306,7 @@ class StateDirAgreementTest {
             for (script in scripts) {
                 assertEquals(
                     expected,
-                    resolveWith(script, home, env),
+                    resolveWith(script, home, env, readSet::readText),
                     "$name: ${repo.relativize(script)} disagrees with StatePaths",
                 )
             }
@@ -383,7 +406,7 @@ class StateDirAgreementTest {
 
         assertEquals(home.resolve(LEGACY_ROOT).resolve("state").toString(), expected)
         assertTrue(
-            resolveWith(wrong, home, emptyMap()) != expected,
+            resolveWith(wrong, home, emptyMap(), Files::readString) != expected,
             "a resolver that ignores the pre-0.4 root must not compare equal — the harness is not running the script",
         )
     }
@@ -400,7 +423,7 @@ class StateDirAgreementTest {
         val expected = StatePaths(envReader = NO_ENV, homeDir = home).stateDir.toString()
 
         assertTrue(
-            resolveWith(wrong, home, emptyMap()) != expected,
+            resolveWith(wrong, home, emptyMap(), Files::readString) != expected,
             "a JS resolver that ignores the pre-0.4 root must not compare equal — the runner is not calling it",
         )
     }
@@ -422,7 +445,7 @@ class StateDirAgreementTest {
         val expected = StatePaths(envReader = NO_ENV, homeDir = home).stateDir.toString()
 
         assertTrue(
-            resolveWith(wrong, home, emptyMap()) != expected,
+            resolveWith(wrong, home, emptyMap(), Files::readString) != expected,
             "a Node resolver that ignores the pre-0.4 root must not compare equal — the runner is not calling it",
         )
     }

@@ -26,6 +26,7 @@ buildscript {
 
 plugins {
     id("splice.kotlin-common")
+    id("splice.law-suite")
     id("splice.module-law")
     application
     id("com.gradleup.shadow") version "9.6.1"
@@ -120,6 +121,19 @@ tasks.test {
     // happen to assert the premise today.
     environment = environment.filterKeys { it != "XDG_CONFIG_HOME" && it != "SPLICE_CONFIG" }
 }
+
+// THE PUBLIC-SOURCE LAW reads every tree a public repository ships, by name and as text (PublicSourceNamesNoHostToolTest.kt).
+// The build computes the files in those roots once, by git's own rule (tracked, or untracked and not ignored), fingerprints
+// exactly that list, and hands it to the test, which scans nothing else.
+splice.lawsuite.ReadSet.declare(
+    project,
+    tasks.named<Test>("lawTest"),
+    listOf(
+        "app", "core", "features", "integrations", "quality/architecture", "quality/compiler-plugin", "build-logic",
+        "quality/detekt", "gradle", "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
+        "install.sh", ".gitignore",
+    ),
+)
 
 val releaseVersion = project.version.toString()
 val releaseGroup = rootProject.name

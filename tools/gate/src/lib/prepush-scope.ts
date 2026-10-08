@@ -5,8 +5,9 @@
 // path globs the leg actually reads. A Kotlin or gradle change compiles every module (a caller in another module still
 // refuses the push) and runs `check` for each module the diff changes. A module the diff does not touch gets no tests.
 // Every push requests the law suites (`lawSuites`) and the jar legs: gradle's up-to-date check decides what runs, because
-// the suites and the jar declare their inputs in gradle, the one place those reads are known. `lawSuites` runs the whole
-// :app:test, so PublicSourceNamesNoHostToolTest runs on every push too. The full suite stays in CI, which runs
+// the suites and the jar declare their inputs in gradle, the one place those reads are known. `lawSuites` runs each module's
+// lawTest, the laws that read outside their module, so PublicSourceNamesNoHostToolTest runs on every push too. The unit
+// suites are not requested here: a module's check runs them, and each reruns only when its own classpath changes. The full suite stays in CI, which runs
 // gateOfRecord on the pushed sha.
 
 /** A ladder row as pre-push reads it. `inputs` is required: the path globs the leg reads. */
@@ -14,6 +15,9 @@ export interface Leg {
   readonly task: string;
   readonly command: readonly string[];
   readonly inputs?: readonly string[];
+  /** The path globs that make pre-commit run this leg: the paths a single commit can turn this leg red with. Only a leg that
+   *  needs no gradle graph and runs in seconds declares it. */
+  readonly commit?: readonly string[];
   readonly dependsOn?: readonly string[];
   readonly creates?: string;
   readonly owns?: string;
@@ -31,7 +35,7 @@ export const LAW_SUITES_TASK = "lawSuites";
  *  requests every such leg on every push and gradle decides: the jar's inputs are shadowJar's declaration, not a copy. */
 export const JAR_TASK = ":app:shadowJar";
 
-/** The test every push runs, whatever it changed, inside lawSuites' :app:test: a host-tool name must not reach a public source
+/** The test every push runs, whatever it changed, inside lawSuites' :app:lawTest: a host-tool name must not reach a public source
  *  from any module. */
 export const PUBLIC_SOURCE_TEST = "PublicSourceNamesNoHostToolTest";
 
@@ -45,6 +49,20 @@ function matchesAny(patterns: readonly string[], path: string): boolean {
     }
     return glob.match(path);
   });
+}
+
+/** A leg needs gradle's graph when it depends on a task, creates a directory or owns a receipt. */
+const needsGradle = (leg: Leg): boolean => (leg.dependsOn?.length ?? 0) > 0 || leg.creates !== undefined || leg.owns !== undefined;
+
+/** The ladder rows pre-commit runs for a commit that changes [changed]: a row whose `commit` globs match a changed path. A
+ *  row that needs gradle's graph never runs here, whatever it declares. */
+export function commitLegs(legs: readonly Leg[], changed: readonly string[]): Leg[] {
+  return legs.filter(
+    (leg) =>
+      leg.commit !== undefined &&
+      !needsGradle(leg) &&
+      changed.some((path) => matchesAny(leg.commit ?? [], path)),
+  );
 }
 
 /** The ladder rows that declare no inputs. Pre-push cannot scope them, so it refuses the push by name. */
@@ -93,14 +111,14 @@ export function prePushScope(input: ScopeInput): PrePushScope {
 
   // A leg runs as a gradle task when it needs gradle's graph (a jar it depends on, a directory it creates, a receipt it
   // owns). Every other in-scope leg runs directly, in parallel with gradle, and never waits for the slot.
-  const gradleLegs = inScope.filter((leg) => (leg.dependsOn?.length ?? 0) > 0 || leg.creates !== undefined || leg.owns !== undefined);
+  const gradleLegs = inScope.filter(needsGradle);
   const directLegs = inScope.filter((leg) => !gradleLegs.includes(leg));
   const gradleInput = changed.some((path) => GRADLE_INPUT.test(path));
   const gradle: string[] = [];
   if (gradleInput) for (const module of input.modules) gradle.push(`${module}:compileKotlin`, `${module}:compileTestKotlin`);
   for (const module of modules) gradle.push(`${module}:check`);
-  // lawSuites runs the whole :app:test. A --tests filter on :app:test would narrow that run too: gradle keeps one instance of
-  // a task however many tasks depend on it, so the public-source test rides in lawSuites instead of a filtered pair.
+  // lawSuites runs :app:lawTest, not :app:test. A --tests filter on :app:test would narrow the module's unit run too: gradle
+  // keeps one instance of a task however many tasks depend on it, so the public-source test rides in lawSuites instead.
   gradle.push(LAW_SUITES_TASK);
   if (changed.some((path) => path.startsWith("build-logic/"))) gradle.push("build-logic:test");
   for (const leg of gradleLegs) gradle.push(`:${leg.task}`);

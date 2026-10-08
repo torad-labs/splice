@@ -1,5 +1,6 @@
 plugins {
     id("splice.kotlin-common")
+    id("splice.law-suite")
     id("splice.module-law")
     `java-test-fixtures`
 }
@@ -20,4 +21,12 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     // TestPorts: a port a test must know before anything binds it, reserved below the ephemeral range.
     testImplementation(testFixtures(project(":core")))
+}
+
+// THE LAW HERE (the shim selector law in SupervisedStartTest.kt) reads the launch script the dist ships, and walks up to
+// install.sh to find the repository. Both are inputs of lawTest, so an edit to either re-runs the law.
+tasks.named<Test>("lawTest") {
+    val repository = rootProject.layout.projectDirectory
+    inputs.files(repository.file("app/src/main/dist/bin/splice-launch"), repository.file("install.sh"))
+        .withPropertyName("shippedLaunchScript")
 }

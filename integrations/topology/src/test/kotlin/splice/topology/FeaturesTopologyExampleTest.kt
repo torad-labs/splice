@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 import kotlin.io.path.readText
@@ -16,7 +17,10 @@ import kotlin.io.path.readText
 /** A fenced toml block, its body captured. */
 private val TOML_BLOCK = Regex("```toml\n(.*?)\n```", RegexOption.DOT_MATCHES_ALL)
 
-class FeaturesTopologyExampleTest {
+/** The laws that read the documents from disk: FEATURES.md 2.3's example and the release documents. A class of its own,
+ *  because the discovery census refuses a class split across the law tag. */
+@Tag("law")
+class FeaturesDocumentLawTest {
 
     @Test
     fun `FEATURES 2_3's splice_toml example is a file the loader parses - V4-315`() {
@@ -41,6 +45,18 @@ class FeaturesTopologyExampleTest {
             ) > 0,
         )
     }
+
+    /** The one toml block in FEATURES.md section 2.3. */
+    private fun example(): String {
+        val doc = Path.of(checkNotNull(System.getProperty("splice.featuresDoc")) { "splice.featuresDoc is not set" })
+        val section = doc.readText().substringAfter("\n### 2.3 ").substringBefore("\n### 2.4 ")
+        val blocks = TOML_BLOCK.findAll(section).map { it.groupValues[1] }.toList()
+        check(blocks.size == 1) { "FEATURES.md 2.3 holds ${blocks.size} toml blocks, not one" }
+        return blocks.single()
+    }
+}
+
+class FeaturesTopologyExampleTest {
 
     @Test
     fun `snippet census refuses bad types and unknown keys without filtering them out`() {
@@ -98,14 +114,5 @@ class FeaturesTopologyExampleTest {
         assertThrows(Exception::class.java) {
             DocumentationTopologySnippets.checkExample("# [daemon]\n# unknown = true\n")
         }
-    }
-
-    /** The one toml block in FEATURES.md section 2.3. */
-    private fun example(): String {
-        val doc = Path.of(checkNotNull(System.getProperty("splice.featuresDoc")) { "splice.featuresDoc is not set" })
-        val section = doc.readText().substringAfter("\n### 2.3 ").substringBefore("\n### 2.4 ")
-        val blocks = TOML_BLOCK.findAll(section).map { it.groupValues[1] }.toList()
-        check(blocks.size == 1) { "FEATURES.md 2.3 holds ${blocks.size} toml blocks, not one" }
-        return blocks.single()
     }
 }

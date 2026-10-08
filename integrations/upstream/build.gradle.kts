@@ -1,5 +1,6 @@
 plugins {
     id("splice.kotlin-common")
+    id("splice.law-suite")
     id("splice.module-law")
     `java-test-fixtures`
 }
@@ -20,7 +21,7 @@ dependencies {
 // assumed: mutating only AGENTS.md passed a plain run and failed only under --rerun-tasks, which
 // proved the leg sound and its TRIGGER missing. Declaring the file here makes any change to it
 // invalidate the task, so the leg fires on exactly the drift it exists to catch.
-tasks.withType<Test>().configureEach {
+tasks.named<Test>("lawTest") {
     inputs.file(rootProject.file("AGENTS.md")).withPropertyName("retryMatrixTable")
 }
 

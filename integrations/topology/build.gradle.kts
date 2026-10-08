@@ -1,5 +1,6 @@
 plugins {
     id("splice.kotlin-common")
+    id("splice.law-suite")
     id("splice.module-law")
 }
 
@@ -8,11 +9,10 @@ dependencies {
     implementation(libs.ktoml.core)
 }
 
-// V4-315: FeaturesTopologyExampleTest parses FEATURES.md 2.3's splice.toml example. The doc is a
-// declared input, so an edit to it alone re-runs the test rather than leaving the last green
-// UP-TO-DATE.
+// V4-315: FeaturesDocumentLawTest parses FEATURES.md 2.3's splice.toml example and checks the release documents. The docs are
+// declared inputs of lawTest, so an edit to any of them alone re-runs the law rather than leaving the last green UP-TO-DATE.
 val featuresDoc = rootProject.layout.projectDirectory.file(".dev/campaigns/web-console/FEATURES.md")
-tasks.withType<Test>().configureEach {
+tasks.named<Test>("lawTest") {
     inputs.file(featuresDoc)
     inputs.files(
         rootProject.file("README.md"),

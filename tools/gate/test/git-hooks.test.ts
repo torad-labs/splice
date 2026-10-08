@@ -441,9 +441,21 @@ describe("the census leg judges the commit's own bytes and refuses a finding the
     writeFile(root, NEW, CLEAN);
     git(root, ["add", "--", NEW]);
     const calls: string[][] = [];
-    const { result, text } = await captured(() => commitGate(lay(root), { gate: compiler(root, calls) }));
+    const { result, text } = await captured(() => commitGate(lay(root), { gate: compiler(root, calls), legs: [] }));
     expect(result).toBe(1);
     expect(text).toContain(`unclaimed: ${NEW}`);
+    expect(calls).toEqual([]);
+  });
+
+  test("RED: a ladder leg the commit's path triggers refuses the commit before the Kotlin judgement", async () => {
+    const root = censusRepo([claim(SEAT)], [SEAT]);
+    writeFile(root, "sgconfig.yml", "ruleDirs: []\n");
+    git(root, ["add", "--", "sgconfig.yml"]);
+    const calls: string[][] = [];
+    const failing: Leg = { task: "gateRules", command: ["bash", "-c", "exit 1"], inputs: ["**"], commit: ["sgconfig.yml"] };
+    const { result, text } = await captured(() => commitGate(lay(root), { gate: compiler(root, calls), legs: [failing] }));
+    expect(result).toBe(1);
+    expect(text).toContain("gateRules");
     expect(calls).toEqual([]);
   });
 

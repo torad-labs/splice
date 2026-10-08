@@ -8,7 +8,7 @@
 // reference to the browser primitive and assert it is exactly the sanctioned one — so a future
 // change that wires a failure path to it fails the build by name instead of shipping a browser loop
 // that only the operator notices.
-package splice.app.auth
+package splice.quality
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -68,7 +68,7 @@ class NoBrowserOnTurnFailureTest {
 
     /** Module-relative paths of every production Kotlin source under the gateway tree that contains
      *  [token]. Module-relative so the expected sets above read the same from any working directory. */
-    private fun referencing(token: String): List<String> = referencing(gatewayRoot().toFile(), token)
+    private fun referencing(token: String): List<String> = referencing(gatewayRoot().toFile(), token, ::declaredRead)
 
     /** [referencing] against an explicit [root], which is what makes the exclusion testable.
      *
@@ -77,11 +77,11 @@ class NoBrowserOnTurnFailureTest {
      *  if they shipped here — measured 2026-09-21, when two live worktrees put seven foreign paths
      *  into this set and reddened a law nobody had broken. So the walk stops at any directory that
      *  is itself a checkout, which is the same refusal ProjectMap makes for the architecture laws. */
-    private fun referencing(root: File, token: String): List<String> =
+    private fun referencing(root: File, token: String, declared: (File) -> File = { it }): List<String> =
         root.walkTopDown()
             .onEnter { dir -> dir == root || !File(dir, ".git").exists() }
             .filter { it.isFile && it.extension == "kt" && it.path.contains("/src/main/kotlin/") }
-            .filter { it.readText().contains(token) }
+            .filter { declared(it).readText().contains(token) }
             .map { it.relativeTo(root).path }
             .toList()
 

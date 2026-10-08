@@ -7,6 +7,7 @@ package splice.lifecycle.start
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.RunningJar
@@ -82,17 +83,6 @@ class SupervisedStartTest {
     fun `no unit on the box routes to the raw spawn`() {
         val route = SupervisedStart(FakeSystemctl(unitPresent = false), env(), settings).route(UNIT)
         assertTrue(route is ColdStartRoute.Raw && UNIT in route.reason, route.toString())
-    }
-
-    @Test
-    fun `the selector list is the shim's unitDefaults list, byte for byte`() {
-        val shim = repo().resolve(SHIM).readText()
-        // The `selectors` array literal: `env.NAME` entries, then the captured CONTROL_PORT_FROM_ENV.
-        val list = shim.substringAfter("function unitDefaults() {").substringBefore("];")
-        val shimSelectors = Regex("""\b(?:env\.)?([A-Z_]+)\b""").findAll(list.substringAfter("["))
-            .map { it.groupValues[1].removeSuffix("_FROM_ENV") }
-            .toList()
-        assertEquals(shimSelectors, harnessSelectors, "$SHIM unitDefaults() and the CLI's list drifted")
     }
 
     // ── DaemonLaunch, the composer ────────────────────────────────────────────────────────────
@@ -224,6 +214,23 @@ class SupervisedStartTest {
             port(listOf("cat", "splice-test-unit-that-does-not-exist-${System.nanoTime()}.service"))
         }
         assertTrue(code != 0, "expected a non-zero answer, got $code")
+    }
+}
+
+/** The selectors the CLI reads and the launch shim reads are one list: a selector added to one and not the other is the drift
+ *  this law exists to catch. It reads the shim's text, so it is a law (`lawTest`), and a class of its own, never split. */
+@Tag("law")
+class ShimSelectorListLawTest {
+
+    @Test
+    fun `the selector list is the shim's unitDefaults list, byte for byte`() {
+        val shim = repo().resolve(SHIM).readText()
+        // The `selectors` array literal: `env.NAME` entries, then the captured CONTROL_PORT_FROM_ENV.
+        val list = shim.substringAfter("function unitDefaults() {").substringBefore("];")
+        val shimSelectors = Regex("""\b(?:env\.)?([A-Z_]+)\b""").findAll(list.substringAfter("["))
+            .map { it.groupValues[1].removeSuffix("_FROM_ENV") }
+            .toList()
+        assertEquals(shimSelectors, harnessSelectors, "$SHIM unitDefaults() and the CLI's list drifted")
     }
 
     private fun repo(): Path {

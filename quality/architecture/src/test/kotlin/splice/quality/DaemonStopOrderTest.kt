@@ -52,7 +52,7 @@
 //
 // NO WALL CLOCK: there is nothing to wait for. Every assertion is a comparison of two positions in
 // a string.
-package splice.app.cli.daemon
+package splice.quality
 
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -86,7 +86,7 @@ class DaemonStopOrderTest {
     private fun code(rel: String): String {
         val path = repoRoot().resolve(rel)
         assertTrue(Files.exists(path), "$rel is missing — this wall's subject is absent, which cannot pass")
-        return stripComments(Files.readString(path))
+        return stripComments(Files.readString(declaredRead(path.toFile()).toPath()))
     }
 
     @Test
@@ -149,7 +149,8 @@ class DaemonStopOrderTest {
         val cancelsScope = source.contains("detachedScope.cancel()") ||
             source.contains("detachedScope.coroutineContext.cancel()")
         val claim = "a cancelled scope launches nothing"
-        val claimSurvives = Files.readString(repoRoot().resolve(TURN_STREAMER_REL)).contains(claim)
+        val streamer = declaredRead(repoRoot().resolve(TURN_STREAMER_REL).toFile())
+        val claimSurvives = streamer.readText().contains(claim)
         if (cancelsScope) return // the guard is live: something really does cancel the scope.
         assertFalse(
             source.contains(guard),

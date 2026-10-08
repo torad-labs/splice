@@ -65,20 +65,15 @@ private const val THIS_LAW_FILE = "quality/architecture/src/test/kotlin/splice/q
 internal object ConventionalType {
     private const val MIN_TYPES = 3
     private val TYPES_LINE = Regex("""^export const TYPES = "([^"]+)";$""", RegexOption.MULTILINE)
-    private val SKIP_DIRS = setOf(".git", "node_modules", "build", ".gradle", "dist", "out", "__pycache__", ".venv")
-    private val SKIP_PREFIXES = listOf(".dev/campaigns/", ".dev/research/")
-    private val SKIP_EXTENSIONS = setOf(
-        "png", "jpg", "jpeg", "gif", "webp", "ico", "jar", "class", "so", "dylib",
-        "zip", "gz", "pdf", "woff", "woff2", "ttf", "eot", "wasm",
-    )
 
-    /** Path-level rejectors backing [accept] — one predicate per [SKIP_DIRS]/[SKIP_EXTENSIONS]/
-     *  [SKIP_PREFIXES] rule, so no single boolean expression has to chain all three. */
-    private val REJECTORS: List<(String) -> Boolean> = listOf(
-        { relPath: String -> relPath.split("/").any { it in SKIP_DIRS } },
-        { relPath: String -> File(relPath).extension.lowercase() in SKIP_EXTENSIONS },
-        { relPath: String -> SKIP_PREFIXES.any { relPath.startsWith(it) } },
+    /** The paths the law reads: the ONE rule file, which the build also applies to git's tracked list to declare this law's
+     *  inputs (conventional-candidate-rules.txt), so the inputs and the census cannot describe different trees. */
+    private val RULES = ConventionalRules(
+        checkNotNull(ConventionalRules::class.java.getResource("/conventional-candidate-rules.txt")) {
+            "conventional-candidate-rules.txt is not on the test classpath"
+        }.readText(),
     )
+    private val REJECTORS: List<(String) -> Boolean> = listOf({ relPath: String -> !RULES.accepts(relPath) })
 
     /** TYPES parsed off SOURCE's own export line, or empty when the line is absent or carries fewer
      *  than [MIN_TYPES] entries — [audit] turns either into a named violation, never a silent skip. */
@@ -132,10 +127,15 @@ internal object ConventionalType {
      *  excluded even when [files] carries it, because it necessarily holds the list this hunts for.
      *  An unreadable path is a problem of its own, named (V4-297): it was skipped, as the retired
      *  checker's `catch { continue }` did, so a copy the law could not read passed as no copy. */
-    fun secondCopies(root: File, files: List<String>, types: List<String>): List<String> {
+    fun secondCopies(
+        root: File,
+        files: List<String>,
+        types: List<String>,
+        read: (File) -> String = File::readText,
+    ): List<String> {
         val pattern = runPattern(types)
         return files.filter { it != SOURCE }.mapNotNull { rel ->
-            runCatching { File(root, rel).readText() }.fold(
+            runCatching { read(File(root, rel)) }.fold(
                 onSuccess = { text ->
                     if (!hasHit(text, pattern)) {
                         null
@@ -152,19 +152,22 @@ internal object ConventionalType {
 
     /** The checker's `check`: a vocabulary SOURCE cannot supply, or a scan that touches nothing, is
      *  a violation, never a silent pass; otherwise every non-SOURCE hit, named. */
-    fun audit(root: File): List<String> {
+    fun audit(
+        root: File,
+        files: List<String> = textFiles(root),
+        read: (File) -> String = File::readText,
+    ): List<String> {
         val sourceFile = File(root, SOURCE)
-        val types = if (sourceFile.isFile) vocabulary(sourceFile.readText()) else emptyList()
+        val types = if (sourceFile.isFile) vocabulary(read(sourceFile)) else emptyList()
         if (types.isEmpty()) {
             val why = if (sourceFile.isFile) "has no usable TYPES assignment" else "missing"
             return listOf("$SOURCE $why — refusing to pass vacuously")
         }
-        val files = textFiles(root)
         val scanned = files.count { it != SOURCE }
         return if (scanned == 0) {
             listOf("scanned 0 files — refusing to pass vacuously")
         } else {
-            secondCopies(root, files, types)
+            secondCopies(root, files, types, read)
         }
     }
 }
@@ -199,16 +202,19 @@ private class ConventionalTree(private val root: File, sourceLine: String) {
 
 class ConventionalTypeLawTest {
     private val map = ProjectMap.fromSystemProperties()
-    private val liveTypes: List<String> = ConventionalType.vocabulary(File(map.root, SOURCE).readText())
+
+    /** The live arm reads only the files the build declared as this law's inputs (splice.lawsuite via the rule file). */
+    private val candidates = declaredCandidates()
+    private val liveTypes: List<String> = ConventionalType.vocabulary(candidates.read(File(map.root, SOURCE)))
     private val liveSourceLine: String = "export const TYPES = \"${liveTypes.joinToString("|")}\";\n"
 
     @Test
     fun `live - the checkout names the conventional-type vocabulary exactly once`() {
-        val files = ConventionalType.textFiles(map.root)
+        val files = candidates.relative
         assertTrue(files.size > MIN_TRACKED_TEXT_FILES) {
             "textFiles answered ${files.size} candidate path(s) under ${map.root} — the census did not run"
         }
-        val problems = ConventionalType.audit(map.root)
+        val problems = ConventionalType.audit(map.root, files, candidates::read)
         assertTrue(problems.isEmpty()) {
             problems.joinToString(separator = "\n  - ", prefix = "ONE CONVENTIONAL TYPE LIST (V4-30) violated:\n  - ")
         }

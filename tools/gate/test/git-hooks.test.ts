@@ -1140,3 +1140,56 @@ describe("the architecture suite fingerprints WHICH paths are tracked, not git's
     expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
   }, 600_000);
 });
+
+describe("a text-scanning law's content inputs are the files its rule file accepts, declared from git's tracked list", () => {
+  /** A real gradle run in a scratch repository: the build-logic classes the quality build uses (CandidateRules, ReadSet) declare
+   *  the accepted tracked files as the inputs of a stamped task. */
+  function candidatesRepo(): string {
+    const root = wallsRepo();
+    linkWrapper(root);
+    writeFile(root, "settings.gradle.kts", 'rootProject.name = "scratch"\n');
+    const classes = join(repoRoot, "build-logic", "build", "classes", "kotlin", "main");
+    writeFile(
+      root,
+      "build.gradle.kts",
+      [
+        "buildscript { dependencies { classpath(files(" + JSON.stringify(classes) + ")) } }",
+        'val rules = splice.lawsuite.CandidateRules("dir build\\next png\\nprefix skip/\\n")',
+        "val accepted = splice.lawsuite.ReadSet.tracked(rootProject.projectDir).filter(rules::accepts)",
+        'val probe = tasks.register("probe") {',
+        '    val stamp = layout.buildDirectory.file("probe.stamp")',
+        "    outputs.file(stamp)",
+        '    doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("ran") }',
+        "}",
+        'splice.lawsuite.ReadSet.declareInputs(project, probe, accepted, "candidates")',
+      ].join("\n"),
+    );
+    writeFile(root, "docs/read.md", "one\n");
+    writeFile(root, "assets/logo.png", "png one\n");
+    writeFile(root, "skip/unread.md", "skipped one\n");
+    git(root, ["add", "--", "settings.gradle.kts", "build.gradle.kts", "docs/read.md", "assets/logo.png", "skip/unread.md"]);
+    commit(root, "chore(test): candidates fixture");
+    return root;
+  }
+
+  async function probe(root: string): Promise<string> {
+    const run = await gradleHere(root)(["probe"]);
+    expect(run.status).toBe(0);
+    return run.output;
+  }
+
+  test("RED: a content change to an accepted file reruns the task; a content-only stage of a rejected file does not", async () => {
+    const root = candidatesRepo();
+    expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
+    expect(await probe(root)).toContain(":probe UP-TO-DATE");
+
+    writeFile(root, "assets/logo.png", "png two\n");
+    writeFile(root, "skip/unread.md", "skipped two\n");
+    git(root, ["add", "assets/logo.png", "skip/unread.md"]);
+    expect(await probe(root)).toContain(":probe UP-TO-DATE");
+
+    writeFile(root, "docs/read.md", "two\n");
+    git(root, ["add", "docs/read.md"]);
+    expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
+  }, 600_000);
+});

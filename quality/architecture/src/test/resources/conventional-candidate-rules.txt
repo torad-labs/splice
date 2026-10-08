@@ -1,0 +1,31 @@
+# The paths ConventionalTypeLawTest does NOT read: the ONE rule file, parsed by the build (splice.lawsuite.CandidateRules, to
+# declare the law's inputs) and by the law (to filter its fixture trees). A path none of these rejects is read.
+dir .git
+dir node_modules
+dir build
+dir .gradle
+dir dist
+dir out
+dir __pycache__
+dir .venv
+# Campaign ledgers quote the defect being fixed; research captures are evidence that must not be mutated to please this wall.
+prefix .dev/campaigns/
+prefix .dev/research/
+ext png
+ext jpg
+ext jpeg
+ext gif
+ext webp
+ext ico
+ext jar
+ext class
+ext so
+ext dylib
+ext zip
+ext gz
+ext pdf
+ext woff
+ext woff2
+ext ttf
+ext eot
+ext wasm

@@ -9,6 +9,8 @@
 package splice.lawsuite
 
 import org.gradle.api.Project
+import org.gradle.api.Task
+import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.testing.Test
 import java.io.File
@@ -88,23 +90,49 @@ object ReadSet {
         error("git listed a name under '$root' that is not UTF-8: ${name.joinToString("") { "%02x".format(it) }} (${failure.message})")
     }
 
+    /** Every file git TRACKS, repo-relative and sorted, minus git's own deleted answer, strict UTF-8; each must be a regular file.
+     *  The set a law that reads "every tracked text file" starts from, before its rules filter it. */
+    fun tracked(repo: File): List<String> {
+        val set = (listed(repo, ".", "--cached") - listed(repo, ".", "--deleted").toSet()).sorted()
+        check(set.isNotEmpty()) { "git tracks no file in $repo" }
+        set.zipWithNext().firstOrNull { (a, b) -> a == b }?.let { (name) -> error("git listed '$name' twice in $repo") }
+        set.forEach { path ->
+            check(repo.resolve(path).isFile) { "the tracked set lists '$path', which is not a file in $repo and which git does not call deleted" }
+        }
+        return set
+    }
+
     /** Declares [roots] as the read set of [lawTest] in [project]: fingerprints every file in it, writes the list to a file the
      *  test JVM reads, and names the repository root. */
     fun declare(project: Project, lawTest: TaskProvider<Test>, roots: List<String>) {
+        declareFiles(project, lawTest, git(project.rootProject.projectDir, roots), "law-read-set", "splice.lawReadSetFile")
+    }
+
+    /** Declares the exact files [set] as inputs of [task]: fingerprints each, writes them NUL-delimited to `build/<name>.txt`
+     *  (a task of its own, a dependency of [task]) and hands that path to the test JVM as [property], beside `splice.root`. */
+    fun declareFiles(project: Project, task: TaskProvider<Test>, set: List<String>, name: String, property: String) {
+        val listFile = declareInputs(project, task, set, name)
+        task.configure {
+            systemProperty("splice.root", project.rootProject.projectDir.absolutePath)
+            systemProperty(property, listFile.get().asFile.absolutePath)
+        }
+    }
+
+    /** What makes [set] the inputs of any [task]: fingerprints every file, and writes the list to `build/<name>.txt` through a task
+     *  of its own that [task] depends on. Returns the list file. */
+    fun declareInputs(project: Project, task: TaskProvider<out Task>, set: List<String>, name: String): RegularFileProperty {
         val repo = project.rootProject.projectDir
-        val set = git(repo, roots)
-        val listFile = project.layout.buildDirectory.file("law-read-set.txt")
-        val write = project.tasks.register("writeLawReadSet") {
+        val listFile = project.objects.fileProperty().fileValue(project.layout.buildDirectory.file("$name.txt").get().asFile)
+        val write = project.tasks.register("write-$name") {
             inputs.property("readSet", set)
             outputs.file(listFile)
             doLast { listFile.get().asFile.apply { parentFile.mkdirs() }.writeText(encode(set)) }
         }
-        lawTest.configure {
+        task.configure {
             dependsOn(write)
-            inputs.files(set.map { repo.resolve(it) }).withPropertyName("readSet")
-            inputs.file(listFile).withPropertyName("readSetList")
-            systemProperty("splice.root", repo.absolutePath)
-            systemProperty("splice.lawReadSetFile", listFile.get().asFile.absolutePath)
+            inputs.files(set.map { repo.resolve(it) }).withPropertyName("$name-files")
+            inputs.file(listFile).withPropertyName("$name-list")
         }
+        return listFile
     }
 }

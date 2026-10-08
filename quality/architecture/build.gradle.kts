@@ -214,3 +214,18 @@ tasks.withType<Test>().configureEach {
     ).withPropertyName("scannedOperatorSurfaces")
     inputs.property("trackedPaths", trackedPathsDigest)
 }
+
+// THE CONVENTIONAL-TYPE LAW'S CONTENT INPUTS. ConventionalTypeLawTest reads the contents of every tracked text file, and the path
+// digest above only answers WHICH paths are tracked, so a content-only edit to a file it reads was served from up-to-date. The
+// build applies the one rule file (conventional-candidate-rules.txt, also parsed by the law) to git's tracked list, fingerprints
+// every accepted file as an input, and hands the same list to the test JVM, where the law reads only through it.
+val conventionalRules = splice.lawsuite.CandidateRules(
+    repoRoot.file("quality/architecture/src/test/resources/conventional-candidate-rules.txt").asFile.readText(),
+)
+splice.lawsuite.ReadSet.declareFiles(
+    project,
+    tasks.named<Test>("test"),
+    splice.lawsuite.ReadSet.tracked(repoRoot.asFile).filter(conventionalRules::accepts),
+    "conventional-candidates",
+    "splice.conventionalCandidatesFile",
+)

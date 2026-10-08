@@ -45,8 +45,15 @@ object ReadSet {
     /** The same set for a row's glob patterns (a directory glob): git's own `:(glob)` pathspec, so the expansion is git's too. */
     fun globbed(repo: File, globs: List<String>): List<String> = git(repo, globs.map { ":(glob)$it" })
 
-    /** The list file's text: every path ended by a NUL, so a filename holding a newline survives. */
-    fun encode(set: List<String>): String = set.joinToString("") { "$it\u0000" }
+    /** The list file's text: every path ended by a NUL, so a filename holding a newline survives. The reader (LawReadSet) refuses an
+     *  empty name and a repeated one, and the writer refuses them too, naming the entry, so the two cannot disagree. */
+    fun encode(set: List<String>): String {
+        check(set.none { it.isEmpty() }) { "the read set holds an empty name" }
+        set.groupingBy { it }.eachCount().entries.firstOrNull { it.value > 1 }?.let { (name) ->
+            error("the read set names '$name' twice")
+        }
+        return set.joinToString("") { "$it\u0000" }
+    }
 
     private fun listed(repo: File, root: String, vararg modes: String): List<String> {
         val command = listOf("git", "ls-files") + modes + listOf("-z", "--", root)

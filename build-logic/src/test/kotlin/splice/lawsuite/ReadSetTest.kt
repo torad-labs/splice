@@ -155,6 +155,14 @@ class ReadSetTest {
     }
 
     @Test
+    fun `RED the writer refuses an empty name and a repeated one, as the reader does`() {
+        assertThrows(IllegalStateException::class.java) { ReadSet.encode(listOf("a.sh", "")) }
+        val thrown = assertThrows(IllegalStateException::class.java) { ReadSet.encode(listOf("a.sh", "b.sh", "a.sh")) }
+
+        assertTrue(thrown.message!!.contains("a.sh"), thrown.message)
+    }
+
+    @Test
     fun `RED a root named twice names its files twice and throws`() {
         repo()
         file("tools/a.sh")

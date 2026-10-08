@@ -335,6 +335,11 @@ describe("every Kotlin file maps to a check", () => {
     expect(checksFor(modules, "build.gradle.kts")).toEqual(["help"]);
   });
 
+  test("RED: a build-logic test file is checked by the test compile, not the main compile; other build-logic paths have no check", () => {
+    expect(checksFor(modules, "build-logic/src/test/kotlin/splice/X.kt")).toEqual(["build-logic:compileTestKotlin"]);
+    expect(checksFor(modules, "build-logic/src/testFixtures/kotlin/splice/X.kt")).toBeUndefined();
+  });
+
   test("a file no module, build-logic or root script owns has no check", () => {
     expect(checksFor(modules, "scripts/x.kts")).toBeUndefined();
   });

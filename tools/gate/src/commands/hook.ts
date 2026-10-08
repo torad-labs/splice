@@ -51,7 +51,11 @@ const ZERO_SHA = /^0+$/;
 const KOTLIN = /\.kts?$/;
 /** A root script: configuration evaluates it, so the `help` task checks it. */
 const ROOT_SCRIPT = /^[^/]+\.gradle\.kts$/;
-const BUILD_LOGIC_TASKS = ["build-logic:compileKotlin"];
+/** build-logic's own sources: main is what its compile checks, test is what its test compile checks, and its build
+ *  scripts are checked by the configuration pass. Any other path under build-logic has no check. */
+const BUILD_LOGIC_MAIN = /^build-logic\/src\/main\//;
+const BUILD_LOGIC_TEST = /^build-logic\/src\/test\//;
+const BUILD_LOGIC_SCRIPT = /^build-logic\/[^/]+\.gradle\.kts$/;
 const ROOT_SCRIPT_TASKS = ["help"];
 const FAILED_TASK = /^> Task (\S+) FAILED$/gm;
 const LINES_SHOWN_ON_FAILURE = 60;
@@ -243,7 +247,10 @@ export function moduleOf(modules: readonly GradleModule[], file: string): string
 export function checksFor(modules: readonly GradleModule[], file: string): string[] | undefined {
   const module = moduleOf(modules, file);
   if (module !== undefined) return [`${module}:compileKotlin`, `${module}:compileTestKotlin`, `${module}:detekt`];
-  if (file.startsWith("build-logic/")) return [...BUILD_LOGIC_TASKS];
+  if (BUILD_LOGIC_MAIN.test(file)) return ["build-logic:compileKotlin"];
+  if (BUILD_LOGIC_TEST.test(file)) return ["build-logic:compileTestKotlin"];
+  if (BUILD_LOGIC_SCRIPT.test(file)) return ["build-logic:help"];
+  if (file.startsWith("build-logic/")) return undefined;
   if (ROOT_SCRIPT.test(file)) return [...ROOT_SCRIPT_TASKS];
   return undefined;
 }

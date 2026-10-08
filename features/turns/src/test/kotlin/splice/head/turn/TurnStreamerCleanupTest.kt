@@ -282,21 +282,23 @@ class TurnStreamerCleanupTest {
     }
 
     /** Replace only the recording's completion CAS, without consuming or exhausting real heap. */
-    @OptIn(kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi::class)
     private fun failCompletion(recording: FrameRecording, failure: Throwable) {
         val field = FrameRecording::class.java.getDeclaredField("progress").apply { isAccessible = true }
-        val initial = checkNotNull((field.get(recording) as MutableStateFlow<*>).value)
-        val state = MutableStateFlow(initial)
+        field.set(recording, failingCompletion(field.get(recording) as MutableStateFlow<*>, failure))
+    }
+
+    /** The progress flow's own state type, kept generic: the test reads it reflectively and never names it. */
+    @OptIn(kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi::class)
+    private fun <S> failingCompletion(progress: MutableStateFlow<S>, failure: Throwable): MutableStateFlow<S> {
+        val initial = checkNotNull(progress.value)
+        val state = MutableStateFlow(progress.value)
         val completing = initial.javaClass.getDeclaredField("complete").apply { isAccessible = true }
-        field.set(
-            recording,
-            object : MutableStateFlow<Any> by state {
-                override fun compareAndSet(expect: Any, update: Any): Boolean {
-                    if (completing.getBoolean(update)) throw failure
-                    return state.compareAndSet(expect, update)
-                }
-            },
-        )
+        return object : MutableStateFlow<S> by state {
+            override fun compareAndSet(expect: S, update: S): Boolean {
+                if (completing.getBoolean(update)) throw failure
+                return state.compareAndSet(expect, update)
+            }
+        }
     }
 
     private class Rig(

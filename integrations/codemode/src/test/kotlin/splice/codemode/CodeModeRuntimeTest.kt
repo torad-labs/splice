@@ -411,12 +411,12 @@ class CodeModeRuntimeTest {
         for (name in listOf("cells")) {
             val runtime = runtime()
             // Deterministically model ConcurrentHashMap's weakly consistent size/iterator pair.
-            val disappearing = object : AbstractMutableSet<Any>() {
+            val disappearing = object : AbstractMutableSet<JvmCodeModeCell>() {
                 override val size: Int get() = 1
 
-                override fun iterator(): MutableIterator<Any> = mutableSetOf<Any>().iterator()
+                override fun iterator(): MutableIterator<JvmCodeModeCell> = mutableSetOf<JvmCodeModeCell>().iterator()
 
-                override fun add(element: Any): Boolean = error("fixture is read-only")
+                override fun add(element: JvmCodeModeCell): Boolean = error("fixture is read-only")
             }
             val ownerField = JvmCodeModeRuntime::class.java.getDeclaredField("cells").apply { isAccessible = true }
             val owner = ownerField.get(runtime)

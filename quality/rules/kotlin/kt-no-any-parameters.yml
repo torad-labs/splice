@@ -11,11 +11,14 @@
 #     out of this rule: its `Any` is an identity or lock token (`synchronized(lock)`), where no type parameter fits.
 #   - No `ignores:` block. The toolkit exempts test source sets. The operator's law is no exceptions, so tests
 #     are policed like production code.
-#   - `override` carve-out. An override's parameter types are fixed by its supertype (Netty's channelRead and
-#     write, kotlinx AbstractEncoder.encodeValue, the JDK's AtomicReference.compareAndSet). No compliant spelling
-#     exists, so firing there would demand the impossible. Same shape as kt-no-extension-functions. The
-#     carve-out is only the override's own parameters: a nested non-override function is still checked, and a
-#     supertype declared in this repo is still caught at its own declaration (it has no `override` modifier).
+#   - `override` carve-out. An override's own parameter types are fixed by its supertype, and where the supertype
+#     is a library no compliant spelling exists: Netty's duplex-handler hooks (channelRead, write,
+#     userEventTriggered; a duplex handler extends no typed inbound base), the JDK's FileSystemProvider.setAttribute
+#     (takes Object) and Any.equals. Typed Netty bases exist only for inbound-only handlers, so a duplex handler
+#     cannot take one. A nested non-override function is still checked. A splice supertype's declaration is still
+#     checked (it has no `override` modifier), but a splice generic instantiated with Any in a subclass
+#     (`class X : Foo<Any> { override fun f(x: Any) }`) is not: the declaration reads `T`. Measured zero such hidden
+#     parameters on 2026-10-08; no rule covers that shape yet.
 id: kt-no-any-parameters
 language: kotlin
 severity: error

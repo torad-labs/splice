@@ -41,4 +41,4 @@
   .uplan .use { grid-column: 1 / -1; }
   .usrow { grid-template-columns: minmax(0, 1fr) auto; }
 }
-.idle-plans { margin-top: var(--space-9); max-width: 70ch; font: 400 1rem/1.5 var(--read); color: var(--mute); }
+.idle-plans { margin-top: var(--space-9); max-width: 70ch; font: 400 1rem/1.5 var(--read); color: var(--mute); overflow-wrap: anywhere; }

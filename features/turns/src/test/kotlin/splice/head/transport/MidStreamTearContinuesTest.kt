@@ -104,7 +104,7 @@ private const val TEAR_DELIVERY_PAUSE_MS = 250L
  *  HOLD_MS while the next arms connect, so eight leave room for that overlap. */
 private const val SERVE_THREADS = 8
 
-// One more tear than PassthroughReanchorController's continuation budget, so the turn runs the
+// One more tear than PassthroughReanchorPolicy's continuation budget, so the turn runs the
 // whole re-anchor loop out and finishes with the honest failure instead of recovering.
 private const val TEARS_PAST_BUDGET = 7
 private const val PERF_POLLS = 40

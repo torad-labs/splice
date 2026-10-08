@@ -50,7 +50,7 @@ public const val DEFAULT_MARKER_TEXT: String = "Continue thinking..."
  * cap, yields the NEXT request body (this round's input + replayed reasoning + the marker). Anything
  * else returns null → the gateway flushes the buffered output and emits the single honest terminal.
  */
-internal class ResponsesFoldController(
+internal class ResponsesFoldPolicy(
     private val config: FoldConfig,
     private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
 ) : FoldPolicy {

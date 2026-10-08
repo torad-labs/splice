@@ -548,7 +548,7 @@ class PassthroughStreamTranslatorTest {
             "the generic path keeps the retryable wire class this dialect already uses",
         )
         assertNotNull(
-            PassthroughReanchorController(prefill = true)
+            PassthroughReanchorPolicy(prefill = true)
                 .continuationForFailure(ReanchorRound(resumeBody(), failure, 0)),
             "the DEFAULT retry plan: a failure carrying salvage must be continuable, not merely reported",
         )

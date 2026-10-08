@@ -200,6 +200,6 @@ class PassthroughProviderTest {
                 budgetTokens = null,
             ),
         )
-        assertInstanceOf(PassthroughReanchorController::class.java, controller)
+        assertInstanceOf(PassthroughReanchorPolicy::class.java, controller)
     }
 }

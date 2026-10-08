@@ -35,7 +35,7 @@ import splice.core.util.ERR_SNIPPET
 internal data class FailureText(val code: String, val body: String)
 
 /** The single presentation seam: (ErrorType, raw upstream message) -> what a human reads. */
-internal class FailurePresenter {
+internal class FailureRenderer {
 
     /** The pair a caller needs, kept separate from the rendering so a test can pin the code and the
      *  sentence independently instead of matching one composed string. */

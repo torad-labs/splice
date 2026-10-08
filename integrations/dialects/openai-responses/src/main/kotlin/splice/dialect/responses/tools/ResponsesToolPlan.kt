@@ -33,7 +33,7 @@ internal class ResponsesToolPlan(
         val policy = quirks.toolSurface
         if (policy == null || policy.mode == ToolSearchMode.HOSTED) return null
         if (partition == null || !partition.deferring) return null
-        return ResponsesToolSearchController(
+        return ResponsesToolSearchPolicy(
             index = ToolSearchIndex(partition.deferred),
             policy = policy,
             emitStrict = quirks.emitStrict,

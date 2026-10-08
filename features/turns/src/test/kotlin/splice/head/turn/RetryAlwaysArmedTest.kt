@@ -105,7 +105,7 @@ private val EXCLUDED: Map<ErrorType, String> = mapOf(
  *  client has already read.
  *
  *  PRECISELY WHERE IT APPLIES (V4-58 review): the Responses dialect DOES carry a resume — its
- *  ResponsesReanchorController appends a marker instruction to continue exactly where the text
+ *  ResponsesReanchorPolicy appends a marker instruction to continue exactly where the text
  *  stops — and a measured Anthropic-shaped head can resume from a prefill (kimi, deepseek). On
  *  those, only the LONG-RESET half of this shape applies; the no-mechanism half is the unmeasured
  *  Anthropic-shaped heads, muse first among them. Reading "everywhere" into this comment would

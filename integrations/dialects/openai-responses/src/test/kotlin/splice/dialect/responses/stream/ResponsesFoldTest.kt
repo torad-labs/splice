@@ -25,7 +25,7 @@ import splice.upstream.FoldRound
 import splice.core.reasoning.ReasoningReplay.decodeReasoningEnvelope as coreDecode
 
 private val CONFIG = FoldConfig(models = setOf("gpt-5.6-luna"))
-private val controller = ResponsesFoldController(CONFIG) { coreDecode(it) }
+private val controller = ResponsesFoldPolicy(CONFIG) { coreDecode(it) }
 
 // A minimal but DTO-valid prior request (model/input/store/stream/instructions) — the continuation
 // builder decodes this through the closed serializer, so it must round-trip.

@@ -96,7 +96,7 @@ internal class ToolWireObjects(private val names: ToolNameShortener = ToolNameSh
      *  field-weighted substring score, not BM25 (spec §2.3; ToolSearchIndex's own header). Dropping
      *  that clause is deliberate, not a missed port. execution:"client" is what tells the backend WE
      *  answer the search, never Claude Code. [limit] is the operator's configured policy.searchLimit
-     *  (threaded from the caller) so the advertised default matches what [ResponsesToolSearchController]
+     *  (threaded from the caller) so the advertised default matches what [ResponsesToolSearchPolicy]
      *  actually clamps to (review 2026-07-24: this used to hardcode DEFAULT_SEARCH_LIMIT). */
     fun toolSearchToolObject(limit: Int): JsonObject = buildJsonObject {
         put(FIELD_TYPE, TYPE_TOOL_SEARCH)

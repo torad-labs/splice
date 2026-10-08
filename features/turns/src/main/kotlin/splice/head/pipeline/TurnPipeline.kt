@@ -32,7 +32,7 @@ internal class TurnPipeline(
 
     // Success-path honesty / promote / mirror live in StreamFinish.kt (concentration, 2026-08-19).
     private val compact = StreamCompact(compactStats)
-    private val failures = FailurePresenter()
+    private val failures = FailureRenderer()
     private val streamFinish = StreamFinish(
         compact,
         log,

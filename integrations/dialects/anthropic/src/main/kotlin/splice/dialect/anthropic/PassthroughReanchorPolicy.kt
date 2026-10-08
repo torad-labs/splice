@@ -1,5 +1,5 @@
 // NEW: mid-stream re-anchoring for the Anthropic-passthrough dialect — the layer this dialect was
-// missing. ResponsesReanchorController has done this for the Responses dialect since 2026-07-24;
+// missing. ResponsesReanchorPolicy has done this for the Responses dialect since 2026-07-24;
 // Provider.reanchorPolicy defaults to null ("surface the failure, pre-reanchor behaviour") and
 // passthrough never overrode it, so every head on THIS dialect — the OAuth heads, kimi, muse,
 // deepseek — ended a truncated turn immediately.
@@ -61,7 +61,7 @@ import splice.core.turn.TurnOutcome
 import splice.upstream.ReanchorPolicy
 import splice.upstream.ReanchorRound
 
-public class PassthroughReanchorController(
+public class PassthroughReanchorPolicy(
     private val prefill: Boolean = false,
     private val maxContinuations: Int = DEFAULT_MAX_CONTINUATIONS,
 ) : ReanchorPolicy {

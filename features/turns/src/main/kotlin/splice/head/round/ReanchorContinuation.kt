@@ -114,7 +114,7 @@ internal class ReanchorContinuation(
      *
      *  The wire TYPE is untouched on purpose. [splice.core.turn.ErrorType.OVERLOADED] still derives
      *  `overloaded_error`, which is the class Claude Code actually retries, and
-     *  [splice.head.pipeline.FailurePresenter] derives the `SPLICE-OVERLOADED` code from that same
+     *  [splice.head.pipeline.FailureRenderer] derives the `SPLICE-OVERLOADED` code from that same
      *  enum — so this row adds words and rosters no new code. Zero attempts means the first round
      *  failed and nothing absorbed it: its message is already the whole truth, and it rides through
      *  untouched (which is also what keeps every NEVER-BELOW-STATUS-QUO arm byte-identical). */

@@ -1,7 +1,7 @@
 # V4-342: the red/green pins for kt-responses-assistant-item-single-author.
 #
 # Every `invalid` case is a spelling the census found or one a copy would take: the constant pair
-# (ResponsesToolSearchController), the bare literals (the re-anchor and fold markers), the phase
+# (ResponsesToolSearchPolicy), the bare literals (the re-anchor and fold markers), the phase
 # written by hand, and a raw string. Every `valid` case keeps one half of the shape and must stay
 # silent: the factory itself, a call to it, another role, and a key named `assistant`.
 id: kt-responses-assistant-item-single-author
@@ -23,7 +23,7 @@ valid:
   # A KEY named assistant is not the role's value.
   - 'val counts = buildJsonObject { put("assistant", 1); put("user", 2) }'
 invalid:
-  # CENSUS: ResponsesToolSearchController.assistantText, both halves constants.
+  # CENSUS: ResponsesToolSearchPolicy.assistantText, both halves constants.
   - |
     private fun assistantText(text: String): JsonObject = buildJsonObject {
         put(FIELD_ROLE, ROLE_ASSISTANT)

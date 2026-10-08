@@ -47,7 +47,7 @@ internal enum class RetryLayer(val budgetOwner: String) {
     L2_PRE_CONTENT_REISSUE("MAX_STREAM_REISSUES"),
 
     /** Resume from the text already delivered, by re-anchoring the round. */
-    L3_REANCHOR_RESUME("ResponsesReanchorController's DEFAULT_MAX_CONTINUATIONS"),
+    L3_REANCHOR_RESUME("ResponsesReanchorPolicy's DEFAULT_MAX_CONTINUATIONS"),
 
     /** Switch to another account in the provider's pool and send the request again. */
     L4_ACCOUNT_SWITCH("the pool's own rotation, driven by AccountSelection"),

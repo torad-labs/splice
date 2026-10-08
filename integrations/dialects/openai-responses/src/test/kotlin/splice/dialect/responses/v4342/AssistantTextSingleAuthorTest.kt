@@ -27,12 +27,12 @@ import splice.core.turn.Usage
 import splice.core.wire.ToolDefinition
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
-import splice.dialect.responses.reasoning.ResponsesReanchorController
+import splice.dialect.responses.reasoning.ResponsesReanchorPolicy
 import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.dialect.responses.stream.FoldConfig
-import splice.dialect.responses.stream.ResponsesFoldController
-import splice.dialect.responses.tools.ResponsesToolSearchController
+import splice.dialect.responses.stream.ResponsesFoldPolicy
+import splice.dialect.responses.tools.ResponsesToolSearchPolicy
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.dialect.responses.tools.ToolSearchIndex
 import splice.upstream.FoldRound
@@ -84,7 +84,7 @@ class AssistantTextSingleAuthorTest {
 
     @Test
     fun `the re-anchor marker is the factory's commentary item, byte for byte - V4-342`() {
-        val controller = ResponsesReanchorController(decodeReasoningEnvelope = { null })
+        val controller = ResponsesReanchorPolicy(decodeReasoningEnvelope = { null })
         val prior = prior("hi")
         val failure = TurnOutcome.Failure(
             "boom",
@@ -101,7 +101,7 @@ class AssistantTextSingleAuthorTest {
 
     @Test
     fun `the fold's continuation marker is the factory's commentary item, byte for byte - V4-342`() {
-        val controller = ResponsesFoldController(FoldConfig(models = setOf("gpt-5.6-luna"))) {
+        val controller = ResponsesFoldPolicy(FoldConfig(models = setOf("gpt-5.6-luna"))) {
             Json.parseToJsonElement("""{"type":"reasoning","id":"$it"}""").jsonObject
         }
         val truncated = TurnOutcome.Success(
@@ -121,7 +121,7 @@ class AssistantTextSingleAuthorTest {
         """{"model":"gpt-5.6-sol","input":[{"role":"user","content":"$user"}],"store":false,"stream":true}""",
     ).jsonObject
 
-    private fun searchController() = ResponsesToolSearchController(
+    private fun searchController() = ResponsesToolSearchPolicy(
         index = ToolSearchIndex(List(4) { ToolDefinition(name = "tool_$it", description = "tool $it") }),
         policy = ToolDeferralPolicy(searchLimit = 4, searchRounds = 3),
         emitStrict = false,

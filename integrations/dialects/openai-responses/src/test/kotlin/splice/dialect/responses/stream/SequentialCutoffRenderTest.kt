@@ -20,7 +20,7 @@ import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.StreamTurnContext
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
-import splice.dialect.responses.reasoning.ResponsesReanchorController
+import splice.dialect.responses.reasoning.ResponsesReanchorPolicy
 import splice.upstream.ReanchorRound
 import splice.upstream.sse.WireSink
 
@@ -129,7 +129,7 @@ class SequentialCutoffRenderTest {
         assertFalse(failure.partial?.emittedThinking == true)
 
         val original = ev("""{"model":"gpt-5.6-sol","input":[],"stream":true}""")
-        val retry = ResponsesReanchorController(
+        val retry = ResponsesReanchorPolicy(
             decodeReasoningEnvelope = { null },
         ).continuationForFailure(ReanchorRound(original, failure, attempt = 0))
         assertEquals(original, retry, "empty cutoff salvage must take the verbatim restart route")

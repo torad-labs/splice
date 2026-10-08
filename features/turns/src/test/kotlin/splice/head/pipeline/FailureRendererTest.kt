@@ -1,4 +1,4 @@
-// NEW: V4-107 — the non-JSON pass-through in FailurePresenter.sentence is capped at ERR_SNIPPET,
+// NEW: V4-107 — the non-JSON pass-through in FailureRenderer.sentence is capped at ERR_SNIPPET,
 // so a huge non-JSON vendor body cannot render whole into the operator's transcript. JSON-field
 // behaviour (detail/error/message lifting) is deliberately untouched.
 package splice.head.pipeline
@@ -6,9 +6,9 @@ package splice.head.pipeline
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
-class FailurePresenterTest {
+class FailureRendererTest {
 
-    private val presenter = FailurePresenter()
+    private val renderer = FailureRenderer()
 
     @Test
     fun `a huge non-JSON vendor body is capped at the error snippet`() {
@@ -17,7 +17,7 @@ class FailurePresenterTest {
         // shape the cap exists for.
         val huge = "x ".repeat(10_000)
 
-        val sentence = presenter.sentence(huge)
+        val sentence = renderer.sentence(huge)
 
         assertEquals(200, sentence.length, sentence)
         assertEquals(huge.take(200), sentence)
@@ -25,14 +25,14 @@ class FailurePresenterTest {
 
     @Test
     fun `a short non-JSON body rides through untouched`() {
-        assertEquals("plain prose", presenter.sentence("plain prose"))
+        assertEquals("plain prose", renderer.sentence("plain prose"))
     }
 
     @Test
     fun `a blank non-JSON body is described, not echoed`() {
         assertEquals(
             "the upstream returned an error that could not be read",
-            presenter.sentence("   "),
+            renderer.sentence("   "),
         )
     }
 }

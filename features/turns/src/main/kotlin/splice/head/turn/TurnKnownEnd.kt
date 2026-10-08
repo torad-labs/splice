@@ -9,7 +9,7 @@ import splice.core.util.ERR_SNIPPET
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
 import splice.head.admission.TurnQuota
-import splice.head.pipeline.FailurePresenter
+import splice.head.pipeline.FailureRenderer
 import splice.upstream.Provider
 import splice.upstream.failure.FailureSource
 import splice.upstream.failure.ForeignCredential
@@ -26,12 +26,12 @@ internal class TurnKnownEnd(
     private val quotas: TurnQuota? = null,
 ) {
 
-    // V4-59: named for the presenter, not the TurnFailures above — the classified message reaching
+    // V4-59: named for the renderer, not the TurnFailures above — the classified message reaching
     // emitError is the SECOND place a vendor's raw body could become client text. The classifier
     // lifts error.message out of a JSON body, but falls back to the WHOLE body whenever the shape
     // is one it cannot read (our own detail-only fail-fast is exactly that shape), and this arm
     // then emitted the fallback verbatim.
-    private val presenter = FailurePresenter()
+    private val renderer = FailureRenderer()
 
     /** True when [e] is a known upstream-auth or upstream-HTTP failure this surface owns. */
     suspend fun tryEmit(drive: TurnDrive, e: Throwable): Boolean = when (e) {
@@ -61,7 +61,7 @@ internal class TurnKnownEnd(
             // line instead pushed the appended login hint past ERR_SNIPPET, silently dropping the
             // one part of this message that tells the operator what to DO — caught by the existing
             // login-hint test, which is exactly what it is for.
-            val classified = presenter.present(failure.type, failure.message)
+            val classified = renderer.present(failure.type, failure.message)
             val boundedMessage = "[${classified.code}] ${classified.body.take(ERR_SNIPPET)}"
             val standby = if (failure.type == ErrorType.RATE_LIMIT) quotas?.standbyRefusal(drive.account) else null
             val message = message(failure.type, boundedMessage, standby)

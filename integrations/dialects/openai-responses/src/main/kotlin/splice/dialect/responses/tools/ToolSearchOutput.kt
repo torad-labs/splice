@@ -14,7 +14,7 @@ import splice.upstream.ToolNameShortener
 
 /**
  * The tool_search_output shape (type, call_id, status, execution, tools[]) — the ONE builder for
- * both callers: the within-turn answer ([ResponsesToolSearchController.continuationForSearch])
+ * both callers: the within-turn answer ([ResponsesToolSearchPolicy.continuationForSearch])
  * and the declaration-replay injection (ResponsesRequestBuilder.kt CHANGE 2, cache-prefix
  * stability 2026-07-25) that re-declares a deferred tool's schema in history before its
  * function_call. Never re-authored as a second shape — see this file's header and ToolSurface.kt's.

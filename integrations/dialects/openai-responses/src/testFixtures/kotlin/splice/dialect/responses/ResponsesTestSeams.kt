@@ -1,6 +1,6 @@
 // NEW: 2026-10-08 — the Responses dialect's request builder, stream translator and re-anchor policy, as a
 // sibling module's test needs them: through plain values and the public ports they implement. Their own
-// types (BuildOptions, StreamTurnContext, ResponsesReanchorController and what they carry) are `internal`
+// types (BuildOptions, StreamTurnContext, ResponsesReanchorPolicy and what they carry) are `internal`
 // to this module, so a provider's or the turn pipeline's test builds one here and not by naming them.
 package splice.dialect.responses
 
@@ -12,7 +12,7 @@ import splice.dialect.responses.reasoning.EmitEncryptedReasoning
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.ReasoningEnvelopeDecoder
 import splice.dialect.responses.reasoning.ReasoningEnvelopeEncoder
-import splice.dialect.responses.reasoning.ResponsesReanchorController
+import splice.dialect.responses.reasoning.ResponsesReanchorPolicy
 import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.dialect.responses.stream.ResponsesStreamTranslator
@@ -65,4 +65,4 @@ fun responsesTestTranslator(
 fun responsesTestReanchor(
     maxContinuations: Int,
     decode: (String) -> JsonObject? = { null },
-): ReanchorPolicy = ResponsesReanchorController(ReasoningEnvelopeDecoder { decode(it) }, maxContinuations)
+): ReanchorPolicy = ResponsesReanchorPolicy(ReasoningEnvelopeDecoder { decode(it) }, maxContinuations)

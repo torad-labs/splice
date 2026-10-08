@@ -26,7 +26,7 @@
 # point in decimal where it becomes a Char (`Char(8212)`, `8212.toChar()`; a bare 8212 is any number).
 # RetryMatrix.kt is the one ignore: its table renders only into AGENTS.md's generated block (agent
 # docs, RetryMatrixTableTest), never a frame. Text splice relays from upstream is not a literal at
-# all: FailurePresenter rewrites its em dashes as it presents them.
+# all: FailureRenderer rewrites its em dashes as it presents them.
 id: kt-no-emdash-cli-text
 language: kotlin
 severity: error

@@ -380,7 +380,7 @@ code mode compares the items it recorded with the client's replay by value (V4-3
 an assistant role on other wires, which never reach a code-mode record: the Anthropic message the client
 reads (MessageStart.kt's SSE message_start, SseEmitter.kt's non-stream terminal), the Chat Completions
 messages role (ChatWireMapper.kt), and the Anthropic passthrough re-anchor's assistant turn
-(PassthroughReanchorController.kt). They are the rule's `ignores:`. Measured on 84f1af3c7: seven hits
+(PassthroughReanchorPolicy.kt). They are the rule's `ignores:`. Measured on 84f1af3c7: seven hits
 with the ignores dropped, three with them in.
 """
 

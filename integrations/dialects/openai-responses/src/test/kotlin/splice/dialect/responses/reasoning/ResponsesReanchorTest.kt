@@ -55,7 +55,7 @@ private fun failureWith(
     partial: TurnOutcome.PartialRound? = TurnOutcome.PartialRound(bodyText = "The fix is to"),
 ) = TurnOutcome.Failure("boom", cause = cause, phase = FailurePhase.MID_OUTPUT, partial = partial)
 
-private val controller = ResponsesReanchorController(
+private val controller = ResponsesReanchorPolicy(
     decodeReasoningEnvelope = { env ->
         Json.parseToJsonElement("""{"type":"reasoning","id":"$env"}""").jsonObject
     },
@@ -107,7 +107,7 @@ private fun replayedProse(provider: ResponsesProvider): JsonObject {
         .single { (it["content"] as? JsonPrimitive)?.content == "The fix is to" }
 }
 
-class ResponsesReanchorControllerTest {
+class ResponsesReanchorPolicyTest {
 
     // V4-339: the partial prose the client already saw was said mid-turn, so by V4-335's rule it is
     // commentary on a lite turn; replayed bare, it read to the model as the turn's final answer.

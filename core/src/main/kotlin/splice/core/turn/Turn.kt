@@ -227,8 +227,8 @@ public class SharedSummaryParts(
 // NEW: V4-122 — the ONE re-anchor continuation budget, in core because both re-anchoring dialects
 // read it and neither may own the other's constant.
 //
-// Two dialect files declared this at 5 — PassthroughReanchorController.kt and
-// ResponsesReanchorController.kt — and the checker held the name as a scar because they re-anchor
+// Two dialect files declared this at 5 — PassthroughReanchorPolicy.kt and
+// ResponsesReanchorPolicy.kt — and the checker held the name as a scar because they re-anchor
 // against the SAME client budget: the number is one policy, and a fork of it makes the two dialects
 // behave differently depending on which head the operator happens to be running. It used to be
 // widened from 2 to 5 at codex-rs parity (11ce5512) in one dialect at a time, which is exactly the
@@ -260,7 +260,7 @@ public data class WatchdogBudget(
      *  OFF BY DEFAULT ([Duration.INFINITE]), and the default is load-bearing rather than timid.
      *  Whether an early reap helps or hurts is a property of the PROVIDER, not of this class: a
      *  provider that cannot be handed a prefill (muse answers one with a 400 that Claude Code never
-     *  retries — see PassthroughReanchorController) has no continuation to be reaped INTO, so for
+     *  retries — see PassthroughReanchorPolicy) has no continuation to be reaped INTO, so for
      *  it an early reap converts a 300 s wait into an identical error 280 s sooner and can only
      *  ever cost a slow-but-alive generation. The head that has been MEASURED to continue is the
      *  one that arms this, at construction (HeadBuildInputs), which is why the value travels on the

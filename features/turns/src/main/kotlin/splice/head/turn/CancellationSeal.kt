@@ -19,7 +19,7 @@ import splice.core.perf.OutcomeTags
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
-import splice.head.pipeline.FailurePresenter
+import splice.head.pipeline.FailureRenderer
 import splice.upstream.Provider
 import java.io.IOException
 
@@ -33,7 +33,7 @@ internal class CancellationSeal(
     private val health: HeadHealthCounters,
     private val usageStamp: TurnUsageStamp,
 ) {
-    private val presenter = FailurePresenter()
+    private val renderer = FailureRenderer()
 
     /** Coroutine recovery may wrap the explicit head-owned cancellation. */
     fun isRestart(cause: Throwable): Boolean =
@@ -146,7 +146,7 @@ internal class CancellationSeal(
             )
             // Pre-stream and independent-source cancellation use the stream's own cap sentence.
             fired is splice.upstream.retry.WatchdogFired.TotalCap ->
-                cancelled(presenter.spoken(ErrorType.OVERLOADED, fired.retryMessage))
+                cancelled(renderer.spoken(ErrorType.OVERLOADED, fired.retryMessage))
             fired != null -> cancelled("${provider.key}: splice idle watchdog ended the round; retry")
             else -> cancelled("${provider.key}: splice turn cancelled; retry")
         }

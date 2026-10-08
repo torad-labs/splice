@@ -10,10 +10,10 @@
 # hand-built assistant items in the Responses dialect, all moved onto the factory in V4-342 with
 # their bytes pinned (v4342/AssistantTextSingleAuthorTest). Seven with the ignores dropped: the
 # other four are THE IGNORES below.
-#   tools/ResponsesToolSearchController.kt  `assistantText`       — no phase; now commentary, the
+#   tools/ResponsesToolSearchPolicy.kt  `assistantText`       — no phase; now commentary, the
 #                                                                    phase the builder gives prose
 #                                                                    a tool_use follows
-#   reasoning/ResponsesReanchorController.kt `reanchorMarker`      — commentary, bytes unchanged
+#   reasoning/ResponsesReanchorPolicy.kt `reanchorMarker`      — commentary, bytes unchanged
 #   stream/ResponsesFold.kt                  `continuationMarker`  — commentary, bytes unchanged
 #
 # THE IGNORES are the other wires, whose assistant role is not a Responses input item and never
@@ -22,7 +22,7 @@
 #                                     (MessageStart.kt) and the non-stream terminal (SseEmitter.kt)
 #   integrations/dialects/openai-chat the Chat Completions `messages` role (ChatWireMapper.kt)
 #   integrations/dialects/anthropic   the Anthropic passthrough re-anchor's assistant turn
-#                                     (PassthroughReanchorController.kt)
+#                                     (PassthroughReanchorPolicy.kt)
 #
 # THE MATCHER is the second argument of a `put` call: the constant `ROLE_ASSISTANT` or the literal
 # word `assistant`. That is the value of an assistant item's role, however the key is spelled, and

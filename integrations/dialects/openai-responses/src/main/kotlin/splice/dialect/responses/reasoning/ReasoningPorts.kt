@@ -4,7 +4,7 @@
 // store and hand back, wrapping the encrypted reasoning a Responses turn produced. Four seams in
 // this dialect speak about it, and until now all four were raw function types threaded through
 // constructors — `decodeReasoningEnvelope` alone appeared in ResponsesFold, ResponsesToolSearch,
-// ResponsesReanchorController and ResponsesRequestBuilder, four separate declarations of the same
+// ResponsesReanchorPolicy and ResponsesRequestBuilder, four separate declarations of the same
 // contract with nothing tying them together but the parameter name.
 //
 // WHY FOUR TYPES AND NOT ONE CODEC OBJECT. The consumers are genuinely asymmetric and grouping

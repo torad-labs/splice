@@ -1,0 +1,29 @@
+id: kt-no-invented-layer
+valid:
+  # named by behavior: the compliant shape every renamed type landed in.
+  - |
+    internal class FoldPolicy(private val limit: Int) {
+        fun fits(size: Int): Boolean = size <= limit
+    }
+  - |
+    internal class FailureRenderer {
+        fun sentence(text: String): String = text.take(160)
+    }
+  - 'object ReanchorPolicy { const val MARKER = "reanchor" }'
+  # a member or a string that merely contains the word is not a declaration of that layer.
+  - |
+    class Holder {
+        val controller = "ControllerName"
+        fun contract(): Int = 1
+    }
+invalid:
+  - |
+    class SessionController(private val limit: Int)
+  - |
+    internal class FailurePresenter {
+        fun sentence(text: String): String = text
+    }
+  - |
+    public data class TurnContract(val id: String)
+  - |
+    object RelayController

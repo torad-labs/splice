@@ -7,10 +7,10 @@ import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnMeta
 import splice.core.util.LogSink
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
-import splice.dialect.responses.reasoning.ResponsesReanchorController
+import splice.dialect.responses.reasoning.ResponsesReanchorPolicy
 import splice.dialect.responses.reasoning.TurnReasoningSink
 import splice.dialect.responses.request.AssistantPhase
-import splice.dialect.responses.stream.ResponsesFoldController
+import splice.dialect.responses.stream.ResponsesFoldPolicy
 import splice.dialect.responses.stream.ResponsesStreamTranslator
 import splice.upstream.FoldPolicy
 import splice.upstream.ReanchorPolicy
@@ -22,10 +22,10 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // allocation here also ran per ROUND via the collectReasoningEnvelopes null-check).
     // V4-339: one per wire shape. A lite turn's replayed partial prose is commentary (V4-335's rule).
     private val defaultReanchorPolicy: ReanchorPolicy by lazy {
-        ResponsesReanchorController(decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) })
+        ResponsesReanchorPolicy(decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) })
     }
     private val liteReanchorPolicy: ReanchorPolicy by lazy {
-        ResponsesReanchorController(
+        ResponsesReanchorPolicy(
             decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) },
             prosePhase = AssistantPhase.COMMENTARY,
         )
@@ -102,7 +102,7 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     fun foldPolicy(meta: TurnMeta): FoldPolicy? {
         val cfg = deps.foldConfig ?: return null
         if (meta.compact || meta.upstreamModel !in cfg.models) return null
-        return ResponsesFoldController(
+        return ResponsesFoldPolicy(
             cfg,
             decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) },
         )

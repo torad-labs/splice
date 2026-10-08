@@ -134,7 +134,7 @@ internal class QuirksOverlay {
      *
      *  Clamped (review 2026-07-24): ToolSurfaceConfig does no validation of its own, so an operator
      *  TOML typo (e.g. `search_limit = 0`) reached `coerceIn(1, policy.searchLimit)` in
-     *  ResponsesToolSearchController unclamped and THREW — a client-visible failed turn on every
+     *  ResponsesToolSearchPolicy unclamped and THREW — a client-visible failed turn on every
      *  round that searched, the one place this feature's own NEVER-BELOW-STATUS-QUO law broke.
      *  Clamping here (like every other numeric knob — ConfigService.normalize) makes a bad value
      *  un-armable instead of a live crash. */

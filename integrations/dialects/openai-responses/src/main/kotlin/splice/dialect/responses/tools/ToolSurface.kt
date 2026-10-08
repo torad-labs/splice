@@ -3,7 +3,7 @@
 // while OpenAI's own client serves these models a collapsed surface (models.json gives gpt-5.6-sol
 // supports_search_tool:true, and core/src/client.rs:838-921 wraps ToolSpec::ToolSearch into the same
 // additional_tools developer item splice already emits). This file owns the PARTITION and the wire
-// tool objects; the answering side lives in ResponsesToolSearchController.kt, and shape-400 recovery lives
+// tool objects; the answering side lives in ResponsesToolSearchPolicy.kt, and shape-400 recovery lives
 // in ToolSurfaceRecovery.kt (split 2026-07-24: this file hit the SAME TooManyFunctions ceiling
 // ResponsesLite.kt was originally split from ResponsesRequestBuilder to avoid).
 // Invariants:
@@ -62,13 +62,13 @@ public data class ToolDeferralPolicy(
     /** Below this many deferrable tools the split buys nothing and costs a round. */
     val minDeferred: Int = DEFAULT_MIN_DEFERRED,
     /** Max tools returned by one `tool_search` answer (clamped 1..this —
-     *  [ResponsesToolSearchController.clampedLimit]). Trades answer size against round count: a
+     *  [ResponsesToolSearchPolicy.clampedLimit]). Trades answer size against round count: a
      *  HIGHER limit answers a broad query in fewer rounds at the cost of a bigger
      *  tool_search_output payload every round; a LOWER limit keeps each round's answer small but
      *  pushes more queries toward [searchRounds]'s exhaustive fallback. */
     val searchLimit: Int = DEFAULT_SEARCH_LIMIT,
     /** Permitted `tool_search` rounds before the FINAL round answers with the ENTIRE deferred set
-     *  regardless of query — the loop-can't-wedge law (ResponsesToolSearchController.kt header): capability
+     *  regardless of query — the loop-can't-wedge law (ResponsesToolSearchPolicy.kt header): capability
      *  at the cap is exactly today's full surface. Trades round budget against when narrowing
      *  gives up: MORE rounds lets ranked, limit-sized answers keep narrowing longer before the
      *  exhaustive fallback; FEWER rounds reaches the larger, unranked exhaustive answer sooner. */

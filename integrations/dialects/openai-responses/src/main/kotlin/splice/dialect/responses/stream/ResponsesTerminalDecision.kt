@@ -86,7 +86,7 @@ internal class ResponsesTerminalDecision(
     // carrying zero text — or worse, as a normal turn once the pipeline promoted the streamed chain
     // of thought to the answer. The model's stated reason IS the verdict.
     // Deliberately carries NO `partial`, unlike every other failure here: a refusal is
-    // deterministic, and ResponsesReanchorController re-POSTs any API_ERROR that carries salvage
+    // deterministic, and ResponsesReanchorPolicy re-POSTs any API_ERROR that carries salvage
     // (RETRYABLE = {OVERLOADED, API_ERROR}), so a partial would buy an identical refusal at full
     // upstream cost.
     private fun refusalFailure(state: ResponsesTurnState): TurnOutcome.Failure? =
@@ -115,7 +115,7 @@ internal class ResponsesTerminalDecision(
     // Success(incomplete=true) would let a blocked generation masquerade as complete (the same
     // L3 honesty invariant ChatStreamTranslator's contentFiltered branch closes). Carries NO
     // partial for the same reason as a refusal above: this terminal is deterministic, so handing
-    // it to ResponsesReanchorController would re-POST the full context for the identical verdict.
+    // it to ResponsesReanchorPolicy would re-POST the full context for the identical verdict.
     private fun contentFilterFailure(state: ResponsesTurnState): TurnOutcome.Failure? =
         if (state.contentFiltered) {
             TurnOutcome.Failure(

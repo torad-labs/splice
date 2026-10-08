@@ -20,7 +20,7 @@ internal class RoundSplice {
      *  search continuation asks the model to do more work on a turn whose budget already blew,
      *  where a failure re-anchor recovers content the client has already been promised. It also
      *  never continues past a round that already committed a real tool_use to the client's wire
-     *  — that check lives inside ResponsesToolSearchController itself (TurnOutcome.Success.hasToolUse),
+     *  — that check lives inside ResponsesToolSearchPolicy itself (TurnOutcome.Success.hasToolUse),
      *  so it need not be repeated here. */
     fun searchContinuation(
         search: ToolSearchPolicy?,

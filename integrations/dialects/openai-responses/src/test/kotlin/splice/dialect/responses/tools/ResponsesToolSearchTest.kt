@@ -1,4 +1,4 @@
-// Walls for the gateway-side tool_search answer (ResponsesToolSearchController.kt): the continuation is an
+// Walls for the gateway-side tool_search answer (ResponsesToolSearchPolicy.kt): the continuation is an
 // APPEND-ONLY extension of the prior request (closed-DTO continuationRequest, every non-input field
 // untouched), the stop conditions (hasToolUse, empty toolSearches, round cap), the exhaustive-vs-
 // ranked answer split, limit clamping, call_id dedup, and the no-dangling-reasoning-item rule.
@@ -29,7 +29,7 @@ import splice.core.reasoning.ReasoningReplay.decodeReasoningEnvelope as coreDeco
 
 private val DEFERRED = List(12) { ToolDefinition(name = "mcp__exa__tool_$it", description = "tool number $it") }
 private val POLICY = ToolDeferralPolicy(searchLimit = 4, searchRounds = 3)
-private val CONTROLLER = ResponsesToolSearchController(
+private val CONTROLLER = ResponsesToolSearchPolicy(
     index = ToolSearchIndex(DEFERRED),
     policy = POLICY,
     emitStrict = false,
@@ -201,7 +201,7 @@ class ResponsesToolSearchTest {
         val outputs = tail.map { it.jsonObject }.filter { it["type"]?.jsonPrimitive?.content == "tool_search_output" }
         assertEquals(1, outputs.size)
         // review 2026-07-25 (comment 4): pin WHICH duplicate is answered, not just the count.
-        // answeredOnce (ResponsesToolSearchController.kt:88-91) is documented first-wins; "tool_0" (the
+        // answeredOnce (ResponsesToolSearchPolicy.kt:88-91) is documented first-wins; "tool_0" (the
         // first call's query) matches only mcp__exa__tool_0 (no "tool_10"/"tool_11" substring
         // collision the way "tool_1" would) — a first->last regression would answer with
         // mcp__exa__tool_1 (and its "tool_1x" siblings) instead, and only this assertion catches it.
@@ -221,7 +221,7 @@ class ResponsesToolSearchTest {
 
     // review 2026-07-24 (HIGH/MEDIUM across reviews): the round's own prose is already on the
     // client's wire before the search call streamed — it must be replayed as context (the same
-    // rule ResponsesReanchorController.assistantText applies), or the model re-says it and the
+    // rule ResponsesReanchorPolicy.assistantText applies), or the model re-says it and the
     // client sees it twice.
     @Test
     fun `the round's emitted prose is replayed as an assistant item before the call`() {

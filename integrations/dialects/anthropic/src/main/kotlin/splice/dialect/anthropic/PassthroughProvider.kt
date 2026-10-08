@@ -94,7 +94,7 @@ public class PassthroughProvider(
      *  this was the only layer that could. Stateless and cheap, so it is constructed per call
      *  rather than held. */
     override fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy =
-        PassthroughReanchorController(prefill = quirks.reanchorPrefill)
+        PassthroughReanchorPolicy(prefill = quirks.reanchorPrefill)
 
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {
         put(ACCEPT, SSE_CONTENT_TYPE) // dialect invariant: this upstream streams SSE

@@ -28,7 +28,7 @@ class PassthroughReanchorTest {
     // The PREFILL-shaped vendor, which kimi and deepseek are by measurement. The restart-only path
     // and the bare default are constructed EXPLICITLY in their own tests below, so a test can never
     // pass on the default constructor by accident.
-    private val controller = PassthroughReanchorController(prefill = true)
+    private val controller = PassthroughReanchorPolicy(prefill = true)
 
     private val originalMessages = buildJsonArray {
         add(
@@ -172,7 +172,7 @@ class PassthroughReanchorTest {
         // every muse truncation would turn into a 400 of the one error class the client does NOT
         // retry, which is worse than the honest overloaded_error it shows today. So PREFILL is
         // opt-in and RESTART-ONLY is the default: a vendor earns the prefill by being measured.
-        val restartOnly = PassthroughReanchorController(prefill = false)
+        val restartOnly = PassthroughReanchorPolicy(prefill = false)
         assertNull(restartOnly.continuationForFailure(round(body(), partial(bodyText = "1\n2\n3"))))
     }
 
@@ -182,7 +182,7 @@ class PassthroughReanchorTest {
         // so it stays available to EVERY vendor, including the ones that cannot take a prefill —
         // and this is the arm that comes before the shape check, so the knob must not reach it.
         val original = body()
-        val restartOnly = PassthroughReanchorController(prefill = false)
+        val restartOnly = PassthroughReanchorPolicy(prefill = false)
         val continued = restartOnly.continuationForFailure(round(original, partial(bodyText = "")))
         assertSame(original, continued)
     }
@@ -195,7 +195,7 @@ class PassthroughReanchorTest {
         // default to true must fail HERE, not silently in production on an unmeasured head — which
         // is also why this test uses the bare constructor while the one above passes false
         // explicitly, so a flipped default reddens this one alone.
-        val defaulted = PassthroughReanchorController()
+        val defaulted = PassthroughReanchorPolicy()
         assertNull(defaulted.continuationForFailure(round(body(), partial(bodyText = "1\n2"))))
     }
 

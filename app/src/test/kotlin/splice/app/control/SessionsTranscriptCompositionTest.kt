@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.transcript.TranscriptReader
 import splice.sessions.http.SessionsRoutes
+import splice.sessions.http.TranscriptRoots
 import splice.sessions.query.SessionHead
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
@@ -69,8 +70,7 @@ class SessionsTranscriptCompositionTest {
         val routes = SessionsRoutes(
             registry(),
             TranscriptReader(),
-            heads = mapOf("codex" to SessionHead(transcriptRoot = own)),
-            vanilla = vanilla,
+            roots = TranscriptRoots(mapOf("codex" to SessionHead(transcriptRoot = own)), vanilla = vanilla),
         )
 
         val reply = routes.transcript(HEADED, null, null)

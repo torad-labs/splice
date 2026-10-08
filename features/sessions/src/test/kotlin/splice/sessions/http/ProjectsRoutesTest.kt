@@ -44,8 +44,7 @@ class ProjectsRoutesTest {
         val sessions = SessionsRoutes(
             rig.registry,
             TestTranscripts(),
-            heads,
-            vanilla = tmp.resolve("vanilla"),
+            roots = TranscriptRoots(heads, vanilla = tmp.resolve("vanilla")),
             teams = teams,
         )
         return ProjectsRoutes(rig.registry, heads, RepoOf { sessions.repoOf(it) }, teams, WallClock { AT })
@@ -58,7 +57,11 @@ class ProjectsRoutesTest {
             rig.repo.resolve(".git/config"),
             "[remote \"origin\"]\n url = https://user:secret@github.com/torad-labs/splice.git\n",
         )
-        val sessionRoutes = SessionsRoutes(rig.registry, TestTranscripts(), vanilla = tmp.resolve("vanilla"))
+        val sessionRoutes = SessionsRoutes(
+            rig.registry,
+            TestTranscripts(),
+            roots = TranscriptRoots(vanilla = tmp.resolve("vanilla")),
+        )
         val session = rig.find(rig.json(sessionRoutes.sessionsJson()), "sessions", "session_id", BUILDER)
         assertEquals(
             "https://github.com/torad-labs/splice.git",
@@ -177,6 +180,13 @@ class ProjectsRoutesTest {
         assertEquals("1", row.getValue("unpriced_turns_today").jsonPrimitive.content)
     }
 
+    private fun sessionRoutes(heads: Map<String, SessionHead>, config: ConfigService) = SessionsRoutes(
+        rig.registry,
+        TestTranscripts(),
+        roots = TranscriptRoots(heads, vanilla = tmp.resolve("vanilla")),
+        settings = ConfigSessionSettings(config),
+    )
+
     // FEATURES.md 4.14's "compaction scope and effective instructions, the statusline roots entry":
     // the rules core says a compaction in this repo resolves to (a project rule shadows the global
     // one), and per head the trusted root its statusline probes the repo under, through the SAME
@@ -195,7 +205,7 @@ class ProjectsRoutesTest {
             envReader = EnvReader { null },
             log = { },
         )
-        val sessions = SessionsRoutes(rig.registry, TestTranscripts(), heads, config, vanilla = tmp.resolve("vanilla"))
+        val sessions = sessionRoutes(heads, config)
         val table = CompactionInstructions(
             CompactionConfig(
                 instructions = "global text",
@@ -291,7 +301,7 @@ class ProjectsRoutesTest {
         val sessions = SessionsRoutes(
             rig.registry,
             TestTranscripts(),
-            vanilla = tmp.resolve("vanilla"),
+            roots = TranscriptRoots(vanilla = tmp.resolve("vanilla")),
             teams = TeamSource { rig.store },
         )
         val row = rig.find(rig.json(sessions.sessionsJson()), "sessions", "session_id", BUILDER)
@@ -311,7 +321,11 @@ class ProjectsRoutesTest {
                 SentTexts(file.toString(), mapOf("toolu_a" to "go"), ids - "toolu_a")
             },
         )
-        val sessions = SessionsRoutes(rig.registry, transcripts, vanilla = tmp.resolve("vanilla"))
+        val sessions = SessionsRoutes(
+            rig.registry,
+            transcripts,
+            roots = TranscriptRoots(vanilla = tmp.resolve("vanilla")),
+        )
         val sent = sessions.sentTexts(LEAD, null, setOf("toolu_a", "toolu_b"))
         assertEquals(file.toString(), sent.path)
         assertEquals(mapOf("toolu_a" to "go"), sent.texts)
@@ -324,7 +338,7 @@ class ProjectsRoutesTest {
         val sessions = SessionsRoutes(
             rig.registry,
             TestTranscripts(),
-            vanilla = tmp.resolve("vanilla"),
+            roots = TranscriptRoots(vanilla = tmp.resolve("vanilla")),
             teams = TeamSource { rig.store },
         )
         val teamOf = { id: String ->

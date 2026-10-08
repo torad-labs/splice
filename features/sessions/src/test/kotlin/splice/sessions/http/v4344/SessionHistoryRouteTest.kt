@@ -16,6 +16,7 @@ import splice.sessions.http.SessionHistoryRowOf
 import splice.sessions.http.SessionRepoNameOf
 import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.TestTranscripts
+import splice.sessions.http.TranscriptRoots
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord
@@ -73,7 +74,12 @@ class SessionHistoryRouteTest {
             assertEquals(roots, asked, "the source is given the declared on-disk denominator")
             scan
         }
-        val rows = SessionsRoutes(registry, TestTranscripts(), vanilla = home, accountOf = account)
+        val rows = SessionsRoutes(
+            registry,
+            TestTranscripts(),
+            roots = TranscriptRoots(vanilla = home),
+            accountOf = account,
+        )
         return SessionHistoryRoute(
             registry,
             source,
@@ -178,7 +184,7 @@ class SessionHistoryRouteTest {
             override fun read(): List<SessionRecord> = listOf(gone)
             override fun list(): SessionListing = SessionListing(listOf(gone))
         }
-        val sessions = SessionsRoutes(registry, TestTranscripts(), vanilla = home)
+        val sessions = SessionsRoutes(registry, TestTranscripts(), roots = TranscriptRoots(vanilla = home))
         val route = SessionHistoryRoute(
             registry,
             SessionHistorySource { SessionHistoryScan(entries) },

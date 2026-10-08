@@ -83,8 +83,8 @@ class SessionsConsoleRoutesTest {
         val routes = SessionsRoutes(
             registry(),
             TestTranscripts(),
+            roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
             activity = ActivitySource { stores },
-            vanilla = tmp.resolve(".claude"),
         )
         val rows = rowsOf(routes)
         val repo = tmp.toRealPath().resolve("work/repo").toString()
@@ -107,8 +107,8 @@ class SessionsConsoleRoutesTest {
         val routes = SessionsRoutes(
             registry(),
             TestTranscripts(),
+            roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
             activity = ActivitySource { stores },
-            vanilla = tmp.resolve(".claude"),
         )
         val alpha = routes.edgeRoutes.edges(ALPHA)
         assertEquals(HttpStatusCode.OK, alpha.status)
@@ -142,8 +142,8 @@ class SessionsConsoleRoutesTest {
         val routes = SessionsRoutes(
             registry(),
             TestTranscripts(),
+            roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
             activity = ActivitySource { stores },
-            vanilla = tmp.resolve(".claude"),
         )
         val rows = rowsOf(routes)
         assertEquals(json("""{"sent":0,"received":1,"last_at":${NOW - 5}}"""), rows.getValue(BETA)["edges"])
@@ -169,9 +169,8 @@ class SessionsConsoleRoutesTest {
         val routes = SessionsRoutes(
             registry(),
             handedTexts(asked),
-            heads = mapOf("codex" to head(tmp.resolve("codex"))),
+            roots = TranscriptRoots(mapOf("codex" to head(tmp.resolve("codex"))), vanilla = tmp.resolve(".claude")),
             activity = ActivitySource { stores },
-            vanilla = tmp.resolve(".claude"),
         )
         val edges = json(routes.edgeRoutes.edges(ALPHA).body)["edges"]!!.jsonArray.map { it.jsonObject }
         assertEquals(
@@ -233,7 +232,11 @@ class SessionsConsoleRoutesTest {
 
     @Test
     fun `unwired stores answer the edges routes with a named 503 and leave the row summary off`() {
-        val routes = SessionsRoutes(registry(), TestTranscripts(), vanilla = tmp.resolve(".claude"))
+        val routes = SessionsRoutes(
+            registry(),
+            TestTranscripts(),
+            roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
+        )
         assertEquals(HttpStatusCode.ServiceUnavailable, routes.edgeRoutes.edges(ALPHA).status)
         assertEquals(HttpStatusCode.ServiceUnavailable, routes.edgeRoutes.boardEdges().status)
         val rows = json(routes.sessionsJson())["sessions"]!!.jsonArray.map { it.jsonObject }
@@ -271,8 +274,7 @@ class SessionsConsoleRoutesTest {
         val routes = SessionsRoutes(
             registry(),
             transcripts,
-            heads = mapOf("codex" to head(own)),
-            vanilla = vanilla,
+            roots = TranscriptRoots(mapOf("codex" to head(own)), vanilla = vanilla),
         )
         val reply = routes.transcript(ALPHA, null, null)
         assertEquals(HttpStatusCode.OK, reply.status)
@@ -305,7 +307,11 @@ class SessionsConsoleRoutesTest {
         val transcripts = TestTranscripts(pages = { session, _, _, _ ->
             TranscriptLookup.Found(TranscriptPage(session, "/synthetic/transcript", messages, null, emptyMap()))
         })
-        val routes = SessionsRoutes(registry(), transcripts, vanilla = tmp.resolve(".claude"))
+        val routes = SessionsRoutes(
+            registry(),
+            transcripts,
+            roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
+        )
         val rows = json(routes.transcript(ALPHA, null, null).body).getValue("messages").jsonArray.map { it.jsonObject }
         assertEquals(
             listOf("first", "second", "first", "second"),
@@ -338,7 +344,11 @@ class SessionsConsoleRoutesTest {
             override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =
                 SentTexts(null, emptyMap(), ids)
         }
-        val routes = SessionsRoutes(registry(), transcripts, vanilla = tmp.resolve(".claude"))
+        val routes = SessionsRoutes(
+            registry(),
+            transcripts,
+            roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
+        )
         val newest = json(routes.transcript(ALPHA, null, 20, "end").body)
         assertEquals("512", newest["earlier"]!!.jsonPrimitive.content)
         assertEquals("newest", newest["messages"]!!.jsonArray.single().jsonObject["text"]!!.jsonPrimitive.content)

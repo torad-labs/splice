@@ -17,6 +17,7 @@ import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.ResumePlan
 import splice.client.transcript.TranscriptReader
 import splice.sessions.http.SessionsRoutes
+import splice.sessions.http.TranscriptRoots
 import splice.sessions.query.SessionHead
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
@@ -72,7 +73,11 @@ class ListMatchesResumeTest {
             "grok" to SessionHead(transcriptRoot = other),
             "kimi" to SessionHead(transcriptRoot = linked),
         )
-        val routes = SessionsRoutes(registry, TranscriptReader(), heads, vanilla = tree("vanilla"))
+        val routes = SessionsRoutes(
+            registry,
+            TranscriptReader(),
+            roots = TranscriptRoots(heads, vanilla = tree("vanilla")),
+        )
         return Json.parseToJsonElement(routes.sessionsJson()).jsonObject.getValue("sessions").jsonArray
             .map { it.jsonObject }
             .associate {

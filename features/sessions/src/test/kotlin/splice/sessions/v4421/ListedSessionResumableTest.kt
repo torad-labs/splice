@@ -18,6 +18,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.TestTranscripts
+import splice.sessions.http.TranscriptRoots
+import splice.sessions.http.TranscriptViewSettings
 import splice.sessions.query.SessionHead
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
@@ -86,7 +88,12 @@ class ListedSessionResumableTest {
         heads: Map<String, SessionHead>,
         ids: Array<String>,
         viewEnabled: SessionTranscriptViewEnabled = SessionTranscriptViewEnabled { true },
-    ) = SessionsRoutes(registry(*ids), onDisk(), heads, vanilla = tree("vanilla"), viewEnabled = viewEnabled)
+    ) = SessionsRoutes(
+        registry(*ids),
+        onDisk(),
+        roots = TranscriptRoots(heads, vanilla = tree("vanilla")),
+        settings = TranscriptViewSettings(viewEnabled),
+    )
 
     @Test
     fun `a session with a transcript resumes, and one that never wrote a file says it cannot`() {

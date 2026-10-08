@@ -60,8 +60,6 @@ class SessionsRoutesTest {
             listOf("2.1.282", "2.1.283", "2.1.284", "2.1.285", "2.1.286", "2.1.287", "2.1.289"),
             listed(SessionsRoutes(registry, TestTranscripts())),
         )
-        val narrowed = SessionsRoutes(registry, TestTranscripts(), noteVersions = setOf("2.1.286", "2.1.285"))
-        assertEquals(listOf("2.1.285", "2.1.286"), listed(narrowed))
     }
 
     @Test

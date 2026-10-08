@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.sessions.http.SessionsRoutes
+import splice.sessions.http.TranscriptRoots
+import splice.sessions.http.TranscriptViewSettings
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord
@@ -152,8 +154,8 @@ class SessionsActivityTest {
         val route = SessionsRoutes(
             registry,
             source,
-            vanilla = tmp.resolve("vanilla"),
-            viewEnabled = SessionTranscriptViewEnabled { enabled },
+            roots = TranscriptRoots(vanilla = tmp.resolve("vanilla")),
+            settings = TranscriptViewSettings(SessionTranscriptViewEnabled { enabled }),
         )
         val body = Json.parseToJsonElement(route.sessionsJson()).jsonObject
         return body.getValue("sessions").jsonArray.single().jsonObject

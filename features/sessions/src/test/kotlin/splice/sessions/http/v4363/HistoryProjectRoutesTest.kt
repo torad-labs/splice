@@ -18,6 +18,7 @@ import splice.sessions.http.SessionRepoNameOf
 import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TestTranscripts
+import splice.sessions.http.TranscriptRoots
 import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
@@ -43,7 +44,11 @@ class HistoryProjectRoutesTest {
         }
         val roots = listOf(SessionHistoryRoot(null, tmp.resolve(".claude")))
         val source = historySource(roots, id, nested, outside)
-        val sessions = SessionsRoutes(records, TestTranscripts(), vanilla = tmp.resolve(".claude"))
+        val sessions = SessionsRoutes(
+            records,
+            TestTranscripts(),
+            roots = TranscriptRoots(vanilla = tmp.resolve(".claude")),
+        )
         val repoOf = RepoOf { sessions.repoOf(it) }
         val historical = SessionHistoryRoute(
             records,

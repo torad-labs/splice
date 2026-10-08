@@ -14,6 +14,8 @@ import org.junit.jupiter.api.io.TempDir
 import splice.sessions.http.SessionHistoryRoute
 import splice.sessions.http.SessionHistoryRowOf
 import splice.sessions.http.SessionsRoutes
+import splice.sessions.http.TranscriptRoots
+import splice.sessions.http.TranscriptViewSettings
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord
@@ -88,8 +90,8 @@ class SessionTranscriptOffTest {
         val routes = SessionsRoutes(
             registry,
             source,
-            vanilla = home,
-            viewEnabled = SessionTranscriptViewEnabled { enabled },
+            roots = TranscriptRoots(vanilla = home),
+            settings = TranscriptViewSettings(SessionTranscriptViewEnabled { enabled }),
         )
         val reply = routes.transcript("session-id", null, 50)
         assertEquals(HttpStatusCode.OK, reply.status)

@@ -35,11 +35,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.core.config.ConfigService
-import splice.core.config.UserHome
 import splice.http.JsonReply
 import splice.sessions.note.PeerNoteAbi
-import splice.sessions.query.SessionHead
 import splice.sessions.registry.RepoOrigin
 import splice.sessions.registry.RepoResolver
 import splice.sessions.registry.RepoRoot
@@ -57,7 +54,6 @@ import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
-import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
 
 internal const val UNKNOWN_HEAD = "unknown head"
@@ -83,21 +79,13 @@ internal const val HEADLESS_NOTE = "headless `claude -p` runs never register; go
 public class SessionsRoutes(
     private val registry: SessionSource,
     private val transcripts: SessionTranscripts,
-    private val heads: Map<String, SessionHead> = emptyMap(),
-    private val config: ConfigService? = null,
+    private val roots: TranscriptRoots = TranscriptRoots(),
+    private val settings: SessionSettings = NoSessionSettings,
     private val activity: ActivitySource = ActivitySource { null },
-    /** The vanilla config root. Read only, never written (HEAD ISOLATION); a parameter so a test
-     *  never reads the operator's own ~/.claude. */
-    private val vanilla: Path = UserHome.dir().resolve(".claude"),
     /** V4-131: the team store the `team` key reads, per request. */
     private val teams: TeamSource = TeamSource { null },
     /** The session's own selected login, never the head-wide last selection. */
     private val accountOf: SessionAccountOf = SessionAccountOf { _, _ -> null },
-    private val viewEnabled: SessionTranscriptViewEnabled = SessionTranscriptViewEnabled {
-        config?.getConfig()?.transcriptView ?: true
-    },
-    /** The Claude Code versions a note is sent to (PeerNoteSocket refuses every other), listed so a page can refuse before anyone types. */
-    private val noteVersions: Set<String> = PeerNoteAbi.AUDITED_VERSIONS,
 ) {
     /** GET /api/sessions/{id}/edges and GET /api/sessions/edges. */
     public val edgeRoutes: ActivityRoutes = ActivityRoutes(registry, activity, SentTextSource(::sentTexts))
@@ -105,10 +93,12 @@ public class SessionsRoutes(
     /** One resolver per distinct root set: statuslineGitRoots is per-head overridable. */
     private val resolvers = ConcurrentHashMap<List<String>, RepoResolver>()
 
+    private val viewEnabled = SessionTranscriptViewEnabled(settings::transcriptView)
+
     /** V4-421: the head trees a resume searches, asked once per listing and held (ResumableSessions). */
     private val resumableSessions = ResumableSessions(
         transcripts,
-        heads.values.mapNotNull { it.transcriptRoot }.distinct(),
+        roots.headTrees(),
     )
 
     public fun sessionsJson(): String = buildJsonObject {
@@ -120,7 +110,8 @@ public class SessionsRoutes(
         val resumable = if (viewEnabled()) resumableSessions.among(ids) else Resumability(null)
         addEdgeState(this)
         put("note", HEADLESS_NOTE)
-        put("note_versions", buildJsonArray { noteVersions.sorted().forEach { add(JsonPrimitive(it)) } })
+        val noteVersions = PeerNoteAbi.AUDITED_VERSIONS.sorted()
+        put("note_versions", buildJsonArray { noteVersions.forEach { add(JsonPrimitive(it)) } })
         // An unreadable directory is not an empty one: the error rides beside the (empty) list.
         listing.error?.let { put("error", it) }
         put("sessions", buildJsonArray { listing.sessions.forEach { add(row(it, edges, resumable, accounts)) } })
@@ -131,13 +122,13 @@ public class SessionsRoutes(
     public fun transcript(sessionId: String, cursor: String?, limit: Int?, before: String? = null): JsonReply {
         if (!viewEnabled()) return SessionTranscriptOff.reply
         val head = registry.read().firstOrNull { it.sessionId == sessionId }?.head
-        val roots = treesFor(head)
+        val trees = roots.treesFor(head)
         val size = limit ?: DEFAULT_TRANSCRIPT_PAGE
         return when (
             val lookup = if (before == null) {
-                transcripts.page(sessionId, roots, cursor, size)
+                transcripts.page(sessionId, trees, cursor, size)
             } else {
-                transcripts.pageBefore(sessionId, roots, before.takeUnless { it == FROM_END }, size)
+                transcripts.pageBefore(sessionId, trees, before.takeUnless { it == FROM_END }, size)
             }
         ) {
             is TranscriptLookup.Found -> JsonReply(HttpStatusCode.OK, pageJson(lookup.page, before != null))
@@ -182,7 +173,7 @@ public class SessionsRoutes(
         put("pid", s.pid)
         put("session_id", s.sessionId)
         put("name", if (viewEnabled()) s.name else null)
-        put("last", SessionActivity.last(s.sessionId, s.cwd, treesFor(s.head), transcripts, viewEnabled))
+        put("last", SessionActivity.last(s.sessionId, s.cwd, roots.treesFor(s.head), transcripts, viewEnabled))
         put("kind", s.kind)
         put("version", s.version)
         put("cwd", s.cwd)
@@ -224,7 +215,7 @@ public class SessionsRoutes(
     /** V4-131: a sender's SendMessage texts, from the transcript trees this route already searches. */
     public fun sentTexts(session: String, head: String?, ids: Set<String>): SentTexts {
         if (!viewEnabled()) return SentTexts(null, emptyMap(), ids)
-        return transcripts.sentTexts(session, treesFor(head), ids)
+        return transcripts.sentTexts(session, roots.treesFor(head), ids)
     }
 
     private fun teamOf(session: String): String? =
@@ -238,17 +229,7 @@ public class SessionsRoutes(
     }
 
     private fun resolverFor(head: String?): RepoResolver {
-        val roots = config?.getConfig(head)?.statuslineGitRoots.orEmpty()
-        return resolvers.computeIfAbsent(roots) { RepoResolver(it) }
-    }
-
-    /** The session's head tree, the vanilla tree, then every other head's (see the header). */
-    private fun treesFor(head: String?): List<Path> {
-        val own = head?.let { heads[it]?.transcriptRoot }
-        val others = heads.values.mapNotNull { it.transcriptRoot }.filter { it != own }
-        // listOf(vanilla), never `+ vanilla`: a Path is an Iterable of its own name elements, so
-        // List<Path> + Path appends each component as a relative path of its own.
-        return (listOfNotNull(own) + listOf(vanilla) + others).distinct()
+        return resolvers.computeIfAbsent(settings.gitRoots(head)) { RepoResolver(it) }
     }
 
     private fun pageJson(page: TranscriptPage, fromEnd: Boolean): String = buildJsonObject {

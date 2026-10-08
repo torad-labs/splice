@@ -15,10 +15,12 @@ import splice.core.config.ConfigService
 import splice.core.config.UserHome
 import splice.core.topology.AuthKindRegistry
 import splice.sessions.http.ActivitySource
+import splice.sessions.http.ConfigSessionSettings
 import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionAccountState
 import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.TeamSource
+import splice.sessions.http.TranscriptRoots
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
 import splice.sessions.transcript.SessionHistoryRoot
@@ -61,8 +63,8 @@ internal class SessionsWiring(
         SessionsRoutes(
             it,
             TranscriptReader(),
-            sessionHeads,
-            config,
+            TranscriptRoots(sessionHeads),
+            ConfigSessionSettings(config),
             ActivitySource { ports.activity },
             teams = TeamSource { ports.teams },
             accountOf = sessionAccounts,

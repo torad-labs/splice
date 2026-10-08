@@ -68,8 +68,20 @@ const dir = (prefix: string): string => {
   return path;
 };
 
+// Fixtures read no ambient git config: not the operator's global hooks, filters or identity, and not the system's.
+// Git's own switches point at an empty file and no system config for this run, and are put back after it.
+const ambientGit = { GIT_CONFIG_GLOBAL: Bun.env.GIT_CONFIG_GLOBAL, GIT_CONFIG_NOSYSTEM: Bun.env.GIT_CONFIG_NOSYSTEM };
+const EMPTY_GIT_CONFIG = join(dir("splice-hook-config-"), "gitconfig");
+writeFileSync(EMPTY_GIT_CONFIG, "");
+Bun.env.GIT_CONFIG_GLOBAL = EMPTY_GIT_CONFIG;
+Bun.env.GIT_CONFIG_NOSYSTEM = "1";
+
 afterAll(() => {
   for (const path of scratch) rmSync(path, { recursive: true, force: true });
+  for (const [key, value] of Object.entries(ambientGit)) {
+    if (value === undefined) delete Bun.env[key];
+    else Bun.env[key] = value;
+  }
 });
 
 function git(cwd: string, args: readonly string[]): void {
@@ -77,9 +89,9 @@ function git(cwd: string, args: readonly string[]): void {
   if (proc.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${proc.stderr.toString()}`);
 }
 
-/** A commit with no hooks, identity or signing from the machine, so the test's commit is the only thing it makes. */
+/** A commit with the fixture's own identity and no signing. It runs the hooks the fixture has, and no others. */
 function commit(root: string, subject: string): void {
-  git(root, ["-c", "user.name=test", "-c", "user.email=test@test", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", subject]);
+  git(root, ["-c", "user.name=test", "-c", "user.email=test@test", "-c", "commit.gpgsign=false", "commit", "-q", "-m", subject]);
 }
 
 function head(root: string): string {
@@ -486,6 +498,16 @@ describe("the gradle output's failing tasks and named files", () => {
       { path: ":core", dir: "core" },
       { path: ":features:turns", dir: "features/turns" },
     ]);
+  });
+});
+
+describe("a fixture runs the hooks it has, and reads no ambient git config", () => {
+  test("RED: a hook the fixture installs refuses the fixture's commit: no hook path is overridden", () => {
+    const root = wallsRepo();
+    writeFileSync(join(root, ".git", "hooks", "pre-commit"), "#!/bin/sh\necho fixture-hook >&2\nexit 1\n", { mode: 0o755 });
+    writeFile(root, "docs/README.md", "docs\n");
+    git(root, ["add", "docs/README.md"]);
+    expect(() => commit(root, "chore(test): hooked")).toThrow("fixture-hook");
   });
 });
 

@@ -22,8 +22,8 @@
 #
 # THE ONE IGNORE, stated rather than hidden: an injected process must name its concrete runtime
 # somewhere. ProcessRuntime.kt is that one file and does nothing else, so the exemption cannot grow
-# to cover logic. Same shape as kt-no-system-getenv's `core/**/config/**` and kt-no-println's inline
-# AsyncFileIo carve-out: convert every site, exempt exactly the edge, say so here.
+# to cover logic. Same shape as kt-no-println's inline AsyncFileIo carve-out: convert every site,
+# exempt exactly the edge, say so here.
 #
 # PROMOTED 2026-08-16 (HD-19) from the dormant .rules/kotlin/ast-grep pack, which sgconfig.yml
 # references from nowhere and so had never run. Red-proven against a synthetic violation BEFORE the

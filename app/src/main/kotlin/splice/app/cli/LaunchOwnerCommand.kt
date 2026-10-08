@@ -9,7 +9,7 @@ import java.net.URI
 
 /** The shim's non-secret declaration, written by a child JVM immediately before its parent execs. */
 internal class LaunchOwnerCommand(private val args: List<String>) : Command() {
-    override fun run(): Int {
+    override suspend fun run(): Int {
         val (pidText, selector, baseUrl) = args
         val (kind, origin) = args.takeLast(2)
         val pid = pidText.toLong()

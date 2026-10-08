@@ -61,7 +61,7 @@ public fun main(args: Array<String>) {
     when (args.firstOrNull()) {
         null, "daemon" -> DaemonProcess(args.toList()).runDaemon()
         "start" -> LifecycleWiring.startThroughUnit()?.let(::exitProcess) ?: DaemonProcess(args.toList()).runDaemon()
-        else -> exitProcess(splice.app.cli.Cli().runCli(args))
+        else -> exitProcess(CliProcess(args).exitCode())
     }
 }
 
@@ -328,3 +328,10 @@ internal const val TEARDOWN_TAIL_GRACE_MS = 2_000L
 // One rolled generation at 64MB caps daemon.log disk at ~128MB — plenty of tail history, bounded.
 // Held here so DaemonProcess.persistentLogger keeps the same default the tests pass past.
 private const val MAX_LOG_BYTES = 64L * 1024 * 1024
+
+/** The CLI one-shot's process. The CLI is suspend all the way down; this is the one place that blocks on it. */
+internal class CliProcess(private val args: Array<String>) {
+    fun exitCode(): Int = blocking()
+
+    private fun blocking(): Int = runBlocking { splice.app.cli.Cli().runCli(args) }
+}

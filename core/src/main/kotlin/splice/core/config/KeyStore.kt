@@ -5,8 +5,8 @@
 // `splice key set`, `claude-openrouter login`, or a head's token-capture hook writes here once and every
 // later `splice restart` picks the key up from any shell. Flat `NAME = "value"` subset of TOML —
 // we are the only writer, so a tolerant line parser is enough and core stays ktoml-free.
-// Lives in core/config: System.getenv is walled to this package (kt-no-system-getenv) and the
-// path/env readers stay injectable for hermetic tests (StatePaths idiom — JVM cannot setenv).
+// Lives in core/config beside the layered config it feeds; the path/env readers stay injectable for
+// hermetic tests (StatePaths idiom — JVM cannot setenv), since kt-no-system-getenv walls every direct read.
 // Writes route through SecureFile.writeAtomic0600 — the single credential-write primitive (#924).
 package splice.core.config
 

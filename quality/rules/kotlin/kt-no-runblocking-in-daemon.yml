@@ -1,13 +1,12 @@
-# runBlocking inside daemon code wedges an event-loop thread; it is legal only at
-# process entry (Main.kt) and in CLI one-shots.
+# runBlocking inside daemon code wedges an event-loop thread; it is legal only at the
+# process entry, the composition root Main.kt, which is the one file this rule exempts.
 id: kt-no-runblocking-in-daemon
 language: kotlin
 severity: error
-message: "runBlocking only at process entry (app Main.kt / cli): daemon code stays suspend all the way."
+message: "runBlocking only at the process entry (app Main.kt, the composition root): everything else stays suspend."
 files:
   - "**/src/main/**/*.kt"
 ignores:
-  - app/src/main/kotlin/**/Main.kt
-  - app/src/main/kotlin/**/cli/**
+  - app/src/main/kotlin/splice/app/Main.kt
 rule:
   pattern: runBlocking

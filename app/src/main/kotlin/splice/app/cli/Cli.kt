@@ -1,6 +1,6 @@
-// NEW: splice CLI dispatch (P5-CLI grows this). In cli/ so the walls exempt its runBlocking use
-// (admin one-shots, not daemon hot path). :app is exempt from no-println — a terminal tool writes
-// to stdout. Verbs live in Command.kt; doctor's checks in DoctorCommand.kt.
+// NEW: splice CLI dispatch (P5-CLI grows this). Suspend all the way down: Main.kt's process entry is the
+// one runBlocking that drives it. :app is exempt from no-println — a terminal tool writes to stdout.
+// Verbs live in Command.kt; doctor's checks in DoctorCommand.kt.
 package splice.app.cli
 
 import splice.configuration.add.AddRefused
@@ -13,7 +13,7 @@ public class Cli {
 
     private val parser = CommandParser()
 
-    public fun runCli(args: Array<String>): Int {
+    public suspend fun runCli(args: Array<String>): Int {
         val help = parser.help(args)
         if (help != null) {
             println(help)

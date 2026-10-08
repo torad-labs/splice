@@ -8,7 +8,7 @@ import java.nio.file.Path
 
 /** Internal hook protocol: a machine-readable outcome, never a provider sign-in itself. */
 internal class PendingLoginCommand(private val args: List<String>) : Command() {
-    override fun run(): Int {
+    override suspend fun run(): Int {
         val outcome = PendingLogins(LaunchOwners(StatePaths().stateDir)).cancel(Path.of(args.first()), args.drop(1))
         println(outcome.name)
         return 0

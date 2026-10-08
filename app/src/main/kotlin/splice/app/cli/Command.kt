@@ -3,7 +3,6 @@
 // run() is total — adding a verb is a compile error until every site handles it.
 package splice.app.cli
 
-import kotlinx.coroutines.runBlocking
 import splice.app.AddWiring
 import splice.app.DoctorWiring
 import splice.app.InstallWiring
@@ -34,54 +33,60 @@ import splice.topology.TopologyLoader
  *  of the same name (Kotlin style law, 2026-08-15: main sources carry no top-level functions), so
  *  every arm below is the old line plus a receiver. */
 public sealed class Command {
-    public abstract fun run(): Int
+    public abstract suspend fun run(): Int
 
     public data class Doctor(val args: List<String> = emptyList()) : Command() {
-        override fun run(): Int = outcomeExitCode(DoctorWiring.command().doctor(args, EnvReader(System::getenv)))
+        override suspend fun run(): Int = outcomeExitCode(
+            DoctorWiring.command().doctor(args, EnvReader(System::getenv)),
+        )
     }
     public data object Version : Command() {
-        override fun run(): Int = success { println("splice $GATEWAY_VERSION") }
+        override suspend fun run(): Int = success { println("splice $GATEWAY_VERSION") }
     }
-    public data object ShimVersion : Command() { override fun run(): Int = success { println(SHIM_VERSION) } }
+    public data object ShimVersion : Command() { override suspend fun run(): Int = success { println(SHIM_VERSION) } }
     public data object Init : Command() {
-        override fun run(): Int = success { InstallWiring.init(EnvReader(System::getenv)) }
+        override suspend fun run(): Int = success { InstallWiring.init(EnvReader(System::getenv)) }
     }
     public data class Install(val target: String?) : Command() {
-        override fun run(): Int = outcomeExitCode(InstallWiring.command().install(target, EnvReader(System::getenv)))
+        override suspend fun run(): Int = outcomeExitCode(
+            InstallWiring.command().install(target, EnvReader(System::getenv)),
+        )
     }
     public data class Uninstall(val target: String?) : Command() {
-        override fun run(): Int = outcomeExitCode(InstallWiring.command().uninstall(target, EnvReader(System::getenv)))
+        override suspend fun run(): Int = outcomeExitCode(
+            InstallWiring.command().uninstall(target, EnvReader(System::getenv)),
+        )
     }
 
     /** v0.4.0 (FEATURES.md §11): `--label <name>` signs in a further account of the head's kind; on a
      *  Claude head it saves or switches the head's login, and `--discard` lets a switch drop a login
      *  saved under no label (V4-276). */
     public data class Login(val head: String?, val label: String? = null, val discard: Boolean = false) : Command() {
-        override fun run(): Int = outcomeExitCode(runBlocking { LoginCommand().login(head, label, discard) })
+        override suspend fun run(): Int = outcomeExitCode(LoginCommand().login(head, label, discard))
     }
     public data object Setup : Command() {
-        override fun run(): Int = outcomeExitCode(runBlocking { SetupCommand().setup() })
+        override suspend fun run(): Int = outcomeExitCode(SetupCommand().setup())
     }
 
     /** v0.4.0 (FEATURES.md §1): `splice add <profile> [...]` — a second provider without editing TOML. */
     public data class Add(val args: List<String>) : Command() {
-        override fun run(): Int = outcomeExitCode(runBlocking { AddWiring.add().add(args, EnvReader(System::getenv)) })
+        override suspend fun run(): Int = outcomeExitCode(AddWiring.add().add(args, EnvReader(System::getenv)))
     }
 
     /** V4-34: `splice add-model` — pick OpenRouter catalog rows through the prompt toolkit. */
     public data object AddModel : Command() {
-        override fun run(): Int = outcomeExitCode(AddWiring.addModel().add(TopologyLoader.configPath()))
+        override suspend fun run(): Int = outcomeExitCode(AddWiring.addModel().add(TopologyLoader.configPath()))
     }
 
     /** 2026-09-22: `splice models [provider]` — what each provider publishes, against splice.toml.
      *  Nonzero when a declared row is over a published ceiling or is no longer served. */
     public data class Models(val args: List<String> = emptyList()) : Command() {
-        override fun run(): Int = outcomeExitCode(ModelsWiring.run(args))
+        override suspend fun run(): Int = outcomeExitCode(ModelsWiring.run(args))
     }
 
     /** v0.4.0 (FEATURES.md §5): `splice upgrade [--to vX] [--now] [--rollback]`. */
     public data class Upgrade(val args: List<String>) : Command() {
-        override fun run(): Int {
+        override suspend fun run(): Int {
             val verb = UpgradeVerb(
                 TerminalOutput(::println),
                 TerminalOutput(System.err::println),
@@ -93,34 +98,34 @@ public sealed class Command {
         }
     }
 
-    public data object Status : Command() { override fun run(): Int = success { StatusCommand().status() } }
+    public data object Status : Command() { override suspend fun run(): Int = success { StatusCommand().status() } }
 
     /** `splice restart [--now]`: waits for compactions in flight unless [now] (V4-216). */
     public data class Restart(val now: Boolean = false) : Command() {
-        override fun run(): Int = outcomeExitCode(LifecycleWiring.restart(waitForCompactions = !now))
+        override suspend fun run(): Int = outcomeExitCode(LifecycleWiring.restart(waitForCompactions = !now))
     }
     public data class Key(val args: List<String>) : Command() {
-        override fun run(): Int = outcomeExitCode(KeyCommand().key(args))
+        override suspend fun run(): Int = outcomeExitCode(KeyCommand().key(args))
     }
     public data class Logs(val args: List<String>) : Command() {
-        override fun run(): Int {
+        override suspend fun run(): Int {
             val verb = LogsCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
             return outcomeExitCode(verb.logs(args, EnvReader(System::getenv)))
         }
     }
     public data object Sessions : Command() {
-        override fun run(): Int {
+        override suspend fun run(): Int {
             val verb = SessionsCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
             return outcomeExitCode(verb.sessions(EnvReader(System::getenv)))
         }
     }
     public data class Perf(val args: List<String>) : Command() {
-        override fun run(): Int = outcomeExitCode(PerfWiring.command().perf(args, EnvReader(System::getenv)))
+        override suspend fun run(): Int = outcomeExitCode(PerfWiring.command().perf(args, EnvReader(System::getenv)))
     }
 
     /** V4-173: the upstream request bodies a head sent, when its operator opted in. */
     public data class Wire(val args: List<String>) : Command() {
-        override fun run(): Int {
+        override suspend fun run(): Int {
             val verb = WireCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
             return outcomeExitCode(verb.wire(args, EnvReader(System::getenv)))
         }
@@ -128,7 +133,7 @@ public sealed class Command {
 
     /** V4-174: a head's full request/response trace, from its day files, when its operator opted in. */
     public data class Trace(val args: List<String>) : Command() {
-        override fun run(): Int = outcomeExitCode(TraceWiring.run(args))
+        override suspend fun run(): Int = outcomeExitCode(TraceWiring.run(args))
     }
 
     /** Verb outcome -> process exit code. Inherited by every case above, which is why each `run()`

@@ -1,8 +1,8 @@
 // NEW: install-target paths (OSS-D R5). install.sh honors SPLICE_BIN_DIR / SPLICE_SHARE_DIR;
 // the jar side (`splice install`) must honor the SAME overrides or the two installers disagree
 // about where wrappers and the launch shim land (the shim ends up where the jar never looks).
-// Lives in core/config because System.getenv is walled to this package (kt-no-system-getenv);
-// the reader stays injectable for hermetic tests (StatePaths idiom — JVM cannot setenv).
+// Lives in core/config beside the layered config it feeds; the reader stays injectable for hermetic
+// tests (StatePaths idiom — JVM cannot setenv), since kt-no-system-getenv walls every direct read.
 package splice.core.config
 
 import splice.core.util.EnvReader

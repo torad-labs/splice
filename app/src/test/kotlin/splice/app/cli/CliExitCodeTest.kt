@@ -1,5 +1,6 @@
 package splice.app.cli
 
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -16,7 +17,7 @@ class CliExitCodeTest {
 
     @Test
     fun `unknown commands return usage exit code`() {
-        assertEquals(2, Cli().runCli(arrayOf("definitely-not-a-command")))
+        assertEquals(2, runCli(arrayOf("definitely-not-a-command")))
     }
 
     @Test
@@ -49,7 +50,7 @@ class CliExitCodeTest {
 
     @Test
     fun `an unknown verb with help remains a usage error`() {
-        val err = stderrOf { assertEquals(2, Cli().runCli(arrayOf("definitely-not-a-command", "--help"))) }
+        val err = stderrOf { assertEquals(2, runCli(arrayOf("definitely-not-a-command", "--help"))) }
         assertTrue(err.startsWith("usage: splice ["), err)
     }
 
@@ -61,7 +62,7 @@ class CliExitCodeTest {
         val err: String
         System.setOut(java.io.PrintStream(out))
         try {
-            err = stderrOf { code = Cli().runCli(args) }
+            err = stderrOf { code = runCli(args) }
         } finally {
             System.setOut(saved)
         }
@@ -92,6 +93,8 @@ class CliExitCodeTest {
     // config line — which legally carries credential-like extra_headers values (the DR-92 class).
     // ktoml's TomlDecodingException extends SerializationException, so the secret-bearing arm
     // throws that supertype with the sentinel in the message; SafeFailureText must withhold it.
+    private fun runCli(args: Array<String>): Int = runBlocking { Cli().runCli(args) }
+
     private fun stderrOf(body: () -> Unit): String {
         val err = java.io.ByteArrayOutputStream()
         val saved = System.err
@@ -164,7 +167,7 @@ class CliExitCodeTest {
                 TopologyLoader.configPath(),
                 "the redirected config path must be the one the verb reads",
             )
-            val err = stderrOf { code = Cli().runCli(arrayOf("status")) }
+            val err = stderrOf { code = runCli(arrayOf("status")) }
             assertEquals(1, code, "a malformed config must exit nonzero THROUGH runCli, not escape it")
             assertTrue(err.startsWith("splice: "), "one safe line from the boundary, was: $err")
             assertFalse(err.contains("\tat "), "no stack trace may reach the operator: $err")

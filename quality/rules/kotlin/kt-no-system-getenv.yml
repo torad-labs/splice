@@ -28,11 +28,9 @@
 id: kt-no-system-getenv
 language: kotlin
 severity: error
-message: "System.getenv only inside core/config — everything else reads the layered ConfigService."
+message: "System.getenv is never called in production code — read the layered ConfigService or an injected EnvReader."
 files:
   - "**/src/main/**/*.kt"
-ignores:
-  - core/src/main/kotlin/**/config/**
 rule:
   any:
     - pattern: System.getenv($$$A)

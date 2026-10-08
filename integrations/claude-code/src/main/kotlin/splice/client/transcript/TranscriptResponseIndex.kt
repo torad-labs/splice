@@ -1,10 +1,11 @@
 // NEW: response offsets and exact preceding-message counts, indexed without decoding historical payloads.
 package splice.client.transcript
 
+import splice.core.util.FileIdentity
+import splice.core.util.FileStat
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptReadBudget
 import splice.sessions.transcript.TranscriptRole
-import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 
@@ -41,7 +42,7 @@ internal class TranscriptResponseIndex(private val opener: TranscriptOpener) {
     }
 }
 
-private data class ResponseStamp(val size: Long, val modified: FileTime, val identity: Any?)
+private data class ResponseStamp(val size: Long, val modified: FileTime, val identity: FileIdentity?)
 
 private class ResponseFileIndex(private val opener: TranscriptOpener) {
     private var stamp: ResponseStamp? = null
@@ -52,11 +53,11 @@ private class ResponseFileIndex(private val opener: TranscriptOpener) {
     private var dropped = false
 
     private fun stamp(file: Path): ResponseStamp {
-        val attributes = Files.readAttributes(file, "basic:size,lastModifiedTime,fileKey")
+        val attributes = FileStat(file, "size,lastModifiedTime")
         return ResponseStamp(
-            attributes.getValue("size") as Long,
-            attributes.getValue("lastModifiedTime") as FileTime,
-            attributes["fileKey"],
+            attributes["size"] as Long,
+            attributes["lastModifiedTime"] as FileTime,
+            attributes.identity,
         )
     }
 

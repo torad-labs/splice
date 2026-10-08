@@ -3,9 +3,10 @@
 // a replaced, shrunk or same-size rewritten file starts over. A boundary guard detects truncate-and-grow.
 package splice.client.transcript
 
+import splice.core.util.FileIdentity
+import splice.core.util.FileStat
 import splice.sessions.transcript.SentTexts
 import java.io.ByteArrayOutputStream
-import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 
@@ -46,11 +47,11 @@ internal class SentTextLedger(
     }
 
     private fun stamp(file: Path): Stamp {
-        val attrs = Files.readAttributes(file, "basic:size,lastModifiedTime,fileKey")
+        val attrs = FileStat(file, "size,lastModifiedTime")
         return Stamp(
-            attrs.getValue("size") as Long,
-            attrs.getValue("lastModifiedTime") as FileTime,
-            attrs["fileKey"],
+            attrs["size"] as Long,
+            attrs["lastModifiedTime"] as FileTime,
+            attrs.identity,
         )
     }
 
@@ -83,7 +84,7 @@ internal class SentTextLedger(
             input.readNBytes(old.tail.size).contentEquals(old.tail)
         }
 
-    private data class Stamp(val size: Long, val modified: FileTime, val identity: Any?)
+    private data class Stamp(val size: Long, val modified: FileTime, val identity: FileIdentity?)
 
     private data class Held(
         val stamp: Stamp,

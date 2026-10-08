@@ -1,9 +1,10 @@
 // NEW: V4-444 — bounded positioned tail reads and immutable per-file activity snapshots.
 package splice.client.transcript
 
+import splice.core.util.FileIdentity
+import splice.core.util.FileStat
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptRole
-import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 
@@ -38,8 +39,8 @@ internal class TranscriptTail(
     }
 
     private fun stamp(file: Path): Stamp {
-        val attrs = Files.readAttributes(file, "basic:size,lastModifiedTime,fileKey")
-        return Stamp(attrs.getValue("size") as Long, attrs.getValue("lastModifiedTime") as FileTime, attrs["fileKey"])
+        val attrs = FileStat(file, "size,lastModifiedTime")
+        return Stamp(attrs["size"] as Long, attrs["lastModifiedTime"] as FileTime, attrs.identity)
     }
 
     /** Windows grow backwards, with no overlapping reads. A reply whose start lies outside the
@@ -79,6 +80,6 @@ internal class TranscriptTail(
         return bytes
     }
 
-    private data class Stamp(val size: Long, val modified: FileTime, val identity: Any?)
+    private data class Stamp(val size: Long, val modified: FileTime, val identity: FileIdentity?)
     private data class Held(val stamp: Stamp, val message: TranscriptMessage?)
 }

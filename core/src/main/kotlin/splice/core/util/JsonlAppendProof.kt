@@ -11,7 +11,7 @@ private const val APPEND_PROOF_PATHS = 256
 
 /** Filesystem identity and stamps; unsupported change-time providers never authorize the fast path. */
 public data class JsonlFileVersion(
-    public val key: Any?,
+    public val key: FileIdentity?,
     public val created: FileTime,
     public val modified: FileTime,
     public val changed: FileTime?,
@@ -47,14 +47,14 @@ public object JsonlAppendProof {
     private val receipts = LinkedHashMap<Path, JsonlAppendReceipt>()
 
     public fun version(file: Path): JsonlFileVersion {
-        val attributes = Files.readAttributes(file, "basic:fileKey,isRegularFile,creationTime,lastModifiedTime,size")
+        val attributes = FileStat(file, "isRegularFile,creationTime,lastModifiedTime,size")
         val changed = if ("unix" in file.fileSystem.supportedFileAttributeViews()) {
             Files.getAttribute(file, "unix:ctime") as? FileTime
         } else {
             null
         }
         return JsonlFileVersion(
-            attributes["fileKey"],
+            attributes.identity,
             attributes["creationTime"] as? FileTime ?: error("missing creation time"),
             attributes["lastModifiedTime"] as? FileTime ?: error("missing modification time"),
             changed,

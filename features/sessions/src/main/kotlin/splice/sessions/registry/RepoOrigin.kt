@@ -2,6 +2,8 @@
 package splice.sessions.registry
 
 import splice.core.util.Cancellables
+import splice.core.util.FileIdentity
+import splice.core.util.FileStat
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -14,7 +16,7 @@ private const val ORIGIN_CACHE_LIMIT = 64
 private const val MAX_CONFIG_BYTES = 1_048_576L
 private val ORIGIN_SECTION = Regex("""^\[(?i:remote)\s+"origin"\]\s*(?:[#;].*)?$""")
 private val ORIGIN_URL = Regex("""^(?i:url)\s*=\s*(.*)$""")
-private data class OriginStamp(val key: Any?, val bytes: Long, val modified: Long)
+private data class OriginStamp(val key: FileIdentity?, val bytes: Long, val modified: Long)
 private data class CachedOrigin(val stamp: OriginStamp, val remote: String?)
 
 /** Reads only the known root's local git config. The cache holds sanitized values, never userinfo. */
@@ -28,11 +30,11 @@ internal object RepoOrigin {
     private fun read(root: Path): String? {
         val config = configAt(root)
         if (!Files.isRegularFile(config)) return null
-        val attrs = Files.readAttributes(config, "basic:fileKey,size,lastModifiedTime")
+        val attrs = FileStat(config, "size,lastModifiedTime")
         val stamp = OriginStamp(
-            attrs["fileKey"],
-            attrs.getValue("size") as Long,
-            (attrs.getValue("lastModifiedTime") as FileTime).toMillis(),
+            attrs.identity,
+            attrs["size"] as Long,
+            (attrs["lastModifiedTime"] as FileTime).toMillis(),
         )
         synchronized(cache) { cache[config]?.takeIf { it.stamp == stamp }?.let { return it.remote } }
         val remote = if (stamp.bytes <= MAX_CONFIG_BYTES) origin(Files.readAllLines(config)) else null

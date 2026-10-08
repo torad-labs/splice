@@ -2,24 +2,31 @@
 // exec; `hook install` writes those shims. The logic lives here, versioned and bun-tested, so each shim is
 // one line.
 //
-// WHAT A FAILURE BLOCKS. Gradle builds the worktree, and a shared checkout always holds other seats' edits, so a
-// compile or detekt failure decides by the file it names:
-//   - a file this commit changes, or a file the worktree holds clean, blocks;
-//   - a file another seat has uncommitted edits in is printed and does not block.
+// A RED CHECK BLOCKS. A gradle run that exits nonzero stops the commit or the push. Nothing is waived by the
+// file a failure names or by who holds that file: the output names each failing file and the seat that holds it
+// (.git/seat-locks), so the blocked seat knows whom to message. The one exception is a COLLISION, a failure
+// another gradle run in this checkout leaves behind (see isCollision). A collision reruns the same tasks once;
+// a red after the rerun, or a second collision, fails.
 //
-// PRE-COMMIT judges the COMMIT. Its paths come from the index git is writing: `git diff --cached` honours
-// GIT_INDEX_FILE, which git sets for `git commit -- <paths>`. Every wall reads each staged blob from that index.
-// Gradle compiles and detekts only the modules that own the commit's files, main and test, so a commit's cost
-// follows its own modules. A break a commit makes in a clean caller in another module is not seen here: the
-// pre-push tier compiles every module and judges it.
+// ONE SET OF BYTES. The walls read the index and gradle reads the worktree. `git commit -- <paths>` writes the
+// worktree's bytes, so the two agree; a path whose index blob is not what `git add` would store from the
+// worktree is refused, because the gate would judge bytes the commit does not hold.
+//
+// EVERY KOTLIN FILE HAS A CHECK. A Kotlin path maps to the gradle tasks that compile it: its module (compile,
+// test compile, detekt), build-logic (its compile), or a root script (the configuration pass, `help`, which
+// compiles every script of the build). A Kotlin path that maps to no check refuses the commit.
+//
+// PRE-COMMIT judges the COMMIT. Its paths come from the index git is writing (`git diff --cached` honours
+// GIT_INDEX_FILE, which git sets for `git commit -- <paths>`). Gradle runs only the checks those paths map to, so a
+// commit's cost follows its own modules. A break a commit makes in a clean caller in another module is not seen
+// here: the pre-push tier compiles every module.
 //
 // PRE-PUSH judges the WORKTREE, and the verdict line says so. The worktree must be the pushed tip's HEAD, or the
-// push is refused. It lints the tip's subject, then runs gradle gateOfRecord (every module compiled, every ladder
-// row, with up-to-date checks and no clean), through the slot. A compile failure is judged by the file it names,
-// as above; any other red task blocks.
+// push is refused. It lints the tip's subject, then runs gradle gateOfRecord (every module, every ladder row,
+// up-to-date checks, no clean) through the slot.
 //
-// NOTHING HERE IS SKIPPABLE. There is no environment switch and no flag. `--no-verify` is the only bypass,
-// and it is forbidden to seats.
+// NOTHING HERE IS SKIPPABLE. There is no environment switch and no flag. `--no-verify` is the only bypass, and
+// it is forbidden to seats.
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -42,9 +49,21 @@ export const PRE_PUSH_GATE_TASKS = GATE_OF_RECORD_TASKS.filter((task) => task !=
 
 const ZERO_SHA = /^0+$/;
 const KOTLIN = /\.kts?$/;
-const COMPILE_TASK = /:(compileKotlin|compileTestKotlin)$/;
+/** A root script: configuration evaluates it, so the `help` task checks it. */
+const ROOT_SCRIPT = /^[^/]+\.gradle\.kts$/;
+const BUILD_LOGIC_TASKS = ["build-logic:compileKotlin"];
+const ROOT_SCRIPT_TASKS = ["help"];
 const FAILED_TASK = /^> Task (\S+) FAILED$/gm;
 const LINES_SHOWN_ON_FAILURE = 60;
+const CLASS_DIRS = ["kotlin/main", "kotlin/test", "kotlin/testFixtures", "java/main", "java/test", "java/testFixtures"];
+
+/** A test task that died reading the results another run is writing (`java.io.EOFException`, or a results file a
+ *  parallel run removed). Gradle prints no path for EOF without --stacktrace, so the task is what the rule names. */
+const TEST_RESULT_COLLISION =
+  /Execution failed for task '(:[^']*test[^']*)'[^\n]*\n> (?:java\.io\.EOFException|java\.nio\.file\.NoSuchFileException: [^\n]*test-results\/[^\n]*)/i;
+/** Gradle's shared-file lock, held by another gradle process in the same checkout. */
+const LOCK_TIMEOUT = /Timeout waiting to lock/;
+const MISSING_CLASS = /NoClassDefFoundError: ([\w$./]+)/g;
 
 export interface Finding {
   severity?: string;
@@ -56,6 +75,26 @@ export interface Finding {
 export interface GradleModule {
   readonly path: string;
   readonly dir: string;
+}
+
+export interface GateRun {
+  readonly status: number;
+  readonly output: string;
+}
+
+/** Runs gradle tasks and returns their exit and output. The default runs them through the gate's slot. */
+export type GateRunner = (tasks: readonly string[]) => Promise<GateRun>;
+
+export interface HookDeps {
+  readonly gate?: GateRunner;
+  readonly openRun?: (head: string) => ReturnType<typeof acquireRunSentinel>;
+}
+
+export interface Judged extends GateRun {
+  /** The first run collided and the tasks ran once more. */
+  readonly reran: boolean;
+  /** The rerun collided too. */
+  readonly collidedAgain: boolean;
 }
 
 function git(root: string, args: readonly string[]): { status: number; stdout: Buffer; stderr: string } {
@@ -87,7 +126,28 @@ export function dirtyPaths(root: string): string[] {
   return [...new Set([...tracked, ...untracked])].sort();
 }
 
-/** A staged blob, exactly as the commit holds it. The worktree is never read for a wall. */
+/** The staged paths whose index blob is not the blob `git add` would store from the worktree file. A staged path
+ *  missing from the worktree differs too. */
+export function unequalBytes(root: string, staged: readonly string[]): string[] {
+  if (staged.length === 0) return [];
+  const indexed = new Map<string, string>();
+  for (const entry of gitPaths(root, ["ls-files", "-s", "-z"])) {
+    const tab = entry.indexOf("\t");
+    const fields = entry.slice(0, tab).split(" ");
+    indexed.set(entry.slice(tab + 1), fields[1] ?? "");
+  }
+  const present = staged.filter((path) => existsSync(join(root, path)));
+  const worktree = new Map<string, string>();
+  if (present.length > 0) {
+    const hashed = spawnSync("git", ["hash-object", "--stdin-paths"], { cwd: root, encoding: "utf8", input: `${present.join("\n")}\n` });
+    if (hashed.status !== 0) throw new Error(`git hash-object failed: ${hashed.stderr.trim()}`);
+    const hashes = hashed.stdout.trim().split("\n");
+    present.forEach((path, i) => worktree.set(path, hashes[i] ?? ""));
+  }
+  return staged.filter((path) => indexed.get(path) === undefined || worktree.get(path) !== indexed.get(path));
+}
+
+/** A staged blob, exactly as the commit holds it. The walls read the index, never the worktree. */
 function indexBlob(root: string, path: string): Buffer {
   const r = git(root, ["show", `:${path}`]);
   if (r.status !== 0) throw new Error(`cannot read ${path} from the index: ${r.stderr.trim()}`);
@@ -105,7 +165,22 @@ function mirror(root: string, paths: readonly string[]): string {
   return dir;
 }
 
-/** The walls over the mirrored files, with the repository's sgconfig. Anything but a clean JSON match list fails. */
+/** ast-grep's verdict. It prints the match list and exits 1 when a match is an error, 0 otherwise. A list is a
+ *  verdict only with exit 0, or with exit 1 and at least one match; any other exit, or no parsed list, did not judge. */
+export function parseScan(status: number, stdout: string, stderr: string): Finding[] {
+  const text = stdout.trim();
+  let parsed: unknown;
+  try {
+    parsed = text === "" ? undefined : JSON.parse(text);
+  } catch {
+    parsed = undefined;
+  }
+  if (!Array.isArray(parsed)) throw new Error(`ast-grep exited ${status} without a match list: ${stderr.trim() || "no stderr"}`);
+  if (status === 0 || (status === 1 && parsed.length > 0)) return parsed as Finding[];
+  throw new Error(`ast-grep exited ${status} with ${parsed.length} match(es): not a verdict it prints`);
+}
+
+/** The walls over the mirrored files, with the repository's sgconfig. */
 export function scanMirror(root: string, dir: string, targets: readonly string[]): Finding[] {
   const proc = spawnSync(astGrepBin(root), ["scan", "--config", join(root, "sgconfig.yml"), "--json=compact", ...targets], {
     cwd: dir,
@@ -113,12 +188,7 @@ export function scanMirror(root: string, dir: string, targets: readonly string[]
     maxBuffer: 1 << 28,
   });
   if (proc.error) throw proc.error;
-  if (proc.status !== 0 && proc.status !== 1) throw new Error(`ast-grep exited ${proc.status}: ${proc.stderr.trim()}`);
-  const text = proc.stdout.trim();
-  if (text === "") return [];
-  const parsed: unknown = JSON.parse(text);
-  if (!Array.isArray(parsed)) throw new Error("ast-grep printed no match list");
-  return parsed as Finding[];
+  return parseScan(proc.status ?? -1, proc.stdout ?? "", proc.stderr ?? "");
 }
 
 /** The gradle projects of settings.gradle.kts, each with its directory. */
@@ -142,6 +212,15 @@ export function moduleOf(modules: readonly GradleModule[], file: string): string
   return best?.path;
 }
 
+/** The gradle tasks that check one Kotlin file, or undefined when no check covers it. */
+export function checksFor(modules: readonly GradleModule[], file: string): string[] | undefined {
+  const module = moduleOf(modules, file);
+  if (module !== undefined) return [`${module}:compileKotlin`, `${module}:compileTestKotlin`, `${module}:detekt`];
+  if (file.startsWith("build-logic/")) return [...BUILD_LOGIC_TASKS];
+  if (ROOT_SCRIPT.test(file)) return [...ROOT_SCRIPT_TASKS];
+  return undefined;
+}
+
 /** The repo-relative files a gradle or detekt output names, so a failure can be placed on a file. */
 export function namedFiles(output: string, root: string): Set<string> {
   const named = new Set<string>();
@@ -157,20 +236,52 @@ export function failedTasks(output: string): string[] {
   return [...output.matchAll(FAILED_TASK)].map((m) => m[1] ?? "");
 }
 
-/** The discriminator of the header: a named file blocks when this commit changes it or the worktree holds it clean.
- *  A named file another seat has uncommitted edits in is advisory. [commitPaths] is empty for pre-push, whose
- *  judged tip is the worktree's HEAD, so the worktree's clean files are the pushed tree's. */
-export function judge(
-  named: ReadonlySet<string>,
-  commitPaths: ReadonlySet<string>,
-  dirty: ReadonlySet<string>,
-): { blocking: string[]; advisory: string[] } {
-  const blocking: string[] = [];
-  const advisory: string[] = [];
-  for (const file of [...named].sort()) {
-    (commitPaths.has(file) || !dirty.has(file) ? blocking : advisory).push(file);
+/** Whether a red run is a collision: a shared file another gradle run in this checkout held, not a red of the code.
+ *  The signatures are a test task's EOF or missing results file, a lock timeout, and a NoClassDefFoundError for a
+ *  class whose .class file is on disk. */
+export function isCollision(output: string, root: string, modules: readonly GradleModule[]): boolean {
+  if (TEST_RESULT_COLLISION.test(output) || LOCK_TIMEOUT.test(output)) return true;
+  for (const m of output.matchAll(MISSING_CLASS)) {
+    const classFile = `${(m[1] ?? "").replaceAll(".", "/")}.class`;
+    if (modules.some((mod) => CLASS_DIRS.some((dir) => existsSync(join(root, mod.dir, "build", "classes", dir, classFile))))) {
+      return true;
+    }
   }
-  return { blocking, advisory };
+  return false;
+}
+
+/** Runs the tasks; a collision reruns them once. A red after the rerun is the answer. */
+export async function judgedRun(
+  run: GateRunner,
+  root: string,
+  modules: readonly GradleModule[],
+  tasks: readonly string[],
+): Promise<Judged> {
+  const first = await run(tasks);
+  if (first.status === 0 || !isCollision(first.output, root, modules)) {
+    return { ...first, reran: false, collidedAgain: false };
+  }
+  console.error("  ! collision: another gradle run in this checkout held a shared file; rerunning the tasks once");
+  const second = await run(tasks);
+  return { ...second, reran: true, collidedAgain: second.status !== 0 && isCollision(second.output, root, modules) };
+}
+
+/** The seat that holds a repo-relative file's lock in .git/seat-locks, or "no seat lock". */
+export function seatOwner(root: string, path: string): string {
+  const commonDir = resolve(root, gitText(root, ["rev-parse", "--git-common-dir"]));
+  const owner = join(commonDir, "seat-locks", path.replaceAll("/", "%"), "owner");
+  return existsSync(owner) ? readFileSync(owner, "utf8").trim() : "no seat lock";
+}
+
+/** What a red run names: its failing tasks, and each file the output names with the seat that holds it. */
+export function failureLines(root: string, output: string): string[] {
+  const lines: string[] = [];
+  const failed = failedTasks(output);
+  if (failed.length > 0) lines.push(`  failing task(s): ${failed.join(", ")}`);
+  const named = [...namedFiles(output, root)].sort();
+  for (const file of named) lines.push(`  ✗ ${file} — seat lock: ${seatOwner(root, file)}`);
+  if (named.length === 0) lines.push("  (the output names no file)");
+  return lines;
 }
 
 /** A child gate process's environment. A hook's GIT_* variables stay out of it: GIT_INDEX_FILE names the commit's
@@ -181,30 +292,28 @@ function spawnEnv(extra: Record<string, string>): Record<string, string> {
   return { ...env, ...extra };
 }
 
-/** Runs gradle tasks through the gradle slot (one gradle per tree) and returns what they printed. The slot is the
- *  gate's own verb, so the lock is the gate's lock. Output is echoed to stderr as it arrives when [echo] is set. */
-async function gradleUnderSlot(
-  lay: Layout,
-  label: string,
-  tasks: readonly string[],
-  javaHome: string,
-  echo: boolean,
-): Promise<{ status: number; output: string }> {
-  const proc = Bun.spawn(
-    [process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"), "slot", label, "--", ...tasks],
-    { cwd: lay.repoRoot, env: spawnEnv({ JAVA_HOME: javaHome }), stdout: "pipe", stderr: "pipe" },
-  );
-  let output = "";
-  const pump = async (stream: ReadableStream<Uint8Array>): Promise<void> => {
-    const decoder = new TextDecoder();
-    for await (const chunk of stream) {
-      const text = decoder.decode(chunk, { stream: true });
-      output += text;
-      if (echo) process.stderr.write(text);
-    }
+/** Gradle tasks through the gradle slot (one gradle per tree). The slot is the gate's own verb, so the lock is the
+ *  gate's lock. Output is echoed to stderr as it arrives when [echo] is set. */
+export function slotRunner(lay: Layout, label: string, echo: boolean): GateRunner {
+  return async (tasks) => {
+    const jdk = resolveJdk21();
+    if ("error" in jdk) throw new Error(jdk.error);
+    const proc = Bun.spawn(
+      [process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"), "slot", label, "--", ...tasks],
+      { cwd: lay.repoRoot, env: spawnEnv({ JAVA_HOME: jdk.javaHome }), stdout: "pipe", stderr: "pipe" },
+    );
+    let output = "";
+    const pump = async (stream: ReadableStream<Uint8Array>): Promise<void> => {
+      const decoder = new TextDecoder();
+      for await (const chunk of stream) {
+        const text = decoder.decode(chunk, { stream: true });
+        output += text;
+        if (echo) process.stderr.write(text);
+      }
+    };
+    await Promise.all([pump(proc.stdout), pump(proc.stderr)]);
+    return { status: await proc.exited, output };
   };
-  await Promise.all([pump(proc.stdout), pump(proc.stderr)]);
-  return { status: await proc.exited, output };
 }
 
 function seconds(started: number): string {
@@ -216,19 +325,29 @@ function tailOf(output: string): string {
 }
 
 /** The pre-commit judgement of this commit. Returns the exit code. */
-export async function preCommit(lay: Layout): Promise<number> {
+export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<number> {
   const started = performance.now();
-  const kotlin = stagedPaths(lay.repoRoot).filter((p) => KOTLIN.test(p));
+  const root = lay.repoRoot;
+  const staged = stagedPaths(root);
+  const split = unequalBytes(root, staged);
+  if (split.length > 0) {
+    for (const path of split) {
+      console.error(`  ✗ ${path}: the index and the worktree hold different bytes. Run git add ${path}, then commit again.`);
+    }
+    console.error(`pre-commit: ✗ ${split.length} path(s) with two sets of bytes — ${seconds(started)}`);
+    return 1;
+  }
+  const kotlin = staged.filter((p) => KOTLIN.test(p));
   if (kotlin.length === 0) {
     console.error("pre-commit: no Kotlin in this commit; nothing to judge");
     return 0;
   }
   console.error(`══ pre-commit ══  ${kotlin.length} Kotlin file(s) in this commit`);
 
-  const dir = mirror(lay.repoRoot, kotlin);
+  const dir = mirror(root, kotlin);
   let findings: Finding[];
   try {
-    findings = scanMirror(lay.repoRoot, dir, kotlin);
+    findings = scanMirror(root, dir, kotlin);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -240,43 +359,36 @@ export async function preCommit(lay: Layout): Promise<number> {
   }
   console.error("  ✓ walls");
 
-  const modules = gradleModules(lay.repoRoot);
-  const owning = [...new Set(kotlin.map((p) => moduleOf(modules, p)).filter((m): m is string => m !== undefined))];
-  if (owning.length === 0) {
-    console.error(`pre-commit: PASS — ${seconds(started)}`);
-    return 0;
+  const modules = gradleModules(root);
+  const tasks = new Set<string>();
+  const unmapped: string[] = [];
+  for (const path of kotlin) {
+    const checks = checksFor(modules, path);
+    if (checks === undefined) unmapped.push(path);
+    else for (const task of checks) tasks.add(task);
   }
-  const jdk = resolveJdk21();
-  if ("error" in jdk) {
-    console.error(jdk.error);
+  if (unmapped.length > 0) {
+    for (const path of unmapped) console.error(`  ✗ ${path}: no gradle check covers this file`);
+    console.error(`pre-commit: ✗ ${unmapped.length} Kotlin file(s) with no check — ${seconds(started)}`);
     return 1;
-  }
-  const tasks = owning.flatMap((m) => [`${m}:compileKotlin`, `${m}:compileTestKotlin`, `${m}:detekt`]);
-  const gradle = await gradleUnderSlot(lay, "pre-commit", tasks, jdk.javaHome, false);
-  if (gradle.status === 0) {
-    console.error(`  ✓ compile + detekt: ${owning.join(" ")}`);
-    console.error(`pre-commit: PASS — ${seconds(started)}`);
-    return 0;
   }
 
-  const named = namedFiles(gradle.output, lay.repoRoot);
-  const { blocking, advisory } = judge(named, new Set(kotlin), new Set(dirtyPaths(lay.repoRoot)));
-  if (named.size === 0 || blocking.length > 0) {
-    console.error(tailOf(gradle.output));
-    const who = named.size === 0 ? "no file it could name" : blocking.join(", ");
-    console.error(`pre-commit: ✗ compile + detekt, failing in: ${who} — ${seconds(started)}`);
-    return 1;
+  const judged = await judgedRun(deps.gate ?? slotRunner(lay, "pre-commit", false), root, modules, [...tasks]);
+  if (judged.status === 0) {
+    console.error(`  ✓ ${[...tasks].join(" ")}`);
+    console.error(`pre-commit: PASS — ${seconds(started)}${judged.reran ? " (after one collision rerun)" : ""}`);
+    return 0;
   }
-  console.error(
-    `  ! not blocking: ${advisory.length} failing file(s) carry another seat's uncommitted edits: ${advisory.join(", ")}`,
-  );
-  console.error(`pre-commit: PASS — ${seconds(started)}`);
-  return 0;
+  console.error(tailOf(judged.output));
+  for (const line of failureLines(root, judged.output)) console.error(line);
+  const again = judged.collidedAgain ? " (a collision again on the rerun)" : "";
+  console.error(`pre-commit: ✗ gradle red${again} — ${seconds(started)}`);
+  return 1;
 }
 
 /** The pre-push judgement of the pushed tip against the worktree. [stdin] is git's ref list:
  *  `<local ref> <local sha> <remote ref> <remote sha>`. */
-export async function prePush(lay: Layout, stdin: string): Promise<number> {
+export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): Promise<number> {
   const started = performance.now();
   const tips = stdin
     .split("\n")
@@ -313,47 +425,30 @@ export async function prePush(lay: Layout, stdin: string): Promise<number> {
     for (const path of dirty) console.error(`      ${path}`);
   }
 
-  const jdk = resolveJdk21();
-  if ("error" in jdk) {
-    console.error(jdk.error);
-    return 1;
-  }
-  const open = acquireRunSentinel(head);
+  const open = (deps.openRun ?? acquireRunSentinel)(head);
   if (open !== null) {
     console.error(`pre-push: refusing — a gate of record is already open over this tree (${describeOpenRun(open)})`);
     return RUN_ALREADY_OPEN_EXIT;
   }
 
   console.error("── gate tier (gradle gateOfRecord, up-to-date checks) ──");
-  const gate = await gradleUnderSlot(lay, "pre-push", [...PRE_PUSH_GATE_TASKS], jdk.javaHome, true);
+  const judged = await judgedRun(
+    deps.gate ?? slotRunner(lay, "pre-push", true),
+    lay.repoRoot,
+    gradleModules(lay.repoRoot),
+    [...PRE_PUSH_GATE_TASKS],
+  );
   const elapsed = seconds(started);
-  if (gate.status === 0) {
-    console.log(`PRE-PUSH: PASS — judged ${judgedWhat}`);
+  if (judged.status === 0) {
+    console.log(`PRE-PUSH: PASS — judged ${judgedWhat}${judged.reran ? "; passed on the rerun after a collision" : ""}`);
     console.error(`pre-push: ✓ gate tier — ${elapsed}`);
     return 0;
   }
-
-  const failed = failedTasks(gate.output);
-  const nonCompile = failed.filter((task) => !COMPILE_TASK.test(task));
-  if (failed.length === 0 || nonCompile.length > 0) {
-    const what = failed.length === 0 ? "no failing task was named" : nonCompile.join(", ");
-    console.log(`PRE-PUSH: FAIL — judged ${judgedWhat}`);
-    console.error(`pre-push: ✗ gate tier, failing: ${what} — ${elapsed}`);
-    return gate.status || 1;
-  }
-  const named = namedFiles(gate.output, lay.repoRoot);
-  const { blocking, advisory } = judge(named, new Set(), new Set(dirty));
-  if (named.size === 0 || blocking.length > 0) {
-    const who = named.size === 0 ? "no file it could name" : blocking.join(", ");
-    console.log(`PRE-PUSH: FAIL — judged ${judgedWhat}`);
-    console.error(`pre-push: ✗ compile, failing in: ${who} — ${elapsed}`);
-    return gate.status || 1;
-  }
-  console.log(
-    `PRE-PUSH: PASS — judged ${judgedWhat}; compile red only in ${advisory.length} file(s) another seat has in flight, so the tests of those modules did not run`,
-  );
-  console.error(`pre-push: ✓ gate tier (non-blocking compile red: ${advisory.join(", ")}) — ${elapsed}`);
-  return 0;
+  console.log(`PRE-PUSH: FAIL — judged ${judgedWhat}`);
+  for (const line of failureLines(lay.repoRoot, judged.output)) console.error(line);
+  const again = judged.collidedAgain ? " (a collision again on the rerun)" : "";
+  console.error(`pre-push: ✗ gate tier${again} — ${elapsed}`);
+  return 1;
 }
 
 function shellQuote(text: string): string {

@@ -15,24 +15,21 @@ import splice.accounts.pool.HeadAccountPoolSource
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.core.usage.RateLimitState
+import splice.core.usage.UsageWarn
 import splice.core.usage.UsageWarnPolicy
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.WallClock
-import splice.usage.perf.HeadPerfSkipSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import java.util.concurrent.TimeUnit
 
 internal class StatuslineRenderer(
     private val label: String,
-    extraGitRoots: List<String> = emptyList(),
-    /** Clock seam: the branch-cache TTL test was a wall-clock race (two real git round-trips inside
-     *  a 2s window flake on a loaded runner) — injected time makes expiry deterministic (DR-22c). */
+    /** The repo and branch lookup behind the location segment. */
+    private val git: StatuslineGit = StatuslineGit(),
+    /** Clock seam for the limit and warn segments and the session start. */
     private val now: WallClock = WallClock(System::currentTimeMillis),
-    /** Branch-lookup seam (DR-22 redo): the real git subprocess in production; a test injects a
-     *  latched lookup so the concurrent late-publish race is deterministic instead of timing-dependent. */
-    branchLookup: GitBranchReader? = null,
     /** The head's catalog when the route knows it. Claude Code fixes its context window per
      *  PROCESS (the pinned row's, via CLAUDE_CODE_MAX_CONTEXT_TOKENS) and splice scales the token
      *  counts it reports so any other row compacts at its own declared window, which leaves the
@@ -45,50 +42,9 @@ internal class StatuslineRenderer(
     private val clientWindows: ClientWindows? = null,
     /** Secret-free live account state; safe on the unauthenticated statusline route. */
     private val accountPool: HeadAccountPoolSource? = null,
-    /** V4-37: this session's spend, computed from the head's own token counts against rates declared
-     *  in TOML — instead of the client's `total_cost_usd`, which Claude Code prices with an Anthropic
-     *  card because it believes it is talking to Anthropic (a measured ~20x high on every
-     *  non-Anthropic head). Null = render the client's number, byte-identically to before. */
-    private val sessionCost: SessionCostSource? = null,
-    /** V4-45: how many perf rows the COST reader had to drop. A source rather than a number,
-     *  deliberately — RendererCacheTest pins that this renderer is cached per head and constructed
-     *  once, so a captured count would freeze at the head's start (zero) and the operator would
-     *  never learn that the figure beside it had gone short. Null renders exactly as today. */
-    private val perfSkips: HeadPerfSkipSource? = null,
-    /** V4-240: the head's upstream is Anthropic (it forwards the client's own login), so Claude
-     *  Code's own figure is priced at this upstream's card and may stand in for splice's. False on
-     *  every other head, where a model splice cannot price says "no rate card" instead. */
-    private val anthropicUpstream: Boolean = false,
-    /** The home trusted beside /tmp and [extraGitRoots]: the route passes UserHome's answer, so the
-     *  renderer reads no process state (V4-218). Null trusts /tmp and the configured roots only. */
-    home: java.nio.file.Path? = null,
+    /** What the cost segment reads: the head's session cost, perf skips and upstream (V4-37/45/240). */
+    private val spend: StatuslineSpend = StatuslineSpend(),
 ) {
-    // Resolved in the body (not a ctor default) so the real lookup can reference the member gitBranch.
-    private val branchLookup: GitBranchReader = branchLookup ?: GitBranchReader { cwd -> gitBranch(cwd) }
-
-    // Operator-trusted roots beyond the home and /tmp for the git-branch lookup (statuslineGitRoots
-    // knob / CLAUDEX_STATUSLINE_GIT_ROOTS) — devcontainer /workspace, /srv layouts. Normalized once.
-    private val extraGitRoots: List<java.nio.file.Path> = extraGitRoots.mapNotNull { root ->
-        // A configured root that is not a usable path is simply not a trusted root. The statusline
-        // has no sink and Claude Code renders on every tick, so a line per render would be noise on
-        // the hottest cosmetic path in splice.
-        // ast-grep-ignore: kt-no-silent-result-collapse -- an unusable configured root is not a failure, it is just not a trusted root
-        Cancellables.runCatchingCancellable { java.nio.file.Paths.get(root).toAbsolutePath().normalize() }.getOrNull()
-    }
-
-    // Real (symlink-resolved) trusted roots for safeGitCwd's containment check — resolved ONCE here
-    // since the root set (the home, /tmp, extraGitRoots) is process-invariant, unlike the per-request
-    // candidate cwd (still resolved fresh on each call). A root missing at construction is dropped,
-    // same as the old per-call runCatching { root.toRealPath() }.getOrNull().
-    // An ABSENT trusted root is not a failure to report: /workspace and /srv do not exist on most
-    // hosts, and the containment check treats "unresolvable" and "not under a trusted root" as the
-    // same answer.
-    private val trustedRoots: List<java.nio.file.Path> = (
-        listOfNotNull(home, java.nio.file.Paths.get("/tmp")) +
-            this.extraGitRoots
-        // ast-grep-ignore: kt-no-silent-result-collapse -- an absent optional root proves absence, not failure
-        ).mapNotNull { root -> Cancellables.runCatchingCancellable { root.toRealPath() }.getOrNull() }
-
     private val json = Json { ignoreUnknownKeys = true }
 
     private val blob = StatuslineJson()
@@ -101,18 +57,11 @@ internal class StatuslineRenderer(
      *  ([StatuslineRateLimits.forSession]) costs it nothing a wrapper function would. */
     internal val rateLimits = StatuslineRateLimits()
     private val bars = StatuslineBars()
-    private val branchCacheLock = Any()
-    private val branchCache = LinkedHashMap<String, CachedBranch>(
-        GIT_CACHE_INITIAL_CAPACITY,
-        GIT_CACHE_LOAD_FACTOR,
-        true,
-    )
 
     fun render(
         stdinJson: String,
         usage: HeadUsageSource?,
-        warnPct: Int,
-        warnTokens5h: Long,
+        warn: StatuslineWarn,
         sessionId: String? = null,
         /** V4-274: this head has not answered the session since it took it over, so a usage the post
          *  carries is another head's last turn (StatuslineUsageOwner). */
@@ -135,24 +84,17 @@ internal class StatuslineRenderer(
             switchReason?.let { "${selected.label} ${dim("← $it")}" } ?: selected.label
         }
         val modelId = blob.str(blob.obj(root, MODEL_FIELD)?.get("id"))
-        val spend = sessionCost?.spendFor(sessionId, modelId, blob.sessionStartMs(root, now()))
         val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(now())
         val segments = listOfNotNull(
             modelSegment(root),
             accountText,
-            bars.costSegment(
-                root,
-                spend?.usd,
-                perfSkips?.skippedRowCount() ?: 0L,
-                CostFallback(rated = sessionCost?.rated(modelId) ?: false, clientPriced = anthropicUpstream),
-                lowerBound = spend?.lowerBound == true,
-            ),
+            spend.segment(bars, root, sessionId, modelId, blob.sessionStartMs(root, now())),
         ) +
             bars.limitSegments(root, selectedQuota ?: snapshot?.quota, selectedQuota != null, nowSeconds) +
             listOfNotNull(
                 contextSegment(root, unanswered),
                 cacheSegment(root, unanswered),
-                warnSegment(snapshot, warnPct, warnTokens5h),
+                warnSegment(snapshot, warn, nowSeconds),
                 locationSegment(root),
             )
         return if (segments.isEmpty()) dim(label) else segments.joinToString(SEPARATOR)
@@ -198,15 +140,12 @@ internal class StatuslineRenderer(
         else -> DIM
     }
 
-    private fun warnSegment(snapshot: UsageView?, warnPct: Int, warnTokens5h: Long): String? {
+    private fun warnSegment(snapshot: UsageView?, warn: StatuslineWarn, nowSeconds: Long): String? {
         snapshot ?: return null
-        val ratelimit = snapshot.ratelimit?.currentAt(TimeUnit.MILLISECONDS.toSeconds(now()))?.let {
-            RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens)
-        }
-        val warn = UsageWarnPolicy.computeUsageWarn(snapshot.outputTokens5h, ratelimit, warnPct, warnTokens5h)
-        return when (warn.level) {
-            "critical" -> "$RED⚠ ${warn.pct}%$RESET"
-            "warn" -> "$YELLOW⚠ ${warn.pct}%$RESET"
+        val level = warn.levelOf(snapshot, nowSeconds)
+        return when (level.level) {
+            "critical" -> "$RED⚠ ${level.pct}%$RESET"
+            "warn" -> "$YELLOW⚠ ${level.pct}%$RESET"
             else -> null
         }
     }
@@ -216,11 +155,9 @@ internal class StatuslineRenderer(
             ?: blob.str(root["cwd"])
             ?: return null
         val base = cwd.trim('/').substringAfterLast('/').ifEmpty { return null }
-        // Only git when cwd RESOLVES to a real directory under the user home (or /tmp) — never
-        // exec git -C against an attacker-chosen path from unauthenticated /statusline. Run git in
-        // the symlink-resolved path, not the raw cwd.
-        val safe = safeGitCwd(cwd)
-        val branch = if (safe != null) cachedGitBranch(safe.toString()) else ""
+        // StatuslineGit runs git only when cwd RESOLVES to a real directory under a trusted root —
+        // never git -C against an attacker-chosen path from unauthenticated /statusline.
+        val branch = git.branchOf(cwd)
         val loc = if (branch.isEmpty()) base else "$base  ⎇ $branch"
         return dim(loc)
     }
@@ -234,79 +171,21 @@ internal class StatuslineRenderer(
             (blob.num(cu["cache_creation_input_tokens"]) ?: 0)
     }
 
-    /** The symlink-RESOLVED absolute directory if it lies under $HOME, /tmp, or an operator-trusted
-     *  root — else null (the resolved path is what git -C runs in). `normalize()` only collapses
-     *  "..": a symlink under /tmp pointing OUTSIDE the trusted roots would pass a lexical prefix
-     *  check yet run git elsewhere, so resolve REAL paths on BOTH sides and compare those
-     *  (review 2026-07-23). Repos outside the trusted roots lose only the branch segment. */
-    internal fun safeGitCwd(cwd: String): java.nio.file.Path? {
-        if (!cwd.startsWith("/") || cwd.any { it.code == 0 }) return null
-        // toRealPath resolves symlinks AND requires existence — a non-existent path returns null.
-        // null IS this function's answer for an untrusted cwd: "could not be resolved" and "outside
-        // every trusted root" are deliberately the same outcome, both meaning the git probe must
-        // not run.
-        // ast-grep-ignore: kt-no-silent-result-collapse -- null is this function's ANSWER for an untrusted cwd, not a swallowed failure
-        val real = Cancellables.runCatchingCancellable { java.nio.file.Paths.get(cwd).toRealPath() }.getOrNull()
-            ?: return null
-        return real.takeIf { p -> java.nio.file.Files.isDirectory(p) && trustedRoots.any { p.startsWith(it) } }
-    }
-
-    private fun cachedGitBranch(cwd: String): String {
-        synchronized(branchCacheLock) {
-            val cached = branchCache[cwd]
-            if (cached != null && now() < cached.expiresAtMs) return cached.branch
-        }
-        // The subprocess runs OUTSIDE the monitor (DR-22b): the renderer is process-shared per head
-        // now, and holding the lock across a 200ms waitFor serialized every concurrent tick behind
-        // one blocking git on a Ktor dispatcher thread. Concurrent misses may each run one
-        // duplicate git. Stamp the observation BEFORE the lookup so expiry encodes WHEN the branch
-        // was read, not when we win the publish lock (DR-22 redo): a slow lookup that publishes late
-        // must not look fresher than a racer that read the branch later.
-        val observedAt = now()
-        val branch = branchLookup(cwd)
-        synchronized(branchCacheLock) {
-            val expiresAt = observedAt + GIT_CACHE_TTL_MS
-            // Revalidate under the lock: a concurrent lookup that observed at-or-after us may already
-            // have published a fresher branch. Our older read must not clobber it — keep and return
-            // the fresher entry (the unconditional publish here let a slow git overwrite a newer one).
-            val existing = branchCache[cwd]
-            if (existing != null && existing.expiresAtMs >= expiresAt) return existing.branch
-            branchCache[cwd] = CachedBranch(branch, expiresAt)
-            while (branchCache.size > GIT_CACHE_MAX_ENTRIES) {
-                val iterator = branchCache.keys.iterator()
-                iterator.next().run { iterator.remove() }
-            }
-        }
-        return branch
-    }
-
-    // Any git failure means no branch segment, which is the designed empty-string fallback: a
-    // statusline must not fail because a repository is odd, and git is not installed at all on
-    // some hosts.
-    // ast-grep-ignore: kt-no-silent-result-collapse -- every git failure means the same designed outcome: no branch segment
-    private fun gitBranch(cwd: String): String = Cancellables.runCatchingCancellable {
-        val process = ProcessBuilder("git", "-C", cwd, "branch", "--show-current")
-            .redirectErrorStream(false)
-            .start()
-        if (!process.waitFor(GIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-            process.destroyForcibly()
-            return ""
-        }
-        process.inputStream.readBytes().decodeToString().trim()
-    }.getOrDefault("")
-
     private fun fmtK(n: Long): String = if (n >= K) "${n / K}k" else n.toString()
 
     private fun dim(s: String) = "$DIM$s$RESET"
 }
 
-private data class CachedBranch(val branch: String, val expiresAtMs: Long)
+/** [pct] is the soft-warn percentage (0 disables the warn tier, V4-109); [tokens5h] the 5h output cap. */
+internal class StatuslineWarn(private val pct: Int, private val tokens5h: Long) {
 
-/** Reads the current git branch for a resolved working directory — the real git subprocess in
- *  production, a latched stand-in in the late-publish race test (DR-22 redo). Named for the ROLE,
- *  not the shape (kt-no-lambda-seam); `operator fun invoke` keeps call sites byte-identical. */
-internal fun interface GitBranchReader {
-    operator fun invoke(cwd: String): String
+    /** The warn level of [snapshot] at [nowSeconds]; only a current ratelimit reading counts. */
+    fun levelOf(snapshot: UsageView, nowSeconds: Long): UsageWarn {
+        val ratelimit = snapshot.ratelimit?.currentAt(nowSeconds)?.let {
+            RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens)
+        }
+        return UsageWarnPolicy.computeUsageWarn(snapshot.outputTokens5h, ratelimit, pct, tokens5h)
+    }
 }
 
 // The stdin-blob JSON adapter, split out so StatuslineRenderer stays inside detekt's per-class
@@ -351,11 +230,6 @@ private const val CTX_WARN_PCT = 60
 private const val CACHE_GOOD_PCT = 70
 private const val CACHE_OK_PCT = 40
 private const val K = 1000
-private const val GIT_TIMEOUT_MS = 200L
-private const val GIT_CACHE_TTL_MS = 2_000L
-private const val GIT_CACHE_INITIAL_CAPACITY = 16
-private const val GIT_CACHE_LOAD_FACTOR = 0.75f
-private const val GIT_CACHE_MAX_ENTRIES = 64
 
 // V4-132: pulled out of 4 call sites (StringLiteralDuplication, threshold 4) once
 // StatuslineRateLimits.kt's modelScoped() added a fourth read of the same JSON field name.

@@ -17,7 +17,7 @@ import java.nio.file.Paths
 
 class StatuslineGitRootTest {
 
-    private val renderer = StatuslineRenderer(label = "codex")
+    private val untrusting = StatuslineGit()
 
     private fun git(repo: java.nio.file.Path, vararg args: String) {
         val process = ProcessBuilder(listOf("git", "-C", repo.toString()) + args)
@@ -36,7 +36,7 @@ class StatuslineGitRootTest {
         assumeTrue(Files.isDirectory(outside), "/usr must exist to serve as an outside-roots target")
         val link = tmpDir.resolve("repo-link")
         Files.createSymbolicLink(link, outside)
-        assertNull(renderer.safeGitCwd(link.toString()), "a symlink escaping the trusted roots must not run git")
+        assertNull(untrusting.safeCwd(link.toString()), "a symlink escaping the trusted roots must not run git")
     }
 
     @Test
@@ -47,8 +47,8 @@ class StatuslineGitRootTest {
         // Trust the temp tree explicitly (not relying on java.io.tmpdir == /tmp). Contained: the
         // resolved real path stays under the trusted root, so it is returned — and it is the RESOLVED
         // path (proving toRealPath ran), which is what git -C is handed.
-        val trusting = StatuslineRenderer(label = "codex", extraGitRoots = listOf(tmpDir.toString()))
-        assertEquals(realRepo.toRealPath(), trusting.safeGitCwd(link.toString()))
+        val trusting = StatuslineGit(listOf(tmpDir.toString()))
+        assertEquals(realRepo.toRealPath(), trusting.safeCwd(link.toString()))
     }
 
     @Test
@@ -60,16 +60,16 @@ class StatuslineGitRootTest {
         var clock = 1_000_000L
         val trusting = StatuslineRenderer(
             label = "codex",
-            extraGitRoots = listOf(tmpDir.toString()),
+            git = StatuslineGit(listOf(tmpDir.toString()), now = WallClock { clock }),
             now = WallClock { clock },
         )
         val stdin = """{"cwd":"$repo"}"""
 
-        val first = trusting.render(stdin, usage = null, warnPct = 0, warnTokens5h = 0)
+        val first = trusting.render(stdin, usage = null, StatuslineWarn(0, 0))
         git(repo, "symbolic-ref", "HEAD", "refs/heads/second")
-        val second = trusting.render(stdin, usage = null, warnPct = 0, warnTokens5h = 0)
+        val second = trusting.render(stdin, usage = null, StatuslineWarn(0, 0))
         clock += 60_000L
-        val third = trusting.render(stdin, usage = null, warnPct = 0, warnTokens5h = 0)
+        val third = trusting.render(stdin, usage = null, StatuslineWarn(0, 0))
 
         assertEquals(true, first.contains("⎇ first"), first)
         assertEquals(true, second.contains("⎇ first"), "the second tick must reuse the cached branch: $second")
@@ -78,6 +78,6 @@ class StatuslineGitRootTest {
 
     @Test
     fun `a non-existent path is rejected because toRealPath requires existence`() {
-        assertNull(renderer.safeGitCwd("/tmp/splice-statusline-does-not-exist-xyzzy"))
+        assertNull(untrusting.safeCwd("/tmp/splice-statusline-does-not-exist-xyzzy"))
     }
 }

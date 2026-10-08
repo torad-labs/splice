@@ -14,7 +14,7 @@ class StatuslineJsonNullTest {
 
     private val renderer = StatuslineRenderer(label = "codex")
 
-    private fun render(stdin: String): String = renderer.render(stdin, usage = null, warnPct = 0, warnTokens5h = 0)
+    private fun render(stdin: String): String = renderer.render(stdin, usage = null, StatuslineWarn(0, 0))
 
     @Test
     fun `a null display_name falls through to the model id instead of rendering the word null`() {

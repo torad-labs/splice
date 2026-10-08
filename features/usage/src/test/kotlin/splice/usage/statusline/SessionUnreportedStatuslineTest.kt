@@ -14,12 +14,11 @@ class SessionUnreportedStatuslineTest {
             override fun sessionTotal(sessionId: String): PerfSessionTotal =
                 PerfSessionTotal(1L, mapOf("synthetic" to model))
         }
-        val renderer = StatuslineRenderer(label = "synthetic", sessionCost = SessionCost(source))
+        val renderer = StatuslineRenderer(label = "synthetic", spend = StatuslineSpend(SessionCost(source)))
         return renderer.render(
             """{"model":{"id":"synthetic"},"cost":{"total_cost_usd":9.99}}""",
             null,
-            warnPct = 0,
-            warnTokens5h = 0,
+            StatuslineWarn(0, 0),
             sessionId = "synthetic",
         )
     }

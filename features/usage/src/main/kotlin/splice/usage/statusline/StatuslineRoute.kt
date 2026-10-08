@@ -44,22 +44,24 @@ public class StatuslineRoute(
         val renderer = renderers.get(managed.key, managed.label, roots, managed.catalog) {
             StatuslineRenderer(
                 managed.label,
-                roots,
+                StatuslineGit(roots, home = UserHome.dir()),
                 catalog = managed.catalog,
                 clientWindows = managed.clientWindows,
                 accountPool = managed.accountPool,
-                sessionCost = sessionCostOf(managed),
-                // V4-45: the same checked-cast bridge sessionCostOf uses below, and captured the
-                // same way — the SOURCE, never a count, so the cached renderer reads it live.
-                perfSkips = managed.perf as? HeadPerfSkipSource,
-                anthropicUpstream = managed.anthropicUpstream,
-                home = UserHome.dir(),
+                spend = StatuslineSpend(
+                    sessionCostOf(managed),
+                    // V4-45: the same checked-cast bridge sessionCostOf uses below, and captured the
+                    // same way — the SOURCE, never a count, so the cached renderer reads it live.
+                    managed.perf as? HeadPerfSkipSource,
+                    managed.anthropicUpstream,
+                ),
             )
         }
         val sessionId = sessionId(stdin)
         // V4-274: the usage a post carries is another head's last turn until this head answers the session.
         val unanswered = usageOwner.unanswered(managed.key, sessionId, managed.perf as? HeadSessionPerfSource)
-        val line = renderer.render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h, sessionId, unanswered)
+        val warn = StatuslineWarn(managed.warnPct, managed.warnTokens5h)
+        val line = renderer.render(stdin, managed.usage, warn, sessionId, unanswered)
         val warning = clientVersions.statuslineWarning(sessionId)
         call.respondText(warning?.let { "$line · $it" } ?: line, ContentType.Text.Plain)
     }

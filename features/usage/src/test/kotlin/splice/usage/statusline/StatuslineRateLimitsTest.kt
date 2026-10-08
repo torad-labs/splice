@@ -29,7 +29,7 @@ class StatuslineRateLimitsTest {
     fun `a session's rate_limits are captured with every window field, keyed by session and account`() {
         val renderer = StatuslineRenderer(label = "Codex")
 
-        renderer.render(PAYLOAD, usage = null, warnPct = 80, warnTokens5h = 0, sessionId = "session-1")
+        renderer.render(PAYLOAD, usage = null, StatuslineWarn(80, 0), sessionId = "session-1")
 
         val capture = renderer.rateLimits.forSession("session-1")
         assertEquals(12.5, capture?.fiveHour?.usedPercent)
@@ -47,7 +47,7 @@ class StatuslineRateLimitsTest {
         val renderer = StatuslineRenderer(label = "Codex")
         val gated = PAYLOAD.replace("\"rate_limits_available\":true", "\"rate_limits_available\":false")
 
-        renderer.render(gated, usage = null, warnPct = 80, warnTokens5h = 0, sessionId = "session-gated")
+        renderer.render(gated, usage = null, StatuslineWarn(80, 0), sessionId = "session-gated")
 
         assertNull(renderer.rateLimits.forSession("session-gated"))
     }
@@ -56,7 +56,7 @@ class StatuslineRateLimitsTest {
     fun `a session with no session_id is never recorded, so no capture ever answers for the wrong caller`() {
         val renderer = StatuslineRenderer(label = "Codex")
 
-        renderer.render(PAYLOAD, usage = null, warnPct = 80, warnTokens5h = 0, sessionId = null)
+        renderer.render(PAYLOAD, usage = null, StatuslineWarn(80, 0), sessionId = null)
 
         assertNull(renderer.rateLimits.forSession(""))
     }
@@ -72,7 +72,7 @@ class StatuslineRateLimitsTest {
         }
         val renderer = StatuslineRenderer(label = "Codex", accountPool = pool)
 
-        renderer.render(PAYLOAD, usage = null, warnPct = 80, warnTokens5h = 0, sessionId = "session-2")
+        renderer.render(PAYLOAD, usage = null, StatuslineWarn(80, 0), sessionId = "session-2")
 
         assertEquals(12.5, renderer.rateLimits.forAccount("backup")?.fiveHour?.usedPercent)
     }

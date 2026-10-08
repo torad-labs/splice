@@ -23,14 +23,14 @@ class StatuslineBarsTest {
 
     private fun render(stdin: String, quota: QuotaView? = null): String {
         val usage = HeadUsageSource { UsageView(0L, 0, null, quota) }
-        val line = StatuslineRenderer(label = "grok").render(stdin, usage, warnPct = 0, warnTokens5h = 0)
+        val line = StatuslineRenderer(label = "grok").render(stdin, usage, StatuslineWarn(0, 0))
         return line.replace(ansi, "")
     }
 
     private fun renderAt(nowMs: Long, stdin: String, quota: QuotaView?): String {
         val usage = HeadUsageSource { UsageView(0L, 0, null, quota) }
         val line = StatuslineRenderer(label = "claude-splice", now = WallClock { nowMs })
-            .render(stdin, usage, warnPct = 0, warnTokens5h = 0)
+            .render(stdin, usage, StatuslineWarn(0, 0))
         return line.replace(ansi, "")
     }
 
@@ -207,14 +207,15 @@ class StatuslineBarsTest {
         val usage = HeadUsageSource { UsageView(0L, 0, null, null) }
         val renderer = StatuslineRenderer(
             label = "grok",
-            sessionCost = SessionCostSource { _, _ -> 12.5 },
-            perfSkips = HeadPerfSkipSource { 3L },
+            spend = StatuslineSpend(
+                sessionCost = SessionCostSource { _, _ -> 12.5 },
+                perfSkips = HeadPerfSkipSource { 3L },
+            ),
         )
         val line = renderer.render(
             """{"model":{"id":"grok-4.6"},"cost":{"total_cost_usd":61.44}}""",
             usage,
-            warnPct = 0,
-            warnTokens5h = 0L,
+            StatuslineWarn(0, 0),
             sessionId = "a6b15bd7-dead-beef",
         ).replace(ansi, "")
 
@@ -225,8 +226,8 @@ class StatuslineBarsTest {
     @Test
     fun `no rate_limits and no quota draws no bars, and a zero cost draws no spend`() {
         val usage = HeadUsageSource { UsageView(0L, 0, null, null) }
-        val line = StatuslineRenderer(label = "claude-splice", anthropicUpstream = true)
-            .render("""{"model":{"id":"mock"},"cost":{"total_cost_usd":0}}""", usage, warnPct = 0, warnTokens5h = 0)
+        val line = StatuslineRenderer(label = "claude-splice", spend = StatuslineSpend(anthropicUpstream = true))
+            .render("""{"model":{"id":"mock"},"cost":{"total_cost_usd":0}}""", usage, StatuslineWarn(0, 0))
             .replace(ansi, "")
         assertFalse("5h" in line || "7d" in line || "$" in line, line)
         assertEquals("● mock", line.trim())

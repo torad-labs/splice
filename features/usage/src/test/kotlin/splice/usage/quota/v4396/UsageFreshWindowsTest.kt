@@ -23,6 +23,7 @@ import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsagePayloads
 import splice.usage.quota.UsageView
 import splice.usage.statusline.StatuslineRenderer
+import splice.usage.statusline.StatuslineWarn
 import java.nio.file.Path
 
 /** V4-396: /api/usage shows a plan window only while it is current — read under 15 minutes ago and
@@ -88,8 +89,8 @@ class UsageFreshWindowsTest {
         val fresh = RateLimitView(100L, 12L, "6m0s", nowS - 14 * 60)
         val renderer = StatuslineRenderer(label = "grok", now = WallClock { nowMs })
         val body = """{"model":{"id":"grok-4.6","display_name":"Grok 4.6"}}"""
-        val staleLine = renderer.render(body, HeadUsageSource { UsageView(0, 0, stale) }, 80, 0)
-        val freshLine = renderer.render(body, HeadUsageSource { UsageView(0, 0, fresh) }, 80, 0)
+        val staleLine = renderer.render(body, HeadUsageSource { UsageView(0, 0, stale) }, StatuslineWarn(80, 0))
+        val freshLine = renderer.render(body, HeadUsageSource { UsageView(0, 0, fresh) }, StatuslineWarn(80, 0))
 
         assertFalse("⚠" in staleLine, staleLine)
         assertTrue("⚠" in freshLine && "88%" in freshLine, freshLine)

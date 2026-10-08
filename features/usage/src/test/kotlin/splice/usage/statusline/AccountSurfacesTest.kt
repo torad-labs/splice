@@ -122,7 +122,7 @@ class AccountSurfacesTest {
             "rate_limits":{"five_hour":{"used_percentage":1,"resets_at":${NOW_S + 3_600L}}}
         }"""
 
-        val line = renderer.render(stdin, usage = null, warnPct = 80, warnTokens5h = 0, sessionId = "session-7")
+        val line = renderer.render(stdin, usage = null, StatuslineWarn(80, 0), sessionId = "session-7")
 
         assertEquals("session-7", seenSession)
         assertTrue(line.contains("backup"), line)
@@ -146,7 +146,7 @@ class AccountSurfacesTest {
         val stdin = """{"model":{"display_name":"Codex"},""" +
             """"rate_limits":{"five_hour":{"used_percentage":1,"resets_at":${NOW_S + 3_600L}}}}"""
 
-        val line = renderer.render(stdin, usage = null, warnPct = 80, warnTokens5h = 0, sessionId = "s")
+        val line = renderer.render(stdin, usage = null, StatuslineWarn(80, 0), sessionId = "s")
 
         assertTrue(line.contains("backup"), line)
         assertTrue(line.contains("1%"), line)

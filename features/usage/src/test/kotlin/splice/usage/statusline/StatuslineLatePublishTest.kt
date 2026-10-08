@@ -37,11 +37,11 @@ class StatuslineLatePublishTest {
         val earlyResult = arrayOf("")
         val lateResult = arrayOf("")
         val early = Thread(
-            { earlyResult[0] = renderer.render(stdin, usage = null, warnPct = 0, warnTokens5h = 0) },
+            { earlyResult[0] = renderer.render(stdin, usage = null, StatuslineWarn(0, 0)) },
             earlyName,
         )
         val late = Thread(
-            { lateResult[0] = renderer.render(stdin, usage = null, warnPct = 0, warnTokens5h = 0) },
+            { lateResult[0] = renderer.render(stdin, usage = null, StatuslineWarn(0, 0)) },
             lateName,
         )
 
@@ -77,9 +77,7 @@ class StatuslineLatePublishTest {
         }
         return StatuslineRenderer(
             label = "codex",
-            extraGitRoots = listOf(tmpDir.toString()),
-            now = clock,
-            branchLookup = lookup,
+            git = StatuslineGit(listOf(tmpDir.toString()), now = clock, lookup = lookup),
         )
     }
 }

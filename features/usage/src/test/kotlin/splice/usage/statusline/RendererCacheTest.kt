@@ -15,18 +15,18 @@ class RendererCacheTest {
         var built = 0
         val first = cache.get("h", "old-name", listOf("/root")) {
             built++
-            StatuslineRenderer("old-name", listOf("/root"))
+            StatuslineRenderer("old-name", StatuslineGit(listOf("/root")))
         }
         val second = cache.get("h", "old-name", listOf("/root")) {
             built++
-            StatuslineRenderer("old-name", listOf("/root"))
+            StatuslineRenderer("old-name", StatuslineGit(listOf("/root")))
         }
         assertSame(first, second, "unchanged inputs must reuse the renderer")
         assertEquals(1, built)
 
         cache.get("h", "new-name", listOf("/root")) {
             built++
-            StatuslineRenderer("new-name", listOf("/root"))
+            StatuslineRenderer("new-name", StatuslineGit(listOf("/root")))
         }
         assertEquals(2, built, "a label change must rebuild the renderer (DR-22a)")
     }
@@ -37,11 +37,11 @@ class RendererCacheTest {
         var built = 0
         cache.get("h", "name", listOf("/a")) {
             built++
-            StatuslineRenderer("name", listOf("/a"))
+            StatuslineRenderer("name", StatuslineGit(listOf("/a")))
         }
         cache.get("h", "name", listOf("/b")) {
             built++
-            StatuslineRenderer("name", listOf("/b"))
+            StatuslineRenderer("name", StatuslineGit(listOf("/b")))
         }
         assertEquals(2, built, "the pre-existing roots invalidation must survive the label fix")
     }

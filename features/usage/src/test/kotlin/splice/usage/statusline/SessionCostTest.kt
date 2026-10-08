@@ -249,8 +249,8 @@ class SessionCostTest {
      *  side of a DIM/RESET pair, so the raw line never contains the literal "$0.09" — every
      *  assertion here is against the visible text the operator actually reads. */
     private fun segment(cost: SessionCostSource?, session: String = sessionId): String =
-        StatuslineRenderer(label = "deepseek", sessionCost = cost)
-            .render(blob, null, warnPct = 0, warnTokens5h = 0, sessionId = session)
+        StatuslineRenderer(label = "deepseek", spend = StatuslineSpend(cost))
+            .render(blob, null, StatuslineWarn(0, 0), sessionId = session)
             .replace(ansi, "")
 
     @Test
@@ -507,13 +507,12 @@ class SessionCostTest {
         val renderer = StatuslineRenderer(
             label = "codex",
             now = { 2_000_000L },
-            sessionCost = SessionCost(cutTail, anthropicCatalog()),
+            spend = StatuslineSpend(SessionCost(cutTail, anthropicCatalog())),
         )
         val line = renderer.render(
             """{"model":{"id":"claude-opus-5-5"},"cost":{"total_cost_usd":9.99,"total_duration_ms":600000}}""",
             null,
-            warnPct = 0,
-            warnTokens5h = 0,
+            StatuslineWarn(0, 0),
             sessionId = sessionId,
         ).replace(ansi, "")
         assertTrue("API est. ≥$0.53" in line, line)
@@ -629,13 +628,12 @@ class SessionCostTest {
         val renderer = StatuslineRenderer(
             label = "codex",
             now = { 2_000_000L },
-            sessionCost = costWith(opusOnly),
+            spend = StatuslineSpend(costWith(opusOnly)),
         )
         val line = renderer.render(
             """{"model":{"id":"claude-opus-5-5"},"cost":{"total_cost_usd":9.99,"total_duration_ms":600000}}""",
             null,
-            warnPct = 0,
-            warnTokens5h = 0,
+            StatuslineWarn(0, 0),
             sessionId = sessionId,
         ).replace(ansi, "")
         assertTrue("API est. $5.25" in line, line)

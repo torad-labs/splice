@@ -44,7 +44,7 @@ class StatuslineScaledRowTest {
     """.trimIndent()
 
     private fun render(renderer: StatuslineRenderer, stdin: String): String =
-        renderer.render(stdin, usage = null, warnPct = 0, warnTokens5h = 0).replace(Regex("\\[[0-9;]*m"), "")
+        renderer.render(stdin, usage = null, StatuslineWarn(0, 0)).replace(Regex("\\[[0-9;]*m"), "")
 
     @Test
     fun `a scaled row renders its own label, declared window and real counts`() {

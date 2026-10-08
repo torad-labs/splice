@@ -9,6 +9,7 @@
 // confident number would defeat the whole exercise.
 package splice.usage.statusline
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.model.HeadRates
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelRates
@@ -17,6 +18,7 @@ import splice.core.model.TurnBill
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTotal
 import splice.core.perf.PerfSessionTurn
+import splice.usage.perf.HeadPerfSkipSource
 import splice.usage.perf.HeadSessionPerfSource
 
 /** What the statusline's cost segment asks for: this session's spend, or null when splice has no
@@ -109,5 +111,45 @@ internal class SessionCost(
     private fun ratesOf(turn: PerfSessionTurn, asked: ModelRates?): ModelRates? {
         val model = turn.model ?: return asked
         return ratesFor(model)
+    }
+}
+
+/**
+ * What the cost segment needs to know about the head.
+ *
+ * [sessionCost] is V4-37: this session's spend from the head's own token counts against rates
+ * declared in TOML, instead of the client's `total_cost_usd` (priced with an Anthropic card, a
+ * measured ~20x high on every non-Anthropic head). Null = render the client's number.
+ *
+ * [perfSkips] is V4-45: how many perf rows the COST reader had to drop. A source rather than a
+ * number, deliberately: RendererCacheTest pins that the renderer is cached per head and built once,
+ * so a captured count would freeze at the head's start and the operator would never learn that the
+ * figure beside it had gone short.
+ *
+ * [anthropicUpstream] is V4-240: the head forwards the client's own login, so Claude Code's figure is
+ * priced at this upstream's card and may stand in for splice's. False on every other head, where a
+ * model splice cannot price says "no rate card" instead.
+ */
+internal class StatuslineSpend(
+    private val sessionCost: SessionCostSource? = null,
+    private val perfSkips: HeadPerfSkipSource? = null,
+    private val anthropicUpstream: Boolean = false,
+) {
+    /** The cost segment for one tick; [sessionStartMs] is when the client session began, or null. */
+    fun segment(
+        bars: StatuslineBars,
+        root: JsonObject,
+        sessionId: String?,
+        modelId: String?,
+        sessionStartMs: Long?,
+    ): String? {
+        val spend = sessionCost?.spendFor(sessionId, modelId, sessionStartMs)
+        return bars.costSegment(
+            root,
+            spend?.usd,
+            perfSkips?.skippedRowCount() ?: 0L,
+            CostFallback(rated = sessionCost?.rated(modelId) ?: false, clientPriced = anthropicUpstream),
+            lowerBound = spend?.lowerBound == true,
+        )
     }
 }

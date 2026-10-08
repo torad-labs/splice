@@ -16,6 +16,8 @@ import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import splice.usage.statusline.SessionCostSource
 import splice.usage.statusline.StatuslineRenderer
+import splice.usage.statusline.StatuslineSpend
+import splice.usage.statusline.StatuslineWarn
 
 class DollarFigureBasisTest {
 
@@ -23,7 +25,7 @@ class DollarFigureBasisTest {
     private val usage = HeadUsageSource { UsageView(0L, 0, null, null) }
 
     private fun line(renderer: StatuslineRenderer, blob: String): String =
-        renderer.render(blob, usage, warnPct = 0, warnTokens5h = 0L, sessionId = "s-1").replace(ansi, "")
+        renderer.render(blob, usage, StatuslineWarn(0, 0), sessionId = "s-1").replace(ansi, "")
 
     /** Strips every figure that carries its basis; any dollar figure left over is bare. */
     private fun assertEveryFigureHasItsBasis(text: String) {
@@ -36,7 +38,7 @@ class DollarFigureBasisTest {
 
     @Test
     fun `splice's own figure on the status line says it is an API-rate estimate`() {
-        val renderer = StatuslineRenderer(label = "codex", sessionCost = SessionCostSource { _, _ -> 0.85 })
+        val renderer = StatuslineRenderer(label = "codex", spend = StatuslineSpend(SessionCostSource { _, _ -> 0.85 }))
         val text = line(renderer, """{"model":{"id":"gpt-6-sol"},"cost":{"total_cost_usd":3.1}}""")
 
         assertTrue(Regex("""\$\d""").containsMatchIn(text), "the figure itself still renders: $text")
@@ -46,7 +48,7 @@ class DollarFigureBasisTest {
     @Test
     fun `a figure Claude Code priced itself never renders under another vendor's model`() {
         // No card on this head: the only figure in the blob is the client's, priced at Anthropic's card.
-        val renderer = StatuslineRenderer(label = "codex", sessionCost = SessionCostSource { _, _ -> null })
+        val renderer = StatuslineRenderer(label = "codex", spend = StatuslineSpend(SessionCostSource { _, _ -> null }))
         val text = line(renderer, """{"model":{"id":"gpt-6-sol"},"cost":{"total_cost_usd":0.85}}""")
 
         assertFalse("0.85" in text, "an Anthropic-priced figure under GPT-6-Sol: $text")

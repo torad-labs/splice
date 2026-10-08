@@ -119,6 +119,12 @@ export function stagedPaths(root: string): string[] {
   return gitPaths(root, ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"]);
 }
 
+/** Every path this commit changes, deletions included. A rename is read as the two paths it moves between, so the module
+ *  it leaves is judged too. Module selection reads these; the walls and the byte comparison read stagedPaths. */
+export function touchedPaths(root: string): string[] {
+  return gitPaths(root, ["diff", "--cached", "--name-only", "--no-renames", "--diff-filter=ACMRD", "-z"]);
+}
+
 /** The worktree's paths that differ from HEAD, tracked or untracked: the uncommitted work of every seat. */
 export function dirtyPaths(root: string): string[] {
   const tracked = gitPaths(root, ["diff", "--name-only", "-z", "HEAD"]);
@@ -358,32 +364,36 @@ export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<numbe
     console.error(`pre-commit: ✗ ${split.length} path(s) with two sets of bytes — ${seconds(started)}`);
     return 1;
   }
-  const kotlin = staged.filter((p) => KOTLIN.test(p));
-  if (kotlin.length === 0) {
+  const touched = touchedPaths(root).filter((p) => KOTLIN.test(p));
+  if (touched.length === 0) {
     console.error("pre-commit: no Kotlin in this commit; nothing to judge");
     return 0;
   }
-  console.error(`══ pre-commit ══  ${kotlin.length} Kotlin file(s) in this commit`);
+  console.error(`══ pre-commit ══  ${touched.length} Kotlin file(s) in this commit`);
 
-  const dir = mirror(root, kotlin);
-  let findings: Finding[];
-  try {
-    findings = scanMirror(root, dir, kotlin);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+  // The walls scan the bytes a commit adds or changes: a deletion has none to scan. Module selection covers every change.
+  const kotlin = staged.filter((p) => KOTLIN.test(p));
+  if (kotlin.length > 0) {
+    const dir = mirror(root, kotlin);
+    let findings: Finding[];
+    try {
+      findings = scanMirror(root, dir, kotlin);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    const errors = findings.filter((f) => f.severity === "error");
+    for (const f of errors) console.error(`  ✗ ${f.ruleId}  ${f.file}: ${f.message ?? ""}`);
+    if (errors.length > 0) {
+      console.error(`pre-commit: ✗ walls (${errors.length} error finding(s)) — ${seconds(started)}`);
+      return 1;
+    }
+    console.error("  ✓ walls");
   }
-  const errors = findings.filter((f) => f.severity === "error");
-  for (const f of errors) console.error(`  ✗ ${f.ruleId}  ${f.file}: ${f.message ?? ""}`);
-  if (errors.length > 0) {
-    console.error(`pre-commit: ✗ walls (${errors.length} error finding(s)) — ${seconds(started)}`);
-    return 1;
-  }
-  console.error("  ✓ walls");
 
   const modules = gradleModules(root);
   const tasks = new Set<string>();
   const unmapped: string[] = [];
-  for (const path of kotlin) {
+  for (const path of touched) {
     const checks = checksFor(modules, path);
     if (checks === undefined) unmapped.push(path);
     else for (const task of checks) tasks.add(task);

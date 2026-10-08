@@ -253,6 +253,32 @@ describe("pre-commit judges the bytes the commit holds", () => {
     expect(unequalBytes(root, [TARGET])).toEqual([TARGET]);
   });
 
+  test("RED: a commit that only deletes a Kotlin file runs the module the file left", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): probe");
+    git(root, ["rm", "-q", TARGET]);
+    const calls: string[][] = [];
+    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(0);
+    expect(calls).toEqual([[":core:compileKotlin", ":core:compileTestKotlin", ":core:detekt"]]);
+  });
+
+  test("RED: a Kotlin file moved out of its module runs the module it left and the module it reaches", async () => {
+    const root = wallsRepo();
+    writeFile(root, "settings.gradle.kts", `${MODULE_SETTINGS}include(":app")\nproject(":app").projectDir = file("app")\n`);
+    git(root, ["add", "settings.gradle.kts"]);
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): probe");
+    mkdirSync(join(root, "app", "src", "main", "kotlin", "splice", "app"), { recursive: true });
+    git(root, ["mv", TARGET, "app/src/main/kotlin/splice/app/Probe.kt"]);
+    const calls: string[][] = [];
+    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(0);
+    expect(calls.length).toBe(1);
+    expect(calls[0]).toEqual(expect.arrayContaining([":core:compileKotlin", ":core:detekt", ":app:compileKotlin", ":app:detekt"]));
+  });
+
   test("a Kotlin file no check covers is refused, and gradle is never asked", async () => {
     const root = wallsRepo();
     writeFile(root, "scripts/Helper.kts", "val x = 1\n");

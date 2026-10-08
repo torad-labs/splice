@@ -18,6 +18,9 @@
 // `pending` is a failure: the migration is complete only when no row is left undecided.
 //
 // Usage: bun .dev/restructure/census.ts [--selftest]   (exit 0 complete, 1 findings, 2 misuse)
+//        bun .dev/restructure/census.ts [--root <dir>] [--rows <file>]
+// --root and --rows let the pre-commit hook judge a commit's bytes: the checkout whose index is read (git's index
+// environment carries through), and the capabilities rows to judge, which the hook takes from that index.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -116,20 +119,36 @@ function selftest(): number {
   return failed === 0 ? 0 : 1;
 }
 
+const USAGE = "usage: bun .dev/restructure/census.ts [--selftest] | [--root <dir>] [--rows <file>]";
+
+/** The checkout and rows to judge: each flag at most once, both defaulting to the worktree this script sits in. */
+function options(argv: string[]): { root: string; rows: string } | undefined {
+  const given = new Map<string, string>();
+  for (let i = 0; i < argv.length; i += 2) {
+    const flag = argv[i] ?? "";
+    const value = argv[i + 1];
+    if ((flag !== "--root" && flag !== "--rows") || value === undefined || given.has(flag)) return undefined;
+    given.set(flag, value);
+  }
+  const root = given.get("--root") ?? join(dirname(import.meta.path), "..", "..");
+  return { root, rows: given.get("--rows") ?? join(root, ".dev", "restructure", "capabilities.tsv") };
+}
+
 function main(argv: string[]): number {
   if (argv.includes("--selftest")) return selftest();
-  if (argv.length > 0) {
-    console.error("usage: bun .dev/restructure/census.ts [--selftest]");
+  const picked = options(argv);
+  if (picked === undefined) {
+    console.error(USAGE);
     return 2;
   }
-  const root = join(dirname(import.meta.path), "..", "..");
+  const { root, rows: rowsPath } = picked;
   const listed = Bun.spawnSync(["git", "-C", root, "ls-files", "-z"], { stdout: "pipe", stderr: "pipe" });
   if (listed.exitCode !== 0) {
     console.error(`git ls-files failed: ${listed.stderr.toString()}`);
     return 2;
   }
   const tracked = new Set(listed.stdout.toString().split("\0").filter((path) => path !== ""));
-  const rows = parse(readFileSync(join(root, ".dev", "restructure", "capabilities.tsv"), "utf8"));
+  const rows = parse(readFileSync(rowsPath, "utf8"));
   const found = findings(rows, tracked);
   for (const line of found) console.log(line);
   const counts = new Map<string, number>();

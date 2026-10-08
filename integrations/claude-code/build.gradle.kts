@@ -9,4 +9,5 @@ dependencies {
     implementation(project(":core"))
     api(project(":features-sessions"))
     implementation(libs.jackson.core)
+    testImplementation(testFixtures(project(":core")))
 }

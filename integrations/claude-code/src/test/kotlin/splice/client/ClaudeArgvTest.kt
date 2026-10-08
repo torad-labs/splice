@@ -4,7 +4,7 @@ package splice.client
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import splice.core.TESTED_CLAUDE_CODE
+import splice.core.testing.CLAUDE_CODE_PIN
 
 class ClaudeArgvTest {
 
@@ -12,7 +12,7 @@ class ClaudeArgvTest {
 
     @Test
     fun `the table was read from the Claude Code release splice pins`() {
-        assertEquals(TESTED_CLAUDE_CODE, ClaudeArgv.GRAMMAR_FROM, "re-read `claude --help` of the new pin")
+        assertEquals(CLAUDE_CODE_PIN, ClaudeArgv.GRAMMAR_FROM, "re-read `claude --help` of the new pin")
     }
 
     @Test

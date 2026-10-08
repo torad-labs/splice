@@ -110,7 +110,8 @@ class SessionsActivityTest {
 
     @Test
     fun `a row says what a waiting session waits for and how it was started`(@TempDir tmp: Path) {
-        val body = row(tmp, LastSource(null), waitingFor = "permission prompt", entrypoint = "cli")
+        val waiting = record(waitingFor = "permission prompt", entrypoint = "cli")
+        val body = row(tmp, LastSource(null), record = waiting)
         assertEquals("permission prompt", body.getValue("waiting_for").jsonPrimitive.content)
         assertEquals("cli", body.getValue("entrypoint").jsonPrimitive.content)
     }
@@ -127,26 +128,29 @@ class SessionsActivityTest {
         val source = LastSource(null)
         assertEquals(JsonNull, row(tmp, source, enabled = false)["last"])
         assertEquals(0, source.calls)
-        assertEquals(JsonNull, row(tmp, source, id = null)["last"])
+        assertEquals(JsonNull, row(tmp, source, record = record(id = null))["last"])
         assertEquals(0, source.calls)
         assertEquals(JsonNull, row(tmp, source)["last"])
         assertEquals(1, source.calls)
     }
 
+    private fun record(
+        id: String? = "synthetic-activity",
+        waitingFor: String? = null,
+        entrypoint: String? = null,
+    ) = SessionRecord(
+        pid = null, sessionId = id, cwd = null, name = null, kind = null, version = null,
+        status = SessionStatus(waitingFor = waitingFor), startedAt = null, updatedAt = null,
+        messagingSocketPath = null, route = SessionRoute.Unknown, availability = SessionAvailability.LIVE,
+        entrypoint = entrypoint,
+    )
+
     private fun row(
         tmp: Path,
         source: LastSource,
         enabled: Boolean = true,
-        id: String? = "synthetic-activity",
-        waitingFor: String? = null,
-        entrypoint: String? = null,
+        record: SessionRecord = record(),
     ): JsonObject {
-        val record = SessionRecord(
-            pid = null, sessionId = id, cwd = null, name = null, kind = null, version = null,
-            status = SessionStatus(waitingFor = waitingFor), startedAt = null, updatedAt = null,
-            messagingSocketPath = null, route = SessionRoute.Unknown, availability = SessionAvailability.LIVE,
-            entrypoint = entrypoint,
-        )
         val registry = object : SessionSource {
             override fun read(): List<SessionRecord> = listOf(record)
             override fun list(): SessionListing = SessionListing(read())

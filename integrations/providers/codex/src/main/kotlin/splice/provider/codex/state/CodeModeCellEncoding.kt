@@ -97,28 +97,13 @@ internal class CodeModeCellEncoding(
             values[name] = Field(null, FieldText { "null" })
         }
 
-        // Each scalar kind has its own typed hook. kotlinx routes encodeEnum through the untyped encodeValue
-        // fallback this class replaced, so the enum hook keeps that index-as-Int encoding. This record captures
-        // its enum field whole through encodeSerializableValue, so no current test reaches this hook.
-        override fun encodeBoolean(value: Boolean) = scalar(value, JsonPrimitive(value))
-
-        override fun encodeByte(value: Byte) = scalar(value, JsonPrimitive(value))
-
-        override fun encodeShort(value: Short) = scalar(value, JsonPrimitive(value))
-
+        // The scalar kinds CodeModeRecordSnapshot reaches. Any other kind falls through to kotlinx's encodeValue,
+        // which throws SerializationException, so an unsupported field fails loudly instead of encoding wrong.
         override fun encodeInt(value: Int) = scalar(value, JsonPrimitive(value))
 
         override fun encodeLong(value: Long) = scalar(value, JsonPrimitive(value))
 
-        override fun encodeFloat(value: Float) = scalar(value, JsonPrimitive(value))
-
-        override fun encodeDouble(value: Double) = scalar(value, JsonPrimitive(value))
-
-        override fun encodeChar(value: Char) = scalar(value, JsonPrimitive(value.toString()))
-
         override fun encodeString(value: String) = scalar(value, JsonPrimitive(value))
-
-        override fun encodeEnum(enumDescriptor: SerialDescriptor, index: Int) = encodeInt(index)
 
         private fun <V : Any> scalar(value: V, primitive: JsonPrimitive) {
             values[name] = Field(value, FieldText { json.encodeToString(JsonElement.serializer(), primitive) })

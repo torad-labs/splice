@@ -65,13 +65,18 @@ package splice.quality
 import com.lemonappdev.konsist.api.Konsist
 import com.lemonappdev.konsist.api.declaration.KoBaseDeclaration
 import com.lemonappdev.konsist.api.declaration.KoFunctionDeclaration
+import com.lemonappdev.konsist.api.declaration.KoParentDeclaration
 import com.lemonappdev.konsist.api.declaration.KoPropertyDeclaration
+import com.lemonappdev.konsist.api.declaration.KoTypeAliasDeclaration
 import com.lemonappdev.konsist.api.provider.KoDeclarationProvider
 import com.lemonappdev.konsist.api.provider.KoNameProvider
 import com.lemonappdev.konsist.api.provider.KoParentProvider
 import com.lemonappdev.konsist.api.provider.KoPrimaryConstructorProvider
 import com.lemonappdev.konsist.api.provider.KoReceiverTypeProvider
+import com.lemonappdev.konsist.api.provider.KoSecondaryConstructorsProvider
 import com.lemonappdev.konsist.api.provider.KoTypeParameterProvider
+import com.lemonappdev.konsist.api.provider.modifier.KoAbstractModifierProvider
+import com.lemonappdev.konsist.api.provider.modifier.KoOpenModifierProvider
 import com.lemonappdev.konsist.api.provider.modifier.KoVisibilityModifierProvider
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -103,42 +108,60 @@ private fun freeStart(ch: Char?): Boolean = ch == null || !isWordOrDot(ch)
  *  as the prefix of a longer path (`splice.x.Y.Companion`) is a use of `splice.x.Y`, as there. */
 private fun freeEnd(ch: Char?): Boolean = ch == null || !isWord(ch)
 
-/** The type names a declaration's PUBLIC contract spells, read from Konsist's declaration model: its
- *  own parents, type parameters and visible constructor parameters, a function's receiver, parameter
- *  and return types, a property's receiver and type, plus those of its public members, nested ones
- *  included. Only TYPES are read. A default value, an initializer or a body is an expression and never
- *  contract (V4-210), and the model knows where each one ends, so a lambda's braces or a string's
- *  commas cannot end a signature early the way a line scan let them. */
+/** The type names a declaration's contract spells: everything a DOWNSTREAM module can call, construct,
+ *  extend or name, read from Konsist's declaration model. That is its own supertypes (by type, never by
+ *  the arguments of a supertype call), type parameters and reachable constructors, a function's receiver,
+ *  parameter and return types, a property's type, a typealias's target, and the same for its reachable
+ *  members, nested ones included. Reachable means public, or protected on an open or abstract class,
+ *  because a subclass in another module calls it. Only TYPES are read. A default value, an initializer
+ *  or a body is an expression and never contract (V4-210), and the model knows where each one ends, so a
+ *  lambda's braces or a string's commas cannot end a signature early the way a line scan let them. */
 private fun signatureOf(declaration: KoBaseDeclaration): String =
     contractOf(declaration).joinToString("\n")
 
 private fun isPublic(declaration: KoBaseDeclaration): Boolean =
     declaration is KoVisibilityModifierProvider && declaration.hasPublicModifier
 
+/** A subclass in another module can reach a protected member or constructor of this class. */
+private fun extensible(declaration: KoBaseDeclaration): Boolean =
+    (declaration is KoOpenModifierProvider && declaration.hasOpenModifier) ||
+        (declaration is KoAbstractModifierProvider && declaration.hasAbstractModifier)
+
+private fun reachable(member: KoBaseDeclaration, owner: KoBaseDeclaration): Boolean =
+    member is KoVisibilityModifierProvider &&
+        (member.hasPublicModifier || (member.hasProtectedModifier && extensible(owner)))
+
 private fun contractOf(declaration: KoBaseDeclaration): List<String> {
     val out = mutableListOf<String?>()
-    if (declaration is KoParentProvider) out += declaration.parents(false).map { it.text }
+    if (declaration is KoParentProvider) out += declaration.parents(false).map(::parentType)
     if (declaration is KoTypeParameterProvider) out += declaration.typeParameters.map { it.text }
-    if (declaration is KoPrimaryConstructorProvider) out += constructorTypes(declaration)
+    out += constructorTypes(declaration)
     if (declaration is KoReceiverTypeProvider) out += declaration.receiverType?.text
     if (declaration is KoFunctionDeclaration) {
         out += declaration.parameters.map { it.type.text }
         out += declaration.returnType?.text
     }
     if (declaration is KoPropertyDeclaration) out += declaration.type?.text
+    if (declaration is KoTypeAliasDeclaration) out += declaration.text.substringAfter('=')
     if (declaration is KoDeclarationProvider) {
         declaration.declarations(includeNested = false, includeLocal = false)
-            .filter { isPublic(it) }
+            .filter { reachable(it, declaration) }
             .forEach { out += contractOf(it) }
     }
     return out.filterNotNull()
 }
 
-/** A constructor that is private, internal or protected is not part of the public contract. */
-private fun constructorTypes(declaration: KoPrimaryConstructorProvider): List<String> {
-    val constructor = declaration.primaryConstructor ?: return emptyList()
-    val hidden = constructor.hasPrivateModifier || constructor.hasInternalModifier || constructor.hasProtectedModifier
-    return if (hidden) emptyList() else constructor.parameters.map { it.type.text }
+/** A supertype as a TYPE: its name and type arguments, without the arguments of a supertype call. */
+private fun parentType(parent: KoParentDeclaration): String =
+    parent.name + parent.typeArguments.orEmpty().joinToString(separator = ",", prefix = "<", postfix = ">") { it.text }
+
+/** The parameter types of every constructor a caller or a subclass can reach: primary or secondary. */
+private fun constructorTypes(declaration: KoBaseDeclaration): List<String> {
+    val primary = (declaration as? KoPrimaryConstructorProvider)?.primaryConstructor
+    val secondary = (declaration as? KoSecondaryConstructorsProvider)?.secondaryConstructors.orEmpty()
+    return (listOfNotNull(primary) + secondary)
+        .filter { it.hasPublicOrDefaultModifier || (it.hasProtectedModifier && extensible(declaration)) }
+        .flatMap { constructor -> constructor.parameters.map { it.type.text } }
 }
 
 internal object PublicSurface {
@@ -150,7 +173,7 @@ internal object PublicSurface {
      *  surface. Every Kotlin spelling is admitted — `fun interface` and `annotation class` included. */
     val DECLARATION = Regex(
         "^public\\s+(?:(?:sealed|data|abstract|open|value|enum|fun|annotation|suspend|inline|expect|external|" +
-            "const)\\s+)*(class|interface|object|fun|val|var)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+            "const)\\s+)*(class|interface|object|fun|val|var|typealias)\\s+([A-Za-z_][A-Za-z0-9_]*)",
     )
 
     private val MODULE_PATH = Regex("\"(:[A-Za-z0-9._-]+)\"")
@@ -620,6 +643,35 @@ class PublicSurfaceLawTest {
     }
 
     @Test
+    fun `the law can actually fail - what a subclass or an alias reaches is contract - V4-92`(@TempDir root: File) {
+        with(Tree(root)) {
+            // Each of these is part of what a DOWNSTREAM module can call or extend, so Hidden rides Store.
+            val reachable = mapOf(
+                "a protected constructor of an open class" to PROTECTED_CONSTRUCTOR_STORE,
+                "a public secondary constructor" to SECONDARY_CONSTRUCTOR_STORE,
+                "a protected member of an open class" to PROTECTED_MEMBER_STORE,
+                "the target of a public typealias" to ALIAS_STORE,
+            )
+            val unread = reachable.filter { (_, source) ->
+                write(LIB_STORE to source, OTHER_USE to STORE_USE)
+                audit(baseline()).isNotEmpty()
+            }.keys
+            assertEquals(emptySet<String>(), unread, "each of these carries its type to the consumer")
+        }
+    }
+
+    @Test
+    fun `the law can actually fail - a supertype call's arguments are not contract - V4-92`(@TempDir root: File) {
+        with(Tree(root)) {
+            // `Base(Hidden())` is an expression: Hidden is built inside Store and no caller binds it.
+            write(LIB_STORE to SUPER_CALL_STORE, OTHER_USE to STORE_USE)
+            assertHit(audit(baseline()), "GROWTH", HIDDEN_ID) {
+                "a type named only in a supertype's constructor arguments is not part of the contract"
+            }
+        }
+    }
+
+    @Test
     fun `the law can actually fail - a shrink names the new number and the resource - V4-92`(@TempDir root: File) {
         with(Tree(root)) {
             write(LIB_API to API, OTHER_USE to USE)
@@ -751,6 +803,26 @@ class PublicSurfaceLawTest {
         /** A default LAMBDA in a primary constructor: its braces sit on the parameter's own line, inside the list. */
         const val LAMBDA_STORE = "package fix.lib\n\npublic class Store(\n    val onFail: () -> Unit = { },\n" +
             "    val hidden: Hidden,\n)\n\npublic class Hidden\n"
+
+        /** A protected constructor takes a type a subclass in another module must pass. */
+        const val PROTECTED_CONSTRUCTOR_STORE = "package fix.lib\n\npublic open class Store protected constructor(\n" +
+            "    hidden: Hidden?,\n)\n\npublic class Hidden\n"
+
+        /** A class whose only constructor is a public SECONDARY one. */
+        const val SECONDARY_CONSTRUCTOR_STORE = "package fix.lib\n\npublic class Store {\n" +
+            "    public constructor(hidden: Hidden)\n}\n\npublic class Hidden\n"
+
+        /** A protected member a subclass in another module calls. */
+        const val PROTECTED_MEMBER_STORE = "package fix.lib\n\npublic open class Store {\n" +
+            "    protected fun read(): Hidden = Hidden()\n}\n\npublic class Hidden\n"
+
+        /** A member that names a public typealias, whose target is the type nothing else spells. */
+        const val ALIAS_STORE = "package fix.lib\n\npublic typealias Alias = Hidden\n\npublic class Store {\n" +
+            "    public fun read(): Alias = Hidden()\n}\n\npublic class Hidden\n"
+
+        /** Hidden appears only inside the arguments of Store's supertype call. */
+        const val SUPER_CALL_STORE = "package fix.lib\n\npublic open class Base(val any: Any)\n\n" +
+            "public class Store : Base(Hidden())\n\npublic class Hidden\n"
 
         fun baseline(vararg entries: String, recorded: String = "2026-09-17"): String =
             """{"recorded": "$recorded", "offenders": [${entries.joinToString(", ") { "\"$it\"" }}]}"""

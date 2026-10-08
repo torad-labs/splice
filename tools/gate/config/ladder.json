@@ -91,10 +91,11 @@
     },
     {
       "task": "codeModePackagedMock",
-      "why": "Exercises the fat JAR the build produced, with synthetic auth and loopback-only tools. The receipt goes under app/build/ — never the tree, and a directory `clean` empties, because the mock refuses to overwrite a receipt.",
+      "why": "Exercises the fat JAR the build produced, with synthetic auth and loopback-only tools. The receipt goes under app/build/ — never the tree. The leg owns its receipt and removes it when it starts, so a rerun writes its own; the mock still refuses any receipt that is there and was not removed by this leg.",
       "command": ["bun", "tools/e2e", "code-mode", "mock", "--artifact", "app/build/libs/app-all.jar", "--receipt", "app/build/receipts/code-mode-mock.json"],
       "dependsOn": [":app:shadowJar"],
-      "creates": "app/build/receipts"
+      "creates": "app/build/receipts",
+      "owns": "app/build/receipts/code-mode-mock.json"
     },
     {
       "task": "dependencyAudit",

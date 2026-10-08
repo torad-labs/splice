@@ -55,6 +55,9 @@ val legTasks = legs.map { leg ->
         (leg["dependsOn"] as List<String>?)?.forEach { dependsOn(it) }
         if (leg["afterAllTests"] == true) dependsOn(everyTestTask)
         (leg["creates"] as String?)?.let { dir -> doFirst { rootDir.resolve(dir).mkdirs() } }
+        // The one file a leg writes and owns is removed as the leg starts: a rerun of the leg must not find its own
+        // previous output. Only the file the row names is removed, never a directory.
+        (leg["owns"] as String?)?.let { file -> doFirst { rootDir.resolve(file).delete() } }
     }
 }
 

@@ -40,6 +40,9 @@ internal sealed class LineShape {
     object NotAnObject : LineShape()
 }
 
+/** A row a move takes: its assistant row, and whether it holds thinking, which goes with its model. */
+internal class RowMove(val assistant: LineShape.Assistant, val strips: Boolean)
+
 /** The per-line rule of the resume rewrite: what a line is, and how an assistant row is moved. */
 internal class AssistantRowMove {
     private val json = Json { ignoreUnknownKeys = true }
@@ -57,19 +60,29 @@ internal class AssistantRowMove {
         Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }
             .fold(onSuccess = { classify(it) }, onFailure = { LineShape.NotAnObject })
 
-    /** Whether [message] holds thinking blocks a move would strip. */
-    fun holdsThinking(message: JsonObject): Boolean = withoutThinking(message[CONTENT]) != null
+    /** The one decision a move makes about a line, shared by the survey that counts the moves and the write that
+     *  applies them: null when the line stays exactly as it is (history, or an assistant row on a model [kept]
+     *  serves), otherwise the row the move takes. */
+    fun moveOf(line: LineShape, kept: KeptModel): RowMove? {
+        if (line !is LineShape.Assistant) return null
+        if (kept(JsonScalars.str(line.message, Keys.MODEL))) return null
+        return RowMove(line, strips = holdsThinking(line.message))
+    }
 
     /** The line rewritten under [policy], or null when the line stays exactly as it is. */
     fun rewritten(line: String, policy: RowPolicy): String? {
-        val assistant = when (val parsed = read(line)) {
-            is LineShape.Assistant -> parsed
-            LineShape.NotAssistant, LineShape.NotAnObject -> return null
-        }
-        val fixedMessage = moved(assistant.message, policy) ?: return null
+        val move = moveOf(read(line), policy.keeps) ?: return null
+        val stripped = withoutThinking(move.assistant.message[CONTENT])
+        if (policy.target == null && stripped == null) return null
+        val message = JsonObject(
+            move.assistant.message.toMutableMap().apply {
+                policy.target?.let { put(Keys.MODEL, JsonPrimitive(it)) }
+                stripped?.let { put(CONTENT, it) }
+            },
+        )
         return json.encodeToString(
             JsonObject.serializer(),
-            JsonObject(assistant.row.toMutableMap().apply { put(TRANSCRIPT_MESSAGE, fixedMessage) }),
+            JsonObject(move.assistant.row.toMutableMap().apply { put(TRANSCRIPT_MESSAGE, message) }),
         )
     }
 
@@ -81,25 +94,19 @@ internal class AssistantRowMove {
     private fun assistantMessage(row: JsonObject): JsonObject? =
         if (JsonScalars.str(row, TRANSCRIPT_TYPE) == ASSISTANT_TYPE) row[TRANSCRIPT_MESSAGE] as? JsonObject else null
 
-    /** [message] moved under [policy]: onto its target model, without its thinking. Null when it stays as it is. */
-    private fun moved(message: JsonObject, policy: RowPolicy): JsonObject? {
-        if (policy.keeps(JsonScalars.str(message, Keys.MODEL))) return null
-        val stripped = withoutThinking(message[CONTENT])
-        if (policy.target == null && stripped == null) return null
-        return JsonObject(
-            message.toMutableMap().apply {
-                policy.target?.let { put(Keys.MODEL, JsonPrimitive(it)) }
-                stripped?.let { put(CONTENT, it) }
-            },
-        )
-    }
+    /** Whether a content block is thinking, the kind a move strips. */
+    private fun isThinking(block: JsonElement): Boolean =
+        JsonScalars.str(block as? JsonObject, TRANSCRIPT_TYPE) in thinkingTypes
+
+    /** Whether [message] holds thinking blocks a move would strip. */
+    private fun holdsThinking(message: JsonObject): Boolean =
+        (message[CONTENT] as? JsonArray)?.any { isThinking(it) } == true
 
     /** [content] without its thinking blocks, or null when it holds none (or is not a block list) and
      *  stays exactly as it is. Emptied, it becomes [thinkingRemoved]: the row is never dropped. */
     private fun withoutThinking(content: JsonElement?): JsonArray? {
         val blocks = content as? JsonArray ?: return null
-        val kept = blocks.filterNot { block -> JsonScalars.str(block as? JsonObject, TRANSCRIPT_TYPE) in thinkingTypes }
-        if (kept.size == blocks.size) return null
-        return JsonArray(kept.ifEmpty { listOf(thinkingRemoved) })
+        if (blocks.none { isThinking(it) }) return null
+        return JsonArray(blocks.filterNot { isThinking(it) }.ifEmpty { listOf(thinkingRemoved) })
     }
 }

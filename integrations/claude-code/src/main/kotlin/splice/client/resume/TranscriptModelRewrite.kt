@@ -52,7 +52,6 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
-import java.util.BitSet
 
 /** Claude Code's transcript extension — the one declaration; ResumeAcrossHeads reads it too. */
 internal const val TRANSCRIPT_SUFFIX: String = ".jsonl"
@@ -118,7 +117,7 @@ public class TranscriptModelRewrite(
         } ?: clientPicked
         val surveys = files.map { survey(it, kept) }
         val policy = RowPolicy(served?.let { pinnedModel } ?: surveys.first().newestClaude, kept)
-        val rewritten = surveys.sumOf { it.changed(policy).cardinality() }
+        val rewritten = surveys.sumOf { it.changed(policy) }
         if (rewritten == 0) {
             originals.rememberIfKept(transcript)
             return 0
@@ -141,32 +140,36 @@ public class TranscriptModelRewrite(
     private fun isNativeClaude(model: String?): Boolean =
         model?.startsWith(CLAUDE_ID_PREFIX) == true && "--" !in model
 
-    /** One pass over [file]: the rows that move off their model ([moves]), the moving rows that hold
-     *  thinking ([thinking]), the last native Claude model an assistant row names, and the bytes' digest. */
-    private class Survey(val file: Path) {
-        val moves = BitSet()
-        val thinking = BitSet()
+    /** One pass over a file, as counts: how many rows a move takes and how many of those hold thinking, the last
+     *  native Claude model an assistant row names, and the digest of the bytes read. No row is kept: the write
+     *  decides each row again through the same [AssistantRowMove.moveOf], so memory does not grow with the file.
+     *  [path] is what the rewrite was given; [file] is the file it names now, which every check and the
+     *  replacement use. */
+    private class Survey(val path: Path, val file: Path) {
+        var moves = 0
+        var strips = 0
         var newestClaude: String? = null
         var digest = ByteArray(0)
 
         /** The rows a rewrite under [policy] changes: a moving row changes when it takes a model, or, with
          *  none to take, when it loses its thinking. */
-        fun changed(policy: RowPolicy): BitSet = if (policy.target != null) moves else thinking
+        fun changed(policy: RowPolicy): Int = if (policy.target != null) moves else strips
     }
 
-    private fun survey(file: Path, kept: KeptModel): Survey {
-        val survey = Survey(file)
-        survey.digest = readable(file) {
-            TranscriptLines.read(file) { index, row ->
-                val message = when (val line = rows.read(row.text())) {
-                    is LineShape.Assistant -> line.message
-                    LineShape.NotAssistant, LineShape.NotAnObject -> return@read
+    private fun survey(path: Path, kept: KeptModel): Survey {
+        val survey = Survey(path, readable(path) { path.toRealPath() })
+        survey.digest = readable(survey.file) {
+            TranscriptLines.read(survey.file) { _, row ->
+                val shape = rows.read(row.text())
+                if (shape is LineShape.Assistant) {
+                    val model = JsonScalars.str(shape.message, Keys.MODEL)
+                    if (isNativeClaude(model)) survey.newestClaude = model
                 }
-                val model = JsonScalars.str(message, Keys.MODEL)
-                if (isNativeClaude(model)) survey.newestClaude = model
-                if (kept(model)) return@read
-                survey.moves.set(index)
-                if (rows.holdsThinking(message)) survey.thinking.set(index)
+                val move = rows.moveOf(shape, kept)
+                if (move != null) {
+                    survey.moves++
+                    if (move.strips) survey.strips++
+                }
             }
         }
         return survey
@@ -188,29 +191,28 @@ public class TranscriptModelRewrite(
     }
 
     private fun publish(survey: Survey, policy: RowPolicy) {
-        val changed = survey.changed(policy)
-        if (changed.isEmpty) return
-        Cancellables.runCatchingCancellable { replace(survey, changed, policy) }
+        if (survey.changed(policy) == 0) return
+        Cancellables.runCatchingCancellable { replace(survey, policy) }
             .exceptionOrNull()
             ?.let { cause -> throw IOException("${survey.file} unwritable (${SafeFailureText.render(cause)})") }
     }
 
-    /** [file]'s rows to [out]: a row in [changed] moved under [policy], every other row's bytes as they were. */
-    private fun writeRows(file: Path, changed: BitSet, policy: RowPolicy, out: OutputStream) {
+    /** [file]'s rows to [out]: a row a move takes is rewritten under [policy], every other row's bytes are kept as
+     *  they were. Returns the digest of the bytes read, which the rewrite checks against its survey. */
+    private fun writeRows(file: Path, policy: RowPolicy, out: OutputStream): ByteArray =
         TranscriptLines.read(file) { index, row ->
             if (index > 0) out.write('\n'.code)
-            val moved = if (changed[index]) rows.rewritten(row.text(), policy) else null
+            val moved = rows.rewritten(row.text(), policy)
             if (moved == null) out.write(row.bytes, 0, row.length) else out.write(moved.toByteArray(Charsets.UTF_8))
         }
-    }
 
     /** V4-259: the new bytes go to a temp file beside the transcript, which is moved over it in one step,
      *  so a write that dies partway leaves the user's transcript exactly as it was; the temp file goes
      *  either way. The in-place write this replaced wrote through a link and refused a read-only file,
      *  and so does this: the file a link names is the one replaced, and a rename, which a read-only file
      *  does not stop, is not attempted on one. The file's permissions carry over to the new one. */
-    private fun replace(survey: Survey, changed: BitSet, policy: RowPolicy) {
-        val target = survey.file.toRealPath()
+    private fun replace(survey: Survey, policy: RowPolicy) {
+        val target = survey.file
         if (!Files.isWritable(target)) throw IOException("$target is read-only")
         val staged = Files.createTempFile(target.parent, ".${target.fileName}.", ".tmp")
         Cancellables.runCatchingCancellable {
@@ -218,8 +220,12 @@ public class TranscriptModelRewrite(
                 runCatching { Files.setPosixFilePermissions(staged, Files.getPosixFilePermissions(target)) },
                 "no POSIX permissions on this filesystem, so there are none to carry over",
             )
-            fs.write(staged) { out -> writeRows(target, changed, policy, out) }
-            ensureUnchanged(survey, "Transcript changed while staging its rewrite")
+            val changedWhileStaging = "Transcript changed while staging its rewrite"
+            var consumed = ByteArray(0)
+            fs.write(staged) { out -> consumed = writeRows(target, policy, out) }
+            // The staged bytes are the surveyed bytes only if the staging read consumed exactly those.
+            if (!MessageDigest.isEqual(consumed, survey.digest)) throw IOException(changedWhileStaging)
+            ensureUnchanged(survey, changedWhileStaging)
             fs.move(staged, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         }.onFailure {
             Cancellables.discard(
@@ -230,9 +236,12 @@ public class TranscriptModelRewrite(
         }
     }
 
-    /** Throws [changed] unless the surveyed file still holds the bytes its survey read. */
+    /** Throws [changed] unless the path still names the file the survey resolved, and that file still holds the
+     *  bytes the survey read. Every check of a rewrite goes through here, so each one reads the file a replacement
+     *  would replace. */
     private fun ensureUnchanged(survey: Survey, changed: String) {
+        val named = readable(survey.path) { survey.path.toRealPath() }
         val now = readable(survey.file) { TranscriptLines.digest(survey.file) }
-        if (!MessageDigest.isEqual(now, survey.digest)) throw IOException(changed)
+        if (named != survey.file || !MessageDigest.isEqual(now, survey.digest)) throw IOException(changed)
     }
 }

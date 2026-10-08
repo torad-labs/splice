@@ -111,6 +111,67 @@ class TranscriptModelRewriteTest {
         assertEquals(listOf("s1.jsonl"), names(dir), "no temp file is left beside it")
     }
 
+    // Review of 9226c8eb9 (splice-reviewer): the staged bytes are whatever the staging read consumed, so that read
+    // must be the surveyed bytes. A file that holds other bytes while it is staged, and is restored before the
+    // last check, published the staged bytes read from the other ones.
+    @Test
+    fun `staged bytes come from the surveyed bytes, even when the file is restored before the last check`(
+        @TempDir dir: Path,
+    ) {
+        val transcript = write(dir.resolve("s1.jsonl"), FOREIGN_ROW)
+        val original = Files.readString(transcript)
+        val transient = USER_ROW + "\n"
+        val flipping = object : TranscriptFs {
+            override fun write(path: Path, rows: StagedRows) {
+                Files.writeString(transcript, transient)
+                Files.newOutputStream(path).use { rows(it) }
+                Files.writeString(transcript, original)
+            }
+
+            override fun move(source: Path, target: Path, vararg options: CopyOption) {
+                Files.move(source, target, *options)
+            }
+        }
+
+        assertThrows(IOException::class.java) {
+            TranscriptModelRewrite(flipping, originals).rewrite(transcript, "gpt-5.6-sol", SOL_ONLY)
+        }
+
+        assertEquals(original, Files.readString(transcript), "the user's transcript is exactly as it was")
+        assertEquals(listOf("s1.jsonl"), names(dir), "no temp file is left beside it")
+    }
+
+    // Review of 9226c8eb9 (splice-reviewer): a link retargeted while it is staged. The rewrite must not replace
+    // the file the link names now with bytes read from the file it named before.
+    @Test
+    fun `a link retargeted during staging is refused, and the file it named before keeps its appended row`(
+        @TempDir dir: Path,
+    ) {
+        val first = write(dir.resolve("first.jsonl"), FOREIGN_ROW)
+        val other = write(dir.resolve("other.jsonl"), FOREIGN_ROW)
+        val link = Files.createSymbolicLink(dir.resolve("s2.jsonl"), first)
+        val appended = Files.readString(first) + USER_ROW + "\n"
+        val retargeting = object : TranscriptFs {
+            override fun write(path: Path, rows: StagedRows) {
+                Files.newOutputStream(path).use { rows(it) }
+                Files.writeString(first, appended)
+                Files.delete(link)
+                Files.createSymbolicLink(link, other)
+            }
+
+            override fun move(source: Path, target: Path, vararg options: CopyOption) {
+                Files.move(source, target, *options)
+            }
+        }
+
+        assertThrows(IOException::class.java) {
+            TranscriptModelRewrite(retargeting, originals).rewrite(link, "gpt-5.6-sol", SOL_ONLY)
+        }
+
+        assertEquals(appended, Files.readString(first), "the row appended to the file it named is not erased")
+        assertEquals(FOREIGN_ROW + "\n", Files.readString(other), "the file the link names now is not rewritten")
+    }
+
     @Test
     fun `a rewrite replaces the transcript whole, keeps its permissions and leaves no temp file`(@TempDir dir: Path) {
         val transcript = write(dir.resolve("s1.jsonl"), USER_ROW, FOREIGN_ROW)

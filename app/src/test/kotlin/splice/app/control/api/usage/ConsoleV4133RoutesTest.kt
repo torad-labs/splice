@@ -41,8 +41,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlServer
-import splice.app.control.controlServerFor
 import splice.app.control.ManagedHead
+import splice.app.control.controlServerFor
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService

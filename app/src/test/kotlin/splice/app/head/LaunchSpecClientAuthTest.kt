@@ -18,7 +18,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.auth.SignInPlanner
-import splice.app.control.ControlServer
 import splice.app.control.controlServerFor
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild

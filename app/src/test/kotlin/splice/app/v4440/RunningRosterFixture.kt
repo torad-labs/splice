@@ -9,8 +9,8 @@ import splice.app.TokenUrlRefreshCall
 import splice.app.auth.SignInPlanner
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
-import splice.app.control.controlServerFor
 import splice.app.control.ManagedHead
+import splice.app.control.controlServerFor
 import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
 import splice.app.head.HeadServerFactory

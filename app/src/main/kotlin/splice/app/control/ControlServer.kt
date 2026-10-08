@@ -32,8 +32,11 @@ import splice.app.control.api.ControlPayloads
 import splice.app.control.api.HeadResolver
 import splice.app.control.mount.AccountsMount
 import splice.app.control.mount.AddMount
+import splice.app.control.mount.BoundResource
 import splice.app.control.mount.ConfigurationMount
 import splice.app.control.mount.ControlGuard
+import splice.app.control.mount.ControlMount
+import splice.app.control.mount.DaemonSelfAnswers
 import splice.app.control.mount.DiagnosticsMount
 import splice.app.control.mount.EventsMount
 import splice.app.control.mount.FleetMount
@@ -50,15 +53,11 @@ import splice.app.control.mount.TraceMount
 import splice.app.control.mount.TurnsMount
 import splice.app.control.mount.UsageMount
 import splice.configuration.topology.TopologyStale
-import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
-import splice.daemonclient.DaemonProbe
-import splice.diagnostics.doctor.DaemonAnswers
-import splice.diagnostics.doctor.DaemonAnswersSource
 import splice.head.admission.AdmissionErrorBody
 import splice.http.ingress.HeapIngress
 import splice.launch.recipe.LaunchService
@@ -85,6 +84,7 @@ public class ControlServer(
     runtime: ControlRuntime = ControlRuntime(),
 ) {
     private val failedHeads: FailedHeads = probes.failedHeads
+
     // Total CONFIGURED heads. The readyHeads + failedHeads == heads invariant only holds against the
     // configured total: an assembly-failed head is counted in failedHeads but is NEVER in the `heads`
     // map, so reporting heads.size broke the invariant for it (review 2026-07-23).
@@ -95,7 +95,6 @@ public class ControlServer(
     private val turnPathStalled: TurnPathStalled = probes.turnPathStalled
     private val launchService: LaunchService? = runtime.launchService
     private val shutdownDaemon: ShutdownDaemon = runtime.shutdownDaemon
-    private val mcpHost: McpHost? = runtime.mcpHost
     private val sessions: SessionSource? = runtime.sessions
     private val clientVersions: ClientVersionTracker = runtime.clientVersions
 
@@ -149,25 +148,34 @@ public class ControlServer(
         ports,
         guard,
         log,
-        DaemonAnswersSource {
-            DaemonAnswers(
-                payloads.controlHealthJson(),
-                fleet.headsJson(),
-                accounts.authJson(),
-                heads.mapValues { (key, _) ->
-                    val effective = config.getConfig(key)
-                    DaemonProbe.HeadTrace(effective.trace)
-                },
-                unmappedTiers = heads.mapValues { (_, head) -> head.catalog?.unmappedTiers.orEmpty() },
-                accounts = accounts.accountsJson(),
-            )
-        },
+        DaemonSelfAnswers(heads, config, payloads, fleet, accounts),
     )
 
     private val models = ModelsMount(heads, ports, guard)
     private val launchSessions = LaunchSessions(sessions, ports, config.statePaths)
     private val launch = LaunchMount(heads, resolver, launchService, audit, log, guard, launchSessions)
-    private val mcp = mcpHost?.let { McpMount(it, guard) }
+
+    // The order the rows register in: MCP last, and only when the daemon hosts MCP at all (null keeps the control
+    // plane exactly as before). The MCP host is the one bound resource: the server starts it after the bind.
+    private val mcp: McpMount? = runtime.mcpHost?.let { McpMount(it, guard) }
+    private val mounts: List<ControlMount> = listOf(
+        ControlMount(fleet::register),
+        ControlMount(lifecycle::register),
+        ControlMount(add::register),
+        ControlMount(configuration::register),
+        ControlMount(usage::register),
+        ControlMount(accounts::register),
+        ControlMount(turns::register),
+        ControlMount(trace::register),
+        ControlMount(sessionMount::register),
+        ControlMount(teams::register),
+        ControlMount(projects::register),
+        ControlMount(events::register),
+        ControlMount(diagnostics::register),
+        ControlMount(models::register),
+        ControlMount(launch::register),
+    ) + listOfNotNull(mcp)
+    private val resources: List<BoundResource> = listOfNotNull(mcp)
     private val ingress = HeapIngress(JvmHeap.budget, Knob.MAX_REQUEST_BYTES.default as Long, AdmissionErrorBody)
 
     @Volatile
@@ -200,7 +208,7 @@ public class ControlServer(
         // returns (read from the 3.5.2 bytecode), so this never actually waits.
         boundPort = engine.engine.resolvedConnectors().single().port
         server = engine
-        mcpHost?.start()
+        resources.forEach { it.start() }
     }
 
     /** The engine and the whole route table it serves. Extracted from [start] (V4-136): the route
@@ -215,22 +223,7 @@ public class ControlServer(
                     ingress.install(this)
                     guard.refuseForeignHosts(this)
                     routing {
-                        fleet.register(this)
-                        lifecycle.register(this)
-                        add.register(this)
-                        configuration.register(this)
-                        usage.register(this)
-                        accounts.register(this)
-                        turns.register(this)
-                        trace.register(this)
-                        sessionMount.register(this)
-                        teams.register(this)
-                        projects.register(this)
-                        events.register(this)
-                        diagnostics.register(this)
-                        models.register(this)
-                        launch.register(this)
-                        mcp?.register(this)
+                        mounts.forEach { it.register(this) }
                     }
                 }
             },
@@ -244,7 +237,7 @@ public class ControlServer(
 
     @Synchronized
     public fun stop() {
-        mcpHost?.stop()
+        resources.forEach { it.stop() }
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
         boundPort = null

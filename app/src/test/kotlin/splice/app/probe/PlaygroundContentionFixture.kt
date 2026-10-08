@@ -19,8 +19,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import splice.app.control.controlServerFor
 import splice.app.control.ManagedHead
+import splice.app.control.controlServerFor
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.SyntheticPerfHistory
 import splice.core.config.ConfigService

@@ -9,14 +9,19 @@ import io.ktor.server.routing.post
 import splice.control.mcp.McpHost
 import splice.control.mcp.McpRoutes
 
-/** The /mcp/{name} rows are the only ones that also admit the MCP access key ([Door.MCP]). */
-internal class McpMount(private val host: McpHost, private val guard: ControlGuard) {
+/** The /mcp/{name} rows are the only ones that also admit the MCP access key ([Door.MCP]). The host's sweeper
+ *  and its open sessions belong to this mount: the server starts and stops them through [start] and [stop]. */
+internal class McpMount(private val host: McpHost, private val guard: ControlGuard) : ControlMount, BoundResource {
     private val routes = McpRoutes(host)
 
-    fun register(route: Route) {
+    override fun register(route: Route) {
         route.get("/api/mcp") { guard.guarded(call) { ControlReplies.respond(call, host.statusJson()) } }
         route.post("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.post(call) } }
         route.get("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.stream(call) } }
         route.delete("/mcp/{name}") { guard.guarded(call, Door.MCP) { routes.delete(call) } }
     }
+
+    override fun start() = host.start()
+
+    override fun stop() = host.stop()
 }

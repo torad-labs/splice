@@ -36,9 +36,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlRuntime
-import splice.app.control.ControlServer
-import splice.app.control.controlServerFor
 import splice.app.control.ManagedHead
+import splice.app.control.controlServerFor
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.client.wrap.WrapStateStore

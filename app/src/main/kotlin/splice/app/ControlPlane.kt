@@ -228,9 +228,7 @@ internal class ControlPlane(
         // Knob.DEBUG is the daemon-wide verbose-logging switch (env CLAUDEX_DEBUG / CODEX_PROXY_DEBUG):
         // when it is on, the daemon marks its own log so the extra verbosity can be told apart. This
         // is the one production read of the knob — the accessor had no consumer before V4-110.
-        if (config.getConfig().debug) {
-            log("[daemon] debug logging enabled\n")
-        }
+        if (config.getConfig().debug) log("[daemon] debug logging enabled\n")
         val home = statePaths.rootDir.parent ?: statePaths.rootDir
         val sharing = McpSharing(
             enabled = mcpHosting.enabled,

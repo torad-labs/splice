@@ -1,13 +1,14 @@
 // NEW: reserve before Ktor copies a body, with an ordered empty refusal when capacity is absent.
 package splice.http.ingress
 
-import io.netty.channel.ChannelDuplexHandler
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.ChannelOutboundHandlerAdapter
 import io.netty.channel.ChannelPromise
+import io.netty.channel.SimpleChannelInboundHandler
 import io.netty.handler.codec.http.DefaultHttpRequest
 import io.netty.handler.codec.http.FullHttpResponse
 import io.netty.handler.codec.http.HttpHeaderNames
+import io.netty.handler.codec.http.HttpObject
 import io.netty.handler.codec.http.HttpRequest
 import io.netty.handler.codec.http.HttpUtil
 import io.netty.handler.codec.http.LastHttpContent
@@ -27,8 +28,8 @@ internal class IngressHandler(
     private val cap: Long,
     private val requestLimit: Long,
     private val ownership: IngressOwnership,
-) : ChannelDuplexHandler() {
-    override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
+) : SimpleChannelInboundHandler<HttpObject>(false) {
+    override fun channelRead0(ctx: ChannelHandlerContext, msg: HttpObject) {
         if (ownership.halted.get()) {
             ReferenceCountUtil.release(msg)
             return
@@ -93,16 +94,19 @@ internal class IngressHandler(
         ctx.fireChannelRead(LastHttpContent.EMPTY_LAST_CONTENT)
     }
 
+    override fun channelInactive(ctx: ChannelHandlerContext) {
+        ownership.disconnect()
+        ctx.fireChannelInactive()
+    }
+}
+
+/** The response path: a final response that ends a connection's last request closes it once its write completes. */
+internal class IngressResponseWatch(private val ownership: IngressOwnership) : ChannelOutboundHandlerAdapter() {
     override fun write(ctx: ChannelHandlerContext, msg: Any, promise: ChannelPromise) {
         val interim = msg is FullHttpResponse && msg.status().code() < HttpStatus.OK
         if (msg is LastHttpContent && !interim) {
             promise.addListener { if (ownership.responded()) ctx.close() }
         }
         ctx.write(msg, promise)
-    }
-
-    override fun channelInactive(ctx: ChannelHandlerContext) {
-        ownership.disconnect()
-        ctx.fireChannelInactive()
     }
 }

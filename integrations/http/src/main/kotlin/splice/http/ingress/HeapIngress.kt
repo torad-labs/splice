@@ -58,6 +58,8 @@ public class HeapIngress(
             "splice-heap-body",
             IngressHandler(heap, maxBodyBytes, requestLimit, ownership),
         )
+        // Added after the body handler, so it lands directly behind the codec: the response path sees writes there.
+        pipeline.addAfter(CODEC_HANDLER, "splice-heap-response", IngressResponseWatch(ownership))
         // Physical close settles ownership even when a retired registration emits no channelInactive.
         pipeline.channel().closeFuture().addListener { ownership.disconnect() }
         val _ = connections.add(pipeline.channel())

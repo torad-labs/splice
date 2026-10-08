@@ -12,11 +12,10 @@
 #   - No `ignores:` block. The toolkit exempts test source sets. The operator's law is no exceptions, so tests
 #     are policed like production code.
 #   - `override` carve-out. An override's own parameter types are fixed by its supertype, and where the supertype
-#     is a library no compliant spelling exists. Four remain, measured 2026-10-08 with the carve-out removed:
-#     IngressHandler's channelRead and write (IngressHandler.kt:31, :96). Netty's typed bases are inbound-only, so
-#     a duplex handler takes none, and these two hooks share IngressOwnership state (register at
-#     IngressHandler.kt:42, responded at :99; IngressOwnership.kt:23). ClientWindowsTest.kt:93 overrides the JDK's
-#     FileSystemProvider.setAttribute, which takes Object. ClientVersion.kt:20 overrides Any.equals.
+#     is a library no compliant spelling exists. Three remain, measured 2026-10-08 with the carve-out removed:
+#     IngressResponseWatch.write (IngressHandler.kt:105), the one untyped outbound hook, since Netty has no typed
+#     outbound base. ClientWindowsTest.kt:93 overrides the JDK's FileSystemProvider.setAttribute, which takes Object.
+#     ClientVersion.kt:20 overrides Any.equals.
 #     A nested non-override function is still checked. A splice supertype's declaration is still checked (it has no
 #     `override` modifier), but a splice generic instantiated with Any in a subclass
 #     (`class X : Foo<Any> { override fun f(x: Any) }`) is not: the declaration reads `T`. Measured zero such hidden

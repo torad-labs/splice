@@ -173,8 +173,23 @@ abstract class McpHostFixture {
         return checkNotNull(reply.sessionId)
     }
 
-    protected suspend fun call(session: String, id: Any, op: String, text: String = "", name: String = "fake"): JsonObject {
-        val idJson = if (id is String) "\"$id\"" else id.toString()
+    protected suspend fun call(
+        session: String,
+        id: Int,
+        op: String,
+        text: String = "",
+        name: String = "fake",
+    ): JsonObject = sendCall(session, id.toString(), op, text, name)
+
+    protected suspend fun call(
+        session: String,
+        id: String,
+        op: String,
+        text: String = "",
+        name: String = "fake",
+    ): JsonObject = sendCall(session, "\"$id\"", op, text, name)
+
+    private suspend fun sendCall(session: String, idJson: String, op: String, text: String, name: String): JsonObject {
         val body = """{"jsonrpc":"2.0","id":$idJson,"method":"tools/call",""" +
             """"params":{"name":"echo","arguments":{"op":"$op","text":"$text"}}}"""
         val reply = host.post(name, session, body)

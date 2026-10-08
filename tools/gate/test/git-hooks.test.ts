@@ -5,7 +5,7 @@
 // the shared checkout. Gradle is a fake, `compiler`, that judges the scratch worktree's bytes, except the two root
 // script tests, which run the real gradle wrapper on a scratch settings file.
 import { afterAll, describe, expect, test } from "bun:test";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import {
@@ -204,7 +204,7 @@ describe("pre-commit judges the bytes the commit holds", () => {
     const { result, text } = await captured(() => preCommit(lay(root), { gate: compiler(root, calls) }));
     expect(result).toBe(1);
     expect(calls).toEqual([]);
-    expect(text).toContain(`${TARGET}: the index and the worktree hold different bytes`);
+    expect(text).toContain(`${TARGET}: the index and the worktree hold different content or mode`);
   });
 
   test("two sets of bytes are refused for the reverse case: the index holds the violation, the worktree the clean form", async () => {
@@ -222,6 +222,22 @@ describe("pre-commit judges the bytes the commit holds", () => {
     git(root, ["config", "filter.upper.clean", "tr a-z A-Z"]);
     writeFile(root, TARGET, CLEAN);
     git(root, ["add", ".gitattributes", TARGET]);
+    expect(unequalBytes(root, [TARGET])).toEqual([TARGET]);
+  });
+
+  test("a staged symlink is judged by its link text, not by the file it names", () => {
+    const root = wallsRepo();
+    writeFile(root, "docs/README.md", "docs\n");
+    symlinkSync("README.md", join(root, "docs", "LINK.md"));
+    git(root, ["add", "docs/LINK.md"]);
+    expect(unequalBytes(root, ["docs/LINK.md"])).toEqual([]);
+  });
+
+  test("a file whose executable bit differs from the index's mode is refused: the mode is part of the entry", () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    chmodSync(join(root, TARGET), 0o755);
     expect(unequalBytes(root, [TARGET])).toEqual([TARGET]);
   });
 

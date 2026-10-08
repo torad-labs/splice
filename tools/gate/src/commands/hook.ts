@@ -28,7 +28,7 @@
 // NOTHING HERE IS SKIPPABLE. There is no environment switch and no flag. `--no-verify` is the only bypass, and
 // it is forbidden to seats.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { astGrepBin } from "../lib/astgrep.ts";
@@ -126,25 +126,45 @@ export function dirtyPaths(root: string): string[] {
   return [...new Set([...tracked, ...untracked])].sort();
 }
 
-/** The staged paths whose index blob is not the blob `git add` would store from the worktree file. A staged path
- *  missing from the worktree differs too. The worktree bytes are hashed raw (`--no-filters`): a clean filter would
- *  turn them into the filtered blob the index holds, and so hide the difference. */
+/** The index entry (`<mode> <blob>`) that `git add` would store for each worktree path now. Regular files are hashed raw
+ *  (`--no-filters`): a clean filter would turn them into the filtered blob the index holds. A symlink is its link text,
+ *  never the file it names. A path missing from the worktree has no entry. */
+function worktreeEntries(root: string, paths: readonly string[]): Map<string, string> {
+  const entries = new Map<string, string>();
+  const regular = new Map<string, string>();
+  for (const path of paths) {
+    const abs = join(root, path);
+    const stat = lstatSync(abs, { throwIfNoEntry: false });
+    if (stat === undefined) continue;
+    if (stat.isSymbolicLink()) {
+      const link = spawnSync("git", ["hash-object", "--no-filters", "--stdin"], { cwd: root, encoding: "utf8", input: readlinkSync(abs) });
+      if (link.status !== 0) throw new Error(`git hash-object failed: ${link.stderr.trim()}`);
+      entries.set(path, `120000 ${link.stdout.trim()}`);
+    } else {
+      regular.set(path, (stat.mode & 0o111) !== 0 ? "100755" : "100644");
+    }
+  }
+  if (regular.size > 0) {
+    const names = [...regular.keys()];
+    const hashed = spawnSync("git", ["hash-object", "--no-filters", "--stdin-paths"], { cwd: root, encoding: "utf8", input: `${names.join("\n")}\n` });
+    if (hashed.status !== 0) throw new Error(`git hash-object failed: ${hashed.stderr.trim()}`);
+    const hashes = hashed.stdout.trim().split("\n");
+    names.forEach((path, i) => entries.set(path, `${regular.get(path)} ${hashes[i] ?? ""}`));
+  }
+  return entries;
+}
+
+/** The staged paths whose index entry (mode and blob) is not the entry `git add` would store from the worktree file.
+ *  A staged path missing from the worktree differs too. */
 export function unequalBytes(root: string, staged: readonly string[]): string[] {
   if (staged.length === 0) return [];
   const indexed = new Map<string, string>();
   for (const entry of gitPaths(root, ["ls-files", "-s", "-z"])) {
     const tab = entry.indexOf("\t");
-    const fields = entry.slice(0, tab).split(" ");
-    indexed.set(entry.slice(tab + 1), fields[1] ?? "");
+    const [mode = "", blob = ""] = entry.slice(0, tab).split(" ");
+    indexed.set(entry.slice(tab + 1), `${mode} ${blob}`);
   }
-  const present = staged.filter((path) => existsSync(join(root, path)));
-  const worktree = new Map<string, string>();
-  if (present.length > 0) {
-    const hashed = spawnSync("git", ["hash-object", "--no-filters", "--stdin-paths"], { cwd: root, encoding: "utf8", input: `${present.join("\n")}\n` });
-    if (hashed.status !== 0) throw new Error(`git hash-object failed: ${hashed.stderr.trim()}`);
-    const hashes = hashed.stdout.trim().split("\n");
-    present.forEach((path, i) => worktree.set(path, hashes[i] ?? ""));
-  }
+  const worktree = worktreeEntries(root, staged);
   return staged.filter((path) => indexed.get(path) === undefined || worktree.get(path) !== indexed.get(path));
 }
 
@@ -333,7 +353,7 @@ export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<numbe
   const split = unequalBytes(root, staged);
   if (split.length > 0) {
     for (const path of split) {
-      console.error(`  ✗ ${path}: the index and the worktree hold different bytes. Run git add ${path}, then commit again.`);
+      console.error(`  ✗ ${path}: the index and the worktree hold different content or mode. Run git add ${path}, then commit again.`);
     }
     console.error(`pre-commit: ✗ ${split.length} path(s) with two sets of bytes — ${seconds(started)}`);
     return 1;

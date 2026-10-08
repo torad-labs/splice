@@ -250,7 +250,7 @@ internal class CodeModeNativeAbandonBillingTest : CodeModeStatementStreamSupport
         item("""{"type":"function_call_output","call_id":"${call.id}","output":"result-0"}"""),
     )
 
-    private fun member(owner: Any, name: String): Any =
+    private fun <O : Any> member(owner: O, name: String): Any =
         checkNotNull(owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner))
 
     private class HeldPosting(source: RedirectableRoundPost) : RedirectableRoundPost by source {

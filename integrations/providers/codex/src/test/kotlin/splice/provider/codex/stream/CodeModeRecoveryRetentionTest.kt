@@ -118,14 +118,14 @@ class CodeModeRecoveryRetentionTest {
         return chars
     }
 
-    private fun retainedChildren(value: Any): List<Any> = when (value) {
+    private fun <V : Any> retainedChildren(value: V): List<Any> = when (value) {
         is JsonPrimitive -> listOf(value.content)
         is Map<*, *> -> (value.keys + value.values).filterNotNull()
         is Iterable<*> -> value.filterNotNull()
         else -> retainedFields(value)
     }
 
-    private fun retainedFields(value: Any): List<Any> {
+    private fun <V : Any> retainedFields(value: V): List<Any> {
         if (!value.javaClass.name.startsWith("splice.provider.codex.")) return emptyList()
         return value.javaClass.declaredFields.filterNot { Modifier.isStatic(it.modifiers) }.mapNotNull {
             it.isAccessible = true

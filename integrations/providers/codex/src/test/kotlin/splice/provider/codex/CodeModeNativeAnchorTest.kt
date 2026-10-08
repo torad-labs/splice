@@ -419,7 +419,7 @@ internal class CodeModeNativeAnchorTest {
         }
     }
 
-    private fun privateField(owner: Any, name: String): Any =
+    private fun <O : Any> privateField(owner: O, name: String): Any =
         owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner)
 
     private fun record(items: List<JsonElement>, completed: List<CodeModeRecord>, id: String): CodeModeRecord {

@@ -373,7 +373,7 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
         else -> error("unknown synthetic retirement")
     }
 
-    private fun field(owner: Any, name: String): Any =
+    private fun <O : Any> field(owner: O, name: String): Any =
         owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner)
 
     private fun assertRetirementBill(settled: Usage?, clientCuts: Long, client: Boolean) {
@@ -536,6 +536,6 @@ internal class CodeModeFirstClaimBillingTest : CodeModeStatementStreamSupport() 
     private fun idle(record: CodeModeRecord?): Boolean =
         record?.phase == CodeModePhase.ACTIVE && record.cellBorrowers == 0 && record.cellIdleSince != null
 
-    private fun field(owner: Any, name: String): Any =
+    private fun <O : Any> field(owner: O, name: String): Any =
         owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner)
 }

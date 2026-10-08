@@ -647,7 +647,10 @@ export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<numbe
     return 1;
   }
   const touched = changed.filter((p) => KOTLIN.test(p));
-  if (touched.length === 0) {
+  // A law reads files that are not Kotlin (a README, a baseline, a script), so a commit with no Kotlin still asks for lawSuites where
+  // the checkout registers them; gradle's up-to-date check keeps that cheap when nothing a law reads changed.
+  const lawsRegistered = existsSync(join(root, LAW_SUITE_PLUGIN));
+  if (touched.length === 0 && !lawsRegistered) {
     console.error("pre-commit: no Kotlin in this commit; nothing to judge");
     return 0;
   }
@@ -692,7 +695,7 @@ export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<numbe
   // The cross-module laws ride in the same request as the push makes: gradle fingerprints each law task's declared read set, so a
   // commit that touches a file a law reads reruns that law, and one that touches nothing a law reads runs none. The selector is
   // gradle's own up-to-date check over the inputs each module declares (splice.law-suite), shared with prePushScope, never a list.
-  if (existsSync(join(root, LAW_SUITE_PLUGIN))) tasks.add(LAW_SUITES_TASK);
+  if (lawsRegistered) tasks.add(LAW_SUITES_TASK);
 
   const judged = await judgedRun(deps.gate ?? slotRunner(lay, "pre-commit", false), root, modules, [...tasks], deps.rivalLive);
   if (judged.status === 0) {

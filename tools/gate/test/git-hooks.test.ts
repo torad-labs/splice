@@ -208,6 +208,13 @@ const pushOf = (sha: string): string => `refs/heads/feat/x ${sha} refs/heads/fea
 /** The fixtures have no ladder: a pre-push test that is not about the ladder injects this empty one. */
 const NO_LEGS: Leg[] = [];
 
+/** The checkout registers lawSuites: the plugin file is committed, as it is in the real repository. */
+function registerLaws(root: string): void {
+  writeFile(root, "build-logic/src/main/kotlin/splice.law-suite.gradle.kts", "// plugin\n");
+  git(root, ["add", "build-logic/src/main/kotlin/splice.law-suite.gradle.kts"]);
+  git(root, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "plugin"]);
+}
+
 describe("pre-commit judges the bytes the commit holds", () => {
   test("RED: a staged violation blocks the commit, and gradle is never asked", async () => {
     const root = wallsRepo();
@@ -229,9 +236,7 @@ describe("pre-commit judges the bytes the commit holds", () => {
 
   test("GREEN: a checkout that registers lawSuites asks for them with the module check, so gradle decides which laws rerun", async () => {
     const root = wallsRepo();
-    writeFile(root, "build-logic/src/main/kotlin/splice.law-suite.gradle.kts", "// plugin\n");
-    git(root, ["add", "build-logic/src/main/kotlin/splice.law-suite.gradle.kts"]);
-    git(root, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "plugin"]);
+    registerLaws(root);
     writeFile(root, TARGET, CLEAN);
     git(root, ["add", TARGET]);
     const calls: string[][] = [];
@@ -241,9 +246,7 @@ describe("pre-commit judges the bytes the commit holds", () => {
 
   test("RED: a law that goes red on the commit refuses it and the verdict names the law", async () => {
     const root = wallsRepo();
-    writeFile(root, "build-logic/src/main/kotlin/splice.law-suite.gradle.kts", "// plugin\n");
-    git(root, ["add", "build-logic/src/main/kotlin/splice.law-suite.gradle.kts"]);
-    git(root, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "plugin"]);
+    registerLaws(root);
     writeFile(root, TARGET, CLEAN);
     git(root, ["add", TARGET]);
     const red: GateRunner = async () => ({
@@ -260,6 +263,22 @@ describe("pre-commit judges the bytes the commit holds", () => {
     writeFile(root, "README.md", "docs\n");
     git(root, ["add", "README.md"]);
     expect(await preCommit(lay(root))).toBe(0);
+  });
+
+  test("RED: a commit with no Kotlin still asks for lawSuites, and a law that reads the README refuses it", async () => {
+    const root = wallsRepo();
+    registerLaws(root);
+    writeFile(root, "README.md", "violates a law\n");
+    git(root, ["add", "README.md"]);
+    const calls: string[][] = [];
+    const red: GateRunner = async (tasks) => {
+      calls.push([...tasks]);
+      return { status: 1, output: "ReadmeLawTest > the readme names a host tool() FAILED\n" };
+    };
+    const { result, text } = await captured(() => preCommit(lay(root), { gate: red }));
+    expect(result).toBe(1);
+    expect(calls).toEqual([["lawSuites"]]);
+    expect(text).toContain("ReadmeLawTest");
   });
 
   test("two sets of bytes are refused, naming the path: the index holds the clean form, the worktree the violation", async () => {
@@ -1054,4 +1073,70 @@ describe("hook install", () => {
   test("a bun or gate path with a single quote stays one shell word", () => {
     expect(shimText("/opt/bun's/bun", "/r/index.ts", "pre-push")).toContain(`exec '/opt/bun'\\''s/bun' '/r/index.ts' hook pre-push "$@"`);
   });
+});
+
+describe("the architecture suite fingerprints WHICH paths are tracked, not git's index bytes", () => {
+  /** A real gradle run in a scratch repository whose task declares the very `trackedPathsDigest` the architecture suite
+   *  declares (read out of quality/architecture/build.gradle.kts, so a changed declaration is the one tested). */
+  function trackedPathsRepo(rawIndex = false): string {
+    const declaration = /val trackedPathsDigest = [\s\S]*?\n\}\n/.exec(
+      readFileSync(join(repoRoot, "quality", "architecture", "build.gradle.kts"), "utf8"),
+    )?.[0];
+    if (declaration === undefined) throw new Error("quality/architecture/build.gradle.kts declares no trackedPathsDigest");
+    const root = wallsRepo();
+    linkWrapper(root);
+    writeFile(root, "settings.gradle.kts", 'rootProject.name = "scratch"\n');
+    writeFile(
+      root,
+      "build.gradle.kts",
+      [
+        "import java.security.MessageDigest",
+        "val repoRoot = layout.projectDirectory",
+        declaration,
+        'tasks.register("probe") {',
+        rawIndex ? '    inputs.files(repoRoot.file(".git/index"))' : '    inputs.property("trackedPaths", trackedPathsDigest)',
+        '    val stamp = layout.buildDirectory.file("probe.stamp")',
+        "    outputs.file(stamp)",
+        '    doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("ran") }',
+        "}",
+      ].join("\n"),
+    );
+    writeFile(root, "docs/tracked.md", "one\n");
+    git(root, ["add", "--", "settings.gradle.kts", "build.gradle.kts", "docs/tracked.md"]);
+    commit(root, "chore(test): tracked fixture");
+    return root;
+  }
+
+  async function probe(root: string): Promise<string> {
+    const run = await gradleHere(root)(["probe"]);
+    expect(run.status).toBe(0);
+    return run.output;
+  }
+
+  test("CONTROL: fingerprinting the raw index (the old declaration) reruns on a content-only stage, so the test above can fail", async () => {
+    const root = trackedPathsRepo(true);
+    await probe(root);
+    expect(await probe(root)).toContain(":probe UP-TO-DATE");
+    writeFile(root, "docs/tracked.md", "two\n");
+    git(root, ["add", "docs/tracked.md"]);
+    expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
+  }, 600_000);
+
+  test("RED: staging a content change to an already tracked file leaves the suite UP-TO-DATE; adding or removing a tracked path reruns it", async () => {
+    const root = trackedPathsRepo();
+    expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
+    expect(await probe(root)).toContain(":probe UP-TO-DATE");
+
+    // `git add` rewrites the index but git's tracked-path list is byte-identical.
+    writeFile(root, "docs/tracked.md", "two\n");
+    git(root, ["add", "docs/tracked.md"]);
+    expect(await probe(root)).toContain(":probe UP-TO-DATE");
+
+    writeFile(root, "docs/new.md", "new\n");
+    git(root, ["add", "docs/new.md"]);
+    expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
+
+    git(root, ["rm", "-q", "--cached", "docs/new.md"]);
+    expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
+  }, 600_000);
 });

@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     id("splice.kotlin-common")
     id("splice.module-law")
@@ -69,15 +71,17 @@ val nestedRepositories: List<String> = nestedRepositoriesBelow(repoRoot.asFile)
     .map { it.relativeTo(repoRoot.asFile).invariantSeparatorsPath }
     .sorted()
 
-// PR 6 review (F3): GIT'S INDEX is an input of these laws. `claude-dir-untracked`,
-// `tracked-capture-artifacts`, `tracked-agents`, `settings-hook` and `hook-tracked` ask `git
-// ls-files` which paths are TRACKED, and the conventional-type census asks the same question — so
-// `git add` changes a verdict while every byte on disk stays where it was. The path is read out of
-// git rather than assumed to be `.git/index`, because in a worktree it is not.
-val gitIndex = providers.exec {
+// PR 6 review (F3): WHICH PATHS ARE TRACKED is an input of these laws. `claude-dir-untracked`, `tracked-capture-artifacts`,
+// `tracked-agents`, `settings-hook` and `hook-tracked` ask `git ls-files` which paths are tracked, and the conventional-type
+// census asks the same question, so `git add` of a NEW path changes a verdict while every byte on disk stays where it was.
+// The input is the digest of git's own NUL-delimited tracked-path list, never the raw `.git/index`: staging a content change
+// to a path that was already tracked rewrites the index and leaves the list byte-identical, and must not rerun the suite.
+val trackedPathsDigest = providers.exec {
     workingDir = repoRoot.asFile
-    commandLine("git", "rev-parse", "--git-path", "index")
-}.standardOutput.asText.map { path -> repoRoot.asFile.resolve(path.trim()) }
+    commandLine("git", "ls-files", "-z")
+}.standardOutput.asBytes.map { bytes ->
+    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { byte -> "%02x".format(byte) }
+}
 
 // THE ROOTS A MOVED LAW MAY READ (DaemonStopOrderTest, NoBrowserOnTurnFailureTest): every module's production tree, plus
 // build-logic's, which is a separate build and so in no module map. ONE list: it is fingerprinted below and handed to the test
@@ -208,5 +212,5 @@ tasks.withType<Test>().configureEach {
         repoRoot.dir(".github").asFileTree,
         repoRoot.dir(".dev/campaigns").asFileTree.matching { include("**/*.toml") },
     ).withPropertyName("scannedOperatorSurfaces")
-    inputs.files(gitIndex).withPropertyName("gitIndex")
+    inputs.property("trackedPaths", trackedPathsDigest)
 }

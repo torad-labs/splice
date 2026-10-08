@@ -26,8 +26,8 @@ internal fun mayImport(layer: Layer): Set<Layer> = when (layer) {
     Layer.ADAPTER -> setOf(Layer.DOMAIN, Layer.ADAPTER)
     Layer.FEATURE -> setOf(Layer.DOMAIN, Layer.ADAPTER, Layer.FEATURE)
     Layer.COMPOSITION -> Layer.entries.toSet()
-    // Measured 2026-10-08: no splice.* import in the tooling modules' main sources.
-    Layer.TOOLING -> emptySet()
+    // Tooling is graded like every layer: it may import tooling, and no product module.
+    Layer.TOOLING -> setOf(Layer.TOOLING)
 }
 
 /** The parsed layer-map.toml: each layer's Gradle module paths, and the composition root's file. */
@@ -93,6 +93,10 @@ internal fun packageOwners(files: List<ScannedFile>): Pair<Map<String, Layer>, L
     val owners = layersOf.mapValues { (_, layers) -> layers.first() }
     return owners to problems
 }
+
+/** Modules that declare main sources but yielded no scanned file, so their imports would go ungraded. */
+internal fun unreadModules(withSources: List<String>, files: List<ScannedFile>): List<String> =
+    withSources.filter { module -> files.none { it.module == module } }
 
 /** Every import that reaches a layer the importing file's layer may not reach. */
 internal fun importBreaches(files: List<ScannedFile>, owners: Map<String, Layer>): List<String> =
@@ -180,6 +184,51 @@ class LayerMapLawTest {
     fun `tooling sources are scanned, so their imports are graded too`() {
         val tooling = scanned().filter { it.layer == Layer.TOOLING }
         assertTrue(tooling.isNotEmpty()) { "no tooling file was scanned, so the tooling layer is not graded" }
+    }
+
+    @Test
+    fun `every module with main sources is read, and the scan reads imports`() {
+        val files = scanned()
+        val withSources = layerMap.modulesOf.values.flatten().filter { map.mainSources(it).isDirectory }
+        val unread = unreadModules(withSources, files)
+        assertTrue(unread.isEmpty()) {
+            "modules with main sources that yielded no file, so their imports are not graded: $unread"
+        }
+        assertTrue(files.sumOf { it.imports.size } > 0) {
+            "the scan read no imports at all, so the import law is vacuous"
+        }
+    }
+
+    @Test
+    fun `the scan assertion can fail - a module with no read file is named`() {
+        assertEquals(listOf(":core"), unreadModules(listOf(":core"), emptyList()))
+        val read = ScannedFile(":core", Layer.DOMAIN, "A.kt", "splice.core", emptyList())
+        assertEquals(emptyList<String>(), unreadModules(listOf(":core"), listOf(read)))
+    }
+
+    @Test
+    fun `tooling may import tooling, and a tooling file importing a product package is a breach`() {
+        val files = listOf(
+            ScannedFile(
+                ":quality-architecture",
+                Layer.TOOLING,
+                "Sub.kt",
+                "splice.firchecks.sub",
+                listOf("splice.firchecks.Registrar"),
+            ),
+            ScannedFile(":quality-architecture", Layer.TOOLING, "Reg.kt", "splice.firchecks", emptyList()),
+            ScannedFile(
+                ":quality-architecture",
+                Layer.TOOLING,
+                "Leak.kt",
+                "splice.firchecks.leak",
+                listOf("splice.core.Clock"),
+            ),
+        )
+        val owners = mapOf("splice.firchecks" to Layer.TOOLING, "splice.core" to Layer.DOMAIN)
+        val breaches = importBreaches(files, owners)
+        assertEquals(1, breaches.size) { "expected only the product import to breach, got $breaches" }
+        assertTrue(breaches.single().contains("imports splice.core.Clock")) { breaches.single() }
     }
 
     // Red proofs: each checker must fail on a synthetic violation before its green run means anything.

@@ -7,8 +7,8 @@
 #   - `Any?` matches too. The toolkit reads only the bare `user_type`; a nullable parameter is a
 #     `nullable_type` wrapping it, so `previous: Any? = null` walked through.
 #   - A plain constructor parameter (`class C(owner: Any)`, no `val`/`var`) matches too: it is a parameter the
-#     toolkit's `kind: parameter` misses. A `val` constructor property is a property, not a parameter, and stays
-#     out of this rule: its `Any` is an identity or lock token (`synchronized(lock)`), where no type parameter fits.
+#     toolkit's `kind: parameter` misses. A `val`/`var` constructor parameter matches too: `class C(private val lock:
+#     Any)` erases its type exactly as a plain one does, so no exemption for properties (2026-10-08, zero live hits).
 #   - No `ignores:` block. The toolkit exempts test source sets. The operator's law is no exceptions, so tests
 #     are policed like production code.
 #   - `override` carve-out. An override's own parameter types are fixed by its supertype, and where the supertype
@@ -31,9 +31,6 @@ rule:
   any:
     - kind: parameter
     - kind: class_parameter
-      not:
-        has:
-          kind: binding_pattern_kind
   has:
     any:
       - kind: user_type

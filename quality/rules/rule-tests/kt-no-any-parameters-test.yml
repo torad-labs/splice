@@ -10,10 +10,10 @@ valid:
     class Handler : ChannelInboundHandlerAdapter() {
         override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {}
     }
-  # a val constructor property is a property, not a parameter: its Any is an identity or lock token.
+invalid:
+  # a val constructor parameter erases its type the same way a plain one does.
   - 'class Guard(private val lock: Any)'
   - 'class Entry(val key: Any?)'
-invalid:
   - 'fun f(owner: Any) {}'
   - 'fun f(owner: Any?) {}'
   - 'fun f(previous: Any? = null) {}'

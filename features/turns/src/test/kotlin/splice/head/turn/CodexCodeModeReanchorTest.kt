@@ -22,17 +22,14 @@ import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.GatewayCustomCall
-import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
-import splice.dialect.responses.StreamTurnContext
-import splice.dialect.responses.reasoning.EmitEncryptedReasoning
-import splice.dialect.responses.reasoning.ResponsesReanchorController
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
-import splice.dialect.responses.stream.ResponsesStreamTranslator
+import splice.dialect.responses.responsesTestReanchor
+import splice.dialect.responses.responsesTestTranslator
 import splice.head.round.RoundInterception
 import splice.head.round.RoundStrategy
 import splice.head.round.RunnerSignals
@@ -70,7 +67,7 @@ class CodexCodeModeReanchorTest {
                 emittedThinking = true,
             )
         }
-        strategy.run(body, null, ResponsesReanchorController({ null }, maxContinuations = 1))
+        strategy.run(body, null, responsesTestReanchor(maxContinuations = 1))
         val failure = finished as TurnOutcome.Failure
         assertEquals(1, posts, "local failure must not produce an upstream marker retry")
         assertEquals(1, runtime.starts)
@@ -96,7 +93,7 @@ class CodexCodeModeReanchorTest {
                 else -> TurnOutcome.Success(false, false, Usage(23, 2), messageClosed = true)
             }
         }
-        strategy.run(body, null, ResponsesReanchorController({ null }, maxContinuations = 1))
+        strategy.run(body, null, responsesTestReanchor(maxContinuations = 1))
         assertTrue(finished is TurnOutcome.Success, finished.toString())
         assertEquals(3, posts)
         assertEquals(1, runtime.starts)
@@ -124,7 +121,7 @@ class CodexCodeModeReanchorTest {
                 TurnOutcome.Success(false, false, Usage(23, 2), messageClosed = true)
             }
         }
-        strategy.run(body, null, ResponsesReanchorController({ null }, maxContinuations = 1))
+        strategy.run(body, null, responsesTestReanchor(maxContinuations = 1))
         assertTrue(finished is TurnOutcome.Success, finished.toString())
         assertEquals(2, posts, "prose recovery must not be mistaken for replay of a script")
         assertEquals(0, runtime.starts)
@@ -285,9 +282,9 @@ class CodexCodeModeReanchorTest {
                 "prompt_cache_key" to kotlinx.serialization.json.JsonPrimitive("synthetic-cache-key"),
             ),
         )
-        val controller = ResponsesReanchorController(
-            { ReasoningReplay.decodeReasoningEnvelope(it) },
+        val controller = responsesTestReanchor(
             maxContinuations = cuts,
+            decode = { ReasoningReplay.decodeReasoningEnvelope(it) },
         )
         private var failure: TurnOutcome.Failure? = null
 
@@ -396,18 +393,9 @@ class CodexCodeModeReanchorTest {
         return listOf(ResponsesAssistantText.item(prose.toString(), AssistantPhase.COMMENTARY), checkNotNull(callback))
     }
 
-    private fun translator() = ResponsesStreamTranslator(
-        StreamTurnContext(
-            compact = false,
-            emitEncryptedReasoning = EmitEncryptedReasoning(false),
-            encodeReasoningEnvelope = ReasoningReplay::encodeReasoningEnvelope,
-            clientGone = { false },
-            watchdogFired = { null },
-            streamIdleMsForMessage = 180_000,
-            upstreamTimeoutMsForMessage = 900_000,
-            summaryPartsShared = SharedSummaryParts(),
-            collectReasoningEnvelopes = true,
-        ),
+    private fun translator() = responsesTestTranslator(
+        collectReasoningEnvelopes = true,
+        encode = ReasoningReplay::encodeReasoningEnvelope,
     )
 
     private fun event(value: String): JsonObject = Json.parseToJsonElement(value).jsonObject

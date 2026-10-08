@@ -16,14 +16,11 @@ import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.parse.AnthropicTurnBody
 import splice.core.reasoning.ReasoningReplay
-import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.ResponsesFunctionNamespace
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.reasoning.InjectPriorReasoning
-import splice.dialect.responses.request.BuildOptions
+import splice.dialect.responses.buildResponsesTestRequest
 import splice.dialect.responses.request.ResponsesCodeModeProjection
-import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.upstream.BuiltTurn
 import splice.upstream.codemode.CodeModeStep
 
@@ -239,24 +236,16 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
             }
         }
         val body = AnthropicParse.parseAnthropicBody(raw.toString())
-        val options = BuildOptions(
-            compact = false,
-            originalModel = "gpt-6-astra",
-            upstreamModel = "gpt-6-astra",
-            configEffort = null,
-            configSummary = null,
-            showReasoning = ReasoningDisplay.OFF,
-            replayReasoning = InjectPriorReasoning(false),
-            decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) },
-        )
-        val request = ResponsesRequestBuilder(
+        val request = buildResponsesTestRequest(
             ResponsesQuirks(
                 providerTag = "test",
                 emitEmptyLiteInstructions = false,
                 responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
             ),
+            body,
+            model = "gpt-6-astra",
+            decode = { ReasoningReplay.decodeReasoningEnvelope(it) },
         )
-            .build(body.typed, body.raw, options).req
         return body to built("gpt-6-astra", lite = true).copy(requestBody = request)
     }
 

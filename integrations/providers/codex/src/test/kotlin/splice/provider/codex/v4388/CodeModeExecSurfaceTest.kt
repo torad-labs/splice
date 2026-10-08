@@ -12,11 +12,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.reasoning.ReasoningReplay
-import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.reasoning.InjectPriorReasoning
-import splice.dialect.responses.request.BuildOptions
-import splice.dialect.responses.request.ResponsesRequestBuilder
+import splice.dialect.responses.buildResponsesTestRequest
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeTurnBuilder
 import splice.provider.codex.backendCodeModeOnly
@@ -79,23 +76,16 @@ class CodeModeExecSurfaceTest : CodeModeBridgeTestSupport() {
             put("messages", Json.parseToJsonElement("""[{"role":"user","content":"start"}]"""))
         }
         val body = AnthropicParse.parseAnthropicBody(raw.toString())
-        val options = BuildOptions(
-            compact = false,
-            originalModel = "gpt-6-sol",
-            upstreamModel = "gpt-6-sol",
-            configEffort = null,
-            configSummary = null,
-            showReasoning = ReasoningDisplay.OFF,
-            replayReasoning = InjectPriorReasoning(false),
-            decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) },
-        )
-        val request = ResponsesRequestBuilder(
+        val request = buildResponsesTestRequest(
             ResponsesQuirks(
                 providerTag = "test",
                 emitEmptyLiteInstructions = false,
                 responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
             ),
-        ).build(body.typed, body.raw, options).req
+            body,
+            model = "gpt-6-sol",
+            decode = { ReasoningReplay.decodeReasoningEnvelope(it) },
+        )
         val built = built("gpt-6-sol", lite = true).copy(requestBody = request)
         val builder = CodexCodeModeTurnBuilder(
             bridge(ScriptedRuntime(ArrayDeque())),

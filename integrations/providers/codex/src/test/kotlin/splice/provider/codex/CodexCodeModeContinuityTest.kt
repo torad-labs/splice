@@ -18,9 +18,7 @@ import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.dialect.responses.reasoning.InjectPriorReasoning
-import splice.dialect.responses.request.BuildOptions
-import splice.dialect.responses.request.ResponsesRequestBuilder
+import splice.dialect.responses.buildResponsesTestRequest
 import splice.provider.codex.stream.CodeModeSourceState
 import splice.upstream.codemode.CodeModeStep
 
@@ -132,20 +130,15 @@ class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {
         val parsed = AnthropicParse.parseAnthropicBody(raw)
         // Codex's own quirks: code mode runs on lite requests only, whose assistant text carries its
         // phase (V4-335).
-        return ResponsesRequestBuilder(CodexQuirks().defaultQuirks())
-            .build(parsed.typed, parsed.raw, buildOptions(replayReasoning)).req.toString()
+        return buildResponsesTestRequest(
+            CodexQuirks().defaultQuirks(),
+            parsed,
+            model = "gpt-6-astra",
+            showReasoning = ReasoningDisplay.TEXT,
+            replayReasoning = replayReasoning,
+            decode = { ReasoningReplay.decodeReasoningEnvelope(it) },
+        ).toString()
     }
-
-    private fun buildOptions(replayReasoning: Boolean) = BuildOptions(
-        compact = false,
-        originalModel = "gpt-6-astra",
-        upstreamModel = "gpt-6-astra",
-        configEffort = null,
-        configSummary = null,
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = InjectPriorReasoning(replayReasoning),
-        decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) },
-    )
 
     private fun callbackMessages(toolId: String, includeReasoning: Boolean): String {
         val reasoning = if (includeReasoning) {

@@ -17,11 +17,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.core.turn.ErrorType
-import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
-import splice.dialect.responses.StreamTurnContext
-import splice.dialect.responses.reasoning.EmitEncryptedReasoning
-import splice.dialect.responses.stream.ResponsesStreamTranslator
+import splice.dialect.responses.responsesTestTranslator
 import splice.upstream.sse.SseReader
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -36,16 +33,9 @@ class ScenarioIntegrationTest {
         mock.stop()
     }
 
-    private fun ctx(emit: Boolean = false) = StreamTurnContext(
-        compact = false,
-        emitEncryptedReasoning = EmitEncryptedReasoning(emit),
-        encodeReasoningEnvelope = { "env:${it["id"]?.jsonPrimitive?.content}" },
-        clientGone = { false },
-        watchdogFired = { null },
-        streamIdleMsForMessage = 180_000,
-        upstreamTimeoutMsForMessage = 900_000,
-        // one turn, one round: this test never continues, so a fresh instance IS the turn's state
-        summaryPartsShared = SharedSummaryParts(),
+    private fun translator(emit: Boolean = false) = responsesTestTranslator(
+        emitEncryptedReasoning = emit,
+        encode = { "env:${it["id"]?.jsonPrimitive?.content}" },
     )
 
     private fun drive(scenario: String, replay: Boolean = false): Pair<TurnOutcome, RecordingSink2> {
@@ -56,7 +46,7 @@ class ScenarioIntegrationTest {
                 setBody("""{"model":"m","instructions":"You are a test. SCENARIO:$scenario","input":[]}""")
             }.execute { resp ->
                 val events = SseReader().sseJsonEvents(resp.bodyAsChannel())
-                outcome = ResponsesStreamTranslator(ctx(replay)).driveTurn(events, sink)
+                outcome = translator(replay).driveTurn(events, sink)
             }
         }
         return outcome!! to sink

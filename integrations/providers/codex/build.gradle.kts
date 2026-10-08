@@ -7,6 +7,7 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":integrations-upstream"))
     implementation(project(":integrations-dialects-openai-responses"))
+    testImplementation(testFixtures(project(":integrations-dialects-openai-responses")))
     implementation(libs.ktor.client.core)
     implementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.ktor.client.cio)

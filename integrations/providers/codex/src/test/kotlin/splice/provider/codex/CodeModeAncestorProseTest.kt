@@ -11,12 +11,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.core.turn.ReasoningDisplay
-import splice.dialect.responses.reasoning.InjectPriorReasoning
+import splice.dialect.responses.buildResponsesTestRequest
 import splice.dialect.responses.request.AssistantPhase
-import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ResponsesAssistantText
-import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.provider.codex.state.CodeModeHistoryIndex
 import splice.provider.codex.state.native.CodeModeAnchorCapture
 import splice.upstream.RoundBody
@@ -169,18 +166,8 @@ internal class CodeModeAncestorProseTest {
                         {"type":"text","text":"synthetic ancestor commentary"},
                         {"type":"tool_use","id":"b1","name":"FixtureCallback","input":{}}]}]}""",
             )
-            val options = BuildOptions(
-                compact = false,
-                originalModel = "claude-codex--fixture",
-                upstreamModel = "fixture",
-                configEffort = "high",
-                configSummary = null,
-                showReasoning = ReasoningDisplay.OFF,
-                replayReasoning = InjectPriorReasoning(false),
-                decodeReasoningEnvelope = { null },
-            )
-            val builder = ResponsesRequestBuilder(CodexQuirks().defaultQuirks())
-            val input = builder.build(parsed.typed, parsed.raw, options).req.getValue("input").jsonArray
+            val request = buildResponsesTestRequest(CodexQuirks().defaultQuirks(), parsed, model = "fixture")
+            val input = request.getValue("input").jsonArray
             return input.single { codec.string(it as? JsonObject, "role") == "assistant" }.jsonObject
         }
     }

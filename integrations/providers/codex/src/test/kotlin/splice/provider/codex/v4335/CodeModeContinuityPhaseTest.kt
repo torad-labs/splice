@@ -24,13 +24,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.LogSink
-import splice.dialect.responses.reasoning.InjectPriorReasoning
-import splice.dialect.responses.request.BuildOptions
-import splice.dialect.responses.request.ResponsesRequestBuilder
+import splice.dialect.responses.buildResponsesTestRequest
 import splice.provider.codex.BASE_REQUEST
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeBridge
@@ -188,18 +185,8 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
                 {"role":"user","content":"Fix the config."},
                 {"role":"assistant","content":[$blocks]}]}""",
         )
-        val opts = BuildOptions(
-            compact = false,
-            originalModel = "claude-codex--$MODEL",
-            upstreamModel = MODEL,
-            configEffort = "high",
-            configSummary = null,
-            showReasoning = ReasoningDisplay.OFF,
-            replayReasoning = InjectPriorReasoning(false),
-            decodeReasoningEnvelope = { null },
-        )
-        val input = ResponsesRequestBuilder(CodexQuirks().defaultQuirks()).build(parsed.typed, parsed.raw, opts)
-            .req.getValue("input").jsonArray
+        val input = buildResponsesTestRequest(CodexQuirks().defaultQuirks(), parsed, model = MODEL)
+            .getValue("input").jsonArray
         return input.filter { roleOf(it) == "assistant" }.map { it.jsonObject }
     }
 

@@ -16,7 +16,7 @@
 //       stopDetached then ends only what is STILL running once the budget is spent. An earlier audit
 //       premise (that one detached compaction BURNS the whole 45s budget) was wrong and is corrected
 //       here: this arm previously asserted the opposite order.
-//   (c) Main's teardown DISCARDS AsyncFileIo.drain()'s Boolean. A false there means the file lane
+//   (c) the daemon run's teardown (DaemonRun.kt) DISCARDS AsyncFileIo.drain()'s Boolean. A false there means the file lane
 //       did not flush inside its timeout, i.e. daemon.log / usage / economics writes were lost on
 //       the way out, and it is the one place a loss is still reportable before halt.
 //   (d) TurnStreamer's `detachedScope.isActive` guard could never be false: stopDetached() calls
@@ -63,7 +63,7 @@ import java.nio.file.Paths
 
 private const val DAEMON_REL = "app/src/main/kotlin/splice/app/Daemon.kt"
 private const val HEAD_SERVER_REL = "features/turns/src/main/kotlin/splice/head/HeadServer.kt"
-private const val MAIN_REL = "app/src/main/kotlin/splice/app/Main.kt"
+private const val DAEMON_RUN_REL = "app/src/main/kotlin/splice/app/DaemonRun.kt"
 private const val TURN_STREAMER_REL = "features/turns/src/main/kotlin/splice/head/turn/TurnStreamer.kt"
 
 class DaemonStopOrderTest {
@@ -123,21 +123,21 @@ class DaemonStopOrderTest {
 
     @Test
     fun `the teardown does not discard whether the file lane actually flushed`() {
-        val source = code(MAIN_REL)
-        val statement = requireOnce(source, "AsyncFileIo.drain()", MAIN_REL)
+        val source = code(DAEMON_RUN_REL)
+        val statement = requireOnce(source, "AsyncFileIo.drain()", DAEMON_RUN_REL)
         val line = source.lineContaining(statement)
         assertFalse(
             line.trim() == "AsyncFileIo.drain()",
-            "$MAIN_REL: AsyncFileIo.drain()'s Boolean is DISCARDED — the call stands alone as a " +
+            "$DAEMON_RUN_REL: AsyncFileIo.drain()'s Boolean is DISCARDED — the call stands alone as a " +
                 "statement. A false means the file lane did not flush inside its timeout, so " +
                 "daemon.log, usage and economics writes were lost on the way out, and this is the last " +
                 "point before lock.close() and the halt watchdog where that loss is still reportable. " +
                 "Consume it: log the failure, do not drop it.",
         )
-        val lockClose = requireOnce(source, "lock.close()", MAIN_REL)
+        val lockClose = requireOnce(source, "lock.close()", DAEMON_RUN_REL)
         assertTrue(
             statement < lockClose,
-            "$MAIN_REL: the file-lane drain must precede lock.close(), or the lock is released while " +
+            "$DAEMON_RUN_REL: the file-lane drain must precede lock.close(), or the lock is released while " +
                 "writes are still queued and a restarting daemon races them",
         )
     }

@@ -41,7 +41,7 @@ internal sealed class LineShape {
 }
 
 /** A row a move takes: its assistant row, and whether it holds thinking, which goes with its model. */
-internal class RowMove(val assistant: LineShape.Assistant, val strips: Boolean)
+internal data class RowMove(val assistant: LineShape.Assistant, val strips: Boolean)
 
 /** The per-line rule of the resume rewrite: what a line is, and how an assistant row is moved. */
 internal class AssistantRowMove {

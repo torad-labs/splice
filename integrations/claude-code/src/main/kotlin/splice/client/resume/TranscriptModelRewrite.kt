@@ -159,7 +159,7 @@ public class TranscriptModelRewrite(
     private fun survey(path: Path, kept: KeptModel): Survey {
         val survey = Survey(path, readable(path) { path.toRealPath() })
         survey.digest = readable(survey.file) {
-            TranscriptLines.read(survey.file) { _, row ->
+            TranscriptLines.read(survey.file) { row ->
                 val shape = rows.read(row.text())
                 if (shape is LineShape.Assistant) {
                     val model = JsonScalars.str(shape.message, Keys.MODEL)
@@ -192,19 +192,26 @@ public class TranscriptModelRewrite(
 
     private fun publish(survey: Survey, policy: RowPolicy) {
         if (survey.changed(policy) == 0) return
-        Cancellables.runCatchingCancellable { replace(survey, policy) }
+        Cancellables.runCatchingCancellable {
+            if (!Files.isWritable(survey.file)) throw IOException("${survey.file} is read-only")
+            replace(survey, policy)
+        }
             .exceptionOrNull()
             ?.let { cause -> throw IOException("${survey.file} unwritable (${SafeFailureText.render(cause)})") }
     }
 
     /** [file]'s rows to [out]: a row a move takes is rewritten under [policy], every other row's bytes are kept as
      *  they were. Returns the digest of the bytes read, which the rewrite checks against its survey. */
-    private fun writeRows(file: Path, policy: RowPolicy, out: OutputStream): ByteArray =
-        TranscriptLines.read(file) { index, row ->
-            if (index > 0) out.write('\n'.code)
+    private fun writeRows(file: Path, policy: RowPolicy, out: OutputStream): ByteArray {
+        // A flag, not a row count: a count wraps past 2^31 rows and would then drop the separator before each row.
+        var first = true
+        return TranscriptLines.read(file) { row ->
+            if (!first) out.write('\n'.code)
+            first = false
             val moved = rows.rewritten(row.text(), policy)
             if (moved == null) out.write(row.bytes, 0, row.length) else out.write(moved.toByteArray(Charsets.UTF_8))
         }
+    }
 
     /** V4-259: the new bytes go to a temp file beside the transcript, which is moved over it in one step,
      *  so a write that dies partway leaves the user's transcript exactly as it was; the temp file goes
@@ -213,7 +220,6 @@ public class TranscriptModelRewrite(
      *  does not stop, is not attempted on one. The file's permissions carry over to the new one. */
     private fun replace(survey: Survey, policy: RowPolicy) {
         val target = survey.file
-        if (!Files.isWritable(target)) throw IOException("$target is read-only")
         val staged = Files.createTempFile(target.parent, ".${target.fileName}.", ".tmp")
         Cancellables.runCatchingCancellable {
             Cancellables.discard(

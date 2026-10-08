@@ -46,9 +46,10 @@ internal class TranscriptRow {
     }
 }
 
-/** Where a pass over a transcript hands each row, with its index from 0. */
+/** Where a pass over a transcript hands each row, in order. The row is valid only inside the call. No index comes
+ *  with it: a counter of rows wraps past 2^31, and a caller that frames rows by it would drop a separator there. */
 internal fun interface RowReader {
-    operator fun invoke(index: Int, row: TranscriptRow)
+    operator fun invoke(row: TranscriptRow)
 }
 
 /** A transcript's rows exactly as Claude Code wrote them: the bytes between newlines, in order, the one
@@ -59,7 +60,6 @@ internal object TranscriptLines {
     fun read(file: Path, onRow: RowReader): ByteArray {
         val digest = MessageDigest.getInstance("SHA-256")
         val row = TranscriptRow()
-        var index = 0
         Files.newInputStream(file).use { input ->
             chunks(input) { chunk, count ->
                 digest.update(chunk, 0, count)
@@ -67,7 +67,7 @@ internal object TranscriptLines {
                 for (at in 0 until count) {
                     if (chunk[at] == NEWLINE) {
                         row.append(chunk, start, at - start)
-                        onRow(index++, row)
+                        onRow(row)
                         row.clear()
                         start = at + 1
                     }
@@ -75,7 +75,7 @@ internal object TranscriptLines {
                 row.append(chunk, start, count - start)
             }
         }
-        onRow(index, row)
+        onRow(row)
         return digest.digest()
     }
 

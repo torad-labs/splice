@@ -113,16 +113,16 @@ class CompactionReplayTest {
     }
 
     private class MapRecordings : CompactionRecordings {
-        val files = mutableMapOf<String, List<String>>()
+        val files = mutableMapOf<String, KeptAnswer>()
 
-        override fun save(key: String, frames: List<String>) {
-            files[key] = frames
+        override fun save(key: String, generation: String, frames: List<String>) {
+            files[key] = KeptAnswer(generation, frames)
         }
 
-        override fun load(key: String): List<String>? = files[key]
+        override fun load(key: String): KeptAnswer? = files[key]
 
-        override fun remove(key: String) {
-            files.remove(key)
+        override fun remove(key: String, generation: String) {
+            if (files[key]?.generation == generation) files.remove(key)
         }
     }
 
@@ -148,10 +148,34 @@ class CompactionReplayTest {
 
         withStore.consumed(key, older)
 
-        assertEquals(newer.frames(), store.load(key), "the older delivery spent a file that is not its own")
-        assertSame(newer, withStore.lookup(key), "the retry of the newer compaction finds that recording, as itself")
+        assertEquals(newer.frames(), store.load(key)?.frames, "the older delivery spent a file that is not its own")
+        val found = checkNotNull(withStore.lookup(key)) { "the retry of the newer compaction finds its answer" }
+        assertEquals(newer.generation, found.generation, "that answer is the newer one, read back from its file")
         withStore.consumed(key, newer)
         assertNull(store.load(key), "the owner's delivery spends its file")
+        assertNull(withStore.lookup(key), "and the retry after it runs upstream")
+    }
+
+    @Test
+    fun `an owner evicted from both caches while it is delivering still spends its file`() {
+        val store = MapRecordings()
+        val withStore = CompactionReplay(store, clock = ElapsedClock { now }, ttlMs = 1_000, capacity = 2)
+        val key = checkNotNull(withStore.key("s", "{}"))
+        val owner = whole()
+        withStore.begin(key, owner)
+        withStore.finish(key, owner, keep = true)
+        // Delivering the owner, other kept answers fill the memory entries and anything bounded that remembers owners.
+        repeat(8) { index ->
+            val other = whole()
+            withStore.begin("other-$index", other)
+            withStore.finish("other-$index", other, keep = true)
+        }
+        assertNull(withStore.lookup("absent"), "the lookup sweeps")
+
+        withStore.consumed(key, owner)
+
+        assertNull(store.load(key), "the delivered answer is spent on disk")
+        assertNull(withStore.lookup(key), "and a second identical request runs upstream")
     }
 
     @Test

@@ -18,11 +18,17 @@ import splice.core.memory.HeapOwners
 import splice.core.memory.HeapReservations
 import splice.core.util.Cancellables
 import splice.upstream.memory.JvmHeap
+import java.util.UUID
 
 // why: the array-list's reference and growth slack; escaped strings own their metadata separately.
 private const val FRAME_ENTRY_BYTES = 64L
 
-internal class FrameRecording(private val heap: HeapReservations = JvmHeap.budget) {
+/** [generation] names this answer for as long as anything holds it: the durable copy is kept under it, so a delivery spends exactly
+ *  its own copy and never a newer one stored under the same key. A recording read back from disk takes the stored generation. */
+internal class FrameRecording(
+    private val heap: HeapReservations = JvmHeap.budget,
+    val generation: String = UUID.randomUUID().toString(),
+) {
 
     private data class Progress(val frames: Int, val complete: Boolean, val whole: Boolean = false)
 

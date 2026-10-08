@@ -29,15 +29,21 @@ import java.security.MessageDigest
 /** Where finished compaction answers are kept between the answer and its retry, by replay key.
  *  Every recording kept is a whole answer: the frames of a turn whose terminal ended cleanly. */
 public interface CompactionRecordings {
-    /** Keep [frames] as [key]'s answer. A failure is the adapter's to report: the retry then runs
-     *  upstream, as it did before this store existed, and the drive that called this is unaffected. */
-    public fun save(key: String, frames: List<String>)
+    /** Keep [frames] as [key]'s answer under [generation], replacing any older generation kept for the key. A failure is the
+     *  adapter's to report: the retry then runs upstream, as it did before this store existed, and the drive that called this is
+     *  unaffected. */
+    public fun save(key: String, generation: String, frames: List<String>)
 
-    /** [key]'s kept answer, or null when there is none to serve (never kept, expired, unreadable). */
-    public fun load(key: String): List<String>?
+    /** [key]'s kept answer with the generation it was kept under, or null when there is none to serve (never kept, expired,
+     *  unreadable). */
+    public fun load(key: String): KeptAnswer?
 
-    public fun remove(key: String)
+    /** Spend the answer kept for [key] under [generation]. A different generation (a newer answer kept at the key since) is left alone,
+     *  whatever any cache still remembers: the generation lives with the durable copy. */
+    public fun remove(key: String, generation: String)
 }
+
+public data class KeptAnswer(public val generation: String, public val frames: List<String>)
 
 /** One owner-only file per key under [dir], named by the key's hash (the key carries a
  *  client-supplied session id, which is never a path). [now] is wall time because the file outlives
@@ -52,29 +58,34 @@ public class FileCompactionRecordings(
 ) : CompactionRecordings {
     private val json = Json { ignoreUnknownKeys = true }
 
-    override fun save(key: String, frames: List<String>) {
+    override fun save(key: String, generation: String, frames: List<String>) {
         Cancellables.runCatchingCancellable {
             SecureFile.ownerOnlyDirectory(dir)?.let { open -> log("[compaction] $dir is not owner-only: $open\n") }
             sweepExpired()
-            val file = fileFor(key)
+            val file = fileFor(key, generation)
             val text = json.encodeToString(KeptRecording.serializer(), KeptRecording(key, frames))
             SecureFile.writeAtomic0600(file, text)
             Files.setLastModifiedTime(file, FileTime.fromMillis(now()))
+            // The newer answer replaces every older generation kept at the key.
+            keptFor(key).filter { it != file }.forEach(Files::deleteIfExists)
         }.onFailure { failure ->
             log("[compaction] could not keep a compaction answer (${SafeFailureText.render(failure)}); $UPSTREAM\n")
         }
     }
 
-    override fun load(key: String): List<String>? {
-        val file = fileFor(key)
+    override fun load(key: String): KeptAnswer? {
         return Cancellables.runCatchingCancellable {
-            if (expired(file)) {
+            val file = keptFor(key).maxByOrNull { Files.getLastModifiedTime(it).toMillis() }
+            if (file == null) {
+                null
+            } else if (expired(file)) {
                 Files.deleteIfExists(file)
                 null
             } else {
                 HeapText.Reader.read(file, heap).use { staged ->
                     val kept = json.decodeFromString(KeptRecording.serializer(), staged.text)
-                    kept.frames.takeIf { kept.key == key }?.also(staged::retain)
+                    val frames = kept.frames.takeIf { kept.key == key }?.also(staged::retain)
+                    frames?.let { KeptAnswer(generationOf(file), it) }
                 }
             }
         }.getOrElse { failure ->
@@ -87,8 +98,8 @@ public class FileCompactionRecordings(
         }
     }
 
-    override fun remove(key: String) {
-        Cancellables.runCatchingCancellable { Files.deleteIfExists(fileFor(key)) }.onFailure { failure ->
+    override fun remove(key: String, generation: String) {
+        Cancellables.runCatchingCancellable { Files.deleteIfExists(fileFor(key, generation)) }.onFailure { failure ->
             log("[compaction] could not remove a replayed compaction answer (${SafeFailureText.render(failure)})\n")
         }
     }
@@ -121,9 +132,22 @@ public class FileCompactionRecordings(
 
     private fun expired(file: Path): Boolean = now() - Files.getLastModifiedTime(file).toMillis() > ttlMs
 
-    private fun fileFor(key: String): Path {
-        val hash = MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8))
-        return dir.resolve(hash.joinToString("") { "%02x".format(it) } + SUFFIX)
+    /** The kept files of [key]: `<hash of key>.<generation>.json`, one per generation (a save leaves only the newest). */
+    private fun keptFor(key: String): List<Path> {
+        if (!Files.isDirectory(dir)) return emptyList()
+        return Files.newDirectoryStream(dir, "${keyHash(key)}.*$SUFFIX").use { it.toList() }
+    }
+
+    private fun fileFor(key: String, generation: String): Path {
+        require(GENERATION.matches(generation)) { "a compaction generation is letters, digits and dashes" }
+        return dir.resolve("${keyHash(key)}.$generation$SUFFIX")
+    }
+
+    private fun generationOf(file: Path): String = file.fileName.toString().removeSuffix(SUFFIX).substringAfter('.')
+
+    private fun keyHash(key: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
     }
 }
 
@@ -131,6 +155,7 @@ public class FileCompactionRecordings(
 private data class KeptRecording(val key: String, val frames: List<String>)
 
 private const val SUFFIX = ".json"
+private val GENERATION = Regex("[0-9A-Za-z-]+")
 private const val UPSTREAM = "its retry runs upstream"
 
 /** How long an answer is held for its retry, in memory and on disk alike: Claude Code retries a

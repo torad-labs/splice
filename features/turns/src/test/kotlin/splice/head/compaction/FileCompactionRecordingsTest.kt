@@ -74,6 +74,44 @@ class FileCompactionRecordingsTest(@TempDir tempDir: Path) {
         assertEquals(frames, received)
     }
 
+    private fun wholeAnswer() = FrameRecording().apply {
+        frames.forEach(::append)
+        complete(whole = true)
+    }
+
+    @Test
+    fun `an owner evicted from both caches while it is delivered spends its file, and a stale generation never spends a newer one`() {
+        val replay = CompactionReplay(store(), capacity = 2)
+        val key = checkNotNull(replay.key("sess-1", "{}"))
+        val owner = wholeAnswer()
+        replay.begin(key, owner)
+        replay.finish(key, owner, keep = true)
+        repeat(8) { index ->
+            val other = wholeAnswer()
+            replay.begin("other-$index", other)
+            replay.finish("other-$index", other, keep = true)
+        }
+        assertEquals(frames, store().load(key)?.frames, "the owner's file is live while both caches have forgotten it")
+
+        replay.consumed(key, owner)
+
+        assertNull(store().load(key), "the owner's delivery spends its own file")
+        assertNull(CompactionReplay(store()).lookup(key), "and nothing replays it")
+
+        val older = wholeAnswer()
+        val newer = FrameRecording().apply {
+            append("event: newer\n\n")
+            complete(whole = true)
+        }
+        val fresh = CompactionReplay(store())
+        for (recording in listOf(older, newer)) {
+            fresh.begin(key, recording)
+            fresh.finish(key, recording, keep = true)
+        }
+        fresh.consumed(key, older)
+        assertEquals(newer.generation, store().load(key)?.generation, "a stale generation leaves the newer file")
+    }
+
     @Test
     fun `an answer not kept, or one still in flight, leaves nothing on disk`() {
         val replay = CompactionReplay(store())

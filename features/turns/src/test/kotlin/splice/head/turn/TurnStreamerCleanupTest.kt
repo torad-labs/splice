@@ -42,6 +42,7 @@ import splice.head.HeadHealthCounters
 import splice.head.TestResponsesProvider
 import splice.head.compaction.CompactionRecordings
 import splice.head.compaction.CompactionReplay
+import splice.head.compaction.KeptAnswer
 import splice.head.headDeps
 import splice.head.turn.stream.PendingSse
 import splice.head.wire.ClientChannel
@@ -131,9 +132,9 @@ class TurnStreamerCleanupTest {
             val first = OutOfMemoryError("synthetic replay persistence failure")
             val later = IllegalStateException("synthetic slot release failure")
             val recordings = object : CompactionRecordings {
-                override fun save(key: String, frames: List<String>): Unit = throw first
-                override fun load(key: String): List<String>? = null
-                override fun remove(key: String) = Unit
+                override fun save(key: String, generation: String, frames: List<String>): Unit = throw first
+                override fun load(key: String): KeptAnswer? = null
+                override fun remove(key: String, generation: String) = Unit
             }
             rig(tmp, recordings = recordings).use { rig ->
                 val recording = FrameRecording()

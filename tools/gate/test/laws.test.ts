@@ -27,7 +27,16 @@ describe("gate ledger laws: both laws, both ways", () => {
   test("a CSS-holding directory counts, not just a .css path", () => {
     expect(laws(one(["tools/screen-review/**"], "npx tsc --noEmit"))).toEqual(["law-25"]);
   });
-  test("a fence with no CSS anywhere is not a law-25 row", () => {
+  test("RED: a relative fence is resolved against the repository, not the process cwd", () => {
+    const here = process.cwd();
+    process.chdir(tmpdir());
+    try {
+      expect(laws(one(["tools/screen-review/**"], "npx tsc --noEmit"))).toEqual(["law-25"]);
+    } finally {
+      process.chdir(here);
+    }
+  });
+    test("a fence with no CSS anywhere is not a law-25 row", () => {
     expect(laws(one(SELF, "npx tsc --noEmit"))).toEqual([]);
   });
   test("the M1-08 shape is RED", () => {

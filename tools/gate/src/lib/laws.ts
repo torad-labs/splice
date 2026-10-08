@@ -32,6 +32,7 @@
 import { execFileSync } from "node:child_process";
 import { readdirSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
+import { layout } from "./repo.ts";
 
 export interface Row {
   readonly id: string;
@@ -142,7 +143,9 @@ function ignoredTrees(dir: string): { readonly top: string; readonly paths: Read
 }
 
 function holdsCss(prefix: string): "yes" | "no" | "unknown" {
-  const root = fenceRoot(prefix);
+  // A fence is repo-relative: resolved against the repository, never the process cwd. From a subdirectory every relative fence
+  // statted ENOENT, which reads as `no`, and law 25 passed on a tree it never read.
+  const root = resolve(layout().repoRoot, fenceRoot(prefix));
   let ignored: ReturnType<typeof ignoredTrees> = null;
   const isIgnored = (dir: string): boolean => {
     if (ignored === null) return false;

@@ -57,17 +57,12 @@ import splice.app.control.mount.TraceMount
 import splice.app.control.mount.TurnsMount
 import splice.app.control.mount.UsageMount
 import splice.core.config.ConfigService
-import splice.core.config.Knob
-import splice.core.config.MgmtKey
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
-import splice.head.admission.AdmissionErrorBody
-import splice.http.ingress.HeapIngress
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.DaemonSuccessor
 import splice.lifecycle.restart.ShutdownDaemon
 import splice.sessions.registry.SessionSource
-import splice.upstream.memory.JvmHeap
 
 // ControlServer's lifecycle/limit constants, at their sanctioned file-scope home.
 private const val STOP_GRACE_MS = 100L
@@ -77,7 +72,8 @@ internal class ControlServer(
     private val port: Int,
     private val heads: Map<String, ManagedHead>,
     private val config: ConfigService,
-    private val mgmtKey: MgmtKey,
+    /** The door every route runs behind, and the request admission, both built by ControlPlane. */
+    private val guard: ControlGuard,
     private val log: LogSink,
     /** The /health body this server serves on its liveness row, read per request. */
     private val health: ControlHealthReport,
@@ -85,12 +81,13 @@ internal class ControlServer(
     signals: HeadSignals,
     /** The runtime collaborators the mounts share: launch, shutdown, the session registry, shared MCP
      *  hosting (null keeps the control plane exactly as before) and the client version tracker. */
-    runtime: ControlRuntime = ControlRuntime(),
+    private val runtime: ControlRuntime = ControlRuntime(),
 ) {
-    private val launchService: LaunchService? = runtime.launchService
-    private val shutdownDaemon: ShutdownDaemon = runtime.shutdownDaemon
-    private val sessions: SessionSource? = runtime.sessions
-    private val clientVersions: ClientVersionTracker = runtime.clientVersions
+    // Views over [runtime], never copies: a stored copy would fix the value at construction.
+    private val launchService: LaunchService? get() = runtime.launchService
+    private val shutdownDaemon: ShutdownDaemon get() = runtime.shutdownDaemon
+    private val sessions: SessionSource? get() = runtime.sessions
+    private val clientVersions: ClientVersionTracker get() = runtime.clientVersions
 
     /** The nine ports ControlPlane wires after construction — see [ConsolePorts], which carries the
      *  discipline they share and why they left this file (V4-161). Read at CALL time, never captured. */
@@ -98,7 +95,6 @@ internal class ControlServer(
 
     private val resolver = HeadResolver(heads, signals)
     private val audit = ControlAudit(log)
-    private val guard = ControlGuard(mgmtKey, audit, log)
 
     // One mount per capability. Every mount reads [ports] at CALL time, never at construction:
     // ControlPlane assigns them after this server exists, so a captured port would be null forever.
@@ -158,7 +154,6 @@ internal class ControlServer(
         ControlMount(launch::register),
     ) + listOfNotNull(mcp)
     private val resources: List<BoundResource> = listOfNotNull(mcp)
-    private val ingress = HeapIngress(JvmHeap.budget, Knob.MAX_REQUEST_BYTES.default as Long, AdmissionErrorBody)
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
@@ -183,7 +178,7 @@ internal class ControlServer(
     /** Suspend since 2026-09-23, for the one read below: Ktor 3 publishes the bound port only
      *  through the engine's suspend resolvedConnectors(). */
     public suspend fun start() {
-        mgmtKey.get() // mint eagerly BEFORE the port opens — a dashboard load must not race it
+        guard.mintKey() // mint eagerly BEFORE the port opens — a dashboard load must not race it
         val engine = controlEngine()
         engine.start(wait = false)
         // Netty's start binds with bind(...).sync() and completes the resolved connectors before it
@@ -202,7 +197,7 @@ internal class ControlServer(
             Netty,
             serverConfig {
                 module {
-                    ingress.install(this)
+                    guard.admit(this)
                     guard.refuseForeignHosts(this)
                     routing {
                         get("/health") { call.respondText(health.json(), ContentType.Application.Json) }
@@ -215,7 +210,7 @@ internal class ControlServer(
                 host = "127.0.0.1"
                 port = this@ControlServer.port
             }
-            channelPipelineConfig = { pipeline -> ingress.install(pipeline) }
+            channelPipelineConfig = { pipeline -> guard.admit(pipeline) }
         }
 
     @Synchronized

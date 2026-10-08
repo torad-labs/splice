@@ -4,14 +4,20 @@
 // stall passes the same [HeadSignals] to both the health body and the server: the heads route and /health read them.
 package splice.app.control
 
+import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadReadiness
 import splice.app.control.api.HeadSignals
+import splice.app.control.mount.ControlGuard
 import splice.configuration.topology.TopologyStale
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.util.LogSink
 import splice.core.version.ClientVersionTracker
+import splice.head.admission.AdmissionErrorBody
+import splice.http.ingress.HeapIngress
+import splice.upstream.memory.JvmHeap
 
 internal fun signalsFor(
     heads: Map<String, ManagedHead>,
@@ -51,13 +57,22 @@ internal fun controlServerFor(
     runtime: ControlRuntime = ControlRuntime(),
     // The health body and the server read one client-version tracker, as ControlPlane wires them.
     health: ControlHealthReport = healthFor(heads, signals = signals, clientVersions = runtime.clientVersions),
-): ControlServer = ControlServer(
-    port,
-    heads,
-    config,
-    mgmtKey,
-    log,
-    health = health,
-    signals = signals,
-    runtime = runtime,
-)
+): ControlServer {
+    // The same guard ControlPlane builds: the production request cap, read from its one knob.
+    val guard = ControlGuard(
+        mgmtKey,
+        ControlAudit(log),
+        log,
+        HeapIngress(JvmHeap.budget, Knob.MAX_REQUEST_BYTES.count(), AdmissionErrorBody),
+    )
+    return ControlServer(
+        port,
+        heads,
+        config,
+        guard,
+        log,
+        health = health,
+        signals = signals,
+        runtime = runtime,
+    )
+}

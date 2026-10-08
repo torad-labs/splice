@@ -13,6 +13,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
 import io.ktor.server.response.respondText
+import io.netty.channel.ChannelPipeline
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.app.control.MgmtRoute
@@ -25,6 +26,7 @@ import splice.core.config.MgmtKey
 import splice.core.config.TurnKey
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.http.ingress.HeapIngress
 
 /** Which scoped bearer a route admits BESIDE the management key, which opens every route. One door
  *  per route, so no route can be widened to two scoped keys by a flag pair. */
@@ -33,7 +35,13 @@ internal enum class Door { MANAGEMENT, MCP, SESSION }
 /** Runs [MgmtRoute] only after the bearer matched the management key or the key of the route's [Door]:
  *  the MCP access key opens only the /mcp/{name} routes, and a launched session's turn key only the
  *  routes its own hooks call. */
-internal class ControlGuard(private val mgmtKey: MgmtKey, audit: ControlAudit, log: LogSink) {
+internal class ControlGuard(
+    private val mgmtKey: MgmtKey,
+    audit: ControlAudit,
+    log: LogSink,
+    /** The request-size and heap admission, built by ControlPlane from the daemon's one request cap. */
+    private val ingress: HeapIngress,
+) {
     private val mcpAccessKey = McpAccessKey(mgmtKey::get)
 
     // v0.4.0: the credential a launched session holds opens its OWN hooks' routes and nothing else.
@@ -58,6 +66,19 @@ internal class ControlGuard(private val mgmtKey: MgmtKey, audit: ControlAudit, l
             }
         }
     }
+
+    /** Admits a request's body against the heap budget ahead of routing, on the module the server installs. */
+    fun admit(app: Application) {
+        ingress.install(app)
+    }
+
+    /** The same admission on the channel pipeline, where the engine reads bytes before any module runs. */
+    fun admit(pipeline: ChannelPipeline) {
+        ingress.install(pipeline)
+    }
+
+    /** Mints the management key now, before the port opens, so a dashboard load never races the minting. */
+    fun mintKey(): String = mgmtKey.get()
 
     suspend fun guarded(call: ApplicationCall, door: Door = Door.MANAGEMENT, block: MgmtRoute) {
         val header = call.request.headers["Authorization"]

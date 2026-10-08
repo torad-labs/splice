@@ -20,9 +20,11 @@ import splice.app.control.ManagedHead
 import splice.app.control.RuntimeNotAnswering
 import splice.app.control.TopologyDigest
 import splice.app.control.TurnPathStalled
+import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.api.HeadReadiness
 import splice.app.control.api.HeadSignals
+import splice.app.control.mount.ControlGuard
 import splice.app.daemon.BootedTopology
 import splice.app.daemon.DaemonMaterializer
 import splice.app.daemon.TopologyStaleness
@@ -53,6 +55,8 @@ import splice.core.config.TurnKey
 import splice.core.config.UserHome
 import splice.core.version.ClientVersionTracker
 import splice.head.HeadDeps
+import splice.head.admission.AdmissionErrorBody
+import splice.http.ingress.HeapIngress
 import splice.launch.LaunchSpec
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.DetachedDaemonSuccessor
@@ -64,12 +68,13 @@ import splice.sessions.registry.RouteOfPid
 import splice.sessions.registry.SessionRegistry
 import splice.upstream.LifecycleScope
 import splice.upstream.codemode.ProcessDispatchers
+import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.milliseconds
 
 internal class ControlPlane(
     /** The daemon's shared environment: its state, its settings, its management key and its log sink. */
-    daemon: DaemonEnvironment,
+    private val daemon: DaemonEnvironment,
     private val shutdownDaemon: ShutdownDaemon,
     /** JW-04 + V4-127: the booted config's identity (sha-256 of the parsed bytes, the resolved
      *  path) and what it declared, as one value. These were three separate parameters until
@@ -85,10 +90,11 @@ internal class ControlPlane(
      *  /api/compaction/instructions reports the resolver the daemon actually compacts with. */
     private val compactionInstructions: CompactionInstructions = CompactionInstructions(),
 ) {
-    private val statePaths = daemon.statePaths
-    private val config = daemon.config
-    private val mgmtKey = daemon.mgmtKey
-    private val log = daemon.log
+    // Views over [daemon], never copies: a stored copy would fix the value at construction.
+    private val statePaths get() = daemon.statePaths
+    private val config get() = daemon.config
+    private val mgmtKey get() = daemon.mgmtKey
+    private val log get() = daemon.log
     private val boundary = DaemonBoundary()
     private val environment = ProcessEnvironment()
     private var claudeLoginOwner: ClaudeLoginOwner? = null
@@ -242,11 +248,18 @@ internal class ControlPlane(
         )
         val mcpHost = mcpHost(home, sharing, heads.values.mapNotNull { it.launchSpec })
         val signals = HeadSignals(heads, RuntimeNotAnswering { probes.runtimeNotAnswering() })
+        // The request cap is resolved here, once, and handed to the guard as a value.
+        val guard = ControlGuard(
+            mgmtKey,
+            ControlAudit(log),
+            log,
+            HeapIngress(JvmHeap.budget, Knob.MAX_REQUEST_BYTES.count(), AdmissionErrorBody),
+        )
         val srv = ControlServer(
             controlPort,
             heads,
             config,
-            mgmtKey,
+            guard,
             log,
             health = healthReport(heads, failedHeads, headCount, probes, signals),
             signals = signals,
@@ -375,7 +388,7 @@ internal class ControlPlane(
      *  (the Knob enum) rather than restated here. */
     private fun mcpHostConfig(): McpHostConfig {
         val m = config.getConfig().asMap()
-        fun ms(knob: Knob): Long = (m[knob.key] as? Long) ?: (knob.default as Long)
+        fun ms(knob: Knob): Long = (m[knob.key] as? Long) ?: (knob.count())
         return McpHostConfig(
             idleTimeout = ms(Knob.MCP_IDLE_TIMEOUT_MS).milliseconds,
             maxServers = ms(Knob.MCP_MAX_SERVERS).toInt(),

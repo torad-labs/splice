@@ -18,7 +18,7 @@ import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.request.ResponsesRequest
 import splice.dialect.responses.request.responsesRequestJson
-import splice.upstream.FoldController
+import splice.upstream.FoldPolicy
 import splice.upstream.FoldRound
 
 /** Operator-tunable reasoning-continuation policy (threaded from config like mirror_reasoning). */
@@ -53,7 +53,7 @@ public const val DEFAULT_MARKER_TEXT: String = "Continue thinking..."
 internal class ResponsesFoldController(
     private val config: FoldConfig,
     private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
-) : FoldController {
+) : FoldPolicy {
 
     private val continuation = ResponsesContinuation()
 

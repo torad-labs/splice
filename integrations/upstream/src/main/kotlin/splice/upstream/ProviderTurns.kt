@@ -16,7 +16,7 @@ public data class BuiltTurn(
     /** The answering policy for THIS turn's deferred surface, built by the request builder (the
      *  only place that knows what was deferred). Null = no deferral this turn, or the feature is
      *  off — the gateway's round loop is byte-for-byte unchanged. */
-    val toolSearch: ToolSearchController? = null,
+    val toolSearch: ToolSearchPolicy? = null,
     /** Gateway-local protocol wrapper for this turn; null preserves the direct round path. */
     val roundInterceptor: RoundInterceptor? = null,
     /** V4-165: what the provider holds for THIS turn and must hear the end of — a llama-server slot

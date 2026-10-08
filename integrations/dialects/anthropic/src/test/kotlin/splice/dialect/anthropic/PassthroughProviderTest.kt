@@ -177,7 +177,7 @@ class PassthroughProviderTest {
 
     @Test
     fun `re-anchoring is actually wired, so the third retry layer is not dead code`() {
-        // WHY THIS GUARD EXISTS. Provider.reanchorController returns null by DEFAULT ("surface the
+        // WHY THIS GUARD EXISTS. Provider.reanchorPolicy returns null by DEFAULT ("surface the
         // failure, pre-reanchor behaviour") and this dialect silently inherited that default, which
         // IS the outage: a stream that EOFs without message_stop is a 2xx whose handler returns a
         // Failure, so neither the connect-phase budget nor the G5 reissue budget can see it, and the
@@ -187,7 +187,7 @@ class PassthroughProviderTest {
         // assertInstanceOf rather than assertNotNull on purpose: an override repointed at some OTHER
         // controller keeps the layer present while no longer being this dialect's, which is the same
         // silence one step along.
-        val controller = provider(KimiProfileFixture().kimi("kimi")).reanchorController(
+        val controller = provider(KimiProfileFixture().kimi("kimi")).reanchorPolicy(
             TurnMeta(
                 compact = false,
                 showReasoning = ReasoningDisplay.OFF,

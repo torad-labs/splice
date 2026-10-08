@@ -34,7 +34,7 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.JsonWire
 import splice.upstream.BuiltTurn
-import splice.upstream.FoldController
+import splice.upstream.FoldPolicy
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
 import splice.upstream.RoundInterceptor
@@ -227,7 +227,7 @@ private class SubstitutingSerializationProvider(
     private val base: Provider,
     private val folding: Boolean,
 ) : Provider by base {
-    override fun foldController(meta: TurnMeta): FoldController? = if (folding) FoldController { null } else null
+    override fun foldPolicy(meta: TurnMeta): FoldPolicy? = if (folding) FoldPolicy { null } else null
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn =
         base.buildTurn(body, compact, sessionId).let { built ->

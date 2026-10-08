@@ -6,7 +6,7 @@ package splice.head.round
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchPolicy
 import splice.upstream.ToolSearchRound
 
 /** The round-splicing laws BOTH runners obey (never two copies — the v29 law). Each runner holds
@@ -23,7 +23,7 @@ internal class RoundSplice {
      *  — that check lives inside ResponsesToolSearchController itself (TurnOutcome.Success.hasToolUse),
      *  so it need not be repeated here. */
     fun searchContinuation(
-        search: ToolSearchController?,
+        search: ToolSearchPolicy?,
         outcome: TurnOutcome,
         body: JsonObject,
         roundIndex: Int,

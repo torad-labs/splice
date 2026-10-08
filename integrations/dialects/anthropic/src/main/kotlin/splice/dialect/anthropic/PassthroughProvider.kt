@@ -22,7 +22,7 @@ import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
 import splice.upstream.ProviderTuning
-import splice.upstream.ReanchorController
+import splice.upstream.ReanchorPolicy
 import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
 import splice.upstream.TurnSignals
@@ -93,7 +93,7 @@ public class PassthroughProvider(
      *  turn at attempts=1 — the connect-phase and G5 budgets cannot see a 2xx that EOFs early, and
      *  this was the only layer that could. Stateless and cheap, so it is constructed per call
      *  rather than held. */
-    override fun reanchorController(meta: TurnMeta): ReanchorController =
+    override fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy =
         PassthroughReanchorController(prefill = quirks.reanchorPrefill)
 
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {

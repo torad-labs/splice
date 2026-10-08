@@ -1,5 +1,5 @@
-// NEW: the answer-the-search-and-continue SPI — the SUCCESS-side sibling of ReanchorController
-// (which continues FAILED rounds) and FoldController (which continues TRUNCATED rounds). The
+// NEW: the answer-the-search-and-continue SPI — the SUCCESS-side sibling of ReanchorPolicy
+// (which continues FAILED rounds) and FoldPolicy (which continues TRUNCATED rounds). The
 // Responses `tool_search` tool declares execution:"client", so the GATEWAY answers it, never
 // Claude Code: the model emits a tool_search_call item and blocks until a tool_search_output
 // item appears in input. Keeping the contract HERE (not in the dialect) is why :daemon-head can run
@@ -15,7 +15,7 @@ package splice.upstream
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
 
-public fun interface ToolSearchController {
+public fun interface ToolSearchPolicy {
     public fun continuationForSearch(round: ToolSearchRound): JsonObject?
 }
 

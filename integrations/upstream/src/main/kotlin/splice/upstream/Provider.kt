@@ -101,10 +101,10 @@ public interface Provider : ProviderIdentity {
 
     /** Reasoning-continuation folding for this turn, or null when the feature is off for this
      *  model/head (the default — every non-codex provider stays pure passthrough). */
-    public fun foldController(meta: TurnMeta): FoldController? = null
+    public fun foldPolicy(meta: TurnMeta): FoldPolicy? = null
 
     /** Mid-stream re-anchoring policy for FAILED rounds; null = surface the failure (pre-reanchor behaviour). */
-    public fun reanchorController(meta: TurnMeta): ReanchorController? = null
+    public fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy? = null
 
     /** RC-4 (reasoning-cache 2026-07-24): one-shot request-body amendment on a
      *  deterministic upstream rejection — (status, responseText, bodyJson) -> amended

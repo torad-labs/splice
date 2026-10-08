@@ -68,7 +68,7 @@ class CodexResponsesArmTest {
         pinAccounts(wired)
         val built = wired.provider.buildTurn(AnthropicParse.parseAnthropicBody(TOOL_BODY), false, "session-1")
         pinTurn(built)
-        assertNotNull(wired.provider.foldController(built.meta))
+        assertNotNull(wired.provider.foldPolicy(built.meta))
         wired.provider.onHeadStop()
     }
 

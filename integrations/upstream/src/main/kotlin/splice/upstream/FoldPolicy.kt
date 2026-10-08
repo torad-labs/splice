@@ -7,10 +7,10 @@ package splice.upstream
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
 
-/** Per-turn continuation policy. A provider returns one from [Provider.foldController] when the
+/** Per-turn continuation policy. A provider returns one from [Provider.foldPolicy] when the
  *  turn's model is fold-eligible; null means pure passthrough (no buffering, no loop — byte-for-byte
  *  the pre-fold behaviour). Called by the gateway after each completed upstream round. */
-public fun interface FoldController {
+public fun interface FoldPolicy {
     /**
      * Decide whether this round's reasoning was truncated and, if so, return the NEXT upstream
      * request body (this round's input + replayed reasoning + a continuation marker) to re-POST.
@@ -32,8 +32,8 @@ public data class FoldRound(
  *  already forwarded, the provider may return the continuation request that resumes the turn from
  *  its accumulated partial output. Null = not continuable (non-retryable failure type, a poison
  *  tool tear, or budget exhausted) — the gateway then emits the honest error terminal. Distinct
- *  from [FoldController], which continues SUCCESSFUL rounds whose reasoning was truncated. */
-public fun interface ReanchorController {
+ *  from [FoldPolicy], which continues SUCCESSFUL rounds whose reasoning was truncated. */
+public fun interface ReanchorPolicy {
     public fun continuationForFailure(round: ReanchorRound): JsonObject?
 }
 

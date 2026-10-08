@@ -23,11 +23,11 @@ import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.head.wire.SseEmitterFactory
-import splice.upstream.FoldController
-import splice.upstream.ReanchorController
+import splice.upstream.FoldPolicy
+import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryBackoff
 import splice.upstream.RoundInterceptor
-import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchPolicy
 import splice.upstream.sse.WireSink
 
 private fun continuationBody() = buildJsonObject { }
@@ -130,7 +130,7 @@ class ReanchorRunnerTest {
             postRound = { rounds.removeFirst().invoke() },
             finish = { h.finish(it) },
             signals = h.signals(),
-        ).run(continuationBody(), ReanchorController { continuationBody() })
+        ).run(continuationBody(), ReanchorPolicy { continuationBody() })
 
         assertEquals(1, h.count("message_start"), "exactly one message_start across rounds")
         assertEquals(1, h.count("message_stop"), "exactly one clean terminal")
@@ -158,7 +158,7 @@ class ReanchorRunnerTest {
             postRound = { rounds.removeFirst().invoke() },
             finish = { h.finish(it) },
             signals = h.signals(),
-        ).run(continuationBody(), ReanchorController { continuationBody() })
+        ).run(continuationBody(), ReanchorPolicy { continuationBody() })
 
         val success = h.finished as TurnOutcome.Success
         assertTrue(success.emittedText, "round-1's forwarded text must count for the honesty gate")
@@ -186,7 +186,7 @@ class ReanchorRunnerTest {
             signals = h.signals(),
         ).run(
             continuationBody(),
-            ReanchorController { round ->
+            ReanchorPolicy { round ->
                 asks++
                 if (round.attempt < 2) continuationBody() else null
             },
@@ -216,7 +216,7 @@ class ReanchorRunnerTest {
             signals = h.signals(watchdog = true),
         ).run(
             continuationBody(),
-            ReanchorController { round ->
+            ReanchorPolicy { round ->
                 asks++
                 if (round.attempt < 2) continuationBody() else null
             },
@@ -238,7 +238,7 @@ class ReanchorRunnerTest {
             signals = h.signals(gone = true),
         ).run(
             continuationBody(),
-            ReanchorController {
+            ReanchorPolicy {
                 asks++
                 continuationBody()
             },
@@ -270,7 +270,7 @@ class ReanchorRunnerTest {
             postRound = { rounds.removeFirst().invoke() },
             finish = { h.finish(it) },
             signals = h.signals(),
-        ).run(continuationBody(), ReanchorController { null }) // NO continuation is available
+        ).run(continuationBody(), ReanchorPolicy { null }) // NO continuation is available
 
         val success = h.finished as TurnOutcome.Success
         assertTrue(success.hasToolUse, "the salvaged turn carries the completed tool call")
@@ -300,7 +300,7 @@ class ReanchorRunnerTest {
             postRound = { rounds.removeFirst().invoke() },
             finish = { h.finish(it) },
             signals = h.signals(),
-        ).run(continuationBody(), ReanchorController { null })
+        ).run(continuationBody(), ReanchorPolicy { null })
 
         assertTrue(
             h.finished is TurnOutcome.Failure,
@@ -318,7 +318,7 @@ class ReanchorRunnerTest {
             postRound = { retryableFailure() },
             finish = { h.finish(it) },
             signals = h.signals(),
-        ).run(continuationBody(), ReanchorController { null })
+        ).run(continuationBody(), ReanchorPolicy { null })
         assertEquals(1, h.count("error"))
         assertEquals(0, h.count("message_stop"))
     }
@@ -348,7 +348,7 @@ class FoldRunnerReanchorTest {
             log = { },
             postRound = { _, _ -> rounds.removeFirst().invoke() },
             finish = { h.finish(it) },
-            reanchor = ReanchorController { round ->
+            reanchor = ReanchorPolicy { round ->
                 seenPartialBodies.add(round.failure.partial?.bodyText)
                 continuationBody()
             },
@@ -391,7 +391,7 @@ class FoldRunnerReanchorTest {
             log = { },
             postRound = { _, _ -> rounds.removeFirst().invoke() },
             finish = { h.finish(it) },
-            reanchor = ReanchorController { continuationBody() },
+            reanchor = ReanchorPolicy { continuationBody() },
             signals = h.signals(),
         ).run(continuationBody()) { null }
         val success = h.finished as TurnOutcome.Success
@@ -419,7 +419,7 @@ class FoldRunnerReanchorTest {
             },
         ).run(
             continuationBody(),
-            ReanchorController { round -> if (round.attempt < 2) continuationBody() else null },
+            ReanchorPolicy { round -> if (round.attempt < 2) continuationBody() else null },
         )
         assertEquals(3, posts)
         assertEquals(listOf(0, 1), waits, "every absorbed failure must pause before the re-POST")
@@ -448,7 +448,7 @@ class FoldRunnerReanchorTest {
             postRound = { rounds.removeFirst().invoke() },
             finish = { h.finish(it) },
             signals = h.signals(),
-        ).run(continuationBody(), ReanchorController { continuationBody() })
+        ).run(continuationBody(), ReanchorPolicy { continuationBody() })
         assertEquals(1, h.absorbed.size, "the absorbed round failure must reach the health hook")
         val abandoned = h.finished as TurnOutcome.ClientAbandoned
         assertEquals(8, abandoned.salvagedUsage.outputTokens, "absorbed burn must ride the abandonment")
@@ -464,7 +464,7 @@ class FoldRunnerReanchorTest {
             log = { },
             postRound = { _, _ -> retryableFailure() },
             finish = { h.finish(it) },
-            reanchor = ReanchorController {
+            reanchor = ReanchorPolicy {
                 asks++
                 continuationBody()
             },
@@ -483,7 +483,7 @@ class FoldRunnerReanchorTest {
     fun `a gone client buys no fold continuation - DR-89`() = runTest {
         val h = Harness()
         var asked = 0
-        val fold = FoldController { round ->
+        val fold = FoldPolicy { round ->
             if (round.roundIndex == 0) {
                 asked++
                 continuationBody()
@@ -508,8 +508,8 @@ class FoldRunnerReanchorTest {
     }
 }
 
-// Search-continuation walls on ReanchorRunner (the search-only path — no ReanchorController at
-// all, or a ReanchorController that stays silent because nothing failed).
+// Search-continuation walls on ReanchorRunner (the search-only path — no ReanchorPolicy at
+// all, or a ReanchorPolicy that stays silent because nothing failed).
 class ReanchorRunnerSearchTest {
 
     @Test
@@ -527,7 +527,7 @@ class ReanchorRunnerSearchTest {
             )
         }
         var searchAsks = 0
-        val search = ToolSearchController { round ->
+        val search = ToolSearchPolicy { round ->
             // The runner consults the controller on EVERY Success round (searchContinuation only
             // type/liveness-guards); the "nothing to answer" decision lives inside the real
             // controller (ResponsesToolSearchController.kt). Count only genuine answers, matching this
@@ -568,7 +568,7 @@ class ReanchorRunnerSearchTest {
             )
         }
         rounds.add { TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 2)) }
-        val search = ToolSearchController { round ->
+        val search = ToolSearchPolicy { round ->
             if (round.outcome.toolSearches.isEmpty()) null else continuationBody()
         }
         ReanchorRunner(
@@ -591,7 +591,7 @@ class ReanchorRunnerSearchTest {
     fun `hasToolUse in the outcome reaches the controller, which then blocks the continuation`() = runTest {
         val h = Harness()
         var sawHasToolUse = false
-        val search = ToolSearchController { round ->
+        val search = ToolSearchPolicy { round ->
             sawHasToolUse = round.outcome.hasToolUse
             if (round.outcome.hasToolUse) null else continuationBody()
         }
@@ -616,7 +616,7 @@ class ReanchorRunnerSearchTest {
     fun `a watchdog fire never continues a search - more work on a spent budget`() = runTest {
         val h = Harness()
         var asks = 0
-        val search = ToolSearchController {
+        val search = ToolSearchPolicy {
             asks++
             continuationBody()
         }
@@ -636,7 +636,7 @@ class ReanchorRunnerSearchTest {
     fun `a gone client never continues a search`() = runTest {
         val h = Harness()
         var asks = 0
-        val search = ToolSearchController {
+        val search = ToolSearchPolicy {
             asks++
             continuationBody()
         }
@@ -659,7 +659,7 @@ class ReanchorRunnerSearchTest {
         rounds.add { retryableFailure(outputTokens = 1) }
         rounds.add { searchSuccess(outputTokens = 1) }
         rounds.add { TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }
-        val search = ToolSearchController { round ->
+        val search = ToolSearchPolicy { round ->
             if (round.outcome.toolSearches.isEmpty()) null else continuationBody()
         }
         var reanchorAsks = 0
@@ -672,7 +672,7 @@ class ReanchorRunnerSearchTest {
             toolSearch = search,
         ).run(
             continuationBody(),
-            ReanchorController { round ->
+            ReanchorPolicy { round ->
                 reanchorAsks++
                 if (round.attempt < 1) continuationBody() else null
             },
@@ -688,7 +688,7 @@ class ReanchorRunnerSearchTest {
         val rounds = ArrayDeque<suspend () -> TurnOutcome>()
         rounds.add { searchSuccess() }
         rounds.add { TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }
-        val search = ToolSearchController { round ->
+        val search = ToolSearchPolicy { round ->
             if (round.outcome.toolSearches.isEmpty()) null else continuationBody()
         }
         ReanchorRunner(
@@ -722,7 +722,7 @@ class FoldRunnerAbandonTest {
             log = { },
             postRound = { _, _ -> rounds.removeFirst().invoke() },
             finish = { h.finish(it) },
-            reanchor = ReanchorController { continuationBody() },
+            reanchor = ReanchorPolicy { continuationBody() },
             signals = h.signals(),
         ).run(continuationBody()) { null }
         assertEquals(1, h.absorbed.size, "the fold-absorbed failure must reach the health hook")
@@ -757,7 +757,7 @@ class FoldRunnerSearchTest {
                 emittedText = true,
             )
         }
-        val search = ToolSearchController { round ->
+        val search = ToolSearchPolicy { round ->
             if (round.outcome.toolSearches.isEmpty()) null else continuationBody()
         }
         FoldRunner(
@@ -782,11 +782,11 @@ class FoldRunnerSearchTest {
         // A dumb controller that always declines — the point is proving it is never even ASKED
         // about the round that carries a search (round 1); round 2 legitimately has none.
         var consultedForSearchingRound = false
-        val search = ToolSearchController { round ->
+        val search = ToolSearchPolicy { round ->
             if (round.outcome.toolSearches.isNotEmpty()) consultedForSearchingRound = true
             null
         }
-        val fold = FoldController { round -> if (round.roundIndex == 0) continuationBody() else null }
+        val fold = FoldPolicy { round -> if (round.roundIndex == 0) continuationBody() else null }
         val rounds = ArrayDeque<suspend (WireSink) -> TurnOutcome>()
         rounds.add { _ ->
             TurnOutcome.Success(
@@ -964,7 +964,7 @@ class RoundRoutingEquivalenceTest {
     @Test
     fun `a first-round Success is byte-identical with and without a re-anchor controller`() = runTest {
         var consulted = 0
-        val controller = ReanchorController { _ ->
+        val controller = ReanchorPolicy { _ ->
             consulted++
             continuationBody()
         }

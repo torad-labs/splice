@@ -21,7 +21,7 @@ import splice.dialect.responses.tools.ResponsesToolPlan
 import splice.dialect.responses.tools.ToolPartition
 import splice.dialect.responses.tools.ToolWireObjects
 import splice.upstream.ToolNameShortener
-import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchPolicy
 
 /** [ResponsesRequestAssembler.buildRequestObject]'s internal return — the request bytes plus the
  *  tool-surface facts only the builder knows (the partition sizes for TurnMeta, the search
@@ -29,7 +29,7 @@ import splice.upstream.ToolSearchController
  *  stays under LongParameterList's function threshold instead of growing a 6th argument. */
 internal data class BuiltBody(
     val req: JsonObject,
-    val toolSearch: ToolSearchController?,
+    val toolSearch: ToolSearchPolicy?,
     val toolsEager: Int?,
     val toolsDeferred: Int?,
 )

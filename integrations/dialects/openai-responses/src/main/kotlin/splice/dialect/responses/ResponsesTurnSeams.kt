@@ -1,4 +1,4 @@
-// NEW: streamTranslator / foldController / reanchorController for
+// NEW: streamTranslator / foldPolicy / reanchorPolicy for
 // ResponsesProvider (concentration, 2026-08-19). Same-package; the provider
 // keeps identity, buildTurn, and the WS/failure surfaces.
 package splice.dialect.responses
@@ -12,8 +12,8 @@ import splice.dialect.responses.reasoning.TurnReasoningSink
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.stream.ResponsesFoldController
 import splice.dialect.responses.stream.ResponsesStreamTranslator
-import splice.upstream.FoldController
-import splice.upstream.ReanchorController
+import splice.upstream.FoldPolicy
+import splice.upstream.ReanchorPolicy
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnSignals
 
@@ -21,10 +21,10 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // The controller is stateless — one cached instance serves every turn (a per-call
     // allocation here also ran per ROUND via the collectReasoningEnvelopes null-check).
     // V4-339: one per wire shape. A lite turn's replayed partial prose is commentary (V4-335's rule).
-    private val reanchorPolicy: ReanchorController by lazy {
+    private val defaultReanchorPolicy: ReanchorPolicy by lazy {
         ResponsesReanchorController(decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) })
     }
-    private val liteReanchorPolicy: ReanchorController by lazy {
+    private val liteReanchorPolicy: ReanchorPolicy by lazy {
         ResponsesReanchorController(
             decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) },
             prosePhase = AssistantPhase.COMMENTARY,
@@ -99,7 +99,7 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // Non-null ONLY when folding is configured AND the turn's model is fold-eligible AND it is not a
     // compaction (a text summarizer requests no encrypted_content). Sol and every non-codex head get
     // null here → the gateway never buffers or loops → pure passthrough.
-    fun foldController(meta: TurnMeta): FoldController? {
+    fun foldPolicy(meta: TurnMeta): FoldPolicy? {
         val cfg = deps.foldConfig ?: return null
         if (meta.compact || meta.upstreamModel !in cfg.models) return null
         return ResponsesFoldController(
@@ -120,6 +120,6 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     // deterministic verdicts (cyber_policy, refusals, content filter) carry no partial and are never
     // re-POSTed. NB: fold-eligible turns get re-anchor via FoldRunner's trigger-B, not
     // ReanchorRunner (driveOneTurn routes fold first).
-    fun reanchorController(meta: TurnMeta): ReanchorController =
-        if (liteShape.isLiteModel(meta.upstreamModel)) liteReanchorPolicy else reanchorPolicy
+    fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy =
+        if (liteShape.isLiteModel(meta.upstreamModel)) liteReanchorPolicy else defaultReanchorPolicy
 }

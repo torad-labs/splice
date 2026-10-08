@@ -33,8 +33,8 @@ internal class TurnRoundRun(
         // byte-for-byte the pre-fold behaviour (drive straight to the real emitter,
         // finish once). A fold-eligible turn hands the loop to FoldRunner. Which runner
         // drives this turn is [RoundStrategy]'s decision (HD-24).
-        val fold = provider.foldController(drive.meta)
-        val reanchor = provider.reanchorController(drive.meta)
+        val fold = provider.foldPolicy(drive.meta)
+        val reanchor = provider.reanchorPolicy(drive.meta)
         RoundStrategy(
             key = provider.key,
             log = log,

@@ -113,7 +113,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
 
     /** V4-116 (1): A STALL CARRIES THE SAME SALVAGE A TRUNCATION DOES — this dialect's half of the
      *  scar. The watchdog branch used to build a Failure with a bare message and no `partial`, so
-     *  `ReanchorController.continuationForFailure` answered null at its first line before reading a
+     *  `ReanchorPolicy.continuationForFailure` answered null at its first line before reading a
      *  single eligibility rule, and a stalled round was unrecoverable BY CONSTRUCTION. A stall and a
      *  truncation are the same fact (the upstream stopped talking after delivering content), so they
      *  are the same Failure, and the controller decides recoverability — never this branch.
@@ -168,7 +168,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         "splice idle watchdog fired after ${fired.idleMs / MS_PER_S}s past the ${fired.limitMs / MS_PER_S}s " +
             "${if (fired.sawClientFrame) MID_OUTPUT_TIER else FIRST_OUTPUT_TIER} tier"
 
-    /** What this round produced before it died, for [splice.upstream.ReanchorController]. Mirrors
+    /** What this round produced before it died, for [splice.upstream.ReanchorPolicy]. Mirrors
      *  [successOutcome]'s reads so a continuation and a success see the SAME buffers. [toolTearOpen]
      *  is left false on purpose: this dialect buffers tool arguments and flushes them before the
      *  terminal, so a raised [ChatToolCalls.hasToolUse] is already the fact that refuses a

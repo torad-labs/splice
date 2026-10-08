@@ -11,7 +11,7 @@ import splice.core.wire.ToolDefinition
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.request.BuildOptions
 import splice.upstream.ToolNameShortener
-import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchPolicy
 
 internal class ResponsesToolPlan(
     private val quirks: ResponsesQuirks,
@@ -29,7 +29,7 @@ internal class ResponsesToolPlan(
 
     /** Only client mode needs a gateway search controller. Hosted searches finish inside Meta;
      *  a bare partition (off, below the floor) still returns no controller. */
-    internal fun toolSearchControllerFor(partition: ToolPartition?, opts: BuildOptions): ToolSearchController? {
+    internal fun toolSearchControllerFor(partition: ToolPartition?, opts: BuildOptions): ToolSearchPolicy? {
         val policy = quirks.toolSurface
         if (policy == null || policy.mode == ToolSearchMode.HOSTED) return null
         if (partition == null || !partition.deferring) return null

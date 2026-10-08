@@ -25,7 +25,7 @@ import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.stream.ResponsesContinuation
 import splice.upstream.ToolNameShortener
-import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchPolicy
 import splice.upstream.ToolSearchRound
 
 /** Per-TURN answering policy. Holds the turn's deferred inventory and nothing else; allocated by
@@ -38,7 +38,7 @@ internal class ResponsesToolSearchController(
     private val normalizeSchemas: Boolean,
     private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
     names: ToolNameShortener = ToolNameShortener(),
-) : ToolSearchController {
+) : ToolSearchPolicy {
 
     private val continuation = ResponsesContinuation()
     private val output = ToolSearchOutput(names)

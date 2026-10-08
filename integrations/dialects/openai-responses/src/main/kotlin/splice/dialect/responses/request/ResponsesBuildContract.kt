@@ -11,9 +11,9 @@ import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.ReasoningEnvelopeDecoder
 import splice.dialect.responses.reasoning.ReasoningLookup
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
-import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchPolicy
 
-public data class BuiltRequest(val req: JsonObject, val meta: TurnMeta, val toolSearch: ToolSearchController? = null)
+public data class BuiltRequest(val req: JsonObject, val meta: TurnMeta, val toolSearch: ToolSearchPolicy? = null)
 
 public data class BuildOptions(
     public val compact: Boolean,

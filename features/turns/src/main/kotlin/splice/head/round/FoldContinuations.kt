@@ -5,16 +5,16 @@ package splice.head.round
 
 import splice.core.turn.TurnOutcome
 import splice.head.wire.BufferingWireSink
-import splice.upstream.FoldController
+import splice.upstream.FoldPolicy
 import splice.upstream.FoldRound
 import splice.upstream.RetryNotice
-import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchPolicy
 
 internal class FoldContinuations(
     private val key: String,
     private val log: RetryNotice,
     private val signals: RunnerSignals,
-    private val toolSearch: ToolSearchController?,
+    private val toolSearch: ToolSearchPolicy?,
     private val rounds: RoundSplice,
 ) {
     /** The fold-continuation and search-continuation checks, extracted out of FoldRunner.run
@@ -22,7 +22,7 @@ internal class FoldContinuations(
      *  neither fired; the caller falls through to the re-anchor check exactly as before the
      *  extraction. */
     fun nextRoundBody(
-        fold: FoldController,
+        fold: FoldPolicy,
         outcome: TurnOutcome,
         buffer: BufferingWireSink,
         salvaged: MutableList<TurnOutcome.PartialRound>,

@@ -14,12 +14,12 @@ import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
 import splice.core.turn.TurnOutcome
 import splice.head.wire.BufferingWireSink
-import splice.upstream.FoldController
-import splice.upstream.ReanchorController
+import splice.upstream.FoldPolicy
+import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryBackoff
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
-import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchPolicy
 import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamTransport
@@ -31,19 +31,19 @@ internal class FoldRunner(
     private val log: RetryNotice,
     private val postRound: PostRoundToSink,
     private val finish: FinishTurn,
-    private val reanchor: ReanchorController? = null,
+    private val reanchor: ReanchorPolicy? = null,
     private val signals: RunnerSignals = RunnerSignals(),
-    private val toolSearch: ToolSearchController? = null,
+    private val toolSearch: ToolSearchPolicy? = null,
     private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(ProcessWaiter()),
 ) {
     private val rounds = RoundSplice()
     private val foldRounds = FoldRounds(key, log, reanchor, signals, toolSearch, finish, rounds)
 
-    suspend fun run(initialBody: JsonObject, fold: FoldController) {
+    suspend fun run(initialBody: JsonObject, fold: FoldPolicy) {
         run(initialBody, fold, null)
     }
 
-    suspend fun run(initialBody: JsonObject, fold: FoldController, perf: TurnPerf?) {
+    suspend fun run(initialBody: JsonObject, fold: FoldPolicy, perf: TurnPerf?) {
         var body = initialBody
         var acc = RoundUsage()
         var roundIndex = 0

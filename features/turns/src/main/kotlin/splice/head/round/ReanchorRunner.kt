@@ -16,11 +16,11 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
 import splice.core.turn.TurnOutcome
-import splice.upstream.ReanchorController
+import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryBackoff
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
-import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchPolicy
 import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.transport.UpstreamTransport
 
@@ -30,20 +30,20 @@ internal class ReanchorRunner(
     private val postRound: PostRound,
     private val finish: FinishTurn,
     private val signals: RunnerSignals,
-    private val toolSearch: ToolSearchController? = null,
+    private val toolSearch: ToolSearchPolicy? = null,
     private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(ProcessWaiter()),
 ) {
     private val rounds = RoundSplice()
     private val continuation = ReanchorContinuation(toolSearch, signals, rounds)
 
     // [reanchor] is nullable — a turn may reach this runner with search-only continuation (no
-    // ReanchorController at all): driveOneTurn routes here whenever EITHER exists, so the seam is
+    // ReanchorPolicy at all): driveOneTurn routes here whenever EITHER exists, so the seam is
     // total rather than resting on an undocumented cross-object invariant.
-    suspend fun run(initialBody: JsonObject, reanchor: ReanchorController?) {
+    suspend fun run(initialBody: JsonObject, reanchor: ReanchorPolicy?) {
         run(initialBody, reanchor, null)
     }
 
-    suspend fun run(initialBody: JsonObject, reanchor: ReanchorController?, perf: TurnPerf?) {
+    suspend fun run(initialBody: JsonObject, reanchor: ReanchorPolicy?, perf: TurnPerf?) {
         var body = initialBody
         var attempt = 0
         var searchIndex = 0

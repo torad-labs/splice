@@ -10,25 +10,25 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.head.wire.BufferingWireSink
-import splice.upstream.FoldController
-import splice.upstream.ReanchorController
+import splice.upstream.FoldPolicy
+import splice.upstream.ReanchorPolicy
 import splice.upstream.ReanchorRound
 import splice.upstream.RetryNotice
-import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchPolicy
 
 internal class FoldRounds(
     key: String,
     log: RetryNotice,
-    private val reanchor: ReanchorController?,
+    private val reanchor: ReanchorPolicy?,
     private val signals: RunnerSignals,
-    toolSearch: ToolSearchController?,
+    toolSearch: ToolSearchPolicy?,
     private val finish: FinishTurn,
     private val rounds: RoundSplice,
 ) {
     private val continuations = FoldContinuations(key, log, signals, toolSearch, rounds)
 
     fun nextRoundBody(
-        fold: FoldController,
+        fold: FoldPolicy,
         outcome: TurnOutcome,
         buffer: BufferingWireSink,
         salvaged: MutableList<TurnOutcome.PartialRound>,

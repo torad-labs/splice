@@ -144,7 +144,7 @@ public class PassthroughStreamTranslator(
     /** V4-116 (1): A STALL CARRIES THE SAME SALVAGE A TRUNCATION DOES.
      *
      *  This is the whole scar. The watchdog branch used to build a Failure with no `partial`, so
-     *  [splice.upstream.ReanchorController.continuationForFailure]'s first line (`round.failure.partial
+     *  [splice.upstream.ReanchorPolicy.continuationForFailure]'s first line (`round.failure.partial
      *  ?: return null`) answered before any eligibility rule was even read — a stalled round was
      *  unrecoverable BY CONSTRUCTION, on every head, even one measured to continue from a prefill
      *  and even mid-answer with real text already in the client's hands. Measured: claude-deepseek
@@ -198,7 +198,7 @@ public class PassthroughStreamTranslator(
                 unexpected?.let { "${quirks.providerTag}: upstream stream failed ($it)$UNEXPECTED_TAIL" }
                     ?: "${quirks.providerTag}: stream ended without a terminal event (truncated); retry",
                 // The SALVAGE, and the reason this failure is now recoverable at all. Without it
-                // `partial` defaulted to null, which Provider.reanchorController reads as "this
+                // `partial` defaulted to null, which Provider.reanchorPolicy reads as "this
                 // dialect cannot continue" — so a truncated stream on THIS dialect (every OAuth
                 // head, kimi, muse, deepseek) ended the turn with attempts=1 while the connect-phase
                 // and G5 budgets sat unused, because neither can see a 2xx that EOFs early. The
@@ -215,7 +215,7 @@ public class PassthroughStreamTranslator(
             )
         }
 
-    /** What this round produced before it died, for [ReanchorController]. Mirrors successOutcome's
+    /** What this round produced before it died, for [ReanchorPolicy]. Mirrors successOutcome's
      *  reads so a continuation and a success see the SAME buffers. */
     private fun partialRound(): TurnOutcome.PartialRound = TurnOutcome.PartialRound(
         thinkingText = channels.thinkingBuf.toString(),

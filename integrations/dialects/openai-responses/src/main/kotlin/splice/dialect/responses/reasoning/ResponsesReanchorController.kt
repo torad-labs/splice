@@ -22,7 +22,7 @@ import splice.core.turn.TurnOutcome
 import splice.dialect.responses.request.AssistantPhase
 import splice.dialect.responses.request.ResponsesAssistantText
 import splice.dialect.responses.stream.ResponsesContinuation
-import splice.upstream.ReanchorController
+import splice.upstream.ReanchorPolicy
 import splice.upstream.ReanchorRound
 
 /** [prosePhase] is the phase the replayed partial prose carries: commentary on a lite turn, null (the
@@ -31,7 +31,7 @@ public class ResponsesReanchorController(
     private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
     private val maxContinuations: Int = DEFAULT_MAX_CONTINUATIONS,
     private val prosePhase: AssistantPhase? = null,
-) : ReanchorController {
+) : ReanchorPolicy {
 
     private val continuation = ResponsesContinuation()
 

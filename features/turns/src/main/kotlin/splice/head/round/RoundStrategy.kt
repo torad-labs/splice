@@ -12,15 +12,15 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
-import splice.upstream.FoldController
+import splice.upstream.FoldPolicy
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.PostingTurnRow
-import splice.upstream.ReanchorController
+import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.RoundBodyInterceptor
 import splice.upstream.RoundInterceptor
-import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchPolicy
 import splice.upstream.sse.WireSink
 
 /** Receives terminal outcomes from raw code-mode posts before the interceptor can expand them. */
@@ -46,19 +46,19 @@ internal class RoundStrategy(
     private val finish: FinishTurn,
     // Defaulted (not just nullable): the 8th required param tripped the constructor-length wall
     // (max 7 required) — always passed explicitly at the one call site (driveOneTurn).
-    private val toolSearch: ToolSearchController? = null,
+    private val toolSearch: ToolSearchPolicy? = null,
     private val interception: RoundInterception = RoundInterception(),
 ) {
     private val rounds = RoundSplice()
 
-    suspend fun run(requestBody: JsonObject, fold: FoldController?, reanchor: ReanchorController?) {
+    suspend fun run(requestBody: JsonObject, fold: FoldPolicy?, reanchor: ReanchorPolicy?) {
         run(requestBody, fold, reanchor, null)
     }
 
     suspend fun run(
         requestBody: JsonObject,
-        fold: FoldController?,
-        reanchor: ReanchorController?,
+        fold: FoldPolicy?,
+        reanchor: ReanchorPolicy?,
         perf: TurnPerf?,
     ) {
         val notice = RetryNotice { log(it) }
@@ -99,8 +99,8 @@ internal class RoundStrategy(
         }
     }
 
-    private fun observedReanchor(controller: ReanchorController?): ReanchorController? = controller?.let { policy ->
-        ReanchorController { round ->
+    private fun observedReanchor(controller: ReanchorPolicy?): ReanchorPolicy? = controller?.let { policy ->
+        ReanchorPolicy { round ->
             policy.continuationForFailure(round)?.also { interception.interceptor?.reanchor(round) }
         }
     }

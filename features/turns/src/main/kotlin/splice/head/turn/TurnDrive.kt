@@ -25,7 +25,7 @@ import splice.head.wire.ClientChannel
 import splice.head.wire.TurnTerminal
 import splice.head.wire.TurnTrace
 import splice.upstream.RoundInterceptor
-import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchPolicy
 import splice.upstream.credentials.AccountSelection
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.TurnWatchdog
@@ -65,7 +65,7 @@ internal data class TurnDrive(
     val channel: ClientChannel,
     /** The provider's answering policy for THIS turn's deferred tool surface. Null = no deferral
      *  this turn, or the feature is off — the round loop is byte-for-byte unchanged. */
-    val toolSearch: ToolSearchController?,
+    val toolSearch: ToolSearchPolicy?,
     /** Optional gateway-local wrapper around each posted round. */
     val roundInterceptor: RoundInterceptor? = null,
     val remainingTurnWait: RemainingTurnWait = RemainingTurnWait { Long.MAX_VALUE },

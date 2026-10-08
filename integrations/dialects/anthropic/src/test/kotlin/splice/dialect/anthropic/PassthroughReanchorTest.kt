@@ -1,7 +1,7 @@
 // NEW: V4-41 — the mid-stream re-anchor layer this dialect never had. The operator saw deepseek
 // "just stop, no retry at all": three truncations in one minute, attempts=1 on each, because a
 // stream that EOFs without message_stop is a 2xx whose handler RETURNS a Failure, so none of the
-// three retry budgets can see it and Provider.reanchorController was left at its null default on
+// three retry budgets can see it and Provider.reanchorPolicy was left at its null default on
 // every passthrough head. These tests pin the controller that closes that hole — and, above all,
 // the ONE state where appending naively would duplicate what the client already read: a reasoning
 // turn, whose prefill is ignored unless the continuation round turns thinking off.

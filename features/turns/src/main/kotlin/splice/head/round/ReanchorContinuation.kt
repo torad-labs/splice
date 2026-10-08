@@ -6,9 +6,9 @@ package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
-import splice.upstream.ReanchorController
+import splice.upstream.ReanchorPolicy
 import splice.upstream.ReanchorRound
-import splice.upstream.ToolSearchController
+import splice.upstream.ToolSearchPolicy
 
 /** V4-106: a continuation TOGETHER with the Failure it was computed from.
  *
@@ -20,7 +20,7 @@ import splice.upstream.ToolSearchController
 internal data class FailureContinuation(val body: JsonObject, val failure: TurnOutcome.Failure)
 
 internal class ReanchorContinuation(
-    private val toolSearch: ToolSearchController?,
+    private val toolSearch: ToolSearchPolicy?,
     private val signals: RunnerSignals,
     private val rounds: RoundSplice,
 ) {
@@ -33,7 +33,7 @@ internal class ReanchorContinuation(
      *  the veto made a stalled round unsalvageable no matter what it carried. clientGone stays: a
      *  continuation for a client that hung up is upstream spend with no reader. */
     fun continuationForFailure(
-        reanchor: ReanchorController?,
+        reanchor: ReanchorPolicy?,
         outcome: TurnOutcome,
         body: JsonObject,
         attempt: Int,

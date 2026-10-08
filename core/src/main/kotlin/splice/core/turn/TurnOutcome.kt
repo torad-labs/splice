@@ -180,7 +180,7 @@ public sealed class TurnOutcome {
         val reasoningEnvelopes: List<String> = emptyList(),
         /** tool_search_call items THIS round emitted. Non-empty only on a responses turn with
          *  deferral active; the gateway never reads their contents — it hands them to the turn's
-         *  ToolSearchController (the same opaque-forwarding rule as reasoningEnvelopes). */
+         *  ToolSearchPolicy (the same opaque-forwarding rule as reasoningEnvelopes). */
         val toolSearches: List<ToolSearchCall> = emptyList(),
         /** Gateway-local custom calls. Empty keeps every non-bridge outcome byte-identical. */
         val customCalls: List<GatewayCustomCall> = emptyList(),

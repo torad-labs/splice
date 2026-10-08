@@ -68,7 +68,7 @@ import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnTerminal
 import splice.head.wire.UsagePayloadBuilder
 import splice.upstream.ClientFrameEmitted
-import splice.upstream.ReanchorController
+import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryBackoff
 import splice.upstream.Ticker
 import splice.upstream.Waiter
@@ -346,7 +346,7 @@ class TurnPerfRowTest {
             backoff = RetryBackoff { _, _ -> delay(3_000) },
         )
         try {
-            runner.run(buildJsonObject {}, ReanchorController { buildJsonObject {} }, drive.perf)
+            runner.run(buildJsonObject {}, ReanchorPolicy { buildJsonObject {} }, drive.perf)
             assertTrue(AsyncFileIo.drain())
             val row = Json.parseToJsonElement(Files.readAllLines(rig.perfFile).single()).jsonObject
             assertAll(

@@ -21,11 +21,11 @@ import splice.dialect.responses.stream.FoldConfig
 import splice.dialect.responses.websocket.ResponsesWsSupport
 import splice.dialect.responses.websocket.WsExtraHeaders
 import splice.upstream.BuiltTurn
-import splice.upstream.FoldController
+import splice.upstream.FoldPolicy
 import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
 import splice.upstream.ProviderTuning
-import splice.upstream.ReanchorController
+import splice.upstream.ReanchorPolicy
 import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
 import splice.upstream.TurnSignals
@@ -109,8 +109,8 @@ public abstract class ResponsesProvider(
     final override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         parts.turnSeams.streamTranslator(meta, signals)
 
-    final override fun foldController(meta: TurnMeta): FoldController? =
-        parts.turnSeams.foldController(meta)
+    final override fun foldPolicy(meta: TurnMeta): FoldPolicy? =
+        parts.turnSeams.foldPolicy(meta)
 
     /** Whether THIS provider's upstream actually speaks the Responses WebSocket. False by default:
      *  the quirk table is shared by every openai-responses provider (codex, grok, openai-platform),
@@ -135,7 +135,7 @@ public abstract class ResponsesProvider(
     final override fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? =
         parts.failureAmend.amendBodyOnFailure(status, responseText, bodyJson)
 
-    // Every turn, compaction included (2026-09-02, see ResponsesTurnSeams.reanchorController).
-    final override fun reanchorController(meta: TurnMeta): ReanchorController? =
-        parts.turnSeams.reanchorController(meta)
+    // Every turn, compaction included (2026-09-02, see ResponsesTurnSeams.reanchorPolicy).
+    final override fun reanchorPolicy(meta: TurnMeta): ReanchorPolicy? =
+        parts.turnSeams.reanchorPolicy(meta)
 }

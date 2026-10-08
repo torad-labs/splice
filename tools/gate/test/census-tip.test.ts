@@ -7,8 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const CENSUS = join(import.meta.dir, "..", "..", "..", ".dev", "restructure", "census.ts");
-const HEADER = "source\tsha256\tdisposition\tdestination\treason";
-const ZERO = "0".repeat(64);
+const HEADER = "source\tdisposition\tdestination\treason";
 const scratch: string[] = [];
 
 afterAll(() => {
@@ -33,7 +32,7 @@ function repo(): string {
   git(root, ["config", "user.email", "census@test.invalid"]);
   git(root, ["config", "user.name", "census test"]);
   write(root, "core/A.kt", "class A\n");
-  write(root, ".dev/restructure/capabilities.tsv", `${HEADER}\ncore/A.kt\t${ZERO}\tcreated\t\tsynthetic claim\n`);
+  write(root, ".dev/restructure/capabilities.tsv", `${HEADER}\ncore/A.kt\tcreated\t\tsynthetic claim\n`);
   git(root, ["add", "-A"]);
   git(root, ["commit", "-q", "-m", "base"]);
   return root;
@@ -79,7 +78,7 @@ describe("the census a push runs judges the pushed tip, not the checkout", () =>
     write(root, "core/C.kt", "class C\n");
     git(root, ["add", "core/C.kt"]);
     git(root, ["commit", "-q", "-m", "a file with no row"]);
-    write(root, ".dev/restructure/capabilities.tsv", `${HEADER}\ncore/A.kt\t${ZERO}\tcreated\t\tsynthetic claim\ncore/C.kt\t${ZERO}\tcreated\t\tclaimed only in the worktree\n`);
+    write(root, ".dev/restructure/capabilities.tsv", `${HEADER}\ncore/A.kt\tcreated\t\tsynthetic claim\ncore/C.kt\tcreated\t\tclaimed only in the worktree\n`);
     const tip = census(root, ["--rev", "HEAD"]);
     expect(tip.status).toBe(1);
     expect(tip.out).toContain("unclaimed: core/C.kt");

@@ -460,15 +460,15 @@ describe("a root script is checked by gradle's configuration pass", () => {
   }, 240_000);
 });
 
-const CENSUS_HEADER = "source\tsha256\tdisposition\tdestination\treason";
+const CENSUS_HEADER = "source\tdisposition\tdestination\treason";
 const CENSUS_ROWS = ".dev/restructure/capabilities.tsv";
 const CENSUS_SCRIPT = ".dev/restructure/census.ts";
 const SEAT = "core/src/main/kotlin/splice/core/Seat.kt";
 const OTHER = "core/src/main/kotlin/splice/core/Other.kt";
 const NEW = "core/src/main/kotlin/splice/core/New.kt";
 
-/** A census row claiming [path] as created. The census never reads the hash column, so its synthetic value is zeros. */
-const claim = (path: string): string => `${path}\t${"0".repeat(64)}\tcreated\t\tsynthetic claim`;
+/** A census row claiming [path] as created. */
+const claim = (path: string): string => `${path}\tcreated\t\tsynthetic claim`;
 
 /** A scratch repository holding the real census script, the rows given and the files given, in one base commit. */
 function censusRepo(rows: readonly string[], files: readonly string[]): string {
@@ -573,7 +573,7 @@ describe("the census leg judges the commit's own bytes and refuses a finding the
 
   test("RED: a row with an empty source is a finding no path places, so the commit that adds it is refused", async () => {
     const root = censusRepo([claim(SEAT)], [SEAT]);
-    const blank = `\t${"0".repeat(64)}\tcreated\t\tsynthetic row with no source`;
+    const blank = `\tcreated\t\tsynthetic row with no source`;
     writeFile(root, CENSUS_ROWS, `${[CENSUS_HEADER, claim(SEAT), blank].join("\n")}\n`);
     git(root, ["add", "--", CENSUS_ROWS]);
     const { result, text } = await captured(() => censusLeg(lay(root)));

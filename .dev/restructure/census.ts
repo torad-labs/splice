@@ -85,11 +85,11 @@ export function findings(rows: Row[], tracked: Set<string>): Finding[] {
 
 export function parse(text: string): Row[] {
   const [header, ...lines] = text.split("\n").filter((line) => line !== "");
-  if (header !== "source\tsha256\tdisposition\tdestination\treason") throw new Error(`unexpected header: ${header}`);
+  if (header !== "source\tdisposition\tdestination\treason") throw new Error(`unexpected header: ${header}`);
   return lines.map((line, index) => {
     const cells = line.split("\t");
-    if (cells.length !== 5) throw new Error(`line ${index + 2}: ${cells.length} cells, expected 5`);
-    const [source = "", , disposition = "", destination = "", reason = ""] = cells;
+    if (cells.length !== 4) throw new Error(`line ${index + 2}: ${cells.length} cells, expected 4`);
+    const [source = "", disposition = "", destination = "", reason = ""] = cells;
     return { source, disposition, destination, reason };
   });
 }

@@ -159,8 +159,7 @@ internal class ControlServer(
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
 
-    /** A [start] is between its first line and its last; a [stop] that arrives then is remembered in [stopRequested]. */
-    private var starting = false
+    /** Set by the first [stop] and never cleared: a server stopped at any point, before its bind included, refuses to bind. */
     private var stopRequested = false
 
     /** What the connector actually bound in the current [start]; null while stopped. */
@@ -185,24 +184,23 @@ internal class ControlServer(
     public suspend fun start() {
         guard.mintKey() // mint eagerly BEFORE the port opens — a dashboard load must not race it
         val engine = controlEngine()
-        synchronized(this) {
-            starting = true
-            stopRequested = false
-        }
-        try {
-            engine.start(wait = false)
-            // Netty's start binds with bind(...).sync() and completes the resolved connectors before it
-            // returns (read from the 3.5.2 bytecode), so this never actually waits.
-            val port = engine.engine.resolvedConnectors().single().port
-            publish(engine, port)
-            resources.forEach { it.start() }
-        } finally {
-            synchronized(this) { starting = false }
+        refuseWhenStopped()
+        engine.start(wait = false)
+        // Netty's start binds with bind(...).sync() and completes the resolved connectors before it
+        // returns (read from the 3.5.2 bytecode), so this never actually waits.
+        val port = engine.engine.resolvedConnectors().single().port
+        publish(engine, port)
+        resources.forEach { it.start() }
+    }
+
+    private fun refuseWhenStopped() {
+        if (synchronized(this) { stopRequested }) {
+            throw CancellationException("the control server was stopped before it bound")
         }
     }
 
-    /** The engine is bound; it becomes this server's own, which [stop] closes, unless a [stop] already ran while it
-     *  was binding. That stop found no engine to close, so the bound listener is closed here and the start ends
+    /** The engine is bound; it becomes this server's own, which [stop] closes, unless a [stop] already ran, before or while it
+     *  bound. That stop found no engine to close, so the bound listener is closed here and the start ends
      *  cancelled, because a listener nobody owns would outlive the daemon that opened it. */
     private fun publish(engine: EmbeddedServer<NettyApplicationEngine, *>, port: Int) {
         val stoppedWhileBinding = synchronized(this) {
@@ -245,7 +243,7 @@ internal class ControlServer(
 
     @Synchronized
     public fun stop() {
-        if (starting) stopRequested = true
+        stopRequested = true
         resources.forEach { it.stop() }
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null

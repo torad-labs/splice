@@ -25,7 +25,6 @@ internal class ControlOwnership(
         adopt(server)
         val bound = boundary.runCatchingDaemonBoundary { server.start() }
             .onFailure {
-                // SAFE-RENDER-EXEMPT[2026-08-31]: srv.start() bind failure — a SocketException names a port and an address, never file bytes
                 log(
                     "[daemon] control plane could not bind :${LogSafe.str(controlPort.toString())} " +
                         "(${LogSafe.str(it.message.orEmpty())}); another owns it, exiting\n",

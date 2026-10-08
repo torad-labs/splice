@@ -11,7 +11,18 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { installShims, moduleOf, namedFiles, gradleModules, preCommit, prePush, shimText, SHIM_BEGIN } from "../src/commands/hook.ts";
+import {
+  failedTasks,
+  gradleModules,
+  installShims,
+  judge,
+  moduleOf,
+  namedFiles,
+  preCommit,
+  prePush,
+  SHIM_BEGIN,
+  shimText,
+} from "../src/commands/hook.ts";
 import { layout } from "../src/lib/repo.ts";
 
 const { repoRoot } = layout();
@@ -60,24 +71,55 @@ describe("pre-commit judges the index the commit is writing", () => {
     red = wallsRepo();
   });
 
-  test("RED: a staged violation blocks the commit even when the worktree copy is clean", () => {
+  test("RED: a staged violation blocks the commit even when the worktree copy is clean", async () => {
     writeTarget(red, VIOLATION);
     git(red, ["add", TARGET]);
     writeTarget(red, CLEAN); // the worktree now holds the clean form; only the index holds the violation
-    expect(preCommit({ repoRoot: red, buildRoot: red })).toBe(1);
+    expect(await preCommit({ repoRoot: red, buildRoot: red })).toBe(1);
   });
 
-  test("GREEN: the same path, staged in its fixed form, passes", () => {
+  test("GREEN: the same path, staged in its fixed form, passes", async () => {
     writeTarget(red, CLEAN);
     git(red, ["add", TARGET]);
-    expect(preCommit({ repoRoot: red, buildRoot: red })).toBe(0);
+    expect(await preCommit({ repoRoot: red, buildRoot: red })).toBe(0);
   });
 
-  test("a commit with no Kotlin in it passes without running a scan", () => {
+  test("a commit with no Kotlin in it passes without running a scan", async () => {
     const empty = wallsRepo();
     writeFileSync(join(empty, "README.md"), "docs\n");
     git(empty, ["add", "README.md"]);
-    expect(preCommit({ repoRoot: empty, buildRoot: empty })).toBe(0);
+    expect(await preCommit({ repoRoot: empty, buildRoot: empty })).toBe(0);
+  });
+});
+
+describe("a failing file blocks unless another seat has it in flight", () => {
+  const commit = new Set(["core/A.kt"]);
+  const dirty = new Set(["core/A.kt", "core/Seat.kt"]);
+
+  test("a file the commit changes blocks", () => {
+    expect(judge(new Set(["core/A.kt"]), commit, dirty)).toEqual({ blocking: ["core/A.kt"], advisory: [] });
+  });
+
+  test("a clean file the commit does not touch blocks: the caller a contract change broke", () => {
+    expect(judge(new Set(["integrations/B.kt"]), commit, dirty)).toEqual({ blocking: ["integrations/B.kt"], advisory: [] });
+  });
+
+  test("a file another seat has uncommitted edits in is printed and does not block", () => {
+    expect(judge(new Set(["core/Seat.kt"]), commit, dirty)).toEqual({ blocking: [], advisory: ["core/Seat.kt"] });
+  });
+
+  test("a mix names each file on its own side", () => {
+    expect(judge(new Set(["core/Seat.kt", "integrations/B.kt"]), commit, dirty)).toEqual({
+      blocking: ["integrations/B.kt"],
+      advisory: ["core/Seat.kt"],
+    });
+  });
+});
+
+describe("the gradle tasks a run reports as failed", () => {
+  test("are read by path, and a compile task is told apart from the rest", () => {
+    const output = "> Task :core:compileKotlin FAILED\n> Task :core:detekt FAILED\n> Task :core:test\n";
+    expect(failedTasks(output)).toEqual([":core:compileKotlin", ":core:detekt"]);
   });
 });
 

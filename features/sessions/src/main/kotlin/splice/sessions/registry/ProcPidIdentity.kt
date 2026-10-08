@@ -7,38 +7,57 @@
 // read only the pid and a five-minute tolerance, and read a stranger's /proc environ as the head).
 package splice.sessions.registry
 
-import splice.core.util.Cancellables
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 
 /** Start-time index in the fields after the `(comm)` of /proc/<pid>/stat: field 22 overall. */
 private const val START_TIME_FIELD_AFTER_COMM = 19
 
-/** This host's pid domain and a pid's start time, as Claude Code spells them. The two roots are the seam: the
- *  registry passes the real /proc and /etc/machine-id, and a test passes a tree it wrote. */
+/** When the process started (epoch ms), or null when unknown. Seam so tests decide without spawning. */
+internal fun interface PidStartedAt {
+    operator fun invoke(pid: Long): Long?
+}
+
+/** This host's pid domain and a pid's start time, as Claude Code spells them. The roots are the seam: production
+ *  reads the real /proc and /etc/machine-id, and a test passes a tree it wrote and the wall-clock starts it wants. */
 internal class ProcPidIdentity(
-    private val procRoot: Path,
-    private val machineIdFile: Path,
-) {
+    private val procRoot: Path = Paths.get("/proc"),
+    private val machineIdFile: Path = Paths.get("/etc/machine-id"),
+    private val startedAtOf: PidStartedAt = PidStartedAt { pid ->
+        ProcessHandle.of(pid).flatMap { it.info().startInstant() }.map { it.toEpochMilli() }.orElse(null)
+    },
+) : PidIdentity {
     private val domain: String? by lazy {
         val machineId = read(machineIdFile)?.trim()?.takeIf { it.isNotEmpty() }
-        // ast-grep-ignore: kt-no-silent-result-collapse -- null is this class's documented answer when the fact is not readable (not Linux)
-        val pidNs = Cancellables.runCatchingCancellable {
-            Files.readSymbolicLink(procRoot.resolve("self").resolve("ns").resolve("pid")).toString()
-        }.getOrNull()
+        val pidNs = pidNamespace()
         if (machineId == null || pidNs == null) null else "linux:$machineId:$pidNs"
     }
 
-    /** `linux:<machine-id>:pid:[<inode>]`, or null when the facts are not readable (not Linux). */
-    fun hostDomain(): String? = domain
+    override fun hostDomain(): String? = domain
 
-    /** The kernel start time of [pid] as the decimal string /proc/<pid>/stat carries, or null. */
-    fun procStart(pid: Long): String? {
+    override fun procStart(pid: Long): String? {
         val stat = read(procRoot.resolve(pid.toString()).resolve("stat")) ?: return null
         val afterComm = stat.substringAfterLast(')').trim().split(' ')
         return afterComm.getOrNull(START_TIME_FIELD_AFTER_COMM)
     }
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- null is this class's documented answer when the fact is not readable (not Linux, or the pid is gone)
-    private fun read(path: Path): String? = Cancellables.runCatchingCancellable { Files.readString(path) }.getOrNull()
+    override fun startedAt(pid: Long): Long? = startedAtOf(pid)
+
+    /** `pid:[<inode>]`, or null off Linux, where the link is absent or the filesystem has no symlinks. */
+    private fun pidNamespace(): String? = try {
+        Files.readSymbolicLink(procRoot.resolve("self").resolve("ns").resolve("pid")).toString()
+    } catch (_: IOException) {
+        null
+    } catch (_: UnsupportedOperationException) {
+        null
+    }
+
+    /** The file's text, or null when it is not there to read (not Linux, or the pid is gone). */
+    private fun read(path: Path): String? = try {
+        Files.readString(path)
+    } catch (_: IOException) {
+        null
+    }
 }

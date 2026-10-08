@@ -12,6 +12,7 @@ import java.nio.file.Paths
 class SessionRegistryTest {
 
     private val now = 1_789_312_411_660L
+    private val hourMs = 3_600_000L
 
     private fun write(dir: Path, pid: Long, body: String) {
         Files.writeString(dir.resolve("$pid.json"), body)
@@ -23,11 +24,12 @@ class SessionRegistryTest {
 
     /** The host the registry reads its pid identity from: a /proc tree and a machine-id file written under [root]
      *  as the kernel and Claude Code write them. A null [machineId] is a host whose domain is not readable. */
-    private fun fakeHost(
+    private fun fakeIdentity(
         root: Path,
         procStarts: Map<Long, String> = emptyMap(),
         machineId: String? = hostMachineId,
-    ): Pair<Path, Path> {
+        started: Map<Long, Long> = emptyMap(),
+    ): PidIdentity {
         val proc = Files.createDirectories(root.resolve("proc"))
         val machineFile = root.resolve("machine-id")
         if (machineId != null) {
@@ -41,29 +43,22 @@ class SessionRegistryTest {
             val stat = Files.createDirectories(proc.resolve(pid.toString())).resolve("stat")
             Files.writeString(stat, "$pid (claude) S ${List(18) { "0" }.joinToString(" ")} $start\n")
         }
-        return proc to machineFile
+        return ProcPidIdentity(proc, machineFile, PidStartedAt { started[it] })
     }
 
     private fun registry(
         dir: Path,
         alive: Set<Long>,
-        started: Map<Long, Long> = emptyMap(),
-        procStarts: Map<Long, String> = emptyMap(),
-        machineId: String? = hostMachineId,
+        identity: PidIdentity = fakeIdentity(dir.resolve("host")),
         heard: Map<String, Long> = emptyMap(),
-        host: Path = dir.resolve("host"),
     ): SessionRegistry {
-        val (proc, machineFile) = fakeHost(host, procStarts, machineId)
         return SessionRegistry(
             sessionsDir = dir,
             routeOf = { pid -> if (pid == 11L) SessionRoute.Head("claudex") else SessionRoute.Direct },
             pidAlive = { it in alive },
-            pidStartedAt = { started[it] },
             clock = { now },
-            staleAfterMs = 60_000L,
+            identity = identity,
             heard = { heard },
-            procRoot = proc,
-            machineIdFile = machineFile,
         )
     }
 
@@ -79,7 +74,8 @@ class SessionRegistryTest {
         write(dir, 13, """{"pid":13,"updatedAt":$now,"startedAt":$now,"pidDomain":"$host","procStart":"100"}""")
         write(dir, 14, """{"pid":14,"updatedAt":$now,"startedAt":$now,"pidDomain":"$host","procStart":"555"}""")
         val starts = mapOf(11L to "187740", 12L to "187740", 13L to "187740")
-        val rows = registry(dir, alive = setOf(11L, 12L, 13L, 14L), procStarts = starts).read()
+        val identity = fakeIdentity(dir.resolve("host"), starts)
+        val rows = registry(dir, alive = setOf(11L, 12L, 13L, 14L), identity = identity).read()
             .associateBy { it.pid }
         assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability, "same domain, same start")
         assertEquals(SessionAvailability.GONE, rows.getValue(12L).availability, "a container's pid: not this host's")
@@ -88,9 +84,7 @@ class SessionRegistryTest {
         val noHost = registry(
             dir,
             alive = setOf(12L),
-            procStarts = starts,
-            machineId = null,
-            host = dir.resolve("host-unreadable"),
+            identity = fakeIdentity(dir.resolve("host-unreadable"), starts, machineId = null),
         ).read()
         val unjudged = noHost.single { it.pid == 12L }.availability
         assertEquals(SessionAvailability.LIVE, unjudged, "no host domain: not judged")
@@ -105,7 +99,7 @@ class SessionRegistryTest {
     ) {
         val old = now - 12 * 3_600_000L
         for (pid in 11L..14L) write(dir, pid, """{"pid":$pid,"sessionId":"s-$pid","status":"busy","updatedAt":$old}""")
-        val heard = mapOf("s-11" to now - 5_000, "s-12" to now - 120_000, "s-14" to now - 5_000)
+        val heard = mapOf("s-11" to now - 5_000, "s-12" to now - 2 * hourMs, "s-14" to now - 5_000)
         val rows = registry(dir, alive = setOf(11L, 12L, 13L), heard = heard).read().associateBy { it.pid }
         assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability, "a turn 5 s ago, its file 12 h old")
         assertEquals(SessionAvailability.STALE, rows.getValue(12L).availability, "its last turn is past the window")
@@ -121,7 +115,8 @@ class SessionRegistryTest {
             11,
             """{"pid":11,"sessionId":"s-11","name":"alpha","status":"busy","updatedAt":${now - 5_000},"cwd":"/w/a"}""",
         )
-        write(dir, 12, """{"pid":12,"sessionId":"s-12","name":"beta","status":"idle","updatedAt":${now - 600_000}}""")
+        val idleAt = now - 2 * hourMs
+        write(dir, 12, """{"pid":12,"sessionId":"s-12","name":"beta","status":"idle","updatedAt":$idleAt}""")
         write(dir, 13, """{"pid":13,"sessionId":"s-13","name":"gamma","status":"busy","updatedAt":${now - 1_000}}""")
         val rows = registry(dir, alive = setOf(11L, 12L)).read().associateBy { it.pid }
         assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability)
@@ -137,7 +132,8 @@ class SessionRegistryTest {
         write(dir, 12, """{"pid":12,"updatedAt":$now,"startedAt":${now - day}}""")
         write(dir, 13, """{"pid":13,"updatedAt":$now,"startedAt":${now - day}}""")
         val started = mapOf(11L to now - 20_000, 12L to now - 60_000)
-        val rows = registry(dir, alive = setOf(11L, 12L, 13L), started = started).read().associateBy { it.pid }
+        val identity = fakeIdentity(dir.resolve("host"), started = started)
+        val rows = registry(dir, alive = setOf(11L, 12L, 13L), identity = identity).read().associateBy { it.pid }
         assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability, "process older than the session")
         assertEquals(SessionAvailability.GONE, rows.getValue(12L).availability, "process a day younger: reused pid")
         assertEquals(SessionAvailability.LIVE, rows.getValue(13L).availability, "unknown start time: trusted")
@@ -199,10 +195,11 @@ class SessionRegistryTest {
     @Test
     fun `a directory that cannot be listed is an error, a missing one is genuinely no sessions`(@TempDir dir: Path) {
         val file = Files.writeString(dir.resolve("sessions"), "not a directory")
-        val blocked = registry(file, alive = emptySet(), host = dir.resolve("host")).list()
+        val blocked = registry(file, alive = emptySet(), identity = fakeIdentity(dir.resolve("host"))).list()
         assertTrue(blocked.sessions.isEmpty())
         assertTrue(checkNotNull(blocked.error).contains("sessions"), "names the directory: ${blocked.error}")
-        val absent = registry(dir.resolve("never"), alive = emptySet(), host = dir.resolve("host")).list()
+        val absent = registry(dir.resolve("never"), alive = emptySet(), identity = fakeIdentity(dir.resolve("host")))
+            .list()
         assertTrue(absent.sessions.isEmpty())
         assertNull(absent.error, "absence is quiet")
     }

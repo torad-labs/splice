@@ -18,9 +18,8 @@ import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
-import java.nio.file.Paths
 
-private const val DEFAULT_STALE_MS = 30L * 60L * 1000L
+private const val STALE_AFTER_MS = 30L * 60L * 1000L
 
 /** A registration is a few hundred bytes; the directory is shared by every head, so a runaway or
  *  foreign file there is skipped rather than read whole on every poll. */
@@ -82,9 +81,18 @@ public fun interface PidAlive {
     public operator fun invoke(pid: Long): Boolean
 }
 
-/** When the process started (epoch ms), or null when unknown. Seam so tests decide without spawning. */
-public fun interface PidStartedAt {
-    public operator fun invoke(pid: Long): Long?
+/** The facts that tell a registration's pid from a stranger's process: this host's pid domain, a pid's
+ *  kernel start time and its wall-clock start. One seam, because [SessionRegistry] judges them together;
+ *  a test answers from a tree it wrote. Every fact is null when it is not readable. */
+public interface PidIdentity {
+    /** `linux:<machine-id>:pid:[<inode>]`, the domain a pid is meaningful in. */
+    public fun hostDomain(): String?
+
+    /** The kernel start time of [pid] as /proc/<pid>/stat spells it. */
+    public fun procStart(pid: Long): String?
+
+    /** When [pid] started (epoch ms). */
+    public fun startedAt(pid: Long): Long?
 }
 
 /** When this daemon last heard from each session id (epoch ms): now while a turn of it is live,
@@ -109,18 +117,11 @@ public class SessionRegistry(
     private val pidAlive: PidAlive = PidAlive { pid ->
         pid > 0 && ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
     },
-    private val pidStartedAt: PidStartedAt = PidStartedAt { pid ->
-        ProcessHandle.of(pid).flatMap { it.info().startInstant() }.map { it.toEpochMilli() }.orElse(null)
-    },
     private val clock: WallClock = WallClock { System.currentTimeMillis() },
-    private val staleAfterMs: Long = DEFAULT_STALE_MS,
+    private val identity: PidIdentity = ProcPidIdentity(),
     private val heard: SessionsHeard = SessionsHeard { emptyMap() },
     private val foreground: ForegroundTools? = null,
-    /** The /proc tree and machine-id file this host's pid identity is read from: production's, or a test's fake. */
-    procRoot: Path = Paths.get("/proc"),
-    machineIdFile: Path = Paths.get("/etc/machine-id"),
 ) : SessionSource {
-    private val identity = ProcPidIdentity(procRoot, machineIdFile)
     private val json = Json { ignoreUnknownKeys = true }
 
     /** Every readable registration, newest activity first. */
@@ -193,7 +194,7 @@ public class SessionRegistry(
         if (judged && domain != hostDomain) return true
         val start = procStart?.let { identity.procStart(pid) }
         if (procStart != null && start != null) return procStart != start
-        return startedAt != null && (pidStartedAt(pid) ?: 0L) > startedAt + PID_REUSE_TOLERANCE_MS
+        return startedAt != null && (identity.startedAt(pid) ?: 0L) > startedAt + PID_REUSE_TOLERANCE_MS
     }
 
     private fun gone(pid: Long, domain: String?, procStart: String?, startedAt: Long?): Boolean =
@@ -210,7 +211,7 @@ public class SessionRegistry(
         procStart: String?,
     ): SessionAvailability = when {
         pid == null || pid <= 0 || gone(pid, domain, procStart, startedAt) -> SessionAvailability.GONE
-        heardAt == null || clock() - heardAt > staleAfterMs -> SessionAvailability.STALE
+        heardAt == null || clock() - heardAt > STALE_AFTER_MS -> SessionAvailability.STALE
         else -> SessionAvailability.LIVE
     }
 }

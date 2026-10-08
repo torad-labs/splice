@@ -121,7 +121,6 @@ class ForegroundHookWiringTest {
             rows,
             routeOf = { SessionRoute.Unknown },
             pidAlive = { true },
-            pidStartedAt = { null },
             clock = clock,
             foreground = tools,
         )

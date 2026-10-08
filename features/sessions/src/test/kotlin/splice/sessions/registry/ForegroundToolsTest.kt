@@ -32,11 +32,7 @@ class ForegroundToolsTest {
             dir,
             routeOf = { SessionRoute.Unknown },
             pidAlive = { alive },
-            pidStartedAt = { null },
             clock = { now },
-            // Absent roots: this host's pid identity reads as unknown, which is all this test needs.
-            procRoot = dir.resolve("no-proc"),
-            machineIdFile = dir.resolve("no-machine-id"),
             foreground = tools,
         )
     }
@@ -130,7 +126,6 @@ class ForegroundToolsTest {
             dir,
             routeOf = { SessionRoute.Unknown },
             pidAlive = { it == 11L },
-            pidStartedAt = { null },
             clock = { now },
             foreground = tools,
         )
@@ -188,7 +183,6 @@ class ForegroundToolsTest {
             dir,
             routeOf = { SessionRoute.Unknown },
             pidAlive = { true },
-            pidStartedAt = { null },
             clock = { now },
             heard = { mapOf(SESSION to now) },
             foreground = tools,

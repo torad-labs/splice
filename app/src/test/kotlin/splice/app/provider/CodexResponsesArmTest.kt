@@ -174,10 +174,10 @@ class CodexResponsesArmTest {
         return paths
     }
 
-    private fun field(owner: Any, name: String): Any =
+    private fun <O : Any> field(owner: O, name: String): Any =
         checkNotNull(owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner))
 
-    private fun registryPayload(registry: Any): WeakReference<Any> {
+    private fun <R : Any> registryPayload(registry: R): WeakReference<Any> {
         val record = (field(registry, "records") as List<*>).first()
         return WeakReference(field(checkNotNull(record), "outer"))
     }

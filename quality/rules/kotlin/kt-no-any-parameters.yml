@@ -1,0 +1,54 @@
+# Type erasure at a parameter. A parameter typed `Any` or `Any?` discards the contract between caller and
+# callee: the compiler can no longer say what the function needs. Use a type parameter
+# (`fun <T : Any> f(owner: T)`) or the specific type.
+#
+# SOURCE: torad-toolkit resources/configs/kotlin-rules/ast-grep/rules-style/no-any-parameters.yaml (TENET).
+# ADAPTED for splice (2026-10-07). Each change, and why:
+#   - `Any?` matches too. The toolkit reads only the bare `user_type`; a nullable parameter is a
+#     `nullable_type` wrapping it, so `previous: Any? = null` walked through.
+#   - A plain constructor parameter (`class C(owner: Any)`, no `val`/`var`) matches too: it is a parameter the
+#     toolkit's `kind: parameter` misses. A `val` constructor property is a property, not a parameter, and stays
+#     out of this rule: its `Any` is an identity or lock token (`synchronized(lock)`), where no type parameter fits.
+#   - No `ignores:` block. The toolkit exempts test source sets. The operator's law is no exceptions, so tests
+#     are policed like production code.
+#   - `override` carve-out. An override's parameter types are fixed by its supertype (Netty's channelRead and
+#     write, kotlinx AbstractEncoder.encodeValue, the JDK's AtomicReference.compareAndSet). No compliant spelling
+#     exists, so firing there would demand the impossible. Same shape as kt-no-extension-functions. The
+#     carve-out is only the override's own parameters: a nested non-override function is still checked, and a
+#     supertype declared in this repo is still caught at its own declaration (it has no `override` modifier).
+id: kt-no-any-parameters
+language: kotlin
+severity: error
+message: "No Any or Any? parameter types. Use a type parameter (fun <T : Any> f(owner: T)) or the specific type."
+note: "An override whose supertype fixes Any is exempt; the supertype's own declaration is still checked."
+files:
+  - "**/*.kt"
+rule:
+  any:
+    - kind: parameter
+    - kind: class_parameter
+      not:
+        has:
+          kind: binding_pattern_kind
+  has:
+    any:
+      - kind: user_type
+        has:
+          kind: type_identifier
+          regex: "^Any$"
+      - kind: nullable_type
+        has:
+          kind: user_type
+          has:
+            kind: type_identifier
+            regex: "^Any$"
+  not:
+    inside:
+      kind: function_value_parameters
+      inside:
+        kind: function_declaration
+        has:
+          kind: modifiers
+          has:
+            kind: member_modifier
+            regex: "^override$"

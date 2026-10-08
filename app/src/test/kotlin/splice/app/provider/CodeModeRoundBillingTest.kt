@@ -1371,14 +1371,18 @@ private class HeadGenerationBillingFixture(tmp: Path) {
     val head = HeadServer(rotating, 0, headDeps(tmp))
     private val client = HttpClient(CIO)
 
-    suspend fun startSource(text: String, previous: Any? = null): Any {
+    suspend fun startSource(text: String): Any = startSourceAfter(text) { true }
+
+    suspend fun <P : Any> startSource(text: String, previous: P): Any = startSourceAfter(text) { it !== previous }
+
+    private suspend fun startSourceAfter(text: String, isNew: (Any?) -> Boolean): Any {
         val url = "http://127.0.0.1:${head.port}/v1/messages"
         val answer = withTimeout(TURN_BOUND_MS) {
             send(client, url, listOf(message("user", JsonPrimitive(text))))
         }
         assertTrue(toolUses(answer).isNotEmpty(), "the source must park before restart: $answer")
         val streams = billingField(billingField(bridge, "driver"), "streams")
-        return checkNotNull((billingField(streams, "rounds") as Map<*, *>).values.single { it !== previous })
+        return checkNotNull((billingField(streams, "rounds") as Map<*, *>).values.single(isNew))
     }
 
     fun nextGeneration() {
@@ -1390,10 +1394,10 @@ private class HeadGenerationBillingFixture(tmp: Path) {
         source = BillingWsRunner()
     }
 
-    fun reader(round: Any): kotlinx.coroutines.Deferred<*> =
+    fun <R : Any> reader(round: R): kotlinx.coroutines.Deferred<*> =
         billingField(round, "finished") as kotlinx.coroutines.Deferred<*>
 
-    fun cut(round: Any, cancellation: String) {
+    fun <R : Any> cut(round: R, cancellation: String) {
         when (cancellation) {
             "lease" -> {
                 val record = billingField(billingField(round, "capture"), "record")
@@ -1408,9 +1412,9 @@ private class HeadGenerationBillingFixture(tmp: Path) {
         }
     }
 
-    fun takeCut(round: Any): Boolean = invoke(round, "takeCut") as Boolean
+    fun <R : Any> takeCut(round: R): Boolean = invoke(round, "takeCut") as Boolean
 
-    private fun invoke(owner: Any, method: String): Any? =
+    private fun <O : Any> invoke(owner: O, method: String): Any? =
         owner.javaClass.getDeclaredMethod(method).apply { isAccessible = true }.invoke(owner)
 
     suspend fun close() {
@@ -1455,8 +1459,8 @@ private class FirstStepBillingRuntime(private val failure: Exception) : CodeMode
     override fun close() = Unit
 }
 
-private fun stageBillingTerminal(
-    round: Any,
+private fun <R : Any> stageBillingTerminal(
+    round: R,
     upstream: BillingUpstream,
     staged: CountDownLatch,
     settle: CountDownLatch,
@@ -1474,12 +1478,12 @@ private fun stageBillingTerminal(
     assertTrue(billingStateFlag(round, "complete"))
 }
 
-private suspend fun replayParkedBillingCallback(
+private suspend fun <R : Any> replayParkedBillingCallback(
     client: HttpClient,
     url: String,
     history: List<JsonObject>,
     bridge: CodexCodeModeBridge,
-    round: Any,
+    round: R,
 ): String {
     val local = withTimeout(TURN_BOUND_MS) { send(client, url, history) }
     assertTrue(toolUses(local).isNotEmpty(), local)
@@ -1523,7 +1527,7 @@ private fun billingBridge(tmp: Path, runtime: StatementGatewayRuntime): CodexCod
     ),
 )
 
-private fun billingField(owner: Any, name: String): Any =
+private fun <O : Any> billingField(owner: O, name: String): Any =
     checkNotNull(owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner))
 
 private fun billingRound(bridge: CodexCodeModeBridge): Any {
@@ -1531,12 +1535,12 @@ private fun billingRound(bridge: CodexCodeModeBridge): Any {
     return checkNotNull((billingField(streams, "rounds") as Map<*, *>).values.single())
 }
 
-private fun billingStateFlag(round: Any, name: String): Boolean {
+private fun <R : Any> billingStateFlag(round: R, name: String): Boolean {
     val state = billingField(billingField(billingField(round, "capture"), "record"), "sourceState")
     return state.javaClass.getDeclaredField(name).apply { isAccessible = true }.getBoolean(state)
 }
 
-private fun loseBillingRecord(bridge: CodexCodeModeBridge, round: Any) {
+private fun <R : Any> loseBillingRecord(bridge: CodexCodeModeBridge, round: R) {
     val registry = billingField(bridge, "registry")
     val record = billingField(billingField(round, "capture"), "record")
     val retained = billingField(registry, "retainedCells")
@@ -1547,7 +1551,7 @@ private fun loseBillingRecord(bridge: CodexCodeModeBridge, round: Any) {
 }
 
 /** Raw-post telemetry deliberately overrides these counters, so also observe billing's actual release. */
-private fun recordBillingRelease(round: Any): CompletableDeferred<Usage?> {
+private fun <R : Any> recordBillingRelease(round: R): CompletableDeferred<Usage?> {
     val released = CompletableDeferred<Usage?>()
     val owed = billingField(billingField(round, "billing"), "owed")
     val field = owed.javaClass.getDeclaredField("release").apply { isAccessible = true }
@@ -1562,12 +1566,12 @@ private fun recordBillingRelease(round: Any): CompletableDeferred<Usage?> {
     return released
 }
 
-private fun reportedBillingUsage(round: Any): Usage? {
+private fun <R : Any> reportedBillingUsage(round: R): Usage? {
     val billing = billingField(round, "billing")
     return billing.javaClass.getDeclaredField("reported").apply { isAccessible = true }.get(billing) as? Usage
 }
 
-private fun assertHeldBillingSource(round: Any) {
+private fun <R : Any> assertHeldBillingSource(round: R) {
     val ended = round.javaClass.getDeclaredField("upstreamEnded").apply { isAccessible = true }
     assertFalse(ended.getBoolean(round), "the gated source must not have returned its terminal")
     val billing = billingField(round, "billing")
@@ -1575,7 +1579,7 @@ private fun assertHeldBillingSource(round: Any) {
     assertTrue(owed != null, "the source posting row must already be held")
 }
 
-private fun awaitParsedBillingTerminal(round: Any) {
+private fun <R : Any> awaitParsedBillingTerminal(round: R) {
     val ended = round.javaClass.getDeclaredField("upstreamEnded").apply { isAccessible = true }
     val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(BILLING_TEST_SECONDS)
     val pause = CountDownLatch(1)

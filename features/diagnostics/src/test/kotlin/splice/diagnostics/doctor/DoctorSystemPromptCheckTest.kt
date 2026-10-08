@@ -75,7 +75,7 @@ class DoctorSystemPromptCheckTest {
     @Test
     fun `only the replace head warns when two heads share a provider`() {
         val toml = head("one", "\"stay terse\"", "\"replace\"") +
-            head("two", "\"stay terse\"", "\"append\"", port = 3902, provider = false)
+            section("two", "\"stay terse\"", "\"append\"", port = 3902)
         assertEquals(listOf("system-prompt:one"), promptRows(toml).map { it.name })
     }
 
@@ -84,28 +84,27 @@ class DoctorSystemPromptCheckTest {
         .configurationChecks(DoctorTopology.Parsed(TopologyLoader.parse(toml)), Paths.get("/tmp/splice.toml"))
         .filter { it.name.startsWith("system-prompt:") }
 
-    private fun head(
+    /** One head on its own provider, the shape nearly every case needs. */
+    private fun head(key: String, prompt: String?, mode: String?, file: String? = null): String =
+        """
+        [providers.cloud]
+        dialect = "openai-chat"
+        base_url = "https://openrouter.ai/api/v1"
+        auth = { kind = "api-key", env = "K" }
+        [[providers.cloud.models]]
+        id = "m1"
+        context_window = 8192
+
+        """.trimIndent() + "\n" + section(key, prompt, mode, file)
+
+    /** A head table alone, for a second head that shares the provider [head] already wrote. */
+    private fun section(
         key: String,
         prompt: String?,
         mode: String?,
         file: String? = null,
         port: Int = 3901,
-        provider: Boolean = true,
     ): String = buildString {
-        if (provider) {
-            append(
-                """
-                [providers.cloud]
-                dialect = "openai-chat"
-                base_url = "https://openrouter.ai/api/v1"
-                auth = { kind = "api-key", env = "K" }
-                [[providers.cloud.models]]
-                id = "m1"
-                context_window = 8192
-
-                """.trimIndent() + "\n",
-            )
-        }
         append("[heads.$key]\n")
         append("provider = \"cloud\"\n")
         append("port = $port\n")

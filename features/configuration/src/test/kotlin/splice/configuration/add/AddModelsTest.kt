@@ -74,7 +74,7 @@ class AddModelsTest {
     fun `cancel at the head picker leaves the file byte-identical`(@TempDir dir: Path) {
         val path = seed(dir)
         val before = Files.readString(path)
-        val wrote = verb(selectKeys = byteArrayOf(ESC), selectTty = true).add(path)
+        val wrote = verb(select = Keyboard(byteArrayOf(ESC), tty = true)).add(path)
         assertFalse(wrote)
         assertEquals(before, Files.readString(path))
     }
@@ -83,7 +83,7 @@ class AddModelsTest {
     fun `non-TTY empty selection writes nothing`(@TempDir dir: Path) {
         val path = seed(dir)
         val before = Files.readString(path)
-        val wrote = verb(selectTty = false, multiTty = false).add(path)
+        val wrote = verb().add(path)
         assertFalse(wrote)
         assertEquals(before, Files.readString(path))
     }
@@ -180,9 +180,7 @@ class AddModelsTest {
         val before = Files.readString(path)
         val refused = assertThrows(AddRefused::class.java) {
             verb(
-                selectTty = false,
-                multiTty = true,
-                multiKeys = byteArrayOf(SPACE, ENTER),
+                multi = Keyboard(byteArrayOf(SPACE, ENTER), tty = true),
                 roster = { _, _, _ -> "models = [ this is not toml" },
             ).add(path)
         }
@@ -235,7 +233,7 @@ class AddModelsTest {
                 return picks.read()
             }
         }
-        val verb = verb(selectTty = false, multiTty = true, multiInput = keys)
+        val verb = verb(multi = Keyboard(keys, tty = true))
 
         val refused = assertThrows(AddRefused::class.java) { verb.add(path) }
 
@@ -274,11 +272,8 @@ class AddModelsTest {
             .mapNotNull { Regex("id = \"([^\"]*)\"").find(it)?.groupValues?.get(1) }
 
     /** The first id the emitted profile's head roster does not yet carry. */
-    private fun addFirstRemaining(path: Path): Boolean = verb(
-        selectTty = false,
-        multiTty = true,
-        multiKeys = byteArrayOf(SPACE, ENTER),
-    ).add(path)
+    private fun addFirstRemaining(path: Path): Boolean =
+        verb(multi = Keyboard(byteArrayOf(SPACE, ENTER), tty = true)).add(path)
 
     /** The file with the `models = [ ... ]` array of `[heads.openrouter]` cut out. */
     private fun outsideRoster(text: String): String =
@@ -301,25 +296,29 @@ class AddModelsTest {
         return path
     }
 
+    /** What one prompt reads from: the bytes the operator types, and whether a terminal is attached. */
+    private class Keyboard(private val input: InputStream, val tty: Boolean = false) {
+        constructor(keys: ByteArray, tty: Boolean = false) : this(ByteArrayInputStream(keys), tty)
+
+        fun reader() = KeyReader(input)
+    }
+
     private fun verb(
-        selectKeys: ByteArray = byteArrayOf(),
-        multiKeys: ByteArray = byteArrayOf(),
-        selectTty: Boolean = false,
-        multiTty: Boolean = false,
+        select: Keyboard = Keyboard(byteArrayOf()),
+        multi: Keyboard = Keyboard(byteArrayOf()),
         roster: RosterEditor = RosterEditor(HeadModelArray()::withAdded),
-        multiInput: InputStream = ByteArrayInputStream(multiKeys),
     ): AddModelVerb = AddModelVerb(
         select = SelectPrompt(
-            keys = KeyReader(ByteArrayInputStream(selectKeys)),
-            terminal = idle(selectTty),
+            keys = select.reader(),
+            terminal = idle(select.tty),
             out = StringBuilder(),
-            hasConsole = { selectTty },
+            hasConsole = { select.tty },
         ),
         multi = MultiSelectPrompt(
-            keys = KeyReader(multiInput),
-            terminal = idle(multiTty),
+            keys = multi.reader(),
+            terminal = idle(multi.tty),
             out = StringBuilder(),
-            hasConsole = { multiTty },
+            hasConsole = { multi.tty },
         ),
         roster = roster,
     )

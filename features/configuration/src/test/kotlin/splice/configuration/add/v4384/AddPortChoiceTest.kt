@@ -48,15 +48,15 @@ class AddPortChoiceTest {
         return path
     }
 
+    /** The existing head sits on the port after [control], as every case here lays it out. */
     private fun prepare(
         home: Path,
         control: Int,
-        head: Int,
         provider: Int? = null,
         candidate: String,
         lastPort: Int = 65_535,
     ): AddPrepared = UserHome.within(home) {
-        file(home, control, head, provider)
+        file(home, control, control + 1, provider)
         val add = AddPrepare(output, AddChecks(output), { _, default -> default }, lastHeadPort = lastPort)
         add.prepare(
             AddArgs(
@@ -75,7 +75,7 @@ class AddPortChoiceTest {
         val control = TestPorts.reserveRun(PORTS_FROM_CONTROL)
         val head = control + 1
         val taken = head + 1
-        val result = prepare(home, control, head, taken, "http://127.0.0.1:32199/v1")
+        val result = prepare(home, control, taken, "http://127.0.0.1:32199/v1")
         val candidate = assertInstanceOf(AddPrepared.Ready::class.java, result).candidate
         assertEquals(taken + 1, candidate.topology.heads.getValue("new").port)
     }
@@ -85,7 +85,7 @@ class AddPortChoiceTest {
         val control = TestPorts.reserveRun(PORTS_FROM_CONTROL)
         val head = control + 1
         val taken = head + 1
-        val result = prepare(home, control, head, candidate = "http://localhost:$taken/v1")
+        val result = prepare(home, control, candidate = "http://localhost:$taken/v1")
         val candidate = assertInstanceOf(AddPrepared.Ready::class.java, result).candidate
         assertEquals(taken + 1, candidate.topology.heads.getValue("new").port)
     }
@@ -102,7 +102,6 @@ class AddPortChoiceTest {
             val result = prepare(
                 home,
                 control,
-                head,
                 candidate = "http://127.0.0.1:32199/v1",
                 lastPort = onlyCandidate,
             )
@@ -120,7 +119,7 @@ class AddPortChoiceTest {
         val head = control + 1
         ServerSocket(head + 1).use { listener ->
             assertTrue(listener.isBound)
-            val result = prepare(home, control, head, candidate = "http://127.0.0.1:32199/v1")
+            val result = prepare(home, control, candidate = "http://127.0.0.1:32199/v1")
             val candidate = assertInstanceOf(AddPrepared.Ready::class.java, result).candidate
             assertEquals(head + 2, candidate.topology.heads.getValue("new").port)
         }

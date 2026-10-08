@@ -33,6 +33,12 @@ class AddCommandTest {
     private val installed = mutableListOf<String>()
     private var restarted = 0
 
+    /** Whether the asked-for restart succeeds; one test turns it off. */
+    private var restartOk = true
+
+    /** What happens to splice.toml while the sign-in runs, the race the verb must refuse to overwrite. */
+    private enum class DuringLogin { NOTHING, EDIT, DELETE }
+
     private fun withHome(home: Path, block: () -> Unit) {
         UserHome.within(home) {
             block()
@@ -47,11 +53,8 @@ class AddCommandTest {
         http: AddHttp,
         login: Boolean = true,
         daemonUp: Boolean = false,
-        restartOk: Boolean = true,
-        editConfigDuringLogin: Boolean = false,
-        deleteConfigDuringLogin: Boolean = false,
+        during: DuringLogin = DuringLogin.NOTHING,
         answers: Map<String, ArrayDeque<String>> = emptyMap(),
-        liveTurn: AddLiveTurn = AddLiveTurn { _, _ -> AddLiveResult(true, "the head answered the check turn") },
     ) = AddCommand(
         output = TerminalOutput(::println),
         errors = TerminalOutput(System.err::println),
@@ -62,8 +65,11 @@ class AddCommandTest {
                     Files.writeString(authFile(provider.auth.kind), TOKENS)
                     installed += "login:$key"
                 }
-                if (editConfigDuringLogin) Files.writeString(config(), Files.readString(config()) + EDIT)
-                if (deleteConfigDuringLogin) Files.delete(config())
+                when (during) {
+                    DuringLogin.NOTHING -> Unit
+                    DuringLogin.EDIT -> Files.writeString(config(), Files.readString(config()) + EDIT)
+                    DuringLogin.DELETE -> Files.delete(config())
+                }
                 login
             },
             install = { key, _ ->
@@ -76,7 +82,7 @@ class AddCommandTest {
             },
             daemonUp = { daemonUp },
             prompt = { question, default -> answers[question]?.removeFirstOrNull()?.ifEmpty { default } ?: default },
-            liveTurn = liveTurn,
+            liveTurn = { _, _ -> AddLiveResult(true, "the head answered the check turn") },
         ),
         bindable = HeadPortBindable { true }, // the verb's other steps, not host listener admission
     )
@@ -193,11 +199,12 @@ class AddCommandTest {
     ) = withHome(home) {
         val before = starter()
         val routes = mapOf("GET https://chatgpt.com/backend-api/codex" to "{}")
-        val racing = command(http(routes), daemonUp = true, editConfigDuringLogin = true)
+        val racing = command(http(routes), daemonUp = true, during = DuringLogin.EDIT)
         assertFalse(runBlocking { racing.add(listOf("codex", "--yes"), env) }, "the write is refused")
         assertEquals(before + EDIT, Files.readString(config()), "the edit survives, not the add")
         Files.writeString(config(), before)
-        val failing = command(http(routes), daemonUp = true, restartOk = false)
+        restartOk = false
+        val failing = command(http(routes), daemonUp = true)
         assertFalse(runBlocking { failing.add(listOf("codex", "--yes"), env) }, "asked-for restart failed")
         assertTrue(Files.readString(config()).contains("[heads.codex]"), "but the head is saved for splice restart")
     }
@@ -208,7 +215,7 @@ class AddCommandTest {
     ) = withHome(home) {
         starter()
         val routes = mapOf("GET https://chatgpt.com/backend-api/codex" to "{}")
-        val racing = command(http(routes), daemonUp = true, deleteConfigDuringLogin = true)
+        val racing = command(http(routes), daemonUp = true, during = DuringLogin.DELETE)
         val out = capture { assertFalse(runBlocking { racing.add(listOf("codex", "--yes"), env) }) }
         assertTrue(out.contains("could not be read again"), out)
         assertFalse(Files.exists(config()), "a rename must not recreate the file from the stale candidate")

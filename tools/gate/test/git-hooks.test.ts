@@ -227,6 +227,34 @@ describe("pre-commit judges the bytes the commit holds", () => {
     expect(calls).toEqual([[":core:compileKotlin", ":core:compileTestKotlin", ":core:detekt"]]);
   });
 
+  test("GREEN: a checkout that registers lawSuites asks for them with the module check, so gradle decides which laws rerun", async () => {
+    const root = wallsRepo();
+    writeFile(root, "build-logic/src/main/kotlin/splice.law-suite.gradle.kts", "// plugin\n");
+    git(root, ["add", "build-logic/src/main/kotlin/splice.law-suite.gradle.kts"]);
+    git(root, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "plugin"]);
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    const calls: string[][] = [];
+    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(0);
+    expect(calls).toEqual([[":core:compileKotlin", ":core:compileTestKotlin", ":core:detekt", "lawSuites"]]);
+  });
+
+  test("RED: a law that goes red on the commit refuses it and the verdict names the law", async () => {
+    const root = wallsRepo();
+    writeFile(root, "build-logic/src/main/kotlin/splice.law-suite.gradle.kts", "// plugin\n");
+    git(root, ["add", "build-logic/src/main/kotlin/splice.law-suite.gradle.kts"]);
+    git(root, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "plugin"]);
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    const red: GateRunner = async () => ({
+      status: 1,
+      output: "DaemonStopOrderTest > the teardown does not discard whether the file lane actually flushed() FAILED\n> Task :quality-architecture:test FAILED\n",
+    });
+    const { result, text } = await captured(() => preCommit(lay(root), { gate: red }));
+    expect(result).toBe(1);
+    expect(text).toContain("DaemonStopOrderTest");
+  });
+
   test("a commit with no Kotlin in it passes without running a scan", async () => {
     const root = wallsRepo();
     writeFile(root, "README.md", "docs\n");

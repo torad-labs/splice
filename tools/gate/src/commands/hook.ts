@@ -42,7 +42,7 @@ import { astGrepBin } from "../lib/astgrep.ts";
 import { resolveJdk21 } from "../lib/jdk.ts";
 import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
-import { commitLegs, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
+import { commitLegs, LAW_SUITES_TASK, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
 import { cancelledBySignal, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
 import { title } from "./title.ts";
 
@@ -55,6 +55,8 @@ export const HOOK_VERBS = ["pre-commit", "pre-push"] as const;
 const ZERO_SHA = /^0+$/;
 const LADDER = "tools/gate/config/ladder.json";
 const KOTLIN = /\.kts?$/;
+/** The plugin whose presence means the checkout registers `lawSuites`; a checkout without it has no law task to request. */
+const LAW_SUITE_PLUGIN = "build-logic/src/main/kotlin/splice.law-suite.gradle.kts";
 /** A root script: configuration evaluates it, so the `help` task checks it. */
 const ROOT_SCRIPT = /^[^/]+\.gradle\.kts$/;
 /** build-logic's own sources: main is what its compile checks, test is what its test compile checks, and its build
@@ -686,6 +688,11 @@ export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<numbe
     console.error(`pre-commit: ✗ ${unmapped.length} Kotlin file(s) with no check — ${seconds(started)}`);
     return 1;
   }
+
+  // The cross-module laws ride in the same request as the push makes: gradle fingerprints each law task's declared read set, so a
+  // commit that touches a file a law reads reruns that law, and one that touches nothing a law reads runs none. The selector is
+  // gradle's own up-to-date check over the inputs each module declares (splice.law-suite), shared with prePushScope, never a list.
+  if (existsSync(join(root, LAW_SUITE_PLUGIN))) tasks.add(LAW_SUITES_TASK);
 
   const judged = await judgedRun(deps.gate ?? slotRunner(lay, "pre-commit", false), root, modules, [...tasks], deps.rivalLive);
   if (judged.status === 0) {

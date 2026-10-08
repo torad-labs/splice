@@ -39,7 +39,7 @@
     },
     {
       "task": "oracleReplay",
-      "inputs": ["core/**","integrations/claude-code/**","integrations/mcp/**","integrations/http/**","integrations/topology/**","integrations/codemode/**","integrations/oauth/**","integrations/terminal/**","integrations/daemon-client/**","integrations/upstream/**","integrations/dialects/anthropic/**","integrations/dialects/openai-chat/**","integrations/dialects/openai-responses/**","integrations/providers/codex/**","integrations/providers/grok/**","integrations/providers/kimi/**","integrations/providers/muse/**","integrations/providers/openai/**","features/turns/**","features/sessions/**","features/models/**","features/heads/**","features/accounts/**","features/usage/**","features/lifecycle/**","features/diagnostics/**","features/launch/**","features/configuration/**","features/events/**","app/**","tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","fixtures/conformance/**"],
+      "inputs": ["tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","fixtures/conformance/**"],
       "why": "Eleven frozen request/response scenarios grade the built Kotlin gateway byte-for-byte against the captured Node oracle. Keeping the replay as a package script without a gate leg left the parity claim entirely opt-in. It depends on :app:shadowJar because it judges the fat jar: without the dependency it ran first, found no jar and BUILT one through a nested gradle inside the gate (measured 2026-09-21).",
       "command": ["bun", "tools/e2e", "oracle"],
       "dependsOn": [":app:shadowJar"]
@@ -52,14 +52,14 @@
     },
     {
       "task": "conformance",
-      "inputs": ["core/**","integrations/claude-code/**","integrations/mcp/**","integrations/http/**","integrations/topology/**","integrations/codemode/**","integrations/oauth/**","integrations/terminal/**","integrations/daemon-client/**","integrations/upstream/**","integrations/dialects/anthropic/**","integrations/dialects/openai-chat/**","integrations/dialects/openai-responses/**","integrations/providers/codex/**","integrations/providers/grok/**","integrations/providers/kimi/**","integrations/providers/muse/**","integrations/providers/openai/**","features/turns/**","features/sessions/**","features/models/**","features/heads/**","features/accounts/**","features/usage/**","features/lifecycle/**","features/diagnostics/**","features/launch/**","features/configuration/**","features/events/**","app/**","tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","fixtures/conformance/**"],
+      "inputs": ["tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","fixtures/conformance/**"],
       "why": "Every message class a Claude Code session depends on (background-subagent task notifications, SessionStart hook context, cross-session messages, the date and <total_tokens> notices, free-form MCP tool schemas, reasoning blocks) through every dialect x system_prompt_mode of the built fat jar against a loopback fake upstream, one asserted cell each plus the system seam of each dialect x mode, and a census whose dialects and modes are read from the Kotlin source. V4-277 (a replace-mode chat head dropped every mid-conversation role=system message, so a subagent's result never reached the model) passed every unit test and only a request through the whole head could have caught it. No network, no quota; it judges the fat jar, so it depends on :app:shadowJar for the reason oracleReplay does.",
       "command": ["bun", "tools/e2e", "conformance"],
       "dependsOn": [":app:shadowJar"]
     },
     {
       "task": "launchOwnerPackagedProof",
-      "inputs": ["core/**","integrations/claude-code/**","integrations/mcp/**","integrations/http/**","integrations/topology/**","integrations/codemode/**","integrations/oauth/**","integrations/terminal/**","integrations/daemon-client/**","integrations/upstream/**","integrations/dialects/anthropic/**","integrations/dialects/openai-chat/**","integrations/dialects/openai-responses/**","integrations/providers/codex/**","integrations/providers/grok/**","integrations/providers/kimi/**","integrations/providers/muse/**","integrations/providers/openai/**","features/turns/**","features/sessions/**","features/models/**","features/heads/**","features/accounts/**","features/usage/**","features/lifecycle/**","features/diagnostics/**","features/launch/**","features/configuration/**","features/events/**","app/**","tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","fixtures/conformance/**"],
+      "inputs": ["tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","fixtures/conformance/**"],
       "why": "The real launch shim records the PID and exact process birth that survive exec, including wrapped Claude and flag-first administrative logins. A missing-writer mutant fails, and an unrelated JVM cannot declare another parent. Loopback fixtures only, no provider login; the packaged CLI requires the freshly built jar.",
       "command": ["bun", "test", "tools/e2e/test/launch-owner.test.ts"],
       "dependsOn": [":app:shadowJar"]
@@ -108,7 +108,7 @@
     },
     {
       "task": "codeModePackagedMock",
-      "inputs": ["core/**","integrations/claude-code/**","integrations/mcp/**","integrations/http/**","integrations/topology/**","integrations/codemode/**","integrations/oauth/**","integrations/terminal/**","integrations/daemon-client/**","integrations/upstream/**","integrations/dialects/anthropic/**","integrations/dialects/openai-chat/**","integrations/dialects/openai-responses/**","integrations/providers/codex/**","integrations/providers/grok/**","integrations/providers/kimi/**","integrations/providers/muse/**","integrations/providers/openai/**","features/turns/**","features/sessions/**","features/models/**","features/heads/**","features/accounts/**","features/usage/**","features/lifecycle/**","features/diagnostics/**","features/launch/**","features/configuration/**","features/events/**","app/**","tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","fixtures/conformance/**"],
+      "inputs": ["tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","fixtures/conformance/**"],
       "why": "Exercises the fat JAR the build produced, with synthetic auth and loopback-only tools. The receipt goes under app/build/ — never the tree. The leg owns its receipt and removes it when it starts, so a rerun writes its own; the mock still refuses any receipt that is there and was not removed by this leg.",
       "command": ["bun", "tools/e2e", "code-mode", "mock", "--artifact", "app/build/libs/app-all.jar", "--receipt", "app/build/receipts/code-mode-mock.json"],
       "dependsOn": [":app:shadowJar"],

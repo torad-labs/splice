@@ -18,6 +18,8 @@
 // `pending` is a failure: the migration is complete only when no row is left undecided.
 //
 // Usage: bun .dev/restructure/census.ts [--selftest]   (exit 0 complete, 1 findings, 2 misuse)
+// --json prints the verdict as one JSON document, {"findings":[{"message","paths"}]}, where paths lists every path a finding
+// is about. The pre-commit hook judges a commit by those paths, never by the sentence, because a path may hold a space or a colon.
 //        bun .dev/restructure/census.ts [--root <dir>] [--rows <file>]
 //        bun .dev/restructure/census.ts [--root <dir>] --rev <commit>
 // --root and --rows let the pre-commit hook judge a commit's bytes: the checkout whose index is read (git's index
@@ -40,35 +42,43 @@ export function inScope(path: string): boolean {
   return path.includes("/") && !path.startsWith(".");
 }
 
-/** Every way the census and the tree disagree, each naming the path it is about. */
-export function findings(rows: Row[], tracked: Set<string>): string[] {
-  const out: string[] = [];
+/** One way the census and the tree disagree. `message` is for people. `paths` is what a judge matches: every path the finding
+ *  is about, carried as data, because a path may hold a space or a colon and so cannot be recovered from the sentence. */
+export interface Finding {
+  readonly message: string;
+  readonly paths: readonly string[];
+}
+
+/** Every way the census and the tree disagree, each naming the paths it is about. */
+export function findings(rows: Row[], tracked: Set<string>): Finding[] {
+  const out: Finding[] = [];
+  const flag = (message: string, ...paths: string[]) => out.push({ message, paths });
   const claims = new Map<string, number>();
   const claim = (path: string) => claims.set(path, (claims.get(path) ?? 0) + 1);
   for (const row of rows) {
     const { source, disposition, destination } = row;
     if (!DISPOSITIONS.has(disposition)) {
-      out.push(`${disposition === "pending" ? "pending" : `unknown disposition '${disposition}'`}: ${source}`);
+      flag(`${disposition === "pending" ? "pending" : `unknown disposition '${disposition}'`}: ${source}`, source);
       continue;
     }
-    if (row.reason.trim() === "") out.push(`blank reason: ${source}`);
+    if (row.reason.trim() === "") flag(`blank reason: ${source}`, source);
     if (disposition === "retain" || disposition === "created") {
-      if (!tracked.has(source)) out.push(`${disposition} but not tracked: ${source}`);
+      if (!tracked.has(source)) flag(`${disposition} but not tracked: ${source}`, source);
       claim(source);
     } else if (disposition === "relocate") {
-      if (!tracked.has(destination)) out.push(`relocated to an untracked destination: ${source} -> ${destination}`);
-      if (source !== destination && tracked.has(source)) out.push(`relocated but the source is still tracked: ${source}`);
+      if (!tracked.has(destination)) flag(`relocated to an untracked destination: ${source} -> ${destination}`, source, destination);
+      if (source !== destination && tracked.has(source)) flag(`relocated but the source is still tracked: ${source}`, source);
       claim(destination);
     } else if (tracked.has(source)) {
-      out.push(`retired but still tracked: ${source}`);
+      flag(`retired but still tracked: ${source}`, source);
     }
   }
   for (const [path, count] of claims) {
-    if (count > 1) out.push(`claimed by ${count} rows: ${path}`);
-    if (!inScope(path)) out.push(`claimed outside the census scope: ${path}`);
+    if (count > 1) flag(`claimed by ${count} rows: ${path}`, path);
+    if (!inScope(path)) flag(`claimed outside the census scope: ${path}`, path);
   }
   for (const path of [...tracked].filter(inScope).sort()) {
-    if (!claims.has(path)) out.push(`unclaimed: ${path}`);
+    if (!claims.has(path)) flag(`unclaimed: ${path}`, path);
   }
   return out;
 }
@@ -109,49 +119,64 @@ function selftest(): number {
   const clean = findings(complete, tracked);
   if (clean.length !== 0) {
     failed++;
-    console.log(`FAIL a complete census passes: ${clean.join("; ")}`);
+    console.log(`FAIL a complete census passes: ${clean.map((finding) => finding.message).join("; ")}`);
   }
   for (const [name, rows, tree, expected] of cases) {
-    const got = findings(rows, tree);
+    const got = findings(rows, tree).map((finding) => finding.message);
     if (!got.includes(expected)) {
       failed++;
       console.log(`FAIL ${name}: expected "${expected}", got ${JSON.stringify(got)}`);
     }
   }
-  console.log(`census selftest: ${cases.length + 1 - failed}/${cases.length + 1} cases`);
+  // A name holding a space and a colon comes back whole, as data, whatever its sentence says.
+  const spelled = "tools/gate/a b:c.ts";
+  const odd = findings([], new Set([spelled]));
+  if (odd.length !== 1 || odd[0]?.paths.join("|") !== spelled) {
+    failed++;
+    console.log(`FAIL a path with a space and a colon is carried whole: got ${JSON.stringify(odd)}`);
+  }
+  console.log(`census selftest: ${cases.length + 2 - failed}/${cases.length + 2} cases`);
   return failed === 0 ? 0 : 1;
 }
 
-const USAGE = "usage: bun .dev/restructure/census.ts [--selftest] | [--root <dir>] [--rows <file>] | [--root <dir>] --rev <commit>";
+const USAGE = "usage: bun .dev/restructure/census.ts [--selftest] | [--root <dir>] [--rows <file>] | [--root <dir>] --rev <commit>, each with [--json]";
 
 /** What to judge. The checkout's index and rows (the default, and pre-commit's commit bytes), or one commit's tree and
  *  rows (`--rev`: a push judges its tip, so another seat's staged file or uncommitted row never blocks it). */
 type Judged = { kind: "index"; root: string; rows: string } | { kind: "rev"; root: string; rev: string };
 
-/** Each flag at most once. `--rev` takes no `--rows`: a commit's rows are the ones in its own tree. */
-function options(argv: string[]): Judged | undefined {
+/** Each flag at most once. `--rev` takes no `--rows`: a commit's rows are the ones in its own tree. `--json` takes no value. */
+function options(argv: string[]): { judged: Judged; json: boolean } | undefined {
   const given = new Map<string, string>();
-  for (let i = 0; i < argv.length; i += 2) {
+  let json = false;
+  for (let i = 0; i < argv.length; i++) {
     const flag = argv[i] ?? "";
-    const value = argv[i + 1];
+    if (flag === "--json") {
+      if (json) return undefined;
+      json = true;
+      continue;
+    }
+    const value = argv[++i];
     if (!["--root", "--rows", "--rev"].includes(flag) || value === undefined || given.has(flag)) return undefined;
     given.set(flag, value);
   }
   const root = given.get("--root") ?? join(dirname(import.meta.path), "..", "..");
   const rev = given.get("--rev");
-  if (rev !== undefined) return given.has("--rows") ? undefined : { kind: "rev", root, rev };
-  return { kind: "index", root, rows: given.get("--rows") ?? join(root, ".dev", "restructure", "capabilities.tsv") };
+  if (rev !== undefined) return given.has("--rows") ? undefined : { judged: { kind: "rev", root, rev }, json };
+  const rows = given.get("--rows") ?? join(root, ".dev", "restructure", "capabilities.tsv");
+  return { judged: { kind: "index", root, rows }, json };
 }
 
 const ROWS_IN_TREE = ".dev/restructure/capabilities.tsv";
 
 function main(argv: string[]): number {
   if (argv.includes("--selftest")) return selftest();
-  const picked = options(argv);
-  if (picked === undefined) {
+  const parsed = options(argv);
+  if (parsed === undefined) {
     console.error(USAGE);
     return 2;
   }
+  const { judged: picked, json } = parsed;
   const { root } = picked;
   let tracked: Set<string>;
   let rowsText: string;
@@ -175,7 +200,12 @@ function main(argv: string[]): number {
   }
   const rows = parse(rowsText);
   const found = findings(rows, tracked);
-  for (const line of found) console.log(line);
+  if (json) {
+    // One document: a judge reads every finding's paths as data and never recovers them from a sentence.
+    console.log(JSON.stringify({ findings: found }));
+    return found.length === 0 ? 0 : 1;
+  }
+  for (const finding of found) console.log(finding.message);
   const counts = new Map<string, number>();
   for (const row of rows) counts.set(row.disposition, (counts.get(row.disposition) ?? 0) + 1);
   const scoped = [...tracked].filter(inScope).length;

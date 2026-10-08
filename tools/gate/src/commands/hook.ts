@@ -12,6 +12,12 @@
 // worktree's bytes, so the two agree; a path whose index blob is not what `git add` would store from the
 // worktree is refused, because the gate would judge bytes the commit does not hold.
 //
+// THE THREAT MODEL OF THE CONTRACT CHECKS. The hook reads each touched path's worktree entry before gradle runs and again
+// after it returns (driftedSince). That catches a seat editing a touched path while the gate runs, the realistic case on a
+// shared checkout. It is not a security boundary: a change that lands between the two reads of one path is not seen, since
+// the hook cannot observe a file between two syscalls. The guarantee is the contract as of the two reads. Later reviews
+// judge this file against that line, not against a stronger one.
+//
 // EVERY KOTLIN FILE HAS A CHECK. A Kotlin path maps to the gradle tasks that compile it: its module (compile,
 // test compile, detekt), build-logic (its compile), or a root script (the configuration pass, `help`, which
 // compiles every script of the build). A Kotlin path that maps to no check refuses the commit.
@@ -36,7 +42,7 @@ import { astGrepBin } from "../lib/astgrep.ts";
 import { resolveJdk21 } from "../lib/jdk.ts";
 import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
-import { LAW_READS, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
+import { type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
 import { cancelledBySignal, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
 import { title } from "./title.ts";
 
@@ -95,8 +101,6 @@ export interface HookDeps {
   readonly openRun?: (head: string) => ReturnType<typeof acquireRunSentinel>;
   /** The ladder rows pre-push scopes by. Read from the checkout when absent. */
   readonly legs?: readonly Leg[];
-  /** The law suites' reads pre-push scopes by. LAW_READS when absent. */
-  readonly lawReads?: Readonly<Record<string, readonly string[]>>;
   /** Whether another gradle process is live: the evidence a collision needs. The default reads the process list. */
   readonly rivalLive?: () => boolean;
 }
@@ -163,9 +167,6 @@ function hashBytes(root: string, bytes: Buffer): string {
   return hashed.stdout.toString("utf8").trim();
 }
 
-/** What each worktree path holds as an index entry, the way `git add` would store it. A symlink is its raw link bytes,
- *  never the file it names. A file is its raw bytes, and only the owner execute bit makes it 100755, as git does. A
- *  missing path has no entry; a directory or another kind is OTHER_KIND. */
 /** The stat of a worktree path, or undefined when it is absent. A parent that is now a regular file (ENOTDIR) means the
  *  path is absent, which is what a commit that deletes it requires; any other error is thrown, and the caller refuses. */
 function lstatAt(abs: string): Stats | undefined {
@@ -188,6 +189,9 @@ function worktreeSignature(root: string, paths: readonly string[]): Map<string, 
   );
 }
 
+/** What each worktree path holds as an index entry, the way `git add` would store it. A symlink is its raw link bytes,
+ *  never the file it names. A file is its raw bytes, and only the owner execute bit makes it 100755, as git does. A
+ *  missing path has no entry; a directory or another kind is OTHER_KIND. */
 function worktreeEntries(root: string, paths: readonly string[]): Map<string, string> {
   const entries = new Map<string, string>();
   const files = new Map<string, string>();
@@ -407,6 +411,8 @@ export async function judgedRun(
     return { ...first, reran: false, collidedAgain: false };
   }
   const again = rerunTasks(tasks, first.output);
+  // Every requested task printed its result, so the collision kept none of them from judging: there is nothing to rerun.
+  if (again.length === 0) return { ...first, reran: false, collidedAgain: false };
   console.error(`  ! collision: another gradle run in this checkout held a shared file; rerunning ${again.length} task(s) once`);
   const second = await run(again);
   const collidedAgain = second.status !== 0 && !cancelledBySignal(second.status) && isCollision(second.output, root, modules, rivalLive);
@@ -415,7 +421,8 @@ export async function judgedRun(
 
 /** The tasks a collision's rerun runs: the requested tasks that failed, and those with no line in the output, each with
  *  the options that follow it (an option belongs to the task before it). Gradle's --continue prints nothing for a task a
- *  failure kept from running, so a task with no line was never judged. A rerun that names none reruns them all. */
+ *  failure kept from running, so a task with no line was never judged. A run that printed a result for every task names
+ *  none, and the rerun is empty: nothing a collision could have kept from judging is left to judge. */
 export function rerunTasks(requested: readonly string[], output: string): string[] {
   const failed = new Set(failedTasks(output).map(taskPath));
   const reached = new Set([...output.matchAll(TASK_LINE)].map((m) => taskPath(m[1] ?? "")));
@@ -425,7 +432,7 @@ export function rerunTasks(requested: readonly string[], output: string): string
     if (!token.startsWith("-")) inUnit = failed.has(taskPath(token)) || !reached.has(taskPath(token));
     if (inUnit) again.push(token);
   }
-  return again.length > 0 ? again : [...requested];
+  return again;
 }
 
 /** Gradle prints a task's path with its leading colon; a requested name may omit it. */
@@ -504,7 +511,6 @@ function tailOf(output: string): string {
 // a path the commit leaves alone is printed and left to the census leg of the gate (CLAUDE.md §18).
 const CENSUS_SCRIPT = ".dev/restructure/census.ts";
 const CENSUS_ROWS = ".dev/restructure/capabilities.tsv";
-const CENSUS_VERDICT = /^census: \d+ rows \(.*\) over \d+ tracked product paths — (\d+) finding\(s\)$/;
 
 /** The bytes the index holds for [path]. Throws when the index holds none. */
 function indexBytes(root: string, path: string): Buffer {
@@ -526,20 +532,34 @@ function namedByCommit(root: string): Set<string> {
   return named;
 }
 
-/** The census script's verdict: its findings, or the reason it could not judge. Exit 0 with no findings and exit 1
- *  with the parsed list are verdicts; any other exit, or a summary that disagrees with its list, is a failure. */
-function censusVerdict(status: number, stdout: string, stderr: string): { findings: string[] } | { failure: string } {
-  const lines = stdout.split("\n").filter((line) => line !== "");
-  const summary = CENSUS_VERDICT.exec(lines.at(-1) ?? "");
-  if (summary === null || (status !== 0 && status !== 1)) {
-    return { failure: `exit ${status}: ${tailOf(`${stdout}${stderr}`).trim() || "no output"}` };
+/** One finding as the census prints it under --json: its sentence for people, and every path it is about. */
+interface CensusFinding {
+  readonly message: string;
+  readonly paths: readonly string[];
+}
+
+function isCensusFinding(value: unknown): value is CensusFinding {
+  if (typeof value !== "object" || value === null) return false;
+  const { message, paths } = value as { message?: unknown; paths?: unknown };
+  return typeof message === "string" && Array.isArray(paths) && paths.every((path) => typeof path === "string");
+}
+
+/** The census script's verdict, read from its one JSON document: its findings, or the reason it could not judge. Exit 0 with
+ *  no findings and exit 1 with the listed findings are verdicts. Any other exit, a document that does not parse or does not
+ *  have this shape, or an exit that disagrees with the list, is a failure. The sentences are never parsed. */
+function censusVerdict(status: number, stdout: string, stderr: string): { findings: CensusFinding[] } | { failure: string } {
+  const failure = (why: string) => ({ failure: `${why}: ${tailOf(`${stdout}${stderr}`).trim() || "no output"}` });
+  if (status !== 0 && status !== 1) return failure(`exit ${status}`);
+  let document: unknown;
+  try {
+    document = JSON.parse(stdout);
+  } catch {
+    return failure(`exit ${status} with no verdict document`);
   }
-  const count = Number(summary[1]);
-  const findings = lines.slice(0, -1);
-  if (findings.length !== count || (status === 0) !== (count === 0)) {
-    return { failure: `exit ${status} with ${count} finding(s) and ${findings.length} listed` };
-  }
-  return { findings };
+  const listed = (document as { findings?: unknown } | null)?.findings;
+  if (!Array.isArray(listed) || !listed.every(isCensusFinding)) return failure(`exit ${status} with a malformed verdict`);
+  if ((status === 0) !== (listed.length === 0)) return failure(`exit ${status} with ${listed.length} finding(s)`);
+  return { findings: listed };
 }
 
 /** The census leg of pre-commit. Returns the exit code. */
@@ -552,20 +572,19 @@ export async function censusLeg(lay: Layout): Promise<number> {
     const rows = join(scratch, "capabilities.tsv");
     writeFileSync(script, indexBytes(root, CENSUS_SCRIPT));
     writeFileSync(rows, indexBytes(root, CENSUS_ROWS));
-    const run = spawnSync(process.execPath, [script, "--root", root, "--rows", rows], { cwd: root, maxBuffer: 1 << 26 });
+    const run = spawnSync(process.execPath, [script, "--root", root, "--rows", rows, "--json"], { cwd: root, maxBuffer: 1 << 26 });
     const verdict = censusVerdict(run.status ?? 1, run.stdout?.toString("utf8") ?? "", run.stderr?.toString("utf8") ?? "");
     if ("failure" in verdict) {
       console.error(`pre-commit: ✗ census could not judge: ${verdict.failure} — ${seconds(started)}`);
       return 1;
     }
     const named = namedByCommit(root);
-    const hits = verdict.findings.filter((finding) => {
-      const words = new Set(finding.split(/[\s:]+/));
-      return [...named].some((path) => words.has(path));
-    });
+    // A finding is this commit's when a path it carries is one the commit names. A finding that carries no path cannot be
+    // placed, so it counts as this commit's until shown otherwise.
+    const hits = verdict.findings.filter((finding) => finding.paths.length === 0 || finding.paths.some((path) => named.has(path)));
     const elsewhere = verdict.findings.filter((finding) => !hits.includes(finding));
-    for (const finding of hits) console.error(`  ✗ census: ${finding}`);
-    for (const finding of elsewhere) console.error(`  · census, not this commit's path: ${finding}`);
+    for (const finding of hits) console.error(`  ✗ census: ${finding.message}`);
+    for (const finding of elsewhere) console.error(`  · census, not this commit's path: ${finding.message}`);
     if (hits.length > 0) {
       console.error(`pre-commit: ✗ census (${hits.length} finding(s) on paths this commit changes) — ${seconds(started)}`);
       return 1;
@@ -706,7 +725,6 @@ export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): 
     legs,
     modules: modules.map((module) => module.path),
     moduleOf: (file) => moduleOf(modules, file),
-    lawReads: deps.lawReads ?? LAW_READS,
     changed,
   });
   const scopeClause = `; scope: ${scope.summary}`;

@@ -3,10 +3,11 @@
 //
 // THE SCOPE IS THE PUSHED DIFF, NOT THE TREE. A ladder row runs when a changed path matches one of its `inputs`, the
 // path globs the leg actually reads. A Kotlin or gradle change compiles every module (a caller in another module still
-// refuses the push), runs `check` for each module the diff changes, and for each law suite whose reads it touches.
-// A module the diff does not touch gets no tests. Every push runs PublicSourceNamesNoHostToolTest, whatever it changed:
-// it reads every tracked file, so no path can keep it from running. The full suite stays in CI, which runs gateOfRecord
-// on the pushed sha.
+// refuses the push) and runs `check` for each module the diff changes. A module the diff does not touch gets no tests.
+// Every push requests the law suites (`lawSuites`) and the jar legs: gradle's up-to-date check decides what runs, because
+// the suites and the jar declare their inputs in gradle, the one place those reads are known. `lawSuites` runs the whole
+// :app:test, so PublicSourceNamesNoHostToolTest runs on every push too. The full suite stays in CI, which runs
+// gateOfRecord on the pushed sha.
 
 /** A ladder row as pre-push reads it. `inputs` is required: the path globs the leg reads. */
 export interface Leg {
@@ -23,34 +24,15 @@ const GRADLE_INPUT = /\.(kts?|java)$|^gradle\/|^gradle\.properties$|^gradlew(\.b
 /** A change every module's build depends on: the shared build logic, the settings, or the root build script. */
 const WHOLE_BUILD = /^(settings\.gradle\.kts$|build\.gradle\.kts$|gradle\.properties$|gradle\/|build-logic\/)/;
 
-/** The path globs each law suite reads from outside its own module, keyed by the suite's gradle project. A suite whose
- *  project is absent reads only its own module. Each entry names the read it stands for, so the list can be checked
- *  against the suite. `:app`'s repository-wide scan (cli/doctor/PublicSourceNamesNoHostToolTest.kt:56-113) is not
- *  scoped here: it reads every tracked file, so the push that runs it would be every push. CI's gate of record runs it. */
-export const LAW_READS: Readonly<Record<string, readonly string[]>> = {
-  ":quality-architecture": [
-    "**/src/main/**/*.kt", // KotlinText.kt:37-45: every module's main sources
-    "**/*.gradle.kts", // ProjectMapTest.kt:79-95, ModuleLawsTest.kt:884-924: every module's build scripts
-    "quality/**", // quality/detekt/detekt.yml, and the suite's own sources under quality/architecture
-    ".dev/campaigns/**", // the campaign ledgers, *.toml
-    "README.md", // ReleaseReadinessLawTest.kt:51-90: the fixed root files
-    "CHANGELOG.md",
-    "AGENTS.md",
-    "install.sh",
-    "package.json",
-    "tools/gate/src/lib/hook.ts",
-    ".github/workflows/**",
-    "app/src/main/resources/splice.example.toml", // a specific file another module's law reads
-  ],
-  ":app": ["features/turns/**"], // cli/daemon/DaemonStopOrderTest.kt:64-152 reads the turns module's sources
-  ":features-diagnostics": ["app/src/main/dist/**", "tools/e2e/src/commands/heads.ts"], // its launch script and e2e heads verb
-  ":features-lifecycle": ["app/src/main/dist/bin/splice-launch"],
-  ":integrations-topology": ["README.md", "CHANGELOG.md", "app/src/main/resources/splice.example.toml"],
-  ":integrations-upstream": ["AGENTS.md"],
-};
+/** The gradle task that runs every law suite. Gradle holds the list of suites and the inputs each one declares, so pre-push
+ *  requests this one task and gradle's up-to-date check skips each suite whose declared inputs did not change. */
+export const LAW_SUITES_TASK = "lawSuites";
+/** The fat jar's task. A leg that depends on it runs when the jar was rebuilt or the leg's own inputs changed. Pre-push
+ *  requests every such leg on every push and gradle decides: the jar's inputs are shadowJar's declaration, not a copy. */
+export const JAR_TASK = ":app:shadowJar";
 
-/** The test every push runs, whatever it changed: a host-tool name must not reach a public source from any module. :app:check
- *  runs it too, so a push that checks :app already runs it. */
+/** The test every push runs, whatever it changed, inside lawSuites' :app:test: a host-tool name must not reach a public source
+ *  from any module. */
 export const PUBLIC_SOURCE_TEST = "PublicSourceNamesNoHostToolTest";
 
 const compiled = new Map<string, Bun.Glob>();
@@ -87,28 +69,26 @@ export interface ScopeInput {
   readonly modules: readonly string[];
   /** The module a changed path belongs to, or undefined for a path outside every module. */
   readonly moduleOf: (path: string) => string | undefined;
-  /** For each law-suite module, the path globs its tests read from other modules or the repository. */
-  readonly lawReads: Readonly<Record<string, readonly string[]>>;
   /** The paths the pushed diff changes. */
   readonly changed: readonly string[];
 }
 
+/** A leg that depends on the fat jar. Pre-push requests it on every push, and gradle decides whether it runs. */
+const runsOnJar = (leg: Leg): boolean => leg.dependsOn?.includes(JAR_TASK) === true;
+
 export function prePushScope(input: ScopeInput): PrePushScope {
   const { changed } = input;
-  const inScope = input.legs.filter((leg) => changed.some((path) => matchesAny(leg.inputs ?? [], path)));
+  const inScope = input.legs.filter((leg) => runsOnJar(leg) || changed.some((path) => matchesAny(leg.inputs ?? [], path)));
   const legList = inScope.length === 0 ? "no legs" : `legs ${inScope.map((leg) => leg.task).join(", ")}`;
 
-  // A module is checked when the diff changes it, when a law suite reads a changed path, or when a shared input changed
-  // (every module's build depends on it, and every module's detekt reads the detekt config).
+  // A module is checked when the diff changes it, or when a shared input changed (every module's build depends on it, and
+  // every module's detekt reads the detekt config).
   const checked = new Set<string>();
   for (const path of changed) {
     const module = input.moduleOf(path);
     if (module !== undefined) checked.add(module);
   }
   if (changed.some((path) => WHOLE_BUILD.test(path))) for (const module of input.modules) checked.add(module);
-  for (const [module, reads] of Object.entries(input.lawReads)) {
-    if (changed.some((path) => matchesAny(reads, path))) checked.add(module);
-  }
   const modules = [...checked].sort();
 
   // A leg runs as a gradle task when it needs gradle's graph (a jar it depends on, a directory it creates, a receipt it
@@ -119,14 +99,19 @@ export function prePushScope(input: ScopeInput): PrePushScope {
   const gradle: string[] = [];
   if (gradleInput) for (const module of input.modules) gradle.push(`${module}:compileKotlin`, `${module}:compileTestKotlin`);
   for (const module of modules) gradle.push(`${module}:check`);
-  // The option follows its task: gradle applies --tests to the task before it, so the pair stays together.
-  const appChecked = modules.includes(":app");
-  if (!appChecked) gradle.push(":app:test", `--tests=*${PUBLIC_SOURCE_TEST}`);
+  // lawSuites runs the whole :app:test. A --tests filter on :app:test would narrow that run too: gradle keeps one instance of
+  // a task however many tasks depend on it, so the public-source test rides in lawSuites instead of a filtered pair.
+  gradle.push(LAW_SUITES_TASK);
   if (changed.some((path) => path.startsWith("build-logic/"))) gradle.push("build-logic:test");
   for (const leg of gradleLegs) gradle.push(`:${leg.task}`);
 
   const compile = gradleInput ? `compile of ${input.modules.length} module(s)` : "no compile";
   const check = `check of ${modules.length === 0 ? "no module" : modules.join(", ")}`;
-  const publicSource = appChecked ? `${PUBLIC_SOURCE_TEST} in :app:check` : `${PUBLIC_SOURCE_TEST} via :app:test`;
-  return { legs: inScope, gradle, direct: directLegs, summary: `${legList}; gradle: ${compile}, ${check}; ${publicSource}` };
+  const publicSource = `${PUBLIC_SOURCE_TEST} in ${LAW_SUITES_TASK}`;
+  return {
+    legs: inScope,
+    gradle,
+    direct: directLegs,
+    summary: `${legList}; gradle: ${compile}, ${check}, ${LAW_SUITES_TASK}; ${publicSource}`,
+  };
 }

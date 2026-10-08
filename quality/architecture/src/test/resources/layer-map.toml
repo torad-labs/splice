@@ -1,0 +1,72 @@
+# layer-map.toml — which architectural role each Gradle module plays (splice-lead ruling, 2026-10-07).
+#
+# EVERY Gradle module is classified in EXACTLY ONE layer below. A module the map does not classify
+# fails LayerMapLawTest BY NAME, so new code can never sit outside a layer. A layer rule names its
+# subject from this map; the rule's own files: globs must equal the source roots of the layer's
+# modules, and LayerMapLawTest reads them to prove it.
+#
+# THE LAYERS, by the direction the module graph (build-logic/.../splice.module-law.gradle.kts) allows:
+#   domain       :core. Pure values, ports and ids. Imports nothing but itself and the kotlin stdlib.
+#   adapter      the integrations/* modules. Speak to the outside world and implement domain ports.
+#                They import domain and adapter code, never features or the composition root.
+#   feature      the features/* modules. Behaviour built from domain and adapters, with the
+#                composition root above them. They import domain, adapter and feature code.
+#   composition  :app, the one process entry. It may import everything.
+#   tooling      the quality modules. They are not product code and are classified, not graded.
+#
+# A MODULE IS CLASSIFIED BY ITS DEPENDENCIES, NOT BY ITS NAME. A module that depends on a feature is a
+# feature, because an adapter may not reach up into a feature. integrations-claude-code depends on
+# :features-sessions (it implements the transcript port sessions owns), so it is a feature. integrations-mcp
+# depends on integrations-claude-code, so it is a feature too. Moving either back to adapter means removing
+# the feature edge from the build first.
+
+[domain]
+modules = [":core"]
+
+[adapter]
+modules = [
+    ":integrations-daemon-client",
+    ":integrations-codemode",
+    ":integrations-dialects-anthropic",
+    ":integrations-dialects-openai-chat",
+    ":integrations-dialects-openai-responses",
+    ":integrations-http",
+    ":integrations-oauth",
+    ":integrations-providers-codex",
+    ":integrations-providers-grok",
+    ":integrations-providers-kimi",
+    ":integrations-providers-muse",
+    ":integrations-providers-openai",
+    ":integrations-terminal",
+    ":integrations-topology",
+    ":integrations-upstream",
+]
+
+[feature]
+modules = [
+    ":integrations-claude-code",
+    ":integrations-mcp",
+    ":features-accounts",
+    ":features-configuration",
+    ":features-diagnostics",
+    ":features-events",
+    ":features-heads",
+    ":features-launch",
+    ":features-lifecycle",
+    ":features-models",
+    ":features-sessions",
+    ":features-turns",
+    ":features-usage",
+]
+
+[composition]
+modules = [":app"]
+
+[tooling]
+modules = [":quality-architecture", ":quality-compiler-plugin"]
+
+# THE COMPOSITION ROOT is one named role held to one file. It is the only file the process-entry rules
+# (runBlocking, getenv) exempt, and LayerMapLawTest proves the file exists and is the only main-source
+# file that declares a process entry in :app.
+[composition-root]
+file = "app/src/main/kotlin/splice/app/Main.kt"

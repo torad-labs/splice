@@ -1,8 +1,10 @@
-// NEW: the daemon's run and its ordered stop, moved out of Main.kt unchanged: the shutdown hook, the startup job beside the
-// signal wait, the halt watchdog that arms when the signal fires, and the cooperative stop with its drain and lock close.
+// NEW: the daemon's run and its ordered stop: the shutdown hook, the startup job beside the signal wait, the halt
+// watchdog armed when the signal fires, and the stop, which closes the control server startup owns, waits for startup to
+// finish, drains the file lane and releases the daemon lock last.
 package splice.app
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
@@ -67,7 +69,7 @@ internal class DaemonRun(
                     val halt = HaltJvm { Runtime.getRuntime().halt(0) }
                     process.runBoundedTeardown(STOP_DEADLINE_MS + TEARDOWN_TAIL_GRACE_MS, halt) {
                         startup.cancel()
-                        shutdown(daemon, lock)
+                        shutdown(daemon, lock, startup)
                     }
                 }
             } finally {
@@ -83,8 +85,11 @@ internal class DaemonRun(
     // reach. The halt floor sits ABOVE the cooperative cap by a grace window: a stop that times out cooperatively at
     // exactly STOP_DEADLINE_MS must still get its drain() + lock.close() tail before the watchdog fires
     // (orchestrator review 2026-07-24 — equal deadlines raced the tail).
-    private suspend fun shutdown(daemon: Daemon, lock: DaemonLock) {
+    private suspend fun shutdown(daemon: Daemon, lock: DaemonLock, startup: Job) {
         withTimeoutOrNull(STOP_DEADLINE_MS) { boundary.runCatchingDaemonBoundary { daemon.stop() } }
+        // The lock is the last thing released: a startup still unwinding may yet touch what it acquired. The wait has
+        // no bound of its own; the halt watchdog this runs under is the bound.
+        startup.join()
         // The file lane's flush is the last reportable signal before lock.close() and the halt
         // watchdog: a false means daemon.log / usage / economics writes were lost on the way out.
         if (!AsyncFileIo.drain()) {

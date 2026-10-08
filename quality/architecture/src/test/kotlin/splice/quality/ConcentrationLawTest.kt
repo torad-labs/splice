@@ -173,8 +173,11 @@ internal object Concentration {
     // 73.9 -> 73.1, ratio 2.98 -> 3.01, measured with this law's own scan on HEAD's text and the tree. 11 -> 12.
     // 2026-10-08: measured by this law on the tree after the control split's step 2 (ControlPayloads deleted, its
     // readers in HeadReadiness, HeadSignals and ControlHealthReport). Band HIGH fell 12 -> 10; the limit follows it.
+    // 2026-10-08, later: the control server's ownership (ControlOwnership.kt in splice.app.control) took the control-port
+    // bind out of ControlPlane, and the daemon run left Main.kt. Unchanged PerfRowsFileSource.kt (3.15 -> 2.99) and
+    // HostedServer.kt (3.02 -> below 3.0) leave HIGH by neighbourhood, measured with this law's own scan on the tree. 10 -> 9.
     const val RATCHET_RECORDED = "2026-10-08"
-    const val RATCHET_MAX_HIGH = 10
+    const val RATCHET_MAX_HIGH = 9
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

@@ -14,7 +14,6 @@ package splice.app
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import splice.app.control.ControlServer
 import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
 import splice.app.daemon.BootedTopology
@@ -185,8 +184,6 @@ public class Daemon(
         perfSources = controlPlane.perfRows,
     )
 
-    // set once in start(); the daemon is not usable before it
-    private var control: ControlServer? = null
     private val heads = LinkedHashMap<String, ManagedHead>()
     private val stopLock = Mutex()
     private var stopped = false
@@ -229,7 +226,7 @@ public class Daemon(
         // binds the control port, so it must run after.
         headProbes.startDaemonHeads(heads, failed, controlPlane.probeScope, log)
         headProbes.startRuntimeWatch(topology, controlPlane.probeScope, log)
-        val srv = controlPlane.start(
+        controlPlane.start(
             controlPort = controlPort,
             heads = heads,
             failedHeads = object : FailedHeads {
@@ -240,7 +237,6 @@ public class Daemon(
             headCount = topology.heads.size,
             probes = headProbes,
         ) ?: return
-        control = srv
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
@@ -255,7 +251,11 @@ public class Daemon(
             // can't cancel the siblings' drains/flushes nor skip control.stop — it surfaces on
             // stderr/daemon.log instead of the JVM default, a black hole once production redirects
             // stderr to /dev/null.
-            headShutdown.stopHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) { control?.stop() }
+            headShutdown.stopHeads(
+                heads.values.map { it.head },
+                HEAD_STOP_BUDGET_MS,
+                log,
+            ) { controlPlane.ownership.close() }
 
             // Probe cancellation runs AFTER the heads have drained: the probe scope is the scope
             // ProviderAssembly hands every provider, so cancelling it first means a SingleFlight

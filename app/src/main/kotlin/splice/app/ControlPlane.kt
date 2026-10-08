@@ -13,6 +13,7 @@ import splice.app.auth.claude.ClaudeAccountsSource
 import splice.app.auth.claude.ClaudeLoginOwner
 import splice.app.auth.claude.ClaudeLoginWiring
 import splice.app.cli.AdminSupport
+import splice.app.control.ControlOwnership
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.FailedHeads
@@ -62,6 +63,7 @@ import splice.launch.LaunchSpec
 import splice.launch.recipe.LaunchService
 import splice.lifecycle.restart.DetachedDaemonSuccessor
 import splice.lifecycle.restart.ShutdownDaemon
+import splice.lifecycle.restart.SuccessorInstall
 import splice.oauth.codex.CodexRefresh
 import splice.sessions.prompt.SlotInstructions
 import splice.sessions.registry.ProcessEnvironment
@@ -127,6 +129,9 @@ internal class ControlPlane(
     internal val signInPlanner = SignInPlanner()
     internal val buildInputs = HeadBuildInputs(config, signInPlanner, modelRosters)
     internal val probeScope = LifecycleScope(ProcessDispatchers().background())
+
+    /** The control server's owner from construction to the stop: see [ControlOwnership]. */
+    internal val ownership = ControlOwnership(boundary, log, shutdownDaemon)
     private val claudeIdentities = splice.app.auth.claude.ClaudeIdentityRefresh(
         probeScope,
         ProcessDispatchers().io(),
@@ -283,14 +288,7 @@ internal class ControlPlane(
         )
         wireConsolePorts(srv)
         wireRestartSuccessor(srv, controlPort)
-        val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
-            .onFailure {
-                // SAFE-RENDER-EXEMPT[2026-08-31]: srv.start() bind failure — a SocketException names a port and an address, never file bytes
-                log("[daemon] control plane could not bind :$controlPort (${it.message}); another owns it, exiting\n")
-                shutdownDaemon()
-            }
-            .isSuccess
-        return if (controlBound) srv else null
+        return if (ownership.bind(srv, controlPort)) srv else null
     }
 
     /** Every port [srv] takes after construction, extracted out of [start] (LongMethod — the same
@@ -358,10 +356,7 @@ internal class ControlPlane(
         srv.wireRestartSuccessor(
             DetachedDaemonSuccessor(
                 AdminSupport.selfJar(),
-                UserHome.dir(),
-                topology.path,
-                successorStateDir(),
-                controlPort,
+                SuccessorInstall(UserHome.dir(), topology.path, successorStateDir(), controlPort),
                 statePaths.logsDir,
                 log,
             ),

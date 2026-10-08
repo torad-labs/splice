@@ -52,7 +52,7 @@ class QuotaOpenControlTest {
             tracker,
             listOf(poller),
         )
-        val server = ControlServer(
+        val server = controlServerFor(
             0,
             mapOf("synthetic" to managed(usage)),
             ConfigService(paths),

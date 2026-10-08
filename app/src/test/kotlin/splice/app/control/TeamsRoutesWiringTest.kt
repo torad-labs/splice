@@ -50,7 +50,7 @@ class TeamsRoutesWiringTest {
     private fun serve(wired: Boolean, test: suspend (TeamsCall) -> Unit) {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
-        val control = ControlServer(
+        val control = controlServerFor(
             port = 0, // bound by the OS at start and read back below: no lease-then-bind window
             heads = emptyMap(),
             config = ConfigService(paths),

@@ -161,7 +161,7 @@ class ResumeRecipeWiringTest {
         val sessions = registration()
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
-        val control = ControlServer(
+        val control = controlServerFor(
             port = 0,
             heads = mapOf("codex" to managedHead(own, command)),
             config = ConfigService(paths),

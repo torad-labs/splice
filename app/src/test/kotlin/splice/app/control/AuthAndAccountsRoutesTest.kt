@@ -92,7 +92,7 @@ class AuthAndAccountsRoutesTest {
         val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = mapOf(WIRED to head(WIRED, pin), NO_POOL to head(NO_POOL, null)),
             config = ConfigService(paths),

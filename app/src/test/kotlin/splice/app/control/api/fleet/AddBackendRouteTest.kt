@@ -39,6 +39,7 @@ import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
+import splice.app.control.controlServerFor
 import splice.app.control.ManagedHead
 import splice.configuration.add.AddConsole
 import splice.configuration.add.AddSignIn
@@ -120,7 +121,7 @@ class AddBackendRouteTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = mapOf(HEAD_KEY to managedHead()),
             config = ConfigService(paths),

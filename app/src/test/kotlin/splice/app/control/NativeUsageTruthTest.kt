@@ -241,7 +241,7 @@ class NativeUsageTruthTest {
     ) = runBlocking {
         withTimeout(TIMEOUT_MS) {
             val key = MgmtKey(paths)
-            val server = ControlServer(
+            val server = controlServerFor(
                 port = 0,
                 heads = mapOf(
                     HEAD to managed(kind).let { head ->

@@ -64,7 +64,7 @@ class DoctorFixRouteTest {
         val paths = StatePaths(baseOverride = tmp.resolve("daemon-state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),

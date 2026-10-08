@@ -53,7 +53,7 @@ class ClientVersionSurfaceTest {
         versions.observe("session-equal", "claude-cli/2.1.257")
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
-        val server = ControlServer(
+        val server = controlServerFor(
             port = 0, // the OS assigns one at bind time; read back below, so nothing can take it first
             heads = mapOf("test" to managedHead()),
             config = ConfigService(paths),

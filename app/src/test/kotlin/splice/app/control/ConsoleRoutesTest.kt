@@ -110,7 +110,7 @@ class ConsoleRoutesTest {
         val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = mapOf(HEAD_KEY to managedHead(), "bare" to bareHead()),
             config = ConfigService(paths),

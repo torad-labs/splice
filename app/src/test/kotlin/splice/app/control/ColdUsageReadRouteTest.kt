@@ -168,7 +168,7 @@ class ColdUsageReadRouteTest {
         private val mgmt = MgmtKey(paths)
         private val key = mgmt.get()
         private val client = HttpClient(CIO)
-        private val server = ControlServer(
+        private val server = controlServerFor(
             0,
             mapOf("synthetic" to managed()),
             ConfigService(paths),

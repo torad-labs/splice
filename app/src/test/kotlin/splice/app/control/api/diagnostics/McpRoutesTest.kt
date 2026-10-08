@@ -30,6 +30,7 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
+import splice.app.control.controlServerFor
 import splice.client.mcp.DirectoryProbe
 import splice.client.mcp.GlobalMcpServersReader
 import splice.client.mcp.McpAccessKey
@@ -102,7 +103,7 @@ class McpRoutesTest {
             materializedHomes = emptySet(),
         )
         host = McpHost(sharing, { global }, log = { }, inventory = inventory)
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),

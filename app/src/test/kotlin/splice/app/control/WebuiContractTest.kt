@@ -108,7 +108,7 @@ class WebuiContractTest {
             warnTokens5h = 0,
             authKind = "chatgpt-oauth",
         )
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = mapOf("codex" to managed),
             config = ConfigService(paths),

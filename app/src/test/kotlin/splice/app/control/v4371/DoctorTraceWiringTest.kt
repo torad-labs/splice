@@ -15,8 +15,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.control.controlServerFor
 import splice.app.DoctorWiring
-import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
@@ -45,7 +45,7 @@ class DoctorTraceWiringTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         val config = ConfigService(paths, perHeadOverrides = mapOf("local" to mapOf("trace" to "true")))
-        val server = ControlServer(
+        val server = controlServerFor(
             port = 0,
             heads = mapOf("local" to head()),
             config = config,

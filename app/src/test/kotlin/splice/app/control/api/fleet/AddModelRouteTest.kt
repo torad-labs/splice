@@ -35,6 +35,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.accounts.signin.LoginStatus
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
+import splice.app.control.controlServerFor
 import splice.configuration.add.AddConsole
 import splice.configuration.add.AddSignIn
 import splice.configuration.add.WrapperInstall
@@ -81,7 +82,7 @@ class AddModelRouteTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),

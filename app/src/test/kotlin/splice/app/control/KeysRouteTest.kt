@@ -91,7 +91,7 @@ class KeysRouteTest {
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         val daemonEnv = EnvReader { name -> if (name == SHADOWED) "set-in-the-daemon-environment" else null }
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = mapOf(
                 "router" to managedHead("router", ApiKeyAuthProvider(STORED, null, EnvReader { null }, store, log)),

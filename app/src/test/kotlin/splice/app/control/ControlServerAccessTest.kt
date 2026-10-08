@@ -66,7 +66,7 @@ class ControlServerAccessTest {
         // with no servers, so the /mcp rows are in the table the walk reads: their door is Door.MCP.
         val sharing =
             McpSharing(true, emptySet(), "http://127.0.0.1:0/mcp/", McpAccessKey(mgmt::get), DirectoryProbe { false })
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),

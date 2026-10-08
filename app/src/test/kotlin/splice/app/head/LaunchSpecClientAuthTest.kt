@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.auth.SignInPlanner
 import splice.app.control.ControlServer
+import splice.app.control.controlServerFor
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild
 import splice.core.auth.CLIENT_AUTH_KIND
@@ -304,7 +305,7 @@ class LaunchSpecClientAuthTest {
     @Test
     fun `the materialized statusline command clears the guarded route with a 200`(@TempDir tmp: Path) {
         val paths = StatePaths(baseOverride = tmp)
-        val server = ControlServer(
+        val server = controlServerFor(
             port = 0, // bound by the OS at start and read back below: no lease-then-bind window
             heads = emptyMap(),
             config = ConfigService(paths),

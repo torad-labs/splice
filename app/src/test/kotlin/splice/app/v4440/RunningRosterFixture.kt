@@ -9,6 +9,7 @@ import splice.app.TokenUrlRefreshCall
 import splice.app.auth.SignInPlanner
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
+import splice.app.control.controlServerFor
 import splice.app.control.ManagedHead
 import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
@@ -131,7 +132,7 @@ internal class RunningRosterFixture(tmp: Path, parent: CoroutineScope) {
         check(awaiting.receive() == 3_600_000L)
     }
 
-    private fun controlServer() = ControlServer(
+    private fun controlServer() = controlServerFor(
         0,
         mapOf("synthetic" to managed),
         config,

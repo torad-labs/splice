@@ -47,7 +47,7 @@ class ClaudeHeadRefusalTest {
         key = mgmt.get()
         // NO heads: this is the state a wizard reaches when `splice add claude` refused and the
         // lane answer was still `wrap` — the case the wizard must report rather than retry.
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),

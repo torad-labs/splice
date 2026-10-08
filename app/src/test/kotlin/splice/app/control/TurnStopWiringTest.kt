@@ -95,7 +95,7 @@ class TurnStopWiringTest {
     private fun serve(ports: PortsSetup, test: suspend (Calls) -> Unit) {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
-        val control = ControlServer(
+        val control = controlServerFor(
             port = 0,
             heads = mapOf("codex" to managedHead()),
             config = ConfigService(paths),

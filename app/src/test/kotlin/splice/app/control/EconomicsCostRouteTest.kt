@@ -91,7 +91,7 @@ class EconomicsCostRouteTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = mapOf(
                 "priced" to managedHead("priced", pricedStore()),

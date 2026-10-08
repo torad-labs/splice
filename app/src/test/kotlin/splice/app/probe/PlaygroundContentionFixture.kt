@@ -19,7 +19,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import splice.app.control.ControlServer
+import splice.app.control.controlServerFor
 import splice.app.control.ManagedHead
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.SyntheticPerfHistory
@@ -88,7 +88,7 @@ internal class PlaygroundContentionFixture(
             respond(content = body, status = HttpStatusCode.OK)
         },
     )
-    private val control = ControlServer(
+    private val control = controlServerFor(
         port = 0,
         heads = mapOf(CONTENTION_HEAD to managed()),
         config = ConfigService(paths),

@@ -44,7 +44,7 @@ class ConfigPersistRouteTest {
         statePaths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(statePaths)
         key = mgmt.get()
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = emptyMap(),
             config = ConfigService(statePaths),

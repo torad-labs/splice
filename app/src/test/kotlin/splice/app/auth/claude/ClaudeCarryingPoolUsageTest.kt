@@ -27,6 +27,7 @@ import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.pool.HeadAccountPinSource
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
+import splice.app.control.controlServerFor
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.PerfSessionAccountIndex
 import splice.core.auth.CredentialKey
@@ -137,7 +138,7 @@ class ClaudeCarryingPoolUsageTest {
     }
 
     private fun sessionControl(fixture: ClaudeNativePoolFixture, rig: ClaudeNativePoolFixture.Rig): ControlServer =
-        ControlServer(
+        controlServerFor(
             port = 0,
             heads = mapOf(NATIVE_HEAD to rig.head, "synthetic-other-head" to rig.head),
             config = ConfigService(fixture.paths),
@@ -243,7 +244,7 @@ class ClaudeCarryingPoolUsageTest {
             file,
             sessionAccounts = PerfSessionAccountIndex(scanBytes = Files.size(file), scanGenerations = 1),
         )
-        val control = ControlServer(
+        val control = controlServerFor(
             port = 0,
             heads = mapOf(NATIVE_HEAD to rig.head.copy(perfRows = source)),
             config = ConfigService(fixture.paths),

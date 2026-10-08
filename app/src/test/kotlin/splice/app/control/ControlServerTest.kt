@@ -133,7 +133,7 @@ class ControlServerTest {
             perfRows = fakePerfRows,
         )
         val launchSpec = launchSpecFixture(tmp, mgmt.get())
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = mapOf(
                 "codex" to managed.copy(launchSpec = launchSpec),
@@ -232,7 +232,7 @@ class ControlServerTest {
         // reporting heads.size (assembled only) broke the readyHeads + failedHeads == heads
         // invariant a launch shim waits on. Report the configured total (review 2026-07-23).
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
-        val degraded = ControlServer(
+        val degraded = controlServerFor(
             port = 0,
             heads = emptyMap(), // the sole configured head failed to ASSEMBLE — never entered `heads`
             config = ConfigService(paths),
@@ -592,7 +592,7 @@ class ControlServerPerHeadConfigTest {
             headOverrides = mapOf("maxInflight" to "100"),
             perHeadOverrides = mapOf("kimi" to mapOf("maxInflight" to "8")),
         )
-        val server = ControlServer(
+        val server = controlServerFor(
             port = 0,
             heads = emptyMap(),
             config = svc,

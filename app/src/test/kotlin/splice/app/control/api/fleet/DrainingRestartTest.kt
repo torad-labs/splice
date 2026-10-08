@@ -34,6 +34,7 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
+import splice.app.control.controlServerFor
 import splice.app.control.ManagedHead
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
@@ -79,7 +80,7 @@ class DrainingRestartTest {
         val paths = StatePaths(baseOverride = tempDir.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
-        control = ControlServer(
+        control = controlServerFor(
             port = 0,
             heads = mapOf(HEAD_KEY to managedHead()),
             config = ConfigService(paths),

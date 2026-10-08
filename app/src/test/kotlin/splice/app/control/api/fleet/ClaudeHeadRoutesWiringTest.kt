@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
+import splice.app.control.controlServerFor
 import splice.app.control.ManagedHead
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
@@ -124,7 +125,7 @@ class ClaudeHeadRoutesWiringTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         val key = mgmt.get()
-        val control = ControlServer(
+        val control = controlServerFor(
             port = 0, // bound by the OS at start and read back below: no lease-then-bind window
             heads = mapOf("claude-splice" to managedHead(tmp.resolve(".claude-claude-splice"))),
             config = ConfigService(paths),

@@ -49,7 +49,7 @@ class ForegroundHookWiringTest {
         val registry = registry(dir, tools, WallClock { now })
         val paths = StatePaths(baseOverride = dir.resolve("state"))
         val mgmt = MgmtKey(paths)
-        val server = ControlServer(
+        val server = controlServerFor(
             port = 0,
             heads = mapOf("synthetic" to head()),
             config = ConfigService(paths),

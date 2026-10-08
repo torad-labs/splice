@@ -31,7 +31,7 @@ class ControlIngressTest {
     fun `control routes refuse shared pressure before rendering and recover after release`(@TempDir tmp: Path) {
         val before = JvmHeap.budget.available.value
         val paths = StatePaths(baseOverride = tmp)
-        val server = ControlServer(
+        val server = controlServerFor(
             port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),

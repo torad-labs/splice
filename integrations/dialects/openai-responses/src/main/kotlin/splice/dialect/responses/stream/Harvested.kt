@@ -2,4 +2,4 @@
 // terminal-object readers are not billed for the DTO (concentration, 2026-08-19).
 package splice.dialect.responses.stream
 
-public data class Harvested(val text: String, val thinking: String)
+internal data class Harvested(val text: String, val thinking: String)

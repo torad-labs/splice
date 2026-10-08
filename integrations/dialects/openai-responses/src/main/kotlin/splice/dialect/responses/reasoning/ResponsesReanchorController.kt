@@ -27,7 +27,7 @@ import splice.upstream.ReanchorRound
 
 /** [prosePhase] is the phase the replayed partial prose carries: commentary on a lite turn, null (the
  *  bare item it always had) on any other. */
-public class ResponsesReanchorController(
+internal class ResponsesReanchorController(
     private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
     private val maxContinuations: Int = DEFAULT_MAX_CONTINUATIONS,
     private val prosePhase: AssistantPhase? = null,

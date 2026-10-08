@@ -13,9 +13,9 @@ import splice.dialect.responses.reasoning.ReasoningLookup
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.upstream.ToolSearchPolicy
 
-public data class BuiltRequest(val req: JsonObject, val meta: TurnMeta, val toolSearch: ToolSearchPolicy? = null)
+internal data class BuiltRequest(val req: JsonObject, val meta: TurnMeta, val toolSearch: ToolSearchPolicy? = null)
 
-public data class BuildOptions(
+internal data class BuildOptions(
     public val compact: Boolean,
     public val originalModel: String,
     public val upstreamModel: String,

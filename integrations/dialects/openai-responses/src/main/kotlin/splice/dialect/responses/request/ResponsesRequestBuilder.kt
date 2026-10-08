@@ -51,7 +51,7 @@ import splice.dialect.responses.stream.ResponsesLooseFields
 import splice.dialect.responses.tools.ResponsesToolPlan
 import splice.upstream.ToolNameShortener
 
-public class ResponsesRequestBuilder(
+internal class ResponsesRequestBuilder(
     private val quirks: ResponsesQuirks,
     private val toolNames: ToolNameShortener = ToolNameShortener(),
 ) {

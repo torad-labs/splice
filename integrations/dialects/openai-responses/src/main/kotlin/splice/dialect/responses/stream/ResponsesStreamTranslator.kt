@@ -54,7 +54,7 @@ import java.util.concurrent.CancellationException
 // NF-06 runaway-upstream guard message; the cap lives in spi.BufferCapacity (one source, three dialects).
 private const val RUNAWAY_GUARD_MESSAGE = "upstream: response exceeded max buffered size; aborting"
 
-public class ResponsesStreamTranslator(
+internal class ResponsesStreamTranslator(
     private val ctx: StreamTurnContext,
     private val names: ToolNameShortener = ToolNameShortener(),
     /** daemon.log, tagged with the provider, for the one line a round that ends failed or incomplete gets. The

@@ -24,7 +24,7 @@ import kotlinx.serialization.json.JsonObject
  * genuine `redacted_thinking` block from a different provider entirely. Every caller treats null as
  * "inject nothing", which is exactly the pre-reasoning-replay behaviour.
  */
-public fun interface ReasoningEnvelopeDecoder {
+internal fun interface ReasoningEnvelopeDecoder {
     public operator fun invoke(envelope: String): JsonObject?
 }
 
@@ -35,7 +35,7 @@ public fun interface ReasoningEnvelopeDecoder {
  * different seams, by different components, and only the stream translator is entitled to mint an
  * envelope. Null means this item produced no envelope and no `redacted_thinking` block is emitted.
  */
-public fun interface ReasoningEnvelopeEncoder {
+internal fun interface ReasoningEnvelopeEncoder {
     public operator fun invoke(item: JsonObject): String?
 }
 
@@ -47,7 +47,7 @@ public fun interface ReasoningEnvelopeEncoder {
  * unwired build is byte-identical. The list is ORDERED because position is the point — the point of
  * the cache is to reinject the model's plan in-position for the next tool-result request.
  */
-public fun interface ReasoningLookup {
+internal fun interface ReasoningLookup {
     public operator fun invoke(toolUseId: String): List<String>?
 }
 
@@ -64,7 +64,7 @@ public fun interface ReasoningLookup {
  * codex-rs drops its reasoning items at the same point). Not on a failed compaction: that conversation
  * carries on as it was. No-op by default, like the capture.
  */
-public fun interface TurnReasoningSink {
+internal fun interface TurnReasoningSink {
     public operator fun invoke(toolIds: List<String>, envelopes: List<String>)
 
     public fun compacted(): Unit = Unit

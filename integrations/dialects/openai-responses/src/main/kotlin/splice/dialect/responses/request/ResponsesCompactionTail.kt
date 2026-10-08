@@ -11,7 +11,7 @@ import kotlinx.serialization.json.put
 /** Appends one user input item after the client-built compaction input. Replacing only the input
  *  array's closing edge leaves every existing item byte-identical, including lite's leading
  *  developer item and the client's summarizer prompt. */
-public class ResponsesCompactionTail {
+internal class ResponsesCompactionTail {
     public fun append(request: JsonObject, text: String): JsonObject {
         if (text.isEmpty()) return request
         val input = request["input"] as? JsonArray ?: return request

@@ -19,7 +19,7 @@ import splice.core.util.JsonScalars
  *  text, or (STRIP, V4-170) deletes paragraphs from it where it sits. In append only the input
  *  array's closing edge moves, so every existing item — including lite's leading developer
  *  base-instructions item — stays byte-identical. */
-public class ResponsesSystemPrompt {
+internal class ResponsesSystemPrompt {
     public fun apply(request: JsonObject, text: String, mode: SystemPromptMode): JsonObject {
         if (text.isEmpty()) return request
         val input = request[INPUT] as? JsonArray ?: return request

@@ -13,18 +13,18 @@ import splice.upstream.ClientGone
 import splice.upstream.WatchdogProbe
 
 /** Work executed under one summary round's lease and coroutine mutex. */
-public fun interface SummaryRoundTask<T> {
+internal fun interface SummaryRoundTask<T> {
     public suspend operator fun invoke(parts: SharedSummaryParts): T
 }
 
 /** Supplies one shared summary state while owning a complete translator round. */
-public interface SummaryRoundOwner {
+internal interface SummaryRoundOwner {
     public suspend fun <T> withRound(task: SummaryRoundTask<T>): T
 }
 
 /** Turn-private whole-round ownership. Conversation entries implement the same contract through
  *  their registry so an entry cannot expire while a round is waiting or running. */
-public class SummaryRoundScope(public val parts: SharedSummaryParts) : SummaryRoundOwner {
+internal class SummaryRoundScope(public val parts: SharedSummaryParts) : SummaryRoundOwner {
     private val mutex = Mutex()
 
     override suspend fun <T> withRound(task: SummaryRoundTask<T>): T = mutex.withLock {
@@ -38,7 +38,7 @@ public class SummaryRoundScope(public val parts: SharedSummaryParts) : SummaryRo
 }
 
 /** Per-turn inputs the machine needs beyond the event flow. */
-public data class StreamTurnContext(
+internal data class StreamTurnContext(
     val compact: Boolean,
     /** EMIT redacted_thinking wire blocks when encrypted_content arrives (so Claude Code can
      *  store the opaque handle). NB: this is the STREAM-side emission flag — distinct from and

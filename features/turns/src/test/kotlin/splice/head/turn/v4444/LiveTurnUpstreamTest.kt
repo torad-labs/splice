@@ -32,6 +32,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.TestResponsesProvider
 import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
@@ -85,10 +86,7 @@ class LiveTurnUpstreamTest {
                 baseUrl = "http://127.0.0.1:9",
                 watchdog = WatchdogBudget(30.seconds, 30.seconds, 60.seconds),
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         )
         private val pipeline = TurnPipeline(
             CompactStats(tmp.resolve("compact.jsonl")),

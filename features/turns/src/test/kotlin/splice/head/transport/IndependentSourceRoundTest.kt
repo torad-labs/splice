@@ -43,6 +43,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadServer
 import splice.head.RecordingSink2
 import splice.head.TestResponsesProvider
@@ -392,10 +393,7 @@ class IndependentSourceRoundTest {
             baseUrl = url,
             watchdog = watchdog,
         ),
-        ReasoningDisplay.TEXT,
-        false,
-        null,
-        null,
+        ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
     )
 
     private class SourceAuth : RefreshableAuthProvider {

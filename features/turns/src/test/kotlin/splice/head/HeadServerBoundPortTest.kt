@@ -26,6 +26,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.head.admission.RequestMaterializationGate
 import splice.upstream.ProviderTuning
 import java.net.Socket
@@ -59,10 +60,7 @@ class HeadServerBoundPortTest {
                 baseUrl = UNUSED_UPSTREAM,
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         ),
         listenPort = 0,
         deps = headDeps(tmp = tmp, seams = HeadDeps.HeadSeams(requestMaterializationGate = materialization)),

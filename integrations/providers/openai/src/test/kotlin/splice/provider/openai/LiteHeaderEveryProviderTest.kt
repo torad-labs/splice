@@ -13,6 +13,7 @@ import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesQuirks
 import splice.upstream.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
@@ -91,10 +92,7 @@ class LiteHeaderEveryProviderTest {
             baseUrl = "https://example.invalid/v1",
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = null,
-        configSummary = null,
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
         quirks = quirks,
     )
 

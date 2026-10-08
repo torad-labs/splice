@@ -34,6 +34,7 @@ import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
@@ -79,9 +80,7 @@ class GrokProviderTest {
             baseUrl = mock.baseUrl,
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", null),
     )
 
     /** ~/.grok/auth.json with an OAuth access token. */

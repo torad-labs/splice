@@ -35,6 +35,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.head.compaction.CompactionReplay
 import splice.head.turn.TurnDriveFactory
 import splice.head.turn.TurnDriver
@@ -96,10 +97,7 @@ class HeadServerDetachedStopOrderTest {
                 watchdog = WatchdogBudget(600.seconds, 600.seconds, 900.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         )
 
     private fun deps(

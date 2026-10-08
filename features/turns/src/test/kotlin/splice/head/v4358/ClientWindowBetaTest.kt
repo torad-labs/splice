@@ -30,6 +30,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
 import splice.head.TestResponsesProvider
@@ -81,10 +82,7 @@ class ClientWindowBetaTest {
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         )
         val deps = headDeps(tmp = tmp).let { it.copy(stores = it.stores.copy(clientWindows = windows)) }
         head = HeadServer(provider = provider, listenPort = 0, deps = deps)

@@ -28,6 +28,7 @@ import splice.core.perf.WsAttemptTiming
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.TestResponsesProvider
@@ -158,10 +159,7 @@ class WsSizeRefusalHeadTest(@param:TempDir private val tmp: Path) {
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
-        configSummary = "detailed",
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
     )
 
     @Test

@@ -51,6 +51,7 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadHealthCounters
 import splice.head.TestResponsesProvider
 import splice.head.admission.admittedSlot
@@ -138,10 +139,7 @@ class TurnConnEndTest {
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
-        configSummary = "detailed",
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
     )
 
     /** One TurnConnEnd plus the drive it is handed; [tag] isolates each case's perf file. */

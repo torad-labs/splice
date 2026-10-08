@@ -16,6 +16,7 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.upstream.ProviderTuning
@@ -35,10 +36,7 @@ private class CompactProbeProvider : ResponsesProvider(
         baseUrl = "https://chatgpt.com/backend-api/codex",
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
-    showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = false,
-    configEffort = null,
-    configSummary = null,
+    reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
     quirks = ResponsesQuirks(providerTag = "claudex"),
 ) {
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()

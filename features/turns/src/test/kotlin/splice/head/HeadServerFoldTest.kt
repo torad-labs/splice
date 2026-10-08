@@ -35,6 +35,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.stream.FoldConfig
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
@@ -91,10 +92,7 @@ class HeadServerFoldTest {
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
             // luna folds; sol is deliberately NOT in the set (passthrough parity).
             foldConfig = FoldConfig(models = setOf("gpt-5.6-luna")),
         )
@@ -223,10 +221,7 @@ class HeadServerFoldTest {
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 1.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         ),
         listenPort = 0,
         deps = headDeps(
@@ -252,10 +247,7 @@ class HeadServerFoldTest {
                 watchdog = WatchdogBudget(20.seconds, 1.seconds, 60.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
             foldConfig = FoldConfig(models = setOf("gpt-5.6-luna")),
         ),
         listenPort = 0,

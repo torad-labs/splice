@@ -48,6 +48,7 @@ import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadHealthCounters
 import splice.head.TestResponsesProvider
 import splice.head.admission.LocalRefusal
@@ -399,10 +400,7 @@ class OutcomeSentenceTest {
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
-        configSummary = "detailed",
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
     )
 
     private fun sentenceOf(record: kotlinx.serialization.json.JsonObject): String? =

@@ -19,6 +19,7 @@ import splice.core.util.Cancellables
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
+import splice.dialect.responses.ReasoningSettings
 import splice.oauth.OAuthAccountFiles
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeOnlyModels
@@ -26,6 +27,7 @@ import splice.provider.codex.CodeModeSessionAlive
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexCodeModeBridge
+import splice.provider.codex.CodexCodeModeWiring
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
@@ -69,18 +71,17 @@ internal class CodexResponsesArm(
                     loginCommand = ctx.loginCommand,
                     stateDir = statePaths.headsDir.resolve(key),
                 ),
-                showReasoning = cfg.showReasoning,
-                replayReasoning = cfg.replayReasoning,
-                configEffort = cfg.effort,
-                configSummary = cfg.summary,
+                reasoning = ReasoningSettings(cfg.showReasoning, cfg.replayReasoning, cfg.effort, cfg.summary),
                 quirks = quirksOverlay.responsesQuirks(providerCfg, CodexQuirks().defaultQuirks(), cfg),
                 // Reasoning-continuation folding (codex 518n-2) — codex head ONLY; grok/openai
                 // never receive a fold config, so they stay pure passthrough.
                 foldConfig = quirksOverlay.foldConfigFrom(cfg),
                 accountIdHeader = providerCfg.quirks.accountIdHeader,
-                codeModeBridge = codeModeBridge(ctx),
-                codeModeModels = ctx.providerCfg.quirks.codeModeModels,
-                codeModeOnly = backendCodeModeOnly(ctx),
+                codeMode = CodexCodeModeWiring(
+                    bridge = codeModeBridge(ctx),
+                    models = ctx.providerCfg.quirks.codeModeModels,
+                    onlyModels = backendCodeModeOnly(ctx),
+                ),
             ),
             auth,
             accounts,

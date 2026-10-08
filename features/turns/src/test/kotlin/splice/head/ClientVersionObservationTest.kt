@@ -22,6 +22,7 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.version.ClientVersionTracker
+import splice.dialect.responses.ReasoningSettings
 import splice.head.admission.AdmissionResponses
 import splice.head.turn.TurnPreparation
 import splice.upstream.ProviderTuning
@@ -87,10 +88,7 @@ class ClientVersionObservationTest {
             baseUrl = "http://127.0.0.1",
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
-        configSummary = "detailed",
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
     )
 
     private fun dependencies(tmp: Path, versions: ClientVersionTracker) = headDeps(

@@ -21,6 +21,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
 import splice.head.admission.AdmissionWindow
@@ -102,10 +103,7 @@ class CountTokensLeaseTest {
                 baseUrl = "http://127.0.0.1:9",
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 20.seconds),
             ),
-            showReasoning = ReasoningDisplay.OFF,
-            replayReasoning = false,
-            configEffort = null,
-            configSummary = null,
+            reasoning = ReasoningSettings(ReasoningDisplay.OFF, false, null, null),
         )
         val responses = AdmissionResponses()
         val auth = ClientAuth(deps, responses, ForeignHostLog("synthetic", deps.log))

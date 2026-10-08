@@ -39,6 +39,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
+import splice.dialect.responses.ReasoningSettings
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -234,10 +235,7 @@ class HeadServerLoadTest {
                     baseUrl = mock.baseUrl,
                     watchdog = WatchdogBudget(120.seconds, 120.seconds, 200.seconds),
                 ),
-                showReasoning = ReasoningDisplay.TEXT,
-                replayReasoning = false,
-                configEffort = "high",
-                configSummary = "detailed",
+                reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
             ),
             listenPort = 0,
             deps = headDeps(

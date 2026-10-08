@@ -31,6 +31,7 @@ import splice.core.perf.PerfKeys
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
+import splice.dialect.responses.ReasoningSettings
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -74,10 +75,7 @@ class HeadServerCollectDisconnectTest {
                     // slot inside this test's window, or the experiment answers nothing.
                     watchdog = WatchdogBudget(600.seconds, 600.seconds, 900.seconds),
                 ),
-                showReasoning = ReasoningDisplay.TEXT,
-                replayReasoning = false,
-                configEffort = "high",
-                configSummary = "detailed",
+                reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
             ),
             listenPort = 0,
             deps = headDeps(

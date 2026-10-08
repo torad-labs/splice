@@ -33,6 +33,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.JsonWire
+import splice.dialect.responses.ReasoningSettings
 import splice.upstream.BuiltTurn
 import splice.upstream.FoldPolicy
 import splice.upstream.Provider
@@ -217,10 +218,7 @@ private fun serializationProvider(baseUrl: String): Provider = TestResponsesProv
         baseUrl = baseUrl,
         watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
     ),
-    showReasoning = ReasoningDisplay.OFF,
-    replayReasoning = false,
-    configEffort = null,
-    configSummary = null,
+    reasoning = ReasoningSettings(ReasoningDisplay.OFF, false, null, null),
 )
 
 private class SubstitutingSerializationProvider(

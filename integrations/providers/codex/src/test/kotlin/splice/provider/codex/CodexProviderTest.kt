@@ -25,6 +25,7 @@ import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.upstream.ProviderTuning
 import splice.upstream.TurnSignals
@@ -77,10 +78,7 @@ class CodexProviderTest {
             baseUrl = "https://x",
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
-        configSummary = "detailed",
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         quirks = CodexQuirks().defaultQuirks().copy(toolSurface = toolSurface),
         accountIdHeader = accountIdHeader,
         log = log,

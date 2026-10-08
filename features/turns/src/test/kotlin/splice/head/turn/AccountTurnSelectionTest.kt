@@ -34,6 +34,7 @@ import splice.core.usage.QuotaWindow
 import splice.core.util.AsyncFileIo
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
@@ -544,10 +545,7 @@ private class AccountTurnRig(root: Path, private val credentialPresent: Boolean 
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         )
     }
 }

@@ -7,9 +7,9 @@
 // fields :daemon-head:test load-bears on. It does not stand in for Codex's live profile.
 package splice.head
 
-import splice.core.turn.ReasoningDisplay
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.stream.FoldConfig
@@ -29,19 +29,13 @@ internal class TestResponsesQuirks {
 
 internal class TestResponsesProvider(
     tuning: ProviderTuning,
-    showReasoning: ReasoningDisplay,
-    replayReasoning: Boolean,
-    configEffort: String?,
-    configSummary: String?,
+    reasoning: ReasoningSettings,
     quirks: ResponsesQuirks = TestResponsesQuirks().profile(),
     foldConfig: FoldConfig? = null,
     log: LogSink = LogSink(DaemonLog::write),
 ) : ResponsesProvider(
     tuning,
-    showReasoning,
-    replayReasoning,
-    configEffort,
-    configSummary,
+    reasoning,
     quirks,
     foldConfig,
     log,

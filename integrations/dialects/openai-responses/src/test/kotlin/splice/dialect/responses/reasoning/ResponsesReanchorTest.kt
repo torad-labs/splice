@@ -32,6 +32,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.StreamTurnContext
@@ -82,10 +83,7 @@ private class ReanchorProbe(lite: Boolean) : ResponsesProvider(
         baseUrl = "https://chatgpt.com/backend-api/codex",
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
-    showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = false,
-    configEffort = null,
-    configSummary = null,
+    reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
     quirks = ResponsesQuirks(providerTag = "claudex", responsesLiteModelRegex = Regex("gpt-5\\.6").takeIf { lite }),
 ) {
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()

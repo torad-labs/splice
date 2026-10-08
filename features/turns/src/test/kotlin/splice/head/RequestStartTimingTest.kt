@@ -31,6 +31,7 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.admission.RequestMaterializationGate
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
@@ -276,10 +277,7 @@ private fun timingProvider(url: String): Provider = TestResponsesProvider(
         baseUrl = url,
         watchdog = WatchdogBudget(5.seconds, 5.seconds, 10.seconds),
     ),
-    showReasoning = ReasoningDisplay.OFF,
-    replayReasoning = false,
-    configEffort = "high",
-    configSummary = null,
+    reasoning = ReasoningSettings(ReasoningDisplay.OFF, false, "high", null),
 )
 
 private suspend fun awaitTiming(condition: () -> Boolean) = withTimeout(TIMING_TIMEOUT_MS) {

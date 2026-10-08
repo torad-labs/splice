@@ -39,6 +39,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
+import splice.dialect.responses.ReasoningSettings
 import splice.head.perf.PerfRowMeta
 import splice.head.perf.PerfStats
 import splice.upstream.ProviderTuning
@@ -123,10 +124,7 @@ class HeadServerPreflightTest {
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         )
         val trace = splice.head.syntheticTraceStore(
             ActivityDays(root.resolve("trace"), "codex", 7, ownerOnly = true),

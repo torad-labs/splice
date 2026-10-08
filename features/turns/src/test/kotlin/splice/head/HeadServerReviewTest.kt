@@ -44,6 +44,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.admission.RequestMaterializationGate
 import splice.head.usage.UsageStore
 import splice.upstream.ProviderTuning
@@ -109,10 +110,7 @@ class HeadServerReviewTest {
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         )
         val id = ++built
         return HeadServer(

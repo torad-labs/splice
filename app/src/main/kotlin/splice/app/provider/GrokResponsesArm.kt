@@ -6,6 +6,7 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import splice.core.config.StatePaths
 import splice.core.util.LogSink
+import splice.dialect.responses.ReasoningSettings
 import splice.oauth.grok.GrokRefresh
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokQuirks
@@ -50,10 +51,7 @@ internal class GrokResponsesArm(
                     loginCommand = ctx.loginCommand,
                     stateDir = statePaths.headsDir.resolve(key),
                 ),
-                showReasoning = cfg.showReasoning,
-                replayReasoning = cfg.replayReasoning,
-                configEffort = cfg.effort,
-                configSummary = cfg.summary,
+                reasoning = ReasoningSettings(cfg.showReasoning, cfg.replayReasoning, cfg.effort, cfg.summary),
                 quirks = quirksOverlay.responsesQuirks(providerCfg, GrokQuirks().defaultQuirks(), cfg),
             ),
             auth,

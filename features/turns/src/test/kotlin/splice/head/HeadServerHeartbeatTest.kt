@@ -23,6 +23,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.upstream.ProviderTuning
 import splice.upstream.Ticker
 import splice.upstream.retry.InflightGate
@@ -71,10 +72,7 @@ class HeadServerHeartbeatTest {
                     baseUrl = mock.baseUrl,
                     watchdog = WatchdogBudget(600.seconds, 600.seconds, 900.seconds),
                 ),
-                showReasoning = ReasoningDisplay.TEXT,
-                replayReasoning = false,
-                configEffort = "high",
-                configSummary = "detailed",
+                reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
             ),
             listenPort = 0,
             deps = headDeps(

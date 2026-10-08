@@ -27,6 +27,7 @@ import splice.core.model.ModelEntry
 import splice.core.model.WindowRule
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
 import splice.head.TestResponsesProvider
@@ -83,10 +84,7 @@ class DefaultRequestCapTest {
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         )
         // No policy argument: the default IS the subject.
         head = HeadServer(provider = provider, listenPort = 0, deps = headDeps(tmp = tmp))

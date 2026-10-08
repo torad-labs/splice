@@ -52,6 +52,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.MockChatGptUpstream
 import splice.head.RecordingSink2
 import splice.head.TestResponsesProvider
@@ -138,10 +139,7 @@ class SseRoundConsumeTest {
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
-        configSummary = "detailed",
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
     )
 
     private suspend fun drive(

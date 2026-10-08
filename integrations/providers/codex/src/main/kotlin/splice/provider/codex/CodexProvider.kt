@@ -7,10 +7,10 @@ package splice.provider.codex
 
 import splice.core.auth.Credentials
 import splice.core.parse.AnthropicTurnBody
-import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.request.ResponsesToolResultMedia
@@ -22,10 +22,7 @@ import splice.upstream.transport.UpstreamResponse
 
 public class CodexProvider(
     tuning: ProviderTuning,
-    showReasoning: ReasoningDisplay,
-    replayReasoning: Boolean,
-    configEffort: String?,
-    configSummary: String?,
+    reasoning: ReasoningSettings,
     quirks: ResponsesQuirks = CodexQuirks().defaultQuirks(),
     // Reasoning-continuation folding (codex 518n-2). null = off; the daemon wires it from config.
     foldConfig: FoldConfig? = null,
@@ -33,20 +30,10 @@ public class CodexProvider(
     /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
     log: LogSink = LogSink(DaemonLog::write),
-    codeModeBridge: CodexCodeModeBridge? = null,
-    /** Upstream model ids the operator adds to those the backend marks code-mode-only; null adds none. */
-    codeModeModels: Collection<String>? = null,
-    /** The models the backend marks `code_mode_only`, asked each turn (V4-441). */
-    codeModeOnly: CodeModeOnlyModels = NoCodeModeOnlyModels,
-) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, foldConfig, log) {
+    private val codeMode: CodexCodeModeWiring = CodexCodeModeWiring(),
+) : ResponsesProvider(tuning, reasoning, quirks, foldConfig, log) {
 
-    private val codeModeTurns = CodexCodeModeTurnBuilder(
-        codeModeBridge,
-        ResponsesToolResultMedia(quirks),
-        codeModeModels,
-        codeModeOnly,
-    )
-    private val codeMode = codeModeBridge
+    private val codeModeTurns = codeMode.turnBuilder(ResponsesToolResultMedia(quirks))
 
     /** Proven against the live ChatGPT backend by the WS-0 spike
      *  (.dev/research/spikes/responses-websocket.md): handshake, event vocabulary and
@@ -62,7 +49,7 @@ public class CodexProvider(
         codeModeTurns.prepare(body, compact, sessionId, super.buildTurn(body, compact, sessionId))
 
     override fun onHeadStop() {
-        codeMode?.onHeadStop()
+        codeMode.onHeadStop()
     }
 
     /** codex-rs 14a477ea8 codex-api/src/sse/responses.rs:65-71 captures the first HTTP token. */
@@ -91,4 +78,22 @@ public fun interface CodeModeOnlyModels {
 /** No backend list known: only the operator's `code_mode_models` runs code mode. */
 internal object NoCodeModeOnlyModels : CodeModeOnlyModels {
     override fun ids(): Collection<String> = emptyList()
+}
+
+/**
+ * The code-mode pieces a Codex head is wired with. [bridge] is the cell runtime (null = code mode off),
+ * [models] the upstream model ids the operator adds to those the backend marks code-mode-only (null adds
+ * none), and [onlyModels] the models the backend marks `code_mode_only`, asked each turn (V4-441).
+ */
+public class CodexCodeModeWiring(
+    private val bridge: CodexCodeModeBridge? = null,
+    private val models: Collection<String>? = null,
+    private val onlyModels: CodeModeOnlyModels = NoCodeModeOnlyModels,
+) {
+    internal fun turnBuilder(media: ResponsesToolResultMedia): CodexCodeModeTurnBuilder =
+        CodexCodeModeTurnBuilder(bridge, media, models, onlyModels)
+
+    internal fun onHeadStop() {
+        bridge?.onHeadStop()
+    }
 }

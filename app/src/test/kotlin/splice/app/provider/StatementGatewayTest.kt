@@ -47,6 +47,7 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.SpliceNotice
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.admission.RequestMaterializationGate
@@ -54,6 +55,7 @@ import splice.head.headDeps
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
+import splice.provider.codex.CodexCodeModeWiring
 import splice.provider.codex.CodexProvider
 import splice.upstream.ProviderTuning
 import splice.upstream.Ticker
@@ -532,12 +534,8 @@ class StatementGatewayTest {
             baseUrl = url,
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 20.seconds),
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = null,
-        configSummary = null,
-        codeModeBridge = bridge,
-        codeModeModels = listOf("gpt-5.6-sol"),
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
+        codeMode = CodexCodeModeWiring(bridge = bridge, models = listOf("gpt-5.6-sol")),
         log = {},
     )
 }

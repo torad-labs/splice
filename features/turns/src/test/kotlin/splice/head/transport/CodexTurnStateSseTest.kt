@@ -27,6 +27,7 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.stream.FoldConfig
 import splice.head.HeadServer
 import splice.head.headDeps
@@ -215,10 +216,7 @@ class CodexTurnStateSseTest {
                 baseUrl = "http://127.0.0.1:${server.address.port}",
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
             quirks = CodexQuirks().defaultQuirks().withSummaryDelivery(null),
             foldConfig = FoldConfig(models = setOf("gpt-5.6-luna")),
         )

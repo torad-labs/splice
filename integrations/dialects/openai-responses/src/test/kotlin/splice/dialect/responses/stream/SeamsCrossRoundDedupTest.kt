@@ -18,6 +18,7 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.LogSink
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesTurnOptions
 import splice.dialect.responses.ResponsesTurnSeams
@@ -87,10 +88,7 @@ private fun codexSeams(log: LogSink = LogSink {}): ResponsesTurnSeams {
             summaryParts = ConversationSummaryParts(),
             turnOptions = ResponsesTurnOptions(
                 TurnOptionsDeps(
-                    showReasoning = ReasoningDisplay.TEXT,
-                    replayReasoning = false,
-                    configEffort = "high",
-                    configSummary = "detailed",
+                    reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
                     quirks = quirks,
                     cachePolicy = cachePolicy,
                     ids = ids,

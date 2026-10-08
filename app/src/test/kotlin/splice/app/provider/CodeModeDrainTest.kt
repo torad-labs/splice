@@ -38,6 +38,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
 import splice.head.compact.CompactStats
@@ -178,7 +179,7 @@ internal class CodeModeDrainTest {
             watchdog,
         )
         return DrainProvider(
-            CodexProvider(tuning, ReasoningDisplay.OFF, false, "high", "detailed"),
+            CodexProvider(tuning, ReasoningSettings(ReasoningDisplay.OFF, false, "high", "detailed")),
             bridge,
         )
     }

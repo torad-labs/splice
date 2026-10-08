@@ -47,6 +47,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
 import splice.head.TestResponsesProvider
@@ -102,10 +103,7 @@ class UpstreamKeepaliveTest {
                 watchdog = watchdog,
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         ),
         listenPort = 0,
         // Generous upstream timeouts: this arm is about the WATCHDOG tier, and a socket timeout

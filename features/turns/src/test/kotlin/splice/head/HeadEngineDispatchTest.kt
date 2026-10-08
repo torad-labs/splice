@@ -26,6 +26,7 @@ import splice.core.perf.PerfKeys
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
+import splice.dialect.responses.ReasoningSettings
 import splice.head.admission.AdmissionErrorBody
 import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
@@ -310,10 +311,7 @@ private fun dispatchProvider(baseUrl: String): Provider = TestResponsesProvider(
         baseUrl = baseUrl,
         watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
     ),
-    showReasoning = ReasoningDisplay.OFF,
-    replayReasoning = false,
-    configEffort = "high",
-    configSummary = null,
+    reasoning = ReasoningSettings(ReasoningDisplay.OFF, false, "high", null),
 )
 
 // The real composition, with only the engine exposed so the call group has deterministic affinity.

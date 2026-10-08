@@ -25,6 +25,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
@@ -65,10 +66,7 @@ class HeadServerLocalAnswerTest {
                     baseUrl = mock.baseUrl,
                     watchdog = WatchdogBudget(20.seconds, 20.seconds, 30.seconds),
                 ),
-                showReasoning = ReasoningDisplay.TEXT,
-                replayReasoning = false,
-                configEffort = "high",
-                configSummary = "detailed",
+                reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
             ),
             listenPort = 0,
             deps = headDeps(

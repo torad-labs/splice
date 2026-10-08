@@ -2,9 +2,9 @@
 package splice.app.provider
 
 import splice.core.auth.Credentials
-import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.dialect.responses.CacheKeyStrategy
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.upstream.ProviderTuning
@@ -23,10 +23,7 @@ private const val UUID_VERSION_FOUR = 0x4000L
 private const val UUID_VARIANT_MASK = 0x3FFF_FFFF_FFFF_FFFFL
 
 internal data class MuseResponsesOptions(
-    val showReasoning: ReasoningDisplay,
-    val replayReasoning: Boolean,
-    val configEffort: String?,
-    val configSummary: String?,
+    val reasoning: ReasoningSettings,
     val quirks: ResponsesQuirks,
     val headers: Map<String, String>,
     val toolNames: ToolNameShortener,
@@ -37,10 +34,7 @@ internal class MuseResponsesProvider(
     private val options: MuseResponsesOptions,
 ) : ResponsesProvider(
     tuning,
-    options.showReasoning,
-    options.replayReasoning,
-    options.configEffort,
-    options.configSummary,
+    options.reasoning,
     options.quirks,
     toolNames = options.toolNames,
 ) {

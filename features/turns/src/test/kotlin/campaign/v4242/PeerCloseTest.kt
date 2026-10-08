@@ -35,6 +35,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.websocket.RoundFrame
 import splice.dialect.responses.websocket.TerminalEvent
 import splice.dialect.responses.websocket.WsConnector
@@ -199,10 +200,7 @@ class PeerCloseTest(@param:TempDir private val tmp: Path) {
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
-        configSummary = "detailed",
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
     )
 
     @Test

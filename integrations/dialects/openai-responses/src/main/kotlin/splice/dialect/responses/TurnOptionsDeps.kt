@@ -4,7 +4,6 @@
 package splice.dialect.responses
 
 import splice.core.model.ModelCatalog
-import splice.core.turn.ReasoningDisplay
 import splice.core.util.LogSink
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
@@ -14,10 +13,7 @@ import splice.dialect.responses.tools.ToolSurfaceLatch
 /** Everything turn-option construction reads from the provider. A data-class
  *  holder so the collaborator stays under the constructor-arity wall. */
 internal data class TurnOptionsDeps(
-    val showReasoning: ReasoningDisplay,
-    val replayReasoning: Boolean,
-    val configEffort: String?,
-    val configSummary: String?,
+    val reasoning: ReasoningSettings,
     val quirks: ResponsesQuirks,
     val cachePolicy: ReasoningCachePolicy,
     val ids: ResponsesStableIds,

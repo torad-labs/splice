@@ -10,6 +10,7 @@ import splice.core.model.ModelEntry
 import splice.core.model.WindowRule
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.TestResponsesProvider
@@ -168,10 +169,7 @@ object HeadHeapProbe {
                 watchdog = WatchdogBudget(30.seconds, 30.seconds, 60.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         )
         return HeadServer(
             provider = provider,

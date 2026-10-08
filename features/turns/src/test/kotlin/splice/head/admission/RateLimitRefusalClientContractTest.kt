@@ -34,6 +34,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadServer
 import splice.head.MockChatGptUpstream
 import splice.head.RATE_LIMITED_STATUS
@@ -78,10 +79,7 @@ private class RefusalRig(tmp: Path) {
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         ),
         listenPort = 0,
         deps = headDeps(

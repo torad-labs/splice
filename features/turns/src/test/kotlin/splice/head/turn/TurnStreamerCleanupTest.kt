@@ -38,6 +38,7 @@ import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadHealthCounters
 import splice.head.TestResponsesProvider
 import splice.head.compaction.CompactionRecordings
@@ -345,10 +346,7 @@ class TurnStreamerCleanupTest {
                 baseUrl = "http://127.0.0.1:9",
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 20.seconds),
             ),
-            showReasoning = ReasoningDisplay.OFF,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = null,
+            reasoning = ReasoningSettings(ReasoningDisplay.OFF, false, "high", null),
         )
         private val deps = headDeps(tmp = tmp, upstream = upstream, gate = gate, log = { logs.add(it) })
         private val factory = TurnDriveFactory(provider, deps, HeadHealthCounters())

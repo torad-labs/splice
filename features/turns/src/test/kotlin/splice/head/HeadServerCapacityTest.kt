@@ -35,6 +35,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
 import splice.core.util.WallClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.usage.QuotaTracker
 import splice.upstream.ProviderTuning
 import splice.upstream.codemode.ProcessElapsedNow
@@ -97,10 +98,7 @@ class HeadServerCapacityTest {
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
-        configSummary = "detailed",
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
     )
 
     @BeforeAll

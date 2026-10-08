@@ -29,6 +29,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.MockChatGptUpstream
 import splice.head.TestResponsesProvider
 import splice.head.admission.TurnQuota
@@ -226,10 +227,7 @@ class AccountTurnTimeoutTest {
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         )
         private val pipeline = TurnPipeline(
             CompactStats(tmp.resolve("compact.jsonl")),

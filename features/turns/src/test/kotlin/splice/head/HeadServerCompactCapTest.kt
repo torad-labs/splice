@@ -43,6 +43,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
@@ -97,10 +98,7 @@ class HeadServerCompactCapTest(@param:TempDir private val root: Path) {
                     watchdog = watchdog,
                     loginCommand = "claudex login",
                 ),
-                showReasoning = ReasoningDisplay.TEXT,
-                replayReasoning = false,
-                configEffort = "high",
-                configSummary = "detailed",
+                reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
             ),
             listenPort = 0,
             deps = headDeps(

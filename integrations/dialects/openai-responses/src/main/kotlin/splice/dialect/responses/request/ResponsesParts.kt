@@ -37,10 +37,7 @@ internal class ResponsesParts(input: ResponsesPartsInput) {
     private val toolSurfaceLatch = ToolSurfaceLatch()
     val turnOptions = ResponsesTurnOptions(
         TurnOptionsDeps(
-            showReasoning = input.showReasoning,
-            replayReasoning = input.replayReasoning,
-            configEffort = input.configEffort,
-            configSummary = input.configSummary,
+            reasoning = input.reasoning,
             quirks = input.quirks,
             cachePolicy = cachePolicy,
             ids = ids,
@@ -59,7 +56,7 @@ internal class ResponsesParts(input: ResponsesPartsInput) {
             summaryParts = summaryParts,
             turnOptions = turnOptions,
             foldConfig = input.foldConfig,
-            replayReasoning = input.replayReasoning,
+            replayReasoning = input.reasoning.replay,
             streamIdleMs = input.streamIdleMs,
             upstreamTimeoutMs = input.upstreamTimeoutMs,
             toolNames = input.toolNames,

@@ -64,6 +64,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.websocket.WsConnector
 import splice.dialect.responses.websocket.WsUpstream
 import splice.head.HeadDeps
@@ -75,6 +76,7 @@ import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeSessionAlive
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
+import splice.provider.codex.CodexCodeModeWiring
 import splice.provider.codex.CodexProvider
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
@@ -1734,12 +1736,8 @@ private fun provider(
         baseUrl = url,
         watchdog = WatchdogBudget(10.seconds, 10.seconds, 20.seconds),
     ),
-    showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = replayReasoning,
-    configEffort = null,
-    configSummary = null,
-    codeModeBridge = bridge,
-    codeModeModels = listOf("gpt-5.6-sol"),
+    reasoning = ReasoningSettings(ReasoningDisplay.TEXT, replayReasoning, null, null),
+    codeMode = CodexCodeModeWiring(bridge = bridge, models = listOf("gpt-5.6-sol")),
     log = {},
 )
 

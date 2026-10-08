@@ -33,10 +33,7 @@ import splice.upstream.WsRoundRunner
 
 public abstract class ResponsesProvider(
     tuning: ProviderTuning,
-    final override val showReasoning: ReasoningDisplay,
-    final override val replayReasoning: Boolean,
-    private val configEffort: String?,
-    private val configSummary: String?,
+    reasoning: ReasoningSettings,
     protected val quirks: ResponsesQuirks,
     // Reasoning-continuation folding (codex 518n-2). null = the feature is off for this provider —
     // grok/openai-platform pass nothing → pure passthrough. Only CodexProvider wires a real config.
@@ -51,6 +48,9 @@ public abstract class ResponsesProvider(
     private val toolNames: ToolNameShortener = ToolNameShortener(),
 ) : Provider, ProviderIdentity by tuning {
 
+    final override val showReasoning: ReasoningDisplay = reasoning.display
+    final override val replayReasoning: Boolean = reasoning.replay
+
     final override val upstreamUrl: String = "${tuning.baseUrl}/responses"
 
     // Collaborator wiring lives in ResponsesParts.kt (concentration, 2026-08-19).
@@ -59,10 +59,7 @@ public abstract class ResponsesProvider(
     private val parts = ResponsesParts(
         ResponsesPartsInput(
             tuning = tuning,
-            showReasoning = showReasoning,
-            replayReasoning = replayReasoning,
-            configEffort = configEffort,
-            configSummary = configSummary,
+            reasoning = reasoning,
             quirks = quirks,
             foldConfig = foldConfig,
             log = log,

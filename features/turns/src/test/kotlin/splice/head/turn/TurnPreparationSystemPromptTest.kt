@@ -42,6 +42,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.dialect.responses.ReasoningSettings
 import splice.head.AnthropicBodyParse
 import splice.head.ClientAuth
 import splice.head.HeadDeps
@@ -418,10 +419,7 @@ class TurnPreparationSystemPromptTest {
             baseUrl = "http://127.0.0.1",
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
-        configSummary = "detailed",
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
     )
 
     private fun passthroughProvider() = PassthroughProvider(

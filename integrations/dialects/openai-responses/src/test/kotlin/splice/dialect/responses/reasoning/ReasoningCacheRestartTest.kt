@@ -28,6 +28,7 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.upstream.ProviderTuning
@@ -68,10 +69,7 @@ private class RestartProbe(
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         stateDir = stateDir,
     ),
-    showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = false,
-    configEffort = null,
-    configSummary = null,
+    reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
     quirks = ResponsesQuirks(providerTag = "claudex", reasoningCache = cacheOn),
     log = { logs.add(it) },
 ) {

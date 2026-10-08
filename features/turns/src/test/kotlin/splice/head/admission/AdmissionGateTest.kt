@@ -49,6 +49,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
+import splice.dialect.responses.ReasoningSettings
 import splice.head.AnthropicBodyParse
 import splice.head.ClientAuth
 import splice.head.HeadDeps
@@ -680,10 +681,7 @@ private val testProvider: TestResponsesProvider = TestResponsesProvider(
         baseUrl = "http://127.0.0.1",
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
-    showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = false,
-    configEffort = "high",
-    configSummary = "detailed",
+    reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
 )
 
 class AdmissionTimingTest {

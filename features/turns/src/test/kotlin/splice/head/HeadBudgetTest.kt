@@ -40,6 +40,7 @@ import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningSettings
 import splice.provider.codex.CodexProvider
 import splice.upstream.ProviderTuning
 import java.nio.file.Files
@@ -183,10 +184,7 @@ private class BudgetRig(root: Path, val budget: RecordingBudget) {
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
-        configSummary = "detailed",
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
     )
 }
 

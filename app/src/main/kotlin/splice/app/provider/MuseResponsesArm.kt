@@ -7,6 +7,7 @@ import splice.core.config.StatePaths
 import splice.core.util.LogSink
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
+import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.dialect.responses.tools.ToolSearchMode
@@ -49,10 +50,12 @@ internal class MuseResponsesArm(
                 stateDir = statePaths.headsDir.resolve(ctx.key),
             ),
             options = MuseResponsesOptions(
-                showReasoning = ctx.cfg.showReasoning,
-                replayReasoning = ctx.cfg.replayReasoning,
-                configEffort = ctx.cfg.effort,
-                configSummary = ctx.cfg.summary,
+                reasoning = ReasoningSettings(
+                    ctx.cfg.showReasoning,
+                    ctx.cfg.replayReasoning,
+                    ctx.cfg.effort,
+                    ctx.cfg.summary,
+                ),
                 quirks = quirks,
                 headers = headers,
                 toolNames = toolNames,

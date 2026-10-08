@@ -39,6 +39,7 @@ import splice.core.usage.PlanLimit
 import splice.core.util.AsyncFileIo
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadServer
 import splice.head.TestResponsesProvider
 import splice.head.headDeps
@@ -115,10 +116,7 @@ private class LimitedHead(tmp: Path, upstreamBody: String) {
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         ),
         listenPort = 0,
         deps = headDeps(

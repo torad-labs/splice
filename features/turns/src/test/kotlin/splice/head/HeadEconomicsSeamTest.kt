@@ -38,6 +38,7 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
+import splice.dialect.responses.ReasoningSettings
 import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
 import splice.head.perf.PerfStats
@@ -97,10 +98,7 @@ private class EconomicsRig(tmp: Path) {
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         ),
         listenPort = 0,
         deps = headDeps(

@@ -41,6 +41,7 @@ import splice.core.storage.ActivityDays
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
+import splice.dialect.responses.ReasoningSettings
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.head.turn.LiveTurns
@@ -102,10 +103,7 @@ class HeadServerTurnStopTest {
                     watchdog = WatchdogBudget(30.seconds, 30.seconds, 60.seconds),
                     loginCommand = "claudex login",
                 ),
-                showReasoning = ReasoningDisplay.TEXT,
-                replayReasoning = false,
-                configEffort = "high",
-                configSummary = "detailed",
+                reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
             ),
             listenPort = 0,
             deps = headDeps(

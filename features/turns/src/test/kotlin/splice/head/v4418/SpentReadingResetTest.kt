@@ -22,6 +22,7 @@ import splice.core.usage.QuotaFullWindow
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.WallClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.TestResponsesProvider
@@ -91,10 +92,7 @@ class SpentReadingResetTest {
                 baseUrl = "http://127.0.0.1:1",
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         ),
         listenPort = 0,
         deps = headDeps(tmp = tmp, quota = quota),

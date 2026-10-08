@@ -36,6 +36,7 @@ import splice.core.model.WindowRule
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
+import splice.dialect.responses.ReasoningSettings
 import splice.head.compact.ShadowClassifier
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
@@ -93,10 +94,7 @@ class HeadServerIntegrationTest {
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = false,
-            configEffort = "high",
-            configSummary = "detailed",
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         )
         head = HeadServer(
             provider = provider,

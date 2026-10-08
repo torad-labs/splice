@@ -32,6 +32,7 @@ import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.WallClock
+import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadServer
 import splice.head.awaitListening
 import splice.head.headDeps
@@ -164,10 +165,7 @@ private class PoolRig(root: Path, val upstream: RejectingUpstream) {
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = false,
-        configEffort = "high",
-        configSummary = "detailed",
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
     )
 }
 

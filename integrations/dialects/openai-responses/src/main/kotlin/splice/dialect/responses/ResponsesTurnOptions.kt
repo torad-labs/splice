@@ -29,12 +29,12 @@ internal class ResponsesTurnOptions(
             originalModel = body.typed.model,
             upstreamModel = deps.catalog.stripSuffixes(body.typed.model),
             // Config-driven (TOML [daemon] / env / state); "none" suppresses when display is off.
-            configEffort = deps.configEffort,
-            configSummary = if (showOn) deps.configSummary else "none",
-            showReasoning = deps.showReasoning,
+            configEffort = deps.reasoning.effort,
+            configSummary = deps.reasoning.summaryForRequest(),
+            showReasoning = deps.reasoning.display,
             // LEGACY client-round-trip replay (redacted_thinking through Claude Code) —
             // operator opt-in only; superseded by the gateway-held reasoning cache below.
-            replayReasoning = InjectPriorReasoning(deps.replayReasoning),
+            replayReasoning = InjectPriorReasoning(deps.reasoning.replay),
             // Ask for the opaque encrypted handle whenever reasoning is visible OR the
             // reasoning cache needs it (RC-5: the cache can only hold what the server returns).
             // Not a function of `compact`: the request is built like a turn (the builder header).
@@ -74,5 +74,5 @@ internal class ResponsesTurnOptions(
         )
     }
 
-    fun showOn(): Boolean = !deps.showReasoning.isOff
+    fun showOn(): Boolean = deps.reasoning.visible()
 }

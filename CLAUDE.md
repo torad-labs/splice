@@ -77,10 +77,16 @@ Before any seat asks the operator to look at a UI (a page, the console, a comp),
 1. Opens every page it asks about, on the build he will see, in his setup (dark mode at his
    width) and at 1440 in both themes, and looks at every screenshot itself.
 2. Fixes what is broken before he sees it: text over text, clipped text, content past the edge,
-   crowding, and sentences where a label or a number would do. Nothing broken goes to him as a
-   list of known issues.
-3. Sends the screenshots it judged, with the sha, in the ask.
+   crowding, walls of text, and any control whose effect a first-time user could not say from the
+   screen. Nothing broken goes to him as a list of known issues.
+3. Judges use, not only defects: walks every control against the screen's element table (what it
+   shows, what a tap does, why it is there), checks that actions line up across cards and rows, and
+   compares the screen side by side with its reference screens. Clean but unclear, cramped or
+   templated fails.
+4. Sends the screenshots it judged, with the sha, in the ask.
 
 A passing test, an HTTP 200, a source review, a copy audit or another seat's older walk is not a
-look. A seat that has not done 1-3 does not ask. A finding that a number could mislead is fixed in
-the number or a label, never by adding a sentence to the page.
+look. A seat that has not done 1-4 does not ask. A number that could mislead is fixed in the number
+or its label first; a short line beside a control is allowed when its name alone would be cryptic.
+Scar, Oct 7, 7:17 PM CT: nine screens passed splice-lead and marlin on defects alone at 3394; he
+reviewed at 3828 and stopped at screen 2 ("What does note do?", cards that "all look like templates").

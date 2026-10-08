@@ -69,7 +69,6 @@ class DoctorFixRouteTest {
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = { logged += it },
         )
         runBlocking { control.start() }

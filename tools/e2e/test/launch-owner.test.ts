@@ -73,6 +73,9 @@ pinned_model = "fixture-model"
     const env = {
       PATH: process.env.PATH!, HOME: dir, SPLICE_HEAD: "fixture", SPLICE_JAR: jar,
       SPLICE_STATE_DIR: state, SPLICE_CONFIG: config, FIXTURE_KEY: "synthetic-key",
+      // A unit no machine has: on a box running splice.service the shim otherwise adopts that unit's
+      // HOME and, for the wrapped `claude`, execs the operator's real Claude Code (seen Oct 7, 2026).
+      SPLICE_SUPERVISOR_UNIT: "splice-launch-owner-test-absent.service",
     };
     const child = Bun.spawn(["node", shim], {env, stdout: "pipe", stderr: "pipe"});
     const [out, err, code] = await Promise.all([

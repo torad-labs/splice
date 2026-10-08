@@ -54,7 +54,6 @@ class ForegroundHookWiringTest {
             heads = mapOf("synthetic" to head()),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = {},
             sessions = registry,
         )

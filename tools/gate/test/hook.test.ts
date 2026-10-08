@@ -93,27 +93,6 @@ describe("gate rules --stdin: the write-time wall", () => {
     expect(runHook("pretooluse", writeEvent(L3_TARGET, suppressed)).decision).toBeNull();
   });
 
-  test("tsx and css rules route", () => {
-    const tsx = runHook("pretooluse", writeEvent("console-next/src/pages/usage/UsagePage.tsx", "export const L = () => <span>usage — live</span>;\n"));
-    expect(expectBlock(tsx)).toContain("webui-no-emdash-ui-text");
-    // Two CSS routes, each probed with a value only its own rule catches: a spacing length off the
-    // token scale, and a type size off the text scale (webui-css-font-size-scale took font-size out
-    // of tokens-only in the console redesign, so one probe can no longer stand for both).
-    const spacing = runHook("pretooluse", writeEvent("console-next/src/styles/base.css", ".myx-panel { padding: 13px; }\n"));
-    expect(expectBlock(spacing)).toContain("webui-css-tokens-only");
-    const type = runHook("pretooluse", writeEvent("console-next/src/styles/base.css", ".myx-panel { font-size: 13px; }\n"));
-    expect(expectBlock(type)).toContain("webui-css-font-size-scale");
-  });
-
-  test("successor HTTP and palette scopes keep their sole allowed files", () => {
-    const fetch = "export const probe = () => fetch('/api/status');\n";
-    expect(expectBlock(runHook("pretooluse", writeEvent("console-next/src/api/probe.ts", fetch)))).toContain("webui-fetch-only-in-api");
-    expect(runHook("pretooluse", writeEvent("console-next/src/api/client.ts", fetch)).decision).toBeNull();
-    const palette = ".probe { color: #123456; }\n";
-    expect(expectBlock(runHook("pretooluse", writeEvent("console-next/src/styles/base.css", palette)))).toContain("webui-css-no-color-literals");
-    expect(runHook("pretooluse", writeEvent("console-next/src/styles/tokens.css", palette)).decision).toBeNull();
-  });
-
   test("edit introducing a violation blocks", () => {
     const target = join(root, L3_TARGET);
     mkdirSync(dirname(target), { recursive: true });

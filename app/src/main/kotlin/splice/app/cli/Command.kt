@@ -14,7 +14,6 @@ import splice.app.TraceWiring
 import splice.app.cli.auth.KeyCommand
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.setup.SetupCommand
-import splice.app.cli.status.DashboardCommand
 import splice.app.cli.status.StatusCommand
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
@@ -99,9 +98,6 @@ public sealed class Command {
     /** `splice restart [--now]`: waits for compactions in flight unless [now] (V4-216). */
     public data class Restart(val now: Boolean = false) : Command() {
         override fun run(): Int = outcomeExitCode(LifecycleWiring.restart(waitForCompactions = !now))
-    }
-    public data object Dashboard : Command() {
-        override fun run(): Int = outcomeExitCode(DashboardCommand().dashboard())
     }
     public data class Key(val args: List<String>) : Command() {
         override fun run(): Int = outcomeExitCode(KeyCommand().key(args))

@@ -99,7 +99,6 @@ class KeysRouteTest {
             ),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = log,
         )
         control.ports.keys = store

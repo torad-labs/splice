@@ -35,14 +35,8 @@
 #   2026-09-17: `/health` — the unauthenticated liveness probe the launch shim polls to tell a
 #     running daemon from a cold start. It MUST NOT need the mgmt key (that is the whole point of the
 #     probe) and it returns no head or config detail: ControlServer.kt:126-127 states both halves.
-#   2026-09-18: `/` and `/dashboard` — the web console PAGE (orchestrator decision, V4-107 follow-up).
-#     Both serve dashboardHtml(): a static bundle (the jar's webui/index.html, or the absolute file
-#     SPLICE_CONSOLE_HTML names) with no
-#     head, config or key rendered into it. Every call the page makes goes to /api/* with the mgmt
-#     key the operator pastes once (console-next/src/api/client.ts:8-53, localStorage
-#     'myx-mgmt-key'), and those routes are guarded. A browser cannot send a bearer on the page
-#     load itself, which is why ControlServer.kt:122 mints the key before the port opens. The page
-#     is the login screen; the data behind it is not reachable without the key.
+#   2026-09-18 to 2026-10-07: `/` and `/dashboard`, the web console page. Removed with the console
+#     UI by the operator's order on Oct 7, 2026; an unguarded route at either path is red again.
 # The allowlist is a PATH regex, so it is anchored per route and cannot be widened by accident; an
 # entry admits exactly the path it spells.
 #
@@ -119,4 +113,4 @@ rule:
           regex: '\bguarded\s*\('
     # ALLOWLIST — see the dated entries in this rule's header. One anchored alternative per route.
     - not:
-        regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*"(/health|/|/dashboard)"'
+        regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*"(/health)"'

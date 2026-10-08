@@ -75,12 +75,6 @@ internal class StatusCommand(
         // them knows they are here. Above the heads they read as though something were wrong.
         println("  " + palette.paint(palette.quiet, "config  ${TopologyLoader.configPath()}"))
         println("  " + palette.paint(palette.quiet, "jar     ${jarLine()}"))
-        println()
-        // The panel is the one affordance the rows cannot carry. The footer used to add "launch"
-        // (the command column again) and "sign in" (each row's action again) — the same facts
-        // re-derived by a second predicate, which had already drifted from the rows once, and which
-        // on a ten-head topology was a single line of a hundred and seventy characters.
-        println("  " + palette.paint(palette.quiet, "panel   ") + palette.paint(palette.signal, "splice dashboard"))
     }
 
     internal fun clientVersionWarning(health: HealthView?): String? = health?.clientVersionWarning

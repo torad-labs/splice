@@ -78,14 +78,3 @@ public fun interface HaltJvm {
 public fun interface Teardown {
     public operator fun invoke()
 }
-
-/**
- * Reads the classpath-bundled dashboard page, or null when the jar carries none.
- *
- * The FALLBACK leg of the dashboard source: the built dist file wins, this is next, and a
- * placeholder is last. Injected because the shadow jar is the only place it really exists
- * (`webui/index.html`), so a test asserting the ladder cannot rely on the real resource.
- */
-public fun interface ClasspathHtml {
-    public operator fun invoke(): String?
-}

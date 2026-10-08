@@ -85,7 +85,6 @@ class LiveWindowsDaemonTest {
         val daemon = Daemon(
             topology = TopologyLoader.parse(boot),
             statePaths = statePaths,
-            dashboardHtml = { "<!doctype html>" },
             log = {},
             topologyDigest = TopologyLoader.sha256Hex(boot.toByteArray()),
             topologyPath = file,

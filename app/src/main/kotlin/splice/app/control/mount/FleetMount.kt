@@ -1,5 +1,5 @@
-// NEW: LAYOUT-01 — the surface the control plane itself owns: liveness, the console page, the status
-// payload, the head list with its per-head actions, and each head's log tail.
+// NEW: LAYOUT-01 — the surface the control plane itself owns: liveness, the status payload, the head
+// list with its per-head actions, and each head's log tail.
 package splice.app.control.mount
 
 import io.ktor.http.ContentType
@@ -8,7 +8,6 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import splice.app.control.ConsolePorts
-import splice.app.control.DashboardPage
 import splice.app.control.api.ControlAudit
 import splice.app.control.api.ControlPayloads
 import splice.app.control.api.HeadResolver
@@ -24,7 +23,6 @@ internal class FleetMount(
     private val payloads: ControlPayloads,
     resolver: HeadResolver,
     audit: ControlAudit,
-    private val dashboardHtml: DashboardPage,
     private val guard: ControlGuard,
     /** Read at CALL time for the declared roster's families: ControlPlane assigns it after construction. */
     private val ports: ConsolePorts,
@@ -39,8 +37,6 @@ internal class FleetMount(
         // Unauthenticated liveness probe: the launch shim polls this to tell a running
         // daemon from a cold start (it must NOT need the mgmt-key). No head/config detail.
         route.get("/health") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }
-        route.get("/") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
-        route.get("/dashboard") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
         route.get("/api/status") {
             guard.guarded(call) { ControlReplies.respond(call, payloads.statusJson(families())) }
         }

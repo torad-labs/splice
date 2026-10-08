@@ -1,10 +1,9 @@
-// The webui contract gate (P4-WEBUI). The shipped console consumes /api/* JSON through
-// console-next/src/api, with payload fields declared in console-next/src/types. This test boots
-// ControlServer with a stub head and pins the required fields of the payload types it exercises,
-// plus selected optional fields its fixture supplies. V4-444 reconciled these transcribed lists
-// against the successor types. The economics bucket is DERIVED from EconomicsRow since V4-98
-// and asserted as a bijection; see ECONOMICS_WIRE_RENAMES. The source-derived packaged probe
-// (tools/e2e/probes/console-wire-keys.ts) independently covers every typed successor read.
+// The /api/* payload contract (P4-WEBUI). The field lists were transcribed from the console's
+// types, which left the repo with the console UI on Oct 7, 2026; they still pin the payloads the
+// API serves. This test boots ControlServer with a stub head and pins the required fields of the
+// payload types it exercises, plus selected optional fields its fixture supplies. The economics
+// bucket is DERIVED from EconomicsRow since V4-98 and asserted as a bijection; see
+// ECONOMICS_WIRE_RENAMES.
 package splice.app.control
 
 import io.ktor.client.HttpClient
@@ -114,7 +113,6 @@ class WebuiContractTest {
             heads = mapOf("codex" to managed),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = {},
         )
         runBlocking { control.start() }
@@ -323,8 +321,8 @@ private const val HEADS_KEY = "heads"
 
 // ── V4-98: the economics bucket's field set, DERIVED from EconomicsRow ────────────────────────
 //
-// WHY. This file's other field lists are transcribed from console-next/src/types, consumed by
-// console-next/src/api: they pin a CLIENT contract whose keys the Kotlin side does not own.
+// WHY. This file's other field lists were transcribed from the removed console's types: they pin a
+// CLIENT contract whose keys the Kotlin side does not own.
 // The economics bucket is different — every one of its fields is one EconomicsRow sum, copied by
 // hand three times (EconomicsStore.EconomicsBucket -> FileSources.kt:56 -> EconomicsPayloads'
 // buildJsonObject), and none of those copies fails to compile when a sum is added with a default

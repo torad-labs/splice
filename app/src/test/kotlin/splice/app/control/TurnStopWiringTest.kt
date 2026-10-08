@@ -100,7 +100,6 @@ class TurnStopWiringTest {
             heads = mapOf("codex" to managedHead()),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = { },
         )
         ports.set(control.ports)

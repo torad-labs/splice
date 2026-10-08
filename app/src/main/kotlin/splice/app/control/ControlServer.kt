@@ -1,10 +1,9 @@
 // PORT-OF: server/src/control/api.mjs + control-server.mjs @ pre-public-port-baseline — the centralized control
-// plane (spliced, loopback :3096). Bearer-guarded /api/* aggregating every head + the committed
-// single-file dashboard at /. Single-daemon simplification (plan): heads are IN-PROCESS Head
+// plane (spliced, loopback :3096). Bearer-guarded /api/* aggregating every head; it serves no
+// console page (removed Oct 7, 2026). Single-daemon simplification (plan): heads are IN-PROCESS Head
 // objects, so lifecycle is start()/stop() calls and config is ONE shared service — NO PATCH
 // fanout (deleted, not ported). File-based truth (auth/usage/compact/logs) so a DOWN head still
-// shows last-known state. JSON payload shapes match console-next/src/types, consumed by
-// console-next/src/api (the P4-WEBUI contract and packaged successor wire probe).
+// shows last-known state.
 //
 // HD-24: split into splice.app.control.api (the HTTP surface — payload projections and by-name
 // routes) + splice.app.control (this file: ctor/routing/lifecycle, plus ManagedHead/ControlPorts and
@@ -77,7 +76,6 @@ public class ControlServer(
     private val heads: Map<String, ManagedHead>,
     private val config: ConfigService,
     private val mgmtKey: MgmtKey,
-    private val dashboardHtml: DashboardPage,
     private val log: LogSink,
     private val launchService: LaunchService? = null,
     private val shutdownDaemon: ShutdownDaemon = ShutdownDaemon {},
@@ -125,7 +123,7 @@ public class ControlServer(
 
     // One mount per capability. Every mount reads [ports] at CALL time, never at construction:
     // ControlPlane assigns them after this server exists, so a captured port would be null forever.
-    private val fleet = FleetMount(payloads, resolver, audit, dashboardHtml, guard, ports)
+    private val fleet = FleetMount(payloads, resolver, audit, guard, ports)
     private val lifecycle = LifecycleMount(payloads, shutdownDaemon, ports, guard, heads, log)
 
     /** The control plane arms the raw successor before binding; both Restart and add-save share it. */

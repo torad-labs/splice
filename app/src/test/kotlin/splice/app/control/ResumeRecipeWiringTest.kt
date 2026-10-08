@@ -166,7 +166,6 @@ class ResumeRecipeWiringTest {
             heads = mapOf("codex" to managedHead(own, command)),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = { },
             sessions = SessionRegistry(
                 sessionsDir = sessions,

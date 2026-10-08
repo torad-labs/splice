@@ -128,7 +128,6 @@ class ClaudeHeadRoutesWiringTest {
             heads = mapOf("claude-splice" to managedHead(tmp.resolve(".claude-claude-splice"))),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = { },
             launchService = launchService,
         )

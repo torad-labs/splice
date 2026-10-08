@@ -86,8 +86,6 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     // the console's live event stream: the bus, its event shapes, and GET /api/events.
     ":features-events" to setOf(":integrations-http"),
     ":quality-architecture" to emptySet(),
-    // The Bun/Vite operator console has no Kotlin or module edges; the map still grades it.
-    ":console-next" to emptySet(),
     // :quality-compiler-plugin is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
     // not our modules), wired into every build only via the -Xplugin classpath (see gateway/build.gradle.kts).
     ":quality-compiler-plugin" to emptySet(),

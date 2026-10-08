@@ -108,10 +108,9 @@ class SetupCommandTest {
         // Pinned by COMMAND, not by label. The 2026-09-22 redesign dropped the Launch/Dashboard/
         // Status/Checkup labels — the operator reads the command itself now — and the old arm failed
         // on the wording while the real regression it should catch is an AFFORDANCE going missing.
-        // It nearly did: that cut lost the dashboard entirely and this arm is what found it.
         assertTrue("splice status" in log, log)
         assertTrue("splice doctor" in log, log)
-        assertTrue("splice dashboard" in log, log)
+        assertFalse("splice dashboard" in log, "the console was removed on Oct 7, 2026: $log")
         assertTrue("anything wrong prints its fix" in log)
         // ONCE. The 2026-09-22 redesign gave this block its own "Setup complete." heading while
         // SetupCommand still ended on the frame's outro, so the last screen announced completion

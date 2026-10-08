@@ -84,7 +84,6 @@ class CompactionRestartTest {
             heads = mapOf(HEAD_KEY to managedHead()),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = { },
             shutdownDaemon = { drains.incrementAndGet() },
         )

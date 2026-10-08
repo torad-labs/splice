@@ -53,7 +53,6 @@ include(
     ":app",
     ":quality-architecture",
     ":quality-compiler-plugin",
-    ":console-next",
 )
 
 project(":core").projectDir = file("core")
@@ -89,5 +88,3 @@ project(":features-events").projectDir = file("features/events")
 project(":app").projectDir = file("app")
 project(":quality-architecture").projectDir = file("quality/architecture")
 project(":quality-compiler-plugin").projectDir = file("quality/compiler-plugin")
-// The shipped operator console is a Bun/Vite module with no Kotlin; :app packages its bundle output.
-project(":console-next").projectDir = file("console-next")

@@ -97,7 +97,6 @@ class AuthAndAccountsRoutesTest {
             heads = mapOf(WIRED to head(WIRED, pin), NO_POOL to head(NO_POOL, null)),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = { },
         )
         control.ports.accounts = accounts

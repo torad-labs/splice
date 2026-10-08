@@ -6,9 +6,8 @@
 #   - agent hook: `bun tools/gate rules --stdin pretooluse` (.claude/settings.json) scans PROPOSED
 #     write content mirrored to a temp tree, so files:/ignores: globs bind identically
 #   - gate:       `bun tools/gate rules` (= npm run gate:rules) on the tree / in CI
-# Policy lives ONLY in quality/rules/console/*.yml — never in per-rule Python.
+# Policy lives ONLY in the ruleDirs below — never in per-rule Python.
 ruleDirs:
   - quality/rules/kotlin
-  - quality/rules/console
 testConfigs:
   - testDir: quality/rules/rule-tests

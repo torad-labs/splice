@@ -136,7 +136,6 @@ class KeptFilesLifetimeTest {
         daemon = Daemon(
             topology = TopologyLoader.parse(topologyToml(authFile.toString().replace("\\", "/"))),
             statePaths = paths,
-            dashboardHtml = { "<!doctype html><title>splice</title>" },
             log = {},
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )

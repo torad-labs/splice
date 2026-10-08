@@ -28,7 +28,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.auth.SignInPlanner
-import splice.app.control.DashboardPage
 import splice.app.control.TurnPathStalled
 import splice.app.head.LaunchSpecFactory
 import splice.app.provider.HeadBuildInputs
@@ -241,7 +240,6 @@ class ConsoleActivityPublishTest {
             paths,
             ConfigService(paths),
             MgmtKey(paths),
-            DashboardPage { "<!doctype html>" },
             { },
             { },
         )
@@ -266,7 +264,6 @@ class ConsoleActivityPublishTest {
             paths,
             ConfigService(paths),
             MgmtKey(paths),
-            DashboardPage { "<!doctype html>" },
             { },
             { },
         )
@@ -313,7 +310,6 @@ class ConsoleActivityPublishTest {
             paths,
             ConfigService(paths),
             MgmtKey(paths),
-            DashboardPage { "<!doctype html>" },
             { },
             { },
         )

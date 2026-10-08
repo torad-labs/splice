@@ -14,7 +14,7 @@
 // the same reason (SetupSignIn, V4-156). SetupHeads keeps the tick list; this keeps the lane.
 //
 // THE SAME PATH, NOT A SECOND MECHANISM. Wrapping means POST /api/claude-head/wrap on the loopback
-// control plane — the identical route the console's Settings page posts to (ClaudeHeadRoutes.kt).
+// control plane (ClaudeHeadRoutes.kt).
 // The wizard does not touch ~/.claude, does not plant a shim and does not learn what wrapping is;
 // it asks the daemon that already knows.
 package splice.app.cli.setup
@@ -42,8 +42,6 @@ internal const val WRAP_HINT: String =
 internal const val SEPARATE_HINT: String =
     "a claude-splice command beside your own; nothing in ~/.claude is touched"
 
-/** Where to do it by hand. There is no `splice wrap` verb — the console's Settings page is the
- *  other caller of this route, so it is what the operator is actually sent to. */
 /** The wrap POST's own read budget. ControlPlaneClient's 3s default was sized for the shutdown
  *  route, which answers 202 BEFORE it tears down; wrap answers only AFTER WrappedHead writes
  *  its state and atomically moves the shim — and the
@@ -52,7 +50,11 @@ internal const val SEPARATE_HINT: String =
  *  Matched to the restart drain rather than to a liveness probe. */
 internal const val WRAP_TIMEOUT_MS: Int = 30_000
 
-internal const val WRAP_LATER: String = "wrap it from splice dashboard, Settings"
+/** Where to do it by hand. There is no `splice wrap` verb and no console since Oct 7, 2026, so the
+ *  operator is sent to the control route itself. */
+internal const val WRAP_LATER: String = "wrap it later with POST /api/claude-head/wrap on the control plane"
+
+private const val UNWRAP_LATER: String = "undo it with POST /api/claude-head/unwrap on the control plane"
 
 /** Which lane the operator put the Claude head in. SEPARATE is the default everywhere a choice is
  *  not made — including a non-TTY run, where SelectPrompt answers with the preselected option. */
@@ -138,11 +140,11 @@ internal class DaemonClaudeWrap(private val env: EnvReader = EnvReader(System::g
             ?.takeIf { it.status in ControlPlaneClient.OK_RANGE }
             ?.let { fieldOf(it.body, "mode") }
         return when (mode) {
-            "wrapped" -> "wrapped: claude now runs through splice; undo it from splice dashboard, Settings"
+            "wrapped" -> "wrapped: claude now runs through splice; $UNWRAP_LATER"
             "separate" -> "not wrapping: the wrap did not take effect; $WRAP_LATER"
             else ->
                 "could not confirm the wrap: the daemon stopped answering mid-request, so it may " +
-                    "have completed; check splice dashboard, Settings before running it again"
+                    "have completed; check GET /api/claude-head before running it again"
         }
     }
 
@@ -151,7 +153,7 @@ internal class DaemonClaudeWrap(private val env: EnvReader = EnvReader(System::g
      *  has checked. */
     internal fun replyLine(reply: ControlReply): String = when (reply.status) {
         in ControlPlaneClient.OK_RANGE ->
-            "wrapped: claude now runs through splice; undo it from splice dashboard, Settings"
+            "wrapped: claude now runs through splice; $UNWRAP_LATER"
         // The body is `{"error": "<reason>"}`; the reason is the whole content of a refusal, so it
         // is quoted rather than summarised.
         else -> "not wrapping: ${reasonOf(reply)}"

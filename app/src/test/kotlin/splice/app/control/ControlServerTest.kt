@@ -1,7 +1,6 @@
 // PORT-OF: server/test/control-server.test.mjs @ pre-public-port-baseline — bearer guard, /api/status, /api/heads
 // + lifecycle, /api/config GET+PATCH (single-JVM: no fanout targets), /api/usage soft-warn
-// firing from a seeded 90% ratelimit, /api/auth masked, dashboard serving, 404s. Payload shapes
-// match console-next/src/types, consumed by console-next/src/api (the contract).
+// firing from a seeded 90% ratelimit, /api/auth masked, no page at /, 404s.
 package splice.app.control
 
 import io.ktor.client.HttpClient
@@ -146,7 +145,6 @@ class ControlServerTest {
             ),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html><title>splice</title>" },
             log = {},
             launchService = LaunchService(
                 splice.client.ClaudeConfigMaterializer(tmp),
@@ -235,7 +233,6 @@ class ControlServerTest {
             heads = emptyMap(), // the sole configured head failed to ASSEMBLE — never entered `heads`
             config = ConfigService(paths),
             mgmtKey = MgmtKey(paths),
-            dashboardHtml = { "" },
             log = {},
             failedHeads = { 1 },
             configuredHeads = 1,
@@ -266,9 +263,8 @@ class ControlServerTest {
     }
 
     @Test
-    fun `dashboard served at root without auth`() = runTest {
-        val body = client.get("http://127.0.0.1:$port/").bodyAsText()
-        assertTrue(body.contains("splice"))
+    fun `no console page is served at root`() = runTest {
+        assertEquals(HttpStatusCode.NotFound, client.get("http://127.0.0.1:$port/").status)
     }
 
     @Test
@@ -598,7 +594,6 @@ class ControlServerPerHeadConfigTest {
             heads = emptyMap(),
             config = svc,
             mgmtKey = mgmt,
-            dashboardHtml = { "" },
             log = {},
         )
         server.start()

@@ -143,7 +143,6 @@ class ClaudeHeadDaemonE2ETest {
         daemon = Daemon(
             topology = TopologyLoader.parse(topologyToml()),
             statePaths = statePaths,
-            dashboardHtml = { "<!doctype html>" },
             log = {},
             refreshCall = { _, _ -> RefreshAttempt.Denied("e2e-denied") },
         )

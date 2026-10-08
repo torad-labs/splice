@@ -93,7 +93,6 @@ internal class PlaygroundContentionFixture(
         heads = mapOf(CONTENTION_HEAD to managed()),
         config = ConfigService(paths),
         mgmtKey = mgmt,
-        dashboardHtml = { "<!doctype html>" },
         log = {},
     )
 

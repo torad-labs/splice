@@ -102,7 +102,6 @@ class TopologyRoutesTest {
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = { },
             topologyStale = TopologyStale { true },
         )

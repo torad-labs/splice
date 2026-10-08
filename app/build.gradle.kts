@@ -167,12 +167,6 @@ val installScript = repositoryRoot.file("install.sh")
 val packageJson = repositoryRoot.file("package.json")
 val bunLock = repositoryRoot.file("bun.lock")
 val distDir = repositoryRoot.dir("dist")
-// V4-444: the console bundle is the OUTPUT of :console-next:bundle, never a checked-in file. Read through
-// the task's output provider so verifyReleaseCompliance and shadowJar depend on the build itself.
-evaluationDependsOn(":console-next")
-val dashboard: Provider<File> = project(":console-next").tasks.named<Exec>("bundle").map { it.outputs.files.singleFile }
-// Release acceptance reads the bytes from this same provider, not a second workspace path.
-val builtConsoleBundle = complianceDir.map { it.file("console-bundle.html") }
 // The set was written 2026-07-20 when every dependency was Apache-2.0/MIT/EPL; BSD was never
 // considered rather than rejected. BSD 2-Clause is strictly MORE permissive than Apache-2.0, which
 // is already allowed — no patent clause, no NOTICE obligation, no copyleft, OSI-approved — and the
@@ -318,7 +312,6 @@ val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
             "Apache-2.0" to "Apache License 2.0",
             "MIT" to "MIT License",
             "EPL-1.0" to "Eclipse Public License 1.0",
-            "OFL-1.1" to "SIL Open Font License 1.1",
             "UPL-1.0" to "Universal Permissive License 1.0",
         )
         val text = buildString {
@@ -363,7 +356,7 @@ val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
 
 val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
     dependsOn(normalizeReleaseBom, copyReleaseLicenses, generateThirdPartyLicenses, generateThirdPartyNotices)
-    inputs.files(bom, licenses, thirdPartyLicenses, thirdPartyNotices, dashboard)
+    inputs.files(bom, licenses, thirdPartyLicenses, thirdPartyNotices)
     doLast {
         val bomJson = JsonSlurper().parse(bom.get().asFile) as Map<*, *>
         val metadata = bomJson["metadata"] as? Map<*, *> ?: emptyMap<Any, Any>()
@@ -424,8 +417,6 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
             "Apache License\nVersion 2.0",
             "MIT License",
             "Eclipse Public License - v 1.0",
-            "SIL OPEN FONT LICENSE",
-            "Version 1.1 - 26 February 2007",
             "Universal Permissive License",
             "UNICODE LICENSE V3",
             "ICU License - ICU 1.8.1 to ICU 57.1",
@@ -436,16 +427,6 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
             val bundle = if ("NOTICE" in name.uppercase()) notices else licenseTexts
             check(text.isNotBlank() && text in bundle) { "release legal bundle missing $coordinate / $name" }
         }
-        // V4-444: the markers of the console-next bundle the jar now ships; console-next/tests/notices.test.ts
-        // holds the full list against the bundle itself, this is the release task's floor.
-        listOf(
-            "Copyright (c) Meta Platforms, Inc. and affiliates.",
-            "Copyright (c) 2022 WorkOS",
-            "Copyright (c) 2021-present Tanner Linsley",
-            "Copyright (c) 2006, Ivan Sagalaev.",
-            "Copyright 2018 The Fraunces Project Authors",
-        ).forEach { marker -> check(marker in notices) { "third-party notices missing $marker" } }
-        check(dashboard.get().length() > 100_000L) { "the built console bundle (:console-next:bundle) is missing or unexpectedly small" }
     }
 }
 
@@ -494,8 +475,6 @@ tasks.register("stageRelease") {
     group = "release"
     description = "Stages dist/: the published asset set and sha256sums.txt over it (checks/release/stage.sh until PR 6)."
     inputs.file(releaseJar).withPropertyName("fatJar")
-    inputs.file(dashboard).withPropertyName("builtConsoleBundle")
-    outputs.file(builtConsoleBundle)
     inputs.files(bom, licenses, thirdPartyLicenses).withPropertyName("complianceReports")
     inputs.files(licenseFile, thirdPartyNotices, provenance, launchShim, installScript)
         .withPropertyName("publishedRepositoryFiles")
@@ -579,9 +558,6 @@ tasks.register("stageRelease") {
             "$digest  $asset\n"
         }
         dist.resolve("sha256sums.txt").writeText(sums)
-        val builtBundle = builtConsoleBundle.get().asFile
-        builtBundle.parentFile.mkdirs()
-        Files.copy(dashboard.get().toPath(), builtBundle.toPath(), StandardCopyOption.REPLACE_EXISTING)
         // QUIET, not LIFECYCLE: the rehearsal and the release workflow both run gradle with `-q`,
         // and stage.sh's closing line printed there too.
         logger.quiet("release stage: $dist")
@@ -657,6 +633,4 @@ tasks.withType<ShadowJar>().configureEach {
     from(provenance) { into("META-INF") }
     from(bom) { into("META-INF") }
     from(licenses) { into("META-INF") }
-    // the archive entry stays `webui/index.html`: DashboardHtml.kt reads that resource by name
-    from(dashboard) { into("webui") }
 }

@@ -7,7 +7,6 @@
     "tools/e2e/tsconfig.json",
     "tools/probes/tsconfig.json",
     "tools/screen-review/tsconfig.json",
-    "console-next/tsconfig.json",
     ".dev/tsconfig.json",
     ".claude/hooks/tsconfig.json"
   ],

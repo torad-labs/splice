@@ -115,7 +115,6 @@ class ConsoleRoutesTest {
             heads = mapOf(HEAD_KEY to managedHead(), "bare" to bareHead()),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = { logged.add(it) },
         )
         runBlocking { control.start() }

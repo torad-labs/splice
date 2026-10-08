@@ -81,27 +81,11 @@ describe("gate run", () => {
   test("env cannot hide an unapproved runtime, unknown flag, missing command or absent target", () => {
     for (const command of [
       ["env", "sh", "-c", "x"], ["env", "curl", "x"], ["env", "-i", "npm", "run", "x"],
-      ["env", "FOO=1"], ["env", "-u"], ["env", "-u", "bad-name", "npm", "run", "e2e:console"],
+      ["env", "FOO=1"], ["env", "-u"], ["env", "-u", "bad-name", "npm", "run", "e2e:heads"],
       ["env", "FOO=1", "npm", "run", "absent-script"], ["env", "FOO=1", "bun", "absent-target"],
     ]) expect(() => validateCommand(command, "synthetic")).toThrow();
-    validateCommand(["env", "-u", "HTML", "MODE=dist", "npm", "run", "e2e:console"], "synthetic");
+    validateCommand(["env", "-u", "HTML", "MODE=dist", "npm", "run", "e2e:heads"], "synthetic");
     validateCommand(["env", "MODE=jar", "bun", "test", "tools/gate/test/run.test.ts"], "synthetic");
-  });
-
-  test("the shipped console suite cannot select a developer HTML override", () => {
-    const app = read("app/build.gradle.kts");
-    expect(app).toContain('project(":console-next").tasks.named<Exec>("bundle")');
-    const suite = read("console-next/build.gradle.kts");
-    expect(suite).toContain('environment.remove("CONSOLE_E2E_HTML")');
-    expect(suite).not.toContain('environment("CONSOLE_E2E_HTML",');
-    expect(suite).toContain('environment("CONSOLE_E2E_BUNDLE", "jar")');
-    const legs = (JSON.parse(read("tools/gate/config/ladder.json")) as { legs: (Leg & { dependsOn?: string[] })[] }).legs;
-    expect(legs.some((leg) => leg.task === "consoleE2e")).toBe(false);
-    expect(suite).toContain('dependsOn(consoleBundle, "lint", ":app:shadowJar")');
-    expect(suite).toContain('commandLine("bun", "e2e/run.ts")');
-    const gate = read("build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts");
-    expect(gate).toContain('dependsOn(":console-next:lint", ":console-next:test", ":console-next:e2e")');
-    expect(read("console-next/e2e/run.ts")).toContain("throwing-page canary");
   });
 
   test("the legs after the slot are exactly the ones that take the slot themselves", () => {

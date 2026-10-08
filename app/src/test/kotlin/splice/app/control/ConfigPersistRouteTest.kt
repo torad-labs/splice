@@ -49,7 +49,6 @@ class ConfigPersistRouteTest {
             heads = emptyMap(),
             config = ConfigService(statePaths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = {},
         )
         runBlocking { control.start() }

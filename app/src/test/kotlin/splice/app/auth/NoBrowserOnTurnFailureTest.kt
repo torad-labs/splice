@@ -22,15 +22,13 @@ import java.nio.file.Paths
 class NoBrowserOnTurnFailureTest {
 
     @Test
-    fun `the browser primitive is called from exactly the three operator-initiated surfaces`() {
+    fun `the browser primitive is called from exactly the two operator-initiated surfaces`() {
         // Sorted, module-relative. OAuthLoginFlow and DeviceLoginFlow are the two login verbs'
-        // flows; AdminSupport.openUrl exists for `splice dashboard`. Nothing else may reach it. The
-        // primitive has two spellings since LAYOUT-01: LoginIo.openBrowser, and a constructed
-        // SystemBrowserOpener, which AdminSupport builds directly and each flow defaults to.
+        // flows. Nothing else may reach it. The primitive has two spellings since LAYOUT-01:
+        // LoginIo.openBrowser, and a constructed SystemBrowserOpener, which each flow defaults to.
         assertEquals(
             listOf(
                 "integrations/oauth/src/main/kotlin/splice/oauth/OAuthLoginFlow.kt",
-                "app/src/main/kotlin/splice/app/cli/AdminSupport.kt",
                 "integrations/oauth/src/main/kotlin/splice/oauth/DeviceLoginFlow.kt",
             ).sorted(),
             browserPrimitive().filterNot { it.endsWith("splice/oauth/LoginIo.kt") }.sorted(),
@@ -40,20 +38,12 @@ class NoBrowserOnTurnFailureTest {
     }
 
     @Test
-    fun `the dashboard wrapper is the only other route, and it is a verb`() {
-        assertEquals(
-            listOf("app/src/main/kotlin/splice/app/cli/status/DashboardCommand.kt"),
-            referencing("openUrl(").filterNot { it.endsWith("splice/app/cli/AdminSupport.kt") },
-        )
-    }
-
-    @Test
     fun `no turn or head path references a browser primitive at all`() {
         // The "on ANY head" half: the head machinery (TurnDriver, TurnPreparation, HeadServer, the
         // adapters) and the provider arms must have no path to the primitive, whatever status or
         // failure class reaches them. This is the assertion that keeps the class dead for kimi, for
         // muse, and for the next head — not just for grok.
-        val offenders = (browserPrimitive() + referencing("openUrl("))
+        val offenders = browserPrimitive()
             .filter { path -> path.contains("/head/") || path.substringAfterLast('/').startsWith("Turn") }
         assertTrue(offenders.isEmpty(), "a turn-failure path can reach the browser: $offenders")
     }

@@ -135,7 +135,6 @@ internal class RunningRosterFixture(tmp: Path, parent: CoroutineScope) {
         mapOf("synthetic" to managed),
         config,
         mgmt,
-        { "" },
         {},
         sessions = object : SessionSource {
             override fun read(): List<SessionRecord> = emptyList()

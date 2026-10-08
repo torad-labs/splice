@@ -1,8 +1,6 @@
 # Copy gate for the text splice's diagnostics print (V4-219, 2026-09-25): zero em-dashes in the
-# sentences `splice doctor`, `splice logs` and `splice wire` write, the same locked decision
-# webui-no-emdash-ui-text.yml enforces on the console. Doctor's details reach the console verbatim
-# (Doctor, Needs you), so an em-dash here printed in the UI past the console's own wall; and the
-# CLI prints the same sentences. Split the clause, or use a colon, a semicolon or a comma.
+# sentences `splice doctor`, `splice logs` and `splice wire` write. Split the clause, or use a
+# colon, a semicolon or a comma.
 #
 # Both spellings are matched: the character itself, and the `\u2014` escape, which parses INSIDE
 # string_content on tree-sitter-kotlin (measured on ast-grep 0.45: `"x \u2014 y"` is one

@@ -250,7 +250,6 @@ class NativeUsageTruthTest {
                 ),
                 config = ConfigService(paths),
                 mgmtKey = key,
-                dashboardHtml = { "<!doctype html>" },
                 log = {},
                 sessions = sessions,
             )

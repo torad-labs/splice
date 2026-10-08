@@ -62,7 +62,6 @@ class DaemonPerHeadConfigTest {
         val d = Daemon(
             topology = topology,
             statePaths = StatePaths(baseOverride = tmp.resolve("state")),
-            dashboardHtml = { "" },
             log = {},
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )

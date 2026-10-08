@@ -50,7 +50,6 @@ class DoctorTraceWiringTest {
             heads = mapOf("local" to head()),
             config = config,
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = {},
         )
         val env = environment(tmp, file, paths)

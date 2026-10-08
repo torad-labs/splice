@@ -52,7 +52,6 @@ class ClaudeHeadRefusalTest {
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = {},
         )
         runBlocking { control.start() }

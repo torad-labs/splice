@@ -25,7 +25,7 @@ describe("gate ledger laws: both laws, both ways", () => {
     expect(laws(one(["console-next/src/styles/base.css"], "npm run build -w console-next"))).toEqual(["law-25"]);
   });
   test("a CSS-holding directory counts, not just a .css path", () => {
-    expect(laws(one(["console-next/src/styles/**"], "npx tsc --noEmit"))).toEqual(["law-25"]);
+    expect(laws(one(["tools/screen-review/**"], "npx tsc --noEmit"))).toEqual(["law-25"]);
   });
   test("a fence with no CSS anywhere is not a law-25 row", () => {
     expect(laws(one(SELF, "npx tsc --noEmit"))).toEqual([]);

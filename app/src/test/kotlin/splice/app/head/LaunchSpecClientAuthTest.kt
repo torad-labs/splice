@@ -309,7 +309,6 @@ class LaunchSpecClientAuthTest {
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = MgmtKey(paths),
-            dashboardHtml = { "" },
             log = {},
         )
         runBlocking { server.start() }

@@ -104,7 +104,6 @@ internal class DaemonProcess(
         val daemon = Daemon(
             topology,
             statePaths,
-            DashboardHtml().source(),
             log = log,
             shutdownDaemon = { shutdownSignal.complete(Unit) },
             // JW-04: the booted config identity, published on /health so an edited-but-inert

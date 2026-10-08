@@ -165,7 +165,6 @@ class MultiProviderDaemonTest {
         daemon = Daemon(
             topology = TopologyLoader.parse(topologyToml(codexAuth, grokKey, orKey, neutralKey, kimiKey)),
             statePaths = statePaths,
-            dashboardHtml = { "<!doctype html>" },
             log = {},
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )

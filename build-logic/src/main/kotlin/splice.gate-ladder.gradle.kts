@@ -21,9 +21,7 @@
 // WHAT IS NOT HERE: the release rehearsal (`bun tools/release verify`). It builds and stages a
 // release through the slot, and the slot is held by the gate for the whole of this graph — a
 // nested run would wait on its own lock. `bun tools/gate run` runs it AFTER the graph, with the
-// slot released. The console's lint and
-// vitest suite are `:console-next:lint` and `:console-next:test`, tasks of their own module, and the Kotlin
-// modules' `check` tasks carry detekt, the unit suites and the module laws.
+// slot released. The Kotlin modules' `check` tasks carry detekt, the unit suites and the module laws.
 import groovy.json.JsonSlurper
 import org.gradle.api.tasks.testing.Test
 
@@ -63,10 +61,9 @@ val legTasks = legs.map { leg ->
 val gateOfRecord = tasks.register("gateOfRecord") {
     group = "gate"
     description =
-        "The gate of record: every module's check, the console's lint and tests, and every leg of " +
+        "The gate of record: every module's check and every leg of " +
             "$ladderPath. Enter through `bun tools/gate run` (JDK 21, the slot, clean, no build cache)."
     dependsOn(subprojects.map { "${it.path}:check" })
-    dependsOn(":console-next:lint", ":console-next:test", ":console-next:e2e")
     dependsOn(legTasks)
     dependsOn("verifyLadder")
     dependsOn("catalogMetadataSync")

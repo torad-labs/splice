@@ -6,7 +6,7 @@
 // `java` is faked on PATH the way tools/gate's slot tests fake gradlew: the jar's self-reported
 // version is an input to these legs, not the thing under test.
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,8 +75,8 @@ function accept(dist: string, options: { javaDir?: string; argv?: readonly strin
   return { code: proc.exitCode, output: `${proc.stdout.toString()}${proc.stderr.toString()}` };
 }
 
-/** Stored ZIP records keep the dashboard tests independent of java/jar and of any real build. */
-function packagedBundle(dist: string, dashboard: string, packagedLicense?: string): void {
+/** Stored ZIP records keep the packaged-jar tests independent of java/jar and of any real build. */
+function packagedBundle(dist: string, packagedLicense?: string): void {
   const entries = ["LICENSE", "THIRD_PARTY_NOTICES.md", "THIRD_PARTY_LICENSES.txt", "PROVENANCE.md", "bom.cdx.json", "dependency-licenses.json"]
     .map((name) => ({
       name: "META-INF/" + name,
@@ -84,7 +84,6 @@ function packagedBundle(dist: string, dashboard: string, packagedLicense?: strin
         ? Buffer.from(packagedLicense)
         : readFileSync(join(dist, name)),
     }));
-  entries.push({ name: "webui/index.html", body: Buffer.from(dashboard) });
   const local: Buffer[] = [];
   const central: Buffer[] = [];
   let offset = 0;
@@ -119,45 +118,30 @@ function packagedBundle(dist: string, dashboard: string, packagedLicense?: strin
     createHash("sha256").update(readFileSync(join(dist, asset))).digest("hex") + "  " + asset + "\n").join(""));
 }
 
-function dashboardFixture(packaged: string) {
-  const root = mkdtempSync(join(tmpdir(), "release-dashboard-"));
+function jarFixture() {
+  const root = mkdtempSync(join(tmpdir(), "release-jar-"));
   workspaces.push(root);
-  const reports = join(root, "app/build/reports/compliance");
-  mkdirSync(reports, { recursive: true });
-  writeFileSync(join(reports, "console-bundle.html"), "<html>console-next</html>");
-  // A retained old build must never be mistaken for the bundle the packaging provider produced.
-  mkdirSync(join(root, "console/dist"), { recursive: true });
-  writeFileSync(join(root, "console/dist/index.html"), "<html>retired console</html>");
   const dist = bundle({ "bom.cdx.json": JSON.stringify({
     bomFormat: "CycloneDX", specVersion: "1.6", serialNumber: "urn:uuid:synthetic", components: [{}],
   }) });
-  packagedBundle(dist, packaged);
+  packagedBundle(dist);
   return { root, dist };
 }
 
 describe("release accept", () => {
-  test("the jar's console-next bundle passes the dashboard leg and reaches installation", () => {
-    const fixture = dashboardFixture("<html>console-next</html>");
+  test("a jar whose sidecars match its own entries reaches installation", () => {
+    const fixture = jarFixture();
     const run = accept(fixture.dist, { root: fixture.root });
     expect(run.code).toBe(1); // The synthetic installer deliberately installs no command.
     expect(run.output).toContain("installed splice command is missing or dangling");
-    expect(run.output).not.toContain("packaged dashboard differs");
   });
 
   test("a dependency license winning the jar resource fails even with matching checksums", () => {
-    const fixture = dashboardFixture("<html>console-next</html>");
-    packagedBundle(fixture.dist, "<html>console-next</html>", "synthetic dependency Apache license\n");
+    const fixture = jarFixture();
+    packagedBundle(fixture.dist, "synthetic dependency Apache license\n");
     const run = accept(fixture.dist, { root: fixture.root });
     expect(run.code).toBe(1);
     expect(run.output).toContain("LICENSE differs from META-INF/LICENSE in splice.jar");
-    expect(run.output).not.toContain("installed splice command");
-  });
-
-  test("a different dashboard fails even when it matches the retained old build", () => {
-    const fixture = dashboardFixture("<html>retired console</html>");
-    const run = accept(fixture.dist, { root: fixture.root });
-    expect(run.code).toBe(1);
-    expect(run.output).toContain("packaged dashboard differs from the built console bundle");
     expect(run.output).not.toContain("installed splice command");
   });
 

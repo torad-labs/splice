@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.control.DashboardPage
 import splice.app.control.TurnPathStalled
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -68,7 +67,6 @@ class TeamWiringTest {
             paths,
             ConfigService(paths),
             MgmtKey(paths),
-            DashboardPage { "<!doctype html>" },
             { },
             { },
         )

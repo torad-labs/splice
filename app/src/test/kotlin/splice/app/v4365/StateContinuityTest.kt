@@ -19,7 +19,6 @@ class StateContinuityTest {
             statePaths = paths,
             config = ConfigService(paths),
             mgmtKey = mgmtKey,
-            dashboardHtml = { "<!doctype html>" },
             log = {},
             shutdownDaemon = {},
         )

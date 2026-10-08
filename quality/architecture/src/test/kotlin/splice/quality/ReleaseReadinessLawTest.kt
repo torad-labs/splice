@@ -52,7 +52,6 @@ private const val WORKFLOWS = ".github/workflows"
 private const val INSTALL = "install.sh"
 private const val README = "README.md"
 private const val CHANGELOG = "CHANGELOG.md"
-private const val CONSOLE_SRC = "console-next/src/"
 private const val MAIN_SOURCE = "/src/main/"
 private const val EXAMPLE_TOML = "app/src/main/resources/splice.example.toml"
 private const val NOTICES = "THIRD_PARTY_NOTICES.md"
@@ -67,7 +66,6 @@ private const val BUG_TEMPLATE = ".github/ISSUE_TEMPLATE/bug.yml"
 private const val DEPENDABOT = ".github/dependabot.yml"
 private const val PACKAGE_JSON = "package.json"
 private const val WRAPPER_PROPERTIES = "gradle/wrapper/gradle-wrapper.properties"
-private const val FONTS = "console-next/src/styles/fonts"
 private const val JDK_RESOLVER = "tools/gate/src/lib/jdk.ts"
 private const val HOOK = "tools/gate/src/lib/hook.ts"
 private const val LAUNCH_SERVICE = "features/launch/src/main/kotlin/splice/launch/recipe/LaunchService.kt"
@@ -113,7 +111,6 @@ private val DISCLAIMERS = listOf(
     "what a pattern removes is the operator's to own",
 )
 private val DISCLAIMER_FILES = listOf(README, CHANGELOG, EXAMPLE_TOML, INSTALL)
-private val CONSOLE_TEXT = listOf(".ts", ".tsx")
 
 /** "[rel]:[line] carries '[phrase]'" for the first line holding one of [DISCLAIMERS], ignoring case. */
 private fun disclaimerIn(rel: String, text: String): String? =
@@ -156,13 +153,6 @@ internal class ReleaseRepo(val root: File, val tracked: List<String>, val kotlin
     }
 
     fun carriesNoDisclaimer(rel: String): String? = disclaimerIn(rel, text(rel) ?: return missing(rel))
-
-    /** The first tracked file under [prefix] ending in one of [extensions] that [check] rejects; none is RED. */
-    fun eachTracked(prefix: String, extensions: List<String>, check: (String, String) -> String?): String? {
-        val files = tracked.filter { rel -> rel.startsWith(prefix) && extensions.any { rel.endsWith(it) } }
-        if (files.isEmpty()) return "no tracked sources under $prefix — the denominator is empty"
-        return files.firstNotNullOfOrNull { rel -> text(rel)?.let { check(rel, it) } }
-    }
 
     fun matches(rel: String, pattern: Regex, what: String): String? {
         val text = text(rel) ?: return missing(rel)
@@ -215,7 +205,6 @@ internal object ReleaseReadiness {
     private val FIXED_PORT = Regex("""[=(,]\s*39_?[0-9]{3}(?![0-9_.Ll])""")
     private val SLEEP_1100 = Regex("""Thread\.sleep\(1100\)""")
     private val FORK_RECORD = Regex("""UNRESOLVED|upstream""", RegexOption.IGNORE_CASE)
-    private val FONT_LICENSE = Regex("""OFL|LICENSE""", RegexOption.IGNORE_CASE)
     private val CLAUDE_PRIVATE = listOf(
         ".claude/skills/",
         ".claude/ledger-diffs/",
@@ -325,12 +314,11 @@ internal object ReleaseReadiness {
         Rule("readme-no-encrypted-cot") { repo -> repo.lacks(README, ENCRYPTED_COT, ignoreCase = true) },
         Rule("readme-no-legacy-login") { repo -> repo.lacks(README, "bin/claudex login") },
         Rule("readme-names-shim") { repo -> repo.contains(README, "splice-launch") },
-        // The files people read, every main source set (what the CLI and daemon print) and the console.
+        // The files people read and every main source set (what the CLI and daemon print).
         // Tests stay out: a test that proves a line is gone has to name it.
         Rule("no-disclaimer") { repo ->
             DISCLAIMER_FILES.firstNotNullOfOrNull { repo.carriesNoDisclaimer(it) }
                 ?: repo.eachKotlin { rel, text -> if (MAIN_SOURCE in rel) disclaimerIn(rel, text) else null }
-                ?: repo.eachTracked(CONSOLE_SRC, CONSOLE_TEXT, ::disclaimerIn)
         },
         Rule("example-no-encrypted-cot") { repo -> repo.lacks(EXAMPLE_TOML, ENCRYPTED_COT, ignoreCase = true) },
         Rule("example-password-equivalent") { repo ->
@@ -343,11 +331,7 @@ internal object ReleaseReadiness {
 
     private fun packagingRules(): List<Rule> = listOf(
         Rule("wrapper-checksum") { repo -> repo.contains(WRAPPER_PROPERTIES, "distributionSha256Sum") },
-        Rule("third-party-notices") { repo ->
-            repo.contains(NOTICES, "SIL Open Font License", ignoreCase = true)
-                ?: repo.contains(NOTICES, "gradle wrapper", ignoreCase = true)
-        },
-        Rule("font-license") { repo -> repo.nonEmptyDir(FONTS, FONT_LICENSE, "OFL or LICENSE file") },
+        Rule("third-party-notices") { repo -> repo.contains(NOTICES, "gradle wrapper", ignoreCase = true) },
         Rule("dependabot") { repo -> repo.present(DEPENDABOT) },
         Rule("package-engines") { repo -> repo.contains(PACKAGE_JSON, "\"engines\"") },
         Rule("jdk-no-homebrew-path") { repo -> repo.lacks(JDK_RESOLVER, "/opt/homebrew/opt/openjdk@21") },
@@ -390,7 +374,6 @@ private const val INSTALL_HOME = "run_jar() {\n  $INSTALL_RUN_JAR\n}\n" +
 private const val PORT_HIGH = "39"
 private const val PORT_LOW = "100"
 private const val A_SLEEP_MS = 1100
-private const val CONSOLE_STRINGS = "console-next/src/lib/words.ts"
 private const val SETUP_TEST = "app/src/test/kotlin/splice/app/cli/setup/SetupCommandTest.kt"
 private const val SETUP_MAIN = "app/src/main/kotlin/splice/app/cli/setup/SetupSignIn.kt"
 
@@ -428,7 +411,6 @@ private class Tree(val root: File) {
         file("${BUILD_LOGIC_TESTS}splice/discovery/TestDiscoveryTest.kt", "class TestDiscoveryTest\n")
         file(README, "Each head runs the splice-launch shim.\n")
         file(CHANGELOG, "# Changelog\n")
-        file(CONSOLE_STRINGS, "export const title = 'splice';\n")
         // On the green side on purpose: a test that proves the line is gone names it, and stays legal.
         file(SETUP_TEST, "val gone = \"Unofficial; use at your own risk.\"\n")
         file(EXAMPLE_TOML, "# every key here is password-equivalent\n")
@@ -439,8 +421,7 @@ private class Tree(val root: File) {
     private fun packaging() {
         HEALTH_FILES.forEach { file(it, "# $it\n") }
         file(BUG_TEMPLATE, "name: bug\n")
-        file(NOTICES, "SIL Open Font License\nGradle wrapper\n")
-        file("$FONTS/OFL.txt", "OFL\n")
+        file(NOTICES, "Gradle wrapper\n")
         file(DEPENDABOT, "version: 2\n")
         file(PACKAGE_JSON, "{\"engines\":{\"node\":\">=24\"}}\n")
         file(JDK_RESOLVER, "export const jdk = 21;\n")
@@ -572,12 +553,6 @@ private fun readmeMutations(): List<Mutation> = listOf(
     Mutation("a main source printing a disclaimer", "no-disclaimer", "$SETUP_MAIN:1 carries 'unofficial'") {
         file(SETUP_MAIN, "val line = \"Unofficial; use at your own risk.\"\n")
     },
-    Mutation("a console string carrying a disclaimer", "no-disclaimer", "$CONSOLE_STRINGS:2 carries 'not affiliated'") {
-        append(CONSOLE_STRINGS, "export const notice = 'Not affiliated with OpenAI';\n")
-    },
-    Mutation("no console sources at all", "no-disclaimer", "denominator is empty") {
-        files.filter { it.startsWith(CONSOLE_SRC) }.forEach { delete(it) }
-    },
     Mutation("the example config mentioning encrypted CoT", "example-no-encrypted-cot", ENCRYPTED_COT) {
         append(EXAMPLE_TOML, "# encrypted CoT replay\n")
     },
@@ -600,15 +575,8 @@ private fun packagingMutations(): List<Mutation> = listOf(
     Mutation("a wrapper without a checksum", "wrapper-checksum", "gradle-wrapper.properties") {
         file(WRAPPER_PROPERTIES, "distributionUrl=x\n")
     },
-    Mutation("notices without the font license", "third-party-notices", "SIL Open Font License") {
-        file(NOTICES, "Gradle wrapper\n")
-    },
     Mutation("notices without the wrapper", "third-party-notices", "gradle wrapper") {
-        file(NOTICES, "SIL Open Font License\n")
-    },
-    Mutation("fonts without a license file", "font-license", FONTS) {
-        delete("$FONTS/OFL.txt")
-        file("$FONTS/Inter.woff2", "font")
+        file(NOTICES, "Third-party notices\n")
     },
     Mutation("no dependabot", "dependabot", "dependabot.yml") { delete(DEPENDABOT) },
     Mutation("package.json without engines", "package-engines", PACKAGE_JSON) { file(PACKAGE_JSON, "{}\n") },

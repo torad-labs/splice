@@ -43,11 +43,6 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          # The single-file bundle contains minified dependency code, not authored source.
-          # :console-next:bundle generates it locally; console-next/src remains scanned.
-          config: |
-            paths-ignore:
-              - console-next/dist
       - name: build Kotlin
         if: matrix.language == 'java-kotlin'
         run: ./gradlew classes --no-daemon --stacktrace

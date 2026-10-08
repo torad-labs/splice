@@ -46,7 +46,6 @@ export const usage =
   "accept [distDir] [--version X]       accept a staged release bundle: assets, checksums, the jar's sidecars, and install.sh end to end";
 
 /** stageRelease snapshots the same task output provider that shadowJar packages. */
-const BUILT_CONSOLE_BUNDLE = "app/build/reports/compliance/console-bundle.html";
 
 /** The sidecars the fat jar must carry byte-identically, staged name -> archive entry. */
 const EMBEDDED: readonly (readonly [string, string])[] = [
@@ -168,11 +167,6 @@ export async function accept(argv: readonly string[], repoRoot: string): Promise
       return fail(`release accept: ${sidecar} differs from ${entry} in splice.jar`);
     }
   }
-  // Compare with the packaging provider's staged bytes, never a guessed workspace dist path.
-  if (!zipEntry(jar, "webui/index.html").equals(readFileSync(join(repoRoot, BUILT_CONSOLE_BUNDLE)))) {
-    return fail("release accept: packaged dashboard differs from the built console bundle");
-  }
-
   // ── install.sh, against these exact bytes ────────────────────────────────────────────────────
   const first = makeSandbox();
   const localEnv = {

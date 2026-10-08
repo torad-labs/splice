@@ -6,9 +6,6 @@
     "node": ">=24"
   },
   "packageManager": "bun@1.4.2",
-  "workspaces": [
-    "console-next"
-  ],
   "scripts": {
     "gate": "bun tools/gate run",
     "gate:no-python": "bun tools/gate no-python && bun test tools/gate/test/no-python.test.ts",
@@ -22,7 +19,6 @@
     "e2e:heads:wire": "bun tools/e2e heads --tier 1",
     "e2e:heads:selftest": "bun tools/e2e heads --selftest",
     "e2e:docker": "bash tools/e2e/docker/run.sh",
-    "e2e:console": "bun run --cwd console-next e2e/run.ts",
     "oracle:capture": "bun tools/e2e oracle capture",
     "oracle:check": "bun tools/e2e oracle check",
     "oracle:replay": "bun tools/e2e oracle",

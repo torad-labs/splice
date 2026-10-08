@@ -57,7 +57,6 @@ class QuotaOpenControlTest {
             mapOf("synthetic" to managed(usage)),
             ConfigService(paths),
             mgmt,
-            { "<title>synthetic</title>" },
             { },
         )
         val client = HttpClient(CIO)

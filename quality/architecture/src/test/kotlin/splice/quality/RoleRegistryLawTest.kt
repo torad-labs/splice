@@ -774,7 +774,8 @@ class RoleRegistryLawTest {
         // 145 since Oct 5 CT: execution disposal cancels its reader, so its output-discard seam is removed.
         // 146 since Oct 5 CT: DayDirectoryAction holds cross-head body admission through metadata publication.
         // 147 since Oct 5 CT: HoldChange serializes refusal mutations against captured posting receipts.
-        assertEquals(147, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 145 since Oct 7 CT: DashboardPage and ClasspathHtml left with the console UI.
+        assertEquals(145, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

@@ -1,6 +1,6 @@
 # splice architecture walls
 
-Console write-time policy lives in the retained `quality/rules/console/` namespace and targets `console-next/src`.  There are NO per-rule
+Write-time policy lives in `quality/rules/kotlin/`. There are NO per-rule
 Python hooks — `bun tools/gate rules --stdin pretooluse` (tools/gate/src/lib/hook.ts) is the single router (operator
 design constraint, 2026-07-13).
 
@@ -19,17 +19,9 @@ design constraint, 2026-07-13).
 
 ## Rule inventory
 
-| rule | scope | wall |
-|---|---|---|
-| webui-fetch-only-in-api(-tsx) | console-next/src | FSD: UI strictly via state |
-| webui-lead-is-the-slot-flag(-tsx) | console-next/src | the lead is the slot's lead flag, never a role named 'lead' |
-| webui-no-emdash-ui-text | console-next/src *.tsx | locked copy gate |
-| webui-css-tokens-only | console-next/src *.css | spacing from --space-N; the only unit a spacing value may carry is % |
-| webui-css-font-size-scale | console-next/src *.css | font-size is exactly var(--text-N) or inherit (an allow-list) |
-| webui-css-no-color-literals | console-next/src *.css | no hex or colour function outside styles/tokens.css |
-
-Kotlin walls (`quality/rules/kotlin/`) mirror the above for the gateway port. The 2026-07-18
-additions are the **preventive walls** distilled from that day's incidents:
+The console's walls left with the console UI on Oct 7, 2026. The Kotlin walls
+(`quality/rules/kotlin/`) guard the gateway. The 2026-07-18 additions are the **preventive walls**
+distilled from that day's incidents:
 
 | rule | scope | wall |
 |---|---|---|

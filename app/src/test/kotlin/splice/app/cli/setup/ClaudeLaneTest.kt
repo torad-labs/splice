@@ -138,7 +138,7 @@ class ClaudeWrapReplyTest {
         val said = DaemonClaudeWrap().replyLine(ControlReply(200, """{"ok":true,"mode":"wrapped"}"""))
 
         assertTrue(said.startsWith("wrapped:"), said)
-        assertTrue("Settings" in said, said)
+        assertTrue("POST /api/claude-head/unwrap" in said, said)
         // There is no `splice wrap`/`splice unwrap` verb; pointing at one would be sending the
         // operator to a command that does not exist.
         assertFalse("splice unwrap" in said, said)

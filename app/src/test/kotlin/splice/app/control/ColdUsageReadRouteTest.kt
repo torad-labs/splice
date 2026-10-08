@@ -173,7 +173,6 @@ class ColdUsageReadRouteTest {
             mapOf("synthetic" to managed()),
             ConfigService(paths),
             mgmt,
-            { "<!doctype html>" },
             {},
         )
 

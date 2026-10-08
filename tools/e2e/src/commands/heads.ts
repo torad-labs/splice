@@ -88,7 +88,7 @@ export const HARNESS_EXIT = 2;
 class FatalError extends Error {}
 
 // ── the state root ───────────────────────────────────────────────────────────
-/** V4-177: the same state-root rule as StatePaths.kt, app/src/main/dist/bin/splice-launch and console-wire-keys.ts —
+/** V4-177: the same state-root rule as StatePaths.kt and app/src/main/dist/bin/splice-launch —
  *  SPLICE_STATE_DIR, then the pre-0.4 CLAUDEX_STATE_DIR, then ~/.splice/state, adopting
  *  ~/.claude-codex/state in place when that is the only root on the box.
  *

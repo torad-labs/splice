@@ -622,12 +622,12 @@ const ARMS: readonly Arm[] = [
   },
   {
     // v0.4.0 review: the CLI asks System.console() whether a person is at a terminal, and on JDK 22-24
-    // it answers yes into a pipe unless java runs with -Djdk.console=java.base: `splice dashboard` then
-    // prints the management key into an agent's transcript. Both paths that run the CLI must carry it.
+    // it answers yes into a pipe unless java runs with -Djdk.console=java.base, and a verb that prints to
+    // a terminal only then prints into an agent's transcript. Both paths that run the CLI must carry it.
     // LAST on purpose: the java mock marks the daemon "new", which no arm after this one may inherit.
     name: "the CLI's java runs with the terminal-only console",
     run: async (ctx) => {
-      const paths: readonly (readonly [string, readonly string[]])[] = [["splice", ["dashboard"]], ["test", ["login"]]];
+      const paths: readonly (readonly [string, readonly string[]])[] = [["splice", ["status"]], ["test", ["login"]]];
       for (const [head, argv] of paths) {
         rmSync(ctx.captures.javaArgv, { force: true });
         await ctx.launch({ SPLICE_HEAD: head }, argv);

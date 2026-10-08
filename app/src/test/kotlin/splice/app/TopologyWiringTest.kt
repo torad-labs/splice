@@ -12,7 +12,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.control.DashboardPage
 import splice.app.control.TurnPathStalled
 import splice.app.daemon.BootedTopology
 import splice.core.config.ConfigService
@@ -36,7 +35,6 @@ class TopologyWiringTest {
             paths,
             ConfigService(paths),
             MgmtKey(paths),
-            DashboardPage { "<!doctype html>" },
             { },
             { },
             BootedTopology(path = file),

@@ -55,16 +55,6 @@ describe("release verify", () => {
     expect(build).toContain('layout.projectDirectory.file("src/main/dist/bin/splice-launch")');
   });
 
-  test("accept reads a snapshot of the same output provider the jar packages", () => {
-    const build = read("app/build.gradle.kts");
-    expect(build).toContain("from(dashboard)");
-    expect(build).toContain('inputs.file(dashboard).withPropertyName("builtConsoleBundle")');
-    expect(build).toContain("outputs.file(builtConsoleBundle)");
-    expect(build).toContain('val builtConsoleBundle = complianceDir.map { it.file("console-bundle.html") }');
-    expect(build).toContain("Files.copy(dashboard.get().toPath(), builtBundle.toPath(), StandardCopyOption.REPLACE_EXISTING)");
-    expect(read("tools/release/src/commands/accept.ts")).toContain('const BUILT_CONSOLE_BUNDLE = "app/build/reports/compliance/console-bundle.html"');
-  });
-
   test("the shim the build stages is the shim every reader resolves", () => {
     expect(existsSync(join(repoRoot, "app/src/main/dist/bin/splice-launch"))).toBe(true);
   });

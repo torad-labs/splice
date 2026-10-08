@@ -20,7 +20,6 @@ import splice.accounts.claude.ClaudeAccountIdentity
 import splice.app.ControlPlane
 import splice.app.TokenUrlRefreshCall
 import splice.app.control.ControlServer
-import splice.app.control.DashboardPage
 import splice.app.control.ManagedHead
 import splice.app.control.TurnPathStalled
 import splice.app.daemon.BootedTopology
@@ -141,7 +140,6 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
         paths,
         config,
         key,
-        DashboardPage { "<!doctype html>" },
         {},
         {},
         BootedTopology(

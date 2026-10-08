@@ -168,8 +168,11 @@ internal object Concentration {
     // 2026-10-04: 8b76ad531 removes NativeAccountRows' uncommitted projection dependency. The committed
     // control median falls 44.0 -> 40.0; unchanged McpHost returns to HIGH by neighbourhood: denominator
     // 44.5 -> 42.5, ratio 2.92 -> 3.06. The committed band returns from 10 to 11.
-    const val RATCHET_RECORDED = "2026-10-04"
-    const val RATCHET_MAX_HIGH = 11
+    // 2026-10-07: removing the console UI shrank splice.app (DashboardHtml.kt gone, Daemon, ControlPlane and
+    // AppPorts smaller). Unchanged PerfRowsFileSource.kt enters HIGH by neighbourhood: C 220.0, denominator
+    // 73.9 -> 73.1, ratio 2.98 -> 3.01, measured with this law's own scan on HEAD's text and the tree. 11 -> 12.
+    const val RATCHET_RECORDED = "2026-10-07"
+    const val RATCHET_MAX_HIGH = 12
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

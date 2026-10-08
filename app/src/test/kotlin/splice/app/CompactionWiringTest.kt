@@ -35,7 +35,6 @@ class CompactionWiringTest {
         val daemon = Daemon(
             topology = topology,
             statePaths = StatePaths(baseOverride = tmp.resolve("state")),
-            dashboardHtml = { "" },
             log = {},
             topologyPath = topologyPath,
         )

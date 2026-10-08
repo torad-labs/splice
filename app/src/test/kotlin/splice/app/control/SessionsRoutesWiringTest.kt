@@ -72,7 +72,6 @@ class SessionsRoutesWiringTest {
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = { },
             sessions = SessionRegistry(
                 sessionsDir = sessions,

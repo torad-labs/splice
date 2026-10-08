@@ -917,9 +917,6 @@ command = "claude-splice"
 #   SPLICE_SUPERVISOR_UNIT supervisorUnit                 SPLICE_MCP_SLICE mcpSlice
 #
 # Seam reads, no TOML spelling — a path or endpoint the daemon reads directly:
-#   SPLICE_CONSOLE_HTML     absolute console index.html override; unset serves the jar bundle.
-#                           Missing, unreadable or relative paths show an error, never the jar.
-#                           Inherited by daemon restarts; independent of the working directory.
 #   SPLICE_CONFIG           the config file to load, overriding the default lookup
 #   SPLICE_STATE_DIR        the state directory, overriding both the default root and the
 #                           pre-0.4 one it adopts; CLAUDEX_STATE_DIR is the older spelling

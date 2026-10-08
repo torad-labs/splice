@@ -4,7 +4,6 @@ package splice.app.control
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -15,7 +14,6 @@ import splice.core.config.StatePaths
 import splice.upstream.memory.JvmHeap
 import java.net.Socket
 import java.nio.file.Path
-import java.util.concurrent.atomic.AtomicInteger
 
 class ControlIngressTest {
     @Test
@@ -33,16 +31,11 @@ class ControlIngressTest {
     fun `control routes refuse shared pressure before rendering and recover after release`(@TempDir tmp: Path) {
         val before = JvmHeap.budget.available.value
         val paths = StatePaths(baseOverride = tmp)
-        val renders = AtomicInteger()
         val server = ControlServer(
             port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = MgmtKey(paths, log = {}),
-            dashboardHtml = {
-                renders.incrementAndGet()
-                "<html>dashboard</html>"
-            },
             log = {},
         )
         runBlocking { server.start() }
@@ -52,15 +45,13 @@ class ControlIngressTest {
                 val reply = request(server.listeningPort)
                 assertTrue(reply.startsWith("HTTP/1.1 529"), reply)
                 assertTrue(reply.contains("overloaded_error"), reply)
-                assertFalse(reply.contains("dashboard"), reply)
-                assertEquals(0, renders.get())
+                assertFalse(reply.contains("readyHeads"), "the refused request reached the /health handler: $reply")
             } finally {
                 hold.close()
             }
             val reply = request(server.listeningPort)
             assertTrue(reply.startsWith("HTTP/1.1 200"), reply)
-            assertTrue(reply.contains("dashboard"), reply)
-            assertEquals(1, renders.get())
+            assertTrue(reply.contains("readyHeads"), reply)
         } finally {
             server.stop()
         }
@@ -71,7 +62,7 @@ class ControlIngressTest {
     private fun request(port: Int): String = Socket("127.0.0.1", port).use { socket ->
         socket.soTimeout = 5000
         socket.getOutputStream().write(
-            "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".toByteArray(),
+            "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".toByteArray(),
         )
         socket.getInputStream().readBytes().toString(Charsets.UTF_8)
     }

@@ -24,7 +24,7 @@ public class Cli {
                 "usage: splice [setup|add <profile>|add-model|models [provider]|upgrade|status|sessions|perf|" +
                     "wire <head> [--last N] [--json]|" +
                     "trace <head> [--last N] [--session S] [--turn ID] [--json] [--purge]|" +
-                    "restart [--now]|dashboard|login <head> [--label <name> [--discard]]|key <set|list|unset>|" +
+                    "restart [--now]|login <head> [--label <name> [--discard]]|key <set|list|unset>|" +
                     "logs [--head <key>] [--tail N] [--follow]|" +
                     "install|uninstall|init|doctor [--json [--with-logs] [--out FILE]]|daemon|version]",
             )

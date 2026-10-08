@@ -145,7 +145,6 @@ class OpenRouterStatuslineTest {
             val daemon = Daemon(
                 topology = TopologyLoader.parse(config),
                 statePaths = statePaths,
-                dashboardHtml = { "<!doctype html>" },
                 log = {},
                 refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
             )

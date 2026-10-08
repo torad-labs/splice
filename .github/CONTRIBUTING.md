@@ -17,18 +17,16 @@ npm run gate:rules        # ast-grep walls, rule routing, config guard, coverage
 npm run test:hooks        # the write-time wall hook's red-green arms
 bun test tools/gate           # the gate CLI's own red-green arms
 ./gradlew check              # module-law + detekt + konsist + unit tests (Kotlin gateway)
-npm run lint -w console-next && npm test -w console-next && ./gradlew :console-next:build :console-next:e2e
 bun tools/gate audit         # the dependency audit
 bun tools/release verify     # the release rehearsal: stage, accept, the launcher against the shim
 ```
 
 `npm run gate` (`bun tools/gate run`: the Gradle ladder of tools/gate/config/ladder.json, then the release rehearsal) runs the complete list: Gradle module-law/detekt/tests,
-ast-grep walls, hook tests, campaign walls, config guard, console lint/test (the bundle builds in the gradle tier)
-with a committed-dist check, the dependency audit, the release-readiness law, and the staged
+ast-grep walls, hook tests, campaign walls, config guard, the dependency audit, the release-readiness law, and the staged
 release acceptance. The individual commands are listed only so a contributor can run one in
 isolation while iterating. The Gradle build is rooted at the repository root with its own
 JDK 21 toolchain; its modules live under `core/`, `integrations/`, `features/`, `app/`,
-`quality/` and `console-next/`, as mapped in `settings.gradle.kts`.
+and `quality/`, as mapped in `settings.gradle.kts`.
 
 A green *diff* is not the bar — a green *merge* is.
 

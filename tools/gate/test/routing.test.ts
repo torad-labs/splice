@@ -55,7 +55,7 @@ describe("rule routing", () => {
     mkdirSync(join(tmp, "quality", "rules", "zz-empty"));
     writeFileSync(
       join(tmp, "sgconfig.yml"),
-      "ruleDirs:\n  - quality/rules/console\n  - quality/rules/kotlin\n  - quality/rules/zz-empty\ntestConfigs:\n  - testDir: quality/rules/rule-tests\n",
+      "ruleDirs:\n  - quality/rules/kotlin\n  - quality/rules/zz-empty\ntestConfigs:\n  - testDir: quality/rules/rule-tests\n",
     );
     try {
       expect(routing().some((p) => p.includes("holds 0 ast-grep rule files"))).toBe(true);

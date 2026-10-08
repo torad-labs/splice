@@ -90,7 +90,6 @@ class DaemonTest {
         daemon = Daemon(
             topology = topology,
             statePaths = statePaths,
-            dashboardHtml = { "<!doctype html><title>splice</title>" },
             log = {},
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
@@ -277,7 +276,6 @@ class DaemonTest {
         val degraded = Daemon(
             topology = TopologyLoader.parse(toml),
             statePaths = StatePaths(baseOverride = tmp.resolve("state")),
-            dashboardHtml = { "" },
             log = {},
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
@@ -319,23 +317,6 @@ class DaemonTest {
         assertEquals(3096, topo.daemon.controlPort)
         assertTrue(topo.heads.isEmpty(), "a first-run daemon has no configured head")
         assertTrue(topo.providers.isEmpty(), "no vendor is selected for the operator")
-    }
-
-    @Test
-    fun `dashboard loader reports an absent explicit file and rereads it when created`(@TempDir tmp: Path) {
-        val dist = tmp.resolve("index.html")
-        var packagedReads = 0
-        val dashboard = DashboardHtml(splice.core.util.EnvReader { dist.toString() }).source {
-            packagedReads += 1
-            "<html>packaged</html>"
-        }
-
-        assertTrue(dashboard().contains("SPLICE_CONSOLE_HTML override path is unreadable"))
-        assertEquals(0, packagedReads)
-
-        Files.writeString(dist, "<html>checkout</html>")
-        assertEquals("<html>checkout</html>", dashboard())
-        assertEquals(0, packagedReads)
     }
 
     @Test

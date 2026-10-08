@@ -197,7 +197,6 @@ tasks.withType<Test>().configureEach {
         repoRoot.file("tools/gate/src/lib/conventional.ts"),
         repoRoot.file("build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts"),
         repoRoot.dir(".github").asFileTree,
-        repoRoot.dir("console-next/src/styles/fonts").asFileTree,
         repoRoot.dir(".dev/campaigns").asFileTree.matching { include("**/*.toml") },
     ).withPropertyName("scannedOperatorSurfaces")
     inputs.files(gitIndex).withPropertyName("gitIndex")

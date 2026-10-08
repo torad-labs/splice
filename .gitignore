@@ -11,8 +11,6 @@ __pycache__/
 
 # generated release bundle and local validation tools
 /dist/
-# the shipped console bundle is :console-next:bundle's output, never committed
-/console-next/dist/
 /.cache/
 
 # gradle (the build root is the repository root; the modules live where restructure plan §2.2 puts
@@ -73,7 +71,6 @@ credentials.json
 /test-results/
 /workspace/
 *.tsbuildinfo
-/console-next/captures/
 .claude/tmp/
 
 # gradle slot lock + holder (bun tools/gate slot)

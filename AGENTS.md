@@ -3,7 +3,7 @@
 ## The invariants (L1 retired; L2–L4 locked)
 
 Structural walls enforce these at write time (`quality/rules/kotlin/` for the
-gateway, `quality/rules/console/` for the console, routed at write time by
+gateway, routed at write time by
 `bun tools/gate rules --stdin pretooluse`) and permanent tests enforce the behavioral
 half (the Kotlin module suites, plus the migration oracle's 11 byte-exact
 fixtures — `npm run oracle:replay`). Do not weaken either.
@@ -67,8 +67,8 @@ fixtures — `npm run oracle:replay`). Do not weaken either.
 > `.mjs` file, treat the contract as authoritative and the filename as history — the 11 byte-exact
 > oracle fixtures pin the wire itself.
 
-Bearer-guarded (`Authorization: Bearer <key>`, which `splice dashboard` prints — the state root
-it lives under is install-dependent since V4-177),
+Bearer-guarded (`Authorization: Bearer <key>`, the management key in the state root, which is
+install-dependent since V4-177),
 loopback-only, both proxies:
 
 | route | purpose |
@@ -115,9 +115,9 @@ field and every earlier layer. No projects table = V4-36's bytes. Resolver:
 > `app/src/main/kotlin/splice/app/control/ControlServer.kt`. The Node
 > `src/control-server.mjs` it replaced was deleted on 2026-08-10.
 
-The dashboard is centralized. `spliced` (`src/control-server.mjs`, loopback
-`:3096`, `controlPort`) hosts the single console at `/` and a bearer-guarded
-`/api/*` that AGGREGATES every head (same mgmt-key). It reads file-based truth
+The control plane is centralized. `spliced` (`src/control-server.mjs`, loopback
+`:3096`, `controlPort`) hosts a bearer-guarded `/api/*` that AGGREGATES every head
+(same mgmt-key). It serves no console page: the console UI was removed on Oct 7, 2026. It reads file-based truth
 (auth, usage, compact) directly so a DOWN head is still visible, and talks to
 RUNNING heads over `/mgmt` for live status + config.
 
@@ -135,20 +135,16 @@ RUNNING heads over `/mgmt` for live status + config.
 - **Config PATCH fans out** to each running head's `/mgmt/config` (the runtime
   layer, which beats the launcher's env pin); with no head up it writes the file.
 - **Soft-warn never blocks** (`usage/warn.mjs`, `usageWarnPct` / `usageWarnTokens5h`):
-  drives the dashboard banner and the statusline `⚠`.
-- Heads keep `/mgmt` but no longer serve `/dashboard`. `claudex dashboard` opens
-  spliced; every head launch best-effort-starts it.
+  drives the statusline `⚠`.
+- Heads keep `/mgmt` but no longer serve `/dashboard`; every head launch
+  best-effort-starts spliced.
 
 ## Gates
 
 ```
-npm run gate          # all Kotlin/Node/console/release/OSS checks, ONE PASS/FAIL
+npm run gate          # all Kotlin/Node/release/OSS checks, ONE PASS/FAIL
 npm run gate:rules    # ast-grep scan (tree) + rule red/green tests
 npm run test:hooks    # orchestrator routing tests
-npm run lint -w console-next # production layers and HTTP boundary are lint-enforced
-npm test -w console-next   # vitest
-./gradlew :console-next:build # the single-file bundle output (never committed)
-./gradlew :console-next:e2e # packaged HTML, isolated real daemon, throwing-page canary
 ```
 
 The Kotlin gateway tier runs under `./gradlew check` (from the repository root, JDK 21): module-law

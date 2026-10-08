@@ -125,12 +125,10 @@ internal class SetupSignIn(
             println("  " + palette.paint(palette.quiet, "needs login   ") + palette.paint(palette.signal, login))
         }
         println()
-        // All four affordances the old block named are still named. The redesign moved the launch
-        // command to the top and dropped the labels, NOT the dashboard — an earlier cut of this
-        // method lost it, and SetupCommandTest caught that rather than the wording change.
+        // The redesign moved the launch command to the top and dropped the labels. The dashboard
+        // left with the console on Oct 7, 2026.
         verb("splice status", "see what's running")
         verb("splice doctor", "anything wrong prints its fix")
-        verb("splice dashboard", "the panel, in a browser")
         // Room before the frame's outro, which renders at column 0 and would otherwise read as one
         // more row of this list.
         println()
@@ -147,5 +145,5 @@ internal class SetupSignIn(
     }
 }
 
-/** Width of the command column in the closing block; "splice dashboard" is the longest at 16. */
+/** Width of the command column in the closing block; "splice status" and "splice doctor" are 13. */
 private const val VERB_W = 18

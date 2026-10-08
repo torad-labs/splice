@@ -14,7 +14,6 @@ import splice.daemonclient.DaemonHealth
 import splice.daemonclient.DaemonSettings
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
-import splice.oauth.SystemBrowserOpener
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -41,8 +40,8 @@ internal object AdminSupport {
 
     /** The running jar, so a spawned daemon reuses the exact same build.
      *
-     *  Located the way [splice.app.DashboardHtml] locates the web UI — by asking the class loader
-     *  for a resource by NAME — instead of by reflecting on this class's protection domain. The
+     *  Located by asking the class loader for a resource by NAME, instead of by reflecting on this
+     *  class's protection domain. The
      *  resource asked for is this object's own class file, so a `jar:` URL answers exactly the
      *  question the protection domain used to answer ("which archive is the code running right now
      *  in?"), and a `file:` URL is an exploded classes dir (a dev build) that falls through to the
@@ -92,8 +91,6 @@ internal object AdminSupport {
      *  must name the third state instead of printing OK for a jar they cannot stat. Null = readable. */
     fun jarAccessFailure(jar: Path): Throwable? =
         Cancellables.runCatchingCancellable { Files.getLastModifiedTime(jar) }.exceptionOrNull()
-
-    fun openUrl(url: String): Boolean = SystemBrowserOpener(TerminalOutput { println(it) }).open(url)
 
     /** DR-174: the mgmt-key read, absence and denied access kept apart — [MgmtKeyFile]'s, in
      *  integrations/daemon-client since LAYOUT-01; this delegate keeps app's call sites unchanged. */

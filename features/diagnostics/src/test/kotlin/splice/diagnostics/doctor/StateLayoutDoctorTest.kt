@@ -41,7 +41,6 @@ private val REQUIRED = setOf(
     "app/src/main/dist/bin/splice-launch",
     "tools/e2e/src/commands/heads.ts",
     "tools/e2e/docker/lib.sh",
-    "tools/e2e/probes/console-wire-keys.ts",
 )
 
 /** One temp HOME per filesystem shape, so every branch is driven independently. The last five are
@@ -177,8 +176,7 @@ class StateLayoutDoctorTest {
  * THE OTHER IMPLEMENTATIONS OF THE STATE-ROOT RULE, pinned against the Kotlin one.
  *
  * `app/src/main/dist/bin/splice-launch` reads the mgmt-key and `config.json` that the daemon WRITES; the two e2e
- * harnesses read the daemon's logs and key the same way; `console-wire-keys.ts --attach` reads the
- * key of whatever daemon is already up. So the rule exists in Node, in bash AND in TypeScript, and
+ * harnesses read the daemon's logs and key the same way. So the rule exists in Node, in bash AND in TypeScript, and
  * a copy that picks the other root reports "mgmt-key not found" on a healthy install, or
  * cold-starts a second daemon against an empty state dir while the real one is serving.
  *

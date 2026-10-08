@@ -13,17 +13,6 @@
 package splice.app.control
 
 /**
- * Renders the dashboard page served at `/` and `/dashboard`.
- *
- * Called PER REQUEST, not once at construction, which is the contract worth having a type for: the
- * daemon's implementation reads the page off the classpath with a filesystem override for local
- * development, so an operator editing the page sees the edit on reload rather than on restart.
- */
-public fun interface DashboardPage {
-    public operator fun invoke(): String
-}
-
-/**
  * Live count of heads that failed to ASSEMBLE or start — a gauge, read fresh per request.
  *
  * The `/health` readiness protocol needs it to converge on a degraded boot instead of waiting

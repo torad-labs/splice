@@ -8,14 +8,13 @@
 // helpers, then same-file collaborators, are now named collaborators in two owned sub-packages —
 // splice.app.head (boot, probes, shutdown, per-head assembly) and splice.app.provider (the
 // compatibility-checked auth-kind/dialect dispatch and provider-specific data selection) — plus
-// three sibling root files (DaemonBoundary, DashboardHtml, ControlPlane). Daemon keeps only its
+// two sibling root files (DaemonBoundary, ControlPlane). Daemon keeps only its
 // constructor, fields, start(), and stop(); everything else delegates to those collaborators.
 package splice.app
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.app.control.ControlServer
-import splice.app.control.DashboardPage
 import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
 import splice.app.control.RuntimeNotAnswering
@@ -56,7 +55,6 @@ import java.nio.file.Path
 public class Daemon(
     private val topology: Topology,
     private val statePaths: StatePaths,
-    private val dashboardHtml: DashboardPage,
     private val log: LogSink = LogSink { System.err.print(it) },
     private val shutdownDaemon: ShutdownDaemon = ShutdownDaemon {},
     private val refreshCall: TokenUrlRefreshCall = TokenUrlRefreshCall(CodexRefresh(log)::refresh),
@@ -106,7 +104,7 @@ public class Daemon(
     )
 
     private val controlPlane = ControlPlane(
-        statePaths, config, mgmtKey, dashboardHtml, log, shutdownDaemon,
+        statePaths, config, mgmtKey, log, shutdownDaemon,
         // The booted config's identity and what it declared, as one value — three parameters until
         // the width ratchet caught this constructor at 13. declaredHeads is still built HERE and not
         // in ControlPlane, because this is the only place that holds the Topology: ControlPlane

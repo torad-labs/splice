@@ -137,7 +137,6 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
             }
         },
     ),
-    "dashboard" to CommandRegistration("", CommandFactory.Alone(Command.Dashboard)),
     "key" to CommandRegistration(
         "set <ENV_NAME> [--value V | --stdin] | list | unset <ENV_NAME>",
         CommandFactory { a -> Command.Key(a.drop(1)) },

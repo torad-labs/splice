@@ -76,7 +76,6 @@ class ClaudeHeadLiveProbeTest {
             val daemon = Daemon(
                 topology = TopologyLoader.parse(topologyToml(controlPort, headPort)),
                 statePaths = StatePaths(baseOverride = tmp.resolve("state")),
-                dashboardHtml = { "<!doctype html>" },
                 log = {},
                 refreshCall = { _, _ -> RefreshAttempt.Denied("live-probe") },
             )

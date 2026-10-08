@@ -14,7 +14,6 @@ import splice.app.auth.claude.ClaudeLoginOwner
 import splice.app.auth.claude.ClaudeLoginWiring
 import splice.app.cli.AdminSupport
 import splice.app.control.ControlServer
-import splice.app.control.DashboardPage
 import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
 import splice.app.control.TopologyDigest
@@ -70,7 +69,6 @@ internal class ControlPlane(
     private val statePaths: StatePaths,
     private val config: ConfigService,
     private val mgmtKey: MgmtKey,
-    private val dashboardHtml: DashboardPage,
     private val log: LogSink,
     private val shutdownDaemon: ShutdownDaemon,
     /** JW-04 + V4-127: the booted config's identity (sha-256 of the parsed bytes, the resolved
@@ -249,7 +247,6 @@ internal class ControlPlane(
             heads,
             config,
             mgmtKey,
-            dashboardHtml,
             log,
             launchService(home, sharing, controlPort),
             shutdownDaemon,

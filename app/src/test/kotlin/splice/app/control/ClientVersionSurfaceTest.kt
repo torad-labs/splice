@@ -58,7 +58,6 @@ class ClientVersionSurfaceTest {
             heads = mapOf("test" to managedHead()),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "" },
             log = {},
             clientVersions = versions,
         )

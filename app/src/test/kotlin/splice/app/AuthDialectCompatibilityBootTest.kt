@@ -119,7 +119,6 @@ class AuthDialectCompatibilityBootTest {
         daemon = Daemon(
             topology = TopologyLoader.parse(topologyToml()),
             statePaths = StatePaths(baseOverride = tmp.resolve("state")),
-            dashboardHtml = { "<!doctype html>" },
             log = logs::add,
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )

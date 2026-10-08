@@ -124,7 +124,6 @@ class AddBackendRouteTest {
             heads = mapOf(HEAD_KEY to managedHead()),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = { logged += it },
             shutdownDaemon = { drains.incrementAndGet() },
         )

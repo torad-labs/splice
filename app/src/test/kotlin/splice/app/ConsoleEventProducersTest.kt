@@ -77,7 +77,6 @@ class ConsoleEventProducersTest {
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = { "<!doctype html>" },
             log = { },
         )
         control.ports.events = publisher.bus

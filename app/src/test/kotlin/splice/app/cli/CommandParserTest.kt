@@ -71,9 +71,7 @@ class CommandParserTest {
     // else, a help flag included, parses to null, so usage prints and nothing runs.
     @Test
     fun `a verb refuses a word it does not name, help flags included - V4-309`() {
-        val noArg = listOf(
-            "version", "shim-version", "init", "setup", "status", "dashboard", "sessions", "restart", "add-model",
-        )
+        val noArg = listOf("version", "shim-version", "init", "setup", "status", "sessions", "restart", "add-model")
         val refused = listOf(
             listOf("restart", "--help"), listOf("restart", "--now", "--help"), listOf("restart", "--now", "--now"),
             listOf("status", "x"), listOf("install", "a", "b"), listOf("install", "--help"),
@@ -115,10 +113,12 @@ class CommandParserTest {
     fun `every verb 0_4_0 ships still parses`() {
         val shipped = listOf(
             "setup", "add", "add-model", "models", "upgrade", "status", "sessions", "perf", "wire", "trace",
-            "restart", "dashboard", "login", "key", "logs", "install", "uninstall", "init", "doctor",
+            "restart", "login", "key", "logs", "install", "uninstall", "init", "doctor",
             "version", "shim-version",
         )
         val lost = shipped.filter { parser.parse(arrayOf(it)) == null }
         assertEquals(emptyList<String>(), lost, "verbs 0.4.0 shipped that no longer parse")
+        // Removed with the console on Oct 7, 2026, by the operator's order.
+        assertEquals(null, parser.parse(arrayOf("dashboard")), "splice dashboard opened the removed console")
     }
 }

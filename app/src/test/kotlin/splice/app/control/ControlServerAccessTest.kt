@@ -10,13 +10,11 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -33,7 +31,6 @@ import splice.core.config.TurnKey
 import java.net.Socket
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicInteger
 
 /** The rows a launched session's own statusline command and SessionStart hook call: the only ones its
  *  turn key opens (Door.SESSION at UsageMount and LaunchMount). */
@@ -44,9 +41,9 @@ private val SESSION_ROWS = setOf(
     "POST /hooks/foreground/{head}",
 )
 
-/** The rows that answer with no key at all: the liveness probe, and the dashboard page at both of its
- *  paths (FleetMount), which asks for the key itself before it calls anything. */
-private val OPEN_ROWS = setOf("GET /health", "GET /", "GET /dashboard")
+/** The row that answers with no key at all: the liveness probe. The console page that answered at
+ *  `/` and `/dashboard` was removed on Oct 7, 2026. */
+private val OPEN_ROWS = setOf("GET /health")
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ControlServerAccessTest {
@@ -54,7 +51,6 @@ class ControlServerAccessTest {
     private lateinit var control: ControlServer
     private lateinit var mgmtKey: String
     private lateinit var turnKey: String
-    private val dashboardRenders = AtomicInteger()
     private val logLines = CopyOnWriteArrayList<String>()
     private val client = HttpClient(CIO) { expectSuccess = false }
     private val port: Int get() = control.listeningPort
@@ -75,10 +71,6 @@ class ControlServerAccessTest {
             heads = emptyMap(),
             config = ConfigService(paths),
             mgmtKey = mgmt,
-            dashboardHtml = {
-                dashboardRenders.incrementAndGet()
-                "<!doctype html><html><head><title>splice</title></head><body></body></html>"
-            },
             log = { logLines += it },
             mcpHost = McpHost(sharing, { JsonObject(emptyMap()) }, log = { }),
         )
@@ -143,14 +135,12 @@ class ControlServerAccessTest {
     }
 
     // DNS rebinding. A page in the operator's browser that rebinds attacker.example to 127.0.0.1
-    // reads loopback responses as its own origin — /health and the dashboard HTML need no key. Its
-    // requests name attacker.example in Host, so the listener refuses them before routing: the
-    // dashboard handler never runs, and even a request carrying the key is refused.
+    // reads loopback responses as its own origin — /health needs no key. Its requests name
+    // attacker.example in Host, so the listener refuses them before routing, and even a request
+    // carrying the key is refused.
     @Test
     fun `a request naming a foreign Host is refused before any route runs`() {
-        val rendersBefore = dashboardRenders.get()
         assertEquals(403, rawStatus("/", "attacker.example:$port"))
-        assertEquals(rendersBefore, dashboardRenders.get(), "the dashboard handler never ran")
         assertEquals(403, rawStatus("/health", "attacker.example:$port"))
         assertEquals(403, rawStatus("/api/status", "attacker.example:$port", bearer = mgmtKey), "even with the key")
         assertEquals(200, rawStatus("/health", "localhost:$port"))
@@ -161,16 +151,12 @@ class ControlServerAccessTest {
         assertTrue(said.single().startsWith("[security] the control plane refused"), said.single())
     }
 
-    // 2026-09-24: the page never carries the key. Every local process, and every account on the box,
-    // reaches this route with a loopback Host (curl does), so a key in the page is a key for all of
-    // them. The console gets it from `splice dashboard`'s owner-only redirect page instead.
+    // Oct 7, 2026: the operator removed the console UI. The daemon serves no page at either path the
+    // console lived at; only the keyed API and /health remain.
     @Test
-    fun `the console page carries no key, at either of its paths`() = runBlocking {
+    fun `the daemon serves no console page, at either path it lived at`() {
         for (path in listOf("/", "/dashboard")) {
-            val page = client.get("http://127.0.0.1:$port$path").bodyAsText()
-            assertTrue(page.contains("<title>splice</title>"), page)
-            assertFalse(page.contains(mgmtKey), "$path served the management key")
-            assertFalse(page.contains(turnKey), "$path served the turn key")
+            assertEquals(404, rawStatus(path, "localhost:$port"), path)
         }
     }
 

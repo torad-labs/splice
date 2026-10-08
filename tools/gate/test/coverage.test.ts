@@ -25,9 +25,10 @@ afterAll(() => {
 });
 
 /** The rule directories sgconfig.yml routes, named ONCE. The mutant copies and the baseline's
- *  denominator both read this, so a third rule dir added to the config cannot land while the
- *  copies and the count quietly go on describing the old two. */
-const RULE_DIRS = ["console", "kotlin"] as const;
+ *  denominator both read this, so a second rule dir added to the config cannot land while the
+ *  copies and the count quietly go on describing the old one. The console's dir left with the
+ *  console UI on Oct 7, 2026. */
+const RULE_DIRS = ["kotlin"] as const;
 
 /** The rule total counted from the FILESYSTEM, never retyped. A hand-kept total is the same defect
  *  mutant (b) below was written against: `62` went stale the moment a rule landed correctly

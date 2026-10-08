@@ -141,7 +141,6 @@ class ClaudeCarryingPoolUsageTest {
             heads = mapOf(NATIVE_HEAD to rig.head, "synthetic-other-head" to rig.head),
             config = ConfigService(fixture.paths),
             mgmtKey = rig.key,
-            dashboardHtml = { "<!doctype html>" },
             log = {},
             sessions = sessions(),
         )
@@ -248,7 +247,6 @@ class ClaudeCarryingPoolUsageTest {
             heads = mapOf(NATIVE_HEAD to rig.head.copy(perfRows = source)),
             config = ConfigService(fixture.paths),
             mgmtKey = rig.key,
-            dashboardHtml = { "<!doctype html>" },
             log = {},
             sessions = sessions(),
         )

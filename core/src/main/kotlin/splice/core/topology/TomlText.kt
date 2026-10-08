@@ -43,7 +43,7 @@ internal class TomlKeys {
     fun canonical(element: JsonElement): JsonElement = when (element) {
         is JsonObject -> JsonObject(element.entries.associate { (key, value) -> unquote(key) to canonical(value) })
         is JsonArray -> JsonArray(element.map(::canonical))
-        else -> element
+        is JsonPrimitive -> element
     }
 
     fun at(tree: JsonElement?, path: List<String>): JsonElement? =

@@ -12,6 +12,7 @@
 package splice.core.topology
 
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.descriptors.PolymorphicKind
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.SerialKind
@@ -86,7 +87,8 @@ class TopologyFieldsManifestTest {
     private fun valuesOf(element: SerialDescriptor): List<String> = when (element.kind) {
         SerialKind.ENUM -> (0 until element.elementsCount).map(element::getElementName)
         StructureKind.LIST -> valuesOf(element.getElementDescriptor(0))
-        else -> emptyList()
+        StructureKind.CLASS, StructureKind.MAP, StructureKind.OBJECT, SerialKind.CONTEXTUAL -> emptyList()
+        is PolymorphicKind, is PrimitiveKind -> emptyList()
     }
 
     private fun isTable(element: SerialDescriptor): Boolean = element.kind == StructureKind.CLASS && !element.isInline

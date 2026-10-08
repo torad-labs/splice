@@ -13,8 +13,10 @@
 // file-private in Kotlin, so leaving them behind in ConfigService.kt would not compile.
 package splice.core.config
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.longOrNull
@@ -199,7 +201,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
     fun jsonScalar(el: JsonElement): Any? = when (el) {
         is JsonNull -> null
         is JsonPrimitive -> el.booleanOrNull ?: el.longOrNull ?: el.content
-        else -> null
+        is JsonObject, is JsonArray -> null
     }
 
     // One dispatch line per KnobKind. The three arms share nothing — not a value, not a helper, not

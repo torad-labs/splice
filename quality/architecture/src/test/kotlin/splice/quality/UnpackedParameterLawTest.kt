@@ -35,6 +35,8 @@ import org.jetbrains.kotlin.cli.common.messages.MessageCollector
 import org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles
 import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
 import org.jetbrains.kotlin.com.intellij.openapi.util.Disposer
+import org.jetbrains.kotlin.com.intellij.psi.PsiErrorElement
+import org.jetbrains.kotlin.com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.config.CommonConfigurationKeys
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
@@ -44,6 +46,7 @@ import org.jetbrains.kotlin.psi.KtParenthesizedExpression
 import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtPsiFactory
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -86,7 +89,16 @@ internal object UnpackedParameters {
 
     /** The member name when the property's initializer parses as `p.member` and `p` is one of [params]. */
     private fun storedCopyOf(property: KoPropertyDeclaration, params: Set<String>): String? {
-        val initializer = psi.createDeclaration<KtProperty>(property.text).initializer ?: return null
+        val declaration = psi.createDeclaration<KtProperty>(property.text)
+        // The runtime parser is Konsist's compiler (2.0.x), older than the one the tree compiles with. Syntax it cannot read
+        // becomes an error element and the initializer would be skipped in silence, so the law fails here instead.
+        PsiTreeUtil.findChildOfType(declaration, PsiErrorElement::class.java)?.let { error ->
+            error(
+                "the unpack law's parser cannot read ${property.location} (offset ${error.textOffset}): " +
+                    error.errorDescription,
+            )
+        }
+        val initializer = declaration.initializer ?: return null
         val copy = unwrapped(initializer) as? KtDotQualifiedExpression
         val receiver = copy?.let { unwrapped(it.receiverExpression) } as? KtNameReferenceExpression
         val member = copy?.selectorExpression as? KtNameReferenceExpression
@@ -342,6 +354,24 @@ internal class UnpackedParameterLawTest {
             """,
         )
         assertTrue(found.isEmpty(), found.joinToString())
+    }
+
+    @Test
+    fun `an initializer the parser cannot read fails the law, naming where, and is never skipped`(@TempDir dir: File) {
+        val failure = assertThrows(IllegalStateException::class.java) {
+            scan(
+                dir,
+                """
+                class Holder(daemon: DaemonEnvironment) {
+                    private val statePaths = daemon.statePaths
+                    private val config = daemon. +
+                }
+                """,
+            )
+        }
+        assertTrue(failure.message.orEmpty().contains("Fixture.kt") && failure.message.orEmpty().contains("offset")) {
+            "the failure must name the file and the offset, was: ${failure.message}"
+        }
     }
 
     private fun scan(dir: File, source: String): List<UnpackedParameters.Unpacking> {

@@ -13,6 +13,8 @@ import splice.app.auth.claude.ClaudeAccountsSource
 import splice.app.auth.claude.ClaudeLoginOwner
 import splice.app.auth.claude.ClaudeLoginWiring
 import splice.app.cli.AdminSupport
+import splice.app.control.ControlHealthProbes
+import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.FailedHeads
 import splice.app.control.ManagedHead
@@ -248,23 +250,27 @@ internal class ControlPlane(
             config,
             mgmtKey,
             log,
-            launchService(home, sharing, controlPort),
-            shutdownDaemon,
-            failedHeads,
-            headCount,
-            topologyDigest = TopologyDigest { running?.digest() ?: topology.digest },
-            configPath = topology.path?.toString().orEmpty(),
-            topologyStale = running?.let { TopologyStale(it::stale) }
-                ?: TopologyStaleness.probe(topology.path, topology.digest),
-            turnPathStalled = turnPathStalled,
-            mcpHost = mcpHost,
-            sessions = SessionRegistry(
-                home.resolve(".claude").resolve("sessions"),
-                RouteOfPid { pid -> environment.route(pid) { port -> headOfPort(heads, port) } },
-                heard = console.sessionsHeard,
-                foreground = foregroundTools,
+            probes = ControlHealthProbes(
+                failedHeads = failedHeads,
+                configuredHeads = headCount,
+                topologyDigest = TopologyDigest { running?.digest() ?: topology.digest },
+                configPath = topology.path?.toString().orEmpty(),
+                topologyStale = running?.let { TopologyStale(it::stale) }
+                    ?: TopologyStaleness.probe(topology.path, topology.digest),
+                turnPathStalled = turnPathStalled,
             ),
-            clientVersions = clientVersions,
+            runtime = ControlRuntime(
+                launchService = launchService(home, sharing, controlPort),
+                shutdownDaemon = shutdownDaemon,
+                sessions = SessionRegistry(
+                    home.resolve(".claude").resolve("sessions"),
+                    RouteOfPid { pid -> environment.route(pid) { port -> headOfPort(heads, port) } },
+                    heard = console.sessionsHeard,
+                    foreground = foregroundTools,
+                ),
+                mcpHost = mcpHost,
+                clientVersions = clientVersions,
+            ),
         )
         wireConsolePorts(srv)
         wireRestartSuccessor(srv, controlPort)

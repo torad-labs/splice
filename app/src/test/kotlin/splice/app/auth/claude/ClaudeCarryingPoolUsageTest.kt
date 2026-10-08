@@ -25,6 +25,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.pool.HeadAccountPinSource
+import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.PerfSessionAccountIndex
@@ -142,7 +143,7 @@ class ClaudeCarryingPoolUsageTest {
             config = ConfigService(fixture.paths),
             mgmtKey = rig.key,
             log = {},
-            sessions = sessions(),
+            runtime = ControlRuntime(sessions = sessions()),
         )
 
     @Test
@@ -248,7 +249,7 @@ class ClaudeCarryingPoolUsageTest {
             config = ConfigService(fixture.paths),
             mgmtKey = rig.key,
             log = {},
-            sessions = sessions(),
+            runtime = ControlRuntime(sessions = sessions()),
         )
         control.ports.claudeLogins = rig.server.ports.claudeLogins
         try {

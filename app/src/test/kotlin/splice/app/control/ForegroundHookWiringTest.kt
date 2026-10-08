@@ -55,7 +55,7 @@ class ForegroundHookWiringTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = {},
-            sessions = registry,
+            runtime = ControlRuntime(sessions = registry),
         )
         runBlocking { server.start() }
         val client = HttpClient(CIO) { expectSuccess = false }

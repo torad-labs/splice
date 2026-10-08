@@ -72,7 +72,7 @@ class ControlServerAccessTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = { logLines += it },
-            mcpHost = McpHost(sharing, { JsonObject(emptyMap()) }, log = { }),
+            runtime = ControlRuntime(mcpHost = McpHost(sharing, { JsonObject(emptyMap()) }, log = { })),
         )
         runBlocking { control.start() }
     }

@@ -59,7 +59,7 @@ class ClientVersionSurfaceTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = {},
-            clientVersions = versions,
+            runtime = ControlRuntime(clientVersions = versions),
         )
         server.start() // routed and bound before it returns: Ktor's default SEQUENTIAL startup (V4-139)
         val port = server.listeningPort

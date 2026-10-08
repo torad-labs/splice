@@ -56,7 +56,7 @@ class TeamsRoutesWiringTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = { },
-            sessions = rig.registry,
+            runtime = ControlRuntime(sessions = rig.registry),
         )
         if (wired) {
             control.ports.teams = rig.store

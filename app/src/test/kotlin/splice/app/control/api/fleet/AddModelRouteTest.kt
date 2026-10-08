@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.signin.LoginStatus
+import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.configuration.add.AddConsole
 import splice.configuration.add.AddSignIn
@@ -86,7 +87,7 @@ class AddModelRouteTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = { logged += it },
-            shutdownDaemon = { drains.incrementAndGet() },
+            runtime = ControlRuntime(shutdownDaemon = { drains.incrementAndGet() }),
         )
         adds = AddConsole(NoSignIn(), WrapperInstall { _, _ -> true }, EnvReader { vars[it] }, TerminalOutput { })
         runBlocking { control.start() }

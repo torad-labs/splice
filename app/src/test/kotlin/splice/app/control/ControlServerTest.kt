@@ -146,16 +146,20 @@ class ControlServerTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = {},
-            launchService = LaunchService(
-                splice.client.ClaudeConfigMaterializer(tmp),
+            runtime = ControlRuntime(
+                launchService = LaunchService(
+                    splice.client.ClaudeConfigMaterializer(tmp),
+                ),
+                shutdownDaemon = {
+                    shutdownRequests.incrementAndGet()
+                    shutdownRequested.countDown()
+                },
             ),
-            shutdownDaemon = {
-                shutdownRequests.incrementAndGet()
-                shutdownRequested.countDown()
-            },
-            topologyDigest = TopologyDigest { "boot-digest-abc" },
-            configPath = "/tmp/splice.toml",
-            topologyStale = { true },
+            probes = ControlHealthProbes(
+                topologyDigest = TopologyDigest { "boot-digest-abc" },
+                configPath = "/tmp/splice.toml",
+                topologyStale = { true },
+            ),
         )
         runBlocking { control.start() }
     }
@@ -234,8 +238,7 @@ class ControlServerTest {
             config = ConfigService(paths),
             mgmtKey = MgmtKey(paths),
             log = {},
-            failedHeads = { 1 },
-            configuredHeads = 1,
+            probes = ControlHealthProbes(failedHeads = { 1 }, configuredHeads = 1),
         )
         degraded.start()
         try {

@@ -167,11 +167,13 @@ class ResumeRecipeWiringTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = { },
-            sessions = SessionRegistry(
-                sessionsDir = sessions,
-                routeOf = { SessionRoute.Unknown },
-                pidAlive = { true },
-                clock = { RESUME_AT },
+            runtime = ControlRuntime(
+                sessions = SessionRegistry(
+                    sessionsDir = sessions,
+                    routeOf = { SessionRoute.Unknown },
+                    pidAlive = { true },
+                    clock = { RESUME_AT },
+                ),
             ),
         )
         runBlocking { control.start() }

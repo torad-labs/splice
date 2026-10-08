@@ -32,6 +32,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
 import splice.core.auth.AuthDescription
@@ -84,7 +85,7 @@ class DrainingRestartTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = { },
-            shutdownDaemon = { drains.incrementAndGet() },
+            runtime = ControlRuntime(shutdownDaemon = { drains.incrementAndGet() }),
         )
         control.ports.supervised = DaemonSupervised { supervised }
         runBlocking { control.start() }

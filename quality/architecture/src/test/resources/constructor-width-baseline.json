@@ -39,10 +39,6 @@
       "params": 19,
       "subsystems": 0
     },
-    "app/src/main/kotlin/splice/app/control/ControlServer.kt ControlServer": {
-      "params": 16,
-      "subsystems": 8
-    },
     "features/accounts/src/main/kotlin/splice/accounts/pool/HeadAccountPool.kt HeadAccountView": {
       "params": 15,
       "subsystems": 0

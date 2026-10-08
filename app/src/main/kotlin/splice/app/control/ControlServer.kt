@@ -77,30 +77,28 @@ public class ControlServer(
     private val config: ConfigService,
     private val mgmtKey: MgmtKey,
     private val log: LogSink,
-    private val launchService: LaunchService? = null,
-    private val shutdownDaemon: ShutdownDaemon = ShutdownDaemon {},
-    // Live count of heads that failed to assemble or start (Daemon.start's `failed` map) — lets
-    // the /health readyHeads protocol converge on a degraded boot instead of waiting forever for
-    // a head that will never become ready (review 2026-07-22 round 3).
-    private val failedHeads: FailedHeads = FailedHeads { 0 },
-    // Total CONFIGURED heads (topology). The readyHeads + failedHeads == heads invariant only holds
-    // against the configured total: an assembly-failed head is counted in failedHeads but is NEVER
-    // in the `heads` map, so reporting heads.size broke the invariant for it (review 2026-07-23).
-    private val configuredHeads: Int = heads.size,
-    // JW-04: the booted config identity + a per-request staleness recompute (fail-open lambda).
-    // Topology stays deliberately non-hot-reloadable; these only make the required restart VISIBLE
-    // to the shim, doctor, and the dashboard. V4-162: the context windows are re-read live, so the
-    // digest names the version the daemon RUNS and is read per request like the staleness.
-    private val topologyDigest: TopologyDigest = TopologyDigest { "" },
-    private val configPath: String = "",
-    private val topologyStale: TopologyStale = TopologyStale { false },
-    private val turnPathStalled: TurnPathStalled = TurnPathStalled { emptyList() },
-    /** v0.4.0 shared MCP hosting; null keeps the control plane exactly as before. */
-    private val mcpHost: McpHost? = null,
-    /** v0.4.0 (FEATURES.md §4): the Claude Code session registry, read-only, for /api/sessions. */
-    sessions: SessionSource? = null,
-    private val clientVersions: ClientVersionTracker = ClientVersionTracker(),
+    /** The health probes this server reads per request: readyHeads vs failedHeads on /health, the
+     *  booted config identity and its staleness, and the turn-path stall. See [ControlHealthProbes]. */
+    probes: ControlHealthProbes = ControlHealthProbes(),
+    /** The runtime collaborators the mounts share: launch, shutdown, the session registry, shared MCP
+     *  hosting (null keeps the control plane exactly as before) and the client version tracker. */
+    runtime: ControlRuntime = ControlRuntime(),
 ) {
+    private val failedHeads: FailedHeads = probes.failedHeads
+    // Total CONFIGURED heads. The readyHeads + failedHeads == heads invariant only holds against the
+    // configured total: an assembly-failed head is counted in failedHeads but is NEVER in the `heads`
+    // map, so reporting heads.size broke the invariant for it (review 2026-07-23).
+    private val configuredHeads: Int = probes.configuredHeads ?: heads.size
+    private val topologyDigest: TopologyDigest = probes.topologyDigest
+    private val configPath: String = probes.configPath
+    private val topologyStale: TopologyStale = probes.topologyStale
+    private val turnPathStalled: TurnPathStalled = probes.turnPathStalled
+    private val launchService: LaunchService? = runtime.launchService
+    private val shutdownDaemon: ShutdownDaemon = runtime.shutdownDaemon
+    private val mcpHost: McpHost? = runtime.mcpHost
+    private val sessions: SessionSource? = runtime.sessions
+    private val clientVersions: ClientVersionTracker = runtime.clientVersions
+
     /** The nine ports ControlPlane wires after construction — see [ConsolePorts], which carries the
      *  discipline they share and why they left this file (V4-161). Read at CALL time, never captured. */
     public val ports: ConsolePorts = ConsolePorts()

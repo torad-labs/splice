@@ -35,6 +35,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
 import splice.client.ClaudeConfigMaterializer
@@ -129,7 +130,7 @@ class ClaudeHeadRoutesWiringTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = { },
-            launchService = launchService,
+            runtime = ControlRuntime(launchService = launchService),
         )
         runBlocking { control.start() }
         val port = control.listeningPort

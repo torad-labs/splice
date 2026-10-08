@@ -28,6 +28,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.client.mcp.DirectoryProbe
 import splice.client.mcp.GlobalMcpServersReader
@@ -107,7 +108,7 @@ class McpRoutesTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = { },
-            mcpHost = host,
+            runtime = ControlRuntime(mcpHost = host),
         )
         // routed and bound before it returns: Ktor's default SEQUENTIAL startup (V4-139)
         runBlocking { control.start() }

@@ -37,6 +37,7 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
+import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
 import splice.configuration.add.AddConsole
@@ -125,7 +126,7 @@ class AddBackendRouteTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = { logged += it },
-            shutdownDaemon = { drains.incrementAndGet() },
+            runtime = ControlRuntime(shutdownDaemon = { drains.incrementAndGet() }),
         )
         control.ports.add = AddConsole(FakeSignIn(), WrapperInstall { k, _ -> linked.add(k) }, env, TerminalOutput { })
         runBlocking { control.start() }

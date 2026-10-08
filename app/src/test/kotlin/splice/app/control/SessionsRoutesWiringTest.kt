@@ -73,11 +73,13 @@ class SessionsRoutesWiringTest {
             config = ConfigService(paths),
             mgmtKey = mgmt,
             log = { },
-            sessions = SessionRegistry(
-                sessionsDir = sessions,
-                routeOf = { SessionRoute.Unknown },
-                pidAlive = { true },
-                clock = { SESSIONS_AT },
+            runtime = ControlRuntime(
+                sessions = SessionRegistry(
+                    sessionsDir = sessions,
+                    routeOf = { SessionRoute.Unknown },
+                    pidAlive = { true },
+                    clock = { SESSIONS_AT },
+                ),
             ),
         )
         control.ports.activity = stores

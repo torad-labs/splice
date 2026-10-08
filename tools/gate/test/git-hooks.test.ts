@@ -9,6 +9,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rea
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import {
+  breaches,
   checksFor,
   type GateRunner,
   failedTasks,
@@ -26,7 +27,6 @@ import {
   SHIM_BEGIN,
   scanMirror,
   shimText,
-  unequalBytes,
 } from "../src/commands/hook.ts";
 import { resolveJdk21 } from "../src/lib/jdk.ts";
 import { type Layout, layout } from "../src/lib/repo.ts";
@@ -130,6 +130,11 @@ function lay(root: string): Layout {
   return { repoRoot: root, buildRoot: root };
 }
 
+/** The paths the contract refuses among [paths], in the order given. */
+function refused(root: string, paths: readonly string[]): string[] {
+  return breaches(root, paths).map((breach) => breach.path);
+}
+
 /** A fake gradle: judges the bytes in the worktree's `core/`, and names each file that holds the violation. */
 function compiler(root: string, calls: string[][] = []): GateRunner {
   return async (tasks) => {
@@ -225,7 +230,7 @@ describe("pre-commit judges the bytes the commit holds", () => {
     writeFile(root, TARGET, VIOLATION);
     git(root, ["add", TARGET]);
     writeFile(root, TARGET, CLEAN);
-    expect(unequalBytes(root, [TARGET])).toEqual([TARGET]);
+    expect(refused(root, [TARGET])).toEqual([TARGET]);
     expect(await preCommit(lay(root), { gate: compiler(root) })).toBe(1);
   });
 
@@ -235,7 +240,7 @@ describe("pre-commit judges the bytes the commit holds", () => {
     git(root, ["config", "filter.upper.clean", "tr a-z A-Z"]);
     writeFile(root, TARGET, CLEAN);
     git(root, ["add", ".gitattributes", TARGET]);
-    expect(unequalBytes(root, [TARGET])).toEqual([TARGET]);
+    expect(refused(root, [TARGET])).toEqual([TARGET]);
   });
 
   test("a staged symlink is judged by its link text, not by the file it names", () => {
@@ -243,7 +248,7 @@ describe("pre-commit judges the bytes the commit holds", () => {
     writeFile(root, "docs/README.md", "docs\n");
     symlinkSync("README.md", join(root, "docs", "LINK.md"));
     git(root, ["add", "docs/LINK.md"]);
-    expect(unequalBytes(root, ["docs/LINK.md"])).toEqual([]);
+    expect(refused(root, ["docs/LINK.md"])).toEqual([]);
   });
 
   test("a file whose executable bit differs from the index's mode is refused: the mode is part of the entry", () => {
@@ -251,7 +256,7 @@ describe("pre-commit judges the bytes the commit holds", () => {
     writeFile(root, TARGET, CLEAN);
     git(root, ["add", TARGET]);
     chmodSync(join(root, TARGET), 0o755);
-    expect(unequalBytes(root, [TARGET])).toEqual([TARGET]);
+    expect(refused(root, [TARGET])).toEqual([TARGET]);
   });
 
   test("RED: a commit that only deletes a Kotlin file runs the module the file left", async () => {
@@ -278,6 +283,70 @@ describe("pre-commit judges the bytes the commit holds", () => {
     expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(0);
     expect(calls.length).toBe(1);
     expect(calls[0]).toEqual(expect.arrayContaining([":core:compileKotlin", ":core:detekt", ":app:compileKotlin", ":app:detekt"]));
+  });
+
+  test("RED: a Kotlin path whose type changes from a file to a symlink is refused, and gradle is never asked", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    writeFile(root, SEAT_FILE, CLEAN);
+    git(root, ["add", TARGET, SEAT_FILE]);
+    commit(root, "chore(test): probe");
+    rmSync(join(root, TARGET));
+    symlinkSync("Seat.kt", join(root, TARGET));
+    git(root, ["add", TARGET]);
+    const calls: string[][] = [];
+    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(1);
+    expect(calls).toEqual([]);
+  });
+
+  test("RED: a commit that deletes a path the worktree still holds is refused, and gradle is never asked", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): probe");
+    git(root, ["rm", "-q", "--cached", TARGET]);
+    const calls: string[][] = [];
+    const { result, text } = await captured(() => preCommit(lay(root), { gate: compiler(root, calls) }));
+    expect(result).toBe(1);
+    expect(calls).toEqual([]);
+    expect(text).toContain(`commit deletes ${TARGET} but the worktree still holds it`);
+  });
+
+  test("RED: a Kotlin symlink is refused: a link holds no bytes of its own for the gate to judge", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    symlinkSync("Probe.kt", join(root, SEAT_FILE.replace("Seat.kt", "Link.kt")));
+    git(root, ["add", TARGET, SEAT_FILE.replace("Seat.kt", "Link.kt")]);
+    const calls: string[][] = [];
+    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(1);
+    expect(calls).toEqual([]);
+  });
+
+  test("a file with a group execute bit and no owner execute bit is a 100644 file: only the owner bit makes 100755", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    chmodSync(join(root, TARGET), 0o654);
+    const calls: string[][] = [];
+    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(0);
+    expect(calls.length).toBe(1);
+  });
+
+  test("a symlink whose target holds a byte that is not UTF-8 is judged by its raw bytes", async () => {
+    const root = wallsRepo();
+    writeFile(root, "docs/README.md", "docs\n");
+    symlinkSync(Buffer.concat([Buffer.from("README"), Buffer.from([0xff]), Buffer.from(".md")]), join(root, "docs", "raw-link"));
+    git(root, ["add", "docs/raw-link"]);
+    expect(await preCommit(lay(root))).toBe(0);
+  });
+
+  test("THE CONTRACT: an entry that is neither a file nor a symlink is refused, not passed", async () => {
+    const root = wallsRepo();
+    writeFile(root, "sub/inner.txt", "x\n");
+    git(root, ["update-index", "--add", "--cacheinfo", "160000,1111111111111111111111111111111111111111,sub"]);
+    const { result, text } = await captured(() => preCommit(lay(root)));
+    expect(result).toBe(1);
+    expect(text).toContain("sub: index mode 160000 is not a file or a symlink");
   });
 
   test("a Kotlin file no check covers is refused, and gradle is never asked", async () => {

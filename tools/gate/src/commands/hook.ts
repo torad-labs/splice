@@ -120,15 +120,11 @@ function gitPaths(root: string, args: readonly string[]): string[] {
   return r.stdout.toString("utf8").split("\0").filter((p) => p.length > 0);
 }
 
-/** The paths this commit changes, read from the index git is writing (GIT_INDEX_FILE when git sets one). */
-export function stagedPaths(root: string): string[] {
-  return gitPaths(root, ["diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"]);
-}
-
-/** Every path this commit changes, deletions included. A rename is read as the two paths it moves between, so the module
- *  it leaves is judged too. Module selection reads these; the walls and the byte comparison read stagedPaths. */
-export function touchedPaths(root: string): string[] {
-  return gitPaths(root, ["diff", "--cached", "--name-only", "--no-renames", "--diff-filter=ACMRD", "-z"]);
+/** Every path this commit changes, read from the index git is writing (GIT_INDEX_FILE when git sets one): added, copied,
+ *  modified, type-changed and deleted. A rename is read as the two paths it moves between, so the module it leaves is
+ *  checked too. */
+export function changedPaths(root: string): string[] {
+  return gitPaths(root, ["diff", "--cached", "--name-only", "--no-renames", "--diff-filter=ACMRTD", "-z"]);
 }
 
 /** The worktree's paths that differ from HEAD, tracked or untracked: the uncommitted work of every seat. */
@@ -138,46 +134,97 @@ export function dirtyPaths(root: string): string[] {
   return [...new Set([...tracked, ...untracked])].sort();
 }
 
-/** The index entry (`<mode> <blob>`) that `git add` would store for each worktree path now. Regular files are hashed raw
- *  (`--no-filters`): a clean filter would turn them into the filtered blob the index holds. A symlink is its link text,
- *  never the file it names. A path missing from the worktree has no entry. */
+const FILE_MODE = "100644";
+const EXECUTABLE_MODE = "100755";
+const SYMLINK_MODE = "120000";
+/** What a worktree path holds when it is a directory or another kind: never an entry a commit can hold. */
+const OTHER_KIND = "other";
+
+/** The entries the index holds: `path -> "<mode> <blob>"`. */
+function indexEntries(root: string): Map<string, string> {
+  const entries = new Map<string, string>();
+  for (const entry of gitPaths(root, ["ls-files", "-s", "-z"])) {
+    const tab = entry.indexOf("\t");
+    const [mode = "", blob = ""] = entry.slice(0, tab).split(" ");
+    entries.set(entry.slice(tab + 1), `${mode} ${blob}`);
+  }
+  return entries;
+}
+
+/** The blob `git add` would store for [bytes]: hashed as given, with no filter and no text decoding. */
+function hashBytes(root: string, bytes: Buffer): string {
+  const hashed = spawnSync("git", ["hash-object", "--no-filters", "--stdin"], { cwd: root, input: bytes });
+  if (hashed.status !== 0) throw new Error(`git hash-object failed: ${hashed.stderr.toString().trim()}`);
+  return hashed.stdout.toString("utf8").trim();
+}
+
+/** What each worktree path holds as an index entry, the way `git add` would store it. A symlink is its raw link bytes,
+ *  never the file it names. A file is its raw bytes, and only the owner execute bit makes it 100755, as git does. A
+ *  missing path has no entry; a directory or another kind is OTHER_KIND. */
 function worktreeEntries(root: string, paths: readonly string[]): Map<string, string> {
   const entries = new Map<string, string>();
-  const regular = new Map<string, string>();
+  const files = new Map<string, string>();
   for (const path of paths) {
     const abs = join(root, path);
     const stat = lstatSync(abs, { throwIfNoEntry: false });
     if (stat === undefined) continue;
     if (stat.isSymbolicLink()) {
-      const link = spawnSync("git", ["hash-object", "--no-filters", "--stdin"], { cwd: root, encoding: "utf8", input: readlinkSync(abs) });
-      if (link.status !== 0) throw new Error(`git hash-object failed: ${link.stderr.trim()}`);
-      entries.set(path, `120000 ${link.stdout.trim()}`);
+      entries.set(path, `${SYMLINK_MODE} ${hashBytes(root, readlinkSync(abs, { encoding: "buffer" }))}`);
+    } else if (stat.isFile()) {
+      files.set(path, (stat.mode & 0o100) !== 0 ? EXECUTABLE_MODE : FILE_MODE);
     } else {
-      regular.set(path, (stat.mode & 0o111) !== 0 ? "100755" : "100644");
+      entries.set(path, OTHER_KIND);
     }
   }
-  if (regular.size > 0) {
-    const names = [...regular.keys()];
+  if (files.size > 0) {
+    const names = [...files.keys()];
     const hashed = spawnSync("git", ["hash-object", "--no-filters", "--stdin-paths"], { cwd: root, encoding: "utf8", input: `${names.join("\n")}\n` });
     if (hashed.status !== 0) throw new Error(`git hash-object failed: ${hashed.stderr.trim()}`);
     const hashes = hashed.stdout.trim().split("\n");
-    names.forEach((path, i) => entries.set(path, `${regular.get(path)} ${hashes[i] ?? ""}`));
+    names.forEach((path, i) => entries.set(path, `${files.get(path)} ${hashes[i] ?? ""}`));
   }
   return entries;
 }
 
-/** The staged paths whose index entry (mode and blob) is not the entry `git add` would store from the worktree file.
- *  A staged path missing from the worktree differs too. */
-export function unequalBytes(root: string, staged: readonly string[]): string[] {
-  if (staged.length === 0) return [];
-  const indexed = new Map<string, string>();
-  for (const entry of gitPaths(root, ["ls-files", "-s", "-z"])) {
-    const tab = entry.indexOf("\t");
-    const [mode = "", blob = ""] = entry.slice(0, tab).split(" ");
-    indexed.set(entry.slice(tab + 1), `${mode} ${blob}`);
+/** A path a commit changes that the worktree does not match, with the reason, named for the path. */
+export interface Breach {
+  readonly path: string;
+  readonly reason: string;
+}
+
+/** THE CONTRACT. For every path a commit changes, the worktree holds the entry the commit holds, in existence, type,
+ *  git-normalized mode and raw bytes; a path the commit deletes is absent from the worktree. Every other case is refused,
+ *  named: a mode that is neither a file nor a symlink, a Kotlin symlink (a link holds no bytes of its own to judge), a
+ *  directory where a file is staged, a type change, and two sets of bytes. The gate judges what the commit holds, so it
+ *  never reads a file the commit does not hold. */
+export function breaches(root: string, changed: readonly string[]): Breach[] {
+  if (changed.length === 0) return [];
+  const indexed = indexEntries(root);
+  const worktree = worktreeEntries(root, changed);
+  const out: Breach[] = [];
+  for (const path of changed) {
+    const onDisk = worktree.get(path);
+    const staged = indexed.get(path);
+    if (staged === undefined) {
+      if (onDisk !== undefined) out.push({ path, reason: `commit deletes ${path} but the worktree still holds it` });
+      continue;
+    }
+    const mode = staged.split(" ")[0] ?? "";
+    if (mode !== FILE_MODE && mode !== EXECUTABLE_MODE && mode !== SYMLINK_MODE) {
+      out.push({ path, reason: `${path}: index mode ${mode} is not a file or a symlink, and the gate judges neither` });
+    } else if (mode === SYMLINK_MODE && KOTLIN.test(path)) {
+      out.push({ path, reason: `${path}: a Kotlin symlink; the gate judges the bytes a commit holds, and a link holds none` });
+    } else if (onDisk === undefined) {
+      out.push({ path, reason: `${path}: the index holds it but the worktree does not` });
+    } else if (onDisk === OTHER_KIND) {
+      out.push({ path, reason: `${path}: the worktree holds a directory or another kind, not a file` });
+    } else if ((mode === SYMLINK_MODE) !== onDisk.startsWith(`${SYMLINK_MODE} `)) {
+      out.push({ path, reason: `${path}: the type changed between a symlink and a file` });
+    } else if (onDisk !== staged) {
+      out.push({ path, reason: `${path}: the index and the worktree hold different content or mode` });
+    }
   }
-  const worktree = worktreeEntries(root, staged);
-  return staged.filter((path) => indexed.get(path) === undefined || worktree.get(path) !== indexed.get(path));
+  return out;
 }
 
 /** A staged blob, exactly as the commit holds it. The walls read the index, never the worktree. */
@@ -394,24 +441,23 @@ function tailOf(output: string): string {
 export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<number> {
   const started = performance.now();
   const root = lay.repoRoot;
-  const staged = stagedPaths(root);
-  const split = unequalBytes(root, staged);
-  if (split.length > 0) {
-    for (const path of split) {
-      console.error(`  ✗ ${path}: the index and the worktree hold different content or mode. Run git add ${path}, then commit again.`);
-    }
-    console.error(`pre-commit: ✗ ${split.length} path(s) with two sets of bytes — ${seconds(started)}`);
+  const changed = changedPaths(root);
+  const refused = breaches(root, changed);
+  if (refused.length > 0) {
+    for (const breach of refused) console.error(`  ✗ ${breach.reason}`);
+    console.error(`pre-commit: ✗ ${refused.length} path(s) the worktree does not match the commit on — ${seconds(started)}`);
     return 1;
   }
-  const touched = touchedPaths(root).filter((p) => KOTLIN.test(p));
+  const touched = changed.filter((p) => KOTLIN.test(p));
   if (touched.length === 0) {
     console.error("pre-commit: no Kotlin in this commit; nothing to judge");
     return 0;
   }
   console.error(`══ pre-commit ══  ${touched.length} Kotlin file(s) in this commit`);
 
-  // The walls scan the bytes a commit adds or changes: a deletion has none to scan. Module selection covers every change.
-  const kotlin = staged.filter((p) => KOTLIN.test(p));
+  // The walls scan the bytes a commit holds: a deletion has none to scan. Module selection covers every change.
+  const indexed = indexEntries(root);
+  const kotlin = touched.filter((p) => indexed.has(p));
   if (kotlin.length > 0) {
     const dir = mirror(root, kotlin);
     let findings: Finding[];

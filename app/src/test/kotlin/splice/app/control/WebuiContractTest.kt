@@ -112,8 +112,7 @@ class WebuiContractTest {
             port = 0,
             heads = mapOf("codex" to managed),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = {},
+            auth = ControlAuth(mgmtKey = mgmt, log = {}),
         )
         runBlocking { control.start() }
     }

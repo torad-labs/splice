@@ -31,6 +31,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.app.control.ControlAuth
 import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
 import splice.app.control.controlServerFor
@@ -96,8 +97,7 @@ class ConsoleVerbReadsRoutesTest {
             port = 0,
             heads = mapOf(HEAD_KEY to managedHead()),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { },
+            auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
         runBlocking { control.start() }
     }

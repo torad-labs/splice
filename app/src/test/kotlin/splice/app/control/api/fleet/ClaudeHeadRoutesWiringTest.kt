@@ -35,6 +35,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.control.ControlAuth
 import splice.app.control.ControlRuntime
 import splice.app.control.ManagedHead
 import splice.app.control.controlServerFor
@@ -125,12 +126,12 @@ class ClaudeHeadRoutesWiringTest {
         val mgmt = MgmtKey(paths)
         val key = mgmt.get()
         val control = controlServerFor(
-            port = 0, // bound by the OS at start and read back below: no lease-then-bind window
+            port = 0,
+            // bound by the OS at start and read back below: no lease-then-bind window
             heads = mapOf("claude-splice" to managedHead(tmp.resolve(".claude-claude-splice"))),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { },
             runtime = ControlRuntime(launchService = launchService),
+            auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
         runBlocking { control.start() }
         val port = control.listeningPort

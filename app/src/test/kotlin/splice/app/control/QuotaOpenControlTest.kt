@@ -32,6 +32,7 @@ import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
+import splice.usage.quota.QuotaClocks
 import splice.usage.quota.QuotaPoller
 import splice.usage.quota.QuotaProbe
 import splice.usage.quota.QuotaSnapshotSink
@@ -56,8 +57,7 @@ class QuotaOpenControlTest {
             0,
             mapOf("synthetic" to managed(usage)),
             ConfigService(paths),
-            mgmt,
-            { },
+            ControlAuth(mgmt, { }),
         )
         val client = HttpClient(CIO)
         server.start()
@@ -99,7 +99,7 @@ class QuotaOpenControlTest {
         },
         QuotaSnapshotSink(tracker::record),
         { },
-        elapsedClock = clock,
+        clocks = QuotaClocks(elapsed = clock),
     )
 
     private fun quotaWindow(body: String) = Json.parseToJsonElement(body).jsonObject.getValue("heads")

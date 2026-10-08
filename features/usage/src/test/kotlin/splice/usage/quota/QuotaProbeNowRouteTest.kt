@@ -49,8 +49,7 @@ class QuotaProbeNowRouteTest {
                 },
                 QuotaSnapshotSink { recorded = it },
                 { },
-                clock = WallClock { now },
-                elapsedClock = ElapsedClock { now },
+                clocks = QuotaClocks(wall = WallClock { now }, elapsed = ElapsedClock { now }),
             )
             val source = object : HeadUsageSource {
                 override fun snapshot(): UsageView {

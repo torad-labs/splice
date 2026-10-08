@@ -17,14 +17,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.core.usage.QuotaSnapshot
 import splice.core.util.Cancellables
-import splice.core.util.ElapsedClock
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
-import splice.core.util.MonoClock
 import splice.core.util.SafeFailureText
-import splice.core.util.WallClock
-import splice.upstream.Ticker
-import splice.upstream.codemode.ProcessTicker
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Where a fresh snapshot goes: app binds it to the head's QuotaTracker (features/turns), so the poller
@@ -39,10 +34,8 @@ public class QuotaPoller(
     private val probe: QuotaProbe,
     private val sink: QuotaSnapshotSink,
     private val log: LogSink,
-    private val intervalMs: Long = QUOTA_POLL_INTERVAL_MS,
-    private val ticker: Ticker = ProcessTicker(),
-    private val clock: WallClock = WallClock(System::currentTimeMillis),
-    private val elapsedClock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
+    private val cadence: QuotaCadence = QuotaCadence(),
+    private val clocks: QuotaClocks = QuotaClocks(),
 ) {
     private val failureLogged = AtomicBoolean(false)
     private val firstLogged = AtomicBoolean(false)
@@ -59,7 +52,7 @@ public class QuotaPoller(
     private var lastSnapshot: QuotaSnapshot? = null
     private var lastProbeAtMs: Long? = null
     private var lastAnswered = true
-    private val floorMs = minOf(intervalMs, QUOTA_PROBE_FLOOR_MS)
+    private val floorMs = minOf(cadence.intervalMs, QUOTA_PROBE_FLOOR_MS)
     private var reuseMs = floorMs
 
     /** Refresh without a turn. Concurrent opens share the active read, and reuse never changes observation time. */
@@ -72,7 +65,7 @@ public class QuotaPoller(
     }
 
     private fun insideFloor(): Boolean =
-        lastProbeAtMs?.let { elapsedClock() - it < reuseMs } == true
+        lastProbeAtMs?.let { clocks.elapsedSince(it) < reuseMs } == true
 
     public fun start(): Job {
         synchronized(lifecycle) {
@@ -96,7 +89,7 @@ public class QuotaPoller(
             var failures = 0
             while (isActive) {
                 failures = if (pollOnce()) 0 else failures + 1
-                if (!ticker.awaitTick(waitAfter(failures))) return@launch
+                if (!cadence.awaitNext(failures)) return@launch
             }
         }
         job = launched
@@ -132,18 +125,12 @@ public class QuotaPoller(
     }
 
     private fun recordRestart(): Int = synchronized(restartTimes) {
-        val now = clock()
+        val now = clocks.now()
         while (restartTimes.isNotEmpty() && now - restartTimes.first() > RESTART_WINDOW_MS) {
             restartTimes.removeFirst()
         }
         restartTimes.addLast(now)
         restartTimes.size
-    }
-
-    /** The full interval after an answer; after the Nth failure in a row, 10 s doubled N-1 times, capped at it. */
-    private fun waitAfter(failures: Int): Long = when (failures) {
-        0 -> intervalMs
-        else -> minOf(intervalMs, QUOTA_RETRY_FIRST_MS shl minOf(failures - 1, RETRY_DOUBLINGS_MAX))
     }
 
     /** True when the endpoint answered, an HTTP refusal included, so only an unreachable endpoint is retried
@@ -176,10 +163,10 @@ public class QuotaPoller(
                 }
             }
         // The floor starts when the read completes, so waiters share even a slow provider answer.
-        lastProbeAtMs = elapsedClock()
+        lastProbeAtMs = clocks.mark()
         val refused = result.exceptionOrNull() is QuotaEndpointRefused
         lastAnswered = result.isSuccess || refused
-        reuseMs = if (refused) maxOf(intervalMs, floorMs) else floorMs
+        reuseMs = if (refused) maxOf(cadence.intervalMs, floorMs) else floorMs
         completedAttempts++
         return lastAnswered
     }
@@ -197,16 +184,9 @@ public class QuotaPoller(
     }
 }
 
-internal const val QUOTA_POLL_INTERVAL_MS: Long = 5 * 60 * 1000L
-
 // why: navigation cannot issue more than one successful probe per minute; a configured shorter poll interval stays its floor.
 private const val QUOTA_PROBE_FLOOR_MS = 60_000L
 
-// why: a boot's network comes up within seconds of the daemon, so the first retry is 10 s.
-private const val QUOTA_RETRY_FIRST_MS = 10_000L
-
-// why: eight doublings of 10 s is about 43 minutes, past any poll interval; the cap keeps the shift from overflowing.
-private const val RETRY_DOUBLINGS_MAX = 8
 private const val MAX_RESTARTS = 5
 private const val RESTART_WINDOW_MS = 600_000L
 private const val MS_PER_MIN = 60_000L

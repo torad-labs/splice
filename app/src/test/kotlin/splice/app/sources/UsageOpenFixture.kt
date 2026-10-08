@@ -16,6 +16,7 @@ import splice.head.usage.UsageStore
 import splice.usage.UsageHead
 import splice.usage.UsageHeads
 import splice.usage.perf.PerfRowsSource
+import splice.usage.quota.QuotaClocks
 import splice.usage.quota.QuotaPoller
 import splice.usage.quota.QuotaProbe
 import splice.usage.quota.QuotaSnapshotSink
@@ -54,8 +55,7 @@ internal class UsageOpenFixture(dir: Path, scope: CoroutineScope) {
         QuotaProbe(::probe),
         QuotaSnapshotSink(tracker::record),
         { },
-        clock = WallClock { now },
-        elapsedClock = ElapsedClock { elapsed },
+        clocks = QuotaClocks(wall = WallClock { now }, elapsed = ElapsedClock { elapsed }),
     )
     private val heads = UsageHeads {
         listOf(

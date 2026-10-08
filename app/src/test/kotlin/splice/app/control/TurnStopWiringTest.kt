@@ -99,8 +99,7 @@ class TurnStopWiringTest {
             port = 0,
             heads = mapOf("codex" to managedHead()),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { },
+            auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
         ports.set(control.ports)
         runBlocking { control.start() }

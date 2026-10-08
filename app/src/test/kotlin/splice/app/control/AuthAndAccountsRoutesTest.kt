@@ -96,8 +96,7 @@ class AuthAndAccountsRoutesTest {
             port = 0,
             heads = mapOf(WIRED to head(WIRED, pin), NO_POOL to head(NO_POOL, null)),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { },
+            auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
         control.ports.accounts = accounts
         runBlocking { control.start() }

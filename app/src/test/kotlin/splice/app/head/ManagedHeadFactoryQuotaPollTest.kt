@@ -36,6 +36,8 @@ import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.head.usage.QuotaTracker
 import splice.oauth.OAuthAccountFiles
+import splice.usage.quota.QuotaCadence
+import splice.usage.quota.QuotaClocks
 import splice.usage.quota.QuotaPoller
 import splice.usage.quota.QuotaProbe
 import splice.usage.quota.QuotaSnapshotSink
@@ -212,8 +214,8 @@ class ManagedHeadFactoryQuotaPollTest {
                     },
                     QuotaSnapshotSink(tracker::record),
                     { },
-                    intervalMs = intervalMs,
-                    elapsedClock = ElapsedClock { 0L },
+                    cadence = QuotaCadence(intervalMs = intervalMs),
+                    clocks = QuotaClocks(elapsed = ElapsedClock { 0L }),
                 )
             },
         ).assembleHead(ctx, controlPort = 3098)

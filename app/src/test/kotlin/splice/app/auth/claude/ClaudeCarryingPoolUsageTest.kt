@@ -25,6 +25,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.pool.HeadAccountPinSource
+import splice.app.control.ControlAuth
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.controlServerFor
@@ -142,9 +143,8 @@ class ClaudeCarryingPoolUsageTest {
             port = 0,
             heads = mapOf(NATIVE_HEAD to rig.head, "synthetic-other-head" to rig.head),
             config = ConfigService(fixture.paths),
-            mgmtKey = rig.key,
-            log = {},
             runtime = ControlRuntime(sessions = sessions()),
+            auth = ControlAuth(mgmtKey = rig.key, log = {}),
         )
 
     @Test
@@ -248,9 +248,8 @@ class ClaudeCarryingPoolUsageTest {
             port = 0,
             heads = mapOf(NATIVE_HEAD to rig.head.copy(perfRows = source)),
             config = ConfigService(fixture.paths),
-            mgmtKey = rig.key,
-            log = {},
             runtime = ControlRuntime(sessions = sessions()),
+            auth = ControlAuth(mgmtKey = rig.key, log = {}),
         )
         control.ports.claudeLogins = rig.server.ports.claudeLogins
         try {

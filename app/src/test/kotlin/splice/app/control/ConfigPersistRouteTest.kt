@@ -48,8 +48,7 @@ class ConfigPersistRouteTest {
             port = 0,
             heads = emptyMap(),
             config = ConfigService(statePaths),
-            mgmtKey = mgmt,
-            log = {},
+            auth = ControlAuth(mgmtKey = mgmt, log = {}),
         )
         runBlocking { control.start() }
     }

@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.DoctorWiring
+import splice.app.control.ControlAuth
 import splice.app.control.ManagedHead
 import splice.app.control.controlServerFor
 import splice.core.auth.AuthDescription
@@ -49,8 +50,7 @@ class DoctorTraceWiringTest {
             port = 0,
             heads = mapOf("local" to head()),
             config = config,
-            mgmtKey = mgmt,
-            log = {},
+            auth = ControlAuth(mgmtKey = mgmt, log = {}),
         )
         val env = environment(tmp, file, paths)
         val doctor = DoctorWiring.command()

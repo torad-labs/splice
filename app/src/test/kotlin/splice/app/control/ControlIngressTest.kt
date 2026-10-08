@@ -35,8 +35,7 @@ class ControlIngressTest {
             port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),
-            mgmtKey = MgmtKey(paths, log = {}),
-            log = {},
+            auth = ControlAuth(mgmtKey = MgmtKey(paths, log = {}), log = {}),
         )
         runBlocking { server.start() }
         try {

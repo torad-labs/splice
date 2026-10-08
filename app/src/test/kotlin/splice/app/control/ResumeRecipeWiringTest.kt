@@ -165,8 +165,6 @@ class ResumeRecipeWiringTest {
             port = 0,
             heads = mapOf("codex" to managedHead(own, command)),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { },
             runtime = ControlRuntime(
                 sessions = SessionRegistry(
                     sessionsDir = sessions,
@@ -175,6 +173,7 @@ class ResumeRecipeWiringTest {
                     clock = { RESUME_AT },
                 ),
             ),
+            auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
         runBlocking { control.start() }
         val port = control.listeningPort

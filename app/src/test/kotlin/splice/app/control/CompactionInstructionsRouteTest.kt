@@ -75,8 +75,7 @@ class CompactionInstructionsRouteTest {
             port = 0,
             heads = mapOf(HEAD_KEY to managedHead()),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { },
+            auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
         runBlocking { control.start() }
     }

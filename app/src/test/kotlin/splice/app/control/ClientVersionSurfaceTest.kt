@@ -54,12 +54,12 @@ class ClientVersionSurfaceTest {
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
         val server = controlServerFor(
-            port = 0, // the OS assigns one at bind time; read back below, so nothing can take it first
+            // the OS assigns the port at bind time; it is read back below, so nothing can take it first
+            port = 0,
             heads = mapOf("test" to managedHead()),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = {},
             runtime = ControlRuntime(clientVersions = versions),
+            auth = ControlAuth(mgmtKey = mgmt, log = {}),
         )
         server.start() // routed and bound before it returns: Ktor's default SEQUENTIAL startup (V4-139)
         val port = server.listeningPort

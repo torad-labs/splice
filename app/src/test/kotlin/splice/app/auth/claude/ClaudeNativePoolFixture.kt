@@ -43,6 +43,7 @@ import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
 import splice.topology.TopologyLoader
 import splice.usage.quota.ClientUserAgent
+import splice.usage.quota.QuotaCadence
 import splice.usage.quota.QuotaPoller
 import splice.usage.quota.QuotaProbes
 import splice.usage.quota.QuotaSnapshotSink
@@ -172,7 +173,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
                     probe,
                     QuotaSnapshotSink(tracker::record),
                     {},
-                    intervalMs = interval,
+                    cadence = QuotaCadence(intervalMs = interval),
                 )
                     .also { it.start() }
             },

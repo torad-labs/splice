@@ -31,6 +31,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.app.control.ControlAuth
 import splice.app.control.ControlServer
 import splice.app.control.controlServerFor
 import splice.core.config.ConfigService
@@ -68,8 +69,7 @@ class EventsRouteTest {
             port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { },
+            auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
         control.ports.events = bus
         runBlocking { control.start() }

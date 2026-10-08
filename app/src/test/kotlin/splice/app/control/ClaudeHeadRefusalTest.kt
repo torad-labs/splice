@@ -51,8 +51,7 @@ class ClaudeHeadRefusalTest {
             port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = {},
+            auth = ControlAuth(mgmtKey = mgmt, log = {}),
         )
         runBlocking { control.start() }
     }

@@ -67,32 +67,52 @@ internal fun topologyHealthFor(
     bootedAtEpochMillis = System.currentTimeMillis(),
 )
 
-internal fun controlServerFor(
-    port: Int,
-    heads: Map<String, ManagedHead>,
-    config: ConfigService,
-    mgmtKey: MgmtKey,
-    log: LogSink,
-    signals: HeadSignals = signalsFor(heads),
-    runtime: ControlRuntime = ControlRuntime(),
-    // The health body and the server read one client-version tracker, as ControlPlane wires them.
-    health: ControlHealthReport = healthFor(heads, signals = signals, clientVersions = runtime.clientVersions),
-): ControlServer {
-    // The same guard ControlPlane builds: the production request cap, read from its one knob.
-    val guard = ControlGuard(
+/** What guards a rig's control server: the management key it accepts and the log its audit lines go to. */
+internal class ControlAuth(private val mgmtKey: MgmtKey, val log: LogSink) {
+    /** The same guard ControlPlane builds: the production request cap, read from its one knob. */
+    fun guard(): ControlGuard = ControlGuard(
         mgmtKey,
         ControlAudit(log),
         log,
         HeapIngress(JvmHeap.budget, Knob.MAX_REQUEST_BYTES.count(), AdmissionErrorBody),
     )
+}
+
+internal fun controlServerFor(
+    port: Int,
+    heads: Map<String, ManagedHead>,
+    config: ConfigService,
+    auth: ControlAuth,
+    runtime: ControlRuntime = ControlRuntime(),
+): ControlServer {
+    val signals = signalsFor(heads)
     return ControlServer(
         port,
         heads,
         config,
-        guard,
-        log,
-        health = health,
+        auth.guard(),
+        auth.log,
+        // The health body and the server read one client-version tracker, as ControlPlane wires them.
+        health = healthFor(heads, signals = signals, clientVersions = runtime.clientVersions),
         signals = signals,
         runtime = runtime,
     )
 }
+
+/** A rig whose /health body is [health], on a port the OS picks. */
+internal fun controlServerWith(
+    health: ControlHealthReport,
+    heads: Map<String, ManagedHead>,
+    config: ConfigService,
+    auth: ControlAuth,
+    runtime: ControlRuntime = ControlRuntime(),
+): ControlServer = ControlServer(
+    0,
+    heads,
+    config,
+    auth.guard(),
+    auth.log,
+    health = health,
+    signals = signalsFor(heads),
+    runtime = runtime,
+)

@@ -53,9 +53,8 @@ class ForegroundHookWiringTest {
             port = 0,
             heads = mapOf("synthetic" to head()),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = {},
             runtime = ControlRuntime(sessions = registry),
+            auth = ControlAuth(mgmtKey = mgmt, log = {}),
         )
         runBlocking { server.start() }
         val client = HttpClient(CIO) { expectSuccess = false }

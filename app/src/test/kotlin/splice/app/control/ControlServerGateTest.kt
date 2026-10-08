@@ -85,7 +85,7 @@ class ControlServerGateTest {
         @TempDir tempDir: Path,
     ) = runTest {
         val paths = StatePaths(baseOverride = tempDir.resolve("state"))
-        val server = controlServerFor(0, emptyMap(), ConfigService(paths), MgmtKey(paths), {})
+        val server = controlServerFor(0, emptyMap(), ConfigService(paths), ControlAuth(MgmtKey(paths), {}))
         server.start()
         try {
             val bound = server.listeningPort
@@ -101,7 +101,7 @@ class ControlServerGateTest {
     fun `lowercase bearer scheme is accepted on a guarded control route`(@TempDir tmp: Path) = runTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
-        val server = controlServerFor(0, emptyMap(), ConfigService(paths), mgmt, {})
+        val server = controlServerFor(0, emptyMap(), ConfigService(paths), ControlAuth(mgmt, {}))
         server.start()
         val port = server.listeningPort
         try {
@@ -126,8 +126,7 @@ class ControlServerGateTest {
             port = 0,
             heads = mapOf("codex" to gateHead("codex", 3099, inflight = 0, queued = 0, limit = 0)),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = {},
+            auth = ControlAuth(mgmtKey = mgmt, log = {}),
         )
         server.start()
         val port = server.listeningPort
@@ -169,8 +168,7 @@ class ControlServerGateTest {
                 "unlimited" to gateHead("unlimited", 4102, inflight = 5, queued = 0, limit = 0),
             ),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = {},
+            auth = ControlAuth(mgmtKey = mgmt, log = {}),
         )
         server.start()
         val port = server.listeningPort

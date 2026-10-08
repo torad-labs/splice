@@ -98,8 +98,7 @@ class KeysRouteTest {
                 "shadowed" to managedHead("shadowed", ApiKeyAuthProvider(SHADOWED, null, daemonEnv, store, log)),
             ),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = log,
+            auth = ControlAuth(mgmtKey = mgmt, log = log),
         )
         control.ports.keys = store
         runBlocking { control.start() }

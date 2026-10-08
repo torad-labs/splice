@@ -249,9 +249,8 @@ class NativeUsageTruthTest {
                     },
                 ),
                 config = ConfigService(paths),
-                mgmtKey = key,
-                log = {},
                 runtime = ControlRuntime(sessions = sessions),
+                auth = ControlAuth(mgmtKey = key, log = {}),
             )
             // Late binding is intentional: UsageMount must not capture the construction-time null.
             server.ports.claudeLogins = port

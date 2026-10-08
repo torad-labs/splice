@@ -172,8 +172,7 @@ class ColdUsageReadRouteTest {
             0,
             mapOf("synthetic" to managed()),
             ConfigService(paths),
-            mgmt,
-            {},
+            ControlAuth(mgmt, {}),
         )
 
         suspend fun <T> withServer(action: suspend kotlinx.coroutines.CoroutineScope.() -> T): T {

@@ -99,8 +99,7 @@ class EconomicsCostRouteTest {
                 "unknown" to managedHead("unknown", unknownStore()),
             ),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { },
+            auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
         runBlocking { control.start() }
     }

@@ -28,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.app.control.ControlAuth
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
@@ -85,9 +86,8 @@ class CompactionRestartTest {
             port = 0,
             heads = mapOf(HEAD_KEY to managedHead()),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { },
             runtime = ControlRuntime(shutdownDaemon = { drains.incrementAndGet() }),
+            auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
         control.ports.supervised = DaemonSupervised { true }
         runBlocking { control.start() }

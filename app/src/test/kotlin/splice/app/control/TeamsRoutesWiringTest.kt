@@ -51,12 +51,12 @@ class TeamsRoutesWiringTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         val control = controlServerFor(
-            port = 0, // bound by the OS at start and read back below: no lease-then-bind window
+            port = 0,
+            // bound by the OS at start and read back below: no lease-then-bind window
             heads = emptyMap(),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { },
             runtime = ControlRuntime(sessions = rig.registry),
+            auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
         if (wired) {
             control.ports.teams = rig.store

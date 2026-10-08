@@ -7,6 +7,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.job
 import splice.app.TokenUrlRefreshCall
 import splice.app.auth.SignInPlanner
+import splice.app.control.ControlAuth
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
@@ -136,8 +137,7 @@ internal class RunningRosterFixture(tmp: Path, parent: CoroutineScope) {
         0,
         mapOf("synthetic" to managed),
         config,
-        mgmt,
-        {},
+        ControlAuth(mgmt, {}),
         runtime = ControlRuntime(
             sessions = object : SessionSource {
                 override fun read(): List<SessionRecord> = emptyList()

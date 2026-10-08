@@ -68,11 +68,10 @@ class SessionsRoutesWiringTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         val control = controlServerFor(
-            port = 0, // bound by the OS at start and read back below: no lease-then-bind window
+            port = 0,
+            // bound by the OS at start and read back below: no lease-then-bind window
             heads = emptyMap(),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { },
             runtime = ControlRuntime(
                 sessions = SessionRegistry(
                     sessionsDir = sessions,
@@ -81,6 +80,7 @@ class SessionsRoutesWiringTest {
                     clock = { SESSIONS_AT },
                 ),
             ),
+            auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
         control.ports.activity = stores
         runBlocking { control.start() }

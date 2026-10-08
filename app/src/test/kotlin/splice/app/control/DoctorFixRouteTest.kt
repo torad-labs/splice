@@ -68,8 +68,7 @@ class DoctorFixRouteTest {
             port = 0,
             heads = emptyMap(),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { logged += it },
+            auth = ControlAuth(mgmtKey = mgmt, log = { logged += it }),
         )
         runBlocking { control.start() }
     }

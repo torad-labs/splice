@@ -114,8 +114,7 @@ class ConsoleRoutesTest {
             port = 0,
             heads = mapOf(HEAD_KEY to managedHead(), "bare" to bareHead()),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { logged.add(it) },
+            auth = ControlAuth(mgmtKey = mgmt, log = { logged.add(it) }),
         )
         runBlocking { control.start() }
     }

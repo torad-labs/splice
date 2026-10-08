@@ -61,9 +61,8 @@ class QuotaPollerTest {
             probe = FailsTwiceThenRecoversProbe(calls),
             sink = QuotaSnapshotSink { },
             log = logs::add,
-            intervalMs = 1_000,
-            clock = WallClock { 0L },
-            elapsedClock = ElapsedClock { testScheduler.currentTime },
+            cadence = QuotaCadence(intervalMs = 1_000),
+            clocks = QuotaClocks(wall = WallClock { 0L }, elapsed = ElapsedClock { testScheduler.currentTime }),
         )
         poller.start()
         advanceTimeBy(4_500)
@@ -93,17 +92,18 @@ class QuotaPollerTest {
             probe = NeverFailsProbe(),
             sink = QuotaSnapshotSink { },
             log = logs::add,
-            intervalMs = 1_000,
-            ticker = Ticker { intervalMs ->
-                // SUSPENDS first, like ProcessTicker: a fake that returned true without delaying
-                // would spin the loop against virtual time and hang runTest rather than exercising
-                // a restart at all.
-                delay(intervalMs)
-                if (ticks.incrementAndGet() == 1) error("ticker blew up")
-                true
-            },
-            clock = WallClock { 0L },
-            elapsedClock = ElapsedClock { testScheduler.currentTime },
+            cadence = QuotaCadence(
+                intervalMs = 1_000,
+                ticker = Ticker { intervalMs ->
+                    // SUSPENDS first, like ProcessTicker: a fake that returned true without delaying
+                    // would spin the loop against virtual time and hang runTest rather than exercising
+                    // a restart at all.
+                    delay(intervalMs)
+                    if (ticks.incrementAndGet() == 1) error("ticker blew up")
+                    true
+                },
+            ),
+            clocks = QuotaClocks(wall = WallClock { 0L }, elapsed = ElapsedClock { testScheduler.currentTime }),
         )
         poller.start()
         advanceTimeBy(3_500)
@@ -134,9 +134,8 @@ class QuotaPollerTest {
             probe = probe,
             sink = QuotaSnapshotSink(recorded::add),
             log = logs::add,
-            intervalMs = 1_000,
-            clock = WallClock { 0L },
-            elapsedClock = ElapsedClock { testScheduler.currentTime },
+            cadence = QuotaCadence(intervalMs = 1_000),
+            clocks = QuotaClocks(wall = WallClock { 0L }, elapsed = ElapsedClock { testScheduler.currentTime }),
         )
         poller.start()
         advanceTimeBy(2_000)
@@ -163,9 +162,8 @@ class QuotaPollerTest {
             probe = RefusedTwiceThenAnswersProbe(calls),
             sink = QuotaSnapshotSink(recorded::add),
             log = { },
-            intervalMs = QUOTA_POLL_INTERVAL_MS,
-            clock = WallClock { 0L },
-            elapsedClock = ElapsedClock { testScheduler.currentTime },
+            cadence = QuotaCadence(intervalMs = QUOTA_POLL_INTERVAL_MS),
+            clocks = QuotaClocks(wall = WallClock { 0L }, elapsed = ElapsedClock { testScheduler.currentTime }),
         )
         poller.start()
         // stop() in finally: a failed assertion that skipped it left the loop running, and runTest's
@@ -198,9 +196,8 @@ class QuotaPollerTest {
             probe = AlwaysRefusedProbe(calls),
             sink = QuotaSnapshotSink { },
             log = { },
-            intervalMs = QUOTA_POLL_INTERVAL_MS,
-            clock = WallClock { 0L },
-            elapsedClock = ElapsedClock { testScheduler.currentTime },
+            cadence = QuotaCadence(intervalMs = QUOTA_POLL_INTERVAL_MS),
+            clocks = QuotaClocks(wall = WallClock { 0L }, elapsed = ElapsedClock { testScheduler.currentTime }),
         )
         poller.start()
         try {
@@ -232,8 +229,7 @@ class QuotaPollerTest {
             probe,
             QuotaSnapshotSink(recorded::add),
             logs::add,
-            clock = { 0L },
-            elapsedClock = ElapsedClock { elapsed },
+            clocks = QuotaClocks(wall = { 0L }, elapsed = ElapsedClock { elapsed }),
         )
 
         repeat(4) {
@@ -262,7 +258,7 @@ class QuotaPollerTest {
             },
             QuotaSnapshotSink { },
             { },
-            elapsedClock = ElapsedClock { testScheduler.currentTime },
+            clocks = QuotaClocks(elapsed = ElapsedClock { testScheduler.currentTime }),
         )
         val first = async { poller.probeNow() }
         runCurrent()
@@ -291,7 +287,7 @@ class QuotaPollerTest {
             },
             QuotaSnapshotSink { },
             { },
-            elapsedClock = ElapsedClock { testScheduler.currentTime },
+            clocks = QuotaClocks(elapsed = ElapsedClock { testScheduler.currentTime }),
         )
         val page = async { poller.probeNow() }
         runCurrent()
@@ -316,7 +312,7 @@ class QuotaPollerTest {
             QuotaProbe { if (++calls == 1) observation else throw QuotaEndpointRefused(429) },
             QuotaSnapshotSink(recorded::add),
             { },
-            elapsedClock = ElapsedClock { testScheduler.currentTime },
+            clocks = QuotaClocks(elapsed = ElapsedClock { testScheduler.currentTime }),
         )
         assertEquals(observation, poller.probeNow())
         advanceTimeBy(60_000)
@@ -343,7 +339,7 @@ class QuotaPollerTest {
             QuotaProbe { if (++calls == 1) observation else null },
             QuotaSnapshotSink(recorded::add),
             { },
-            elapsedClock = ElapsedClock { testScheduler.currentTime },
+            clocks = QuotaClocks(elapsed = ElapsedClock { testScheduler.currentTime }),
         )
         assertEquals(observation, poller.probeNow())
         advanceTimeBy(60_000)

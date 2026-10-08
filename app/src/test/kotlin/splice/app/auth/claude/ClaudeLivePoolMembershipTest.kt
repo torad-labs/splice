@@ -58,6 +58,8 @@ import splice.core.util.WallClock
 import splice.diagnostics.playground.PlaygroundHead
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessDispatchers
+import splice.usage.quota.QuotaCadence
+import splice.usage.quota.QuotaClocks
 import splice.usage.quota.QuotaPoller
 import splice.usage.quota.QuotaProbe
 import splice.usage.quota.QuotaSnapshotSink
@@ -165,9 +167,8 @@ class ClaudeLivePoolMembershipTest {
                 QuotaProbe { null },
                 QuotaSnapshotSink(tracker::record),
                 {},
-                ticker = Ticker { tick.await() },
-                clock = WallClock { 1_000_000L },
-                elapsedClock = ElapsedClock { 0L },
+                cadence = QuotaCadence(ticker = Ticker { tick.await() }),
+                clocks = QuotaClocks(wall = WallClock { 1_000_000L }, elapsed = ElapsedClock { 0L }),
             ).also { jobs.add(it.start()) }
         }
         val head = fixture(scope, PlaygroundProviders(), polling)

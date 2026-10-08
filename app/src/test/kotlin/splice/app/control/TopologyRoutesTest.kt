@@ -97,13 +97,12 @@ class TopologyRoutesTest {
     private fun serve(wired: Boolean, test: suspend (Call) -> Unit) {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
-        val control = controlServerFor(
-            port = 0, // bound by the OS at start and read back below: no lease-then-bind window
+        // The OS picks the port at start, and it is read back below: no lease-then-bind window.
+        val control = controlServerWith(
             heads = emptyMap(),
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = { },
             health = topologyHealthFor(emptyMap(), topologyStale = TopologyStale { true }),
+            auth = ControlAuth(mgmtKey = mgmt, log = { }),
         )
         if (wired) {
             control.ports.topology = TopologyWriter(

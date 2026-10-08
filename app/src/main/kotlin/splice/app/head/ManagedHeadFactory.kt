@@ -35,6 +35,7 @@ import splice.oauth.AuthHttpClientFactory
 import splice.provider.codex.CodexQuotaHeaderFamily
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.usage.quota.ClientUserAgent
+import splice.usage.quota.QuotaCadence
 import splice.usage.quota.QuotaPoller
 import splice.usage.quota.QuotaProbe
 import splice.usage.quota.QuotaProbes
@@ -61,7 +62,14 @@ internal class ManagedHeadFactory(
     private val probeScope: CoroutineScope,
     private val log: LogSink,
     private val startQuotaPoller: StartQuotaPoller = StartQuotaPoller { head, probe, tracker, intervalMs ->
-        QuotaPoller(probeScope, head, probe, QuotaSnapshotSink(tracker::record), log, intervalMs = intervalMs)
+        QuotaPoller(
+            probeScope,
+            head,
+            probe,
+            QuotaSnapshotSink(tracker::record),
+            log,
+            cadence = QuotaCadence(intervalMs = intervalMs),
+        )
             .also { it.start() }
     },
     private val onPrimaryQuota: OnPrimaryQuota = OnPrimaryQuota { _ -> },

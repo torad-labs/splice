@@ -141,12 +141,15 @@ class ControlServerTest {
             "dupA" to sharedCommandHead(managed, launchSpec, "dupA"),
             "dupB" to sharedCommandHead(managed, launchSpec, "dupB"),
         )
-        control = controlServerFor(
-            port = 0,
+        control = controlServerWith(
+            health = topologyHealthFor(
+                heads,
+                topologyDigest = TopologyDigest { "boot-digest-abc" },
+                configPath = "/tmp/splice.toml",
+                topologyStale = { true },
+            ),
             heads = heads,
             config = ConfigService(paths),
-            mgmtKey = mgmt,
-            log = {},
             runtime = ControlRuntime(
                 launchService = LaunchService(
                     splice.client.ClaudeConfigMaterializer(tmp),
@@ -156,12 +159,7 @@ class ControlServerTest {
                     shutdownRequested.countDown()
                 },
             ),
-            health = topologyHealthFor(
-                heads,
-                topologyDigest = TopologyDigest { "boot-digest-abc" },
-                configPath = "/tmp/splice.toml",
-                topologyStale = { true },
-            ),
+            auth = ControlAuth(mgmtKey = mgmt, log = {}),
         )
         runBlocking { control.start() }
     }
@@ -234,13 +232,11 @@ class ControlServerTest {
         // reporting heads.size (assembled only) broke the readyHeads + failedHeads == heads
         // invariant a launch shim waits on. Report the configured total (review 2026-07-23).
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
-        val degraded = controlServerFor(
-            port = 0,
+        val degraded = controlServerWith(
             heads = emptyMap(), // the sole configured head failed to ASSEMBLE — never entered `heads`
             config = ConfigService(paths),
-            mgmtKey = MgmtKey(paths),
-            log = {},
             health = healthFor(emptyMap(), readinessFor(emptyMap(), failedHeads = { 1 }, configuredHeads = 1)),
+            auth = ControlAuth(mgmtKey = MgmtKey(paths), log = {}),
         )
         degraded.start()
         try {
@@ -598,8 +594,7 @@ class ControlServerPerHeadConfigTest {
             port = 0,
             heads = emptyMap(),
             config = svc,
-            mgmtKey = mgmt,
-            log = {},
+            auth = ControlAuth(mgmtKey = mgmt, log = {}),
         )
         server.start()
         val perHeadPort = server.listeningPort

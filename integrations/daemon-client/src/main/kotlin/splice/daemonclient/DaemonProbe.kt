@@ -239,9 +239,9 @@ public object DaemonProbe {
         )
         return HeadAuthSeen(
             present = head["present"]?.jsonPrimitive?.booleanOrNull == true,
-            verdict = when {
-                sent == null -> CredentialVerdict.Held
-                else -> read ?: CredentialVerdict.Unverified
+            verdict = when (sent) {
+                null -> CredentialVerdict.Held
+                is JsonPrimitive, is JsonObject, is JsonArray -> read ?: CredentialVerdict.Unverified
             },
         )
     }

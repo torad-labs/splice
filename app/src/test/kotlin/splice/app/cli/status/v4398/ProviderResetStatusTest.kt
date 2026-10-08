@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.status.StatusTable
 import splice.app.control.ManagedHead
 import splice.app.control.healthFor
+import splice.app.control.readinessFor
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.head.Head
@@ -106,7 +107,8 @@ class ProviderResetStatusTest {
             warnPct = 80,
             warnTokens5h = 0,
         )
-        val payloads = healthFor(mapOf(head.key to source), configuredHeads = 1)
+        val heads = mapOf(head.key to source)
+        val payloads = healthFor(heads, readinessFor(heads, configuredHeads = 1))
         val body = payloads.json(NOW_MS)
         val health = Json.parseToJsonElement(body).jsonObject
         assertEquals("0", health.getValue("failedHeads").jsonPrimitive.content)

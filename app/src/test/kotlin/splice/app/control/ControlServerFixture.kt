@@ -24,27 +24,47 @@ internal fun signalsFor(
     runtimeNotAnswering: RuntimeNotAnswering = RuntimeNotAnswering { emptyMap() },
 ): HeadSignals = HeadSignals(heads, runtimeNotAnswering)
 
-/** The /health body a rig serves. [signals] is the one the server's heads route reads too, so a rig passes the
- *  same value to [controlServerFor] and to here whenever the two must agree. */
-internal fun healthFor(
+/** The readiness a rig reports: the heads it serves, how many failed, how many were configured, which are stalled. */
+internal fun readinessFor(
     heads: Map<String, ManagedHead>,
     failedHeads: FailedHeads = FailedHeads { 0 },
     configuredHeads: Int = heads.size,
     turnPathStalled: TurnPathStalled = TurnPathStalled { emptyList() },
-    topologyDigest: TopologyDigest = TopologyDigest { "" },
-    configPath: String = "",
-    topologyStale: TopologyStale = TopologyStale { false },
+): HeadReadiness = HeadReadiness(heads, failedHeads, configuredHeads, turnPathStalled)
+
+/** The /health body a rig serves. [signals] is the one the server's heads route reads too, so a rig passes the
+ *  same value to [controlServerFor] and to here whenever the two must agree. */
+internal fun healthFor(
+    heads: Map<String, ManagedHead>,
+    readiness: HeadReadiness = readinessFor(heads),
     signals: HeadSignals = signalsFor(heads),
     clientVersions: ClientVersionTracker = ClientVersionTracker(),
     bootedAtEpochMillis: Long = System.currentTimeMillis(),
 ): ControlHealthReport = ControlHealthReport(
-    readiness = HeadReadiness(heads, failedHeads, configuredHeads, turnPathStalled),
+    readiness = readiness,
     signals = signals,
+    topologyDigest = TopologyDigest { "" },
+    configPath = "",
+    topologyStale = TopologyStale { false },
+    clientVersions = clientVersions,
+    bootedAtEpochMillis = bootedAtEpochMillis,
+)
+
+/** The /health body of a rig whose running topology is [topologyDigest] at [configPath] and reads [topologyStale]. */
+internal fun topologyHealthFor(
+    heads: Map<String, ManagedHead>,
+    topologyDigest: TopologyDigest = TopologyDigest { "" },
+    configPath: String = "",
+    topologyStale: TopologyStale = TopologyStale { false },
+    readiness: HeadReadiness = readinessFor(heads),
+): ControlHealthReport = ControlHealthReport(
+    readiness = readiness,
+    signals = signalsFor(heads),
     topologyDigest = topologyDigest,
     configPath = configPath,
     topologyStale = topologyStale,
-    clientVersions = clientVersions,
-    bootedAtEpochMillis = bootedAtEpochMillis,
+    clientVersions = ClientVersionTracker(),
+    bootedAtEpochMillis = System.currentTimeMillis(),
 )
 
 internal fun controlServerFor(

@@ -33,6 +33,7 @@ import splice.app.cli.status.StatusTable
 import splice.app.control.ManagedHead
 import splice.app.control.UsageHeadAdapter
 import splice.app.control.healthFor
+import splice.app.control.readinessFor
 import splice.app.head.HeadServerFactory
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
@@ -202,7 +203,7 @@ class SpentReadingSurfacesTest {
         val (spent, resets) = weekAt(100.0)
         tracker.record(spent)
 
-        val health = healthFor(mapOf(KEY to head), configuredHeads = 1).json()
+        val health = healthFor(mapOf(KEY to head), readinessFor(mapOf(KEY to head), configuredHeads = 1)).json()
         val body = Json.parseToJsonElement(health).jsonObject
         assertNull(body["quotaResetAtEpochSeconds"], "a reading is not a refusal: $health")
         val full = body.getValue("quotaFull").jsonObject.getValue(KEY).jsonObject
@@ -225,7 +226,7 @@ class SpentReadingSurfacesTest {
         val head = assemble(state) { tracker = it }
         tracker.record(weekAt(99.0).first)
 
-        val health = healthFor(mapOf(KEY to head), configuredHeads = 1).json()
+        val health = healthFor(mapOf(KEY to head), readinessFor(mapOf(KEY to head), configuredHeads = 1)).json()
         assertNull(Json.parseToJsonElement(health).jsonObject["quotaResetAtEpochSeconds"], health)
         assertNull(Json.parseToJsonElement(health).jsonObject["quotaFull"], health)
 

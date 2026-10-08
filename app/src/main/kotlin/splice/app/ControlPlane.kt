@@ -32,6 +32,7 @@ import splice.app.head.HeadProbeReadings
 import splice.app.launch.HookProcessExec
 import splice.app.probe.PlaygroundProviders
 import splice.app.probe.UpstreamPlaygroundProbe
+import splice.app.provider.ClaudeAccountWiring
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderAssembly
@@ -141,8 +142,12 @@ internal class ControlPlane(
         probeScope,
         log,
         refreshCall,
-        claudeIdentities = claudeIdentities,
-        nativePlaces = splice.accounts.claude.ClaudeLoginPlacesSource { claudeLoginOwner },
+        claudeAccounts = ClaudeAccountWiring(
+            statePaths,
+            log,
+            identities = claudeIdentities,
+            nativePlaces = splice.accounts.claude.ClaudeLoginPlacesSource { claudeLoginOwner },
+        ),
     )
 
     /** V4-131: the daemon's ONE team store: the routes edit it and every head's slot resolver reads it. */

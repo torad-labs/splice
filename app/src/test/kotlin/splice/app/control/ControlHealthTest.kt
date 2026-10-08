@@ -57,8 +57,7 @@ class ControlHealthTest {
         failed: Int = 0,
     ) = healthFor(
         heads,
-        failedHeads = { failed },
-        turnPathStalled = { stalled },
+        readiness = readinessFor(heads, failedHeads = { failed }, turnPathStalled = { stalled }),
     )
 
     private fun ok(json: kotlinx.serialization.json.JsonObject) =

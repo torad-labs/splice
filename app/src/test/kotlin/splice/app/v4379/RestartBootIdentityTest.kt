@@ -7,12 +7,13 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.app.control.api.ControlHealthReport
 import splice.app.control.healthFor
+import splice.app.control.readinessFor
 
 class RestartBootIdentityTest {
     @Test
     fun `health holds one boot identity and a replacement daemon gets another`() {
         fun health(bootedAt: Long): ControlHealthReport =
-            healthFor(emptyMap(), configuredHeads = 0, bootedAtEpochMillis = bootedAt)
+            healthFor(emptyMap(), readinessFor(emptyMap(), configuredHeads = 0), bootedAtEpochMillis = bootedAt)
         fun stamp(payloads: ControlHealthReport): Long = Json.parseToJsonElement(payloads.json())
             .jsonObject.getValue("bootedAtEpochMillis").jsonPrimitive.content.toLong()
 

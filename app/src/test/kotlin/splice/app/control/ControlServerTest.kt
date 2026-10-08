@@ -156,7 +156,7 @@ class ControlServerTest {
                     shutdownRequested.countDown()
                 },
             ),
-            health = healthFor(
+            health = topologyHealthFor(
                 heads,
                 topologyDigest = TopologyDigest { "boot-digest-abc" },
                 configPath = "/tmp/splice.toml",
@@ -240,7 +240,7 @@ class ControlServerTest {
             config = ConfigService(paths),
             mgmtKey = MgmtKey(paths),
             log = {},
-            health = healthFor(emptyMap(), failedHeads = { 1 }, configuredHeads = 1),
+            health = healthFor(emptyMap(), readinessFor(emptyMap(), failedHeads = { 1 }, configuredHeads = 1)),
         )
         degraded.start()
         try {

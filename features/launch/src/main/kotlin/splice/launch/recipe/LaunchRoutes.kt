@@ -107,9 +107,7 @@ public class LaunchRoutes(
             request.dangerouslySkipPermissions,
             // DR-81: key presence is read per launch, not from the boot-frozen spec.
             keyPresentNow = target.keyPresence.keyPresentNow(),
-            cwd = request.cwd,
-            wrapped = wrapped,
-            inheritedConfigDir = request.inheritedConfigDir,
+            caller = LaunchCaller(request.cwd, wrapped, request.inheritedConfigDir),
         ),
     )
 

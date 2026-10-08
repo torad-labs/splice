@@ -44,7 +44,7 @@ class ClaudeAccountRowsTest {
     )
 
     @Test
-    fun `native rows distinguish a verified profile from an unresolved profile`() {
+    fun `native rows distinguish a verified profile from an unresolved profile`() = runBlocking {
         val pending = ClaudeLoginPlaceView(
             ClaudeLoginPlaceId.NATIVE,
             "synthetic-client",

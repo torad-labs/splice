@@ -26,7 +26,6 @@ import splice.core.config.UserHome
 import splice.core.util.EnvReader
 import splice.launch.LaunchRecipe
 import splice.launch.LaunchSpec
-import java.nio.file.Paths
 
 // LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
 
@@ -78,14 +77,10 @@ public class LaunchService(
         extraArgs: List<String>,
         dangerouslySkipPermissions: Boolean,
         keyPresentNow: Boolean = true,
-        /** V4-183: the shim's working directory; null from a shim older than shim-4, which leaves -c unbounded. */
-        cwd: String? = null,
-        /** V4-129 review: non-null when this launch came THROUGH the wrapped default `claude` command
-         *  ([WrappedHead.launchThrough]): its settings ride an overlay, never a write into vanilla. */
-        wrapped: WrappedLaunch? = null,
-        /** The calling shim's config root, not the daemon's own inherited environment. */
-        inheritedConfigDir: String? = null,
+        caller: LaunchCaller = LaunchCaller(),
     ): LaunchRecipe {
+        val cwd = caller.cwd
+        val wrapped = caller.wrapped
         val keyed = if (keyPresentNow) spec.copy(tokenCapture = null, advertiseKeySetup = false) else spec
         val effective = wrapped?.let { keyed.copy(trees = keyed.trees.copy(own = it.configDir)) } ?: keyed
         val slots = aliasSlots(effective)
@@ -109,7 +104,7 @@ public class LaunchService(
             headKey = effective.headKey,
         )
         // V4-283: the folder-trust records the operator granted for this cwd, in any head, are carried in.
-        val trust = cwd?.let { Paths.get(it) }?.takeIf { it.isAbsolute }
+        val trust = caller.absoluteCwd()
             ?.let { TrustedLaunch(it, effective.trees.siblings) }
         // V4-232: a head's presented rows enter its OWN settings.json only. V4-445: a wrapped launch materializes
         // NOTHING: it runs over the operator's own ~/.claude and ~/.claude.json, which stay as they are, and
@@ -130,7 +125,7 @@ public class LaunchService(
         val adoption = adoptResume(held, bounded.args)
         // V4-445: Claude Code reads ~/.claude.json only while CLAUDE_CONFIG_DIR is unset. Set to the vanilla dir it
         // reads ~/.claude/.claude.json, a file that holds none of the operator's mcpServers, projects or account.
-        val environment = launchEnvironment(spec, held, slots, wrapped, inheritedConfigDir)
+        val environment = launchEnvironment(spec, held, slots, wrapped, caller.inheritedConfigDir)
         val argv = buildList {
             // V4-129: the real absolute path when `claude` on PATH is currently the wrap shim itself
             // (see [wrapState]'s KDoc) — bare [claudeBinary] otherwise, byte-identical to every launch

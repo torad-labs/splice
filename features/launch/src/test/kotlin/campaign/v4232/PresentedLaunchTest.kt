@@ -25,6 +25,7 @@ import splice.core.model.ModelEntry
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
+import splice.launch.recipe.LaunchCaller
 import splice.launch.recipe.LaunchService
 import java.nio.file.Files
 import java.nio.file.Path
@@ -128,7 +129,12 @@ class PresentedLaunchTest(@param:TempDir private val tmp: Path) {
         val wrapping = LaunchService(materializer, wrap = wrap)
         val through = wrapping.wrap.launchThrough("claude") ?: error("a wrap state is present: claude must resolve")
 
-        wrapping.launch(spec(catalog(245_760L)), emptyList(), dangerouslySkipPermissions = false, wrapped = through)
+        wrapping.launch(
+            spec(catalog(245_760L)),
+            emptyList(),
+            dangerouslySkipPermissions = false,
+            caller = LaunchCaller(wrapped = through),
+        )
 
         assertEquals(operators, settings(home.resolve(".claude/settings.json"))["modelOverrides"])
     }

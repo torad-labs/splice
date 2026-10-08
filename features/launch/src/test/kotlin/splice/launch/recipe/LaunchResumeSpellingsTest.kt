@@ -70,7 +70,12 @@ class LaunchResumeSpellingsTest(@param:TempDir private val tmp: Path) {
         )
         SessionOwnership(mine.trees.own).record("own-session", cwd, transcript)
 
-        val recipe = service.launch(mine, extraArgs = listOf("-c"), dangerouslySkipPermissions = false, cwd = cwd)
+        val recipe = service.launch(
+            mine,
+            extraArgs = listOf("-c"),
+            dangerouslySkipPermissions = false,
+            caller = LaunchCaller(cwd = cwd),
+        )
         assertEquals(listOf("--resume", "own-session"), recipe.argv.takeLast(2), recipe.argv.toString())
         assertFalse(recipe.argv.contains("-c"))
         assertNull(recipe.warning, "resuming one's own session is the quiet path: ${recipe.warning}")
@@ -91,7 +96,12 @@ class LaunchResumeSpellingsTest(@param:TempDir private val tmp: Path) {
         owned.record("older", cwd, older)
         owned.record("newer", cwd, empty)
 
-        val recipe = service.launch(mine, extraArgs = listOf("-c"), dangerouslySkipPermissions = false, cwd = cwd)
+        val recipe = service.launch(
+            mine,
+            extraArgs = listOf("-c"),
+            dangerouslySkipPermissions = false,
+            caller = LaunchCaller(cwd = cwd),
+        )
         assertEquals(listOf("--resume", "older"), recipe.argv.takeLast(2), recipe.argv.toString())
         assertNull(recipe.warning, "an older usable own session is still a quiet continue")
     }

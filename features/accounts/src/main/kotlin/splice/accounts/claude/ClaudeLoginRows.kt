@@ -15,7 +15,6 @@ import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountView
 import splice.core.auth.AuthDescription
 import splice.core.auth.REFUSAL_FIELD
-import splice.core.head.ProviderAnswer
 import splice.core.usage.QuotaFreshness
 
 internal object ClaudeLoginRows {
@@ -32,23 +31,21 @@ internal object ClaudeLoginRows {
             providers.getValue(view.head),
             carrying[view.head],
             nowSeconds,
-            head?.activePool?.view(null),
-            head?.accountAuth?.descriptions()?.get("native:${view.id.wire}"),
-            head?.answers?.answer("native:${view.id.wire}"),
+            head,
         )
     }
 
     /** Same row for the roster and an explicit refresh; no credential join key is part of the payload. [carrying] is
      *  the place whose credential carried the head's newest matched request, or null before any matched. */
-    fun json(
+    suspend fun json(
         view: ClaudeLoginPlaceView,
         provider: String,
         carrying: ClaudeLoginPlaceId?,
         nowSeconds: Long,
-        pool: HeadAccountPoolView? = null,
-        description: AuthDescription? = null,
-        answer: ProviderAnswer? = null,
+        head: AccountHead? = null,
     ): JsonObject = buildJsonObject {
+        val place = "native:${view.id.wire}"
+        val answer = head?.answers?.answer(place)
         put("provider", provider)
         AccountAnswerJson.write(this, answer)
         put("credential_path", view.credentialPath)
@@ -81,7 +78,7 @@ internal object ClaudeLoginRows {
         windows(this, view, nowSeconds)
         put("held", view.standing.held)
         put("held_until_epoch_seconds", view.standing.untilEpochSeconds)
-        selection(this, view, pool, description)
+        selection(this, view, head?.activePool?.view(null), head?.accountAuth?.descriptions()?.get(place))
         put("carrying_request", carrying?.let { it == view.id })
         putJsonArray("heads") { add(JsonPrimitive(view.head)) }
         putJsonObject("failover_positions") { put(view.head, null as Int?) }

@@ -49,7 +49,12 @@ class LaunchFolderTrustTest {
 
         val service = LaunchService(ClaudeConfigMaterializer(home))
         val spec = claudex(listOf(spliceHead))
-        service.launch(spec, listOf("-r"), dangerouslySkipPermissions = false, cwd = take.toString())
+        service.launch(
+            spec,
+            listOf("-r"),
+            dangerouslySkipPermissions = false,
+            caller = LaunchCaller(cwd = take.toString()),
+        )
 
         val state = Json.parseToJsonElement(Files.readString(home.resolve(".claude-claudex/.claude.json"))).jsonObject
         val record = state["projects"]?.jsonObject?.get(take.toString())?.jsonObject

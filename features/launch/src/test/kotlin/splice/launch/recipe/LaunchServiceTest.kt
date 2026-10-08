@@ -481,7 +481,12 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         // V4-183: a bare -c with no session of this head in the cwd is a NEW session, said once —
         // never the sibling's, and never the client's own newest-in-tree continue.
         val cwd = Files.createDirectories(tmp.resolve("home-x")).toString()
-        val continued = service.launch(mine, extraArgs = listOf("-c"), dangerouslySkipPermissions = false, cwd = cwd)
+        val continued = service.launch(
+            mine,
+            extraArgs = listOf("-c"),
+            dangerouslySkipPermissions = false,
+            caller = LaunchCaller(cwd = cwd),
+        )
         assertFalse(continued.argv.contains("-c"), "the client's -c never reaches the client: ${continued.argv}")
         assertTrue(continued.warning.orEmpty().startsWith("no session of this head in $cwd"), continued.warning)
         assertFalse(

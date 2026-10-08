@@ -108,8 +108,10 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
             spec("claude-splice", forwardClientAuth = true),
             listOf("-p"),
             dangerouslySkipPermissions = false,
-            wrapped = through,
-            inheritedConfigDir = tmp.resolve(".claude-claude-splice").toString(),
+            caller = LaunchCaller(
+                wrapped = through,
+                inheritedConfigDir = tmp.resolve(".claude-claude-splice").toString(),
+            ),
         )
 
         assertFalse("CLAUDE_CONFIG_DIR" in recipe.env, "set, Claude Code reads ~/.claude/.claude.json: ${recipe.env}")
@@ -151,8 +153,7 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
             spec("claude-splice", forwardClientAuth = true),
             emptyList(),
             dangerouslySkipPermissions = false,
-            wrapped = through,
-            inheritedConfigDir = customDir,
+            caller = LaunchCaller(wrapped = through, inheritedConfigDir = customDir),
         )
 
         assertFalse("CLAUDE_CONFIG_DIR" in recipe.env)

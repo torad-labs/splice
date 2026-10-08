@@ -76,5 +76,5 @@ public fun interface HaltJvm {
  * On a clean finish the halt watchdog is disarmed, so the halt never runs.
  */
 public fun interface Teardown {
-    public operator fun invoke()
+    public suspend operator fun invoke()
 }

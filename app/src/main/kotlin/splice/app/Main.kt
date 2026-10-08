@@ -1,10 +1,9 @@
-// NEW: process entry (P4-SUP). The ONLY place runBlocking is legal (the walls exempt Main.kt +
-// cli/). Acquires the single-flight daemon lock, loads topology, starts the daemon, installs a
+// NEW: process entry (P4-SUP). `main` is suspend, so no runBlocking exists anywhere. Acquires the
+// single-flight daemon lock, loads topology, starts the daemon, installs a
 // shutdown hook. `splice daemon` is the default; other subcommands route to the CLI (P5-CLI).
 package splice.app
 
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.app.daemon.DaemonLock
 import splice.app.daemon.DaemonLockWait
@@ -25,12 +24,13 @@ import splice.topology.TopologyLoader
 import splice.topology.TopologyStatePaths
 import java.nio.file.Path
 import java.security.Security
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.system.exitProcess
 
-public fun main(args: Array<String>) {
+public suspend fun main(args: Array<String>) {
     // Kill JVM negative-DNS caching BEFORE any lookup (kimi 07:00 burst, 2026-07-18): the JVM
     // caches a FAILED lookup for 10s by default, so one resolver timeout for api.kimi.com poisoned
     // every following request — 37 turn failures from one blip, including 5ms "failures" that never
@@ -61,7 +61,7 @@ public fun main(args: Array<String>) {
     when (args.firstOrNull()) {
         null, "daemon" -> DaemonProcess(args.toList()).runDaemon()
         "start" -> LifecycleWiring.startThroughUnit()?.let(::exitProcess) ?: DaemonProcess(args.toList()).runDaemon()
-        else -> exitProcess(CliProcess(args).exitCode())
+        else -> exitProcess(splice.app.cli.Cli().runCli(args))
     }
 }
 
@@ -74,7 +74,7 @@ internal class DaemonProcess(
     private val boundary: DaemonBoundary = DaemonBoundary(),
 ) {
 
-    internal fun runDaemon() {
+    internal suspend fun runDaemon() {
         armShutdownOwnership()
         // The BOOTSTRAP state paths: the crash log needs a path before anything can throw, and
         // [daemon].state_dir cannot be known until the topology below has parsed — so the net is
@@ -115,21 +115,23 @@ internal class DaemonProcess(
         // `addShutdownHook` takes an unstarted Thread — the one place in this process where the JVM
         // API itself demands the type. It comes from the platform factory rather than an ad-hoc
         // `Thread(...)` so that thread creation has a single seam here as it does in every executor.
+        // The hook never stops anything: it asks main to (the signal) and waits, on a plain latch and not in a
+        // coroutine, until main's ordered stop has finished. Bounded by the same ladder as the stop itself.
+        val stopped = CountDownLatch(1)
         Runtime.getRuntime().addShutdownHook(
-            Executors.defaultThreadFactory().newThread { shutdown(daemon, lock) },
+            Executors.defaultThreadFactory().newThread {
+                shutdownSignal.complete(Unit)
+                stopped.await(STOP_DEADLINE_MS + TEARDOWN_TAIL_GRACE_MS, TimeUnit.MILLISECONDS)
+            },
         )
         // V4-445: keeps a wrapped plain `claude` wrapped across Claude Code's own updates. Production only: it
         // watches the real ~/.local/bin, which a test daemon must never do.
         WrapGuard(WrappedHead(UserHome.dir()), InstallPaths().binDir, log).use { guard ->
             guard.start()
-            serveUntilShutdown(daemon, lock, shutdownSignal)
+            serveUntilShutdown(daemon, lock, shutdownSignal, stopped)
         }
     }
 
-    /** The blocking serve loop, PRIVATE by law: wall kt-no-runblocking-exported-bridge lets Main.kt
-     *  CALL runBlocking at process entry but never EXPORT a blocking bridge, and relocating these
-     *  functions into a class turned the old file-private `runDaemon` into a member. The blocking
-     *  body therefore lives here, one level below the member `main` dispatches to. */
     /** V4-74: THE DAEMON'S ORDERED STOP IS THE ONLY SHUTDOWN OWNER, and this is where that is armed.
      *
      *  Ktor's EmbeddedServer registers its OWN JVM shutdown hook per engine, and on SIGTERM those
@@ -156,37 +158,39 @@ internal class DaemonProcess(
         System.setProperty("io.ktor.server.engine.ShutdownHook", "false")
     }
 
-    private fun serveUntilShutdown(
+    /** Serves until the signal completes (a control plane that could not bind, or the shutdown hook), then runs the
+     *  ordered stop here, in main's own context, and releases the hook waiting on [stopped]. */
+    private suspend fun serveUntilShutdown(
         daemon: Daemon,
         lock: DaemonLock,
         shutdownSignal: CompletableDeferred<Unit>,
+        stopped: CountDownLatch,
     ) {
-        runBlocking {
+        try {
+            daemon.start()
+            // A control plane that could not bind asks for shutdown before start returns (ControlPlane.start).
+            if (!shutdownSignal.isCompleted) bootEnded()
+            shutdownSignal.await()
+        } finally {
             try {
-                daemon.start()
-                // A control plane that could not bind asks for shutdown before start returns (ControlPlane.start).
-                if (!shutdownSignal.isCompleted) bootEnded()
-                shutdownSignal.await()
-            } finally {
                 shutdown(daemon, lock)
+            } finally {
+                stopped.countDown()
             }
         }
     }
 
-    // Bounded shutdown shared by BOTH drivers (the SIGTERM hook and the run-loop finally). daemon.stop()
-    // is idempotent (`stopLock` Mutex + `stopped`), so a double invocation across the two drivers is safe. The
+    // Bounded shutdown, run once by main after the signal (the SIGTERM hook only completes that signal). The
     // watchdog is the guarantee SIGTERM lacked: gating JVM exit purely on stop() returning let one wedged
     // head / non-daemon Netty thread turn SIGTERM into a no-op (the operator then reached for SIGKILL,
     // and the racing restart it invited — BS-4). withTimeoutOrNull caps the cooperative stop; halt(0) is
     // the floor for the uninterruptible case a cancel can't reach.
-    private fun shutdown(daemon: Daemon, lock: DaemonLock) {
+    private suspend fun shutdown(daemon: Daemon, lock: DaemonLock) {
         // The halt floor sits ABOVE the cooperative cap by a grace window: a stop that times out
         // cooperatively at exactly STOP_DEADLINE_MS must still get its drain() + lock.close() tail
         // before the watchdog fires (orchestrator review 2026-07-24 — equal deadlines raced the tail).
         runBoundedTeardown(STOP_DEADLINE_MS + TEARDOWN_TAIL_GRACE_MS, { Runtime.getRuntime().halt(0) }) {
-            runBlocking {
-                withTimeoutOrNull(STOP_DEADLINE_MS) { boundary.runCatchingDaemonBoundary { daemon.stop() } }
-            }
+            withTimeoutOrNull(STOP_DEADLINE_MS) { boundary.runCatchingDaemonBoundary { daemon.stop() } }
             // The file lane's flush is the last reportable signal before lock.close() and the halt
             // watchdog: a false means daemon.log / usage / economics writes were lost on the way out.
             if (!AsyncFileIo.drain()) {
@@ -200,7 +204,7 @@ internal class DaemonProcess(
     // [deadlineMs]. A cancel (withTimeoutOrNull) can't kill a thread stuck in uninterruptible blocking work
     // (a wedged engine stop), so halt(0) is the floor that guarantees termination. On a clean finish the
     // watchdog is disarmed via [halted] so halt never fires. [halt] is injected so tests exercise both paths.
-    internal fun runBoundedTeardown(deadlineMs: Long, halt: HaltJvm, teardown: Teardown) {
+    internal suspend fun runBoundedTeardown(deadlineMs: Long, halt: HaltJvm, teardown: Teardown) {
         val halted = AtomicBoolean(false)
         // A named single-thread scheduler holding ONE delayed task, not a raw thread parked in
         // Thread.sleep: same daemon-ness (the JVM never waits on it), same one-shot firing at
@@ -328,10 +332,3 @@ internal const val TEARDOWN_TAIL_GRACE_MS = 2_000L
 // One rolled generation at 64MB caps daemon.log disk at ~128MB — plenty of tail history, bounded.
 // Held here so DaemonProcess.persistentLogger keeps the same default the tests pass past.
 private const val MAX_LOG_BYTES = 64L * 1024 * 1024
-
-/** The CLI one-shot's process. The CLI is suspend all the way down; this is the one place that blocks on it. */
-internal class CliProcess(private val args: Array<String>) {
-    fun exitCode(): Int = blocking()
-
-    private fun blocking(): Int = runBlocking { splice.app.cli.Cli().runCli(args) }
-}

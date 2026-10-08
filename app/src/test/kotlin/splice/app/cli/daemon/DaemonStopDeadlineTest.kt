@@ -80,16 +80,18 @@ class DaemonStopDeadlineTest {
     fun `the halt watchdog force-terminates a teardown that overruns the deadline`() {
         val halts = AtomicInteger(0)
         val halted = CountDownLatch(1)
-        process.runBoundedTeardown(
-            deadlineMs = 150,
-            halt = {
-                halts.incrementAndGet()
-                halted.countDown()
-            },
-        ) {
-            // A teardown that overruns the deadline: it ends only when the watchdog has halted
-            // (bounded, so a watchdog that never fires fails here instead of hanging).
-            assertTrue(halted.await(10, TimeUnit.SECONDS), "the watchdog never halted an overrunning teardown")
+        runBlocking {
+            process.runBoundedTeardown(
+                deadlineMs = 150,
+                halt = {
+                    halts.incrementAndGet()
+                    halted.countDown()
+                },
+            ) {
+                // A teardown that overruns the deadline: it ends only when the watchdog has halted
+                // (bounded, so a watchdog that never fires fails here instead of hanging).
+                assertTrue(halted.await(10, TimeUnit.SECONDS), "the watchdog never halted an overrunning teardown")
+            }
         }
         assertEquals(1, halts.get(), "the watchdog halts exactly once when teardown overruns")
     }
@@ -97,8 +99,10 @@ class DaemonStopDeadlineTest {
     @Test
     fun `a clean teardown never halts`() {
         val halts = AtomicInteger(0)
-        process.runBoundedTeardown(deadlineMs = 200, halt = { halts.incrementAndGet() }) {
-            // returns immediately — well under the deadline
+        runBlocking {
+            process.runBoundedTeardown(deadlineMs = 200, halt = { halts.incrementAndGet() }) {
+                // returns immediately — well under the deadline
+            }
         }
         // A PROOF OF ABSENCE, and the one wall-clock wait this file keeps (V4-139): nothing signals
         // that a disarmed watchdog did not fire, so the only instrument is a window past the deadline.

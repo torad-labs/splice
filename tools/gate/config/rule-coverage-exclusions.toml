@@ -538,15 +538,6 @@ the rest of :integrations-claude-code file-for-file.
 """
 
 [[exclusion]]
-rule = "kt-no-runblocking-in-daemon"
-files = ["app/src/main/kotlin/**/Main.kt"]
-date = "2026-09-20"
-reason = """
-runBlocking is allowed in the process entry, app Main.kt, alone. That exempted file is not
-unguarded: kt-no-runblocking-exported-bridge grades it, requiring every bridge into it to be private.
-"""
-
-[[exclusion]]
 rule = "kt-no-runblocking-exported-bridge"
 files = ["app/src/main/kotlin/**/*.kt"]
 date = "2026-09-20"

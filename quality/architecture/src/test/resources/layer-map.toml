@@ -65,8 +65,7 @@ modules = [":app"]
 [tooling]
 modules = [":quality-architecture", ":quality-compiler-plugin"]
 
-# THE COMPOSITION ROOT is one named role held to one file. It is the only file kt-no-runblocking-in-daemon
-# exempts, and LayerMapLawTest proves the file exists and is the only main-source file that declares a
-# process entry in :app.
+# THE COMPOSITION ROOT is one named role held to one file. LayerMapLawTest proves the file exists and is the
+# only main-source file that declares a process entry in :app.
 [composition-root]
 file = "app/src/main/kotlin/splice/app/Main.kt"

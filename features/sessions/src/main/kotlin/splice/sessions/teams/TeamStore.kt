@@ -102,14 +102,14 @@ internal fun interface TeamEdit {
 }
 
 /** A write the store refused, with the reason the route reports. */
-public class TeamRefusal(message: String) : IllegalArgumentException(message)
+internal class TeamRefusal(message: String) : IllegalArgumentException(message)
 
 /** A create that reused an idempotency key with a different body; the route answers 409. */
-public class TeamKeyConflict(message: String) : IllegalArgumentException(message)
+internal class TeamKeyConflict(message: String) : IllegalArgumentException(message)
 
 /** The real filesystem: [TeamStore]'s production default [RepoProbe], the only implementation that
  *  ever touches disk. */
-public val realRepoProbe: RepoProbe = RepoProbe { path ->
+internal val realRepoProbe: RepoProbe = RepoProbe { path ->
     val at = Paths.get(path)
     when {
         !Files.exists(at) -> RepoPathCheck.MISSING

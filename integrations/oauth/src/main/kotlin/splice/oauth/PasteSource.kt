@@ -14,7 +14,7 @@ public interface PasteSource {
 }
 
 /** The process's own terminal: interactive when the JVM has a console, read through System.in. */
-public class SystemPasteSource : PasteSource {
+internal class SystemPasteSource : PasteSource {
     override fun interactive(): Boolean = System.console() != null
 
     override fun input(): InputStream = System.`in`

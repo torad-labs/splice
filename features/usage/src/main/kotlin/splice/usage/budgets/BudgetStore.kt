@@ -46,7 +46,7 @@ public data class Budget(
 private data class BudgetsDocument(val budgets: List<Budget> = emptyList())
 
 /** A write [BudgetStore] refused, with the reason the route reports as a 400. */
-public class BudgetRefusal(message: String) : IllegalArgumentException(message)
+internal class BudgetRefusal(message: String) : IllegalArgumentException(message)
 
 /** The actions a budget may name. [BudgetStore.replace] refuses any other spelling. */
 public object BudgetActions {

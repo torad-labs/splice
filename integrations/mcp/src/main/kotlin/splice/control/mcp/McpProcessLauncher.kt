@@ -23,7 +23,7 @@ public fun interface McpProcessLauncher {
  *  V4-147: [containment] decides the two things a spawn owes the box — the cgroup the child runs in
  *  (a slice the host caps) and its oom_score_adj (off splice's inherited -1000). Null keeps the
  *  plain spawn, which is what a test wants and what a box with no such slice gets anyway. */
-public class StdioProcessLauncher(
+internal class StdioProcessLauncher(
     private val workingDir: Path = UserHome.dir(),
     private val containment: McpContainment? = null,
 ) : McpProcessLauncher {

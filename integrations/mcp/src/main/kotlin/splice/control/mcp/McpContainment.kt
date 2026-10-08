@@ -39,19 +39,19 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** A systemd slice's memory ceiling, as `systemctl --user show <slice> -p MemoryMax --value` prints
  *  it: "infinity" for a slice with no cap, null when systemd could not be asked at all. */
-public fun interface SliceMemoryCap {
+internal fun interface SliceMemoryCap {
     public operator fun invoke(slice: String): String?
 }
 
 /** Writes a spawned child's oom_score_adj and READS IT BACK — the read is the assertion, because a
  *  write that lands on another value still reports success. Null when it could not be written. */
-public fun interface OomScoreAdjWrite {
+internal fun interface OomScoreAdjWrite {
     public operator fun invoke(pid: Long, value: Int): Int?
 }
 
 /** Where a hosted child runs and how killable it is. Both halves are per-spawn, and neither ever
  *  touches splice's own process: [protect] writes exactly one pid, the child's. */
-public class McpContainment(
+internal class McpContainment(
     private val log: LogSink,
     private val slice: String = APP_MCP_SLICE,
     private val adj: Int = HOSTED_ADJ,
@@ -131,4 +131,4 @@ private const val UNCAPPED = "infinity"
 // is conventionally told to skip, so every reaper can still select it — the whole point of the raise —
 // while staying below an ordinary user process (0), because killing an MCP server destroys a
 // capability the session cannot respawn by itself rather than a cache.
-public const val HOSTED_ADJ: Int = -100
+internal const val HOSTED_ADJ: Int = -100

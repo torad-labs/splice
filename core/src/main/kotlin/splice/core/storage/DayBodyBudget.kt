@@ -20,10 +20,10 @@ import java.time.ZoneOffset
 public const val TRACE_BODY_MAX_BYTES: Long = 32L shl 30
 
 /** Trace bodies never consume the volume's last 64 GiB of usable space. */
-public const val TRACE_BODY_MIN_FREE_BYTES: Long = 64L shl 30
+internal const val TRACE_BODY_MIN_FREE_BYTES: Long = 64L shl 30
 
 /** An eviction tombstone preserves the omission's reason without deleting the day's trace records. */
-public const val DAY_BODY_EVICTED_SUFFIX: String = ".bodies-evicted"
+internal const val DAY_BODY_EVICTED_SUFFIX: String = ".bodies-evicted"
 
 public const val BODY_BUDGET_EVICTED_REASON: String = "evicted by the body budget"
 

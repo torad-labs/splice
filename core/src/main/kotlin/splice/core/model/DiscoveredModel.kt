@@ -29,7 +29,7 @@ public data class DiscoveredModel(
 }
 
 /** The `tool_mode` the Codex backend publishes for a model it runs on the code-mode surface alone. */
-public const val TOOL_MODE_CODE_MODE_ONLY: String = "code_mode_only"
+internal const val TOOL_MODE_CODE_MODE_ONLY: String = "code_mode_only"
 
 /** What each head's provider published at daemon start, by head key — the daemon's ModelRosters.
  *  Every reader that builds a head's catalog takes this one port, so the catalog a head boots with

@@ -20,7 +20,7 @@ import splice.upstream.failure.SseSpuriousWakeupException
 // the cap is part of [ChannelReads]'s cross-module contract (DR-26d): callers in :daemon-head reason
 // about when a torn peer turns into SseSpuriousWakeupException, and an invisible constant made
 // that contract unreviewable from the consuming side.
-public const val MAX_SPURIOUS_WAKEUPS: Int = 1024
+internal const val MAX_SPURIOUS_WAKEUPS: Int = 1024
 
 public object ChannelReads {
 

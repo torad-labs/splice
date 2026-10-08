@@ -72,7 +72,7 @@ public data class TrustedRoot(val path: String, val origin: TrustedRootOrigin)
 
 private data class CachedRoot(val root: RepoRoot, val expiresAtMs: Long)
 
-public class RepoResolver(
+internal class RepoResolver(
     extraRoots: List<String> = emptyList(),
     home: String? = UserHome.dir().toString(),
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),

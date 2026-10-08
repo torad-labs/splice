@@ -30,10 +30,10 @@ public data class AlertSettings(
 )
 
 /** Off: no desktop notifications, no webhook — the state every install starts in. */
-public val defaultAlertSettings: AlertSettings = AlertSettings()
+internal val defaultAlertSettings: AlertSettings = AlertSettings()
 
 /** A write [AlertStore] refused, with the reason the route reports as a 400. */
-public class AlertRefusal(message: String) : IllegalArgumentException(message)
+internal class AlertRefusal(message: String) : IllegalArgumentException(message)
 
 public class AlertStore(private val file: Path) {
     private val json = Json {

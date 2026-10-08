@@ -25,7 +25,7 @@ public fun interface DayDirectoryAction<T> {
 }
 
 /** A shared body budget takes this fence before every per-head lock and keeps it through index publication. */
-public class DayDirectoryLock(dir: Path) {
+internal class DayDirectoryLock(dir: Path) {
     private val shared = DayMutationLock(dir, "directory", directory = null)
 
     public fun <T> withLock(action: DayDirectoryAction<T>): T = shared.withLock { action() }

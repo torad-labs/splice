@@ -36,12 +36,13 @@
 // on whole-token boundaries) or star-imports its package. Justification then PROPAGATES through
 // public signatures to a fixpoint: a public member's parameter or return type is part of the
 // contract even when no source file spells it, because the call site binds it by inference and a
-// name-based scan cannot see that. The signature read is the declaration's own header plus the
-// headers of its public MEMBERS — headers, not first lines, because a member whose parameter list
-// wraps hid its own types for a whole row. Every `= expression` is cut out of each header first: a
-// default, an initializer or an expression body is not contract, and reading one as a use let a
-// const named only in a default go public under a green wall (V4-210). Both approximations are
-// deliberate: over-justifying costs a missed declaration, under-justifying cost five good ones.
+// name-based scan cannot see that. The signature is read from Konsist's declaration model, never
+// from text: the declaration's parents, type parameters and visible constructor parameters, a
+// function's receiver, parameter and return types, a property's type, and the same for its public
+// members. Only TYPES are read, so a default, an initializer or an expression body is never contract
+// (V4-210) and a default lambda's braces cannot end a signature early (the line scan this replaced
+// stopped at the first `{` and hid every parameter after it). Over-justifying costs a missed
+// declaration, under-justifying cost five good ones; the union over overloads is deliberate.
 //
 // VIOLATIONS. GROWTH — a declaration no other module consumes that the baseline does not record —
 // is RED BY NAME on the commit that adds it. A SHRINK is RED too: a baseline entry that has stopped
@@ -61,6 +62,17 @@
 // modules, so the hole is empty today and this paragraph is the marker.
 package splice.quality
 
+import com.lemonappdev.konsist.api.Konsist
+import com.lemonappdev.konsist.api.declaration.KoBaseDeclaration
+import com.lemonappdev.konsist.api.declaration.KoFunctionDeclaration
+import com.lemonappdev.konsist.api.declaration.KoPropertyDeclaration
+import com.lemonappdev.konsist.api.provider.KoDeclarationProvider
+import com.lemonappdev.konsist.api.provider.KoNameProvider
+import com.lemonappdev.konsist.api.provider.KoParentProvider
+import com.lemonappdev.konsist.api.provider.KoPrimaryConstructorProvider
+import com.lemonappdev.konsist.api.provider.KoReceiverTypeProvider
+import com.lemonappdev.konsist.api.provider.KoTypeParameterProvider
+import com.lemonappdev.konsist.api.provider.modifier.KoVisibilityModifierProvider
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -77,13 +89,6 @@ import java.io.File
 private const val BASELINE_RESOURCE = "/public-surface-baseline.json"
 private const val BASELINE_PATH = "quality/architecture/src/test/resources/public-surface-baseline.json"
 
-/** How many lines a declaration header may span before the scan gives up. A cap rather than "until
- *  the body", because a header that never closes would otherwise swallow the rest of the file and
- *  justify every name in it — this row's own failure mode, inverted. */
-private const val SIGNATURE_MAX_LINES = 20
-
-private val HEADER_END = Regex("=\\s*$")
-
 /** `\w`, ASCII, exactly as both the checker's JS engine and Java's default read it. */
 private const val WORD_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz"
 
@@ -98,92 +103,42 @@ private fun freeStart(ch: Char?): Boolean = ch == null || !isWordOrDot(ch)
  *  as the prefix of a longer path (`splice.x.Y.Companion`) is a use of `splice.x.Y`, as there. */
 private fun freeEnd(ch: Char?): Boolean = ch == null || !isWord(ch)
 
-private fun closesHeader(line: String): Boolean = line.contains("{") || HEADER_END.containsMatchIn(line)
+/** The type names a declaration's PUBLIC contract spells, read from Konsist's declaration model: its
+ *  own parents, type parameters and visible constructor parameters, a function's receiver, parameter
+ *  and return types, a property's receiver and type, plus those of its public members, nested ones
+ *  included. Only TYPES are read. A default value, an initializer or a body is an expression and never
+ *  contract (V4-210), and the model knows where each one ends, so a lambda's braces or a string's
+ *  commas cannot end a signature early the way a line scan let them. */
+private fun signatureOf(declaration: KoBaseDeclaration): String =
+    contractOf(declaration).joinToString("\n")
 
-/** A declaration's HEADER: its own line plus the continuation lines up to the body, capped. */
-private fun headerOf(lines: List<String>, at: Int): List<String> {
-    val out = mutableListOf<String>()
-    for (index in at until minOf(lines.size, at + SIGNATURE_MAX_LINES)) {
-        out += lines[index]
-        if (closesHeader(lines[index])) break
+private fun isPublic(declaration: KoBaseDeclaration): Boolean =
+    declaration is KoVisibilityModifierProvider && declaration.hasPublicModifier
+
+private fun contractOf(declaration: KoBaseDeclaration): List<String> {
+    val out = mutableListOf<String?>()
+    if (declaration is KoParentProvider) out += declaration.parents(false).map { it.text }
+    if (declaration is KoTypeParameterProvider) out += declaration.typeParameters.map { it.text }
+    if (declaration is KoPrimaryConstructorProvider) out += constructorTypes(declaration)
+    if (declaration is KoReceiverTypeProvider) out += declaration.receiverType?.text
+    if (declaration is KoFunctionDeclaration) {
+        out += declaration.parameters.map { it.type.text }
+        out += declaration.returnType?.text
     }
-    return out
-}
-
-private const val OPENERS = "([{"
-private const val CLOSERS = ")]}"
-
-/** The text that carries a declaration's reachable type names: its own header, plus the headers of
- *  its PUBLIC members. A member's BODY is excluded, so a type named only inside a private member
- *  slips through and OVER-justifies; that direction is chosen deliberately. */
-private fun signatureOf(lines: List<String>, at: Int): String {
-    val own = headerOf(lines, at)
-    val out = mutableListOf(withoutDefaults(own.joinToString("\n")))
-    var index = at + maxOf(own.size, 1)
-    while (index < lines.size) {
-        if (PublicSurface.DECLARATION.containsMatchIn(lines[index])) break
-        val member = if (PublicSurface.MEMBER.containsMatchIn(lines[index])) headerOf(lines, index) else emptyList()
-        if (member.isNotEmpty()) out += withoutDefaults(member.joinToString("\n"))
-        // Past the member's own header, so its parameter lines are not re-read as members.
-        index += maxOf(member.size, 1)
+    if (declaration is KoPropertyDeclaration) out += declaration.type?.text
+    if (declaration is KoDeclarationProvider) {
+        declaration.declarations(includeNested = false, includeLocal = false)
+            .filter { isPublic(it) }
+            .forEach { out += contractOf(it) }
     }
-    return out.joinToString("\n")
+    return out.filterNotNull()
 }
 
-/** A header with every `= expression` cut out: a parameter's default, a property's initializer, an
- *  expression body. None of them is contract. A caller binds a parameter's TYPE by inference and
- *  never its default, and a default may name an `internal` const, which the compiler allows, so a
- *  name met only after an `=` justifies nothing (V4-210: `x: Int = DEFAULT_X` read as a use, and the
- *  two consts V4-150 made internal could go public again under a green wall). Cut per HEADER, never
- *  over the joined signature, so an expression body cannot run on into the next member's types. */
-private fun withoutDefaults(header: String): String {
-    val out = StringBuilder()
-    var index = 0
-    while (index < header.length) {
-        if (header[index] == '=') {
-            index = endOfExpression(header, index + 1)
-        } else {
-            out.append(header[index])
-            index += 1
-        }
-    }
-    return out.toString()
-}
-
-/** Where the expression after an `=` ends: a `,` or an unmatched closer at its own depth, or the end
- *  of its line once it has begun, so a default wrapped over lines is cut whole and the parameter
- *  after it is kept. A string literal's `,` and `)` are not structure. */
-private fun endOfExpression(text: String, from: Int): Int {
-    var depth = 0
-    var begun = false
-    var quoted = false
-    for (index in from until text.length) {
-        val ch = text[index]
-        if (depth == 0 && ends(ch, begun, quoted)) return index
-        quoted = quotedAfter(ch, quoted)
-        if (!quoted) depth += nesting(ch)
-        begun = begun || !ch.isWhitespace()
-    }
-    return text.length
-}
-
-private fun ends(ch: Char, begun: Boolean, quoted: Boolean): Boolean = when {
-    ch == '\n' -> begun
-    quoted -> false
-    else -> ch == ',' || ch in CLOSERS
-}
-
-/** A Kotlin string literal never spans a line, so a stray quote in prose cannot hide the rest. */
-private fun quotedAfter(ch: Char, quoted: Boolean): Boolean = when (ch) {
-    '\n' -> false
-    '"' -> !quoted
-    else -> quoted
-}
-
-private fun nesting(ch: Char): Int = when (ch) {
-    in OPENERS -> 1
-    in CLOSERS -> -1
-    else -> 0
+/** A constructor that is private, internal or protected is not part of the public contract. */
+private fun constructorTypes(declaration: KoPrimaryConstructorProvider): List<String> {
+    val constructor = declaration.primaryConstructor ?: return emptyList()
+    val hidden = constructor.hasPrivateModifier || constructor.hasInternalModifier || constructor.hasProtectedModifier
+    return if (hidden) emptyList() else constructor.parameters.map { it.type.text }
 }
 
 internal object PublicSurface {
@@ -197,10 +152,6 @@ internal object PublicSurface {
         "^public\\s+(?:(?:sealed|data|abstract|open|value|enum|fun|annotation|suspend|inline|expect|external|" +
             "const)\\s+)*(class|interface|object|fun|val|var)\\s+([A-Za-z_][A-Za-z0-9_]*)",
     )
-
-    /** A PUBLIC MEMBER — the half that defeated the first cut of this wall. An indented `public` is
-     *  a member signature and not prose, because explicitApi() makes the modifier mandatory. */
-    val MEMBER = Regex("^\\s+(?:public\\s|override\\s+public\\s|public\\s+override\\s)")
 
     private val MODULE_PATH = Regex("\"(:[A-Za-z0-9._-]+)\"")
     private val NON_LIBRARY = Regex("val nonLibrary = setOf\\(([^)]*)\\)", RegexOption.DOT_MATCHES_ALL)
@@ -371,24 +322,47 @@ internal object PublicSurface {
         return root.walkTopDown().filter { it.isFile && it.extension == "kt" }.sortedBy { it.path }.toList()
     }
 
-    private fun declarations(map: ProjectMap, module: String): List<Declaration> =
-        sources(map, module, MAIN).flatMap { file ->
-            declarationsIn(module, KotlinText.rel(map, file), file.readText())
-        }
+    private val KONSIST_ROOT: File = ProjectMap.fromSystemProperties().root.absoluteFile
 
-    private fun declarationsIn(module: String, rel: String, text: String): List<Declaration> {
+    private fun declarations(map: ProjectMap, module: String): List<Declaration> {
+        val root = File(map.dir(module), MAIN)
+        if (!root.isDirectory) return emptyList()
+        // Konsist resolves a path against the REPOSITORY root, so a tree anywhere else (a temp one) is
+        // handed over relative to it.
+        val relative = KONSIST_ROOT.toPath().relativize(root.absoluteFile.toPath()).toString()
+        val trees = Konsist.scopeFromDirectory(relative).files.associateBy { File(it.path).canonicalPath }
+        return sources(map, module, MAIN).flatMap { file ->
+            val tree = checkNotNull(trees[file.canonicalPath]) { "${file.path}: Konsist has no such file" }
+            declarationsIn(module, KotlinText.rel(map, file), file.readText(), tree.declarations(false, false))
+        }
+    }
+
+    /** The declarations are ENUMERATED by their `public` line, as before, and each one's signature is
+     *  read from the model's top-level declarations of that name. A line the model places no public
+     *  declaration on is an error rather than an empty signature, because an empty one justifies
+     *  nothing and reads as green. Overloads share a name and a baseline identity, so they share a
+     *  signature: the union over-justifies, which this wall chooses over missing a type. */
+    private fun declarationsIn(
+        module: String,
+        rel: String,
+        text: String,
+        top: List<KoBaseDeclaration>,
+    ): List<Declaration> {
         val pkg = PACKAGE.find(text)?.groupValues?.get(1).orEmpty()
         val lines = text.split(LINE_SPLIT)
         return lines.indices.mapNotNull { index ->
             DECLARATION.find(lines[index])?.let { match ->
+                val name = match.groupValues[2]
+                val nodes = top.filter { it is KoNameProvider && it.name == name && isPublic(it) }
+                check(nodes.isNotEmpty()) { "$rel:${index + 1}: Konsist has no public top-level `$name` in this file" }
                 Declaration(
                     module = module,
                     pkg = pkg,
-                    name = match.groupValues[2],
+                    name = name,
                     kind = match.groupValues[1],
                     rel = rel,
                     line = index + 1,
-                    signature = signatureOf(lines, index),
+                    signature = nodes.joinToString("\n") { signatureOf(it) },
                 )
             }
         }
@@ -634,6 +608,18 @@ class PublicSurfaceLawTest {
     }
 
     @Test
+    fun `the law can actually fail - a default lambda does not end the signature - V4-92`(@TempDir root: File) {
+        with(Tree(root)) {
+            // The braces of a default LAMBDA sit inside the parameter list. A header that ends at the first
+            // brace never reads `hidden: Hidden` below it, so Hidden reads as unjustified although Store is consumed.
+            write(LIB_STORE to LAMBDA_STORE, OTHER_USE to STORE_USE)
+            assertFalse(audit(baseline()).any { HIDDEN_ID in it }) {
+                "a type after a default lambda is still the constructor's contract, and its class is consumed"
+            }
+        }
+    }
+
+    @Test
     fun `the law can actually fail - a shrink names the new number and the resource - V4-92`(@TempDir root: File) {
         with(Tree(root)) {
             write(LIB_API to API, OTHER_USE to USE)
@@ -761,6 +747,10 @@ class PublicSurfaceLawTest {
             "public class Store(size: Int = DEFAULT_SIZE) {\n    public data class Policy(\n" +
             "        val bytes: Int = DEFAULT_BYTES,\n        val limit: Long = maxOf(\n            DEFAULT_LIMIT,\n" +
             "            1L,\n        ),\n        val hidden: Hidden,\n    ) {\n    }\n}\n\npublic class Hidden\n"
+
+        /** A default LAMBDA in a primary constructor: its braces sit on the parameter's own line, inside the list. */
+        const val LAMBDA_STORE = "package fix.lib\n\npublic class Store(\n    val onFail: () -> Unit = { },\n" +
+            "    val hidden: Hidden,\n)\n\npublic class Hidden\n"
 
         fun baseline(vararg entries: String, recorded: String = "2026-09-17"): String =
             """{"recorded": "$recorded", "offenders": [${entries.joinToString(", ") { "\"$it\"" }}]}"""

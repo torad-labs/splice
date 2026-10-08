@@ -43,7 +43,7 @@ public class StreamTornBeforeClient(cause: Throwable) :
  *  is not mistaken for a read one. Its text must not say "connect": ktor reads that word as a connect
  *  timeout (OkHttpEngine). The retry loop retries it on a new connection; a turn out of attempts ends like
  *  any other IOException. */
-public class RequestWriteStalled(public val stalledMs: Long, cause: Throwable) :
+internal class RequestWriteStalled(public val stalledMs: Long, cause: Throwable) :
     java.net.SocketTimeoutException("the upstream took no more of the request for ${stalledMs}ms; the write stalled") {
     init {
         initCause(cause)

@@ -278,4 +278,34 @@ class HeapIngressTest {
         }
         assertEquals(heap.limitBytes, heap.available.value)
     }
+
+    @Test
+    fun `a refused connection closes when the client half-closes, not at the grace deadline`() = runBlocking {
+        val heap = HeapBudget(1024 * 1024, 128 * 1024)
+        val channel = CompletableFuture<Channel>()
+        val server = testServer(HeapIngress(heap, 32 * 1024, AdmissionErrorBody), channel) {
+            routing { post("/") { error("a cap-backed refusal must not read chunks") } }
+        }
+        server.start(false)
+        try {
+            val port = server.engine.resolvedConnectors().single().port
+            Socket("127.0.0.1", port).use { socket ->
+                socket.soTimeout = 5000
+                socket.getOutputStream().write(
+                    "POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n".toByteArray(),
+                )
+                val accepted = channel.get(5, TimeUnit.SECONDS)
+                // The staged close has shut the server's output, so reading to EOF returns the refusal.
+                val reply = socket.getInputStream().readBytes().toString(Charsets.UTF_8)
+                assertTrue(reply.startsWith("HTTP/1.1 413"), reply)
+                assertTrue(accepted.isOpen, "the server holds its input open until the client half-closes")
+                socket.shutdownOutput()
+                // The grace timer is one second from the staged close. The client's FIN must close well before it.
+                val closed = accepted.closeFuture().await(500, TimeUnit.MILLISECONDS)
+                assertTrue(closed, "the client's FIN must close the connection, not the grace timer")
+            }
+        } finally {
+            server.stop(0, 1000)
+        }
+    }
 }

@@ -10,14 +10,16 @@
 // A getter is a view, not a copy: `val x: T get() = p.x` reads through to the owner and holds nothing, so it has no
 // initializer and is not counted. Locals inside a method are not fields of the class and are never counted.
 //
-// THREAT MODEL. The law catches a member copy in any spelling that token normalization reduces to
-// `receiver.member`: comments dropped, whitespace around the dot dropped, parentheses around the receiver or the whole
-// expression unwrapped. Rewrites that route through other constructs, such as `with(p) { a }`, `p.let { it.a }` or a
-// property reference, are out of scope here; review covers those.
+// THREAT MODEL. The law catches a member copy in every spelling the Kotlin parser reads as `param.member`: the
+// property is parsed with the compiler's own PSI, parentheses are unwrapped as syntax, and a copy is a dot-qualified
+// expression whose receiver is a bare name that is a primary-constructor parameter and whose selector is a bare name.
+// A call, a safe call, a lambda or any other construct is not a copy, so `p(a).x` is not one. Rewrites that route
+// through other constructs, such as `with(p) { a }`, `p.let { it.a }` or a property reference, are out of scope here;
+// review covers those.
 //
 // BY SHAPE, NOT BY TEXT. Konsist reads the declarations: a class, its primary constructor's parameters, and the
 // properties the class itself declares, each with its initializer. Modifiers (`override`, `private`, `open`) play no
-// part, a class header of any length is one declaration, and a wrapped initializer is unwrapped to its expression.
+// part and a class header of any length is one declaration. The initializer is then parsed, never matched as text.
 //
 // NO ALLOWLIST. A violation is fixed in the code, never listed. The law reads every product `src/main` file the
 // project map yields, and it counts zero or it fails by name. A fixture test proves the detector can fail, so
@@ -28,6 +30,19 @@ package splice.quality
 
 import com.lemonappdev.konsist.api.Konsist
 import com.lemonappdev.konsist.api.declaration.KoClassDeclaration
+import com.lemonappdev.konsist.api.declaration.KoPropertyDeclaration
+import org.jetbrains.kotlin.cli.common.messages.MessageCollector
+import org.jetbrains.kotlin.cli.jvm.compiler.EnvironmentConfigFiles
+import org.jetbrains.kotlin.cli.jvm.compiler.KotlinCoreEnvironment
+import org.jetbrains.kotlin.com.intellij.openapi.util.Disposer
+import org.jetbrains.kotlin.config.CommonConfigurationKeys
+import org.jetbrains.kotlin.config.CompilerConfiguration
+import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
+import org.jetbrains.kotlin.psi.KtExpression
+import org.jetbrains.kotlin.psi.KtNameReferenceExpression
+import org.jetbrains.kotlin.psi.KtParenthesizedExpression
+import org.jetbrains.kotlin.psi.KtProperty
+import org.jetbrains.kotlin.psi.KtPsiFactory
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -35,11 +50,18 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
 internal object UnpackedParameters {
-    /** An initializer that is a bare member of one name: `p.x`. */
-    private val MEMBER = Regex("""^([A-Za-z_]\w*)\.([A-Za-z_]\w*)$""")
-    private val COMMENT = Regex("""/\*[\s\S]*?\*/|//[^\n]*""")
-    private val WHITESPACE = Regex("""\s+""")
-    private val PARENTHESISED_NAME = Regex("""\(([A-Za-z_]\w*)\)""")
+    /** The compiler's parser, started once: initializers are parsed, never matched as text. */
+    private val psi: KtPsiFactory by lazy {
+        val configuration = CompilerConfiguration().apply {
+            put(CommonConfigurationKeys.MESSAGE_COLLECTOR_KEY, MessageCollector.NONE)
+        }
+        val environment = KotlinCoreEnvironment.createForProduction(
+            Disposer.newDisposable("unpack-law"),
+            configuration,
+            EnvironmentConfigFiles.JVM_CONFIG_FILES,
+        )
+        KtPsiFactory(environment.project, markGenerated = false)
+    }
 
     data class Unpacking(val rel: String, val line: Int, val klass: String, val fields: List<String>) {
         override fun toString(): String =
@@ -56,45 +78,26 @@ internal object UnpackedParameters {
         if (params.isEmpty()) return null
         val copied = klass.properties(includeNested = false)
             .filter { !it.isConstructorDefined }
-            .filter { property -> storedCopyOf(property.value, params) == property.name }
+            .filter { property -> storedCopyOf(property, params) == property.name }
             .map { it.name }
         if (copied.size < 2) return null
         return Unpacking(rel, lineOf(klass), klass.name, copied)
     }
 
-    /** The member name when [initializer] is `p.member` once normalized, and `p` is one of [params]. */
-    private fun storedCopyOf(initializer: String?, params: Set<String>): String? {
-        val match = MEMBER.matchEntire(normalized(initializer.orEmpty())) ?: return null
-        return match.groupValues[2].takeIf { match.groupValues[1] in params }
+    /** The member name when the property's initializer parses as `p.member` and `p` is one of [params]. */
+    private fun storedCopyOf(property: KoPropertyDeclaration, params: Set<String>): String? {
+        val initializer = psi.createDeclaration<KtProperty>(property.text).initializer ?: return null
+        val copy = unwrapped(initializer) as? KtDotQualifiedExpression
+        val receiver = copy?.let { unwrapped(it.receiverExpression) } as? KtNameReferenceExpression
+        val member = copy?.selectorExpression as? KtNameReferenceExpression
+        return member?.getReferencedName()?.takeIf { receiver?.getReferencedName() in params }
     }
 
-    /** The initializer reduced to tokens: no comments, no whitespace, no parentheses around a bare receiver or
-     *  around the whole expression. `p . a`, `(p).a` and `p/*copy*/.a` all reduce to `p.a`. */
-    private fun normalized(initializer: String): String {
-        var text = initializer.replace(COMMENT, "").replace(WHITESPACE, "")
-        while (true) {
-            val unwrapped = unwrapParentheses(text).replace(PARENTHESISED_NAME, "$1")
-            if (unwrapped == text) return text
-            text = unwrapped
-        }
-    }
-
-    /** Strips parentheses that wrap the WHOLE expression: `((p.x))` is `p.x`, `(a).b` is untouched. */
-    private fun unwrapParentheses(expression: String): String {
-        var text = expression.trim()
-        while (isWrapped(text)) text = text.substring(1, text.lastIndex).trim()
-        return text
-    }
-
-    private fun isWrapped(text: String): Boolean = text.startsWith("(") && closerOfFirst(text) == text.lastIndex
-
-    private fun closerOfFirst(text: String): Int {
-        var depth = 0
-        for ((index, char) in text.withIndex()) {
-            if (char == '(') depth++
-            if (char == ')' && --depth == 0) return index
-        }
-        return -1
+    /** [expression] with every wrapping pair of parentheses taken off, as syntax. */
+    private fun unwrapped(expression: KtExpression): KtExpression {
+        var inner = expression
+        while (inner is KtParenthesizedExpression) inner = inner.expression ?: return inner
+        return inner
     }
 
     /** The line a class starts on, from the `path:line:column` location Konsist reports. */
@@ -180,6 +183,34 @@ internal class UnpackedParameterLawTest {
             """,
         )
         assertEquals(listOf("statePaths", "config", "limits"), found.single().fields)
+    }
+
+    @Test
+    fun `INVALID - a nested block comment between receiver and member is still a stored copy`(@TempDir dir: File) {
+        val found = scan(
+            dir,
+            """
+            class Holder(daemon: DaemonEnvironment) {
+                private val statePaths = daemon/*outer /*inner*/ outer*/.statePaths
+                private val config = daemon /* a */ . /* b */ config
+            }
+            """,
+        )
+        assertEquals(listOf("statePaths", "config"), found.single().fields)
+    }
+
+    @Test
+    fun `VALID - a call whose argument is a parameter's name is not a copy of that parameter`(@TempDir dir: File) {
+        val found = scan(
+            dir,
+            """
+            class Holder(pa: Source, p: (Int) -> Source) {
+                private val statePaths = p(a).statePaths
+                private val config = p(a).config
+            }
+            """,
+        )
+        assertTrue(found.isEmpty(), found.joinToString())
     }
 
     @Test

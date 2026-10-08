@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.Keys
@@ -22,10 +21,10 @@ import splice.client.resume.originals.TranscriptOriginals
 import splice.core.config.StatePaths
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import java.nio.file.AccessDeniedException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
-import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.isSymbolicLink
 
 class ResumeAcrossHeadsTest {
@@ -304,20 +303,17 @@ class ResumeAcrossHeadsTest {
         assertTrue(lines.any { "could not list" in it }, "a real failure to list is named: $lines")
     }
 
+    /** A listing refused the way an access denial refuses it. The refusal is the double's, so the test does not
+     *  depend on who runs it: a root process can read a directory with no permission bits. */
     @Test
-    fun `a projects dir this user cannot read is still named in the log`(@TempDir home: Path) {
+    fun `a projects dir whose listing is denied is still named in the log`(@TempDir home: Path) {
         val calling = headConfig(home, "codex")
-        val projects = Files.createDirectories(calling.resolve(Keys.PROJECTS))
-        Files.setPosixFilePermissions(projects, PosixFilePermissions.fromString("---------"))
-        try {
-            assumeFalse(Files.isReadable(projects), "this user can read a directory with no permissions")
-            val (lines, log) = logged()
+        val denied = ProjectsListing { path -> throw AccessDeniedException(path.toString()) }
+        val (lines, log) = logged()
+        val rewriter = TranscriptModelRewrite(originals = TranscriptOriginals(StatePaths(baseOverride = state)))
 
-            resumer().plan(calling, emptyList(), "s1", log)
+        ResumeAcrossHeads(rewriter, denied).plan(calling, emptyList(), "s1", log)
 
-            assertTrue(lines.any { "could not list" in it }, "an access failure is named: $lines")
-        } finally {
-            Files.setPosixFilePermissions(projects, PosixFilePermissions.fromString("rwxr-xr-x"))
-        }
+        assertTrue(lines.any { "could not list" in it }, "an access failure is named: $lines")
     }
 }

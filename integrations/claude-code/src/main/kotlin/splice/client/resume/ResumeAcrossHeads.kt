@@ -135,7 +135,18 @@ public sealed class SessionAdoption {
     public data class Invalid(public val cause: String) : SessionAdoption()
 }
 
-public class ResumeAcrossHeads(public val rewriter: TranscriptModelRewrite = TranscriptModelRewrite()) {
+/** The one read a search makes of a projects dir: its entries. A seam, so a test can refuse a listing the way an
+ *  access denial does, whoever runs the test. */
+public fun interface ProjectsListing {
+    public fun list(path: Path): List<Path>
+}
+
+public class ResumeAcrossHeads(
+    public val rewriter: TranscriptModelRewrite = TranscriptModelRewrite(),
+    private val listing: ProjectsListing = ProjectsListing { path ->
+        Files.newDirectoryStream(path).use { stream -> stream.toList() }
+    },
+) {
 
     /** Resolve `-r [sessionId]` for the head launching from [callingConfigDir], looking in every
      *  other head's CLAUDE_CONFIG_DIR. [pinnedModel] is that head's model, and [served] its whole roster:
@@ -317,9 +328,7 @@ public class ResumeAcrossHeads(public val rewriter: TranscriptModelRewrite = Tra
      *  denied, an I/O error, a path that is not a directory) is named once and read as empty, never a
      *  thrown launch. */
     private fun directoryEntries(path: Path, log: LogSink): List<Path> {
-        val entries = Cancellables.runCatchingCancellable {
-            Files.newDirectoryStream(path).use { stream -> stream.toList() }
-        }
+        val entries = Cancellables.runCatchingCancellable { listing.list(path) }
         entries.exceptionOrNull()?.takeUnless { it is NoSuchFileException }?.let { cause ->
             log(
                 "[resume] could not list $path (${SafeFailureText.render(cause)}), so that tree was NOT " +

@@ -10,7 +10,9 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import {
   breaches,
+  censusLeg,
   checksFor,
+  commitGate,
   type GateRunner,
   failedTasks,
   failureLines,
@@ -390,6 +392,105 @@ describe("a root script is checked by gradle's configuration pass", () => {
     git(root, ["add", "settings.gradle.kts"]);
     expect(await preCommit(lay(root), { gate: gradleHere(root) })).toBe(0);
   }, 240_000);
+});
+
+const CENSUS_HEADER = "source\tsha256\tdisposition\tdestination\treason";
+const CENSUS_ROWS = ".dev/restructure/capabilities.tsv";
+const CENSUS_SCRIPT = ".dev/restructure/census.ts";
+const SEAT = "core/src/main/kotlin/splice/core/Seat.kt";
+const OTHER = "core/src/main/kotlin/splice/core/Other.kt";
+const NEW = "core/src/main/kotlin/splice/core/New.kt";
+
+/** A census row claiming [path] as created. The census never reads the hash column, so its synthetic value is zeros. */
+const claim = (path: string): string => `${path}\t${"0".repeat(64)}\tcreated\t\tsynthetic claim`;
+
+/** A scratch repository holding the real census script, the rows given and the files given, in one base commit. */
+function censusRepo(rows: readonly string[], files: readonly string[]): string {
+  const root = dir("splice-hook-census-");
+  git(root, ["init", "-q"]);
+  writeFile(root, CENSUS_SCRIPT, readFileSync(join(repoRoot, CENSUS_SCRIPT), "utf8"));
+  writeFile(root, CENSUS_ROWS, `${[CENSUS_HEADER, ...rows].join("\n")}\n`);
+  for (const path of files) writeFile(root, path, CLEAN);
+  git(root, ["add", "--", ".dev", ...files]);
+  commit(root, "chore(test): scratch census base");
+  return root;
+}
+
+describe("the census leg judges the commit's own bytes and refuses a finding the commit causes", () => {
+  test("RED: an unclaimed staged file is refused by name, and the Kotlin judgement never runs", async () => {
+    const root = censusRepo([claim(SEAT)], [SEAT]);
+    writeFile(root, NEW, CLEAN);
+    git(root, ["add", "--", NEW]);
+    const calls: string[][] = [];
+    const { result, text } = await captured(() => commitGate(lay(root), { gate: compiler(root, calls) }));
+    expect(result).toBe(1);
+    expect(text).toContain(`unclaimed: ${NEW}`);
+    expect(calls).toEqual([]);
+  });
+
+  test("GREEN: a staged file with its row passes the census leg", async () => {
+    const root = censusRepo([claim(SEAT)], [SEAT]);
+    writeFile(root, NEW, CLEAN);
+    writeFile(root, CENSUS_ROWS, `${[CENSUS_HEADER, claim(SEAT), claim(NEW)].join("\n")}\n`);
+    git(root, ["add", "--", NEW, CENSUS_ROWS]);
+    expect(await censusLeg(lay(root))).toBe(0);
+  });
+
+  test("RED: a commit that removes a row leaves its file unclaimed, and the commit is refused", async () => {
+    const root = censusRepo([claim(SEAT), claim(OTHER)], [SEAT, OTHER]);
+    writeFile(root, CENSUS_ROWS, `${[CENSUS_HEADER, claim(SEAT)].join("\n")}\n`);
+    git(root, ["add", "--", CENSUS_ROWS]);
+    const { result, text } = await captured(() => censusLeg(lay(root)));
+    expect(result).toBe(1);
+    expect(text).toContain(`unclaimed: ${OTHER}`);
+  });
+
+  test("RED: a commit that deletes a claimed file and keeps its row is refused", async () => {
+    const root = censusRepo([claim(SEAT)], [SEAT]);
+    git(root, ["rm", "-q", "--", SEAT]);
+    const { result, text } = await captured(() => censusLeg(lay(root)));
+    expect(result).toBe(1);
+    expect(text).toContain(`not tracked: ${SEAT}`);
+  });
+
+  test("GREEN: a finding about a path the commit leaves alone is reported, not refused", async () => {
+    const root = censusRepo([claim(SEAT)], [SEAT, OTHER]);
+    writeFile(root, NEW, CLEAN);
+    writeFile(root, CENSUS_ROWS, `${[CENSUS_HEADER, claim(SEAT), claim(NEW)].join("\n")}\n`);
+    git(root, ["add", "--", NEW, CENSUS_ROWS]);
+    const { result, text } = await captured(() => censusLeg(lay(root)));
+    expect(result).toBe(0);
+    expect(text).toContain(`unclaimed: ${OTHER}`);
+  });
+
+  test("RED: the rows are judged as the index holds them, so a claim only in the worktree claims nothing", async () => {
+    const root = censusRepo([claim(SEAT)], [SEAT]);
+    writeFile(root, NEW, CLEAN);
+    git(root, ["add", "--", NEW]);
+    writeFile(root, CENSUS_ROWS, `${[CENSUS_HEADER, claim(SEAT), claim(NEW)].join("\n")}\n`);
+    const { result, text } = await captured(() => censusLeg(lay(root)));
+    expect(result).toBe(1);
+    expect(text).toContain(`unclaimed: ${NEW}`);
+  });
+
+  test("RED: rows the census cannot parse refuse the commit: a run with no verdict is a failure", async () => {
+    const root = censusRepo([claim(SEAT)], [SEAT]);
+    writeFile(root, CENSUS_ROWS, `not the header\n${claim(SEAT)}\n`);
+    git(root, ["add", "--", CENSUS_ROWS]);
+    const { result, text } = await captured(() => censusLeg(lay(root)));
+    expect(result).toBe(1);
+    expect(text).toContain("census could not judge");
+  });
+
+  test("RED: a commit whose index holds no census script is refused: the census cannot judge", async () => {
+    const root = dir("splice-hook-census-");
+    git(root, ["init", "-q"]);
+    writeFile(root, NEW, CLEAN);
+    git(root, ["add", "--", NEW]);
+    const { result, text } = await captured(() => censusLeg(lay(root)));
+    expect(result).toBe(1);
+    expect(text).toContain("census could not judge");
+  });
 });
 
 describe("every Kotlin file maps to a check", () => {

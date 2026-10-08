@@ -39,7 +39,7 @@ import { cancelledBySignal, GATE_OF_RECORD_TASKS, RUN_ALREADY_OPEN_EXIT } from "
 import { title } from "./title.ts";
 
 export const usage =
-  "hook <pre-commit|pre-push|install>  the git hooks: pre-commit judges the commit's Kotlin, pre-push the worktree; install writes the shims";
+  "hook <pre-commit|pre-push|install>  the git hooks: pre-commit runs the census and judges the commit's Kotlin, pre-push the worktree; install writes the shims";
 
 export const SHIM_BEGIN = "# >>> splice gate hook >>> written by `bun tools/gate hook install`; reinstall replaces it";
 export const SHIM_END = "# <<< splice gate hook <<<";
@@ -437,6 +437,96 @@ function tailOf(output: string): string {
   return output.split("\n").slice(-LINES_SHOWN_ON_FAILURE).join("\n");
 }
 
+// The census leg of pre-commit. Like the walls, it judges the commit's bytes: the script and the rows are read from the
+// index, and the tracked set is the index's, since git hands this hook the commit's index. The census checks the whole
+// tree, so this leg judges what the commit can change: a finding fails the commit when it names a path the commit
+// changes, or a path a changed row names. A commit adds no finding elsewhere except by changing a row. A finding about
+// a path the commit leaves alone is printed and left to the census leg of the gate (CLAUDE.md §18).
+const CENSUS_SCRIPT = ".dev/restructure/census.ts";
+const CENSUS_ROWS = ".dev/restructure/capabilities.tsv";
+const CENSUS_VERDICT = /^census: \d+ rows \(.*\) over \d+ tracked product paths — (\d+) finding\(s\)$/;
+
+/** The bytes the index holds for [path]. Throws when the index holds none. */
+function indexBytes(root: string, path: string): Buffer {
+  const r = git(root, ["show", `:${path}`]);
+  if (r.status !== 0) throw new Error(`the commit holds no ${path}: ${r.stderr.trim()}`);
+  return r.stdout;
+}
+
+/** The paths a finding may be about for this commit: every path it changes, and the paths its changed rows name. */
+function namedByCommit(root: string): Set<string> {
+  const named = new Set(changedPaths(root));
+  const rowChanges = git(root, ["diff", "--cached", "--no-renames", "--no-color", "-U0", "--", CENSUS_ROWS]).stdout.toString("utf8");
+  for (const line of rowChanges.split("\n")) {
+    const changed = (line.startsWith("+") && !line.startsWith("+++")) || (line.startsWith("-") && !line.startsWith("---"));
+    if (!changed) continue;
+    const [source = "", , , destination = ""] = line.slice(1).split("\t");
+    for (const path of [source, destination]) if (path !== "") named.add(path);
+  }
+  return named;
+}
+
+/** The census script's verdict: its findings, or the reason it could not judge. Exit 0 with no findings and exit 1
+ *  with the parsed list are verdicts; any other exit, or a summary that disagrees with its list, is a failure. */
+function censusVerdict(status: number, stdout: string, stderr: string): { findings: string[] } | { failure: string } {
+  const lines = stdout.split("\n").filter((line) => line !== "");
+  const summary = CENSUS_VERDICT.exec(lines.at(-1) ?? "");
+  if (summary === null || (status !== 0 && status !== 1)) {
+    return { failure: `exit ${status}: ${tailOf(`${stdout}${stderr}`).trim() || "no output"}` };
+  }
+  const count = Number(summary[1]);
+  const findings = lines.slice(0, -1);
+  if (findings.length !== count || (status === 0) !== (count === 0)) {
+    return { failure: `exit ${status} with ${count} finding(s) and ${findings.length} listed` };
+  }
+  return { findings };
+}
+
+/** The census leg of pre-commit. Returns the exit code. */
+export async function censusLeg(lay: Layout): Promise<number> {
+  const started = performance.now();
+  const root = lay.repoRoot;
+  const scratch = mkdtempSync(join(tmpdir(), "splice-census-"));
+  try {
+    const script = join(scratch, "census.ts");
+    const rows = join(scratch, "capabilities.tsv");
+    writeFileSync(script, indexBytes(root, CENSUS_SCRIPT));
+    writeFileSync(rows, indexBytes(root, CENSUS_ROWS));
+    const run = spawnSync(process.execPath, [script, "--root", root, "--rows", rows], { cwd: root, maxBuffer: 1 << 26 });
+    const verdict = censusVerdict(run.status ?? 1, run.stdout?.toString("utf8") ?? "", run.stderr?.toString("utf8") ?? "");
+    if ("failure" in verdict) {
+      console.error(`pre-commit: ✗ census could not judge: ${verdict.failure} — ${seconds(started)}`);
+      return 1;
+    }
+    const named = namedByCommit(root);
+    const hits = verdict.findings.filter((finding) => {
+      const words = new Set(finding.split(/[\s:]+/));
+      return [...named].some((path) => words.has(path));
+    });
+    const elsewhere = verdict.findings.filter((finding) => !hits.includes(finding));
+    for (const finding of hits) console.error(`  ✗ census: ${finding}`);
+    for (const finding of elsewhere) console.error(`  · census, not this commit's path: ${finding}`);
+    if (hits.length > 0) {
+      console.error(`pre-commit: ✗ census (${hits.length} finding(s) on paths this commit changes) — ${seconds(started)}`);
+      return 1;
+    }
+    console.error(`  ✓ census${elsewhere.length > 0 ? ` (${elsewhere.length} finding(s) on other paths, reported above)` : ""}`);
+    return 0;
+  } catch (exc) {
+    console.error(`pre-commit: ✗ census could not judge: ${exc instanceof Error ? exc.message : String(exc)} — ${seconds(started)}`);
+    return 1;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/** The pre-commit verb: the census leg, then the commit's Kotlin judgement. A census refusal stops it before gradle. */
+export async function commitGate(lay: Layout, deps: HookDeps = {}): Promise<number> {
+  const census = await censusLeg(lay);
+  if (census !== 0) return census;
+  return preCommit(lay, deps);
+}
+
 /** The pre-commit judgement of this commit. Returns the exit code. */
 export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<number> {
   const started = performance.now();
@@ -600,7 +690,7 @@ export async function hook(argv: readonly string[]): Promise<number> {
   const lay = layout();
   try {
     // git passes the hook its own arguments (pre-push gets the remote's name and URL); neither is read.
-    if (verb === "pre-commit") return await preCommit(lay);
+    if (verb === "pre-commit") return await commitGate(lay);
     if (verb === "pre-push") return await prePush(lay, await Bun.stdin.text());
     if (verb === "install" && rest.length === 0) {
       const hooksDir = resolve(lay.repoRoot, gitText(lay.repoRoot, ["rev-parse", "--git-path", "hooks"]));

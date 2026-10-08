@@ -14,7 +14,7 @@ public interface SessionSettings {
 }
 
 /** No configuration: transcripts on, no extra git roots. */
-public object NoSessionSettings : SessionSettings {
+internal object NoSessionSettings : SessionSettings {
     override fun transcriptView(): Boolean = true
     override fun gitRoots(head: String?): List<String> = emptyList()
 }

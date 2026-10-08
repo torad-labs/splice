@@ -65,7 +65,7 @@ public object UsageWarnPolicy {
     public fun computeUsageWarn(
         outputTokens5h: Long = 0,
         ratelimit: RateLimitState? = null,
-        warnPct: Int = (Knob.USAGE_WARN_PCT.default as Long).toInt(),
+        warnPct: Int = Knob.USAGE_WARN_PCT.count().toInt(),
         warnTokens5h: Long = 0,
         plan: PlanWindows? = null,
     ): UsageWarn =

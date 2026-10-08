@@ -15,7 +15,7 @@ internal const val MATERIALIZATION_RESIDENT_BYTES: Long = HEAP_RESIDENT_BYTES
 
 /** Decoding and retained request trees use the measured 13/2 expansion, without oversized clamping. */
 public class RequestMaterializationGate(
-    heapBudgetBytes: Long = Knob.MATERIALIZATION_HEAP_BYTES.default as Long,
+    heapBudgetBytes: Long = Knob.MATERIALIZATION_HEAP_BYTES.count(),
     /** Every default head spends the daemon ledger; isolated test ledgers require explicit injection. */
     public val heap: HeapBudget = JvmHeap.budget,
 ) {

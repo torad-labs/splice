@@ -83,9 +83,9 @@ class ConfigHonestyPinsTest {
 
     @Test
     fun `the default warn threshold is the knob's, not a local copy - V4-109`() {
-        // Reads Knob.USAGE_WARN_PCT.default rather than restating 80, so const-single-source's
+        // Reads Knob.USAGE_WARN_PCT.count() rather than restating 80, so const-single-source's
         // KNOB-SHADOW stays clear and the two cannot drift.
-        val knobDefault = (Knob.USAGE_WARN_PCT.default as Long).toInt()
+        val knobDefault = Knob.USAGE_WARN_PCT.count().toInt()
         assertEquals(
             "warn",
             UsageWarnPolicy.computeUsageWarn(ratelimit = ninetyPct).level,

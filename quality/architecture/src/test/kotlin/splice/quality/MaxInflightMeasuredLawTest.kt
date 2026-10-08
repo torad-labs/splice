@@ -20,7 +20,11 @@ import org.junit.jupiter.api.Test
 import java.io.File
 
 internal object MaxInflightMeasured {
-    private val KNOB = Regex("MAX_INFLIGHT\\(\\s*\"maxInflight\"[\\s\\S]*?,\\s*(\\d+)L\\s*\\)")
+    // The default is a typed count, `KnobDefault.Count(12L)`, or a bare literal from before the type.
+    private val KNOB = Regex(
+        "MAX_INFLIGHT\\(\\s*\"maxInflight\"[\\s\\S]*?,\\s*" +
+            "(?:KnobDefault\\.Count\\()?(\\d+)L\\s*\\)",
+    )
     private val MEASURE = Regex("([\\d.]+)%\\s+turn failure at inflight\\s*<=\\s*(\\d+)")
 
     /** One side's reading: the number, or why it could not be read. [detail] carries the measured
@@ -133,7 +137,8 @@ class MaxInflightMeasuredLawTest {
         )
 
     private fun knob(default: Long) =
-        "    MAX_INFLIGHT(\"maxInflight\", KnobKind.NUMBER, listOf(\"CLAUDEX_MAX_INFLIGHT\"), ${default}L),\n"
+        "    MAX_INFLIGHT(\"maxInflight\", KnobKind.NUMBER, listOf(\"CLAUDEX_MAX_INFLIGHT\"), " +
+            "KnobDefault.Count(${default}L)),\n"
 
     private companion object {
         const val EXAMPLE = "# box: 0.3% turn failure at inflight<=14, 11% at 38, 67% at 100.\n"

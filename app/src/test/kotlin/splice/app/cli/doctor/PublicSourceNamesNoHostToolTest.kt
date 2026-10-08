@@ -32,6 +32,7 @@ package splice.app.cli.doctor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.AdminSupport
@@ -76,6 +77,7 @@ private fun scan(root: Path, roots: List<Path>): List<String> =
         .flatMap { findingsIn(root, it) }
         .sorted()
 
+@Tag("law")
 class PublicSourceNamesNoHostToolTest {
 
     private val repo: Path = run {
@@ -176,8 +178,8 @@ class SupervisorUnitIsConfiguredTest {
 
     @Test
     fun `the declared default is this repo's own unit name`() {
-        assertEquals("splice.service", Knob.SUPERVISOR_UNIT.default)
-        assertEquals("app-mcp.slice", Knob.MCP_SLICE.default)
+        assertEquals("splice.service", Knob.SUPERVISOR_UNIT.text())
+        assertEquals("app-mcp.slice", Knob.MCP_SLICE.text())
     }
 
     // Mutant: pass a blank value through. `systemctl --user is-active ""` is not a question about

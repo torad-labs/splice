@@ -107,7 +107,7 @@ public class BudgetRoutes(private val source: BudgetSource, private val config: 
     /** [Knob.BUDGET_DEFAULT_ACTION]'s live value — see the file header for why this reads live. */
     private fun defaultAction(): String =
         config.getConfig().asMap()[Knob.BUDGET_DEFAULT_ACTION.key] as? String
-            ?: Knob.BUDGET_DEFAULT_ACTION.default as String
+            ?: Knob.BUDGET_DEFAULT_ACTION.text()
 
     private inline fun withStore(block: (BudgetStore) -> JsonReply): JsonReply {
         val store = source() ?: return refuse(HttpStatusCode.ServiceUnavailable, BUDGETS_UNWIRED)

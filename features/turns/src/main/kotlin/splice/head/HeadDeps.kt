@@ -55,9 +55,9 @@ import splice.upstream.transport.UpstreamClient
  *  V4-210: both READ the Knob (MAX_REQUEST_BYTES, REQUEST_READ_TIMEOUT_MS), the operator-facing
  *  source HeadServerFactory already reads per head. A re-typed default was a KNOB-SHADOW that the
  *  const-single-source law missed only because it could not read a default written by name. */
-internal val defaultMaxRequestBytes: Int = (Knob.MAX_REQUEST_BYTES.default as Long).toInt()
+internal val defaultMaxRequestBytes: Int = Knob.MAX_REQUEST_BYTES.count().toInt()
 
-internal val defaultRequestReadTimeoutMs: Long = Knob.REQUEST_READ_TIMEOUT_MS.default as Long
+internal val defaultRequestReadTimeoutMs: Long = Knob.REQUEST_READ_TIMEOUT_MS.count()
 
 /** Collaborators the head needs, bundled to keep the constructor lean. */
 public data class HeadDeps(

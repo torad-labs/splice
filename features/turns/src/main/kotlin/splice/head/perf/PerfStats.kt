@@ -148,7 +148,7 @@ public class PerfStats(
      *  (every construction site before this row, and every one this row did not touch) is today's
      *  exact behaviour — one generation, then discard. */
     private val archiveDir: Path? = null,
-    private val archiveRetentionDays: Int = (Knob.PERF_ARCHIVE_RETENTION_DAYS.default as Long).toInt(),
+    private val archiveRetentionDays: Int = Knob.PERF_ARCHIVE_RETENTION_DAYS.count().toInt(),
     /** V4-133: the rotate threshold [record] appends against — JsonlSink's own default for every
      *  construction site this row did not touch, injectable so a test can force a rotation (and
      *  therefore the archive hook) without writing 64 MB of turns. */

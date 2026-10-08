@@ -109,7 +109,7 @@ class DefaultRequestCapTest {
 
     @Test
     fun `the default cap is the Messages API's own 32 MiB`() {
-        assertEquals(MESSAGES_API_LIMIT, Knob.MAX_REQUEST_BYTES.default)
+        assertEquals(MESSAGES_API_LIMIT, Knob.MAX_REQUEST_BYTES.count())
     }
 
     @Test

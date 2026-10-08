@@ -91,11 +91,11 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         // (unbindable). Ports need pre-commit's `positiveLong ?: default` contract instead —
         // reject non-positive values outright, then clamp only the ceiling.
         out[Knob.PORT.key] =
-            (positiveLong(out, Knob.PORT) ?: (Knob.PORT.default as Long)).coerceAtMost(MAX_PORT)
+            (positiveLong(out, Knob.PORT) ?: Knob.PORT.count()).coerceAtMost(MAX_PORT)
         out[Knob.GROK_PORT.key] =
-            (positiveLong(out, Knob.GROK_PORT) ?: (Knob.GROK_PORT.default as Long)).coerceAtMost(MAX_PORT)
+            (positiveLong(out, Knob.GROK_PORT) ?: Knob.GROK_PORT.count()).coerceAtMost(MAX_PORT)
         out[Knob.CONTROL_PORT.key] =
-            (positiveLong(out, Knob.CONTROL_PORT) ?: (Knob.CONTROL_PORT.default as Long)).coerceAtMost(MAX_PORT)
+            (positiveLong(out, Knob.CONTROL_PORT) ?: Knob.CONTROL_PORT.count()).coerceAtMost(MAX_PORT)
         out[Knob.MAX_INFLIGHT.key] = clampLong(out, Knob.MAX_INFLIGHT, floor = 0L, ceiling = MAX_INT)
         out[Knob.MAX_QUEUED.key] = clampLong(out, Knob.MAX_QUEUED, floor = 0L, ceiling = MAX_INT)
         // DR-150: this said `default = 2L` — the PRE-G4b number, left behind when Knob's default
@@ -110,7 +110,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
             out,
             Knob.UPSTREAM_RETRIES,
             floor = 1L,
-            default = Knob.UPSTREAM_RETRIES.default as Long,
+            default = Knob.UPSTREAM_RETRIES.count(),
             ceiling = MAX_RETRIES,
         )
         out[Knob.FOLD_MAX_CONTINUE.key] =
@@ -128,7 +128,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         // the operator may want a thinner public form.
         val summaryRaw = str(out, Knob.SUMMARY)?.trim()?.lowercase().orEmpty()
         if (summaryRaw.isEmpty()) {
-            out[Knob.SUMMARY.key] = Knob.SUMMARY.default
+            out[Knob.SUMMARY.key] = Knob.SUMMARY.text()
         } else {
             out[Knob.SUMMARY.key] = summaryRaw
         }

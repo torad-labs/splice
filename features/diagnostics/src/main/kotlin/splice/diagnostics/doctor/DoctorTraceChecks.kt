@@ -21,7 +21,7 @@ internal class DoctorTraceChecks(private val statePaths: StatePaths) {
     ): List<DoctorCheck> = topology.heads.mapNotNull { (key, head) ->
         val raw = head.overrides[Knob.TRACE.key]
         val declared = when (raw?.trim()?.lowercase()) {
-            null -> checkNotNull(Knob.TRACE.default as? Boolean)
+            null -> Knob.TRACE.flag()
             in FALSE_SPELLINGS -> false
             in TRUE_SPELLINGS -> true
             else -> return@mapNotNull invalidRow(key)
@@ -29,7 +29,7 @@ internal class DoctorTraceChecks(private val statePaths: StatePaths) {
         val booted = running?.get(key)
         if (declared && booted?.enabled != false) return@mapNotNull null
         val declaredDays = head.overrides[Knob.TRACE_RETENTION_DAYS.key]?.trim()?.toLongOrNull()
-            ?: Knob.TRACE_RETENTION_DAYS.default as Long
+            ?: Knob.TRACE_RETENTION_DAYS.count()
         traceRow(key, declared, booted, declaredDays)
     }
 

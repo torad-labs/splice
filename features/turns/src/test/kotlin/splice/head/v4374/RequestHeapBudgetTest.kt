@@ -18,7 +18,7 @@ private const val CHILD_SECONDS = 300L
 class RequestHeapBudgetTest {
     @Test
     fun `sixteen requests at the body cap survive the weighted heap budget`(@TempDir tmp: Path) {
-        probe(16, (Knob.MAX_REQUEST_BYTES.default as Long).toInt(), tmp)
+        probe(16, Knob.MAX_REQUEST_BYTES.count().toInt(), tmp)
     }
 
     @Test

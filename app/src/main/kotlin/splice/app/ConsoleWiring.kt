@@ -170,7 +170,7 @@ internal object ConsoleWiring {
      *  including today, so it is read as one. */
     internal fun activityStores(statePaths: StatePaths, config: ConfigService): ActivityStores {
         val knobs = config.getConfig().asMap()
-        val days = (knobs[Knob.ACTIVITY_RETENTION_DAYS.key] as? Long ?: Knob.ACTIVITY_RETENTION_DAYS.default as Long)
+        val days = (knobs[Knob.ACTIVITY_RETENTION_DAYS.key] as? Long ?: Knob.ACTIVITY_RETENTION_DAYS.count())
         val heads = knobs[Knob.ACTIVITY_STORE_HEADS.key] as? String ?: ALL_HEADS
         val edges = knobs[Knob.MESSAGE_EDGES.key] as? Boolean ?: true
         return ActivityStores(

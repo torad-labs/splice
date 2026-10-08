@@ -31,10 +31,10 @@ public data class FoldConfig(
      *  file-local `3` was a second declaration of it — the KNOB-SHADOW const-single-source exists to
      *  catch, and the one that goes wrong silently: the operator sets 5, the config layer carries 5,
      *  and this default keeps answering 3 for every direct construction. */
-    val maxContinue: Int = (Knob.FOLD_MAX_CONTINUE.default as Long).toInt(),
+    val maxContinue: Int = Knob.FOLD_MAX_CONTINUE.count().toInt(),
     val markerText: String = DEFAULT_MARKER_TEXT,
     /** V4-100: READS Knob.FOLD_MAX_TIER, same reason as [maxContinue]. */
-    val maxTierN: Int = (Knob.FOLD_MAX_TIER.default as Long).toInt(),
+    val maxTierN: Int = Knob.FOLD_MAX_TIER.count().toInt(),
 )
 
 // The one FoldConfig default still at file scope, because Kotlin main sources carry no `companion`

@@ -421,8 +421,8 @@ class AddCommandTest {
             assertEquals(latest, landed)
             val claudeSlots = heads.getValue("claude-splice").models.orEmpty().associate { it.slot to it.id }
             assertEquals("claude-opus-5-5", claudeSlots["opus"], "Claude Code's opus tier")
-            assertEquals(heads.getValue("codex").pinnedModel, Knob.PINNED_MODEL.default, "CLAUDEX_PINNED_MODEL")
-            assertEquals(heads.getValue("grok").pinnedModel, Knob.GROK_MODEL.default, "CLAUDE_GROK_MODEL")
+            assertEquals(heads.getValue("codex").pinnedModel, Knob.PINNED_MODEL.text(), "CLAUDEX_PINNED_MODEL")
+            assertEquals(heads.getValue("grok").pinnedModel, Knob.GROK_MODEL.text(), "CLAUDE_GROK_MODEL")
         }
 
     @Test

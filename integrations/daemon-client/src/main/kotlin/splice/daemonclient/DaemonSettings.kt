@@ -50,7 +50,7 @@ public class DaemonSettings(private val errors: TerminalOutput) {
             headOverrides = topology?.let { TopologyKnobLayer(it).configOverrides() } ?: emptyMap(),
             envReader = envReader,
         ).getConfig().supervisorUnit
-        return unit.ifBlank { Knob.SUPERVISOR_UNIT.default as String }
+        return unit.ifBlank { Knob.SUPERVISOR_UNIT.text() }
     }
 
     /** Same, from an already-loaded (or absent) topology — doctor uses this so a diagnostic

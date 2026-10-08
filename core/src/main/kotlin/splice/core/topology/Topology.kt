@@ -72,7 +72,7 @@ public data class Topology(
      *  who moves the control port onto a head's number at runtime gets the bind failure, which is
      *  the same behaviour as before this check existed. */
     public fun portCollisions(): Map<Int, List<String>> {
-        val controlPort = daemon.controlPort ?: (Knob.CONTROL_PORT.default as Long).toInt()
+        val controlPort = daemon.controlPort ?: Knob.CONTROL_PORT.count().toInt()
         val declared = heads.entries.map { it.value.port to it.key } + (controlPort to CONTROL_PLANE_OWNER)
         return declared.groupBy({ it.first }, { it.second }).filterValues { it.size > 1 }
     }

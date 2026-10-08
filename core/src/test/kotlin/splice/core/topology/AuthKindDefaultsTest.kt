@@ -49,8 +49,8 @@ class AuthKindDefaultsTest {
 
     @Test
     fun `the legacy codex and grok knobs default to the registry's splice-owned files`() {
-        assertEquals(AuthKind.ChatgptOAuth.authFile, Knob.CODEX_AUTH_PATH.default)
-        assertEquals(AuthKind.GrokOAuth.authFile, Knob.GROK_AUTH_PATH.default)
+        assertEquals(AuthKind.ChatgptOAuth.authFile, Knob.CODEX_AUTH_PATH.text())
+        assertEquals(AuthKind.GrokOAuth.authFile, Knob.GROK_AUTH_PATH.text())
     }
 
     @Test

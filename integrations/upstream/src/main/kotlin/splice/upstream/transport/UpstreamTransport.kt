@@ -301,9 +301,9 @@ private const val DEFAULT_HTTPS_PORT = 443
 // what UpstreamFactory hands every production head, so a const re-typing its default was a second
 // source for the same 200ms / 10s / ±10% — const-single-source's KNOB-SHADOW names the base once it
 // reads a default written by name. The two DNS numbers have no knob and stay the one source they were.
-internal val defaultBackoffBaseMs: Long = Knob.RETRY_BACKOFF_BASE_MS.default as Long
-internal val defaultBackoffCapMs: Long = Knob.RETRY_BACKOFF_CAP_MS.default as Long
-internal val defaultJitterPct: Int = (Knob.RETRY_BACKOFF_JITTER_PCT.default as Long).toInt()
+internal val defaultBackoffBaseMs: Long = Knob.RETRY_BACKOFF_BASE_MS.count()
+internal val defaultBackoffCapMs: Long = Knob.RETRY_BACKOFF_CAP_MS.count()
+internal val defaultJitterPct: Int = Knob.RETRY_BACKOFF_JITTER_PCT.count().toInt()
 internal const val DNS_BACKOFF_BASE_MS: Long = 1_000L
 internal const val DNS_MAX_BACKOFF_MS: Long = 4_000L
 

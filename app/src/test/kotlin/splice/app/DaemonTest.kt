@@ -172,7 +172,7 @@ class DaemonTest {
             assertEquals("b2e4d8f1 gpt-5.6-sol", row.text("label"))
             assertFalse(row["compact"]!!.jsonPrimitive.boolean)
             // stream_idle_ms is the head's configured limit
-            assertEquals(Knob.STREAM_IDLE_MS.default, held.long("stream_idle_ms"))
+            assertEquals(Knob.STREAM_IDLE_MS.count(), held.long("stream_idle_ms"))
             assertTrue(held.long("acquired") >= 1, "the held turn was acquired: $held")
             // acquired minus released is the live count
             assertEquals(1L, held.long("acquired") - held.long("released"), "$held")

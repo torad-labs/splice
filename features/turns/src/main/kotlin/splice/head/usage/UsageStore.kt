@@ -49,7 +49,7 @@ public class UsageStore(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     log: LogSink = LogSink(DaemonLog::write),
 ) {
-    // Shared by flushRateLimit and persistSnapshot (review 2026-07-22): one Any() serializes both
+    // Shared by flushRateLimit and persistSnapshot (review 2026-07-22): one UsageWriteLock serializes both
     // lanes' disk writes across UsageRingFile and RateLimitStore. Splitting it into two locks
     // would be a logic change (out of scope here).
     private val writeLock = UsageWriteLock()

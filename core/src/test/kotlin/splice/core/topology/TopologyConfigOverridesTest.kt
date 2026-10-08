@@ -305,7 +305,7 @@ class TopologyConfigOverridesTest {
     fun `grokAuthPath knob default agrees with the auth-kind registry - DR-79`() {
         assertEquals(
             AuthKindRegistry.defaultAuthFileFor("grok-oauth"),
-            Knob.GROK_AUTH_PATH.default,
+            Knob.GROK_AUTH_PATH.text(),
         )
     }
 

@@ -191,19 +191,19 @@ class ConfigServiceTest {
         val stateDir = tmp.resolve("state")
         Files.createDirectories(stateDir)
         stateDir.resolve("config.json").writeText("""{"chatgptApiBase":null,"maxQueued":null}""")
-        assertEquals(Knob.CHATGPT_API_BASE.default, svc.getConfig().chatgptApiBase)
+        assertEquals(Knob.CHATGPT_API_BASE.text(), svc.getConfig().chatgptApiBase)
         assertEquals(512, svc.getConfig().maxQueued, "a nulled NUMBER knob keeps its default")
     }
 
     // DR-150: normalize's own `default` for upstreamRetries was still the pre-G4b 2, four years of
-    // knob history behind Knob.UPSTREAM_RETRIES.default of 4. It never fired in production —
+    // knob history behind Knob.UPSTREAM_RETRIES.count() of 4. It never fired in production —
     // mergedRaw seeds every knob before normalize runs — so nothing could catch the drift. This
     // arm normalizes an UNSEEDED map, which is the only shape that reaches the substitution, and
     // pins it to the DECLARED default rather than to a second copy of the literal.
     @Test
     fun `an unseeded upstreamRetries normalizes to the declared knob default - DR-150`() {
         val normalized = ConfigCoercion { null }.normalize(emptyMap())
-        assertEquals(Knob.UPSTREAM_RETRIES.default, normalized["upstreamRetries"])
+        assertEquals(Knob.UPSTREAM_RETRIES.count(), normalized["upstreamRetries"])
         assertEquals(4L, normalized["upstreamRetries"], "and that declared default is still 4")
         // the seeded path a real caller takes must agree with it, or the two sites have drifted
         // again in the other direction
@@ -384,7 +384,7 @@ class ConfigServiceTest {
 
     @Test
     fun `positive materialization overrides fit the configured body cap while zero stays automatic`() {
-        for (cap in listOf(4L, Knob.MAX_REQUEST_BYTES.default as Long, Long.MAX_VALUE)) {
+        for (cap in listOf(4L, Knob.MAX_REQUEST_BYTES.count(), Long.MAX_VALUE)) {
             val required = splice.core.memory.HeapWeights.request(cap)
             for (configured in listOf(0L, 1L, required, Long.MAX_VALUE)) {
                 val cfg = service(

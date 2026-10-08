@@ -409,7 +409,7 @@ internal object ConstSingleSource {
     }
 
     /** Knob name -> normalised numeric default, parsed from the enum entries. Every entry is classed
-     *  by its KIND, and a NUMBER entry's default is read where the entry writes it: `default = …` by
+     *  by its KIND, and a NUMBER entry's default is read where the entry writes it: `typedDefault = …` by
      *  name first, else the FOURTH positional. An entry that cannot be classed, and a NUMBER entry
      *  whose default does not read as a number, is a problem BY NAME, because skipping it switches
      *  KNOB-SHADOW off for that knob with every test green. That is what the positional-only reader
@@ -441,7 +441,14 @@ internal object ConstSingleSource {
         val code = body.orEmpty().lines().joinToString("\n") { Reader.stripLineComment(it) }
         val args = Reader.splitTopLevel(code).map { Reader.normalise(it) }.filter { it.isNotEmpty() }
         val kind = argument(args, "kind", KIND_POSITION)?.let { KNOB_KIND.matchEntire(it)?.groupValues?.get(1) }
-        return KnobEntry(name, kind, argument(args, "default", DEFAULT_POSITION))
+        return KnobEntry(name, kind, argument(args, "typedDefault", DEFAULT_POSITION)?.let(::unwrapDefault))
+    }
+
+    /** A typed default reads as the literal it wraps: `KnobDefault.Count(3099)` is `3099`, and
+     *  `KnobDefault.None` is the null default, which has nothing to shadow. */
+    private fun unwrapDefault(default: String): String = when (default) {
+        "KnobDefault.None" -> "null"
+        else -> Regex("(?:KnobDefault\\.)?Count\\((.*)\\)").matchEntire(default)?.groupValues?.get(1) ?: default
     }
 
     /** `name = x` wherever the entry writes it, else the [position]th positional argument. */
@@ -458,7 +465,7 @@ internal object ConstSingleSource {
                 "to guard is unknown and KNOB-SHADOW would be silently off for it: ${unclassed.joinToString(", ")}"
         }
         if (unread.isNotEmpty()) {
-            out += "$knobRel: cannot read the default of ${unread.size} NUMBER Knob(s) — neither `default = …` " +
+            out += "$knobRel: cannot read the default of ${unread.size} NUMBER Knob(s) — neither `typedDefault = …` " +
                 "nor the fourth positional is a numeric literal or literal arithmetic, so KNOB-SHADOW would be " +
                 "silently off for each. Spell the default in literals, or teach this reader the new spelling: " +
                 unread.joinToString(", ")
@@ -729,16 +736,26 @@ class ConstSingleSourceLawTest {
     @Test
     fun `the law can actually fail - a Knob default written by name is graded - V4-210`(@TempDir root: File) {
         with(Tree(root)) {
-            // Knob.kt writes most of its numeric defaults as `default = N`. A reader that took only
-            // the fourth positional skipped every one of them, and two real shadows sat under it.
+            // Knob.kt writes most of its numeric defaults by name, as `typedDefault = KnobDefault.Count(N)`
+            // (`default = N` before the typed split). A reader that took only the fourth positional skipped
+            // every one of them, and two real shadows sat under it.
             write(A_KT to KNOB_SHADOW_SRC)
             rewriteKnob(KNOB_NAMED_ARGS)
-            assertHit(audit(baseline()), "KNOB-SHADOW", "USAGE_WARN_PCT") { "a default written by name is a default" }
+            assertHit(audit(baseline()), "KNOB-SHADOW", "duplicates", "USAGE_WARN_PCT") {
+                "a default written by name is a default"
+            }
+
+            // The typed spelling wraps the number in its kind; the reader must read through the wrapper.
+            rewriteKnob(KNOB_TYPED_WRAPPED)
+            // The refusal "cannot read" names the knob too, so the needle "duplicates" is what a shadow hit alone says.
+            assertHit(audit(baseline()), "KNOB-SHADOW", "duplicates", "USAGE_WARN_PCT") {
+                "a default wrapped as KnobDefault.Count(N) is a default"
+            }
 
             // Literal arithmetic is how two of them are spelled, and it compares as normalised text.
             write(A_KT to BYTES_SHADOW_SRC)
             rewriteKnob(KNOB_ARITHMETIC)
-            assertHit(audit(baseline()), "KNOB-SHADOW", "MAX_REQUEST_BYTES") {
+            assertHit(audit(baseline()), "KNOB-SHADOW", "duplicates", "MAX_REQUEST_BYTES") {
                 "a const spelling a Knob's arithmetic default must be RED by name"
             }
 
@@ -952,7 +969,7 @@ public enum class Knob(
     public val key: String,
     public val kind: KnobKind,
     public val envNames: List<String>,
-    public val default: Any?,
+    public val typedDefault: Any?,
     public val restartRequired: Boolean = false,
 ) {
     PINNED_MODEL("pinnedModel", KnobKind.STRING, listOf("CLAUDEX_PINNED_MODEL"), "gpt-5.6-sol"),
@@ -960,14 +977,14 @@ public enum class Knob(
         "maxRequestBytes",
         KnobKind.NUMBER,
         listOf("SPLICE_MAX_REQUEST_BYTES"),
-        default = 8 * 1024 * 1024L,
+        typedDefault = 8 * 1024 * 1024L,
         restartRequired = true,
     ),
     TRACE_MAX_BODY_CHARS(
         "traceMaxBodyChars",
         KnobKind.NUMBER,
         listOf("SPLICE_TRACE_MAX_BODY_CHARS"),
-        default = 4L shl 20,
+        typedDefault = 4L shl 20,
         restartRequired = true,
     ),
 }
@@ -980,14 +997,14 @@ public enum class Knob(
     public val key: String,
     public val kind: KnobKind,
     public val envNames: List<String>,
-    public val default: Any?,
+    public val typedDefault: Any?,
 ) {
     USAGE_WARN_PCT("usageWarnPct", KnobKind.NUMBER, listOf("SPLICE_USAGE_WARN_PCT"), 80L),
     SESSION_CAP(
         "sessionCap",
         KnobKind.NUMBER,
         listOf("SPLICE_SESSION_CAP"),
-        default = sessionCapFromHost(),
+        typedDefault = sessionCapFromHost(),
     ),
 }
 """
@@ -1002,7 +1019,7 @@ public enum class Knob(
     public val key: String,
     public val kind: KnobKind,
     public val envNames: List<String>,
-    public val default: Any?,
+    public val typedDefault: Any?,
 ) {
     USAGE_WARN_PCT("usageWarnPct", NUMBER, listOf("SPLICE_USAGE_WARN_PCT"), 80L),
 }
@@ -1016,13 +1033,31 @@ public enum class Knob(
     public val key: String,
     public val kind: KnobKind,
     public val envNames: List<String>,
-    public val default: Any?,
+    public val typedDefault: Any?,
 ) {
     USAGE_WARN_PCT(
         key = "usageWarnPct",
         kind = KnobKind.NUMBER,
         envNames = listOf("SPLICE_USAGE_WARN_PCT"),
-        default = 80L,
+        typedDefault = 80L,
+    ),
+}
+"""
+
+        /** The spelling Knob.kt really uses: the number wrapped in its kind, as `KnobDefault.Count(80L)`. */
+        const val KNOB_TYPED_WRAPPED = """package splice.core.config
+
+public enum class Knob(
+    public val key: String,
+    public val kind: KnobKind,
+    public val envNames: List<String>,
+    public val typedDefault: Any?,
+) {
+    USAGE_WARN_PCT(
+        key = "usageWarnPct",
+        kind = KnobKind.NUMBER,
+        envNames = listOf("SPLICE_USAGE_WARN_PCT"),
+        typedDefault = KnobDefault.Count(80L),
     ),
 }
 """
@@ -1033,7 +1068,7 @@ public enum class Knob(
     public val key: String,
     public val kind: KnobKind,
     public val envNames: List<String>,
-    public val default: Any?,
+    public val typedDefault: Any?,
     public val restartRequired: Boolean = false,
 ) {
     USAGE_WARN_PCT("usageWarnPct", KnobKind.NUMBER, listOf("SPLICE_USAGE_WARN_PCT"), 80L),

@@ -66,8 +66,8 @@ internal class CodeModeCellEncoding(
         fun encode(): String
     }
 
-    private data class Field(val value: Any?, val text: FieldText) {
-        fun changed(previous: Field?): Boolean {
+    private data class Field<V>(val value: V, val text: FieldText) {
+        fun changed(previous: Field<*>?): Boolean {
             if (previous == null) return true
             if (value === previous.value) return false
             return value != previous.value
@@ -78,10 +78,10 @@ internal class CodeModeCellEncoding(
     @OptIn(ExperimentalSerializationApi::class)
     private class RecordFields(private val json: Json) : AbstractEncoder() {
         override val serializersModule: SerializersModule get() = json.serializersModule
-        private val values = linkedMapOf<String, Field>()
+        private val values = linkedMapOf<String, Field<*>>()
         private var name = ""
 
-        fun of(record: CodeModeRecordSnapshot): Map<String, Field> {
+        fun of(record: CodeModeRecordSnapshot): Map<String, Field<*>> {
             CodeModeRecordSnapshot.serializer().serialize(this, record)
             return values
         }

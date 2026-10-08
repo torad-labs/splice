@@ -10,6 +10,11 @@
 // A getter is a view, not a copy: `val x: T get() = p.x` reads through to the owner and holds nothing, so it has no
 // initializer and is not counted. Locals inside a method are not fields of the class and are never counted.
 //
+// THREAT MODEL. The law catches a member copy in any spelling that token normalization reduces to
+// `receiver.member`: comments dropped, whitespace around the dot dropped, parentheses around the receiver or the whole
+// expression unwrapped. Rewrites that route through other constructs, such as `with(p) { a }`, `p.let { it.a }` or a
+// property reference, are out of scope here; review covers those.
+//
 // BY SHAPE, NOT BY TEXT. Konsist reads the declarations: a class, its primary constructor's parameters, and the
 // properties the class itself declares, each with its initializer. Modifiers (`override`, `private`, `open`) play no
 // part, a class header of any length is one declaration, and a wrapped initializer is unwrapped to its expression.
@@ -32,6 +37,9 @@ import java.io.File
 internal object UnpackedParameters {
     /** An initializer that is a bare member of one name: `p.x`. */
     private val MEMBER = Regex("""^([A-Za-z_]\w*)\.([A-Za-z_]\w*)$""")
+    private val COMMENT = Regex("""/\*[\s\S]*?\*/|//[^\n]*""")
+    private val WHITESPACE = Regex("""\s+""")
+    private val PARENTHESISED_NAME = Regex("""\(([A-Za-z_]\w*)\)""")
 
     data class Unpacking(val rel: String, val line: Int, val klass: String, val fields: List<String>) {
         override fun toString(): String =
@@ -54,10 +62,21 @@ internal object UnpackedParameters {
         return Unpacking(rel, lineOf(klass), klass.name, copied)
     }
 
-    /** The member name when [initializer] is `p.member` (parentheses unwrapped) and `p` is one of [params]. */
+    /** The member name when [initializer] is `p.member` once normalized, and `p` is one of [params]. */
     private fun storedCopyOf(initializer: String?, params: Set<String>): String? {
-        val match = MEMBER.matchEntire(unwrapParentheses(initializer.orEmpty())) ?: return null
+        val match = MEMBER.matchEntire(normalized(initializer.orEmpty())) ?: return null
         return match.groupValues[2].takeIf { match.groupValues[1] in params }
+    }
+
+    /** The initializer reduced to tokens: no comments, no whitespace, no parentheses around a bare receiver or
+     *  around the whole expression. `p . a`, `(p).a` and `p/*copy*/.a` all reduce to `p.a`. */
+    private fun normalized(initializer: String): String {
+        var text = initializer.replace(COMMENT, "").replace(WHITESPACE, "")
+        while (true) {
+            val unwrapped = unwrapParentheses(text).replace(PARENTHESISED_NAME, "$1")
+            if (unwrapped == text) return text
+            text = unwrapped
+        }
     }
 
     /** Strips parentheses that wrap the WHOLE expression: `((p.x))` is `p.x`, `(a).b` is untouched. */
@@ -144,6 +163,38 @@ internal class UnpackedParameterLawTest {
             """,
         )
         assertEquals(listOf("statePaths", "config"), found.single().fields)
+    }
+
+    @Test
+    fun `INVALID - a spaced dot, a parenthesised receiver and an inline comment are the same stored copy`(
+        @TempDir dir: File,
+    ) {
+        val found = scan(
+            dir,
+            """
+            class Holder(daemon: DaemonEnvironment) {
+                private val statePaths = daemon . statePaths
+                private val config = (daemon).config
+                private val limits = daemon/*copy*/.limits
+            }
+            """,
+        )
+        assertEquals(listOf("statePaths", "config", "limits"), found.single().fields)
+    }
+
+    @Test
+    fun `an unwrapped expression that is not a bare member stays out`(@TempDir dir: File) {
+        val found = scan(
+            dir,
+            """
+            class Holder(daemon: DaemonEnvironment) {
+                private val statePaths = (daemon).statePaths.toString()
+                private val config = daemon.config.copy()
+                private val limits = daemon.limits ?: other.limits
+            }
+            """,
+        )
+        assertTrue(found.isEmpty(), found.joinToString())
     }
 
     @Test

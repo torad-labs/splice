@@ -201,8 +201,8 @@ internal class TranscriptOriginalsTest {
         val main = write(tmp.resolve("project/session.jsonl"), ROW + "\n")
         val arrived = """{"type":"user","message":{"content":"arrived during staging"}}"""
         val fs = object : TranscriptFs {
-            override fun write(path: Path, bytes: ByteArray) {
-                Files.write(path, bytes)
+            override fun write(path: Path, rows: StagedRows) {
+                Files.newOutputStream(path).use { rows(it) }
                 Files.writeString(main, arrived + "\n", java.nio.file.StandardOpenOption.APPEND)
             }
             override fun move(source: Path, target: Path, vararg options: java.nio.file.CopyOption) {

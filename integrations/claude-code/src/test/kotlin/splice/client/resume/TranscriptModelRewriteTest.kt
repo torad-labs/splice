@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.resume.originals.TranscriptOriginals
 import splice.core.config.StatePaths
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.nio.file.CopyOption
 import java.nio.file.Files
@@ -33,9 +34,18 @@ private val SOL_ONLY = listOf("gpt-5.6-sol")
 private const val FOREIGN_ROW_ON_SOL = """{"type":"assistant","sessionId":"s1",""" +
     """"message":{"model":"gpt-5.6-sol","content":[]}}"""
 
+/** About 300 MB of rows of about 1 MB each. */
+private const val LARGE_ROWS = 300
+private const val LARGE_ROW_CHARS = 1_000_000
+
+/** The whole-file rewrite held the text, its rows, the moved rows, the joined text and the encoded
+ *  bytes at once: about ten heap bytes per transcript byte once a row decodes two bytes a character. */
+private const val WHOLE_FILE_HEAP_PER_BYTE = 8
+
 /** A write that puts its first [kept] bytes down and then dies, as a crash or a full disk does. */
 private class DyingWrite(private val kept: Int) : TranscriptFs {
-    override fun write(path: Path, bytes: ByteArray) {
+    override fun write(path: Path, rows: StagedRows) {
+        val bytes = ByteArrayOutputStream().also { rows(it) }.toByteArray()
         Files.write(path, bytes.copyOf(kept))
         throw IOException("No space left on device")
     }
@@ -47,8 +57,8 @@ private class DyingWrite(private val kept: Int) : TranscriptFs {
 
 /** A write that lands whole, and a swap that is refused. */
 private object RefusedSwap : TranscriptFs {
-    override fun write(path: Path, bytes: ByteArray) {
-        Files.write(path, bytes)
+    override fun write(path: Path, rows: StagedRows) {
+        Files.newOutputStream(path).use { rows(it) }
     }
 
     override fun move(source: Path, target: Path, vararg options: CopyOption) {
@@ -232,6 +242,38 @@ class TranscriptModelRewriteTest {
 
         assertEquals(false, rows(subagent)[0].contains("thinking"), rows(subagent)[0])
     }
+
+    // Oct 7 CT, reported by a peer seat: resuming a 715 MB and a 1022 MB transcript failed the whole launch
+    // ("unclassified failure") while a 338 MB one resumed. The rewrite held each file whole, as text,
+    // several copies at once, and the JDK's UTF-8 encode of text past about 715M characters throws
+    // NegativeArraySizeException. This transcript is sized so a whole-file rewrite cannot fit the test
+    // heap: the whole-file rewrite ran this JVM out of memory on it. A rewrite holds one row at a time.
+    @Test
+    fun `a transcript too large to hold in memory is rewritten one row at a time`(@TempDir dir: Path) {
+        val heap = Runtime.getRuntime().maxMemory()
+        val size = LARGE_ROWS.toLong() * LARGE_ROW_CHARS
+        assertTrue(heap < size * WHOLE_FILE_HEAP_PER_BYTE, "a $heap-byte heap could hold this transcript whole")
+        // One non-Latin-1 character, as real transcripts carry, makes every decoded row two bytes a character.
+        val text = "✓" + "x".repeat(LARGE_ROW_CHARS)
+        val transcript = dir.resolve("s1.jsonl")
+        Files.newBufferedWriter(transcript).use { out ->
+            repeat(LARGE_ROWS) { out.write(largeRow("k3-256k", text) + "\n") }
+        }
+        val before = Files.size(transcript)
+
+        assertEquals(LARGE_ROWS, rewriter.rewrite(transcript, "gpt-5.6-sol", SOL_ONLY))
+
+        val grown = ("gpt-5.6-sol".length - "k3-256k".length).toLong() * LARGE_ROWS
+        assertEquals(before + grown, Files.size(transcript), "only each row's model changed")
+        val moved = largeRow("gpt-5.6-sol", text)
+        Files.newBufferedReader(transcript).use { rows ->
+            assertEquals(LARGE_ROWS, rows.lineSequence().count { it == moved })
+        }
+    }
+
+    private fun largeRow(model: String, text: String): String =
+        """{"type":"assistant","sessionId":"s1","message":{"model":"$model",""" +
+            """"content":[{"type":"text","text":"$text"}]}}"""
 
     @Test
     fun `a file that cannot be written throws instead of leaving half of history moved`(@TempDir dir: Path) {

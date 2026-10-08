@@ -26,23 +26,24 @@
 // byte-identical; an unparseable line is history too and is never dropped. A read or write failure
 // throws: half-rewritten history is precisely what leaves a resumed session on a model the head
 // cannot serve, and each caller decides what a failure means for its own outcome.
+//
+// One row at a time (Oct 7 CT): a pass reads the rows that move and a SHA-256 of the bytes, and only a
+// file with a moving row is streamed into its staged replacement. The whole-file read this replaced held
+// several copies of the text at once, and a 715 MB transcript failed the launch that resumed it. What one
+// line is, and how an assistant row moves, is AssistantRowMove; this file is the transaction over a file.
 package splice.client.resume
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
 import splice.client.Keys
 import splice.client.resume.originals.TranscriptOriginals
-import splice.client.transcript.CONTENT
+import splice.client.transcript.TranscriptLines
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
+import java.io.BufferedOutputStream
 import java.io.IOException
-import java.nio.ByteBuffer
+import java.io.OutputStream
+import java.nio.channels.Channels
 import java.nio.channels.FileChannel
 import java.nio.file.CopyOption
 import java.nio.file.Files
@@ -50,19 +51,26 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.security.MessageDigest
+import java.util.BitSet
 
 /** Claude Code's transcript extension — the one declaration; ResumeAcrossHeads reads it too. */
 internal const val TRANSCRIPT_SUFFIX: String = ".jsonl"
-private const val TRANSCRIPT_TYPE = "type"
-private const val TRANSCRIPT_MESSAGE = "message"
-private const val ASSISTANT_TYPE = "assistant"
 
 /** Anthropic's model namespace: a row there is a model a client on its own login can restore. */
 private const val CLAUDE_ID_PREFIX = "claude-"
 
+/** Buffer between a rewrite's rows and its staged file. */
+private const val WRITE_BUFFER_BYTES = 1 shl 20
+
+/** What a rewrite puts in its staged file, written to the stream it is handed. */
+public fun interface StagedRows {
+    public operator fun invoke(out: OutputStream)
+}
+
 /** The two steps of a rewrite a test must fail deterministically: writing the new bytes and the swap. */
 public interface TranscriptFs {
-    public fun write(path: Path, bytes: ByteArray)
+    public fun write(path: Path, rows: StagedRows)
 
     public fun move(source: Path, target: Path, vararg options: CopyOption)
 }
@@ -70,10 +78,11 @@ public interface TranscriptFs {
 private object ProcessTranscriptFs : TranscriptFs {
     /** The bytes are forced to disk before this returns: a rename can reach the disk before the data
      *  it names, so a crash after an unforced move could leave an empty transcript in the original's place. */
-    override fun write(path: Path, bytes: ByteArray) {
+    override fun write(path: Path, rows: StagedRows) {
         FileChannel.open(path, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING).use { channel ->
-            val buffer = ByteBuffer.wrap(bytes)
-            while (buffer.hasRemaining()) channel.write(buffer)
+            val out = BufferedOutputStream(Channels.newOutputStream(channel), WRITE_BUFFER_BYTES)
+            rows(out)
+            out.flush()
             channel.force(true)
         }
     }
@@ -88,15 +97,7 @@ public class TranscriptModelRewrite(
     private val originals: TranscriptOriginals = TranscriptOriginals(StatePaths()),
 ) {
 
-    private val json = Json { ignoreUnknownKeys = true }
-
-    /** The blocks a signature rides on — the two Claude Code's own strip removes (aEt/Tcr). */
-    private val thinkingTypes = setOf("thinking", "redacted_thinking")
-
-    /** Claude Code's stand-in for a message its signature recovery leaves empty: kcr() in 2.1.281,
-     *  xmr() in 2.1.282 and wwr() in 2.1.283, byte for byte. */
-    private val thinkingRemoved =
-        json.parseToJsonElement("""{"type":"text","text":"[Thinking removed]","citations":[]}""")
+    private val rows = AssistantRowMove()
 
     /** Rewrite to [pinnedModel], without its thinking blocks (see the header), every assistant row
      *  whose `message.model` the head does NOT serve, in [transcript] and in every jsonl under its
@@ -111,53 +112,68 @@ public class TranscriptModelRewrite(
         val subdir = transcript.resolveSibling(transcript.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX))
         val children = if (Files.isDirectory(subdir, NOFOLLOW_LINKS)) jsonlUnder(subdir) else emptyList()
         val files = listOf(transcript) + children
-        val policy = served?.let { roster ->
-            val kept = roster.toSet() + pinnedModel
-            RowPolicy(pinnedModel) { model -> model in kept }
-        } ?: clientPicked(transcript)
-        val prepared = files.map { prepareFile(it, policy) }
-        val rewritten = prepared.sumOf { it.changed }
+        val kept = served?.let { roster ->
+            val names = roster.toSet() + pinnedModel
+            KeptModel { model -> model in names }
+        } ?: clientPicked
+        val surveys = files.map { survey(it, kept) }
+        val policy = RowPolicy(served?.let { pinnedModel } ?: surveys.first().newestClaude, kept)
+        val rewritten = surveys.sumOf { it.changed(policy).cardinality() }
         if (rewritten == 0) {
             originals.rememberIfKept(transcript)
             return 0
         }
         originals.preserve(transcript, files)
-        if (prepared.any { readText(it.file) != it.original }) {
-            throw IOException("Transcript changed while preserving its original; nothing was rewritten")
-        }
-        prepared.forEach(::publish)
+        val preservedChanged = "Transcript changed while preserving its original; nothing was rewritten"
+        surveys.forEach { ensureUnchanged(it, preservedChanged) }
+        surveys.forEach { publish(it, policy) }
         return rewritten
     }
 
-    /** Whether a row on this model stays where it is. */
-    private fun interface KeptModel {
-        operator fun invoke(model: String?): Boolean
-    }
-
-    /** Which rows stay ([keeps]) and the model a moved row takes ([target]; null keeps the row's own). */
-    private data class RowPolicy(val target: String?, val keeps: KeptModel)
-
     /** V4-449: where the client picks its own models no roster exists to move onto. A row on a Claude model
      *  stays as it is; a row on another vendor's model moves, without its thinking, onto the newest Claude
-     *  model this transcript used. With no Claude row there is nothing to move onto: the row still loses its
-     *  thinking (another vendor's signature fails upstream) and keeps its model, which the picker replaces. */
-    private fun clientPicked(transcript: Path): RowPolicy {
-        val newest = readText(transcript).split("\n").asReversed().firstNotNullOfOrNull(::claudeModelOf)
-        return RowPolicy(newest) { model -> isNativeClaude(model) }
-    }
-
-    private fun claudeModelOf(row: String): String? {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-30 (V4-449): an unparseable line names no model; rewriteRow keeps it verbatim.
-        val obj = Cancellables.runCatchingCancellable { json.parseToJsonElement(row).jsonObject }
-            .getOrNull() ?: return null
-        return JsonScalars.str(assistantMessage(obj), Keys.MODEL)?.takeIf(::isNativeClaude)
-    }
+     *  model this transcript used ([Survey.newestClaude] of the transcript itself). With no Claude row there
+     *  is nothing to move onto: the row still loses its thinking (another vendor's signature fails upstream)
+     *  and keeps its model, which the picker replaces. */
+    private val clientPicked = KeptModel { model -> isNativeClaude(model) }
 
     /** Discovery IDs use a head's double-hyphen namespace, not the native Claude model namespace. */
     private fun isNativeClaude(model: String?): Boolean =
         model?.startsWith(CLAUDE_ID_PREFIX) == true && "--" !in model
 
-    private fun readText(file: Path): String = Cancellables.runCatchingCancellable { Files.readString(file) }
+    /** One pass over [file]: the rows that move off their model ([moves]), the moving rows that hold
+     *  thinking ([thinking]), the last native Claude model an assistant row names, and the bytes' digest. */
+    private class Survey(val file: Path) {
+        val moves = BitSet()
+        val thinking = BitSet()
+        var newestClaude: String? = null
+        var digest = ByteArray(0)
+
+        /** The rows a rewrite under [policy] changes: a moving row changes when it takes a model, or, with
+         *  none to take, when it loses its thinking. */
+        fun changed(policy: RowPolicy): BitSet = if (policy.target != null) moves else thinking
+    }
+
+    private fun survey(file: Path, kept: KeptModel): Survey {
+        val survey = Survey(file)
+        survey.digest = readable(file) {
+            TranscriptLines.read(file) { index, row ->
+                val message = when (val line = rows.read(row.text())) {
+                    is LineShape.Assistant -> line.message
+                    LineShape.NotAssistant, LineShape.NotAnObject -> return@read
+                }
+                val model = JsonScalars.str(message, Keys.MODEL)
+                if (isNativeClaude(model)) survey.newestClaude = model
+                if (kept(model)) return@read
+                survey.moves.set(index)
+                if (rows.holdsThinking(message)) survey.thinking.set(index)
+            }
+        }
+        return survey
+    }
+
+    /** [read] of [file], a failure named as that file's: the one way a pass here reports a read. */
+    private inline fun <T> readable(file: Path, read: () -> T): T = Cancellables.runCatchingCancellable(read)
         .getOrElse { cause -> throw IOException("$file unreadable (${SafeFailureText.render(cause)})") }
 
     private fun jsonlUnder(dir: Path): List<Path> = Files.walk(dir).use { stream ->
@@ -171,25 +187,21 @@ public class TranscriptModelRewrite(
             }.toList()
     }
 
-    private data class PreparedRewrite(val file: Path, val changed: Int, val original: String, val bytes: ByteArray?)
-
-    private fun prepareFile(file: Path, policy: RowPolicy): PreparedRewrite {
-        val text = readText(file)
-        var changed = 0
-        val rows = text.split("\n").map { row ->
-            val rewritten = rewriteRow(row, policy)
-            if (rewritten != null) changed += 1
-            rewritten ?: row
-        }
-        val bytes = if (changed == 0) null else rows.joinToString("\n").toByteArray(Charsets.UTF_8)
-        return PreparedRewrite(file, changed, text, bytes)
+    private fun publish(survey: Survey, policy: RowPolicy) {
+        val changed = survey.changed(policy)
+        if (changed.isEmpty) return
+        Cancellables.runCatchingCancellable { replace(survey, changed, policy) }
+            .exceptionOrNull()
+            ?.let { cause -> throw IOException("${survey.file} unwritable (${SafeFailureText.render(cause)})") }
     }
 
-    private fun publish(prepared: PreparedRewrite) {
-        val bytes = prepared.bytes ?: return
-        Cancellables.runCatchingCancellable { replace(prepared.file, prepared.original, bytes) }
-            .exceptionOrNull()
-            ?.let { cause -> throw IOException("${prepared.file} unwritable (${SafeFailureText.render(cause)})") }
+    /** [file]'s rows to [out]: a row in [changed] moved under [policy], every other row's bytes as they were. */
+    private fun writeRows(file: Path, changed: BitSet, policy: RowPolicy, out: OutputStream) {
+        TranscriptLines.read(file) { index, row ->
+            if (index > 0) out.write('\n'.code)
+            val moved = if (changed[index]) rows.rewritten(row.text(), policy) else null
+            if (moved == null) out.write(row.bytes, 0, row.length) else out.write(moved.toByteArray(Charsets.UTF_8))
+        }
     }
 
     /** V4-259: the new bytes go to a temp file beside the transcript, which is moved over it in one step,
@@ -197,8 +209,8 @@ public class TranscriptModelRewrite(
      *  either way. The in-place write this replaced wrote through a link and refused a read-only file,
      *  and so does this: the file a link names is the one replaced, and a rename, which a read-only file
      *  does not stop, is not attempted on one. The file's permissions carry over to the new one. */
-    private fun replace(file: Path, original: String, bytes: ByteArray) {
-        val target = file.toRealPath()
+    private fun replace(survey: Survey, changed: BitSet, policy: RowPolicy) {
+        val target = survey.file.toRealPath()
         if (!Files.isWritable(target)) throw IOException("$target is read-only")
         val staged = Files.createTempFile(target.parent, ".${target.fileName}.", ".tmp")
         Cancellables.runCatchingCancellable {
@@ -206,8 +218,8 @@ public class TranscriptModelRewrite(
                 runCatching { Files.setPosixFilePermissions(staged, Files.getPosixFilePermissions(target)) },
                 "no POSIX permissions on this filesystem, so there are none to carry over",
             )
-            fs.write(staged, bytes)
-            ensureUnchanged(target, original)
+            fs.write(staged) { out -> writeRows(target, changed, policy, out) }
+            ensureUnchanged(survey, "Transcript changed while staging its rewrite")
             fs.move(staged, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         }.onFailure {
             Cancellables.discard(
@@ -218,45 +230,9 @@ public class TranscriptModelRewrite(
         }
     }
 
-    private fun ensureUnchanged(file: Path, original: String) {
-        if (readText(file) != original) throw IOException("Transcript changed while staging its rewrite")
+    /** Throws [changed] unless the surveyed file still holds the bytes its survey read. */
+    private fun ensureUnchanged(survey: Survey, changed: String) {
+        val now = readable(survey.file) { TranscriptLines.digest(survey.file) }
+        if (!MessageDigest.isEqual(now, survey.digest)) throw IOException(changed)
     }
-
-    /** The rewritten row, or null when this row is not an assistant row on another model — an
-     *  unparseable line included: a transcript is history, and history is never silently dropped. */
-    private fun rewriteRow(row: String, policy: RowPolicy): String? {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-19 (V4-169): an unparseable line is kept verbatim BY DESIGN (see the KDoc); null here means "leave this row alone", never a swallowed failure.
-        val obj = Cancellables.runCatchingCancellable { json.parseToJsonElement(row).jsonObject }
-            .getOrNull() ?: return null
-        val fixedMessage = assistantMessage(obj)?.let { moved(it, policy) } ?: return null
-        return json.encodeToString(
-            JsonObject.serializer(),
-            JsonObject(obj.toMutableMap().apply { put(TRANSCRIPT_MESSAGE, fixedMessage) }),
-        )
-    }
-
-    /** [message] moved under [policy]: onto its target model, without its thinking. Null when it stays as it is. */
-    private fun moved(message: JsonObject, policy: RowPolicy): JsonObject? {
-        if (policy.keeps(JsonScalars.str(message, Keys.MODEL))) return null
-        val stripped = withoutThinking(message[CONTENT])
-        if (policy.target == null && stripped == null) return null
-        return JsonObject(
-            message.toMutableMap().apply {
-                policy.target?.let { put(Keys.MODEL, JsonPrimitive(it)) }
-                stripped?.let { put(CONTENT, it) }
-            },
-        )
-    }
-
-    /** [content] without its thinking blocks, or null when it holds none (or is not a block list) and
-     *  stays exactly as it is. Emptied, it becomes [thinkingRemoved]: the row is never dropped. */
-    private fun withoutThinking(content: JsonElement?): JsonArray? {
-        val blocks = content as? JsonArray ?: return null
-        val kept = blocks.filterNot { block -> JsonScalars.str(block as? JsonObject, TRANSCRIPT_TYPE) in thinkingTypes }
-        if (kept.size == blocks.size) return null
-        return JsonArray(kept.ifEmpty { listOf(thinkingRemoved) })
-    }
-
-    private fun assistantMessage(row: JsonObject): JsonObject? =
-        if (JsonScalars.str(row, TRANSCRIPT_TYPE) == ASSISTANT_TYPE) row[TRANSCRIPT_MESSAGE] as? JsonObject else null
 }

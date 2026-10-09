@@ -28,6 +28,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 import splice.upstream.transport.LocalHttp
 
 private const val HTTP_OK = 200
@@ -190,7 +191,7 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
             )
             put("tools", buildJsonArray { add(shapes.pingTool()) })
         }
-        val reply = http("POST", "$v1/chat/completions", body.toString())
+        val reply = http("POST", "$v1/chat/completions", JsonWire.string(body))
             ?: return LocalLiveProbe(false, false, "no answer from $v1/chat/completions")
         return LocalLiveReading().read(reply)
     }
@@ -215,7 +216,7 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
         val bare = id.removeSuffix(":latest")
         val spellings = setOf(id, bare)
         if (only != null && spellings.none { it in only }) return LocalModel(id, null)
-        val show = http("POST", "$root/api/show", buildJsonObject { put("model", id) }.toString())
+        val show = http("POST", "$root/api/show", JsonWire.string(buildJsonObject { put("model", id) }))
             ?.takeIf { it.status == HTTP_OK }
             ?.let { parse(it.body) }
         val served = (running[id] ?: running[bare] ?: running["$id:latest"])?.takeIf { it > 0 }

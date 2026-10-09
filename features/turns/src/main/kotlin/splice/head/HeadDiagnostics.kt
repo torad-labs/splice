@@ -17,6 +17,7 @@ import splice.core.GATEWAY_VERSION
 import splice.core.head.GateHealth
 import splice.core.head.HeadHealth
 import splice.core.model.DiscoveryRow
+import splice.core.util.JsonWire
 import splice.head.turn.TurnDriver
 import splice.head.wire.WIRE_TAP_OFF
 import splice.head.wire.WireTap
@@ -63,12 +64,14 @@ internal class HeadDiagnostics(
     fun rateLimitSnapshot(): splice.core.head.RateLimitHealth = driver.rateLimitSnapshot()
 
     /** GET /health. [port] is the one the head listens on (HeadEngine.port), not the configured one. */
-    fun healthJson(port: Int): String = buildJsonObject {
-        put("ok", true)
-        put("port", port)
-        put("version", GATEWAY_VERSION)
-        put("head", provider.key)
-    }.toString()
+    fun healthJson(port: Int): String = JsonWire.string(
+        buildJsonObject {
+            put("ok", true)
+            put("port", port)
+            put("version", GATEWAY_VERSION)
+            put("head", provider.key)
+        },
+    )
 
     /** V4-173: GET /wire — the last [last] upstream request bodies this head sent, or null when the
      *  tap is off so the route can say which knob turns it on rather than answer an empty list a
@@ -83,12 +86,14 @@ internal class HeadDiagnostics(
         // model is otherwise missing from the picker). Which rows actually show is curated by the
         // availableModels allowlist in settings.json, not here.
         val rows = provider.catalog.discoveryRows()
-        return buildJsonObject {
-            put("object", "list")
-            put(
-                "data",
-                buildJsonArray { rows.forEach { add(json.encodeToJsonElement(DiscoveryRow.serializer(), it)) } },
-            )
-        }.toString()
+        return JsonWire.string(
+            buildJsonObject {
+                put("object", "list")
+                put(
+                    "data",
+                    buildJsonArray { rows.forEach { add(json.encodeToJsonElement(DiscoveryRow.serializer(), it)) } },
+                )
+            },
+        )
     }
 }

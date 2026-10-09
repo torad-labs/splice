@@ -8,6 +8,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import splice.core.util.JsonWire
 import splice.head.TurnsHeads
 
 private const val COMPACT_TAIL = 50
@@ -31,26 +32,28 @@ public class CompactPayloads(private val heads: TurnsHeads) {
             summary.tail.map { row -> managed.key to row }
         }.sortedBy { (_, row) -> row["ts"]?.toLongOrNull() ?: 0L }
             .takeLast(COMPACT_TAIL)
-        return buildJsonObject {
-            putJsonObject("stats") {
-                put("total", summaries.sumOf { (_, summary) -> summary.total })
-                putCounts(this, "by_outcome", outcomes)
-                putCounts(this, "by_outcome_7d", recent)
-                putJsonObject("heads") {
-                    summaries.forEach { (managed, summary) -> putHead(this, managed.key, summary) }
-                }
-                putJsonArray("tail") {
-                    tail.forEach { (head, row) ->
-                        addJsonObject {
-                            put("head", head)
-                            row.forEach { (key, value) ->
-                                if (key in COMPACT_POLL_FIELDS) putCompactScalar(this, key, value)
+        return JsonWire.string(
+            buildJsonObject {
+                putJsonObject("stats") {
+                    put("total", summaries.sumOf { (_, summary) -> summary.total })
+                    putCounts(this, "by_outcome", outcomes)
+                    putCounts(this, "by_outcome_7d", recent)
+                    putJsonObject("heads") {
+                        summaries.forEach { (managed, summary) -> putHead(this, managed.key, summary) }
+                    }
+                    putJsonArray("tail") {
+                        tail.forEach { (head, row) ->
+                            addJsonObject {
+                                put("head", head)
+                                row.forEach { (key, value) ->
+                                    if (key in COMPACT_POLL_FIELDS) putCompactScalar(this, key, value)
+                                }
                             }
                         }
                     }
                 }
-            }
-        }.toString()
+            },
+        )
     }
 
     private fun sum(counts: List<Map<String, Int>>): Map<String, Int> {

@@ -14,6 +14,7 @@ import kotlinx.serialization.json.putJsonObject
 import splice.core.usage.PlanLimit
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import splice.core.wire.RateLimitReply
@@ -107,16 +108,18 @@ public class FileProviderHoldStore(
         return JsonScalars.long(obj, RESET_AT)?.let { PlanLimit(claim, it) }
     }
 
-    private fun json(hold: ProviderHold): String = buildJsonObject {
-        hold.providerResetAtEpochSeconds?.let { put(RESET_AT, it) }
-        hold.rateLimitReply?.let { put(REPLY, Json.encodeToJsonElement(RateLimitReply.serializer(), it)) }
-        hold.plan?.let { limit ->
-            putJsonObject(PLAN) {
-                put(CLAIM, limit.claim)
-                put(RESET_AT, limit.resetEpochSeconds)
+    private fun json(hold: ProviderHold): String = JsonWire.string(
+        buildJsonObject {
+            hold.providerResetAtEpochSeconds?.let { put(RESET_AT, it) }
+            hold.rateLimitReply?.let { put(REPLY, Json.encodeToJsonElement(RateLimitReply.serializer(), it)) }
+            hold.plan?.let { limit ->
+                putJsonObject(PLAN) {
+                    put(CLAIM, limit.claim)
+                    put(RESET_AT, limit.resetEpochSeconds)
+                }
             }
-        }
-    }.toString()
+        },
+    )
 }
 
 private const val RESET_AT = "reset_at_epoch_seconds"

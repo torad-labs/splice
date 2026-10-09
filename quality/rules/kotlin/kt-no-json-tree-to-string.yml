@@ -9,27 +9,8 @@ files:
   - integrations/upstream/src/main/**/*.kt
   - integrations/dialects/*/src/main/**/*.kt
   - integrations/providers/*/src/main/**/*.kt
-# These serializers contain only control metadata or bounded numeric snapshots, never prompt trees.
-# Every omission is mirrored in the dated coverage dispositions.
   - "build-logic/src/main/**/*.kt"
   - "build-logic/src/main/**/*.kts"
-ignores:
-  - core/src/main/kotlin/splice/core/model/ClientWindows.kt
-  - core/src/main/kotlin/splice/core/usage/QuotaJson.kt
-  - features/turns/src/main/kotlin/splice/head/CountTokens.kt
-  - features/turns/src/main/kotlin/splice/head/HeadDiagnostics.kt
-  - features/turns/src/main/kotlin/splice/head/compact/CompactPayloads.kt
-  - features/turns/src/main/kotlin/splice/head/compaction/CompactionInstructionsRoute.kt
-  - features/turns/src/main/kotlin/splice/head/perf/SessionTotals.kt
-  - features/turns/src/main/kotlin/splice/head/perf/TurnKeptRoutes.kt
-  - features/turns/src/main/kotlin/splice/head/turn/LiveTurnsRoutes.kt
-  - features/turns/src/main/kotlin/splice/head/usage/EconomicsStore.kt
-  - features/turns/src/main/kotlin/splice/head/usage/RateLimitHeaders.kt
-  - features/turns/src/main/kotlin/splice/head/usage/UsageRingFile.kt
-  - features/turns/src/main/kotlin/splice/head/wire/CaptureRoutes.kt
-  - features/turns/src/main/kotlin/splice/head/wire/WireRoutes.kt
-  - integrations/upstream/src/main/kotlin/splice/upstream/local/LocalRuntimeProbe.kt
-  - integrations/upstream/src/main/kotlin/splice/upstream/retry/ProviderHoldStore.kt
 utils:
   json-declaration:
     all:

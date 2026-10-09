@@ -44,6 +44,7 @@ import splice.core.perf.PerfSessionTotal
 import splice.core.util.Cancellables
 import splice.core.util.CoalescedFlush
 import splice.core.util.DaemonLog
+import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -268,38 +269,40 @@ private object TotalsFile {
         sessions = field(root, "sessions").jsonArray.map { kept(it.jsonObject) },
     )
 
-    fun encode(clean: Boolean, since: Long, sessions: Map<String, Kept>): String = buildJsonObject {
-        put("clean", clean)
-        put("since", since)
-        put(
-            "sessions",
-            buildJsonArray {
-                sessions.forEach { (tag, kept) ->
-                    add(
-                        buildJsonObject {
-                            put("session", tag)
-                            put("from", kept.total.fromMs)
-                            put("last", kept.lastMs)
-                            putJsonObject("models") {
-                                kept.total.models.forEach { (model, t) ->
-                                    putJsonObject(model) {
-                                        put("turns", t.turns)
-                                        put("in_tokens", t.inTokens)
-                                        put("cached_tokens", t.cachedTokens)
-                                        put("cache_write_tokens", t.cacheWriteTokens)
-                                        put("out_tokens", t.outTokens)
-                                        put("cost_usd", t.usd)
-                                        put("unpriced_turns", t.unpricedTurns)
-                                        put("unreported_usage_turns", t.unreportedUsageTurns)
+    fun encode(clean: Boolean, since: Long, sessions: Map<String, Kept>): String = JsonWire.string(
+        buildJsonObject {
+            put("clean", clean)
+            put("since", since)
+            put(
+                "sessions",
+                buildJsonArray {
+                    sessions.forEach { (tag, kept) ->
+                        add(
+                            buildJsonObject {
+                                put("session", tag)
+                                put("from", kept.total.fromMs)
+                                put("last", kept.lastMs)
+                                putJsonObject("models") {
+                                    kept.total.models.forEach { (model, t) ->
+                                        putJsonObject(model) {
+                                            put("turns", t.turns)
+                                            put("in_tokens", t.inTokens)
+                                            put("cached_tokens", t.cachedTokens)
+                                            put("cache_write_tokens", t.cacheWriteTokens)
+                                            put("out_tokens", t.outTokens)
+                                            put("cost_usd", t.usd)
+                                            put("unpriced_turns", t.unpricedTurns)
+                                            put("unreported_usage_turns", t.unreportedUsageTurns)
+                                        }
                                     }
                                 }
-                            }
-                        },
-                    )
-                }
-            },
-        )
-    }.toString() + "\n"
+                            },
+                        )
+                    }
+                },
+            )
+        },
+    ) + "\n"
 
     private fun kept(o: JsonObject): Pair<String, Kept> {
         val models = field(o, "models").jsonObject.mapValues { (_, m) ->

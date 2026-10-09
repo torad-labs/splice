@@ -36,6 +36,7 @@ import splice.core.topology.TopologyWriteResult
 import splice.core.topology.TopologyWriter
 import splice.core.topology.TopologyWriterSource
 import splice.core.util.Cancellables
+import splice.core.util.JsonWire
 import splice.core.util.SafeFailureText
 import splice.head.TurnsHeadLookup
 import splice.http.JsonReply
@@ -133,16 +134,18 @@ public class CaptureRoutes(
     private fun unknownHead(name: String) = refuse(HttpStatusCode.BadRequest, "unknown head: $name")
 
     private fun captureJson(head: String, enabled: Boolean, retentionDays: Int, maxBodyChars: Long): String =
-        buildJsonObject {
-            put("head", head)
-            put("enabled", enabled)
-            put("retention_days", retentionDays)
-            put("max_body_chars", maxBodyChars)
-            // Always true — see the file header. A future hot-construction seam flips this to a
-            // real computation instead of a literal; today's fence does not reach it.
-            put("restart_required", true)
-        }.toString()
+        JsonWire.string(
+            buildJsonObject {
+                put("head", head)
+                put("enabled", enabled)
+                put("retention_days", retentionDays)
+                put("max_body_chars", maxBodyChars)
+                // Always true — see the file header. A future hot-construction seam flips this to a
+                // real computation instead of a literal; today's fence does not reach it.
+                put("restart_required", true)
+            },
+        )
 
     private fun refuse(status: HttpStatusCode, message: String) =
-        JsonReply(status, buildJsonObject { put("error", message) }.toString())
+        JsonReply(status, JsonWire.string(buildJsonObject { put("error", message) }))
 }

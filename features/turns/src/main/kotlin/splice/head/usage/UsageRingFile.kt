@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.jsonArray
 import splice.core.util.Cancellables
+import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -86,7 +87,7 @@ internal class UsageRingFile(
     internal fun persistSnapshot(snapshot: List<JsonObject>, version: Long) {
         synchronized(writeLock) {
             if (version <= persistedVersion) return
-            val encoded = buildJsonArray { snapshot.forEach { add(it) } }.toString() + "\n"
+            val encoded = JsonWire.string(buildJsonArray { snapshot.forEach { add(it) } }) + "\n"
             val failure = Cancellables
                 .runCatchingCancellable { SecureFile.writeAtomic0600(usageFile, encoded) }
                 .exceptionOrNull()

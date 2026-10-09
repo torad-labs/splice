@@ -13,6 +13,7 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.core.util.JsonWire
 import splice.head.TurnsHeadLookup
 import splice.http.JsonReply
 
@@ -45,7 +46,7 @@ public class LiveTurnsRoutes(private val heads: TurnsHeadLookup, private val reg
                 }
             }
         }
-        JsonReply(HttpStatusCode.OK, body.toString())
+        JsonReply(HttpStatusCode.OK, JsonWire.string(body))
     }
 
     public fun stop(head: String, id: String): JsonReply = resolved(head) { key, turns ->
@@ -58,7 +59,7 @@ public class LiveTurnsRoutes(private val heads: TurnsHeadLookup, private val reg
                 put("head", key)
                 put("session", stopped.session)
             }
-            JsonReply(HttpStatusCode.OK, body.toString())
+            JsonReply(HttpStatusCode.OK, JsonWire.string(body))
         }
     }
 
@@ -79,5 +80,5 @@ public class LiveTurnsRoutes(private val heads: TurnsHeadLookup, private val reg
     }
 
     private fun refuse(status: HttpStatusCode, message: String) =
-        JsonReply(status, buildJsonObject { put("error", message) }.toString())
+        JsonReply(status, JsonWire.string(buildJsonObject { put("error", message) }))
 }

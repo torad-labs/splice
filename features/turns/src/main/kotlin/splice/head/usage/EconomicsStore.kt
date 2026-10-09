@@ -42,6 +42,7 @@ import splice.core.perf.ECONOMICS_RETENTION_MS
 import splice.core.util.Cancellables
 import splice.core.util.CoalescedFlush
 import splice.core.util.DaemonLog
+import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -239,30 +240,32 @@ public class EconomicsStore(
     private fun persist(snapshot: List<EconomicsBucket>, v: Long) {
         synchronized(writeLock) {
             if (v <= persistedVersion) return
-            val encoded = buildJsonArray {
-                snapshot.forEach { b ->
-                    add(
-                        buildJsonObject {
-                            put("hour", b.hour)
-                            put("turns", b.turns)
-                            put("local_steps", b.localSteps)
-                            put("unreported_usage_turns", b.counts.unreportedUsageTurns)
-                            put("in_tokens", b.inTokens)
-                            put("cached_tokens", b.cachedTokens)
-                            put("cache_write_tokens", b.cacheWriteTokens)
-                            put("out_tokens", b.outTokens)
-                            put("req_bytes", b.reqBytes)
-                            put("upstream_req_bytes", b.upstreamBytes)
-                            put("tools_eager", b.toolsEager)
-                            put("tools_deferred", b.toolsDeferred)
-                            put("deferral_turns", b.deferralTurns)
-                            put("rate_limited", b.rateLimited)
-                            put("cost_usd", b.costUsd) // null writes JSON null: "not priced then"
-                            put("unpriced_turns", b.unpricedTurns)
-                        },
-                    )
-                }
-            }.toString() + "\n"
+            val encoded = JsonWire.string(
+                buildJsonArray {
+                    snapshot.forEach { b ->
+                        add(
+                            buildJsonObject {
+                                put("hour", b.hour)
+                                put("turns", b.turns)
+                                put("local_steps", b.localSteps)
+                                put("unreported_usage_turns", b.counts.unreportedUsageTurns)
+                                put("in_tokens", b.inTokens)
+                                put("cached_tokens", b.cachedTokens)
+                                put("cache_write_tokens", b.cacheWriteTokens)
+                                put("out_tokens", b.outTokens)
+                                put("req_bytes", b.reqBytes)
+                                put("upstream_req_bytes", b.upstreamBytes)
+                                put("tools_eager", b.toolsEager)
+                                put("tools_deferred", b.toolsDeferred)
+                                put("deferral_turns", b.deferralTurns)
+                                put("rate_limited", b.rateLimited)
+                                put("cost_usd", b.costUsd) // null writes JSON null: "not priced then"
+                                put("unpriced_turns", b.unpricedTurns)
+                            },
+                        )
+                    }
+                },
+            ) + "\n"
             if (Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, encoded) }.isSuccess) {
                 persistedVersion = v
             }

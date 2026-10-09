@@ -23,6 +23,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.LruSizing
 import splice.core.util.SafeFailureText
@@ -91,7 +92,7 @@ public class ClientWindows(
     // order. tmp + ATOMIC_MOVE: a concurrent reader (the next daemon) never sees a torn file.
     private fun persist(path: Path) = synchronized(ioLock) {
         val snapshot = synchronized(lock) { windows.toMap() }
-        val json = buildJsonObject { snapshot.forEach { (id, window) -> put(id, window) } }.toString()
+        val json = JsonWire.string(buildJsonObject { snapshot.forEach { (id, window) -> put(id, window) } })
         try {
             path.parent?.let { Files.createDirectories(it) }
             val tmp = path.resolveSibling("${path.fileName}.tmp")

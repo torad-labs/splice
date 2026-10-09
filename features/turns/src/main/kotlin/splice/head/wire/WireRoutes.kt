@@ -13,6 +13,7 @@ package splice.head.wire
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.JsonWire
 import splice.head.TurnsHeadLookup
 import splice.http.JsonReply
 import java.util.concurrent.ConcurrentHashMap
@@ -69,5 +70,5 @@ public class WireRoutes(private val heads: TurnsHeadLookup, private val taps: Wi
         }
 
     private fun refuse(status: HttpStatusCode, message: String) =
-        JsonReply(status, buildJsonObject { put("error", message) }.toString())
+        JsonReply(status, JsonWire.string(buildJsonObject { put("error", message) }))
 }

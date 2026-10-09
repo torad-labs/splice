@@ -12,16 +12,19 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.util.JsonScalars
+import splice.core.util.JsonWire
 
 public class QuotaJson {
     private val json = Json { ignoreUnknownKeys = true }
 
-    public fun encode(snapshot: QuotaSnapshot): String = buildJsonObject {
-        snapshot.fiveHour?.let { w -> putJsonObject("five_hour") { window(this, w) } }
-        snapshot.sevenDay?.let { w -> putJsonObject("seven_day") { window(this, w) } }
-        snapshot.plan?.let { put("plan", it) }
-        put("updated_at", snapshot.updatedAt)
-    }.toString()
+    public fun encode(snapshot: QuotaSnapshot): String = JsonWire.string(
+        buildJsonObject {
+            snapshot.fiveHour?.let { w -> putJsonObject("five_hour") { window(this, w) } }
+            snapshot.sevenDay?.let { w -> putJsonObject("seven_day") { window(this, w) } }
+            snapshot.plan?.let { put("plan", it) }
+            put("updated_at", snapshot.updatedAt)
+        },
+    )
 
     // Corrupt content is no snapshot until the next poll rewrites it (QuotaTracker.readFile).
     public fun decode(text: String): QuotaSnapshot? {

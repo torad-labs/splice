@@ -13,6 +13,7 @@ import splice.core.perf.PerfArchiveName
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -132,20 +133,22 @@ public class TurnKeptRoutes(
         val tally = tally(kept.perf)
         val deleted = kept.perf.isEmpty() && kept.totals.isEmpty() &&
             Files.isRegularFile(source.stateDir.resolve(TURN_STATS_DELETED_MARKER), LinkOption.NOFOLLOW_LINKS)
-        return buildJsonObject {
-            put("store", "turns")
-            put("state", if (deleted) "deleted" else "on")
-            if (deleted) {
-                put("reason", "turns deleted")
-            } else if (tally.unknown > 0) {
-                put("reason", "${tally.unknown} turn rows have no usable timestamp")
-            }
-            put("days", tally.days.size)
-            put("rows", tally.rows)
-            put("oldest", tally.days.minOrNull()?.toString())
-            // Neither a live generation nor an archive is swept on a clock (PerfStats.sweepArchive).
-            put("ages_out", null as String?)
-        }.toString()
+        return JsonWire.string(
+            buildJsonObject {
+                put("store", "turns")
+                put("state", if (deleted) "deleted" else "on")
+                if (deleted) {
+                    put("reason", "turns deleted")
+                } else if (tally.unknown > 0) {
+                    put("reason", "${tally.unknown} turn rows have no usable timestamp")
+                }
+                put("days", tally.days.size)
+                put("rows", tally.rows)
+                put("oldest", tally.days.minOrNull()?.toString())
+                // Neither a live generation nor an archive is swept on a clock (PerfStats.sweepArchive).
+                put("ages_out", null as String?)
+            },
+        )
     }
 
     private fun remove(source: StatePaths): DeletedTurns {
@@ -223,5 +226,5 @@ public class TurnKeptRoutes(
     }.fold(onSuccess = { it }, onFailure = { null })
 
     private fun refuse(status: HttpStatusCode, why: String): JsonReply =
-        JsonReply(status, buildJsonObject { put("error", why) }.toString())
+        JsonReply(status, JsonWire.string(buildJsonObject { put("error", why) }))
 }

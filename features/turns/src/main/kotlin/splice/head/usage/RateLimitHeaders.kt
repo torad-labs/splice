@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.usage.QuotaHeaderRead
 import splice.core.usage.RateLimitState
+import splice.core.util.JsonWire
 import splice.core.util.WallClock
 
 /**
@@ -46,7 +47,7 @@ internal class RateLimitHeaders(private val clock: WallClock) {
             if (reset != null) put("reset_tokens", reset) else put("reset_tokens", null as String?)
             put("updated_at", clock())
         }
-        return PendingRateLimit(payload.toString() + "\n", rateLimitStateFrom(payload))
+        return PendingRateLimit(JsonWire.string(payload) + "\n", rateLimitStateFrom(payload))
     }
 
     /** RateLimitState field mapping, single-sourced so the pending-payload and on-disk paths

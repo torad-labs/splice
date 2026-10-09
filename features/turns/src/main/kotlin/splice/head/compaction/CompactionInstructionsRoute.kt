@@ -22,6 +22,7 @@ import kotlinx.serialization.json.put
 import splice.core.compaction.CompactionInstructions
 import splice.core.compaction.CompactionScope
 import splice.core.compaction.EffectiveCompactionInstructions
+import splice.core.util.JsonWire
 import splice.head.TurnsHeadLookup
 
 /** Answered when the daemon never wired the table. NOT a 404 and NOT an empty list: the console
@@ -46,7 +47,7 @@ public class CompactionInstructionsRoute(
         if (matches.isEmpty()) {
             // 400 naming the head, never 404: 404 on this path means route-not-built to the console.
             call.respondText(
-                buildJsonObject { put("error", "unknown head: $head") }.toString(),
+                JsonWire.string(buildJsonObject { put("error", "unknown head: $head") }),
                 ContentType.Application.Json,
                 HttpStatusCode.BadRequest,
             )
@@ -54,7 +55,7 @@ public class CompactionInstructionsRoute(
         }
         if (table == null) {
             call.respondText(
-                buildJsonObject { put("error", COMPACTION_UNWIRED) }.toString(),
+                JsonWire.string(buildJsonObject { put("error", COMPACTION_UNWIRED) }),
                 ContentType.Application.Json,
                 HttpStatusCode.ServiceUnavailable,
             )
@@ -71,7 +72,7 @@ public class CompactionInstructionsRoute(
             }
         }
         call.respondText(
-            buildJsonObject { put("scopes", buildJsonArray { scopes.forEach { add(it) } }) }.toString(),
+            JsonWire.string(buildJsonObject { put("scopes", buildJsonArray { scopes.forEach { add(it) } }) }),
             ContentType.Application.Json,
         )
     }

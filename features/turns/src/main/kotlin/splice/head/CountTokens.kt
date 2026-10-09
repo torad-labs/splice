@@ -11,6 +11,7 @@ import io.ktor.server.response.respondText
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.perf.PromptTokenEstimate
+import splice.core.util.JsonWire
 import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
 import splice.head.admission.Materializing
@@ -49,7 +50,7 @@ internal class CountTokens(
         // Conservative and Unicode-safe: UTF-8 bytes / 3 includes structural/tool overhead.
         deps.log("[${provider.key}] count_tokens estimate=$estimate (local; no upstream turn)\n")
         call.respondText(
-            buildJsonObject { put("input_tokens", estimate) }.toString(),
+            JsonWire.string(buildJsonObject { put("input_tokens", estimate) }),
             ContentType.Application.Json,
         )
     }

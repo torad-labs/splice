@@ -129,7 +129,7 @@ in-flight turns before restarting (V4-74). One exception is live already: a mode
   Absent rates mean "no dollar figure", never zero.
 
 The whole shape, one of each construct, as a file the daemon's loader parses
-(`FeaturesTopologyExampleTest`, V4-315):
+(`FeaturesDocumentLawTest`):
 
 ```toml
 [daemon]

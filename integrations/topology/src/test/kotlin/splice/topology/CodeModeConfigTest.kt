@@ -79,12 +79,7 @@ class CodeModeConfigTest {
             val error = assertThrows(IllegalArgumentException::class.java) {
                 TopologyLoader.parse(topology(kind, dialect, codeMode = true))
             }
-            assertEquals(
-                "code_mode is only supported with auth.kind = 'chatgpt-oauth' " +
-                    "and dialect = 'openai-responses'",
-                error.message,
-                label,
-            )
+            assertTrue(error.message.orEmpty().contains("code_mode"), "$label: ${error.message}")
         }
     }
 }

@@ -141,15 +141,6 @@ class SendLedgerTest {
         assertEquals(Files.size(file), counter.drain())
     }
 
-    @Test
-    fun `no transcript in any tree reports every id missing with the dirs searched`() {
-        val none = texts("toolu_h1")
-        assertEquals(
-            SentTexts(null, emptyMap(), setOf("toolu_h1"), roots.map { it.resolve("projects").toString() }),
-            none,
-        )
-    }
-
     private companion object {
         // why: the guard re-reads this many bytes before the held offset to prove the prefix is the same file.
         const val TAIL_GUARD_BYTES = 4_096

@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -128,8 +129,7 @@ internal object HookScriptFiles {
             }
             if (chmodFailure != null) {
                 throw IOException(
-                    // SAFE-RENDER-EXEMPT[2026-08-31]: a chmod on a copy we just wrote — the failure names that path, never the script's bytes
-                    "$script: chmod rwx------ failed on the staged copy (${chmodFailure.message}); " +
+                    "$script: chmod rwx------ failed on the staged copy (${SafeFailureText.render(chmodFailure)}); " +
                         "staged file deleted, any existing hook left untouched",
                 )
             }

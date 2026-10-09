@@ -125,9 +125,7 @@ internal class InstallLinker(
             output.line("splice: installed '$command' -> $launchShim (head=$headKey)")
             null
         } catch (e: java.io.IOException) {
-            // SAFE-RENDER-EXEMPT[2026-08-31]: symlink claim under bin — the caught java.io.IOException is FileSystemException over a path we own, never file content
-            // No em-dash: the console's add shows this sentence verbatim in saved.wrapper.error (V4-220).
-            "failed to link $command: $link was not claimable (${e.message})"
+            "failed to link $command: $link was not claimable (${SafeFailureText.render(e)})"
         }
     }
 

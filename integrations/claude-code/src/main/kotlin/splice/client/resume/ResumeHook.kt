@@ -27,6 +27,7 @@ import splice.client.login.HookScriptFiles
 import splice.core.client.FOREGROUND_OWNER_ENV
 import splice.core.client.FOREGROUND_OWNER_HEADER
 import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.file.Path
 
@@ -76,8 +77,7 @@ internal object ResumeHook {
         val chmod = hooks.chmod
         val leg = Cancellables.runCatchingCancellable {
             hooks.execProbe?.invoke(configDir, chmod)?.let { failure ->
-                // SAFE-RENDER-EXEMPT[2026-09-19]: an exec-bit probe on a directory we create — the failure names that directory, never file content
-                throw IOException("$configDir cannot execute a staged hook (${failure.message})")
+                throw IOException("$configDir cannot execute a staged hook (${SafeFailureText.render(failure)})")
             }
             // Written current HERE, per install: a header file removed since the last launch is back
             // before the script naming it is, and a write that fails is this hook's logged failure.
@@ -94,8 +94,8 @@ internal object ResumeHook {
         if (leg.isFailure) {
             log(
                 "[resume] resume hook NOT installed in $configDir " +
-                    // SAFE-RENDER-EXEMPT[2026-09-19]: a staged hook copy — a FileSystemException over paths this code authored, never content
-                    "(${leg.exceptionOrNull()?.message}): a session resumed on this head keeps the model " +
+                    "(${leg.exceptionOrNull()?.let(SafeFailureText::render)})" +
+                    ": a session resumed on this head keeps the model " +
                     "id of the head that wrote it, so Claude Code prints its restore notice once\n",
             )
         }

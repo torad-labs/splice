@@ -128,8 +128,7 @@ internal class ProjectsLink(
      *  materialize. Lives here rather than in linkShared to keep that loop under its complexity budget. */
     fun linkOrLog(globalProjects: Path, dst: Path, log: LogSink) {
         Cancellables.runCatchingCancellable { link(globalProjects, dst, log) }.exceptionOrNull()?.let { cause ->
-            // SAFE-RENDER-EXEMPT[2026-09-16]: link does path work only — the failure names a directory, never transcript content
-            log("[materialize] projects transcripts NOT linked into ${dst.parent} (${cause.message})\n")
+            log("[materialize] projects transcripts NOT linked into ${dst.parent} (${SafeFailureText.render(cause)})\n")
         }
     }
 
@@ -224,7 +223,6 @@ internal class ProjectsLink(
         val plan = MigrationPlan()
         val refusal = preflight(dst, globalProjects, plan)
         if (refusal != null) {
-            // SAFE-RENDER-EXEMPT[2026-09-16]: `refusal` here is a String this class composes from a file NAME and a fixed phrase, not a throwable — no exception text reaches it
             log(
                 "[projects] REFUSED to migrate $dst into $globalProjects ($refusal), so " +
                     "this head keeps private transcripts\n",

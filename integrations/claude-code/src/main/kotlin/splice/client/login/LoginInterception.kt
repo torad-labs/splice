@@ -110,8 +110,8 @@ internal object LoginInterception {
             if (leg.isFailure) {
                 log(
                     "[login] /login interception NOT installed in $configDir " +
-                        // SAFE-RENDER-EXEMPT[2026-08-31]: staged-file copy leg — a FileSystemException over paths this code authored, never their content
-                        "(${leg.exceptionOrNull()?.message}): commands/login.md or its hook failed; " +
+                        "(${leg.exceptionOrNull()?.let(SafeFailureText::render)})" +
+                        ": commands/login.md or its hook failed; " +
                         "the head runs without an interceptor\n",
                 )
             }
@@ -140,8 +140,7 @@ internal object LoginInterception {
         val chmod = hooks.chmod
         val leg = Cancellables.runCatchingCancellable {
             hooks.execProbe?.invoke(configDir, chmod)?.let { failure ->
-                // SAFE-RENDER-EXEMPT[2026-08-31]: an exec-bit probe on a directory we create — the failure names that directory, never file content
-                throw IOException("$configDir cannot execute a staged hook (${failure.message})")
+                throw IOException("$configDir cannot execute a staged hook (${SafeFailureText.render(failure)})")
             }
             val script = HookScriptFiles.writeHookScript(
                 configDir,
@@ -157,8 +156,8 @@ internal object LoginInterception {
         if (leg.isFailure) {
             log(
                 "[login] key-setup advertiser NOT installed in $configDir " +
-                    // SAFE-RENDER-EXEMPT[2026-08-31]: staged commands/login.md copy — a FileSystemException over paths this code authored, never content
-                    "(${leg.exceptionOrNull()?.message}); the paste flow stays undiscoverable this launch\n",
+                    "(${leg.exceptionOrNull()?.let(SafeFailureText::render)})" +
+                    "; the paste flow stays undiscoverable this launch\n",
             )
         }
         return leg.getOrElse { emptyMap() }

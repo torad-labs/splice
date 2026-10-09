@@ -50,8 +50,7 @@ internal class SessionRegistryLink(
      *  materialize. The same shape as ProjectsLink.linkOrLog — the two generated trees share one idiom. */
     fun linkOrLog(globalSessions: Path, dst: Path, log: LogSink) {
         Cancellables.runCatchingCancellable { link(globalSessions, dst, log) }.exceptionOrNull()?.let { cause ->
-            // SAFE-RENDER-EXEMPT[2026-08-31]: link does path work only — the failure names a directory, never its content
-            log("[materialize] sessions registry NOT linked into ${dst.parent} (${cause.message})\n")
+            log("[materialize] sessions registry NOT linked into ${dst.parent} (${SafeFailureText.render(cause)})\n")
         }
     }
 
@@ -132,11 +131,10 @@ internal class SessionRegistryLink(
         val nonRegular = entries.firstOrNull { !Files.isRegularFile(it, NOFOLLOW_LINKS) }
         val collision = transfers.firstOrNull { (_, target) -> Files.exists(target, NOFOLLOW_LINKS) }
         if (nonRegular != null || collision != null) {
-            val cause = nonRegular?.let { "unexpected non-file entry '${it.fileName}'" }
+            val reason = nonRegular?.let { "unexpected non-file entry '${it.fileName}'" }
                 ?: "'${collision?.second?.fileName}' already exists in the global registry"
-            // SAFE-RENDER-EXEMPT[2026-08-31]: `cause` here is a String this function composes from a file NAME and a fixed phrase, not a throwable — no exception text reaches it
             log(
-                "[sessions] REFUSED to migrate $dst into $globalSessions ($cause), so " +
+                "[sessions] REFUSED to migrate $dst into $globalSessions ($reason), so " +
                     "this head keeps private sessions\n",
             )
             return false

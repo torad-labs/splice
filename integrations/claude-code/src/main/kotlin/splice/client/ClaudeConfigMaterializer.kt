@@ -51,6 +51,7 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.io.IOException
+import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.NoSuchFileException
@@ -233,14 +234,13 @@ public class ClaudeConfigMaterializer(
         val probeFailure = Cancellables.runCatchingCancellable {
             Files.getLastModifiedTime(src, NOFOLLOW_LINKS)
             if (!Files.exists(src)) {
-                throw IOException("global entry is a link whose target is missing or unreachable")
+                throw FileSystemException(src.toString(), null, "global entry is a link whose target is missing")
             }
         }.exceptionOrNull()
         if (probeFailure is NoSuchFileException) return
         if (probeFailure != null) {
             log(
-                // SAFE-RENDER-EXEMPT[2026-08-31]: a NOFOLLOW stat plus our OWN authored IOException text; render would withhold the dangling-target sentence this line exists to name
-                "[materialize] shared '$item' NOT linked into $configDir (${probeFailure.message}); " +
+                "[materialize] shared '$item' NOT linked into $configDir (${SafeFailureText.render(probeFailure)}); " +
                     "this head launches without the operator's $item\n",
             )
             return
@@ -268,8 +268,7 @@ public class ClaudeConfigMaterializer(
             .exceptionOrNull()
             ?.let { cause ->
                 log(
-                    // SAFE-RENDER-EXEMPT[2026-08-31]: replaceWithSymlink is path work only — the failure names src or dst, never file content
-                    "[materialize] shared '$item' NOT linked into $configDir (${cause.message}); " +
+                    "[materialize] shared '$item' NOT linked into $configDir (${SafeFailureText.render(cause)}); " +
                         "this head launches without the operator's $item\n",
                 )
             }

@@ -6,6 +6,7 @@ package splice.launch.install
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import kotlin.io.path.isSymbolicLink
@@ -39,8 +40,7 @@ internal class UninstallCommand(
                 }
             }.onFailure { e ->
                 ok = false
-                // SAFE-RENDER-EXEMPT[2026-08-31]: Files.delete of a bin symlink — the failure names the link path, never file content
-                output.line("splice: failed to remove $command: ${e.message}")
+                output.line("splice: failed to remove $command: ${SafeFailureText.render(e)}")
             }
         }
         return ok

@@ -24,6 +24,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # A pull request's gate reads the diff against its merge base with main, so the history comes with it.
+          fetch-depth: 0
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -44,8 +46,14 @@ jobs:
           bun-version: 1.4.2
       - name: install workspaces
         run: bun install --frozen-lockfile
+      # A push to main runs the whole ladder on everything. A pull request runs what its diff against main affects: the
+      # same selector as pre-push (tools/gate/src/lib/selector.ts), so a check still runs whenever its inputs change.
       - name: complete repository gate
+        if: ${{ github.event_name != 'pull_request' }}
         run: npm run gate
+      - name: scoped repository gate
+        if: ${{ github.event_name == 'pull_request' }}
+        run: bun tools/gate run --since origin/${{ github.base_ref }}
       # Where the gate's minutes went: the profile `bun tools/gate run` asks Gradle for, and every
       # suite's JUnit report with each test's time. Kept on a red run too, which is when they are read.
       - name: keep the gate's timings
@@ -62,7 +70,7 @@ jobs:
       # an install takes the exact sha's artifact from the gate of record instead of a local copy of
       # the tree (operator, Sep 28: no worktrees, build trees included).
       - name: keep the gate-built jar
-        if: ${{ success() }}
+        if: ${{ success() && github.event_name != 'pull_request' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: splice-jar

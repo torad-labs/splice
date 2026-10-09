@@ -42,6 +42,7 @@ import { astGrepBin } from "../lib/astgrep.ts";
 import { resolveJdk21 } from "../lib/jdk.ts";
 import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
+import { parseModuleGraph } from "../lib/selector.ts";
 import { commitLegs, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
 import { cancelledBySignal, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
 import { title } from "./title.ts";
@@ -741,6 +742,7 @@ export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): 
     modules: modules.map((module) => module.path),
     moduleOf: (file) => moduleOf(modules, file),
     changed,
+    graph: readModuleGraph(lay.repoRoot),
   });
   const scopeClause = `; scope: ${scope.summary}`;
   console.error(`── scope: ${scope.summary} ──`);
@@ -811,6 +813,19 @@ export function pushedPaths(root: string, refs: readonly { tip: string; remote: 
   return [...paths].sort();
 }
 
+/** The module law, read from the file the build enforces. */
+export function readModuleGraph(root: string): ReturnType<typeof parseModuleGraph> {
+  return parseModuleGraph(readFileSync(join(root, "gradle", "module-law.txt"), "utf8"));
+}
+
+/** The paths a branch changes against its merge base with [base]. Throws when git cannot say. */
+export function pathsSince(root: string, base: string): string[] {
+  const mergeBase = gitText(root, ["merge-base", base, "HEAD"]);
+  const diff = git(root, ["diff", "--name-only", "--no-renames", "-z", mergeBase, "HEAD"]);
+  if (diff.status !== 0) throw new Error(`git diff ${mergeBase} HEAD failed: ${diff.stderr.trim()}`);
+  return diff.stdout.toString("utf8").split("\0").filter((path) => path !== "").sort();
+}
+
 /** The ladder's rows, read from the checkout. A missing or malformed ladder throws: pre-push refuses rather than judge a
  *  scope it cannot name. */
 export function readLadder(root: string): Leg[] {
@@ -824,7 +839,7 @@ export function readLadder(root: string): Leg[] {
 
 /** Runs each direct leg from the repository root, all at once. A leg that exits nonzero, or cannot start, fails; its
  *  output tail is shown only then. Returns the failed legs. */
-async function runDirectLegs(root: string, legs: readonly Leg[]): Promise<Leg[]> {
+export async function runDirectLegs(root: string, legs: readonly Leg[]): Promise<Leg[]> {
   const runs = await Promise.all(
     legs.map(async (leg) => {
       const started = performance.now();

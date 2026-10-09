@@ -10,6 +10,8 @@
 // suites are not requested here: a module's check runs them, and each reruns only when its own classpath changes. The full suite stays in CI, which runs
 // gateOfRecord on the pushed sha.
 
+import { isDocsOnly, type ModuleGraph, select } from "./selector.ts";
+
 /** A ladder row as pre-push reads it. `inputs` is required: the path globs the leg reads. */
 export interface Leg {
   readonly task: string;
@@ -25,8 +27,6 @@ export interface Leg {
 
 /** A change a gradle run must judge: Kotlin, Java, a gradle script, the catalog, or the wrapper. */
 const GRADLE_INPUT = /\.(kts?|java)$|^gradle\/|^gradle\.properties$|^gradlew(\.bat)?$|^build-logic\//;
-/** A change every module's build depends on: the shared build logic, the settings, or the root build script. */
-const WHOLE_BUILD = /^(settings\.gradle\.kts$|build\.gradle\.kts$|gradle\.properties$|gradle\/|build-logic\/)/;
 
 /** The gradle task that runs every law suite. Gradle holds the list of suites and the inputs each one declares, so pre-push
  *  requests this one task and gradle's up-to-date check skips each suite whose declared inputs did not change. */
@@ -89,38 +89,38 @@ export interface ScopeInput {
   readonly moduleOf: (path: string) => string | undefined;
   /** The paths the pushed diff changes. */
   readonly changed: readonly string[];
+  /** The module law (gradle/module-law.txt), so a changed module's dependents are checked with it. Absent: no dependents. */
+  readonly graph?: ModuleGraph;
 }
 
 /** A leg that depends on the fat jar. Pre-push requests it on every push, and gradle decides whether it runs. */
 const runsOnJar = (leg: Leg): boolean => leg.dependsOn?.includes(JAR_TASK) === true;
 
+const docsOnlyDiff = (changed: readonly string[]): boolean => changed.length > 0 && changed.every(isDocsOnly);
+
 export function prePushScope(input: ScopeInput): PrePushScope {
   const { changed } = input;
-  const inScope = input.legs.filter((leg) => runsOnJar(leg) || changed.some((path) => matchesAny(leg.inputs ?? [], path)));
+  const inScope = input.legs.filter((leg) => (!docsOnlyDiff(changed) && runsOnJar(leg)) || changed.some((path) => matchesAny(leg.inputs ?? [], path)));
   const legList = inScope.length === 0 ? "no legs" : `legs ${inScope.map((leg) => leg.task).join(", ")}`;
 
-  // A module is checked when the diff changes it, or when a shared input changed (every module's build depends on it, and
-  // every module's detekt reads the detekt config).
-  const checked = new Set<string>();
-  for (const path of changed) {
-    const module = input.moduleOf(path);
-    if (module !== undefined) checked.add(module);
-  }
-  if (changed.some((path) => WHOLE_BUILD.test(path))) for (const module of input.modules) checked.add(module);
-  const modules = [...checked].sort();
+  // The selector decides which modules are checked: the changed ones plus every module that depends on one, or all of them
+  // when a build-wide input changed. A docs-only diff selects no module and starts no gradle at all.
+  const selection = select({ changed, modules: input.modules, moduleOf: input.moduleOf, graph: input.graph ?? new Map() });
+  const docsOnly = selection.docsOnly;
+  const modules = docsOnly ? [] : selection.modules;
 
   // A leg runs as a gradle task when it needs gradle's graph (a jar it depends on, a directory it creates, a receipt it
   // owns). Every other in-scope leg runs directly, in parallel with gradle, and never waits for the slot.
   const gradleLegs = inScope.filter(needsGradle);
   const directLegs = inScope.filter((leg) => !gradleLegs.includes(leg));
-  const gradleInput = changed.some((path) => GRADLE_INPUT.test(path));
+  const gradleInput = !docsOnly && changed.some((path) => GRADLE_INPUT.test(path));
   const gradle: string[] = [];
   if (gradleInput) for (const module of input.modules) gradle.push(`${module}:compileKotlin`, `${module}:compileTestKotlin`);
   for (const module of modules) gradle.push(`${module}:check`);
   // lawSuites runs :app:lawTest, not :app:test. A --tests filter on :app:test would narrow the module's unit run too: gradle
   // keeps one instance of a task however many tasks depend on it, so the public-source test rides in lawSuites instead.
-  gradle.push(LAW_SUITES_TASK);
-  if (changed.some((path) => path.startsWith("build-logic/"))) gradle.push("build-logic:test");
+  if (!docsOnly) gradle.push(LAW_SUITES_TASK);
+  if (changed.some((path) => path.startsWith("build-logic/"))) gradle.push("build-logic:test", "build-logic:detekt");
   for (const leg of gradleLegs) gradle.push(`:${leg.task}`);
 
   const compile = gradleInput ? `compile of ${input.modules.length} module(s)` : "no compile";

@@ -3968,3 +3968,5 @@ build-logic/src/main/kotlin/splice/modulelaw/ModuleLawTable.kt	created		Reads gr
 build-logic/src/test/kotlin/splice/modulelaw/ModuleLawTableTest.kt	created		Pins the table format: comments, blank lines, an empty dependency list, and a malformed or repeated line refused by number.
 gradle/module-law.txt	created		The project-dependency table both the build (splice.module-law) and ModuleLawsTest read, one module per line.
 integrations/claude-code/src/main/kotlin/splice/client/wrap/WrapStateStore.kt	created		Holds the wrap state file and the launcher-owner record, and reads a file that is there but unusable as unreadable, never as absent.
+tools/gate/src/lib/selector.ts	created		the one selector pre-commit, pre-push and the pull-request gate share: changed files to affected modules
+tools/gate/test/selector.test.ts	created		the selector against the real module law

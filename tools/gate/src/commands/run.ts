@@ -31,7 +31,7 @@ import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
 import { runUnderSlot } from "../lib/slot.ts";
 import { exitStatusOf } from "../lib/status.ts";
 
-export const usage = "run [--java-home-only]                the gate of record: JDK 21, then clean gateOfRecord through the slot, then the release rehearsal";
+export const usage = "run [--java-home-only | --since <ref>]    the gate of record: JDK 21, then clean gateOfRecord through the slot, then the release rehearsal; with --since, only what the diff against <ref> affects (pull requests)";
 
 export const GATE_OF_RECORD_LABEL = "gate-of-record";
 /** `--profile` writes build/reports/profile/: each task's time, which CI keeps as an artifact, so where a
@@ -62,7 +62,41 @@ function headAtStart(repoRoot: string): string {
   return proc.exitCode === 0 ? proc.stdout.toString().trim() : "unknown";
 }
 
+/** A pull request's gate: the same selector pre-push uses, over the branch's diff against its merge base with [base]. The
+ *  full ladder is the push to main's, so nothing the diff does not touch is skipped there. */
+async function runSince(base: string): Promise<number> {
+  const jdk = resolveJdk21();
+  if ("error" in jdk) {
+    console.error(jdk.error);
+    return 1;
+  }
+  const { repoRoot } = layout();
+  const hook = await import("./hook.ts");
+  const { prePushScope } = await import("../lib/prepush-scope.ts");
+  const modules = hook.gradleModules(repoRoot);
+  const legs = hook.readLadder(repoRoot);
+  const scope = prePushScope({
+    legs,
+    modules: modules.map((module) => module.path),
+    moduleOf: (file) => hook.moduleOf(modules, file),
+    changed: hook.pathsSince(repoRoot, base),
+    graph: hook.readModuleGraph(repoRoot),
+  });
+  console.error(`══ splice gate (pull request) ══  scope: ${scope.summary}`);
+  const direct = hook.runDirectLegs(repoRoot, scope.direct);
+  let gradleExit = 0;
+  if (scope.gradle.length > 0) {
+    gradleExit = await runUnderSlot({ layout: layout(), label: GATE_OF_RECORD_LABEL, args: ["--no-build-cache", ...scope.gradle, "--continue", "--profile"], env: { JAVA_HOME: jdk.javaHome } });
+    if (cancelledBySignal(gradleExit)) return gradleExit;
+  }
+  const failed = await direct;
+  const red = gradleExit !== 0 || failed.length > 0;
+  console.log(red ? "GATE: FAIL" : "GATE: PASS");
+  return red ? 1 : 0;
+}
+
 export async function run(argv: readonly string[]): Promise<number> {
+  if (argv[0] === "--since" && argv.length === 2 && argv[1] !== undefined) return runSince(argv[1]);
   const javaHomeOnly = argv[0] === "--java-home-only" && argv.length === 1;
   if (argv.length > 0 && !javaHomeOnly) {
     console.error(`gate run: takes no arguments but --java-home-only (got ${argv.join(" ")}) — the gate of record is one fixed invocation`);

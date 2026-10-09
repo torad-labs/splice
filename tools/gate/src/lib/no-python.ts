@@ -111,7 +111,7 @@ function kindOf(path: string, text: string): Kind {
   if (/\.jsonc?$/.test(base)) return "json";
   if (/\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(base)) return "script";
   if (/\.(?:kt|kts|java)$/.test(base)) return "jvm";
-  if (/\.(?:sh|bash|zsh)$/.test(base) || SHEBANG_SHELL.test(first)) return "shell";
+  if (/\.(?:sh|bash|zsh|mk)$/.test(base) || /^Makefile/.test(base) || SHEBANG_SHELL.test(first)) return "shell";
   return "other";
 }
 
@@ -325,7 +325,7 @@ export function factsOf(root: string, sources: readonly Source[], lenient = fals
       for (const text of facts.nested) snippets.push({ owner, text });
     }
   });
-  const shell = analyzeShell(root, snippets.map((s) => s.text));
+  const shell = analyzeShell(root, snippets.map((s) => s.text), snippets.map((s) => extracted[s.owner]!.path));
   shell.forEach((facts, k) => {
     const owner = snippets[k]!.owner;
     if (facts.interpreter) interpreter[owner] = true;
@@ -438,7 +438,7 @@ function staleVerifies(s: Scan): string[] {
     if (!/^\.dev\/campaigns\/[^/]+\.toml$/.test(ledger) || kindOf(ledger, text) !== "ledger") continue;
     for (const row of ledgerRows(ledger, text, false)) if (isLive(row.status)) rows.push({ ledger, row });
   }
-  const facts = analyzeShell(s.root, rows.map((r) => r.row.verify));
+  const facts = analyzeShell(s.root, rows.map((r) => r.row.verify), rows.map((r) => r.ledger));
   rows.forEach(({ ledger, row }, i) => {
     for (const { runtime, target } of facts[i]!.calls) {
       // .py ONLY for a missing file: a live row may name a .ts that does not exist yet, because the row CREATES it.

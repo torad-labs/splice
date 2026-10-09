@@ -123,10 +123,10 @@ export function rank(target: Issue, candidates: readonly Issue[], threshold: num
   const scored = candidates
     .filter((c) => c.number !== target.number)
     .map((c) => ({ number: c.number, title: c.title, raw: score(target.title, target.body, c.title, c.body) }))
-    .filter((c) => c.raw >= threshold)
-    .map((c) => ({ number: c.number, title: c.title, score: round3(c.raw) }));
-  scored.sort((x, y) => y.score - x.score);
-  return scored.slice(0, topK);
+    .filter((c) => c.raw >= threshold);
+  // Order on the raw score and round only for display: two candidates that both show 0.806 keep their real order.
+  scored.sort((x, y) => y.raw - x.raw);
+  return scored.slice(0, topK).map((c) => ({ number: c.number, title: c.title, score: round3(c.raw) }));
 }
 
 if (import.meta.main) {

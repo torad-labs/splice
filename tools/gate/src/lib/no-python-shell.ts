@@ -205,7 +205,7 @@ rule:
 `;
 
 /** Every `command` node's text, per snippet, from ONE ast-grep scan over the batch. */
-function commandsOf(repoRoot: string, snippets: readonly string[]): string[][] {
+function commandsOf(repoRoot: string, snippets: readonly string[], labels: readonly string[]): string[][] {
   const out: string[][] = snippets.map(() => []);
   if (!snippets.length) return out;
   const dir = mkdtempSync(join(tmpdir(), "no-python-shell-"));
@@ -215,6 +215,11 @@ function commandsOf(repoRoot: string, snippets: readonly string[]): string[][] {
       stdout: "pipe",
       stderr: "pipe",
     });
+    // A scan that failed says nothing about the snippets: it must fail the wall, never read as "no commands".
+    if (r.exitCode !== 0) {
+      const files = [...new Set(labels)].slice(0, 8).join(", ");
+      throw new Error(`no-python: ast-grep failed on the shell batch (exit ${r.exitCode}) reading ${files}: ${r.stderr.toString().trim()}`);
+    }
     let hits: { file: string; text: string }[];
     try {
       hits = JSON.parse(r.stdout.toString() || "[]");
@@ -231,12 +236,13 @@ function commandsOf(repoRoot: string, snippets: readonly string[]): string[][] {
 const MAX_NESTING = 4;
 
 /** Facts per snippet. One scan per nesting level, however many snippets there are. */
-export function analyzeShell(repoRoot: string, snippets: readonly string[]): ShellFacts[] {
+export function analyzeShell(repoRoot: string, snippets: readonly string[], labels: readonly string[] = snippets): ShellFacts[] {
   const interpreter = snippets.map(() => false);
   const calls: Call[][] = snippets.map(() => []);
   let level: { owner: number; text: string }[] = snippets.map((text, owner) => ({ owner, text }));
+  const labelOf = (owner: number): string => labels[owner] ?? "a shell snippet";
   for (let depth = 0; level.length > 0 && depth < MAX_NESTING; depth++) {
-    const commands = commandsOf(repoRoot, level.map((l) => l.text));
+    const commands = commandsOf(repoRoot, level.map((l) => l.text), level.map((l) => labelOf(l.owner)));
     const next: { owner: number; text: string }[] = [];
     level.forEach((l, k) => {
       for (const command of commands[k]!) {

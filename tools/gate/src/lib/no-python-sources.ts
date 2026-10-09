@@ -268,6 +268,11 @@ export function sourceFactsJvm(repoRoot: string, files: readonly { path: string;
         stdout: "pipe",
         stderr: "pipe",
       });
+      if (r.exitCode !== 0) {
+        throw new Error(
+          `no-python: ast-grep failed on the ${language} batch (exit ${r.exitCode}) reading ${mine.slice(0, 8).map((f) => f.path).join(", ")}: ${r.stderr.toString().trim()}`,
+        );
+      }
       let hits: { file: string; ruleId: string; text: string; metaVariables: { single: Record<string, { text: string }>; multi: Record<string, { text: string }[]> } }[];
       try {
         hits = JSON.parse(r.stdout.toString() || "[]");

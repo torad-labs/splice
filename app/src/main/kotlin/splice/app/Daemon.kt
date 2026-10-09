@@ -25,9 +25,11 @@ import splice.app.head.HeadKeptFiles
 import splice.app.head.HeadProbes
 import splice.app.head.HeadPromptInputs
 import splice.app.head.HeadServerFactory
+import splice.app.head.HeadServing
 import splice.app.head.HeadShutdown
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
+import splice.app.head.QuotaPollSeams
 import splice.client.resume.originals.TranscriptOriginals
 import splice.codemode.WorkerArtifacts
 import splice.core.compaction.CompactionInstructions
@@ -171,16 +173,18 @@ public class Daemon(
             it.sentCredentials = controlPlane.sentCredentials
         }
     private val managedHeadFactory = ManagedHeadFactory(
-        statePaths,
-        controlPlane.providerAssembly,
-        headServerFactory,
-        launchSpecFactory,
-        controlPlane.probeScope,
-        log,
-        // The probes present the Claude Code this daemon has actually seen, which is the identity Anthropic's
-        // usage endpoint buckets by (ClaudeUsageProbe). One tracker, the same one every head observes into.
-        clientUserAgent = ClientUserAgent(clientVersions::newestClaudeCodeUserAgent),
-        playgroundProviders = controlPlane.playgroundProviders,
+        statePaths = statePaths,
+        providerAssembly = controlPlane.providerAssembly,
+        serving = HeadServing(headServerFactory, controlPlane.playgroundProviders),
+        launchSpecFactory = launchSpecFactory,
+        log = log,
+        quotaSeams = QuotaPollSeams(
+            controlPlane.probeScope,
+            log,
+            // The probes present the Claude Code this daemon has actually seen, which is the identity Anthropic's
+            // usage endpoint buckets by (ClaudeUsageProbe). One tracker, the same one every head observes into.
+            clientUserAgent = ClientUserAgent(clientVersions::newestClaudeCodeUserAgent),
+        ),
         perfSources = controlPlane.perfRows,
     )
 
@@ -243,7 +247,11 @@ public class Daemon(
 
     public suspend fun stop(): Unit = stopLock.withLock {
         if (!stopped) {
-            stopped = true
+            // Both fences first and without waiting: a stop cut short by its deadline while a head start holds the
+            // gate must still keep startup from starting a head or binding the control port after it. [stopped] is set
+            // at the END, so a pass that was cut short is finished by the next call, never taken for done.
+            headProbes.fenceStarts()
+            controlPlane.ownership.fence()
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an
@@ -265,6 +273,7 @@ public class Daemon(
             headProbes.stop()
             controlPlane.cancelProbes()
             topologyWindows.close()
+            stopped = true
         }
     }
 }

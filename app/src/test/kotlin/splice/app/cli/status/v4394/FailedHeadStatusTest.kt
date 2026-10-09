@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.cli.status.StatusReadings
 import splice.app.cli.status.StatusTable
 import splice.app.control.FailedHeads
 import splice.app.control.healthFor
@@ -62,7 +63,11 @@ class FailedHeadStatusTest {
     @Test
     fun `a head the daemon failed to build reads as not running with its boot reason`(@TempDir bin: Path) {
         val table = StatusTable(CliPalette(ColorDepth.NONE))
-        val (_, muse, codex) = table.lines(topology, readyEnv(bin), failedHeads = mapOf("claude-muse" to reason))
+        val (_, muse, codex) = table.lines(
+            topology,
+            readyEnv(bin),
+            StatusReadings(failedHeads = mapOf("claude-muse" to reason)),
+        )
 
         assertTrue(muse.contains("not running") && muse.contains(reason), muse)
         assertFalse(muse.contains("ready"), muse)

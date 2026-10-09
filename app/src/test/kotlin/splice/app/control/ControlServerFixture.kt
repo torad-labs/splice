@@ -93,8 +93,10 @@ internal fun controlServerFor(
         auth.guard(),
         auth.log,
         // The health body and the server read one client-version tracker, as ControlPlane wires them.
-        health = healthFor(heads, signals = signals, clientVersions = runtime.clientVersions),
-        signals = signals,
+        readings = ControlReadings(
+            healthFor(heads, signals = signals, clientVersions = runtime.clientVersions),
+            signals,
+        ),
         runtime = runtime,
     )
 }
@@ -112,7 +114,6 @@ internal fun controlServerWith(
     config,
     auth.guard(),
     auth.log,
-    health = health,
-    signals = signalsFor(heads),
+    readings = ControlReadings(health, signalsFor(heads)),
     runtime = runtime,
 )

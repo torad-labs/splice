@@ -23,6 +23,25 @@ import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 
+/** The steps of `setup` that change the machine, beside install: the profile add, the daemon restart and the
+ *  Claude wrap. Not prompts, which is the line SetupPrompts draws. [wrap] reads through [env], not a fresh
+ *  `EnvReader(System::getenv)`: DaemonClaudeWrap reads the mgmt-key and resolves the control port through it, so a
+ *  default that ignored the hermetic environment was one preselection change away from a test wrapping the
+ *  developer's own ~/.claude (V4-177 review). */
+internal class SetupEffects(
+    env: EnvReader,
+    private val add: ProfileAdd = ProfileAdd { name ->
+        AddWiring.add(restart = DaemonRestart { true }).add(listOf(name, "--yes"), EnvReader(System::getenv))
+    },
+    val restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
+    private val wrap: ClaudeWrap = DaemonClaudeWrap(env),
+) {
+    fun heads(profiles: AddProfiles, prompts: SetupPrompts, env: EnvReader): SetupHeads =
+        SetupHeads(profiles, prompts.pickHeads, add, restart, prompts.hasConsole, env, prompts.frame)
+
+    fun lanes(prompts: SetupPrompts): SetupClaudeLane = SetupClaudeLane(prompts.pickLane, wrap)
+}
+
 /** The `setup` verb. Production constructs with defaults so Command.Setup does not change. */
 internal class SetupCommand(
     loginHead: HeadSignIn = HeadSignIn { key -> LoginCommand().login(key) },
@@ -38,19 +57,9 @@ internal class SetupCommand(
     },
     private val env: EnvReader = EnvReader(System::getenv),
     private val profiles: AddProfiles = AddProfiles(),
-    private val addProfile: ProfileAdd = ProfileAdd { name ->
-        AddWiring.add(restart = DaemonRestart { true }).add(listOf(name, "--yes"), EnvReader(System::getenv))
-    },
-    private val restart: DaemonRestart = DaemonRestart { LifecycleWiring.restart() },
-    /** V4-175: the wrap call. Not a prompt — it CHANGES THE MACHINE, which is the line SetupPrompts
-     *  draws, so it stays here beside install, add and restart. */
-    /** V4-177 review: `env` and not a fresh `EnvReader(System::getenv)`. DaemonClaudeWrap reads
-     *  the mgmt-key and resolves the control port through it, so the default silently ignored
-     *  the hermetic environment this class already threads — one preselection change away from
-     *  a test wrapping the developer's own ~/.claude. */
-    private val wrapClaude: ClaudeWrap = DaemonClaudeWrap(env),
+    private val effects: SetupEffects = SetupEffects(env),
     /** The optional local-model step (rig), on this class's env and restart. */
-    private val localModel: SetupLocalModel = SetupLocalModel(prompts, env, restart),
+    private val localModel: SetupLocalModel = SetupLocalModel(prompts, env, effects.restart),
 ) {
     private val frame = prompts.frame
 
@@ -71,8 +80,8 @@ internal class SetupCommand(
         val start = chosenStart(prompts.choose(options, initialIndex(facts, options)))
         val path = TopologyLoader.configPath(env)
         val bin = InstallLayout().localBin(env)
-        val lanes = SetupClaudeLane(prompts.pickLane, wrapClaude)
-        val picker = SetupHeads(profiles, prompts.pickHeads, addProfile, restart, prompts.hasConsole, env, frame)
+        val lanes = effects.lanes(prompts)
+        val picker = effects.heads(profiles, prompts, env)
         val heads = picker.offer(facts, path)
         val lane = lanes.ask(heads)
         val local = localModel.offer(path)

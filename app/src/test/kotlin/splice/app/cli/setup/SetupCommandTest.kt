@@ -289,8 +289,11 @@ class SetupCommandTest {
                             },
                         ),
                         loginHead = NO_REAL_LOGIN,
-                        addProfile = ProfileAdd { error("empty tick must not add") },
                         detect = { emptyFacts() },
+                        effects = SetupEffects(
+                            EnvReader(System::getenv),
+                            add = ProfileAdd { error("empty tick must not add") },
+                        ),
                     ).setup()
                 }
             }
@@ -320,14 +323,17 @@ class SetupCommandTest {
                 runBlocking {
                     SetupCommand(
                         loginHead = NO_REAL_LOGIN,
-                        addProfile = ProfileAdd { name ->
-                            added += name
-                            true
-                        },
-                        restart = DaemonRestart {
-                            restarts += 1
-                            true
-                        },
+                        effects = SetupEffects(
+                            EnvReader(System::getenv),
+                            add = ProfileAdd { name ->
+                                added += name
+                                true
+                            },
+                            restart = DaemonRestart {
+                                restarts += 1
+                                true
+                            },
+                        ),
                     ).setup()
                 }
             }
@@ -348,12 +354,15 @@ class SetupCommandTest {
                             },
                         ),
                         loginHead = NO_REAL_LOGIN,
-                        addProfile = ProfileAdd { name ->
-                            added += name
-                            name != "grok"
-                        },
-                        restart = DaemonRestart { true },
                         detect = { emptyFacts() },
+                        effects = SetupEffects(
+                            EnvReader(System::getenv),
+                            add = ProfileAdd { name ->
+                                added += name
+                                name != "grok"
+                            },
+                            restart = DaemonRestart { true },
+                        ),
                     ).setup()
                 }
             }
@@ -371,12 +380,15 @@ class SetupCommandTest {
                             pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(listOf("codex", "kimi")) },
                         ),
                         loginHead = NO_REAL_LOGIN,
-                        addProfile = ProfileAdd { true },
-                        restart = DaemonRestart {
-                            restarts += 1
-                            true
-                        },
                         detect = { emptyFacts() },
+                        effects = SetupEffects(
+                            EnvReader(System::getenv),
+                            add = ProfileAdd { true },
+                            restart = DaemonRestart {
+                                restarts += 1
+                                true
+                            },
+                        ),
                     ).setup()
                 }
             }
@@ -420,8 +432,11 @@ class SetupCommandTest {
                             },
                         ),
                         loginHead = NO_REAL_LOGIN,
-                        addProfile = ProfileAdd { error("empty tick must not add") },
                         detect = { emptyFacts() },
+                        effects = SetupEffects(
+                            EnvReader(System::getenv),
+                            add = ProfileAdd { error("empty tick must not add") },
+                        ),
                     ).setup()
                 }
             }
@@ -446,14 +461,17 @@ class SetupCommandTest {
                         prompts = prompts,
                         loginHead = NO_REAL_LOGIN,
                         detect = { emptyFacts().copy(spliceOwned = setOf("chatgpt-oauth", "muse-oauth")) },
-                        addProfile = ProfileAdd { error("empty tick must not add") },
                         // A console run reaches the local-model offer; left at its default it would
                         // spawn the real nvidia-smi. No card here, so it is never asked.
                         localModel = SetupLocalModel(
                             prompts,
                             EnvReader { null },
                             DaemonRestart { true },
-                            gpu = GpuProbe { emptyList() },
+                            host = RigHost(gpu = GpuProbe { emptyList() }),
+                        ),
+                        effects = SetupEffects(
+                            EnvReader(System::getenv),
+                            add = ProfileAdd { error("empty tick must not add") },
                         ),
                     ).setup()
                 }
@@ -479,7 +497,10 @@ class SetupCommandTest {
                         ),
                         loginHead = NO_REAL_LOGIN,
                         detect = { emptyFacts().copy(spliceOwned = setOf("chatgpt-oauth")) },
-                        addProfile = ProfileAdd { error("empty tick must not add") },
+                        effects = SetupEffects(
+                            EnvReader(System::getenv),
+                            add = ProfileAdd { error("empty tick must not add") },
+                        ),
                     ).setup()
                 }
             }
@@ -498,12 +519,15 @@ class SetupCommandTest {
                             pickHeads = HeadPicker { _, _ -> MultiSelectOutcome.Chosen(wanted) },
                         ),
                         loginHead = NO_REAL_LOGIN,
-                        addProfile = ProfileAdd { name ->
-                            added += name
-                            true
-                        },
-                        restart = DaemonRestart { true },
                         detect = { emptyFacts() },
+                        effects = SetupEffects(
+                            EnvReader(System::getenv),
+                            add = ProfileAdd { name ->
+                                added += name
+                                true
+                            },
+                            restart = DaemonRestart { true },
+                        ),
                     ).setup()
                 }
             }

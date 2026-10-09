@@ -25,8 +25,10 @@ import splice.app.control.ManagedHead
 import splice.app.control.SilentHeadProbes
 import splice.app.daemon.BootedTopology
 import splice.app.head.HeadServerFactory
+import splice.app.head.HeadServing
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
+import splice.app.head.QuotaPollSeams
 import splice.app.head.StartQuotaPoller
 import splice.app.provider.ProviderBuild
 import splice.core.auth.CredentialKey
@@ -35,6 +37,7 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
@@ -148,21 +151,25 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
         TokenUrlRefreshCall { _, _ -> error("native credentials must never be refreshed") },
     )
 
-    suspend fun rig(probes: QuotaProbes? = null, upstreamUrl: String = "https://synthetic.example"): Rig {
-        val file = topologyFile(upstreamUrl)
-        val topology = TopologyLoader.parse(Files.readString(file))
-        val config = configuration(probes)
-        val key = MgmtKey(paths)
-        val plane = plane(file, config, key)
-        val model = ModelEntry("synthetic-model", contextWindow = 4_000)
-        val factory = ManagedHeadFactory(
-            paths,
-            plane.providerAssembly,
+    private fun factory(
+        plane: ControlPlane,
+        topology: Topology,
+        config: ConfigService,
+        key: MgmtKey,
+        probes: QuotaProbes?,
+    ): ManagedHeadFactory = ManagedHeadFactory(
+        statePaths = paths,
+        providerAssembly = plane.providerAssembly,
+        serving = HeadServing(
             HeadServerFactory(config, key, {}).also {
                 it.sentCredentials = plane.sentCredentials
                 it.credentialAccountNames = plane.credentialAccountNames
             },
-            LaunchSpecFactory(topology, plane.signInPlanner, key, plane.buildInputs),
+            plane.playgroundProviders,
+        ),
+        launchSpecFactory = LaunchSpecFactory(topology, plane.signInPlanner, key, plane.buildInputs),
+        log = {},
+        quotaSeams = QuotaPollSeams(
             plane.probeScope,
             {},
             startQuotaPoller = StartQuotaPoller { head, probe, tracker, interval ->
@@ -178,8 +185,18 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
                     .also { it.start() }
             },
             clientUserAgent = ClientUserAgent { "synthetic-client" },
-            playgroundProviders = plane.playgroundProviders,
-        )
+        ),
+
+    )
+
+    suspend fun rig(probes: QuotaProbes? = null, upstreamUrl: String = "https://synthetic.example"): Rig {
+        val file = topologyFile(upstreamUrl)
+        val topology = TopologyLoader.parse(Files.readString(file))
+        val config = configuration(probes)
+        val key = MgmtKey(paths)
+        val plane = plane(file, config, key)
+        val model = ModelEntry("synthetic-model", contextWindow = 4_000)
+        val factory = factory(plane, topology, config, key, probes)
         probes?.let { factory.quotaProbes = it }
         val ctx = ProviderBuild(
             NATIVE_HEAD,

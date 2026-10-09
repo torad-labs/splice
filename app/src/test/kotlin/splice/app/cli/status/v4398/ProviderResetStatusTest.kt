@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.cli.status.StatusReadings
 import splice.app.cli.status.StatusTable
 import splice.app.control.ManagedHead
 import splice.app.control.healthFor
@@ -78,12 +79,20 @@ class ProviderResetStatusTest {
         // V4-419: the zone is the machine's, so this pins Chicago explicitly instead of hoping the runner is there.
         val chicago = LocalTimeText(ZoneId.of("America/Chicago"))
         val table = StatusTable(CliPalette(ColorDepth.NONE), WallClock { NOW_MS }, chicago)
-        val limited = table.lines(topology, env, quotaResetAtEpochSeconds = mapOf("claude-muse" to RESET_SECONDS))[1]
+        val limited = table.lines(
+            topology,
+            env,
+            StatusReadings(quotaResetAtEpochSeconds = mapOf("claude-muse" to RESET_SECONDS)),
+        )[1]
         assertTrue(limited.contains("out of quota until Oct 4, 7:00 PM CDT"), limited)
         assertFalse(limited.contains("ready"), limited)
         val ready = table.lines(topology, env)[1]
         assertTrue(ready.trimEnd().endsWith("ready"), ready)
-        val expired = table.lines(topology, env, quotaResetAtEpochSeconds = mapOf("claude-muse" to NOW_MS / 1_000))[1]
+        val expired = table.lines(
+            topology,
+            env,
+            StatusReadings(quotaResetAtEpochSeconds = mapOf("claude-muse" to NOW_MS / 1_000)),
+        )[1]
         assertTrue(expired.trimEnd().endsWith("ready"), expired)
     }
 

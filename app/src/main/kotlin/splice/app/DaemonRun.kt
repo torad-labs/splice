@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit
 internal class DaemonRun(
     private val process: DaemonProcess,
     private val boundary: DaemonBoundary = DaemonBoundary(),
+    private val stopDeadlineMs: Long = STOP_DEADLINE_MS,
 ) {
 
     /** Registers the JVM shutdown hook and serves until the signal: the whole process-level stop path, as one seam so a
@@ -34,7 +35,7 @@ internal class DaemonRun(
         Runtime.getRuntime().addShutdownHook(
             Executors.defaultThreadFactory().newThread {
                 shutdownSignal.complete(Unit)
-                stopped.await(STOP_DEADLINE_MS + TEARDOWN_TAIL_GRACE_MS, TimeUnit.MILLISECONDS)
+                stopped.await(stopDeadlineMs + TEARDOWN_TAIL_GRACE_MS, TimeUnit.MILLISECONDS)
             },
         )
         serveUntilShutdown(daemon, lock, shutdownSignal, stopped)
@@ -67,7 +68,7 @@ internal class DaemonRun(
             try {
                 withContext(NonCancellable) {
                     val halt = HaltJvm { Runtime.getRuntime().halt(0) }
-                    process.runBoundedTeardown(STOP_DEADLINE_MS + TEARDOWN_TAIL_GRACE_MS, halt) {
+                    process.runBoundedTeardown(stopDeadlineMs + TEARDOWN_TAIL_GRACE_MS, halt) {
                         startup.cancel()
                         shutdown(daemon, lock, startup)
                     }
@@ -86,10 +87,14 @@ internal class DaemonRun(
     // exactly STOP_DEADLINE_MS must still get its drain() + lock.close() tail before the watchdog fires
     // (orchestrator review 2026-07-24 — equal deadlines raced the tail).
     private suspend fun shutdown(daemon: Daemon, lock: DaemonLock, startup: Job) {
-        withTimeoutOrNull(STOP_DEADLINE_MS) { boundary.runCatchingDaemonBoundary { daemon.stop() } }
+        val cooperative = withTimeoutOrNull(stopDeadlineMs) { boundary.runCatchingDaemonBoundary { daemon.stop() } }
         // The lock is the last thing released: a startup still unwinding may yet touch what it acquired. The wait has
         // no bound of its own; the halt watchdog this runs under is the bound.
         startup.join()
+        // A stop the deadline cut short left a head start holding the gate, and that start may have finished since:
+        // with startup over and the fences set nothing more can open, so the second pass stops what it opened. A
+        // stop that finished is `stopped`, and this pass does nothing.
+        if (cooperative == null) boundary.runCatchingDaemonBoundary { daemon.stop() }
         // The file lane's flush is the last reportable signal before lock.close() and the halt
         // watchdog: a false means daemon.log / usage / economics writes were lost on the way out.
         if (!AsyncFileIo.drain()) {

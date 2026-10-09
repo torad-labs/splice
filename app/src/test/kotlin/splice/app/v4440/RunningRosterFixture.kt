@@ -15,8 +15,11 @@ import splice.app.control.controlServerFor
 import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
 import splice.app.head.HeadServerFactory
+import splice.app.head.HeadServing
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
+import splice.app.head.QuotaPollSeams
+import splice.app.head.StartQuotaPoller
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.HeadModelsSource
 import splice.app.provider.ModelRosters
@@ -147,13 +150,21 @@ internal class RunningRosterFixture(tmp: Path, parent: CoroutineScope) {
     )
 
     private fun factory() = ManagedHeadFactory(
-        paths,
-        ProviderAssembly(paths, scope, {}, TokenUrlRefreshCall { _, _ -> error("no OAuth in fixture") }),
-        HeadServerFactory(config, mgmt, {}),
-        LaunchSpecFactory(topology, signIn, mgmt, inputs),
-        scope,
-        {},
-        startQuotaPoller = { _, _, _, _ -> null },
+        statePaths = paths,
+        providerAssembly = ProviderAssembly(
+            paths,
+            scope,
+            {},
+            TokenUrlRefreshCall { _, _ -> error("no OAuth in fixture") },
+        ),
+        serving = HeadServing(HeadServerFactory(config, mgmt, {})),
+        launchSpecFactory = LaunchSpecFactory(topology, signIn, mgmt, inputs),
+        log = {},
+        quotaSeams = QuotaPollSeams(
+            scope,
+            {},
+            startQuotaPoller = StartQuotaPoller { _, _, _, _ -> null },
+        ),
     )
 
     suspend fun refresh() {

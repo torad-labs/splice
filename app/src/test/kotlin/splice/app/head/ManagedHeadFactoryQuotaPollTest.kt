@@ -64,17 +64,20 @@ class ManagedHeadFactoryQuotaPollTest {
                 log,
                 TokenUrlRefreshCall { _, _ -> error("refresh must not run during assembly") },
             ),
-            headServerFactory = HeadServerFactory(config, mgmtKey, log),
+            serving = HeadServing(HeadServerFactory(config, mgmtKey, log)),
             launchSpecFactory = LaunchSpecFactory(
                 topology = Topology(),
                 signInPlanner = signInPlanner,
                 mgmtKey = mgmtKey,
                 buildInputs = HeadBuildInputs(config, signInPlanner),
             ),
-            probeScope = scope,
             log = log,
-            startQuotaPoller = startQuotaPoller,
-            onPrimaryQuota = onPrimaryQuota,
+            quotaSeams = QuotaPollSeams(
+                scope,
+                log,
+                startQuotaPoller = startQuotaPoller,
+                onPrimaryQuota = onPrimaryQuota,
+            ),
         )
     }
 

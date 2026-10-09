@@ -29,15 +29,18 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TokenUrlRefreshCall
 import splice.app.auth.SignInPlanner
+import splice.app.cli.status.StatusReadings
 import splice.app.cli.status.StatusTable
 import splice.app.control.ManagedHead
 import splice.app.control.UsageHeadAdapter
 import splice.app.control.healthFor
 import splice.app.control.readinessFor
 import splice.app.head.HeadServerFactory
+import splice.app.head.HeadServing
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.app.head.OnPrimaryQuota
+import splice.app.head.QuotaPollSeams
 import splice.app.head.StartQuotaPoller
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
@@ -98,17 +101,20 @@ class SpentReadingSurfacesTest {
                 log,
                 TokenUrlRefreshCall { _, _ -> error("refresh must not run during assembly") },
             ),
-            headServerFactory = HeadServerFactory(config, mgmtKey, log),
+            serving = HeadServing(HeadServerFactory(config, mgmtKey, log)),
             launchSpecFactory = LaunchSpecFactory(
                 topology = Topology(),
                 signInPlanner = signIn,
                 mgmtKey = mgmtKey,
                 buildInputs = HeadBuildInputs(config, signIn),
             ),
-            probeScope = scope,
             log = log,
-            startQuotaPoller = StartQuotaPoller { _, _, _, _ -> null },
-            onPrimaryQuota = OnPrimaryQuota { primary(it) },
+            quotaSeams = QuotaPollSeams(
+                scope,
+                log,
+                startQuotaPoller = StartQuotaPoller { _, _, _, _ -> null },
+                onPrimaryQuota = OnPrimaryQuota { primary(it) },
+            ),
         )
         return factory.assembleHead(providerBuild(state), controlPort = 3098).also {
             running = it
@@ -178,8 +184,7 @@ class SpentReadingSurfacesTest {
         return table.lines(
             topology,
             env,
-            quotaResetAtEpochSeconds = view.quota.refusedUntil,
-            quotaFull = view.quota.full,
+            StatusReadings(quotaResetAtEpochSeconds = view.quota.refusedUntil, quotaFull = view.quota.full),
         )[1]
     }
 

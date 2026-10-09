@@ -32,8 +32,10 @@ import splice.app.TokenUrlRefreshCall
 import splice.app.auth.SignInPlanner
 import splice.app.control.ManagedHead
 import splice.app.head.HeadServerFactory
+import splice.app.head.HeadServing
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
+import splice.app.head.QuotaPollSeams
 import splice.app.head.StartQuotaPoller
 import splice.app.probe.PlaygroundProviders
 import splice.app.probe.UpstreamPlaygroundProbe
@@ -115,12 +117,14 @@ class ClaudeLivePoolMembershipTest {
         val factory = ManagedHeadFactory(
             statePaths = paths,
             providerAssembly = assembly,
-            headServerFactory = HeadServerFactory(config, key, {}),
+            serving = HeadServing(HeadServerFactory(config, key, {}), registry),
             launchSpecFactory = LaunchSpecFactory(Topology(), planner, key, HeadBuildInputs(config, planner)),
-            probeScope = scope,
             log = {},
-            startQuotaPoller = polling ?: StartQuotaPoller { _, _, _, _ -> null },
-            playgroundProviders = registry,
+            quotaSeams = QuotaPollSeams(
+                scope,
+                {},
+                startQuotaPoller = polling ?: StartQuotaPoller { _, _, _, _ -> null },
+            ),
         )
         val model = ModelEntry("synthetic-model", contextWindow = 4_000)
         val build = ProviderBuild(

@@ -36,6 +36,8 @@ internal class HeadProbes : HeadProbeReadings {
     private val authProbes = LinkedHashMap<String, AuthProbeLoop>()
 
     private val startGate = Mutex()
+
+    @Volatile
     private var startsOpen = true
 
     // Turn-path liveness (2026-08-12): key -> stalled. The 91h wedge proved head liveness and head
@@ -70,11 +72,18 @@ internal class HeadProbes : HeadProbeReadings {
         }
     }
 
-    /** The daemon's stop boundary for head starts: after this returns, [startDaemonHeads] starts nothing. It waits for
-     *  a start already in flight, so the heads the stop then stops include every head that was started. A head restart
-     *  the operator asks for while the daemon runs does not come through here. */
+    /** The daemon's stop boundary for head starts, in two steps so a stop cut short by its deadline still holds it. The
+     *  fence needs no lock: from the moment it returns, no start that has not begun will begin. Then it waits for a start
+     *  already in flight, so the heads the stop stops include every head that was started. A head restart the
+     *  operator asks for while the daemon runs does not come through here. */
     internal suspend fun closeStarts() {
-        startGate.withLock { startsOpen = false }
+        fenceStarts()
+        startGate.withLock { }
+    }
+
+    /** The fence alone: refuses every start that has not begun, and waits for nothing. */
+    internal fun fenceStarts() {
+        startsOpen = false
     }
 
     /** V4-417: starts the background probe of every local head's runtime. Off the request path: nothing

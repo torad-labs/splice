@@ -49,6 +49,12 @@ internal class ControlOwnership(
         }
     }
 
+    /** The fence alone: refuses anything adopted after, and leaves what was adopted running. The stop sets it before it
+     *  waits on anything, so a stop cut short by its deadline still keeps startup from opening the control port later. */
+    fun fence() {
+        synchronized(gate) { closed = true }
+    }
+
     /** The stop boundary: closes what was adopted, and refuses anything adopted after. Safe to call twice. */
     fun close() {
         val server = synchronized(gate) {

@@ -67,7 +67,8 @@ internal class StatusCommand(
         // V4-415: probed whether or not the daemon is up, since the runtime is the operator's own
         // process and a stopped daemon says nothing about it.
         val notAnswering = localRuntimes.notAnswering(topology)
-        val rows = table.lines(topology, envReader, failedHeads, quota.refusedUntil, notAnswering, quota.full)
+        val readings = StatusReadings(failedHeads, quota.refusedUntil, notAnswering, quota.full)
+        val rows = table.lines(topology, envReader, readings)
         for (line in rows) println(line)
         if (up) extras.printAccounts(port, envReader)
         println()

@@ -69,6 +69,12 @@ import splice.sessions.registry.SessionSource
 private const val STOP_GRACE_MS = 100L
 private const val STOP_TIMEOUT_MS = 500L
 
+/** What a control server reports about its heads: the /health body and the per-head signals (a silent runtime, a
+ *  quota reset, a full window) the heads route and the doctor read. */
+internal class ControlReadings(val health: ControlHealthReport, private val signals: HeadSignals) {
+    fun resolver(heads: Map<String, ManagedHead>): HeadResolver = HeadResolver(heads, signals)
+}
+
 internal class ControlServer(
     private val port: Int,
     private val heads: Map<String, ManagedHead>,
@@ -76,10 +82,9 @@ internal class ControlServer(
     /** The door every route runs behind, and the request admission, both built by ControlPlane. */
     private val guard: ControlGuard,
     private val log: LogSink,
-    /** The /health body this server serves on its liveness row, read per request. */
-    private val health: ControlHealthReport,
-    /** The per-head readings the heads route and the doctor read: a silent runtime, a quota reset, a full window. */
-    signals: HeadSignals,
+    /** The /health body served on the liveness row, read per request, and the per-head readings the heads route
+     *  and the doctor read. */
+    private val readings: ControlReadings,
     /** The runtime collaborators the mounts share: launch, shutdown, the session registry, shared MCP
      *  hosting (null keeps the control plane exactly as before) and the client version tracker. */
     private val runtime: ControlRuntime = ControlRuntime(),
@@ -94,7 +99,7 @@ internal class ControlServer(
      *  discipline they share and why they left this file (V4-161). Read at CALL time, never captured. */
     public val ports: ConsolePorts = ConsolePorts()
 
-    private val resolver = HeadResolver(heads, signals)
+    private val resolver = readings.resolver(heads)
     private val audit = ControlAudit(log)
 
     // One mount per capability. Every mount reads [ports] at CALL time, never at construction:
@@ -109,7 +114,7 @@ internal class ControlServer(
 
     // V4-220 item 3: the add's save restarts through lifecycle's own restarts, never a second path.
     private val add = AddMount(ports, guard, lifecycle.restarts, shutdownDaemon, log)
-    private val configuration = ConfigurationMount(config, health.staleness(), ports, guard)
+    private val configuration = ConfigurationMount(config, readings.health.staleness(), ports, guard)
     private val usage = UsageMount(heads, resolver, config, clientVersions, ports, guard)
     private val accounts = AccountsMount(heads, resolver, ports, guard, log)
     private val turns = TurnsMount(heads, resolver, config, ports, guard)
@@ -127,7 +132,7 @@ internal class ControlServer(
         ports,
         guard,
         log,
-        DaemonSelfAnswers(heads, config, health, fleet, accounts),
+        DaemonSelfAnswers(heads, config, readings.health, fleet, accounts),
     )
 
     private val models = ModelsMount(heads, ports, guard)
@@ -228,7 +233,7 @@ internal class ControlServer(
                     guard.admit(this)
                     guard.refuseForeignHosts(this)
                     routing {
-                        get("/health") { call.respondText(health.json(), ContentType.Application.Json) }
+                        get("/health") { call.respondText(readings.health.json(), ContentType.Application.Json) }
                         mounts.forEach { it.register(this) }
                     }
                 }

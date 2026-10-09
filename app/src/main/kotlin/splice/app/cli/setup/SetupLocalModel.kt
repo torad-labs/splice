@@ -37,6 +37,20 @@ private const val RETRY = "retry by hand: rig up $RIG_HEAD, then splice setup ag
  *  line long enough to wrap would redraw as two rows the spinner cannot erase. */
 private const val PROGRESS_SHOWN = 60
 
+/** Where the offer is made: the platform rig ships for and the card nvidia-smi can name on it. The card is
+ *  probed only after the platform answers, so a host rig does not ship for never spawns nvidia-smi. */
+internal class RigHost(
+    private val platform: HostPlatform = HostPlatform(
+        System.getProperty("os.name").orEmpty(),
+        System.getProperty("os.arch").orEmpty(),
+    ),
+    private val gpu: GpuProbe = NvidiaSmi(),
+) {
+    fun rigSupported(): Boolean = platform.rigSupported()
+
+    fun card(): String? = gpu().firstOrNull()
+}
+
 /** [env] and [restart] are SetupCommand's own, threaded into the production defaults: rig is looked
  *  up on the wizard's PATH, and the add restarts the daemon through the wizard's restart. */
 internal class SetupLocalModel(
@@ -44,11 +58,7 @@ internal class SetupLocalModel(
     env: EnvReader,
     restart: DaemonRestart,
     private val rig: Rig = ProcessRig(env),
-    private val gpu: GpuProbe = NvidiaSmi(),
-    private val platform: HostPlatform = HostPlatform(
-        System.getProperty("os.name").orEmpty(),
-        System.getProperty("os.arch").orEmpty(),
-    ),
+    private val host: RigHost = RigHost(),
     private val add: LocalHeadAdd = LocalHeadAdd { head -> AddWiring.add(restart).addRuntime(head, env) },
     private val out: TerminalOutput = TerminalOutput(::println),
 ) {
@@ -58,9 +68,9 @@ internal class SetupLocalModel(
     /** Asked after the head tick-list, before the Summary. True only when the operator said yes. The
      *  console and platform come first so a headless run never even spawns nvidia-smi. */
     fun offer(path: Path): Boolean = when {
-        !prompts.hasConsole() || !platform.rigSupported() -> false
+        !prompts.hasConsole() || !host.rigSupported() -> false
         configured(path) -> false.also { prompts.frame.step("local model: '$LOCAL_KEY' is already configured") }
-        else -> gpu().firstOrNull()?.let { card ->
+        else -> host.card()?.let { card ->
             prompts.frame.confirm("Run a local model on your $card? $WHAT_HAPPENS", false)
         } ?: false
     }

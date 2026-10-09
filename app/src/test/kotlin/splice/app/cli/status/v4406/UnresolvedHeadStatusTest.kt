@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.cli.status.StatusReadings
 import splice.app.cli.status.StatusTable
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepth
@@ -56,7 +57,7 @@ class UnresolvedHeadStatusTest {
 
     @Test
     fun `a head whose provider is unknown reads not running with the daemon's reason`(@TempDir bin: Path) {
-        val lines = table.lines(topology, readyEnv(bin), failedHeads = mapOf("claude-grok" to reason))
+        val lines = table.lines(topology, readyEnv(bin), StatusReadings(failedHeads = mapOf("claude-grok" to reason)))
 
         assertEquals(3, lines.size, lines.joinToString("\n"))
         val grok = lines.single { it.contains("claude-grok") }
@@ -73,7 +74,11 @@ class UnresolvedHeadStatusTest {
 
     @Test
     fun `a head health names failed that the local topology does not know gets its own row`(@TempDir bin: Path) {
-        val lines = table.lines(topology, readyEnv(bin), failedHeads = mapOf("claude-ghost" to "port 3999 in use"))
+        val lines = table.lines(
+            topology,
+            readyEnv(bin),
+            StatusReadings(failedHeads = mapOf("claude-ghost" to "port 3999 in use")),
+        )
 
         val ghost = lines.single { it.contains("claude-ghost") }
         assertTrue(ghost.contains("not running: port 3999 in use"), ghost)

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.function.ThrowingSupplier
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.status.LocalRuntimeReach
+import splice.app.cli.status.StatusReadings
 import splice.app.cli.status.StatusTable
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepth
@@ -68,7 +69,7 @@ class RuntimeNotAnsweringStatusTest {
 
         assertEquals(mapOf("bonsai" to ":8099"), down)
         val lines = StatusTable(CliPalette(ColorDepth.NONE))
-            .lines(topology, env(bin), runtimeNotAnswering = down)
+            .lines(topology, env(bin), StatusReadings(runtimeNotAnswering = down))
         val bonsai = lines.single { it.contains("claude-bonsai") }
         val glml = lines.single { it.contains("claude-glml53") }
         assertTrue(bonsai.contains("runtime not answering on :8099"), bonsai)

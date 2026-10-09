@@ -52,15 +52,13 @@ internal fun interface OnPrimaryQuota {
     operator fun invoke(tracker: QuotaTracker)
 }
 
-internal class ManagedHeadFactory(
-    private val statePaths: StatePaths,
-    private val providerAssembly: ProviderAssembly,
-    private val headServerFactory: HeadServerFactory,
-    private val launchSpecFactory: LaunchSpecFactory,
-    /** The daemon's OWN scope (the same instance ProviderAssembly prefetches on): the quota pollers
-     *  end with Daemon.stop() like every other background probe. */
-    private val probeScope: CoroutineScope,
-    private val log: LogSink,
+/** What a head's quota polling is wired with: the poller starter, the primary-tracker observer and the Claude Code
+ *  User-Agent the probes present, which is the one this daemon's client was seen sending (null until a client
+ *  has sent a turn, and a Claude head's probe then sends none). [probeScope] is the daemon's OWN scope, the same
+ *  instance ProviderAssembly prefetches on, so the pollers end with Daemon.stop() like every other background probe. */
+internal class QuotaPollSeams(
+    probeScope: CoroutineScope,
+    log: LogSink,
     private val startQuotaPoller: StartQuotaPoller = StartQuotaPoller { head, probe, tracker, intervalMs ->
         QuotaPoller(
             probeScope,
@@ -73,11 +71,43 @@ internal class ManagedHeadFactory(
             .also { it.start() }
     },
     private val onPrimaryQuota: OnPrimaryQuota = OnPrimaryQuota { _ -> },
-    /** The Claude Code User-Agent the quota probes present, which is the one this daemon's client was seen
-     *  sending. Null until a client has sent a turn, and a Claude head's probe then sends none. */
     private val clientUserAgent: ClientUserAgent = ClientUserAgent { null },
+) {
+    fun primaryWired(tracker: QuotaTracker) {
+        onPrimaryQuota(tracker)
+    }
+
+    fun pollingFor(
+        ctx: ProviderBuild,
+        probes: QuotaProbes,
+        orders: AccountOrderStore,
+    ): HeadQuotaPolling = HeadQuotaPolling(ctx, probes, startQuotaPoller, clientUserAgent, orders)
+}
+
+/** The head server factory and the Playground registry a head is bound into once it is built. */
+internal class HeadServing(
+    private val headServerFactory: HeadServerFactory,
     /** V4-444: where each assembled head's provider is registered for the Playground's one call. */
     private val playgroundProviders: PlaygroundProviders = PlaygroundProviders(),
+) {
+    /** Assembly binds independent replies to this head before the head is exposed to the control plane. */
+    fun observedHead(
+        ctx: ProviderBuild,
+        wired: Wired,
+        stores: HeadStores,
+        forwardClientAuth: Boolean,
+        recordings: FileCompactionRecordings,
+    ) = headServerFactory.headServerFor(ctx, wired.provider, stores, forwardClientAuth, recordings)
+        .also { playgroundProviders.bind(ctx.key, wired, stores.accountPool, it.providerReplies) }
+}
+
+internal class ManagedHeadFactory(
+    private val statePaths: StatePaths,
+    private val providerAssembly: ProviderAssembly,
+    private val serving: HeadServing,
+    private val launchSpecFactory: LaunchSpecFactory,
+    private val log: LogSink,
+    private val quotaSeams: QuotaPollSeams,
     private val perfSources: splice.app.sources.PerfSourceFiles = splice.app.sources.PerfSourceFiles(statePaths),
 ) {
     internal var quotaProbes: QuotaProbes = QuotaProbes(AuthHttpClientFactory().create())
@@ -102,9 +132,9 @@ internal class ManagedHeadFactory(
         val primaryQuota = wired.accounts.singleOrNull { it.primary && it.nativePlace == null }
             ?.let { accountQuotas.getValue(it.label) }
             ?: QuotaTracker(statePaths.quotaFile(key), extraFamily = CodexQuotaHeaderFamily())
-        onPrimaryQuota(primaryQuota)
+        quotaSeams.primaryWired(primaryQuota)
         val stores = headStores(ctx, wired, primaryQuota, accountQuotas)
-        val quotaPollers = HeadQuotaPolling(ctx, quotaProbes, startQuotaPoller, clientUserAgent, accountOrders)
+        val quotaPollers = quotaSeams.pollingFor(ctx, quotaProbes, accountOrders)
             .start(wired, stores, accountQuotas, providerAssembly, providerHolds)
         val logFile = statePaths.logsDir.resolve("daemon.log")
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
@@ -115,7 +145,7 @@ internal class ManagedHeadFactory(
         // enforcing the management key.
         val forwardClientAuth = wired.auth is ClientAuthProvider
         if (forwardClientAuth) primaryQuota.credentialListener = CredentialQuotaFiles(statePaths.quotaFile(key), log)
-        val server = observedHead(ctx, wired, stores, forwardClientAuth)
+        val server = serving.observedHead(ctx, wired, stores, forwardClientAuth, recordings(key))
         // DR-81: key presence is NOT baked into the spec — it is a per-launch read of the SAME
         // wired credential, so `splice key set`/unset changes the very next launch. Non-api-key
         // auth reads true: capture/advertiser stay disarmed, which is the safe side.
@@ -149,15 +179,6 @@ internal class ManagedHeadFactory(
     private fun keyPresence(wired: Wired): splice.launch.KeyPresenceProbe = splice.launch.KeyPresenceProbe {
         (wired.auth as? ApiKeyAuthProvider)?.hasKeyNow() != false
     }
-
-    /** Assembly binds independent replies to this head before the head is exposed to the control plane. */
-    private fun observedHead(
-        ctx: ProviderBuild,
-        wired: Wired,
-        stores: HeadStores,
-        forwardClientAuth: Boolean,
-    ) = headServerFactory.headServerFor(ctx, wired.provider, stores, forwardClientAuth, recordings(ctx.key))
-        .also { playgroundProviders.bind(ctx.key, wired, stores.accountPool, it.providerReplies) }
 
     /** Every file-backed store one head owns, built from its state paths. Its own method because
      *  the head WRITES these and the control-plane adapters READ them, and both must hold the SAME

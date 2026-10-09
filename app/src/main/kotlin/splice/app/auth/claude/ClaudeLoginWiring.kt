@@ -20,17 +20,16 @@ import java.nio.file.Path
  *  so there is one place that knows how a Claude sign-in is started on this machine. */
 internal data class ClaudeLoginArm(val owner: ClaudeLoginOwner, val accounts: ClaudeAccountsPort)
 
-internal object ClaudeLoginWiring {
-    fun create(
-        paths: StatePaths,
-        topologyPath: Path?,
-        scope: CoroutineScope,
-        wrap: WrapStateRead,
-        log: LogSink,
-        userAgent: ClientUserAgent = ClientUserAgent { null },
-        identityRefresh: ClaudeIdentityRefresh? = null,
-        poolChanges: ClaudePoolChanges? = null,
-    ): ClaudeLoginArm {
+internal class ClaudeLoginWiring(
+    private val paths: StatePaths,
+    private val scope: CoroutineScope,
+    private val wrap: WrapStateRead,
+    private val log: LogSink,
+    private val userAgent: ClientUserAgent = ClientUserAgent { null },
+    private val identityRefresh: ClaudeIdentityRefresh? = null,
+    private val poolChanges: ClaudePoolChanges? = null,
+) {
+    fun create(topologyPath: Path?): ClaudeLoginArm {
         val home = paths.rootDir.parent ?: paths.rootDir
         val topology = topologyPath?.let(TopologyLoader::loadOrMaterialize) ?: Topology()
         val processes = ProcessEnvironment()

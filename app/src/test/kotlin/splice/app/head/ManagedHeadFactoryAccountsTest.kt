@@ -94,16 +94,19 @@ class ManagedHeadFactoryAccountsTest {
                 log,
                 TokenUrlRefreshCall { _, _ -> error("refresh must not run during assembly") },
             ),
-            headServerFactory = HeadServerFactory(config, mgmtKey, log),
+            serving = HeadServing(HeadServerFactory(config, mgmtKey, log)),
             launchSpecFactory = LaunchSpecFactory(
                 topology = Topology(),
                 signInPlanner = signInPlanner,
                 mgmtKey = mgmtKey,
                 buildInputs = HeadBuildInputs(config, signInPlanner),
             ),
-            probeScope = scope,
             log = log,
-            startQuotaPoller = { _, _, _, _ -> null },
+            quotaSeams = QuotaPollSeams(
+                scope,
+                log,
+                startQuotaPoller = StartQuotaPoller { _, _, _, _ -> null },
+            ),
         )
     }
 

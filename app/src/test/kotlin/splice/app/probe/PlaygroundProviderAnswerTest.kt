@@ -33,8 +33,11 @@ import splice.app.TokenUrlRefreshCall
 import splice.app.auth.SignInPlanner
 import splice.app.control.AccountHeadAdapter
 import splice.app.head.HeadServerFactory
+import splice.app.head.HeadServing
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
+import splice.app.head.QuotaPollSeams
+import splice.app.head.StartQuotaPoller
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
@@ -426,17 +429,19 @@ class PlaygroundProviderAnswerTest {
                 {},
                 TokenUrlRefreshCall { _, _ -> error("synthetic assembly must not refresh") },
             ),
-            headServerFactory = HeadServerFactory(config, key, {}),
+            serving = HeadServing(HeadServerFactory(config, key, {}), registry),
             launchSpecFactory = LaunchSpecFactory(
                 Topology(),
                 planner,
                 key,
                 HeadBuildInputs(config, planner),
             ),
-            probeScope = scope,
             log = {},
-            startQuotaPoller = { _, _, _, _ -> null },
-            playgroundProviders = registry,
+            quotaSeams = QuotaPollSeams(
+                scope,
+                {},
+                startQuotaPoller = StartQuotaPoller { _, _, _, _ -> null },
+            ),
         )
         val model = ModelEntry("synthetic-model", contextWindow = 4_000)
         val kimi = authKind == "kimi-oauth"

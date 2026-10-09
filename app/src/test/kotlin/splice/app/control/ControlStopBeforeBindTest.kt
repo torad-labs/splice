@@ -59,6 +59,32 @@ class ControlStopBeforeBindTest {
         assertFalse(listens(port)) { "a listener is live on :$port after the stop refused the bind" }
     }
 
+    @Test
+    fun `a fence set before the adoption refuses the bind, and a fence after it leaves the adopted server running`(
+        @TempDir tmp: Path,
+    ) {
+        val paths = StatePaths(baseOverride = tmp)
+        val port = TestPorts.reserve()
+        val auth = ControlAuth(MgmtKey(paths, LogSink { }), LogSink { })
+        val ownership = ControlOwnership(DaemonBoundary(), LogSink { }, ShutdownDaemon { })
+        ownership.fence()
+        val fenced = controlServerFor(port, emptyMap(), ConfigService(paths), auth)
+        val refused = runCatching { runBlocking { ownership.bind(fenced, port) } }
+        assertTrue(
+            refused.exceptionOrNull() is CancellationException,
+            "a fenced ownership must refuse, was: $refused",
+        )
+        assertFalse(listens(port)) { "a listener is live on :$port after a fenced bind" }
+
+        val open = ControlOwnership(DaemonBoundary(), LogSink { }, ShutdownDaemon { })
+        val adopted = controlServerFor(port, emptyMap(), ConfigService(paths), auth)
+        assertTrue(runBlocking { open.bind(adopted, port) }) { "an unfenced bind must succeed" }
+        open.fence()
+        assertTrue(listens(adopted.listeningPort)) { "the fence alone must leave the adopted server running" }
+        open.close()
+        assertFalse(listens(adopted.listeningPort)) { "close must stop the adopted server" }
+    }
+
     private fun listens(port: Int): Boolean = try {
         Socket().use { it.connect(InetSocketAddress("127.0.0.1", port), CONNECT_TIMEOUT_MS) }
         true

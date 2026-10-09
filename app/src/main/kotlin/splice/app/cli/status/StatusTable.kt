@@ -44,24 +44,20 @@ internal class StatusTable(
     internal fun lines(
         topology: Topology,
         envReader: EnvReader,
-        failedHeads: Map<String, String> = emptyMap(),
-        quotaResetAtEpochSeconds: Map<String, Long> = emptyMap(),
-        runtimeNotAnswering: Map<String, String> = emptyMap(),
-        quotaFull: Map<String, QuotaFull> = emptyMap(),
+        readings: StatusReadings = StatusReadings(),
     ): List<String> {
         // V4-406: a row per configured head, and one per head the daemon names failed that this
         // topology does not know — the join to providers used to DROP a head it could not resolve,
         // hiding exactly the head whose boot failure the operator needs to read.
         val configured = topology.heads.map { (key, head) ->
-            val word =
-                HeadWord(failedHeads[key], quotaResetAtEpochSeconds[key], runtimeNotAnswering[key], quotaFull[key])
+            val word = readings.wordFor(key)
             topology.providers[head.provider]?.let { row(key, head, it, envReader, word) }
                 ?: unresolvedRow(
                     listOf(key, head.claude.command ?: key, head.port.toString(), "-"),
                     word.bootFailure ?: "unknown provider '${head.provider}'",
                 )
         }
-        val unknown = failedHeads.filterKeys { it !in topology.heads }.toSortedMap().map { (key, reason) ->
+        val unknown = readings.failedOutside(topology.heads.keys).map { (key, reason) ->
             unresolvedRow(listOf(key, "-", "-", "-"), reason)
         }
         val rows = configured + unknown
@@ -228,7 +224,22 @@ private data class Row(val glyph: String, val cells: List<String>, val action: S
  *  the instant its provider stops refusing turns, epoch seconds (V4-398), the endpoint of its
  *  local runtime when that does not answer (V4-415), and the provider's reading when it names a window
  *  fully used (V4-452). All null for a head that is fine. */
-private data class HeadWord(
+/** What the daemon reports about each head beyond its topology row, keyed by head: the boot failure, the instant
+ *  its quota refusal lifts, the endpoint of a silent runtime, and a spent plan window. */
+internal class StatusReadings(
+    private val failedHeads: Map<String, String> = emptyMap(),
+    private val quotaResetAtEpochSeconds: Map<String, Long> = emptyMap(),
+    private val runtimeNotAnswering: Map<String, String> = emptyMap(),
+    private val quotaFull: Map<String, QuotaFull> = emptyMap(),
+) {
+    /** The heads the daemon names failed that [known] does not hold, in key order. */
+    fun failedOutside(known: Set<String>): Map<String, String> = failedHeads.filterKeys { it !in known }.toSortedMap()
+
+    fun wordFor(key: String): HeadWord =
+        HeadWord(failedHeads[key], quotaResetAtEpochSeconds[key], runtimeNotAnswering[key], quotaFull[key])
+}
+
+internal data class HeadWord(
     val bootFailure: String?,
     val quotaResetAtEpochSeconds: Long?,
     val runtimeEndpoint: String?,

@@ -82,11 +82,13 @@ class SetupLocalModelTest {
         env = EnvReader { null },
         restart = DaemonRestart { error("the step restarts only through the add it hands the head to") },
         rig = rig,
-        gpu = GpuProbe {
-            gpuCalls += 1
-            cards
-        },
-        platform = platform,
+        host = RigHost(
+            platform,
+            GpuProbe {
+                gpuCalls += 1
+                cards
+            },
+        ),
         add = add,
         out = TerminalOutput { out += it },
     )
@@ -242,15 +244,18 @@ class SetupLocalModelTest {
                     prompts = prompts,
                     loginHead = HeadSignIn { error("no head here needs a sign-in") },
                     detect = { SetupFacts(emptySet(), emptySet(), false, false, SetupStart.OpenRouter) },
-                    addProfile = ProfileAdd { name ->
-                        events += "add $name"
-                        true
-                    },
-                    restart = DaemonRestart {
-                        events += "restart"
-                        true
-                    },
                     localModel = local,
+                    effects = SetupEffects(
+                        EnvReader(System::getenv),
+                        add = ProfileAdd { name ->
+                            events += "add $name"
+                            true
+                        },
+                        restart = DaemonRestart {
+                            events += "restart"
+                            true
+                        },
+                    ),
                 ).setup()
             }
         }

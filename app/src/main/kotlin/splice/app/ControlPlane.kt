@@ -14,6 +14,7 @@ import splice.app.auth.claude.ClaudeLoginOwner
 import splice.app.auth.claude.ClaudeLoginWiring
 import splice.app.cli.AdminSupport
 import splice.app.control.ControlOwnership
+import splice.app.control.ControlReadings
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.FailedHeads
@@ -202,16 +203,15 @@ internal class ControlPlane(
         val materializer = materializer(home, sharing, controlPort)
         val rewriter = TranscriptModelRewrite(originals = TranscriptOriginals(statePaths))
         val wrap = WrappedHead(home)
-        val arm = ClaudeLoginWiring.create(
+        val arm = ClaudeLoginWiring(
             statePaths,
-            topology.path,
             probeScope,
             wrap,
             log,
             splice.usage.quota.ClientUserAgent(clientVersions::newestClaudeCodeUserAgent),
             claudeIdentities,
             providerAssembly.claudePoolChanges,
-        )
+        ).create(topology.path)
         val owner = arm.owner
         claudeLoginOwner = owner
         claudeAccounts = arm.accounts
@@ -271,8 +271,7 @@ internal class ControlPlane(
             config,
             guard,
             log,
-            health = healthReport(heads, failedHeads, headCount, probes, signals),
-            signals = signals,
+            readings = ControlReadings(healthReport(heads, failedHeads, headCount, probes, signals), signals),
             runtime = ControlRuntime(
                 launchService = launchService(home, sharing, controlPort),
                 shutdownDaemon = shutdownDaemon,

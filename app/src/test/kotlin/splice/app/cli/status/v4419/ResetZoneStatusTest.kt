@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.cli.status.StatusReadings
 import splice.app.cli.status.StatusTable
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepth
@@ -53,7 +54,7 @@ class ResetZoneStatusTest {
         val clock = WallClock { NOW_MS }
         val table = if (times == null) StatusTable(palette, clock) else StatusTable(palette, clock, times)
         val limited = mapOf("claude-muse" to RESET_SECONDS)
-        return table.lines(topology, EnvReader(vars::get), quotaResetAtEpochSeconds = limited)[1]
+        return table.lines(topology, EnvReader(vars::get), StatusReadings(quotaResetAtEpochSeconds = limited))[1]
     }
 
     @Test

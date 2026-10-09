@@ -89,10 +89,8 @@ public data class HeadDeps(
     val log: LogSink,
 ) {
     /** The single resolver for which quota tracker a turn reads (V4-99): the SELECTED account's
-     *  tracker, else the primary's. A body property, not a constructor param, so it is not part of
-     *  the data class's equals/copy — it is a derived collaborator, not a value. */
-    internal val turnQuota: TurnQuota =
-        TurnQuota(quotaBundle.accountPool, quotaBundle.accountQuotas, quotaBundle.quota)
+     *  tracker, else the primary's. Read through the bundle, which alone holds the trackers. */
+    internal val turnQuota: TurnQuota get() = quotaBundle.turnQuota
 
     init {
         require(inferenceToken.isNotBlank()) { "inferenceToken must not be blank" }
@@ -126,15 +124,20 @@ public data class HeadDeps(
 
     /** Which account a turn spends, and the trackers that decide eligibility. */
     public data class HeadQuota(
-        val quota: QuotaTracker?,
+        /** The trackers are private on purpose: the only way to read one is [turnQuota], which owns the precedence
+         *  (selected account first, the primary after), so no site can re-derive it. */
+        private val quota: QuotaTracker?,
         val accountPool: AccountPool?,
-        val accountQuotas: Map<String, QuotaTracker>,
+        private val accountQuotas: Map<String, QuotaTracker>,
         /** V4-133 review: the head's daily spend budget, which decides eligibility in USD the way
          *  the trackers do in quota. No default, like every member of this bundle: a head built
          *  without one says so ([splice.core.budget.NoHeadBudget]) rather than forgetting. */
         val budget: HeadBudget,
         val credentialAccountNames: CredentialAccountNames,
     ) {
+        /** The one resolver for which quota tracker a turn reads (V4-99). */
+        internal val turnQuota: TurnQuota = TurnQuota(accountPool, accountQuotas, quota)
+
         /** A forwarded caller alone uses the legacy path until a stored member is published. */
         val activePool: AccountPool? get() = accountPool?.takeIf { it.active }
     }

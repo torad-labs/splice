@@ -18,6 +18,7 @@ import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
+import splice.upstream.credentials.Selection
 import splice.upstream.retry.RateLimitCooldown
 import java.nio.file.Path
 
@@ -52,6 +53,16 @@ class TurnQuotaTest {
         pool.select(session)
         val quota = TurnQuota(pool, mapOf("primary" to primary, "backup" to backup), primary)
         assertSame(backup, quota.forSession(session, null), "the pool selected backup, so backup's tracker answers")
+    }
+
+    @Test
+    fun `a stateless turn reads the tracker of the account it explicitly selected`() {
+        val primary = tracker("primary")
+        val backup = tracker("backup")
+        val pool = pool(primary, backup)
+        val chosen = pool.select(null, excluded = setOf("primary")) as Selection.Chosen
+        val quota = TurnQuota(pool, mapOf("primary" to primary, "backup" to backup), primary)
+        assertSame(backup, quota.forSession(null, chosen.account), "no session to stick to, so the selection decides")
     }
 
     @Test

@@ -106,14 +106,10 @@ internal class RateLimitStore(
     // parsed once in persistRateLimit) no re-parse of the same JSON on every /statusline tick and
     // /api/usage poll (review 2026-07-22). The inline flush this replaces had re-added, on the read
     // path, the churn coalescing removed from the round path (review 2026-07-22 round 3).
-    // ast-grep-ignore: kt-no-silent-result-collapse -- an unreadable file is logged by RateLimitFile.read, RateLimitFile.kt:32-45
-    public fun readRateLimit(): RateLimitState? = Cancellables.runCatchingCancellable {
+    // An unreadable file is logged by RateLimitFile.read, which answers null for it; nothing here can throw.
+    public fun readRateLimit(): RateLimitState? {
         val pending = pendingRateLimit.get()
-        if (pending != null) {
-            pending.parsed
-        } else {
-            // A flusher may already own the pending payload. Return the last atomic commit without waiting.
-            file.read()?.let { headers.rateLimitStateFrom(it) }
-        }
-    }.getOrNull()
+        // A flusher may already own the pending payload. Return the last atomic commit without waiting.
+        return pending?.parsed ?: file.read()?.let { headers.rateLimitStateFrom(it) }
+    }
 }

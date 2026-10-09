@@ -6,7 +6,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -92,7 +91,7 @@ class RequestStartTimingTest {
             try {
                 assertTrue(rig.provider.entered.await(TIMING_TIMEOUT_MS, TimeUnit.MILLISECONDS))
                 val second = async(Dispatchers.IO) { timingPost(rig.port, "timed") }
-                awaitTiming { rig.gate.snapshot().queued == 1 }
+                awaitTiming("the second turn queued behind the first") { rig.gate.snapshot().queued == 1 }
                 delay(TIMING_WAIT_MS)
                 rig.provider.release.countDown()
                 assertTrue(first.await().contains("message_stop"))
@@ -280,9 +279,13 @@ private fun timingProvider(url: String): Provider = TestResponsesProvider(
     reasoning = ReasoningSettings(ReasoningDisplay.OFF, false, "high", null),
 )
 
-private suspend fun awaitTiming(condition: () -> Boolean) = withTimeout(TIMING_TIMEOUT_MS) {
-    // ast-grep-ignore: kt-tests-no-wall-clock -- polls real gate state under a withTimeout deadline, never a fixed wait.
-    while (!condition()) delay(5)
+/** Polls [condition] with a deadline, never a sleep for a duration, and fails naming [what] never happened. */
+private suspend fun awaitTiming(what: String, condition: () -> Boolean) {
+    val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(TIMING_TIMEOUT_MS)
+    while (!condition()) {
+        check(System.nanoTime() < deadline) { "$what did not happen within $TIMING_TIMEOUT_MS ms" }
+        delay(ROW_POLL_MS)
+    }
 }
 
 private fun timingBody(label: String, stream: Boolean = true): String =
@@ -322,7 +325,7 @@ private fun timingRow(root: Path, session: String = "timed"): JsonObject {
 // why: the row lands within milliseconds of the reply; 10 s only bounds a CI runner under load.
 private const val ROW_WAIT_SECONDS = 10L
 
-// why: a short poll keeps the wait close to the row's real arrival without spinning.
+// why: a short poll keeps each wait close to the moment its condition holds without spinning.
 private const val ROW_POLL_MS = 5L
 
 private fun duration(row: JsonObject, key: String): Long {

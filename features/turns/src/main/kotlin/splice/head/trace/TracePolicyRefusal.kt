@@ -6,7 +6,6 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
 import splice.head.transport.WsFailureTerminal
@@ -46,6 +45,6 @@ internal object TracePolicyRefusal {
     }
 
     private fun parse(text: String): JsonObject? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- malformed retained text supplies no provider words; the decoded cause still explains the refusal.
-        Cancellables.runCatchingCancellable { Json.parseToJsonElement(text) as? JsonObject }.getOrNull()
+        // Malformed retained text supplies no provider words; the decoded cause still explains the refusal.
+        JsonScalars.objectOrNull(Json, text)
 }

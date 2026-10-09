@@ -21,7 +21,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.config.Knob
@@ -38,6 +37,7 @@ import splice.core.perf.UpstreamMilestones
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
 import splice.core.util.JsonlSink
 import splice.core.util.LogSink
@@ -315,8 +315,7 @@ public class PerfStats(
         // silently-blank instrument.
         val rows = Cancellables.runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
-                // ast-grep-ignore: kt-no-silent-result-collapse -- null is counted and logged by noteSkippedRow, PerfStats.kt:142 and :167
-                val row = Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
+                val row = JsonScalars.objectOrNull(json, line)
                 if (row == null) noteSkippedRow()
                 row?.takeUnless(LivenessProbe::legacyRow)
             }

@@ -83,10 +83,16 @@ public class CaptureRoutes(
     // write() and everything past it lives here.
     private fun writeWith(writer: TopologyWriter, head: String, body: String): JsonReply {
         val key = resolveKey(head) ?: return unknownHead(head)
-        // ast-grep-ignore: kt-no-silent-result-collapse -- a body that is not JSON and a body of the wrong shape get the same answer, one 400 naming the shape expected, so the failure has nothing more to say
-        val parsed = Cancellables.runCatchingCancellable { json.decodeFromString(CaptureWrite.serializer(), body) }
-            .getOrNull() ?: return refuse(HttpStatusCode.BadRequest, BAD_CAPTURE_BODY)
+        // A body that is not JSON and a body of the wrong shape get the same answer, one 400 naming the shape
+        // expected, so the failure has nothing more to say.
+        val parsed = decoded(body) ?: return refuse(HttpStatusCode.BadRequest, BAD_CAPTURE_BODY)
         return applyWrite(writer, key, parsed)
+    }
+
+    private fun decoded(body: String): CaptureWrite? = try {
+        json.decodeFromString(CaptureWrite.serializer(), body)
+    } catch (_: IllegalArgumentException) {
+        null
     }
 
     private fun applyWrite(writer: TopologyWriter, key: String, parsed: CaptureWrite): JsonReply {

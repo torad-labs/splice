@@ -17,7 +17,6 @@ import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapText
 import splice.core.storage.DayLine
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.head.wire.TraceKinds
 import splice.upstream.memory.JvmHeap
@@ -66,10 +65,12 @@ internal class TraceStamps(private val json: Json, private val heap: HeapReserva
         if (line.byteSize >= Int.MAX_VALUE) throw HeapCapacityException()
         return line.bytes().use { input ->
             HeapText.Reader.read(input, line.byteSize, heap).use { staged ->
-                // ast-grep-ignore: kt-no-silent-result-collapse -- a torn or foreign line is counted as skipped, while capacity propagates before parsing
-                Cancellables.runCatchingCancellable {
+                // A torn or foreign line is counted as skipped, while capacity propagates before parsing.
+                try {
                     json.decodeFromString(TraceStamp.serializer(), staged.text)
-                }.getOrNull()?.also(staged::retain)
+                } catch (_: IllegalArgumentException) {
+                    null
+                }?.also(staged::retain)
             }
         }
     }

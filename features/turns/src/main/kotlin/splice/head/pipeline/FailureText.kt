@@ -28,7 +28,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.ErrorType
-import splice.core.util.Cancellables
 import splice.core.util.ERR_SNIPPET
 
 /** A failure as the client should read it: a stable, greppable [code] and a human [body]. */
@@ -55,8 +54,11 @@ internal class FailureRenderer {
     fun sentence(message: String): String {
         // A body that is not JSON is prose and rides through (V4-235: dashes aside): null IS the complete story
         // here, by design (see the header). Cancellable so a cancelled turn actually stops.
-        // ast-grep-ignore: kt-no-silent-result-collapse -- non-JSON body is prose by contract, see header
-        val element = Cancellables.runCatchingCancellable { Json.parseToJsonElement(message) }.getOrNull()
+        val element = try {
+            Json.parseToJsonElement(message)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
         return when {
             // Not JSON rides through as prose. A rule that ALSO rejected markup was tried here and
             // reverted: zero_event_auth's body is an <html> page whose text reads "401 Unauthorized:

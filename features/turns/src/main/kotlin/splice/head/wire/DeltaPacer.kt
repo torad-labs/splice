@@ -25,10 +25,8 @@ package splice.head.wire
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 
 /** One release step per frame tick, about sixty a second. */
@@ -171,8 +169,6 @@ private object DeltaFields {
         return parsed(data)?.takeIf { JsonScalars.str(it, "type") in VISIBLE_TYPES }
     }
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- a frame whose data is not JSON is not a delta; pacing never fails a turn over what it cannot read
-    private fun parsed(data: String): JsonObject? = Cancellables.runCatchingCancellable {
-        Json.parseToJsonElement(data).jsonObject["delta"] as? JsonObject
-    }.getOrNull()
+    // A frame whose data is not JSON is not a delta; pacing never fails a turn over what it cannot read.
+    private fun parsed(data: String): JsonObject? = JsonScalars.objectOrNull(Json, data)?.get("delta") as? JsonObject
 }

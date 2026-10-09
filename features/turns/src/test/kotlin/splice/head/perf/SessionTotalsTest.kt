@@ -224,7 +224,7 @@ class SessionTotalsTest {
      *  write lays "clean":false over the stop's mark, and the next start throws the totals away. The
      *  pending write runs here by its own method, not by waiting out its second. */
     @Test
-    fun `the coalesced write after the stop's flush leaves the file and its clean mark alone - V4-330`(
+    fun `the coalesced write after the stop's flush leaves the file and its clean mark alone`(
         @TempDir tmp: Path,
     ) {
         val file = tmp.resolve("t.json")
@@ -246,7 +246,7 @@ class SessionTotalsTest {
 
     // V4-293: a failed write dropped the totals with no line, and the flush retried it in silence.
     @Test
-    fun `a write that fails is logged once per streak, with its cause - V4-293`(@TempDir tmp: Path) {
+    fun `a write that fails is logged once per streak, with its cause`(@TempDir tmp: Path) {
         val dir = tmp.resolve("state")
         val file = Files.createDirectory(dir).resolve("t.json")
         val totals = store(file)

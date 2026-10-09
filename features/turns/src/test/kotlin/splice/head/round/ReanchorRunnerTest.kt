@@ -255,7 +255,7 @@ class ReanchorRunnerTest {
     // result the model has not seen), so the ending has to be ours: the tool block COMPLETED, the
     // client can simply run it, and the model continues next turn from the tool result.
     @Test
-    fun `a cut after a COMPLETED tool call ends clean at tool_use - V4-76`() = runTest {
+    fun `a cut after a COMPLETED tool call ends clean at tool_use`() = runTest {
         val h = Harness()
         val rounds = ArrayDeque<suspend () -> TurnOutcome>()
         rounds.add {
@@ -286,7 +286,7 @@ class ReanchorRunnerTest {
     }
 
     @Test
-    fun `an OPEN tool tear keeps today's honest error - V4-76 control`() = runTest {
+    fun `an OPEN tool tear keeps today's honest error`() = runTest {
         val h = Harness()
         val rounds = ArrayDeque<suspend () -> TurnOutcome>()
         rounds.add {
@@ -441,7 +441,7 @@ class FoldRunnerReanchorTest {
     // nothing for ClientAbandoned, so this cannot double-count (a Failure final stays
     // finishTurn's, exactly once — HeadServerIntegrationTest).
     @Test
-    fun `absorbed failures reach health when the client abandons - DR-125`() = runTest {
+    fun `absorbed failures reach health when the client abandons`() = runTest {
         val h = Harness()
         val rounds = ArrayDeque<suspend () -> TurnOutcome>()
         rounds.add { retryableFailure(outputTokens = 8) }
@@ -486,7 +486,7 @@ class FoldRunnerReanchorTest {
     // must not buy more upstream fold rounds: quota burn plus a pinned InflightGate slot for a
     // reader that already left.
     @Test
-    fun `a gone client buys no fold continuation - DR-89`() = runTest {
+    fun `a gone client buys no fold continuation`() = runTest {
         val h = Harness()
         var asked = 0
         val fold = FoldPolicy { round ->
@@ -719,7 +719,7 @@ class FoldRunnerAbandonTest {
     // DR-125: same wall for the fold loop — trigger-B absorbs the failure; the next round's
     // client hang-up must not erase it from head health.
     @Test
-    fun `fold-absorbed failures reach health when the client abandons - DR-125`() = runTest {
+    fun `fold-absorbed failures reach health when the client abandons`() = runTest {
         val h = Harness()
         val rounds = ArrayDeque<suspend () -> TurnOutcome>()
         rounds.add { retryableFailure(outputTokens = 8, bodyText = "") }
@@ -837,7 +837,7 @@ class FoldRunnerSearchTest {
 class RoundStrategySingleRoundTest {
 
     @Test
-    fun `the single-round path carries the failed round's own burn - DR-130`() = runTest {
+    fun `the single-round path carries the failed round's own burn`() = runTest {
         val h = Harness()
         RoundStrategy(
             emitter = h.emitter,

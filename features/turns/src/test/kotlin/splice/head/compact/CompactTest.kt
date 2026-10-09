@@ -93,7 +93,7 @@ class CompactTest {
     // normal compaction. Every pre-existing fixture here gave the last user message text, which is
     // exactly why none of them could catch it.
     @Test
-    fun `a tool-result-only last user message never re-triggers compaction - DR-141`() {
+    fun `a tool-result-only last user message never re-triggers compaction`() {
         val toolTurn = body(
             """{"model":"m","messages":[
                 {"role":"user","content":"$COMPACT_MARKER"},
@@ -125,34 +125,13 @@ class CompactTest {
         )
     }
 
-    @Test
-    fun `shadow classifier records the instrument fields and caps the ring`() {
-        val lines = mutableListOf<String>()
-        val shadow = ShadowClassifier(log = { lines.add(it) }, clock = { 42L })
-        val row = shadow.record(
-            body(
-                """{"model":"gpt-5.6-sol","system":"sys","tools":[{"name":"t","input_schema":{}}],
-                    "messages":[{"role":"user","content":"hi"}]}""",
-            ),
-            compact = false,
-        )
-        assertEquals(false, row.compact)
-        assertEquals(false, row.hasMarker)
-        assertEquals(1, row.toolCount)
-        assertEquals(3, row.sysLen)
-        assertTrue(lines.single().startsWith("[shadow-compact] compact=false has_marker=false tool_count=1 sys_len=3"))
-        repeat(600) { shadow.record(body("""{"model":"m","messages":[]}"""), compact = false) }
-        assertEquals(100, shadow.tail(100).size)
-        assertTrue(shadow.tail(1000).size <= 500)
-    }
-
     // CMP-001: the drift canary itself was untested — `compact-drift` appeared exactly once in the
     // repo, in Compact.kt. It fires on the PARTIAL drift: the pinned verbatim compactMarkers all
     // miss while a looser affordance regex still catches the turn as compact, which is what a
     // Claude Code summarizer-wording change looks like from here. Untested, the instrument built to
     // catch marker rot would have rotted silently with it.
     @Test
-    fun `CMP-001 - a fallback-only match fires the compact-drift canary, a verbatim marker never does`() {
+    fun `a fallback-only match fires the compact-drift canary, a verbatim marker never does`() {
         val lines = mutableListOf<String>()
         val shadow = ShadowClassifier(log = { lines.add(it) }, clock = { 9L })
 

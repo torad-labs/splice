@@ -1,9 +1,9 @@
-// NEW: V4-345 — a perf row names the trace turn that recorded its request, so the console opens the
+// NEW: a perf row names the trace turn that recorded its request, so the console opens the
 // request a person clicked (GET /api/heads/{head}/trace?turn=ID) rather than guessing it by time: five
 // turns run at once and subagents share a session. Proven through the REAL HeadServer, on both paths
 // that write a perf row: a turn that was served, and a turn refused before it was served (a blocking
 // budget, one of the local refusals). A head that keeps no trace writes a row with no turn in it.
-package splice.head.perf.v4345
+package splice.head.perf
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer

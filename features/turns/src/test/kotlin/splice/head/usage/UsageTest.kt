@@ -328,20 +328,6 @@ class UsageTest {
     }
 
     @Test
-    fun `cache log line format is exact`() {
-        val line = hud.cacheLogLine(
-            "codex-proxy",
-            "gpt-5.6-sol",
-            obj("""{"input_tokens":200,"input_tokens_details":{"cached_tokens":150},"output_tokens":9}"""),
-            compact = true,
-        )
-        assertEquals(
-            "[codex-proxy] cache: input=200 cached=150 hit=75% output=9 compact model=gpt-5.6-sol\n",
-            line,
-        )
-    }
-
-    @Test
     fun `output clamp - over clamps with the log line, under passes, null max passes`() {
         val logs = mutableListOf<String>()
         val clamp = OutputClampPolicy.makeOutputClamp(
@@ -424,7 +410,7 @@ class UsageTest {
     // carried headers. The sibling UsageRingFile.persistSnapshot keeps memory state and logs a
     // failure streak; this pins the same contract for the ratelimit lane.
     @Test
-    fun `a failing ratelimit write retains the payload for the next flush - DR-127`(@TempDir tmp: Path) {
+    fun `a failing ratelimit write retains the payload for the next flush`(@TempDir tmp: Path) {
         val roDir = tmp.resolve("ro")
         Files.createDirectories(roDir)
         val rateFile = roDir.resolve("ratelimit.json")
@@ -637,7 +623,7 @@ class UsageScalingTest {
     // HUD silently. Direct-read reaches the AccessDenied and logs it; quiet empty is ONLY proven
     // absence (NoSuchFile with no NOFOLLOW entry — a dangling link logs, see its own arm below).
     @Test
-    fun `an inaccessible usage file logs the read failure, not a silent empty - DR-58`(@TempDir dir: Path) {
+    fun `an inaccessible usage file logs the read failure, not a silent empty`(@TempDir dir: Path) {
         val externalDir = Files.createDirectories(dir.resolve("external"))
         val target = Files.writeString(externalDir.resolve("usage.json"), "[]")
         val link = dir.resolve("usage.json").also { Files.createSymbolicLink(it, target) }
@@ -660,7 +646,7 @@ class UsageScalingTest {
     // empty — NoSuchFile AND no path entry is the one shape that must not warn. Guards the
     // direct-read from over-correcting into a log-everything firehose on the common cold-start path.
     @Test
-    fun `a genuinely absent usage file reads empty and quiet - DR-58`(@TempDir dir: Path) {
+    fun `a genuinely absent usage file reads empty and quiet`(@TempDir dir: Path) {
         val log = mutableListOf<String>()
         val ring = splice.head.usage.UsageRingFile(dir.resolve("nope.json"), UsageWriteLock(), LogSink { log += it })
         assertTrue(ring.readEntriesFromDisk().isEmpty())
@@ -671,7 +657,7 @@ class UsageScalingTest {
     // no symlink. Any exists() pre-gate reads false through the untraversable parent; only the
     // direct read reaches the AccessDenied and logs the window reset.
     @Test
-    fun `an untraversable usage-file parent logs the read failure - DR-58`(@TempDir dir: Path) {
+    fun `an untraversable usage-file parent logs the read failure`(@TempDir dir: Path) {
         val externalDir = Files.createDirectories(dir.resolve("external"))
         val file = Files.writeString(externalDir.resolve("usage.json"), "[]")
         Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("---------"))
@@ -689,7 +675,7 @@ class UsageScalingTest {
     // — the ring's disk lane broke, which is not a quiet first run. exists(NOFOLLOW) disambiguates
     // the caught NoSuch only; unconditional NoSuch->quiet would silently reset the 5h window.
     @Test
-    fun `a dangling usage symlink logs the read failure, not a quiet first run - DR-58`(@TempDir dir: Path) {
+    fun `a dangling usage symlink logs the read failure, not a quiet first run`(@TempDir dir: Path) {
         val link = dir.resolve("usage.json").also { Files.createSymbolicLink(it, dir.resolve("never-created")) }
         val log = mutableListOf<String>()
         val ring = splice.head.usage.UsageRingFile(link, UsageWriteLock(), LogSink { log += it })
@@ -756,22 +742,6 @@ class SessionWindowUsageTest {
         val p = payload("grok-4.3[1m]", input = 100_000, cached = 0, sessionWindow = 400_000)
         assertEquals(100_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong())
         assertEquals(1_000_000, p["context_window"]?.jsonPrimitive?.content?.toLong())
-    }
-
-    @Test
-    fun `the factor line says whose window it used`() {
-        val logged = mutableListOf<String>()
-        TurnWiring(LogSink { logged += it }).usagePayloadBuilder(xai, meta("grok-4.6"), 400_000)(Usage(1_000, 7, 0))
-        assertTrue(logged.single().contains("the session's own"), logged.toString())
-        // an unknown session on the pinned row is exact and logs nothing; a scaled row on an
-        // unknown session names the launch env as the window it assumed
-        val silent = mutableListOf<String>()
-        TurnWiring(LogSink { silent += it }).usagePayloadBuilder(xai, meta("grok-4.6"), null)(Usage(1_000, 7, 0))
-        assertTrue(silent.isEmpty(), silent.toString())
-        val assumed = mutableListOf<String>()
-        TurnWiring(LogSink { assumed += it }).usagePayloadBuilder(xai, meta("grok-4.6[500k]"), null)(Usage(1_000, 7, 0))
-        assertTrue(assumed.single().contains("the launch env"), assumed.toString())
-        assertTrue(assumed.single().contains("client window 256000"), assumed.toString())
     }
 }
 

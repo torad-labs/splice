@@ -483,7 +483,7 @@ class TurnPipelineTest {
     // tools to call; a model calling one anyway is the drift worth a row). The turn itself must
     // flow on unchanged: recorded, not rewritten.
     @Test
-    fun `a tooled no-text compact turn records a row naming the shape - DR-126`() = runTest {
+    fun `a tooled no-text compact turn records a row naming the shape`() = runTest {
         val rec = RecTerminal()
         val tooled = TurnOutcome.Success(
             hasToolUse = true,
@@ -555,7 +555,7 @@ class TurnPipelineTest {
     // emitError call in TurnPipeline.finishStream and the permanent cell below goes red BY NAME.
 
     @Test
-    fun `the pipeline hands the emitter the failure's own type and permanence - V4-81`() = runTest {
+    fun `the pipeline hands the emitter the failure's own type and permanence`() = runTest {
         // V4-117: the pair is (cause, expected wire type). The expectation is written out rather
         // than computed from the cause, so a cause that started deriving a DIFFERENT type would
         // redden here instead of silently redefining what the test asserts.
@@ -588,7 +588,7 @@ class TurnPipelineTest {
     }
 
     @Test
-    fun `a permanent failure reaches the emitter marked as such - V4-81`() = runTest {
+    fun `a permanent failure reaches the emitter marked as such`() = runTest {
         // See PreContentWireType: a failure the client would reproduce exactly by re-sending must
         // not be advertised as transient, and this is the flag that tells the emitter so.
         val rec = RecTerminal()

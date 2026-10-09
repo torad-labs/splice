@@ -14,7 +14,7 @@ import java.nio.file.Path
 class UsageFileDiagnosticsTest {
 
     @Test
-    fun `ratelimit diagnostics never quote state bytes - DR-73`(@TempDir tmp: Path) {
+    fun `ratelimit diagnostics never quote state bytes`(@TempDir tmp: Path) {
         val sentinel = "SENTINEL-RL-BYTES"
         val file = tmp.resolve("ratelimit.json")
         Files.writeString(file, """{"limit":"$sentinel""")
@@ -26,7 +26,7 @@ class UsageFileDiagnosticsTest {
     }
 
     @Test
-    fun `usage-ring diagnostics never quote state bytes - DR-73`(@TempDir tmp: Path) {
+    fun `usage-ring diagnostics never quote state bytes`(@TempDir tmp: Path) {
         val sentinel = "SENTINEL-RING-BYTES"
         val file = tmp.resolve("usage.json")
         Files.writeString(file, """[{"t":"$sentinel""")
@@ -46,7 +46,7 @@ class UsageFileDiagnosticsTest {
     // silently. The assertion keys on the class-qualified text render() emits via toString(), which
     // raw `.message` never produces.
     @Test
-    fun `usage-ring persist failures render through the sanitizer - DR-139`(@TempDir tmp: Path) {
+    fun `usage-ring persist failures render through the sanitizer`(@TempDir tmp: Path) {
         // A non-empty DIRECTORY at the usage path: the atomic move onto it fails with
         // DirectoryNotEmptyException — the only persist failure reachable without inventing a seam.
         val usageFile = Files.createDirectories(tmp.resolve("usage.json"))

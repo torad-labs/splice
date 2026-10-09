@@ -500,7 +500,7 @@ class EconomicsStoreTest {
      *  lands after the stop, and at a teardown it re-created the deleted @TempDir (V4-329). The
      *  pending write runs here by its own method, not by waiting out its second. */
     @Test
-    fun `the coalesced write after flushNow writes nothing - V4-330`(@TempDir tmp: Path) {
+    fun `the coalesced write after flushNow writes nothing`(@TempDir tmp: Path) {
         val file = tmp.resolve("e.json")
         val store = EconomicsStore(file, UNPRICED, WallClock { 10 * HOUR })
         store.record(turn(inTokens = 7))

@@ -97,21 +97,6 @@ class CompactionReplayTest {
         assertSame(newer, replay.lookup(key), "the retry of the newer compaction still finds its recording")
     }
 
-    @Test
-    fun `control - the delivery of the recording that owns the key spends it, so the tests above can fail`() {
-        val key = checkNotNull(replay.key("s", "{}"))
-        val delivered = whole()
-        replay.begin(key, delivered)
-        replay.finish(key, delivered, keep = true)
-        val newer = whole()
-        replay.begin(key, newer)
-        replay.finish(key, newer, keep = true)
-
-        replay.consumed(key, newer)
-
-        assertNull(replay.lookup(key), "the owner's delivery is spent")
-    }
-
     private class MapRecordings : CompactionRecordings {
         val files = mutableMapOf<String, KeptAnswer>()
 

@@ -146,7 +146,7 @@ internal class ClientChannel(
         recording?.append(frame)
         trace?.clientFrame(frame)
         if (detached.get()) return
-        if (modelOutput && pacer.isVisibleDelta(frame)) bursts.arrived(perf, clock())
+        if (modelOutput && pacer.isArrivingDelta(frame)) bursts.arrived(perf, clock())
         if (pacer.hold(frame, perf, modelOutput, clock())) {
             if (modelOutput) ModelAccounting.count(frame, perf)
             return

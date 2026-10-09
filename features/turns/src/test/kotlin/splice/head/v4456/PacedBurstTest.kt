@@ -143,6 +143,24 @@ class PacedBurstTest {
             assertEquals(7_000L, counters[PerfKeys.ARRIVAL_SILENCE_MAX_MS])
         }
 
+    @Test
+    fun `an empty delta is not an arrival, and a native key order is both counted and paced`() = runBlocking {
+        val native = "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0," +
+            "\"delta\":{\"thinking\":\"hello\",\"type\":\"thinking_delta\"}}\n\n"
+        val empty = "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0," +
+            "\"delta\":{\"type\":\"text_delta\",\"text\":\"\"}}\n\n"
+        time.nowMs = 0
+        write(delta(0, "text_delta", "text"))
+        time.nowMs = 1_000
+        write(empty)
+        time.nowMs = 2_000
+        write(native)
+        val counters = perf.snapshot().counters
+        assertEquals(2L, counters[PerfKeys.ARRIVAL_BURSTS])
+        assertEquals(2_000L, counters[PerfKeys.ARRIVAL_SILENCE_MAX_MS])
+        assertTrue(DeltaPacer().isVisibleDelta(native), "a native-ordered delta is a visible delta for the pacer")
+    }
+
     private fun freshChannel(sink: MutableList<String>) = ClientChannel(
         ImmediateSseWriter(writeRaw = { sink += it }, flushRaw = {}),
         Mutex(),

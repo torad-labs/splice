@@ -37,8 +37,13 @@ private const val PACE_WINDOW_MS = 1_000L
 private const val PACE_FLOOR_PER_TICK = 4
 
 private const val DELTA_EVENT = "event: content_block_delta\n"
-private const val TEXT_DELTA_MARK = "\"delta\":{\"type\":\"text_delta\""
-private const val THINKING_DELTA_MARK = "\"delta\":{\"type\":\"thinking_delta\""
+
+// why: a native source keeps its own key order, so the delta's type can sit after its payload. A quote inside a JSON
+// string value is always escaped, so these marks can only be the delta's own fields.
+private const val TEXT_DELTA_MARK = "\"type\":\"text_delta\""
+private const val THINKING_DELTA_MARK = "\"type\":\"thinking_delta\""
+private const val EMPTY_TEXT_MARK = "\"text\":\"\""
+private const val EMPTY_THINKING_MARK = "\"thinking\":\"\""
 
 /** Holds the frames a burst queues and decides which leave each tick. Every member except
  *  [awaitSignal] and [finish] runs under the channel's writeMutex, which is what makes the queue safe. */
@@ -145,4 +150,8 @@ internal class DeltaPacer(
 
     fun isVisibleDelta(frame: String): Boolean =
         frame.startsWith(DELTA_EVENT) && (frame.contains(TEXT_DELTA_MARK) || frame.contains(THINKING_DELTA_MARK))
+
+    /** A visible delta that carries characters: the client has nothing new to read from an empty one. */
+    fun isArrivingDelta(frame: String): Boolean =
+        isVisibleDelta(frame) && !frame.contains(EMPTY_TEXT_MARK) && !frame.contains(EMPTY_THINKING_MARK)
 }

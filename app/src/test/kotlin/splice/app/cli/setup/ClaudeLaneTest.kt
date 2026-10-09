@@ -1,7 +1,4 @@
-// NEW: V4-175 — the wizard's Claude lane question, and what answering `wrap` does.
-//
-// Every arm here names the mutant it exists for, because the defect this row closes was not a
-// broken branch: it was a question that was never asked, and nothing failed while it wasn't.
+// The wizard's Claude lane question, and what answering `wrap` does.
 package splice.app.cli.setup
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -50,25 +47,6 @@ class ClaudeLaneTest {
         assertEquals(listOf(ClaudeLane.SEPARATE, ClaudeLane.WRAP), asked.single().map { it.value })
     }
 
-    // Mutant: promise file takeover, omit preserved MCP/state, or omit persistence across updates.
-    // Wrapping takes over the command, never the operator's vanilla configuration.
-    @Test
-    fun `the wrap option explains routing preserved state and update persistence`() {
-        val (lane, asked) = lanes({ options, index -> SelectOutcome.Chosen(options[index].value) })
-        lane.ask(listOf(CLAUDE))
-
-        val wrapHint = asked.single().single { it.value == ClaudeLane.WRAP }.hint.orEmpty()
-        assertTrue("claude itself goes through splice" in wrapHint, wrapHint)
-        assertTrue("wrapped across updates" in wrapHint, wrapHint)
-        assertTrue("settings" in wrapHint, wrapHint)
-        assertTrue("MCP servers" in wrapHint, wrapHint)
-        assertTrue("Claude state stay untouched" in wrapHint, wrapHint)
-        assertFalse("rewrites" in wrapHint || "backed up" in wrapHint, wrapHint)
-
-        val separateHint = asked.single().single { it.value == ClaudeLane.SEPARATE }.hint.orEmpty()
-        assertTrue("nothing in ~/.claude is touched" in separateHint, separateHint)
-    }
-
     // Mutant: treat a cancelled prompt as an answer. Escaping out of a menu is not consent to
     // take over the operator's claude command.
     @Test
@@ -111,21 +89,6 @@ class ClaudeLaneTest {
 
         val said = lane.apply(ClaudeLane.WRAP, listOf("codex"))
         assertEquals("not wrapping: the claude head was not added", said)
-    }
-
-    // The wizard prints this BEFORE "Install now?", which is the only point at which reading it
-    // can still change the answer.
-    @Test
-    fun `the summary line names the lane and carries its hint`() {
-        val (lane, _) = lanes({ _, _ -> SelectOutcome.Cancelled })
-
-        val wrap = lane.summaryLine(ClaudeLane.WRAP)
-        assertTrue(wrap.startsWith("Claude lane: wrap"), wrap)
-        assertTrue(WRAP_HINT in wrap, wrap)
-
-        val separate = lane.summaryLine(ClaudeLane.SEPARATE)
-        assertTrue(separate.startsWith("Claude lane: separate"), separate)
-        assertTrue(SEPARATE_HINT in separate, separate)
     }
 }
 

@@ -26,7 +26,7 @@ class KeyCommandTest {
     // cliStoreSink from the in-body default dies here (the first version injected an already-wired
     // store and the default-arg mutant survived, codex's replay catch).
     @Test
-    fun `key list surfaces an unreadable store on stderr, not a silent empty - DR-40`(@TempDir tmp: Path) {
+    fun `key list surfaces an unreadable store on stderr, not a silent empty`(@TempDir tmp: Path) {
         val externalDir = Files.createDirectories(tmp.resolve("external"))
         val path = externalDir.resolve("keys.toml")
         KeyStore(path).write("OPENROUTER_API_KEY", "sk-a")
@@ -85,7 +85,7 @@ class KeyCommandTest {
     // V4-309: each sub-verb takes only the words it names. `unset FOO --help` removed FOO and
     // `set FOO --value V --help` stored V, because only the first word was ever checked.
     @Test
-    fun `a word key does not name prints usage and leaves the store as it was - V4-309`(@TempDir tmp: Path) {
+    fun `a word key does not name prints usage and leaves the store as it was`(@TempDir tmp: Path) {
         val s = store(tmp)
         s.write("OPENROUTER_API_KEY", "sk-kept")
         val ran = listOf(
@@ -103,7 +103,7 @@ class KeyCommandTest {
     // unreadable or a peer holds its lock. runCatchingCancellable does not catch that type, so `set`
     // ended in an uncaught exception and a stack trace, and `unset` had no catch at all.
     @Test
-    fun `set and unset on an unreadable store end in the CLI's own message - V4-222`(@TempDir tmp: Path) {
+    fun `set and unset on an unreadable store end in the CLI's own message`(@TempDir tmp: Path) {
         val s = store(tmp)
         s.write("OPENROUTER_API_KEY", "sk-kept")
         Files.setPosixFilePermissions(s.path, PosixFilePermissions.fromString("---------"))

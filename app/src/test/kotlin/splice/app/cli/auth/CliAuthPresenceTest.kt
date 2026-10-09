@@ -51,7 +51,7 @@ class CliAuthPresenceTest {
     )
 
     @Test
-    fun `a denied credential file reads present with the remedy said - DR-70`(@TempDir tmp: Path) {
+    fun `a denied credential file reads present with the remedy said`(@TempDir tmp: Path) {
         val dir = Files.createDirectories(tmp.resolve("auth"))
         val credential = dir.resolve("auth.json")
         Files.writeString(credential, """{"access_token":"tok"}""")
@@ -66,7 +66,7 @@ class CliAuthPresenceTest {
     }
 
     @Test
-    fun `a denied credential file counts as configured for sign-in planning - DR-70`(@TempDir tmp: Path) {
+    fun `a denied credential file counts as configured for sign-in planning`(@TempDir tmp: Path) {
         val dir = Files.createDirectories(tmp.resolve("auth"))
         val credential = dir.resolve("auth.json")
         Files.writeString(credential, """{"access_token":"tok"}""")
@@ -86,7 +86,7 @@ class CliAuthPresenceTest {
     }
 
     @Test
-    fun `the three-way mgmt key read keeps absence and denial apart - DR-174`(@TempDir tmp: Path) {
+    fun `the three-way mgmt key read keeps absence and denial apart`(@TempDir tmp: Path) {
         val stateDir = Files.createDirectories(tmp.resolve("state"))
         val env = stateEnv(stateDir)
         assertTrue(AdminSupport.readMgmtKey(env) is MgmtKeyRead.Absent, "an unminted key is Absent")
@@ -119,7 +119,7 @@ class CliAuthPresenceTest {
     // The home through UserHome.within (V4-218); under a test JVM the
     // class resource is a file: URL, so selfJar() always reaches the installed-copy branch.
     @Test
-    fun `an unreadable installed jar is still the installed jar - DR-70`(@TempDir tmp: Path) {
+    fun `an unreadable installed jar is still the installed jar`(@TempDir tmp: Path) {
         UserHome.within(tmp) {
             val spliceDir = Files.createDirectories(tmp.resolve(".local/share/splice"))
             val jar = spliceDir.resolve("splice.jar")

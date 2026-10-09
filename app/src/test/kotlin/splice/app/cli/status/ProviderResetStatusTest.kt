@@ -1,4 +1,4 @@
-package splice.app.cli.status.v4398
+package splice.app.cli.status
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -9,8 +9,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.status.StatusReadings
-import splice.app.cli.status.StatusTable
 import splice.app.control.ManagedHead
 import splice.app.control.healthFor
 import splice.app.control.readinessFor
@@ -76,7 +74,7 @@ class ProviderResetStatusTest {
         Files.createSymbolicLink(bin.resolve("claude-muse"), bin.resolve("target"))
         val vars = mapOf("SPLICE_BIN_DIR" to bin.toString(), "TEST_MUSE_KEY" to "synthetic-key")
         val env = EnvReader(vars::get)
-        // V4-419: the zone is the machine's, so this pins Chicago explicitly instead of hoping the runner is there.
+        // The zone is the machine's, so this pins Chicago explicitly instead of hoping the runner is there.
         val chicago = LocalTimeText(ZoneId.of("America/Chicago"))
         val table = StatusTable(CliPalette(ColorDepth.NONE), WallClock { NOW_MS }, chicago)
         val limited = table.lines(

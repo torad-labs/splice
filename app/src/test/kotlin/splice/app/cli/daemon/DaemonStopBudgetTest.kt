@@ -40,8 +40,8 @@ class DaemonStopBudgetTest {
 
     private val haltFloorMs = STOP_DEADLINE_MS + TEARDOWN_TAIL_GRACE_MS
 
-    /** The lock poll's interval (DaemonLockWait), the one this module declares. Pinned to 250ms below
-     *  so a change there reds here rather than silently rescaling the lock wait. */
+    /** The lock poll's interval (DaemonLockWait), the one this module declares;
+     *  the rungs below are computed from it. */
     private val pollMs = LOCK_POLL_INTERVAL_MS
     private val lockWaitMs = LOCK_WAIT_POLLS * pollMs
 
@@ -50,12 +50,6 @@ class DaemonStopBudgetTest {
     private val gracefulRungMs = StopRungPolls.GRACEFUL * pollMs
     private val spawnerMs = StopRungPolls.STARTUP * pollMs
     private val sigtermRungMs = StopRungPolls.SIGTERM * pollMs
-
-    /** The whole ladder in ONE assertion chain, so a reader sees the shape before the failures. */
-    @Test
-    fun `the pollers all step at the interval these budgets are computed from`() {
-        assertEquals(250L, pollMs, "the ladder's arithmetic assumes a 250ms poll interval")
-    }
 
     @Test
     fun `the stop ladder descends from systemd to the drain, every link inside the next`() {

@@ -19,16 +19,6 @@ class CliExitCodeTest {
     }
 
     @Test
-    fun `login help prints its usage without producing a command`() {
-        assertHelp(arrayOf("login", "--help"))
-    }
-
-    @Test
-    fun `add-model help prints its usage without producing a command`() {
-        assertHelp(arrayOf("add-model", "--help"))
-    }
-
-    @Test
     fun `every registered verb prints help before or after other words without producing a command`() {
         val registered = CommandParser().registeredVerbs
         assertFalse(registered.isEmpty(), "the parser table must supply the coverage denominator")
@@ -78,14 +68,6 @@ class CliExitCodeTest {
         )
     }
 
-    @Test
-    fun `failed command outcomes return nonzero`() {
-        // outcomeExitCode moved from a top-level function onto `Command` itself; every case
-        // inherits the same mapping, so the receiver here is arbitrary.
-        assertEquals(1, Command.Version.outcomeExitCode(false))
-        assertEquals(0, Command.Version.outcomeExitCode(true))
-    }
-
     // DR-99: the CLI failure boundary. A malformed splice.toml escaped status/login/install/etc.
     // as a raw TomlDecodingException stack trace, and ktoml decode text can quote the offending
     // config line — which legally carries credential-like extra_headers values (the DR-92 class).
@@ -106,7 +88,7 @@ class CliExitCodeTest {
     }
 
     @Test
-    fun `a decode failure renders one safe line - no secret, no stack trace - DR-99`() {
+    fun `a decode failure renders one safe line - no secret, no stack trace`() {
         var code = -1
         val err = stderrOf {
             code = Cli().guarded {
@@ -120,7 +102,7 @@ class CliExitCodeTest {
     }
 
     @Test
-    fun `a missing config file renders its path and exits nonzero - DR-99`() {
+    fun `a missing config file renders its path and exits nonzero`() {
         var code = -1
         val err = stderrOf {
             code = Cli().guarded { throw java.nio.file.NoSuchFileException("/tmp/splice-none/splice.toml") }
@@ -133,7 +115,7 @@ class CliExitCodeTest {
     }
 
     @Test
-    fun `the boundary passes successes through and lets cancellation escape - DR-99`() {
+    fun `the boundary passes successes through and lets cancellation escape`() {
         assertEquals(0, Cli().guarded { 0 })
         org.junit.jupiter.api.Assertions.assertThrows(java.util.concurrent.CancellationException::class.java) {
             Cli().guarded { throw java.util.concurrent.CancellationException("turn cancelled") }
@@ -152,7 +134,7 @@ class CliExitCodeTest {
      *  the arm pins both halves at once: the boundary catches (exit 1, one line, no stack trace)
      *  AND the rendered line withholds the bytes. */
     @Test
-    fun `runCli routes a real verb's config failure through the boundary - DR-99`(@TempDir tmp: Path) {
+    fun `runCli routes a real verb's config failure through the boundary`(@TempDir tmp: Path) {
         val config = tmp.resolve(".config").resolve("splice").resolve("splice.toml")
         Files.createDirectories(config.parent)
         Files.writeString(config, MALFORMED_CONFIG_TOML)

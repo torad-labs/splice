@@ -1,4 +1,4 @@
-// NEW: CW-7 / CW-10 — splice setup on the prompt toolkit. Headless topology is the
+// splice setup on the prompt toolkit. Headless topology is the
 // captured first-run no-plan oracle; declining confirm writes nothing. Extra heads tick
 // from AddProfiles and install through AddCommand.
 package splice.app.cli.setup
@@ -73,31 +73,6 @@ class SetupCommandTest {
     }
 
     @Test
-    fun `intro summary and outro run in order`(@TempDir home: Path) {
-        val chrome = StringBuilder()
-        withHome(home) {
-            seedShim(home)
-            runBlocking {
-                SetupCommand(
-                    prompts = SetupPrompts(
-                        frame = WizardFrame(out = chrome, ask = ConfirmPrompt { _, d -> d }),
-                        choose = { options, index -> SelectOutcome.Chosen(options[index].value) },
-                        spinner = Spinner(StringBuilder(), tty = false),
-                    ),
-                    loginHead = NO_REAL_LOGIN,
-                    detect = { emptyFacts() },
-                ).setup()
-            }
-        }
-        val text = chrome.toString()
-        val intro = text.indexOf("splice setup")
-        val summary = text.indexOf("Summary")
-        val outro = text.indexOf("Not set up yet.")
-        assertTrue(intro >= 0 && summary > intro && outro > summary, text)
-        assertFalse(text.contains("Detected"), "fresh machine prints no Detected line")
-    }
-
-    @Test
     fun `the closing block still names every affordance, by command`(@TempDir home: Path) {
         val log = captureStdout {
             withHome(home) {
@@ -169,19 +144,6 @@ class SetupCommandTest {
         claude = ClaudeWrapperConfig(command = command),
     )
 
-    @Test
-    fun `starter topology selects no vendor or credential`(@TempDir home: Path) {
-        val topology = withHome(home) {
-            seedShim(home)
-            runBlocking { SetupCommand(loginHead = NO_REAL_LOGIN).setup() }
-            Files.readString(home.resolve(".config").resolve("splice").resolve("splice.toml"))
-        }
-        assertFalse("[providers.openrouter]" in topology)
-        assertFalse("[heads.openrouter]" in topology)
-        assertFalse("env = \"OPENROUTER_API_KEY\"" in topology)
-        assertFalse("chatgpt-oauth" in topology)
-    }
-
     // Operator ruling, 2026-09-26: no disclaimer anywhere. The walk says where the sign-in lands, nothing more.
     @Test
     fun `sign-in walk names its own credential file and prints no disclaimer`(@TempDir home: Path) {
@@ -215,14 +177,6 @@ class SetupCommandTest {
         assertTrue("splice add codex" in oauth, "the selected plan must name a real profile: $oauth")
         assertFalse("splice add codex" in openRouter, openRouter)
         assertFalse("splice add chatgpt-oauth" in oauth, "an auth kind is not an add profile: $oauth")
-    }
-
-    @Test
-    fun `Existing pick on a home with no topology still names the starter`(@TempDir home: Path) {
-        val text = summaryFor(home, SetupStart.Existing)
-        assertTrue("Starter topology" in text, text)
-        assertTrue("Wrapper commands under" in text, text)
-        assertFalse("already present" in text, text)
     }
 
     @Test

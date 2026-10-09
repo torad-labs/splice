@@ -1,13 +1,13 @@
-// NEW: V4-418 — the three surfaces an operator reads (status, /health, usage) say what a head's CURRENT quota
+// the three surfaces an operator reads (status, /health, usage) say what a head's CURRENT quota
 // reading at 100% says, before any turn has been refused. Marlin (f7f1e9308): claudex read ready and Fleet OK while
-// its own poll said the week was spent. V4-452 ruled the words: a full reading is not a refusal (claudex served 1,163
+// its own poll said the week was spent. The ruling: a full reading is not a refusal (claudex served 1,163
 // turns on Oct 1 at a week read 100%), so status stays ready and says "week at 100%, resets <reset>", /health names
 // it quotaFull apart from quotaResetAtEpochSeconds, and usage reports the plan window rather than a provider reset.
 // Only a refusal the head holds reads "out of quota until". Driven through the production wiring: ManagedHeadFactory
 // assembles the real head (its real primary QuotaTracker, its real HeadServer), a reading is recorded on that tracker
-// the way the poller records one, and each surface is read from the head. The reset is rendered by V4-419's one zone
+// the way the poller records one, and each surface is read from the head. The reset is rendered by the one zone
 // rule, so the zone is pinned here instead of hoping the runner is in Chicago.
-package splice.app.cli.status.v4418
+package splice.app.cli.status
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,8 +29,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TokenUrlRefreshCall
 import splice.app.auth.SignInPlanner
-import splice.app.cli.status.StatusReadings
-import splice.app.cli.status.StatusTable
 import splice.app.control.ManagedHead
 import splice.app.control.UsageHeadAdapter
 import splice.app.control.healthFor

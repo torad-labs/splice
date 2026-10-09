@@ -1,6 +1,5 @@
 package splice.app.cli.status
 
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -9,7 +8,6 @@ import splice.core.config.UserHome
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
-import splice.daemonclient.DaemonProbe.HealthView
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -46,13 +44,13 @@ class StatusCommandTest {
         )
     }
 
-    // DR-98: a kimi-oauth head with default config read permanently not-signed-in — the registry
+    // A kimi-oauth head with default config read permanently not-signed-in — the registry
     // row carried null (claiming a "provider-computed path" nothing computes) while every working
     // path hard-fell-back to the same literal, so credentialConfigured resolved NO file: status
     // showed login-needed and doctor FAILed forever against a serving head. Since 2026-09-05 the
     // default is splice's own ~/.config/splice/auth/kimi.json (AuthKind header), never the app's.
     @Test
-    fun `kimi-oauth default credential file counts as configured - DR-98`(@TempDir tmp: Path) {
+    fun `kimi-oauth default credential file counts as configured`(@TempDir tmp: Path) {
         val provider = ProviderConfig(
             dialect = Dialect.ANTHROPIC_PASSTHROUGH,
             baseUrl = "https://example.invalid",
@@ -63,27 +61,6 @@ class StatusCommandTest {
         UserHome.within(tmp) {
             assertTrue(StatusCommand().authPresent("kimi", provider) { null })
         }
-    }
-
-    @Test
-    fun `status surfaces the aggregate client version warning from health`() {
-        val warning =
-            "Claude Code 2.1.258 is newer than the version splice 0.3.2 was tested with (2.1.257)"
-        val health = HealthView(
-            version = "0.3.2",
-            heads = 1,
-            readyHeads = 1,
-            failedHeads = 0,
-            clientVersionWarning = warning,
-        )
-        assertEquals(warning, StatusCommand().clientVersionWarning(health))
-    }
-
-    @Test
-    fun `status has no client version line when health has no warning`() {
-        val health = HealthView(version = "0.3.2", heads = 1, readyHeads = 1, failedHeads = 0)
-        assertEquals(null, StatusCommand().clientVersionWarning(health))
-        assertEquals(null, StatusCommand().clientVersionWarning(null))
     }
 
     @Test

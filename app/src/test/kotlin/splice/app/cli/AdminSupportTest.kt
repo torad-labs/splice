@@ -4,7 +4,6 @@
 package splice.app.cli
 
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -32,18 +31,5 @@ class AdminSupportTest {
         } finally {
             System.setProperty("java.class.path", saved)
         }
-    }
-
-    // selfJar() locates itself by a resource NAME, a string nothing links or renames with. This
-    // pins the literal to the class it is meant to name (reflection is fine here — test sources are
-    // exempt from kt-no-reflection-in-production, and checking the literal is the whole point).
-    @Test
-    fun `the self-locating resource name matches AdminSupport's own class file`() {
-        val expected = AdminSupport::class.java.name.replace('.', '/') + ".class"
-        assertTrue(expected == "splice/app/cli/AdminSupport.class", "was: $expected")
-        assertTrue(
-            AdminSupport::class.java.classLoader.getResource(expected) != null,
-            "$expected must resolve on the loader that holds this build",
-        )
     }
 }

@@ -1,6 +1,4 @@
-// DR-86's status arm, split from DoctorShimAbsenceTest when doctor moved to features/diagnostics
-// (LAYOUT-01): `splice status`'s jar line is the same reporter contract as doctor's jar row, and
-// it stayed in app with the status verb.
+// `splice status` names an unreadable installed jar instead of rendering the healthy path.
 package splice.app.cli.status
 
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -20,12 +18,8 @@ class StatusJarLineTest {
         Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwx------"))
     }
 
-    // DR-86 redo (codex gap): the STATUS twin. jarLine is the same reporter contract, and its
-    // unreadable branch was unpinned — reverting it to the old selfJar()?.toString() left every
-    // permanent suite green. Same fixture as the doctor arm: installed jar under a tmp home,
-    // parent denied, the line must say unreadable rather than render the healthy path.
     @Test
-    fun `status jarLine names an unreadable jar instead of the healthy path - DR-86`(@TempDir tmp: Path) {
+    fun `status jarLine names an unreadable jar instead of the healthy path`(@TempDir tmp: Path) {
         val spliceShare = Files.createDirectories(
             tmp.resolve("home").resolve(".local").resolve("share").resolve("splice"),
         )

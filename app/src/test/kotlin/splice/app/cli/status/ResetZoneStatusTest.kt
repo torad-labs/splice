@@ -1,16 +1,13 @@
-// NEW: V4-419 — `splice status` says a provider's reset in the machine's own zone, with that zone's abbreviation. V4-398
-// wrote "out of quota until <time> CT" from a formatter hard-coded to America/Chicago, so every user outside Chicago read
-// the wrong hour under a label that named a zone they are not in. The rule is core's LocalTimeText, the one every product
+// `splice status` says a provider's reset in the machine's own zone, with that zone's abbreviation, and never names a zone
+// the user is not in (the old text was hard-coded to America/Chicago). The rule is core's LocalTimeText, the one every product
 // sentence that names a time uses; each case here names its zone, so none passes by the accident of the runner's.
-package splice.app.cli.status.v4419
+package splice.app.cli.status
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.status.StatusReadings
-import splice.app.cli.status.StatusTable
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepth
 import splice.core.topology.AuthConfig

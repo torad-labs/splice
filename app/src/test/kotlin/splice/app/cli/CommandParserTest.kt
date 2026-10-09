@@ -41,7 +41,7 @@ class CommandParserTest {
     // V4-276: --discard lets a switch of the Claude head drop a login saved under no label. It is a
     // flag, never the head, and it means nothing without --label.
     @Test
-    fun `login carries --discard beside a label, and refuses it alone or twice - V4-276`() {
+    fun `login carries --discard beside a label, and refuses it alone or twice`() {
         val switch = arrayOf("login", "claude-splice", "--label", "work", "--discard")
         assertEquals(Command.Login("claude-splice", "work", discard = true), parser.parse(switch))
         val first = arrayOf("login", "--discard", "claude-splice", "--label", "work")
@@ -56,7 +56,7 @@ class CommandParserTest {
     // object directly, so it stays green even if the VERB is removed from the parse table and the
     // operator can no longer reach it. This is the seam that makes the verb exist.
     @Test
-    fun `the logs verb reaches the logs command, arguments and all - JW-08`() {
+    fun `the logs verb reaches the logs command, arguments and all`() {
         assertEquals(Command.Logs(emptyList()), parser.parse(arrayOf("logs")))
         assertEquals(Command.Logs(listOf("--tail", "50")), parser.parse(arrayOf("logs", "--tail", "50")))
         assertEquals(
@@ -70,7 +70,7 @@ class CommandParserTest {
     // kept the one word it knew and dropped the rest. A verb takes only the words it names; anything
     // else, a help flag included, parses to null, so usage prints and nothing runs.
     @Test
-    fun `a verb refuses a word it does not name, help flags included - V4-309`() {
+    fun `a verb refuses a word it does not name, help flags included`() {
         val noArg = listOf("version", "shim-version", "init", "setup", "status", "sessions", "restart", "add-model")
         val refused = listOf(
             listOf("restart", "--help"), listOf("restart", "--now", "--help"), listOf("restart", "--now", "--now"),
@@ -92,7 +92,7 @@ class CommandParserTest {
     }
 
     @Test
-    fun `the words a verb names still parse - V4-309`() {
+    fun `the words a verb names still parse`() {
         assertEquals(Command.Restart(now = false), parser.parse(arrayOf("restart")))
         assertEquals(Command.Restart(now = true), parser.parse(arrayOf("restart", "--now")))
         assertEquals(Command.Install(null), parser.parse(arrayOf("install")))

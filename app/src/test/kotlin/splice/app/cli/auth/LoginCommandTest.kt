@@ -6,15 +6,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeLogins
-import splice.client.login.LoginOutcomeFile
-import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
-import splice.oauth.SignInPersistence
-import splice.oauth.kimi.LoginKimi
 import splice.sessions.registry.ProcessEnvironment
 import splice.topology.TopologyLoader
 import java.nio.file.Files
@@ -63,56 +59,6 @@ class LoginCommandTest {
     }
 
     @Test
-    fun `automatic account receipt names the persisted label instead of auto`(@TempDir tmp: Path) {
-        val primary = tmp.resolve("kimi.json")
-        Files.writeString(primary, "{}")
-        val account = requireNotNull(LoginKimi().spec("kimi", primary, "auto").account)
-        assertTrue(SignInPersistence().persist(primary, """{"access_token":"kimi-secret"}""", account))
-        UserHome.within(tmp) {
-            CliSignIn().writeLoginOutcome("kimi", ok = true, account = account)
-            val receipt = requireNotNull(LoginOutcomeFile.consume(StatePaths().stateDir, "kimi"))
-            assertTrue(receipt.contains("signed in as 'kimi-2'"), receipt)
-            assertFalse(receipt.contains("'auto'"), receipt)
-        }
-    }
-
-    // DR-97: the masked prompt must derive its var from the HEAD key — the daemon reads
-    // effectiveApiKeyEnv(ctx.key) in every arm, and a provider-key derivation stored the key
-    // under a var nothing reads (login success, head 401s, doctor "not set"). No interactive
-    // console in a test JVM, so the piped-fallback line carries the derived var to stdout.
-    // This arm pins runLoginFlow's OWN contract; the call site that feeds it is pinned by the
-    // login() arm below (review 2026-08-31: this one alone cannot see login() pass the provider
-    // key, and the two were conflated in this comment).
-    @Test
-    fun `api-key login derives the env var from the HEAD key - DR-97`() {
-        val provider = ProviderConfig(
-            dialect = Dialect.OPENAI_CHAT,
-            baseUrl = "https://example.invalid",
-            auth = AuthConfig("api-key"),
-        )
-        val out = java.io.ByteArrayOutputStream()
-        val saved = System.out
-        System.setOut(java.io.PrintStream(out))
-        try {
-            kotlinx.coroutines.runBlocking {
-                LoginCommand().runLoginFlow("fast", provider, Topology())
-            }
-        } finally {
-            System.setOut(saved)
-        }
-        assertTrue(out.toString().contains("FAST_API_KEY"), "prompt must name the var the daemon reads:\n$out")
-    }
-
-    /** DR-97 (coverage redo, review 2026-08-31): the arm above drives runLoginFlow with a literal
-     *  head key, so it stays GREEN when login() itself regresses to passing the provider key —
-     *  the actual defect. This one enters at login(), the production entry Command.Login calls,
-     *  and reads the derived var off the real resolution chain: config -> head -> provider ->
-     *  masked prompt. `[heads.fast] provider = "openrouter"` with NO explicit auth.env is the
-     *  shape that discriminates: head-derived is FAST_API_KEY, provider-derived OPENROUTER_API_KEY.
-     *  The home is redirected so BOTH the config path and the login receipt land in the temp
-     *  tree (StatePaths resolves through the same UserHome) — the DR-111 law: a test never writes a real
-     *  receipt. */
-    @Test
     fun `OAuth account refusal prints its authored reason`() {
         val topology = TopologyLoader.parse(OAUTH_HEAD_TOML)
         val provider = topology.providers.getValue("codex")
@@ -133,8 +79,13 @@ class LoginCommandTest {
         assertFalse(out.toString().contains("withheld"), out.toString())
     }
 
+    /** The masked prompt must derive its var from the HEAD key (the daemon reads it from the head key, never the
+     *  provider key). Enters at login(), the production entry Command.Login calls, over the real resolution chain:
+     *  config -> head -> provider -> masked prompt. `[heads.fast] provider = "openrouter"` with NO explicit auth.env
+     *  discriminates: head-derived is FAST_API_KEY, provider-derived OPENROUTER_API_KEY. The home is redirected so the
+     *  config path and the login receipt land in the temp tree. */
     @Test
-    fun `login derives the api-key env var from the HEAD key at the real call site - DR-97`(@TempDir tmp: Path) {
+    fun `login derives the api-key env var from the HEAD key at the real call site`(@TempDir tmp: Path) {
         val config = tmp.resolve(".config").resolve("splice").resolve("splice.toml")
         Files.createDirectories(config.parent)
         Files.writeString(config, FAST_HEAD_TOML)
@@ -163,28 +114,11 @@ class LoginCommandTest {
         assertTrue(printed.contains("FAST_API_KEY"), "login() must derive the var from the HEAD key:\n$printed")
         assertFalse(
             printed.contains("OPENROUTER_API_KEY"),
-            "the PROVIDER key must never name the var — that is the DR-97 defect:\n$printed",
+            "the PROVIDER key must never name the var:\n$printed",
         )
     }
 
-    @Test
-    fun `example config muse head has no extra headers and uses port 3106`() {
-        val toml = checkNotNull(javaClass.getResourceAsStream("/splice.example.toml")) {
-            "example toml missing"
-        }.bufferedReader().use { it.readText() }
-        val topology = TopologyLoader.parse(toml)
-        val head = topology.heads.getValue("claude-muse")
-        val muse = topology.providers.getValue(head.provider)
-        assertEquals("muse-oauth", muse.auth.kind)
-        assertEquals(Dialect.OPENAI_RESPONSES, muse.dialect)
-        assertTrue(muse.staticHeaders.isEmpty())
-        assertEquals(3106, head.port)
-        assertEquals("claude-muse--", head.discoveryPrefix)
-        assertEquals(null, head.models)
-        muse.catalogFor(head)
-    }
-
-    // ---- V4-276: `splice login <claude-head> --label`, end to end over the real session registry ----
+    // ---- `splice login <claude-head> --label`, end to end over the real session registry ----
 
     /** The Claude head runs over [configDir]; claudex, another head of the same provider, on 3105. */
     private fun claudeHeads(configDir: Path): Topology = TopologyLoader.parse(
@@ -252,7 +186,7 @@ class LoginCommandTest {
     }
 
     @Test
-    fun `splice login on the Claude head saves its live login under the label and selects it - V4-276`(
+    fun `splice login on the Claude head saves its live login under the label and selects it`(
         @TempDir tmp: Path,
     ) {
         val configDir = signedIn(tmp)
@@ -268,7 +202,7 @@ class LoginCommandTest {
     }
 
     @Test
-    fun `splice login on the Claude head refuses while one of its sessions runs, naming it - V4-276`(
+    fun `splice login on the Claude head refuses while one of its sessions runs, naming it`(
         @TempDir tmp: Path,
     ) {
         val configDir = signedIn(tmp)

@@ -1,4 +1,4 @@
-package splice.app.cli.status.v4415
+package splice.app.cli.status
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -7,9 +7,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.function.ThrowingSupplier
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.status.LocalRuntimeReach
-import splice.app.cli.status.StatusReadings
-import splice.app.cli.status.StatusTable
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepth
 import splice.core.topology.AuthConfig
@@ -27,8 +24,7 @@ import java.time.Duration
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 
-/** V4-415: after the 7:43 PM CT reboot `splice status` read "ready" for four local heads while
- *  nothing answered on :8099-:8102. Status says whether a turn would work, not whether the wrapper
+/** Status says whether a turn would work, not whether the wrapper
  *  is installed: a local head whose runtime does not answer reads so, and the probe is bounded so
  *  status never hangs on a wedged one. */
 class RuntimeNotAnsweringStatusTest {

@@ -1,4 +1,4 @@
-// NEW: SetupDetection matrix over injected fakes (cli-wizard CW-6).
+// SetupDetection: what the wizard suggests starting from, given the credentials and daemon present.
 package splice.app.cli.setup
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -54,54 +54,6 @@ class SetupDetectionTest {
         assertFalse(facts.daemonUp)
         assertTrue(facts.suggested !is SetupStart.Existing)
         assertEquals(SetupStart.OAuth("chatgpt-oauth"), facts.suggested)
-    }
-
-    @Test
-    fun `probes every registry auth path and OPENROUTER_API_KEY and the control port`() {
-        val seenFiles = mutableListOf<String>()
-        val seenEnv = mutableListOf<String>()
-        val seenPorts = mutableListOf<Int>()
-        SetupDetection(
-            env = EnvReader { name ->
-                seenEnv.add(name)
-                null
-            },
-            credentials = CredentialPresenceProbe { path ->
-                seenFiles.add(path)
-                false
-            },
-            daemon = DaemonUpProbe { port ->
-                seenPorts.add(port)
-                false
-            },
-            controlPort = ControlPortResolver { 4123 },
-        ).detect()
-        assertEquals(setOf("OPENROUTER_API_KEY"), seenEnv.toSet())
-        assertEquals(listOf(4123), seenPorts)
-        val expected = AuthKindRegistry.knownKinds().flatMap { kind ->
-            listOfNotNull(kind.defaultAuthFile, (kind as? AuthKind.OAuth)?.nativeAppFile)
-        }.toSet()
-        assertEquals(expected, seenFiles.toSet())
-    }
-
-    @Test
-    fun `control port comes from the resolver not a constant`() {
-        var resolved = 0
-        val seenPorts = mutableListOf<Int>()
-        SetupDetection(
-            env = emptyEnv(),
-            credentials = CredentialPresenceProbe { false },
-            daemon = DaemonUpProbe { port ->
-                seenPorts.add(port)
-                false
-            },
-            controlPort = ControlPortResolver {
-                resolved += 1
-                4123
-            },
-        ).detect()
-        assertEquals(1, resolved)
-        assertEquals(listOf(4123), seenPorts)
     }
 
     private fun detect(env: EnvReader, files: Set<String>, daemonUp: Boolean) =

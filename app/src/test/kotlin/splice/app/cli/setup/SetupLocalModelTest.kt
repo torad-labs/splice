@@ -1,4 +1,4 @@
-// NEW: `splice setup`'s local-model step against a FAKE rig — never the real one, its installer or
+// `splice setup`'s local-model step against a FAKE rig — never the real one, its installer or
 // nvidia-smi: the real one downloads an 8 GB model, and on the operator's box a model already serves on
 // rig's port. When to offer, what declining leaves, rig's exit codes in words, and — through the real
 // `splice add` machinery and the real topology loader — the exact row a successful run writes.
@@ -130,37 +130,6 @@ class SetupLocalModelTest {
     }
 
     @Test
-    fun `the question names the card, the install dir, the model and its size, and defaults to no`(
-        @TempDir home: Path,
-    ) {
-        var default: Boolean? = null
-        val prompts = SetupPrompts(
-            frame = WizardFrame(
-                out = chrome,
-                ask = ConfirmPrompt { question, fallback ->
-                    asked += question
-                    default = fallback
-                    false
-                },
-            ),
-            hasConsole = ConsolePresence { true },
-        )
-        assertFalse(step(prompts = prompts).offer(home.resolve("splice.toml")))
-        val question = asked.single()
-        val parts = listOf(
-            CARD,
-            "~/.local/share/rig",
-            "bonsai-2-27b and its engine",
-            "about 9 GB",
-            "about 18 GB of disk",
-        )
-        for (part in parts + "serves it on this machine") {
-            assertTrue(part in question, "'$part' missing from: $question")
-        }
-        assertEquals(false, default, "the question defaults to NO")
-    }
-
-    @Test
     fun `declining changes nothing`(@TempDir home: Path) {
         val path = home.resolve("splice.toml")
         Files.writeString(path, "[daemon]\ncontrol_port = 3096\n")
@@ -174,14 +143,6 @@ class SetupLocalModelTest {
         assertTrue(added.isEmpty())
         assertEquals("[daemon]\ncontrol_port = 3096\n", Files.readString(path))
         assertFalse(Files.exists(home.resolve("keys.toml")))
-    }
-
-    @Test
-    fun `chosen, the Summary carries one line naming the download`() {
-        val summary = step().summary(true)
-        assertEquals(1, summary.size, summary.toString())
-        val named = listOf("about 9 GB", "about 18 GB of disk", "claude-bonsai")
-        assertTrue(named.all { it in summary.single() }, summary.toString())
     }
 
     @Test

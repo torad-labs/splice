@@ -1,4 +1,4 @@
-package splice.app.cli.status.v4394
+package splice.app.cli.status
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -9,8 +9,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.status.StatusReadings
-import splice.app.cli.status.StatusTable
 import splice.app.control.FailedHeads
 import splice.app.control.healthFor
 import splice.app.control.readinessFor
@@ -27,9 +25,7 @@ import splice.daemonclient.DaemonProbe
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** V4-394: at 12:22:39 PM CT /health said ok:false, failedHeads 1 (claude-muse skipped at boot)
- *  while `splice status` printed claude-muse "ready": status judged the row from the credential
- *  and the wrapper alone. A head the daemon failed to build now reads as not running, with the
+/** `splice status` must not judge a row from the credential and the wrapper alone: a head the daemon failed to build now reads as not running, with the
  *  daemon's own boot reason, and the other heads are unchanged. */
 class FailedHeadStatusTest {
     private val reason = "provider muse (auth muse-oauth) cannot use dialect anthropic-passthrough"

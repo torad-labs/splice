@@ -1,11 +1,9 @@
-package splice.app.cli.status.v4406
+package splice.app.cli.status
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.status.StatusReadings
-import splice.app.cli.status.StatusTable
 import splice.core.terminal.CliPalette
 import splice.core.terminal.ColorDepth
 import splice.core.topology.AuthConfig
@@ -18,9 +16,8 @@ import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** V4-406: with `[heads.grok] provider = "no-such-provider"` /health named grok failed, yet
- *  `splice status` printed no grok row: the table joined heads to providers and silently dropped
- *  every head the join could not resolve. Each configured head now has a row, and so does every
+/** With `[heads.grok] provider = "no-such-provider"` the table must not silently drop the head the
+ *  heads-to-providers join cannot resolve. Each configured head now has a row, and so does every
  *  head /health names failed, even one the local topology does not know. */
 class UnresolvedHeadStatusTest {
     private val reason = "unknown provider 'no-such-provider'"

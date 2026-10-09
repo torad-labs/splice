@@ -1,6 +1,4 @@
-// DR-174 arms for `splice restart`'s stop key, split from app's CliAuthPresenceTest when the restart
-// verb moved to features/lifecycle (LAYOUT-01): a key it cannot READ and a key that is not there are
-// two states with opposite remedies, and the restart path says which one it met.
+// The restart path tells a key it cannot READ from a key that is not there, because the remedies are opposite.
 package splice.lifecycle.restart
 
 import com.sun.net.httpserver.HttpServer
@@ -54,13 +52,13 @@ class StopKeyTest {
         return server
     }
 
-    // DR-174: `splice restart` printed "mgmt-key not found at <path>" for a key it could not READ,
+    // `splice restart` printed "mgmt-key not found at <path>" for a key it could not READ,
     // because AdminSupport.mgmtKey collapsed AccessDenied and absence into one null. The two states
     // have opposite remedies — one chmod versus a re-mint the operator cannot even perform while
     // the daemon holds the old key in memory — so the arm asserts the SENTENCE, not just the
     // refusal: both states correctly refuse to stop, and only the wording tells them apart.
     @Test
-    fun `an unreadable mgmt key is not a missing one on the restart path - DR-174`(@TempDir tmp: Path) {
+    fun `an unreadable mgmt key is not a missing one on the restart path`(@TempDir tmp: Path) {
         val stateDir = Files.createDirectories(tmp.resolve("state"))
         Files.writeString(stateDir.resolve("mgmt-key"), "the-real-key")
         val server = runningDaemon()
@@ -89,7 +87,7 @@ class StopKeyTest {
     }
 
     @Test
-    fun `a genuinely absent mgmt key still reports not found - DR-174 control`(@TempDir tmp: Path) {
+    fun `a genuinely absent mgmt key still reports not found`(@TempDir tmp: Path) {
         val stateDir = Files.createDirectories(tmp.resolve("state"))
         val server = runningDaemon()
         val port = server.address.port

@@ -1,7 +1,4 @@
-// DR-68 absence-class arms for the boot log, split from LogSurfaceAbsenceTest when the log display
-// surfaces moved to features/diagnostics, and moved here with the cold start (LAYOUT-01): an unreadable
-// boot log used to read as a silent cold-start. Degrading to quiet is allowed only for PROVEN absence;
-// access-indeterminate is said.
+// Absence classes for the boot log: an unreadable boot log is said, a proven-absent one stays quiet.
 package splice.lifecycle.start
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -27,7 +24,7 @@ class BootLogAbsenceTest {
     // the module law is not a thing a test gets an exemption from. A divergence fails LOUDLY:
     // the boot-log read would find nothing and the 'unreadable' assertion below would miss.
     @Test
-    fun `an unreadable boot log is said, not swallowed - DR-68`(@TempDir tmp: Path) {
+    fun `an unreadable boot log is said, not swallowed`(@TempDir tmp: Path) {
         Files.createDirectories(tmp.resolve(".splice"))
         Files.writeString(tmp.resolve(".splice").resolve("logs"), "not a directory")
         val printed = withHomeCapturingStdout(tmp) { spawn().printBootLogTail() }
@@ -36,7 +33,7 @@ class BootLogAbsenceTest {
     }
 
     @Test
-    fun `a genuinely absent boot log stays quiet - DR-68 control`(@TempDir tmp: Path) {
+    fun `a genuinely absent boot log stays quiet`(@TempDir tmp: Path) {
         val printed = withHomeCapturingStdout(tmp) { spawn().printBootLogTail() }
         assertEquals("", printed)
     }

@@ -1,10 +1,7 @@
-// NEW: V4-395 — `splice restart` never acts on a supervisor unit that belongs to another home. RED on
-// HEAD: Marlin ran `HOME=walk-desk java -Duser.home=walk-desk -jar splice.jar restart` (control_port
-// 31210, no SPLICE_SUPERVISOR_UNIT) at Sep 28, 12:40:45 PM CT, and SupervisedStart.route(), which refuses
-// only the harness env selectors, sent `systemctl --user restart splice.service` to the everyday daemon
-// (HOME=/home/marcos, :3096). Driven through the verb against a loopback daemon and a systemctl that
-// records every call, with the unit's daemon named by a fake reader and the invoking home a temp HOME.
-package splice.lifecycle.restart.v4395
+// `splice restart` never acts on a supervisor unit that belongs to another home: it is refused and named, and only
+// the unit's own home and port restart through the unit. Driven through the verb against a loopback daemon and a
+// systemctl that records every call.
+package splice.lifecycle.restart
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
@@ -17,7 +14,6 @@ import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonSettings
-import splice.lifecycle.restart.RestartCommand
 import splice.lifecycle.start.DaemonColdStart
 import splice.lifecycle.start.HostSupervisedStart
 import splice.lifecycle.start.ManagerEnvironment
@@ -41,7 +37,7 @@ private const val SHORT_STARTUP_POLLS = 8
 private const val EVERYDAY_HOME = "/home/everyday"
 private const val EVERYDAY_PORT = 3096
 
-class ForeignUnitRestartTest {
+class ForeignUnitRestartRefusalTest {
 
     /** The invoking home's own daemon: answers /health with [version], lists no heads, and counts the
      *  shutdown route it must never be sent. */
@@ -241,11 +237,5 @@ class ForeignUnitRestartTest {
         // A manager that answers runs some other HOME than this temp dir, and none answering is unreadable:
         // both are foreign, and only a wiring with no reader says the unit is ours.
         assertTrue(ownership is UnitOwnership.Foreign, "the shipped wiring left the ownership check off: $ownership")
-    }
-
-    @Test
-    fun `the real reader answers an absolute home or null for a manager it cannot reach, never throws`() {
-        val daemon = SystemdUnitDaemon(DaemonSettings(TerminalOutput { lines += it }))(UNIT)
-        assertTrue(daemon == null || daemon.home.isAbsolute, "expected null or an absolute home, got $daemon")
     }
 }

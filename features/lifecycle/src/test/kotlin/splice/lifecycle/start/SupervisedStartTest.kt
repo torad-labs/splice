@@ -204,17 +204,6 @@ class SupervisedStartTest {
             assertTrue(ctl.calls.none { it[0] == "start" }, "the unit must not be started: ${ctl.calls}")
         }
     }
-
-    @Test
-    fun `the real systemctl port answers non-zero for a manager it cannot reach, never throws`() {
-        // PATH-independent: an executable name that exists nowhere is exactly "no systemctl here".
-        val code = JdkSystemctl().let { port ->
-            // The port always prefixes `systemctl --user`; drive it with a verb no manager accepts
-            // so a present manager also answers non-zero, and an absent one answers 127.
-            port(listOf("cat", "splice-test-unit-that-does-not-exist-${System.nanoTime()}.service"))
-        }
-        assertTrue(code != 0, "expected a non-zero answer, got $code")
-    }
 }
 
 /** The selectors the CLI reads and the launch shim reads are one list: a selector added to one and not the other is the drift

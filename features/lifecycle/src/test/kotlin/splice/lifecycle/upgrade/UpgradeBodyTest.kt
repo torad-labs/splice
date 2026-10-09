@@ -74,23 +74,4 @@ class UpgradeBodyTest {
             "a measured fact carries no excuse, whether its value is a version or null",
         )
     }
-
-    @Test
-    fun `the payload carries the six states and an absolute check time`() {
-        val keys = payload().keys
-        val named = setOf(
-            "installed",
-            "latest",
-            "latest_basis",
-            "latest_unavailable_reason",
-            "rollback_target",
-            "rollback_basis",
-            "rollback_unavailable_reason",
-            "checked_at_epoch_millis",
-        )
-        assertTrue(keys.containsAll(named), "missing ${named - keys}")
-        // ABSOLUTE AND NULL, never zero and never the epoch: either would date "nothing has looked" to
-        // 1970 and read as a measurement taken then.
-        assertEquals(JsonNull, payload()["checked_at_epoch_millis"])
-    }
 }

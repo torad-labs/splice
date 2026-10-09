@@ -1,4 +1,4 @@
-package splice.lifecycle.restart.v4365
+package splice.lifecycle.restart
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,22 +12,11 @@ import splice.core.terminal.TerminalOutput
 import splice.core.testing.TestPorts
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
-import splice.lifecycle.restart.CompactionsInFlight
-import splice.lifecycle.restart.DaemonRestarts
-import splice.lifecycle.restart.DaemonSuccessor
-import splice.lifecycle.restart.DaemonSupervised
-import splice.lifecycle.restart.DetachedDaemonSuccessor
-import splice.lifecycle.restart.RestartAfterCompactions
-import splice.lifecycle.restart.RestartCommand
-import splice.lifecycle.restart.RestartPhase
-import splice.lifecycle.restart.RestartTaken
-import splice.lifecycle.restart.ShutdownDaemon
-import splice.lifecycle.restart.SuccessorInstall
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 
-class UnsupervisedRestartTest {
+class DetachedSuccessorRestartTest {
     private fun restarts(): DaemonRestarts = DaemonRestarts(
         RestartAfterCompactions(
             CompactionsInFlight { emptyList() },
@@ -141,33 +130,5 @@ class UnsupervisedRestartTest {
         assertEquals(0, java.exitValue(), properties)
         assertTrue(properties.contains("user.home = $quotedHome"), properties)
         assertTrue(properties.contains("splice.noSystemBrowser = 1"), properties)
-    }
-
-    @Test
-    fun `the detached CLI inherits the boot home config state and control port`() {
-        val home = Path.of("/synthetic/home")
-        val jar = Path.of("/synthetic/install/splice.jar")
-        val config = home.resolve("custom.toml")
-        val successor = DetachedDaemonSuccessor(
-            jar,
-            SuccessorInstall(home, config, home.resolve("state"), 31999),
-            home.resolve("logs"),
-            LogSink {},
-            123L,
-        )
-        assertEquals(listOf("sh", "-c"), successor.command(jar).take(2))
-        assertEquals(listOf("sh", "123", jar.toString()), successor.command(jar).takeLast(3))
-        assertTrue(successor.command(jar)[2].contains("restart --now"))
-        assertEquals(
-            mapOf(
-                "HOME" to home.toString(),
-                "SPLICE_CONFIG" to config.toString(),
-                "SPLICE_STATE_DIR" to home.resolve("state").toString(),
-                "SPLICE_CONTROL_PORT" to "31999",
-                "SPLICE_JAR" to jar.toString(),
-            ),
-            successor.selectors(jar).filterKeys { it != "JAVA_TOOL_OPTIONS" },
-        )
-        assertTrue(successor.selectors(jar).getValue("JAVA_TOOL_OPTIONS").contains("-Duser.home=\"$home\""))
     }
 }

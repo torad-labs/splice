@@ -1,10 +1,7 @@
-// NEW: V4-409 — the cold start never starts a supervisor unit that belongs to another home. V4-395 made
-// `splice restart` refuse such a unit; `splice dashboard` reaches DaemonLaunch.ensureDaemon, which ran
-// `systemctl --user start` on the unit for any shell that sets no harness selector, so a scratch home with the
-// everyday unit stopped started Marcos's daemon (and then waited on its own port). ensureDaemon now asks the same
-// ownership question before it starts a unit and refuses with the same sentence. Driven through the public
-// DaemonColdStart against a systemctl that records every verb, with the unit's daemon named by a fake reader.
-package splice.lifecycle.start.v4409
+// The cold start never starts a supervisor unit that belongs to another home: it refuses with the restart's sentence
+// and starts nothing, while the unit's own home and port start through it. Driven through DaemonColdStart against a
+// systemctl that records every verb.
+package splice.lifecycle.start
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
@@ -17,11 +14,6 @@ import splice.core.config.RunningJar
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.daemonclient.DaemonSettings
-import splice.lifecycle.start.DaemonColdStart
-import splice.lifecycle.start.SupervisedStart
-import splice.lifecycle.start.Systemctl
-import splice.lifecycle.start.UnitDaemon
-import splice.lifecycle.start.UnitDaemonReader
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -34,7 +26,7 @@ private const val SHORT_STARTUP_POLLS = 8
 private const val EVERYDAY_HOME = "/home/everyday"
 private const val EVERYDAY_PORT = 3096
 
-class ForeignUnitStartTest {
+class ForeignUnitStartRefusalTest {
 
     /** The invoking home's daemon, or the stand-in for one the unit will bring up: answers /health with [version]. */
     private class FakeDaemon(@Volatile var version: String) {

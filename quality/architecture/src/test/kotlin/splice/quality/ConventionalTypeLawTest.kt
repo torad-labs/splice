@@ -48,6 +48,7 @@ import org.junit.jupiter.api.TestFactory
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.util.concurrent.TimeUnit
+import kotlin.io.path.invariantSeparatorsPathString
 
 private const val SOURCE = "tools/gate/src/lib/conventional.ts"
 private const val GIT_TIMEOUT_SECONDS = 30L
@@ -65,15 +66,6 @@ private const val THIS_LAW_FILE = "quality/architecture/src/test/kotlin/splice/q
 internal object ConventionalType {
     private const val MIN_TYPES = 3
     private val TYPES_LINE = Regex("""^export const TYPES = "([^"]+)";$""", RegexOption.MULTILINE)
-
-    /** The paths the law reads: the ONE rule file, which the build also applies to git's tracked list to declare this law's
-     *  inputs (conventional-candidate-rules.txt), so the inputs and the census cannot describe different trees. */
-    private val RULES = ConventionalRules(
-        checkNotNull(ConventionalRules::class.java.getResource("/conventional-candidate-rules.txt")) {
-            "conventional-candidate-rules.txt is not on the test classpath"
-        }.readText(),
-    )
-    private val REJECTORS: List<(String) -> Boolean> = listOf({ relPath: String -> !RULES.accepts(relPath) })
 
     /** TYPES parsed off SOURCE's own export line, or empty when the line is absent or carries fewer
      *  than [MIN_TYPES] entries — [audit] turns either into a named violation, never a silent skip. */
@@ -95,7 +87,7 @@ internal object ConventionalType {
      *  file, so unlike a stateful `g`-flag scan there is no lastIndex to carry between files. */
     fun hasHit(text: String, pattern: Regex): Boolean = pattern.containsMatchIn(text.replace("`", " "))
 
-    private fun accept(relPath: String, file: File): Boolean = file.isFile && REJECTORS.none { it(relPath) }
+    private fun accept(file: File): Boolean = file.isFile
 
     /** `git ls-files -z` at [root], or null when it answers nothing or fails — not a git repository,
      *  among other reasons — the checker's gitListed. */
@@ -109,18 +101,17 @@ internal object ConventionalType {
     }
 
     /** Every file under [root], relative with forward slashes — the checker's tree-walk fallback,
-     *  unpruned like the original (a directory named in [SKIP_DIRS] is still entered; [accept]
-     *  filters its files out just the same, so the result is identical either way). */
+     *  unpruned like the original, and nothing is pruned: every tracked file is a candidate. */
     private fun walk(root: File): List<String> =
         root.walkTopDown().filter { it.isFile }.map { it.relativeTo(root).invariantSeparatorsPath }.toList()
 
     /** Every candidate text path under [root]: the tracked list when [root] is a git repository, a
      *  full walk otherwise (the checker's iterTextFiles/gitListed fallback), so a bare @TempDir
-     *  fixture with no .git runs the same [accept] filters as a real checkout. SOURCE is included
+     *  fixture with no .git reads the same files a real checkout does. SOURCE is included
      *  here; [secondCopies] and [audit] are what exclude it. */
     fun textFiles(root: File): List<String> {
         val candidates = gitListed(root) ?: walk(root)
-        return candidates.filter { accept(it, File(root, it)) }
+        return candidates.filter { accept(File(root, it)) }
     }
 
     /** The paths among [files] (relative to [root]) that restate a run of 3+ [types] — SOURCE is
@@ -203,18 +194,21 @@ private class ConventionalTree(private val root: File, sourceLine: String) {
 class ConventionalTypeLawTest {
     private val map = ProjectMap.fromSystemProperties()
 
-    /** The live arm reads only the files the build declared as this law's inputs (splice.lawsuite via the rule file). */
+    /** The live arm reads only the files the build declared as this law's inputs (every tracked file; none is exempt). */
     private val candidates = declaredCandidates()
-    private val liveTypes: List<String> = ConventionalType.vocabulary(candidates.read(File(map.root, SOURCE)))
+
+    private fun read(file: File): String = candidates.readText(file.toPath())
+    private val liveTypes: List<String> = ConventionalType.vocabulary(read(File(map.root, SOURCE)))
     private val liveSourceLine: String = "export const TYPES = \"${liveTypes.joinToString("|")}\";\n"
 
     @Test
     fun `live - the checkout names the conventional-type vocabulary exactly once`() {
-        val files = candidates.relative
+        val base = map.root.toPath()
+        val files = candidates.files().map { base.relativize(it).invariantSeparatorsPathString }
         assertTrue(files.size > MIN_TRACKED_TEXT_FILES) {
             "textFiles answered ${files.size} candidate path(s) under ${map.root} — the census did not run"
         }
-        val problems = ConventionalType.audit(map.root, files, candidates::read)
+        val problems = ConventionalType.audit(map.root, files, ::read)
         assertTrue(problems.isEmpty()) {
             problems.joinToString(separator = "\n  - ", prefix = "ONE CONVENTIONAL TYPE LIST (V4-30) violated:\n  - ")
         }

@@ -7,6 +7,7 @@ plugins {
 
 dependencies {
     testImplementation(libs.konsist)
+    testImplementation(testFixtures(project(":core")))
     // The Kotlin PSI the unpack law parses initializers with. Konsist already puts this exact compiler on the test
     // runtime classpath (2.0.21 at konsist 0.17.3), so compile against that version and add nothing to the runtime.
     testCompileOnly("org.jetbrains.kotlin:kotlin-compiler-embeddable:2.0.21")
@@ -215,17 +216,14 @@ tasks.withType<Test>().configureEach {
     inputs.property("trackedPaths", trackedPathsDigest)
 }
 
-// THE CONVENTIONAL-TYPE LAW'S CONTENT INPUTS. ConventionalTypeLawTest reads the contents of every tracked text file, and the path
-// digest above only answers WHICH paths are tracked, so a content-only edit to a file it reads was served from up-to-date. The
-// build applies the one rule file (conventional-candidate-rules.txt, also parsed by the law) to git's tracked list, fingerprints
-// every accepted file as an input, and hands the same list to the test JVM, where the law reads only through it.
-val conventionalRules = splice.lawsuite.CandidateRules(
-    repoRoot.file("quality/architecture/src/test/resources/conventional-candidate-rules.txt").asFile.readText(),
-)
+// THE CONVENTIONAL-TYPE LAW'S CONTENT INPUTS. ConventionalTypeLawTest reads the contents of every tracked file, and the path digest above only
+// answers WHICH paths are tracked, so a content-only edit to a file it reads was served from up-to-date. The build fingerprints
+// every tracked file as an input and hands the same list to the test JVM, where the law reads only through it (LawReadSet). No
+// file is exempt: the law reads a binary lossily and a ledger like any other text.
 splice.lawsuite.ReadSet.declareFiles(
     project,
     tasks.named<Test>("test"),
-    splice.lawsuite.ReadSet.tracked(repoRoot.asFile).filter(conventionalRules::accepts),
+    splice.lawsuite.ReadSet.tracked(repoRoot.asFile),
     "conventional-candidates",
     "splice.conventionalCandidatesFile",
 )

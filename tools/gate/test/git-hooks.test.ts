@@ -1141,9 +1141,9 @@ describe("the architecture suite fingerprints WHICH paths are tracked, not git's
   }, 600_000);
 });
 
-describe("a text-scanning law's content inputs are the files its rule file accepts, declared from git's tracked list", () => {
-  /** A real gradle run in a scratch repository: the build-logic classes the quality build uses (CandidateRules, ReadSet) declare
-   *  the accepted tracked files as the inputs of a stamped task. */
+describe("a text-scanning law's content inputs are every tracked file, declared from git's tracked list", () => {
+  /** A real gradle run in a scratch repository: the build-logic classes the quality build uses (ReadSet) declare
+   *  every tracked file as the inputs of a stamped task. */
   function candidatesRepo(): string {
     const root = wallsRepo();
     linkWrapper(root);
@@ -1154,20 +1154,19 @@ describe("a text-scanning law's content inputs are the files its rule file accep
       "build.gradle.kts",
       [
         "buildscript { dependencies { classpath(files(" + JSON.stringify(classes) + ")) } }",
-        'val rules = splice.lawsuite.CandidateRules("dir build\\next png\\nprefix skip/\\n")',
-        "val accepted = splice.lawsuite.ReadSet.tracked(rootProject.projectDir).filter(rules::accepts)",
+        "val tracked = splice.lawsuite.ReadSet.tracked(rootProject.projectDir)",
         'val probe = tasks.register("probe") {',
         '    val stamp = layout.buildDirectory.file("probe.stamp")',
         "    outputs.file(stamp)",
         '    doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("ran") }',
         "}",
-        'splice.lawsuite.ReadSet.declareInputs(project, probe, accepted, "candidates")',
+        'splice.lawsuite.ReadSet.declareInputs(project, probe, tracked, "candidates")',
       ].join("\n"),
     );
     writeFile(root, "docs/read.md", "one\n");
     writeFile(root, "assets/logo.png", "png one\n");
-    writeFile(root, "skip/unread.md", "skipped one\n");
-    git(root, ["add", "--", "settings.gradle.kts", "build.gradle.kts", "docs/read.md", "assets/logo.png", "skip/unread.md"]);
+    writeFile(root, "build/kept.md", "a tracked file under a build directory\n");
+    git(root, ["add", "-f", "--", "settings.gradle.kts", "build.gradle.kts", "docs/read.md", "assets/logo.png", "build/kept.md"]);
     commit(root, "chore(test): candidates fixture");
     return root;
   }
@@ -1178,18 +1177,19 @@ describe("a text-scanning law's content inputs are the files its rule file accep
     return run.output;
   }
 
-  test("RED: a content change to an accepted file reruns the task; a content-only stage of a rejected file does not", async () => {
+  test("RED: a content change to ANY tracked file reruns the task, a binary or a build-directory file included; an untracked change does not", async () => {
     const root = candidatesRepo();
     expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
     expect(await probe(root)).toContain(":probe UP-TO-DATE");
 
-    writeFile(root, "assets/logo.png", "png two\n");
-    writeFile(root, "skip/unread.md", "skipped two\n");
-    git(root, ["add", "assets/logo.png", "skip/unread.md"]);
+    writeFile(root, "untracked.md", "not tracked\n");
     expect(await probe(root)).toContain(":probe UP-TO-DATE");
 
-    writeFile(root, "docs/read.md", "two\n");
-    git(root, ["add", "docs/read.md"]);
-    expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
+    for (const [path, text] of [["docs/read.md", "two\n"], ["assets/logo.png", "png two\n"], ["build/kept.md", "kept two\n"]] as const) {
+      writeFile(root, path, text);
+      git(root, ["add", "-f", path]);
+      expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
+      expect(await probe(root)).toContain(":probe UP-TO-DATE");
+    }
   }, 600_000);
 });

@@ -207,7 +207,6 @@ internal object ReleaseReadiness {
     private val FORK_RECORD = Regex("""UNRESOLVED|upstream""", RegexOption.IGNORE_CASE)
     private val CLAUDE_PRIVATE = listOf(
         ".claude/skills/",
-        ".claude/ledger-diffs/",
         ".claude/agents/",
         ".claude/workflows/",
         ".claude/commands/",

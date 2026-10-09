@@ -1,4 +1,4 @@
-# Lineage: copied verbatim from .rules/kotlin/detekt.yml (torad kit) 2026-07-16 (P1-KONSIST); prune with ledger notes.
+# Lineage: copied verbatim from .rules/kotlin/detekt.yml (torad kit) 2026-07-16 (P1-KONSIST); prune with the reason in the commit message.
 # Torad Kotlin Detekt Configuration
 # Install: copy to project root as detekt.yml
 # Builds on detekt defaults; warnings fail the build (warningsAsErrors).

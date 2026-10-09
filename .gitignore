@@ -48,7 +48,6 @@ credentials.json
 
 # --- OSS-K: internal-material untrack ignores (per-file, never blanket) ---
 .claude/skills/
-.claude/ledger-diffs/
 .claude/agents/
 .claude/workflows/
 .claude/commands/

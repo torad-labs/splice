@@ -80,14 +80,6 @@
   "expected": true
  },
  {
-  "id": "ledger-control",
-  "category": "control",
-  "path": ".dev/campaigns/review.toml",
-  "text": "[[items]]\nid = \"R-1\"\nstatus = \"todo\"\nverify = \"python3 -V\"\n",
-  "tracked": true,
-  "expected": true
- },
- {
   "id": "prose-control",
   "category": "control",
   "path": "README.md",
@@ -308,46 +300,6 @@
   "category": "config",
   "path": "launcher.json",
   "text": "{\n\"command\":\n\"python3\",\n\"args\":[\"-V\"]\n}\n",
-  "tracked": true,
-  "expected": true
- },
- {
-  "id": "ledger-literal-string",
-  "category": "ledger",
-  "path": ".dev/campaigns/review.toml",
-  "text": "[[items]]\nid = \"R-1\"\nstatus = \"todo\"\nverify = 'python3 -V'\n",
-  "tracked": true,
-  "expected": true
- },
- {
-  "id": "ledger-indented",
-  "category": "ledger",
-  "path": ".dev/campaigns/review.toml",
-  "text": "[[items]]\n  id = \"R-1\"\n  status = \"todo\"\n  verify = \"python3 -V\"\n",
-  "tracked": true,
-  "expected": true
- },
- {
-  "id": "ledger-multiline-literal",
-  "category": "ledger",
-  "path": ".dev/campaigns/review.toml",
-  "text": "[[items]]\nid = \"R-1\"\nstatus = \"todo\"\nverify = '''\npython3 -V\n'''\n",
-  "tracked": true,
-  "expected": true
- },
- {
-  "id": "ledger-quoted-command",
-  "category": "ledger",
-  "path": ".dev/campaigns/review.toml",
-  "text": "[[items]]\nid = \"R-1\"\nstatus = \"todo\"\nverify = \"\\\"python3\\\" -V\"\n",
-  "tracked": true,
-  "expected": true
- },
- {
-  "id": "ledger-new-format-space-header",
-  "category": "ledger",
-  "path": ".dev/campaigns/review.toml",
-  "text": "[[ items ]]\nid = \"R-1\"\nstatus = \"done\"\nverify = \"bun old.ts\"\n[[ items ]]\nid = \"R-2\"\nstatus = \"todo\"\nverify = \"python3 -V\"\n",
   "tracked": true,
   "expected": true
  },

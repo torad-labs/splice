@@ -54,6 +54,6 @@ Contract sources: codex-rs `client.rs` (`RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VAL
 ## Consequence
 
 The `previous_response_id` section of `prompt-cache-drain.md` ("not portable — separate project")
-is now the **ws-transport campaign** (`.dev/campaigns/ws-transport.toml`): WsUpstream (JDK
+became the **ws-transport** work: WsUpstream (JDK
 `java.net.http.WebSocket`, no new dependencies) + a bail-closed delta classifier + default-off
 `quirks.websocket`, SSE fallback at every stage.

@@ -22,7 +22,7 @@ bun tools/release verify     # the release rehearsal: stage, accept, the launche
 ```
 
 `npm run gate` (`bun tools/gate run`: the Gradle ladder of tools/gate/config/ladder.json, then the release rehearsal) runs the complete list: Gradle module-law/detekt/tests,
-ast-grep walls, hook tests, campaign walls, config guard, the dependency audit, the release-readiness law, and the staged
+ast-grep walls, hook tests, config guard, the dependency audit, the release-readiness law, and the staged
 release acceptance. The individual commands are listed only so a contributor can run one in
 isolation while iterating. The Gradle build is rooted at the repository root with its own
 JDK 21 toolchain; its modules live under `core/`, `integrations/`, `features/`, `app/`,

@@ -12,7 +12,7 @@
 // DESKTOP IS NOT DELIVERED HERE, and not anywhere yet. AlertRoutes.kt's header already rules the daemon
 // out ("DESKTOP IS THE CONSOLE'S OWN JOB": a headless process has no desktop to notify), and the
 // console that would own it shows no notification and has no event to show one from: the /api/events
-// kinds were decided on 2026-09-18 (.dev/campaigns/web-console/FEATURES.md §6) and carry no budget
+// kinds were decided on 2026-09-18 (docs/specs/web-console.md §6) and carry no budget
 // family. `desktop: true` therefore reaches the operator through nothing but the head's log line.
 package splice.usage.alerts
 

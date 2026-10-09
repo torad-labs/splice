@@ -34,10 +34,8 @@
 // NOT CAUGHT, ported from the checker's own list. A short phrase naming only one or two types: that
 // is a comparison, not a restated vocabulary, and a third real type turns it into one. Words the
 // org gate does not recognize at all: those never enter the parsed alternation. `git log` history:
-// `gate title` already warns against inferring the convention from it. Campaign ledgers under
-// .dev/campaigns, which quote the defect being fixed rather than teach a title vocabulary. Research
-// captures under .dev/research, where mutating a recording to please this wall would falsify
-// evidence.
+// `gate title` already warns against inferring the convention from it. Research captures under
+// .dev/research, where mutating a recording to please this wall would falsify evidence.
 package splice.quality
 
 import org.junit.jupiter.api.Assertions.assertEquals

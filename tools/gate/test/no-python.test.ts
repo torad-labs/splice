@@ -5,7 +5,7 @@
 // wall family exists to catch. There is no list and no exemption, so every charge is a new one and every
 // green arm is a file that names Python without running or installing it.
 //
-// THE SHAPE FIXTURES (fixtures/no-python-shapes.json) are an independent reviewer's probe of the wall: 59
+// THE SHAPE FIXTURES (fixtures/no-python-shapes.json) are an independent reviewer's probe of the wall: 53
 // files, each with the verdict it must get, and two launcher configs added beside them. They were written
 // against the previous text-matching wall, which let 36 of them through and charged 8 prose files; they
 // stay as the standing proof that the structural reading does neither. Each is graded by the wall AND by
@@ -160,8 +160,6 @@ describe("the no-python wall: the file census", () => {
 describe("the no-python wall: invocations by structure", () => {
   // Every RED arm is a way the repo would actually run or install Python; every GREEN arm names it
   // without running anything.
-  const LEDGER = (status: string, verify: string) =>
-    `[[items]]\nid = "R-1"\nstatus = "${status}"\nverify = "${verify}"\nnotes = ["ran python3 x.py once"]\n`;
   const SPAWN = 'import { spawnSync } from "node:child_process";\n';
   const SHAPES: readonly (readonly [string, string, string])[] = [
     ["a shebang", "tool", "#!/usr/bin/env python3\nprint(1)\n"],
@@ -194,8 +192,6 @@ describe("the no-python wall: invocations by structure", () => {
     ["a Bun.spawn cmd object", "t.ts", 'Bun.spawn({ cmd: ["python3", "-V"] });\n'],
     ["a Bun shell template", "t.ts", "await Bun.$`python3 -c 1`;\n"],
     ["a launcher object literal", "t.ts", 'export const server = { command: "python3", args: ["s.py"] };\n'],
-    ["a live ledger verify", ".dev/campaigns/c.toml", LEDGER("todo", "python3 checks/x.py --selftest")],
-    ["an in-flight ledger verify", ".dev/campaigns/c.toml", LEDGER("in_flight", "bun a.ts && python3 b.py")],
   ];
   for (const [what, path, text] of SHAPES) {
     arm(what, "red", (r) => {
@@ -210,8 +206,6 @@ describe("the no-python wall: invocations by structure", () => {
     ["an svg screenshot", "doctor.svg", "<text>python3 --version</text>\n"],
     ["prose json", "wire.json", '{"note":"captured with python3 -m json.tool"}\n'],
     ["a toml comment", "tools/x.toml", '# was python3 once\nname = "x"\n'],
-    ["a ledger note", ".dev/campaigns/c.toml", LEDGER("todo", "bun a.ts")],
-    ["a done ledger verify (history, not an instruction)", ".dev/campaigns/c.toml", LEDGER("done", "python3 b.py")],
     ["a shell comment", "run.sh", "#!/bin/sh\n# python3 used to run this\necho ok\n"],
     ["a shell echo", "run.sh", '#!/bin/sh\necho "no python3 here"\n'],
     ["a shell lookup that runs nothing", "run.sh", "#!/bin/sh\ncommand -v python3 >/dev/null || echo none\n"],
@@ -298,8 +292,8 @@ interface Shape {
 const SHAPES_JSON = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "no-python-shapes.json"), "utf8")) as Shape[];
 
 describe("the no-python wall: the reviewer's shape fixtures", () => {
-  test("the fixture file holds what it claims: 50 files that run Python and 11 that only name it", () => {
-    expect(SHAPES_JSON.filter((s) => s.expected)).toHaveLength(50);
+  test("the fixture file holds what it claims: 44 files that run Python and 11 that only name it", () => {
+    expect(SHAPES_JSON.filter((s) => s.expected)).toHaveLength(44);
     expect(SHAPES_JSON.filter((s) => !s.expected)).toHaveLength(11);
   });
   for (const s of SHAPES_JSON) {
@@ -367,44 +361,6 @@ describe("the no-python wall: callers", () => {
     w(r, "run.sh", '#!/bin/sh\necho "python3 archived-example.py"\n');
     commit(r);
   }, (r) => !existsSync(join(r, "archived-example.py")));
-
-  // ── a ledger instruction naming a file that is gone ────────────────────────────────────────
-  // Graded ONLY on rows that have not run yet. The green arms are the boundary: without them the
-  // obvious "any missing path is bad" implementation passes its red arm and then charges correct
-  // ledger authorship.
-  const ledger = (r: string, id: string, status: string, verify: string) =>
-    w(r, ".dev/campaigns/c.toml", `[[items]]\nid = "${id}"\nstatus = "${status}"\nverify = "${verify}"\n`);
-
-  arm("a TODO row whose verify names a missing .py", "red", (r) => {
-    ledger(r, "T-1", "todo", "python3 checks/gone.py");
-    commit(r);
-  }, (r) => !existsSync(join(r, "checks", "gone.py")));
-
-  arm("a TODO row naming a .ts it will CREATE", "green", (r) => {
-    ledger(r, "T-2", "todo", "bun checks/not-yet-written.ts");
-    commit(r);
-  }, (r) => !existsSync(join(r, "checks", "not-yet-written.ts")));
-
-  arm("a VERIFIED row's verify is history, not an instruction", "green", (r) => {
-    ledger(r, "T-3", "verified", "python3 checks/long-since-converted.py");
-    commit(r);
-  }, (r) => !existsSync(join(r, "checks", "long-since-converted.py")));
-
-  arm("a TODO row naming the WRONG runtime for the extension", "red", (r) => {
-    w(r, "checks/w.ts", "//\n");
-    ledger(r, "T-4", "todo", "python3 checks/w.ts");
-    commit(r);
-  }, (r) => existsSync(join(r, "checks", "w.ts")));
-
-  arm("a TODO row whose files= names a missing .py", "red", (r) => {
-    w(r, ".dev/campaigns/c.toml", `[[items]]\nid = "T-5"\nstatus = "todo"\nfiles = ["checks/vanished.py"]\n`);
-    commit(r);
-  }, (r) => !existsSync(join(r, "checks", "vanished.py")));
-
-  arm("a TODO row whose files= is a GLOB", "green", (r) => {
-    w(r, ".dev/campaigns/c.toml", `[[items]]\nid = "T-6"\nstatus = "todo"\nfiles = ["checks/*.py"]\n`);
-    commit(r);
-  }, (r) => readFileSync(join(r, ".dev", "campaigns", "c.toml"), "utf8").includes('files = ["checks/*.py"]'));
 
   // A registry row whose wall= names a file that is gone.
   arm("a registry wall= naming a missing file", "red", (r) => {
@@ -495,8 +451,6 @@ describe("the no-python write guard", () => {
 
   // An Edit's fragment is not a whole document; the guard reads the part it can.
   guardArm("a workflow fragment that adds a python3 step", "block", edit(".github/workflows/ci.yml", "      - run: python3 x.sh\n"));
-  guardArm("a ledger fragment that adds a python3 verify", "block", edit(".dev/campaigns/x.toml", 'verify = "python3 x.py"\n'));
-  guardArm("a ledger fragment that adds a bun verify", "allow", edit(".dev/campaigns/x.toml", 'verify = "bun x.ts"\n'));
 
   // THE WRITE-TIME HALF OF THE RUNTIME CENSUS: the wrong interpreter in front of a .ts.
   guardArm("the wrong runtime into a caller", "block", edit(caller, 'python3 "$HERE/mock_chat.ts" &'));

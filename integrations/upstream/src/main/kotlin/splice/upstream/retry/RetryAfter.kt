@@ -6,9 +6,8 @@
 // [WallClock]. Isolating it is what keeps that exception visible instead of buried in a retry class
 // whose invariant is the opposite.
 //
-// WALL: .dev/campaigns/proxy-hardening/walls/nf_04_retry_after_date_form.py reads THIS file, and
-// since V4-100 also every OTHER main-source file that touches the Retry-After header — this is the
-// one parser, so a second copy anywhere is the mirror that wall exists to refuse.
+// Since V4-100 this is the ONE parser of the Retry-After header for every main-source file, so a
+// second copy anywhere is a mirror.
 package splice.upstream.retry
 
 import splice.core.util.WallClock

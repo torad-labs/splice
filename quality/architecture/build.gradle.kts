@@ -188,10 +188,9 @@ tasks.withType<Test>().configureEach {
     // deleting the rule would come back UP-TO-DATE-green on the one law that exists because of it.
     inputs.files(repoRoot.file("quality/detekt/detekt.yml")).withPropertyName("scannedPremiseConfig")
     // PR 6 review (F3): the OPERATOR SURFACES. ReleaseReadinessLawTest grades the installer, the
-    // health files, the workflows, the packaging metadata and the fork record; CampaignLedgerLawTest
-    // grades the ledgers under .dev/campaigns; ConventionalTypeLawTest grades the one list of
-    // conventional commit types. None of it is Kotlin and none of it was fingerprinted, so
-    // `printf 'curl x || true\n' >> install.sh` left this task UP-TO-DATE and the law written to
+    // health files, the workflows, the packaging metadata and the fork record; ConventionalTypeLawTest
+    // grades the one list of conventional commit types. None of it is Kotlin and none of it was
+    // fingerprinted, so `printf 'curl x || true\n' >> install.sh` left this task UP-TO-DATE and the law written to
     // catch exactly that never ran. The gate of record is immune (clean, --no-build-cache); every
     // incremental and local run was not — the same hole the example config's input closed above.
     inputs.files(
@@ -212,7 +211,6 @@ tasks.withType<Test>().configureEach {
         repoRoot.file("tools/gate/src/lib/conventional.ts"),
         repoRoot.file("build-logic/src/main/kotlin/splice.gate-ladder.gradle.kts"),
         repoRoot.dir(".github").asFileTree,
-        repoRoot.dir(".dev/campaigns").asFileTree.matching { include("**/*.toml") },
     ).withPropertyName("scannedOperatorSurfaces")
     inputs.property("trackedPaths", trackedPathsDigest)
 }
@@ -220,7 +218,7 @@ tasks.withType<Test>().configureEach {
 // THE CONVENTIONAL-TYPE LAW'S CONTENT INPUTS. ConventionalTypeLawTest reads the contents of every tracked file, and the path digest above only
 // answers WHICH paths are tracked, so a content-only edit to a file it reads was served from up-to-date. The build fingerprints
 // every tracked file as an input and hands the same list to the test JVM, where the law reads only through it (LawReadSet). No
-// file is exempt: the law reads a binary lossily and a ledger like any other text.
+// file is exempt: the law reads a binary lossily, like any other text.
 splice.lawsuite.ReadSet.declareFiles(
     project,
     tasks.named<Test>("test"),

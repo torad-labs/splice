@@ -19,7 +19,7 @@
  *     been added yet, which is the state every tracked .py passed through on its way in.
  *   · A FILE THAT RUNS OR INSTALLS THE INTERPRETER FAILS, judged by STRUCTURE and not by text:
  *     a shebang; the commands of a shell script, a workflow step, a Dockerfile instruction, a
- *     package script or a ledger verify (no-python-shell.ts); the spawn calls of a TypeScript, Kotlin
+ *     package script (no-python-shell.ts); the spawn calls of a TypeScript, Kotlin
  *     or Java source (no-python-sources.ts); a launcher entry whose command is the interpreter. A
  *     sentence, a comment, a label or an `echo` that names it is not an invocation.
  *   · THERE IS NO LIST AND NO EXEMPTION. Every census is graded against zero, and this library, its
@@ -27,7 +27,7 @@
  *     site is a law that can be broken from there. Their pattern strings are not invocations, so they
  *     need no allowance.
  *
- * The denominator comes from git, never from a list (campaign law 24): ONE domain for every kind of
+ * The denominator comes from git, never from a list (global rules §24): ONE domain for every kind of
  * check, the tracked files plus the untracked files that are not ignored, enumerated NUL-separated so
  * that no path is ever quoted. A path that cannot be read fails the wall by name; nothing is skipped.
  * Every census takes the repository root explicitly so the test arms can grade fixture roots in-process.
@@ -98,7 +98,7 @@ function readText(root: string, f: string): string | null {
 const SHEBANG_INTERPRETER = /^#!.*\b(?:python|pypy)/;
 const SHEBANG_SHELL = /^#!\s*(?:\S*\/)?(?:env\s+(?:-\S+\s+)*)?(?:ba|z|da|k|a)?sh\b/;
 
-type Kind = "shell" | "yaml" | "docker" | "package" | "ledger" | "json" | "script" | "jvm" | "other";
+type Kind = "shell" | "yaml" | "docker" | "package" | "json" | "script" | "jvm" | "other";
 
 function kindOf(path: string, text: string): Kind {
   const base = basename(path);
@@ -106,8 +106,6 @@ function kindOf(path: string, text: string): Kind {
   if (base === "package.json") return "package";
   if (/^Dockerfile/i.test(base) || /\.dockerfile$/i.test(base)) return "docker";
   if (/\.ya?ml$/.test(base)) return "yaml";
-  // A ledger is a campaign file by its place, or any toml that holds `[[items]]` rows; an Edit's fragment has no header.
-  if (/\.toml$/.test(base) && (/^\.dev\/campaigns\/[^/]+\.toml$/.test(path) || /^\s*\[\[\s*items\s*\]\]/m.test(text))) return "ledger";
   if (/\.jsonc?$/.test(base)) return "json";
   if (/\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(base)) return "script";
   if (/\.(?:kt|kts|java)$/.test(base)) return "jvm";
@@ -180,46 +178,6 @@ function yamlExtract(node: unknown, out: Extract): void {
   }
 }
 
-/** The rows of a ledger: `[[items]]` tables of a parsed TOML document. */
-interface LedgerRow {
-  readonly id: string;
-  readonly status: string;
-  readonly verify: string;
-  readonly files: readonly string[];
-}
-
-function ledgerRows(path: string, text: string, lenient: boolean): LedgerRow[] {
-  const parse = (t: string) => (Bun.TOML.parse(t) as { items?: Record<string, unknown>[] }).items ?? [];
-  let items: Record<string, unknown>[];
-  try {
-    items = parse(text);
-    // An Edit's fragment can be valid TOML without being a row table: the lines of one row, no header.
-    if (lenient && items.length === 0) items = parse(`[[items]]\n${text}`);
-  } catch (e) {
-    if (!lenient) throw new WallError(`no-python: cannot parse ledger ${path}: ${e instanceof Error ? e.message : e}`);
-    try {
-      items = parse(`[[items]]\n${text}`); // an Edit's fragment: the lines of one row
-    } catch {
-      items = text
-        .split("\n")
-        .flatMap((line) => {
-          try {
-            return [Bun.TOML.parse(line) as Record<string, unknown>];
-          } catch {
-            return [];
-          }
-        });
-    }
-  }
-  return items.map((i) => ({
-    id: typeof i["id"] === "string" ? i["id"] : "(unidentified row)",
-    status: typeof i["status"] === "string" ? i["status"] : "todo",
-    verify: typeof i["verify"] === "string" ? i["verify"] : "",
-    files: Array.isArray(i["files"]) ? i["files"].filter((f): f is string => typeof f === "string") : [],
-  }));
-}
-
-const isLive = (status: string) => status === "todo" || status === "in_flight";
 
 /** What the shell-and-spawn layer can read from one file, before any ast-grep scan. */
 function extract(path: string, text: string, lenient: boolean): Extract {
@@ -262,9 +220,6 @@ function extract(path: string, text: string, lenient: boolean): Extract {
       }
       break;
     }
-    case "ledger":
-      for (const row of ledgerRows(path, text, lenient)) if (isLive(row.status) && row.verify) out.shell.push(row.verify);
-      break;
     case "json":
       try {
         for (const command of commandsIn(Bun.JSONC.parse(text))) out.argv.push([word(command)]);
@@ -428,36 +383,6 @@ function wallFields(node: unknown): string[] {
   return Object.entries(node).flatMap(([k, v]) => (k === "wall" && typeof v === "string" && v ? [v] : wallFields(v)));
 }
 
-/** THE FIFTH CENSUS: a ledger instruction that names a file the conversion deleted, or a runtime that cannot run it.
- *  ONLY ROWS THAT WILL RUN ARE GRADED: a done/verified row's verify is a record of the gate that ran. Read as TEXT,
- *  not through the CLI: the CLI is the only WRITE channel. */
-function staleVerifies(s: Scan): string[] {
-  const out: string[] = [];
-  const rows: { ledger: string; row: LedgerRow }[] = [];
-  for (const [ledger, text] of s.texts) {
-    if (!/^\.dev\/campaigns\/[^/]+\.toml$/.test(ledger) || kindOf(ledger, text) !== "ledger") continue;
-    for (const row of ledgerRows(ledger, text, false)) if (isLive(row.status)) rows.push({ ledger, row });
-  }
-  const facts = analyzeShell(s.root, rows.map((r) => r.row.verify), rows.map((r) => r.ledger));
-  rows.forEach(({ ledger, row }, i) => {
-    for (const { runtime, target } of facts[i]!.calls) {
-      // .py ONLY for a missing file: a live row may name a .ts that does not exist yet, because the row CREATES it.
-      if (runtime === "py" && target.endsWith(".py") && !existsSync(at(s.root, target))) {
-        out.push(`${ledger} ${row.id} [${row.status}] -> ${target} (file is gone)`);
-      }
-      for (const wrong of mismatchedCalls([{ runtime, target }])) {
-        out.push(`${ledger} ${row.id} [${row.status}] -> ${wrong} (wrong runtime for that extension)`);
-      }
-    }
-    // files= on live rows, literal paths only (a glob matching nothing is a legitimate fence for work not yet done).
-    for (const entry of row.files) {
-      if (entry.includes("*") || !entry.endsWith(".py") || existsSync(at(s.root, entry))) continue;
-      out.push(`${ledger} ${row.id} [${row.status}] -> ${entry} (files= fence names a file that is gone)`);
-    }
-  });
-  return out.sort();
-}
-
 /** THE SEVENTH CENSUS: every caller read for a mismatched runtime, on the same surface as the dangling census. */
 function runtimeMismatch(s: Scan): string[] {
   const out: string[] = [];
@@ -498,12 +423,6 @@ export function wall(root: string): WallReport {
       dangling(s),
       "A conversion deleted the file and left a caller pointing at it. Repoint the call at the .ts, and grep for the " +
         "stem: a converted script usually has more than one call site.",
-    ],
-    [
-      "live ledger verify= gone missing",
-      staleVerifies(s),
-      "Rows that have NOT run yet carry a verify naming a script that does not exist. Repoint it with the manifest " +
-        "CLI's edit-verify, in the SAME commit that converted the script.",
     ],
     [
       "callers running the WRONG runtime",

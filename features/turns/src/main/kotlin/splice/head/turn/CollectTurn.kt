@@ -1,8 +1,7 @@
 // PORT-OF: splice/gateway/head/TurnDriver.kt (collect) @ 86f1411 — invariants unchanged: the
-// non-stream sibling of TurnDriver.stream. This is the campaign's own pre-priced contingency
-// (.dev/campaigns/head-decoupling.toml HD-24): the un-split TurnDriver.kt measured 1.83, just over
-// the 1.8 gate, so collect's 18 lines move here exactly as pre-priced. [driver] is held (not a
-// lambda — kt-no-lambda-seam) so [TurnDriver.driveSealingCancellation] stays the ONE copy of the
+// non-stream sibling of TurnDriver.stream. This is the head-decoupling plan's pre-priced contingency
+// (HD-24): the un-split TurnDriver.kt measured 1.83, just over the 1.8 gate, so collect's 18 lines
+// move here exactly as pre-priced. [driver] is held (not a lambda — kt-no-lambda-seam) so [TurnDriver.driveSealingCancellation] stays the ONE copy of the
 // L3 seal contract shared by stream and collect; the visibility widening (private -> internal) is
 // named on that method.
 package splice.head.turn

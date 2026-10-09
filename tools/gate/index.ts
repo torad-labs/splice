@@ -6,7 +6,6 @@ import { attribution, usage as attributionUsage } from "./src/commands/attributi
 import { audit, usage as auditUsage } from "./src/commands/audit.ts";
 import { hook, usage as hookUsage } from "./src/commands/hook.ts";
 import { landing, usage as landingUsage } from "./src/commands/landing.ts";
-import { ledger, usage as ledgerUsage } from "./src/commands/ledger.ts";
 import { noPython, usage as noPythonUsage } from "./src/commands/no-python.ts";
 import { rules, usage as rulesUsage } from "./src/commands/rules.ts";
 import { sentinel, usage as sentinelUsage } from "./src/commands/sentinel.ts";
@@ -24,7 +23,6 @@ const VERBS = {
   attribution: { usage: attributionUsage, exec: (argv: string[]) => attribution(argv) },
   "no-python": { usage: noPythonUsage, exec: (argv: string[]) => noPython(argv) },
   typecheck: { usage: typecheckUsage, exec: (argv: string[]) => typecheck(argv) },
-  ledger: { usage: ledgerUsage, exec: (argv: string[]) => ledger(argv) },
   audit: { usage: auditUsage, exec: (argv: string[]) => audit(argv) },
   hook: { usage: hookUsage, exec: (argv: string[]) => hook(argv) },
   allowlist: { usage: allowlistUsage, exec: (argv: string[]) => allowlist(argv) },

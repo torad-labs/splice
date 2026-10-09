@@ -1667,6 +1667,11 @@ docs/architecture/request-byte-contracts.md	retain	docs/architecture/request-byt
 docs/assets/doctor.svg	retain	docs/assets/doctor.svg	Project documentation
 docs/design/DESIGN.md	retire		removed Oct 3 with the console's parity, coverage and jobs walls: the operator sets the console's screens, not these docs
 docs/design/PRODUCT.md	retire		removed Oct 3 with the console's parity, coverage and jobs walls: the operator sets the console's screens, not these docs
+docs/specs/modular-backends.md	created		the modular-backends design plan, moved from the retired campaign folder
+docs/specs/telemetry.md	created		the telemetry feature spec and its resolved decisions, moved from the retired campaign folder
+docs/specs/v0.4.0.md	created		the 0.4.0 feature spec; each section's Resolved block is Marcos's decision, moved from the retired campaign folder
+docs/specs/web-console-acceptance.md	created		the console's acceptance questions in the user's words, moved from the retired campaign folder
+docs/specs/web-console.md	created		the console feature spec and its route and event contract, moved from the retired campaign folder
 docs/design/look-gate.md	retire		removed Oct 3 with the console's parity, coverage and jobs walls: the operator sets the console's screens, not these docs
 docs/design/type-spec.md	retire		retired by the console redesign (2026-09-25): the strip-bay type spec; docs/design/DESIGN.md section 8 carries the bounded-fluid scale that replaced it
 docs/superpowers/plans/2026-08-15-head-decoupling.md	retain	docs/superpowers/plans/2026-08-15-head-decoupling.md	Project documentation
@@ -1997,7 +2002,7 @@ quality/architecture/build.gradle.kts	retain	quality/architecture/build.gradle.k
 quality/architecture/src/test/kotlin/splice/quality/ArchitectureLawsTest.kt	retain	quality/architecture/src/test/kotlin/splice/quality/ArchitectureLawsTest.kt	Architecture and static enforcement
 quality/architecture/src/test/kotlin/splice/quality/AutoCloseableClosedLawTest.kt	retain	quality/architecture/src/test/kotlin/splice/quality/AutoCloseableClosedLawTest.kt	Architecture and static enforcement
 quality/architecture/src/test/kotlin/splice/quality/BootFailureNetFirstLawTest.kt	retain	quality/architecture/src/test/kotlin/splice/quality/BootFailureNetFirstLawTest.kt	Architecture and static enforcement
-quality/architecture/src/test/kotlin/splice/quality/CampaignLedgerLawTest.kt	retain	quality/architecture/src/test/kotlin/splice/quality/CampaignLedgerLawTest.kt	Architecture and static enforcement
+quality/architecture/src/test/kotlin/splice/quality/CampaignLedgerLawTest.kt	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
 quality/architecture/src/test/kotlin/splice/quality/CompactionIsATurnLawTest.kt	retain	quality/architecture/src/test/kotlin/splice/quality/CompactionIsATurnLawTest.kt	Architecture and static enforcement
 quality/architecture/src/test/kotlin/splice/quality/ConcentrationLawTest.kt	retain	quality/architecture/src/test/kotlin/splice/quality/ConcentrationLawTest.kt	Architecture and static enforcement
 quality/architecture/src/test/kotlin/splice/quality/ConstSingleSourceLawTest.kt	retain	quality/architecture/src/test/kotlin/splice/quality/ConstSingleSourceLawTest.kt	Architecture and static enforcement
@@ -2027,7 +2032,7 @@ quality/architecture/src/test/kotlin/splice/quality/SharedQuirksLawTest.kt	retai
 quality/architecture/src/test/kotlin/splice/quality/SilentConstantsLawTest.kt	retain	quality/architecture/src/test/kotlin/splice/quality/SilentConstantsLawTest.kt	Architecture and static enforcement
 quality/architecture/src/test/kotlin/splice/quality/TerminalRestoreLawTest.kt	retain	quality/architecture/src/test/kotlin/splice/quality/TerminalRestoreLawTest.kt	Architecture and static enforcement
 quality/architecture/src/test/kotlin/splice/quality/UsageSingleAliasReaderLawTest.kt	retain	quality/architecture/src/test/kotlin/splice/quality/UsageSingleAliasReaderLawTest.kt	Architecture and static enforcement
-quality/architecture/src/test/resources/campaign-ledger-floor.json	retain	quality/architecture/src/test/resources/campaign-ledger-floor.json	Architecture and static enforcement
+quality/architecture/src/test/resources/campaign-ledger-floor.json	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
 quality/architecture/src/test/resources/const-single-source-baseline.json	retain	quality/architecture/src/test/resources/const-single-source-baseline.json	Architecture and static enforcement
 quality/architecture/src/test/resources/constructor-width-baseline.json	retain	quality/architecture/src/test/resources/constructor-width-baseline.json	Architecture and static enforcement
 quality/architecture/src/test/resources/public-surface-baseline.json	retain	quality/architecture/src/test/resources/public-surface-baseline.json	Architecture and static enforcement
@@ -2227,7 +2232,7 @@ tools/gate/config/rule-coverage-exclusions.toml	retain	tools/gate/config/rule-co
 tools/gate/index.ts	retain	tools/gate/index.ts	Cohesive engineering tooling
 tools/gate/src/commands/allowlist.ts	retain	tools/gate/src/commands/allowlist.ts	Cohesive engineering tooling
 tools/gate/src/commands/audit.ts	retain	tools/gate/src/commands/audit.ts	Cohesive engineering tooling
-tools/gate/src/commands/ledger.ts	retain	tools/gate/src/commands/ledger.ts	Cohesive engineering tooling
+tools/gate/src/commands/ledger.ts	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
 tools/gate/src/commands/no-python.ts	retain	tools/gate/src/commands/no-python.ts	Cohesive engineering tooling
 tools/gate/src/commands/rules.ts	retain	tools/gate/src/commands/rules.ts	Cohesive engineering tooling
 tools/gate/src/commands/run.ts	retain	tools/gate/src/commands/run.ts	Cohesive engineering tooling
@@ -2245,8 +2250,8 @@ tools/gate/src/lib/exclusions.ts	retain	tools/gate/src/lib/exclusions.ts	Cohesiv
 tools/gate/src/lib/flock.ts	retain	tools/gate/src/lib/flock.ts	Cohesive engineering tooling
 tools/gate/src/lib/hook.ts	retain	tools/gate/src/lib/hook.ts	Cohesive engineering tooling
 tools/gate/src/lib/jdk.ts	retain	tools/gate/src/lib/jdk.ts	Cohesive engineering tooling
-tools/gate/src/lib/landed.ts	retain	tools/gate/src/lib/landed.ts	Cohesive engineering tooling
-tools/gate/src/lib/laws.ts	retain	tools/gate/src/lib/laws.ts	Cohesive engineering tooling
+tools/gate/src/lib/landed.ts	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
+tools/gate/src/lib/laws.ts	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
 tools/gate/src/lib/no-python.ts	retain	tools/gate/src/lib/no-python.ts	Cohesive engineering tooling
 tools/gate/src/lib/repo.ts	retain	tools/gate/src/lib/repo.ts	Cohesive engineering tooling
 tools/gate/src/lib/routing.ts	retain	tools/gate/src/lib/routing.ts	Cohesive engineering tooling
@@ -2261,15 +2266,15 @@ tools/gate/src/lib/status.ts	retain	tools/gate/src/lib/status.ts	Cohesive engine
 tools/gate/test/allowlist.test.ts	retain	tools/gate/test/allowlist.test.ts	Cohesive engineering tooling
 tools/gate/test/astgrep.test.ts	retain	tools/gate/test/astgrep.test.ts	Cohesive engineering tooling
 tools/gate/test/audit.test.ts	retain	tools/gate/test/audit.test.ts	Cohesive engineering tooling
-tools/gate/test/campaign-cli-selftest-canary.sh	retain	tools/gate/test/campaign-cli-selftest-canary.sh	Cohesive engineering tooling
-tools/gate/test/campaign-cli-selftest.sh	retain	tools/gate/test/campaign-cli-selftest.sh	Cohesive engineering tooling
+tools/gate/test/campaign-cli-selftest-canary.sh	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
+tools/gate/test/campaign-cli-selftest.sh	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
 tools/gate/test/configguard.test.ts	retain	tools/gate/test/configguard.test.ts	Cohesive engineering tooling
 tools/gate/test/coverage.test.ts	retain	tools/gate/test/coverage.test.ts	Cohesive engineering tooling
 tools/gate/test/exclusions.test.ts	retain	tools/gate/test/exclusions.test.ts	Cohesive engineering tooling
 tools/gate/test/hook.test.ts	retain	tools/gate/test/hook.test.ts	Cohesive engineering tooling
 tools/gate/test/jdk.test.ts	retain	tools/gate/test/jdk.test.ts	Cohesive engineering tooling
-tools/gate/test/landed.test.ts	retain	tools/gate/test/landed.test.ts	Cohesive engineering tooling
-tools/gate/test/laws.test.ts	retain	tools/gate/test/laws.test.ts	Cohesive engineering tooling
+tools/gate/test/landed.test.ts	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
+tools/gate/test/laws.test.ts	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
 tools/gate/test/no-python.test.ts	retain	tools/gate/test/no-python.test.ts	Cohesive engineering tooling
 tools/gate/test/routing.test.ts	retain	tools/gate/test/routing.test.ts	Cohesive engineering tooling
 tools/gate/test/rules.test.ts	retain	tools/gate/test/rules.test.ts	Cohesive engineering tooling
@@ -2613,7 +2618,7 @@ tools/gate/config/typecheck.json	created		added at this path by b96f1969f feat(g
 tools/gate/src/commands/typecheck.ts	created		added at this path by b96f1969f feat(gate): a typecheck leg, every tracked .ts in a program and older errors a shrinking baseline
 tools/gate/src/lib/typecheck.ts	created		added at this path by b96f1969f feat(gate): a typecheck leg, every tracked .ts in a program and older errors a shrinking baseline
 tools/gate/test/typecheck.test.ts	created		added at this path by b96f1969f feat(gate): a typecheck leg, every tracked .ts in a program and older errors a shrinking baseline
-tools/gate/test/wire-law-source-census.test.ts	created		added at this path by 2d740991f refactor(layout): turns, sessions, usage, heads and models become feature slices
+tools/gate/test/wire-law-source-census.test.ts	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
 features/lifecycle/src/testFixtures/kotlin/splice/lifecycle/StopRungPolls.kt	created		the CLI stop rungs for app's stop-ladder test, read from their declarations (LAYOUT-01 review)
 core/src/testFixtures/kotlin/splice/core/testing/TestPorts.kt	created		added at this path by 36384d41f test(core): reserve test ports below the ephemeral range, and retire the lease
 core/src/test/kotlin/splice/core/testing/TestPortsTest.kt	created		added at this path by 36384d41f test(core): reserve test ports below the ephemeral range, and retire the lease
@@ -2629,7 +2634,7 @@ tools/release/src/lib/changelog.ts	created		the release body from the version's 
 tools/release/src/commands/notes.ts	created		the release body from the version's CHANGELOG section, and the gate that a version bump carries one (V4-198)
 tools/release/test/changelog.test.ts	created		the release body from the version's CHANGELOG section, and the gate that a version bump carries one (V4-198)
 core/src/test/kotlin/splice/core/config/ConfigHeadOnlyKnobsTest.kt	created		the trace and the wire tap are set per head only (v0.4.0 prompt-review)
-tools/gate/test/ledger-guard.test.ts	created		the campaign-ledger guard driven through its PreToolUse entry (v0.4.0 tooling review)
+tools/gate/test/ledger-guard.test.ts	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
 tools/e2e/docker/lib.sh	created		added at this path by 50565f37b test(e2e): rehearse the upgrade from a published release
 tools/e2e/docker/lib.ts	created		added at this path by 50565f37b test(e2e): rehearse the upgrade from a published release
 tools/e2e/docker/upgrade.sh	created		added at this path by 50565f37b test(e2e): rehearse the upgrade from a published release

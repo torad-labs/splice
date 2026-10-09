@@ -8,8 +8,8 @@
   at `feat/v0.4.0` `7fa98534`
 - Why: Marcos rates the PostHog wizard first-class and torad-toolkit pretty good, and asked how
   splice compares. Feeds the telemetry consent step
-  (`.dev/campaigns/telemetry/FEATURES.md` §6) and 0.4.0's guided-provider-setup feature
-  (`.dev/campaigns/v0.4.0/FEATURES.md` §1).
+  (`docs/specs/telemetry.md` §6) and 0.4.0's guided-provider-setup feature
+  (`docs/specs/v0.4.0.md` §1).
 
 ## The headline
 
@@ -207,18 +207,18 @@ start (it heals backups during `sync`, not before the first read), and no non-TT
   *patterns* — preflight, typed surfaces, secret vault — not the architecture.
 - **Self-instrumentation before the telemetry campaign lands.** The PostHog wizard reports its own
   usage to PostHog. That is a reasonable thing to want for `splice setup` eventually, and it must
-  ride the channel and consent design in `.dev/campaigns/telemetry/FEATURES.md`, not a second path
+  ride the channel and consent design in `docs/specs/telemetry.md`, not a second path
   invented for the wizard.
 - **`npx`-style remote execution.** splice is an installed binary with checksum and attestation
   verification; a curl-to-shell equivalent would undo a guarantee the project already paid for.
 
 ## Where this feeds
 
-- **Telemetry consent step** (`.dev/campaigns/telemetry/FEATURES.md` §6) — the proposed step is
+- **Telemetry consent step** (`docs/specs/telemetry.md` §6) — the proposed step is
   written against `AdminSupport.confirm`, which is correct today. If item 1 lands, the same step
   should use `note` for the disclosure block rather than raw `println`, so the payload summary reads
   as a titled box like torad's `Summary`.
-- **Guided provider setup** (`.dev/campaigns/v0.4.0/FEATURES.md` §1) — that section's resolved
+- **Guided provider setup** (`docs/specs/v0.4.0.md` §1) — that section's resolved
   decision is `splice add <profile>` with the profile as an argument. Item 1 is what would let it
   be a menu instead, and items 2–4 are what would make it feel like `torad init`. Worth reopening
   that decision if the prompt toolkit lands first.

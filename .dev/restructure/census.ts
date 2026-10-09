@@ -6,7 +6,7 @@
 // checks cannot fail for what the list omits.
 //
 // SCOPE: every tracked path under a top-level DIRECTORY whose name does not start with a dot.
-// Excluded by name: the dot roots (.dev campaign ledgers, .github workflows, .claude hook wiring)
+// Excluded by name: the dot roots (.dev research and runbooks, .github workflows, .claude hook wiring)
 // and root-level files (build entry points, licences, the lockfile). Neither is product layout,
 // and neither moved in LAYOUT-01. A new product root is therefore in scope the day it appears.
 //

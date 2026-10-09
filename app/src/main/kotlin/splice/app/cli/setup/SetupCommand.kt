@@ -97,8 +97,10 @@ internal class SetupCommand(
     private suspend fun install(plan: WizardAnswer.Plan): Boolean {
         prompts.spinner.start("Installing")
         val result = Cancellables.runCatchingBestEffort { runInstall() }
-        val installed = result.fold(onSuccess = { it }, onFailure = { false })
+        val installed = result.fold(onSuccess = { it is InstallResult.Linked }, onFailure = { false })
         if (installed) prompts.spinner.stop("Installed wrappers") else prompts.spinner.fail("Install failed")
+        // A refusal prints its sentence on one line, as the install verb does, after the spinner has stopped.
+        result.getOrNull()?.let { if (it is InstallResult.Refused) System.err.println("splice: ${it.sentence}") }
         result.exceptionOrNull()?.let { throw it }
         if (!installed) return false
         plan.lanes.apply(plan.lane, plan.picker.addAll(plan.heads))?.let { println(it) }
@@ -180,14 +182,11 @@ internal class SetupCommand(
         return listOf(starter, wrappers) + extra + adding + lane + keys
     }
 
-    private fun runInstall(): Boolean {
+    private fun runInstall(): InstallResult {
         InstallWiring.init(env)
         val install = InstallWiring.command()
         val wrappers = install.install("--all", env)
-        val result = if (wrappers is InstallResult.Linked) install.installSelf(env) else wrappers
-        // A refusal prints its sentence on one line, as the install verb does; the wizard reports the install failed.
-        if (result is InstallResult.Refused) System.err.println("splice: ${result.sentence}")
-        return result is InstallResult.Linked
+        return if (wrappers is InstallResult.Linked) install.installSelf(env) else wrappers
     }
 }
 

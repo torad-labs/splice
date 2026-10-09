@@ -105,7 +105,7 @@ internal class BufferingWireSink(private val real: WireSink) : WireSink {
     }
 
     /** Drop the tentative output (the round was truncated — its answer was built on cut reasoning). */
-    public fun discard() {
+    override fun discard() {
         ops.clear()
         openRefs.clear()
     }

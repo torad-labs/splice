@@ -60,6 +60,11 @@ public interface WireSink : SourceProgressSink, NativeResponseSink {
 
     public suspend fun closeAll()
 
+    /** Drop output this sink holds but has not yet shown the client: a round whose answer is replaced by another
+     *  round's (a websocket round re-served over SSE) must leave nothing of its own behind. Default no-op: a sink
+     *  that holds nothing has nothing to drop. */
+    public fun discard() {}
+
     /** Complete text block in one shot (promote-to-text, mirror). Empty text is a no-op. */
     public suspend fun addTextBlock(text: String)
 

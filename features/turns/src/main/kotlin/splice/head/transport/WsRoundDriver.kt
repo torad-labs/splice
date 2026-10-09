@@ -27,6 +27,7 @@ import splice.head.turn.ZeroEventClassifier
 import splice.upstream.Provider
 import splice.upstream.WsRoundAbort
 import splice.upstream.WsRoundRunner
+import splice.upstream.retry.PathLiveness
 import splice.upstream.transport.HeaderRedaction
 
 internal class WsRoundDriver(
@@ -135,7 +136,7 @@ internal class WsRoundDriver(
                 drive.slot,
                 round,
                 inputs.frameEmittedThisRound,
-                accepted.pathPulse,
+                PathLiveness(accepted.pathPulse),
             )
             // V4-114: the fallback is a VALUE on drive()'s return type, so this branch is
             // compiler-checked — adding a WsRoundResult case can no longer slip past a `catch` on
@@ -146,6 +147,9 @@ internal class WsRoundDriver(
                 is WsRoundResult.Streamed -> result.outcome
                 is WsRoundResult.NeedsSse -> {
                     ending = result.detail
+                    // The round's buffered draft belongs to a round the client never saw; SSE answers the turn on
+                    // this same sink, so what the websocket round buffered must not be flushed beside that answer.
+                    inputs.sink.discard()
                     bypassToSse(runner, drive, result.detail)
                 }
             }

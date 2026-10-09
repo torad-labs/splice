@@ -89,6 +89,7 @@ import splice.head.round.RunnerSignals
 import splice.head.turn.TurnDrive
 import splice.head.turn.ZeroEventClassifier
 import splice.head.usage.OutputClamp
+import splice.head.wire.BufferingWireSink
 import splice.head.wire.ClientChannel
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnTerminal
@@ -1139,6 +1140,39 @@ class WsRoundDriverTest {
         try {
             driver.run(inputs)
             assertEquals(listOf(false to 999L), answers)
+        } finally {
+            inputs.turnJob.cancel()
+            inputs.drive.slot.release()
+        }
+    }
+
+    /** A fold round buffers its text draft in the sink and counts no client frame for it. When a later
+     *  failure terminal sends the round to SSE on that same sink, the draft must go with the failed round:
+     *  SSE's answer then flushes alone, never beside the websocket round's obsolete text. */
+    @Test
+    fun `a websocket draft buffered before a re-serve over SSE is not flushed beside the SSE answer`() = runTest {
+        val runner = ScriptedRunner(
+            listOf(
+                """{"type":"response.created","response":{"id":"r1"}}""",
+                """{"type":"response.output_item.added","output_index":0,"item":{"type":"message","role":"assistant"}}""",
+                """{"type":"response.content_part.added","output_index":0,"content_index":0,""" +
+                    """"part":{"type":"output_text","text":""}}""",
+                """{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"draft"}""",
+                """{"type":"response.failed","response":{"id":"r1","error":{"code":"server_error","message":"boom"}}}""",
+            ),
+        )
+        val client = RecordingSink2()
+        val buffer = BufferingWireSink(client)
+        val inputs = coldFlowInputs(RecordingTerminal(), this, sink = buffer)
+        val driver = WsRoundDriver(
+            provider(runner),
+            log = {},
+            classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
+        )
+        try {
+            assertNull(driver.run(inputs), "the round is re-served over SSE")
+            buffer.flush() // what the SSE round's success does with the sink it inherited
+            assertEquals(emptyList<String>(), client.opens, "the failed websocket round's draft reaches no client")
         } finally {
             inputs.turnJob.cancel()
             inputs.drive.slot.release()

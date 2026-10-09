@@ -11,22 +11,9 @@
 # single string_content node then contains the full substring. Do NOT narrow it back; that reopens
 # the concatenation evasion.
 #
-# LaunchSpecFactory.kt is ignored deliberately, not incidentally. Its `"~/.claude-$key"`
-# (launchSpecFor, moved out of Daemon.kt in the 2026-08-17 decomposition) is the per-head
-# CLAUDE_CONFIG_DIR default for the WRAPPED Claude Code instance — `~/.claude-claudex`,
-# `~/.claude-grok`, one per head. That is a different external contract from this wall's subject,
-# which is the GATEWAY's own state root (StatePaths.kt — `~/.splice/state`, or the adopted
-# `~/.claude-codex/state`). They share a prefix and nothing else; routing the launcher's config
-# dir through StatePaths would be wrong.
-#
-# McpSources.kt is ignored for a THIRD, unrelated reason (V4-146, 2026-09-20): its literal
-# `.claude-plugin` is Claude Code's own reserved plugin-manifest directory name (a plugin's
-# `<version>/.claude-plugin/plugin.json`), not a state or config DIR this daemon resolves — it
-# happens to share the substring `.claude-` with the pattern this wall guards and nothing else. The
-# file's OWN dash-suffixed home enumeration (`.claude-bonsai`, `.claude-claude-grok`, …) is spelled
-# off Keys.CLAUDE (no literal of its own — kt-no-vanilla-config-dir's dispositioned constant); only
-# the plugin-manifest name is a literal, and it names a fixed on-disk contract Claude Code owns, not
-# one this repo could route through StatePaths.
+# The other `.claude-` literals are not this root and are declared as their own const val, exempt by shape:
+# LaunchSpecFactory's `~/.claude-` is the per-head CLAUDE_CONFIG_DIR default for the WRAPPED Claude Code (a different
+# external contract, one dir per head), and McpSources' `.claude-plugin` is Claude Code's own plugin-manifest dirname.
 id: kt-state-paths-single-source
 language: kotlin
 severity: error
@@ -34,24 +21,23 @@ message: "State paths resolve only in StatePaths.kt — no `.splice` or `.claude
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
-ignores:
-  - core/src/main/kotlin/**/config/StatePaths.kt
-  # per-head CLAUDE_CONFIG_DIR for the wrapped Claude Code — a separate contract, see header
-  - app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt
-  # `.claude-plugin` is a plugin manifest dirname, not a state/config dir — see header
-  - integrations/claude-code/src/main/kotlin/splice/client/mcp/McpSources.kt
 rule:
-  any:
-    - kind: string_content
-      regex: \.claude-
-    # The `.splice` root is matched as a whole PATH SEGMENT, not as a substring, because main
-    # sources legitimately spell five dot-prefixed splice TEMP names that share the prefix and are
-    # not state roots: `.splice-doctor-write-probe.` (DoctorProbeWrite), `.splice-exec-probe.`
-    # (HookScriptFiles), `.splice-link-` (SessionRegistryLink, ClaudeConfigMaterializer,
-    # ProjectsLink) and `.splice-wrap-`/`.splice-wrap-backup-` (WrappedHead). Requiring a `/` or
-    # end-of-node after the segment separates the root from all of them, and still matches the
-    # template chunks a string interpolation leaves behind (`"~/.splice/$leaf"` → `~/.splice/`).
-    # This is the same anchored-on-string_content idiom kt-no-vanilla-config-dir uses, for the same
-    # reason: a raw string has different delimiters, so the regex belongs on the inner content node.
-    - kind: string_content
-      regex: (?:^|/)\.splice(?:/|$)
+  all:
+    # every literal this wall guards is declared once, as a const val, and a const val is exempt by that shape
+    # (single-source-declaration), not by the file that holds it: StatePaths' two roots, LaunchSpecFactory's
+    # per-head config prefix and McpSources' plugin-manifest dirname each name their one literal that way
+    - not:
+        inside:
+          matches: single-source-declaration
+          stopBy: end
+    - any:
+        - kind: string_content
+          regex: \.claude-
+        # The `.splice` root is matched as a whole PATH SEGMENT, not as a substring, because main sources
+        # legitimately spell dot-prefixed splice TEMP names that share the prefix and are not state roots
+        # (`.splice-doctor-write-probe.`, `.splice-exec-probe.`, `.splice-link-`, `.splice-wrap-`). Requiring a `/`
+        # or end-of-node after the segment separates the root from all of them, and still matches the template
+        # chunks a string interpolation leaves behind (`"~/.splice/$leaf"` gives `~/.splice/`). The regex sits on
+        # the inner string_content node because a raw string has different delimiters.
+        - kind: string_content
+          regex: (?:^|/)\.splice(?:/|$)

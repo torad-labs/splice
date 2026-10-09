@@ -1,5 +1,9 @@
 id: kt-state-paths-single-source
 valid:
+  # each guarded literal's one declaration, exempt by its shape: a const val
+  - 'internal const val SPLICE_STATE_HOME: String = ".splice"'
+  - 'internal const val LEGACY_STATE_HOME: String = ".claude-codex"'
+  - 'internal const val HEAD_CONFIG_DIR_PREFIX: String = "~/.claude-"'
   - 'val dir = statePaths.stateDir'
   - 'val dir = statePaths.resolve("state")'
   # V4-177: the five dot-prefixed splice TEMP names in main sources. They share the `.splice`
@@ -12,6 +16,8 @@ valid:
   # the install share dir is `<prefix>/share/splice` — no dot, so not this wall's subject
   - 'val share = home.resolve(".local/share/splice")'
 invalid:
+  # a literal that is not a const declaration is the drift this wall exists for
+  - 'val LEGACY_STATE_HOME = ".claude-codex"'
   - 'val dir = home.resolve(".claude-codex/state")'
   # the evasions the widened fragment closes (2026-07-26 audit): the old
   # `\.claude-codex` regex is a per-NODE check, so neither of these contained

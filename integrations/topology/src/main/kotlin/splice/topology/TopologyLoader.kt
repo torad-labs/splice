@@ -20,6 +20,7 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SecureFile
 import splice.core.util.TopologyTypeFailure
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -203,9 +204,11 @@ replay_reasoning = false
 
     /** Digest of the file as it is on disk RIGHT NOW; null when unreadable (fail open — an
      *  unreadable file must degrade the staleness signal, never break /health or a launch). */
-    public fun currentDigest(path: Path): String? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): fail-open by design (see the doc above): an unreadable or absent splice.toml must degrade the staleness signal, never break /health or a launch, so null IS the whole reading.
-        Cancellables.runCatchingCancellable { sha256Hex(Files.readAllBytes(path)) }.getOrNull()
+    public fun currentDigest(path: Path): String? = try {
+        sha256Hex(Files.readAllBytes(path))
+    } catch (_: IOException) {
+        null
+    }
 
     /** sha-256 of splice.toml bytes, the one spelling of a topology digest: boot, [currentDigest] and
      *  the live window re-read (V4-162, TopologyWindows) all hash through here. */

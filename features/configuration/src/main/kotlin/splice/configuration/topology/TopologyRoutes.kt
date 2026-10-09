@@ -68,11 +68,17 @@ public class TopologyRoutes(private val source: TopologyWriterSource, private va
     /** Resolve a draft head's instruction file without writing splice.toml. */
     public fun preview(body: String): JsonReply = PromptPreview(source).reply(body)
 
+    /** The `topology` object of a request body. A body that is not JSON, not an object, or without that member
+     *  gets the same answer, one 400 naming the shape expected, so the parse failure has nothing more to say. */
+    private fun topologyObject(body: String): JsonObject? = try {
+        json.parseToJsonElement(body).jsonObject[TOPOLOGY] as? JsonObject
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
     public fun write(body: String): JsonReply {
         val writer = source() ?: return error(HttpStatusCode.ServiceUnavailable, TOPOLOGY_UNWIRED)
-        // ast-grep-ignore: kt-no-silent-result-collapse -- a body that is not JSON and a body without a topology object get the same answer, one 400 naming the shape expected, so the failure has nothing more to say
-        val requested = Cancellables.runCatchingCancellable { json.parseToJsonElement(body).jsonObject[TOPOLOGY] }
-            .getOrNull() as? JsonObject
+        val requested = topologyObject(body)
             ?: return error(HttpStatusCode.BadRequest, "the body must be {\"topology\": {...}}")
         val attempt = Cancellables.runCatchingCancellable { attempt(writer, requested) }.getOrElse { failure ->
             Attempt(refused(TopologyFinding("splice.toml", SafeFailureText.render(failure))))

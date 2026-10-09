@@ -16,6 +16,7 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.TopologyTypeFailure
+import splice.oauth.OAuthAccountRefused
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -96,8 +97,13 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
     }
 
     /** The operator-facing reason a boundary-captured failure carries: rendered as [SafeFailureText] does, with the
-     *  splice line it came from, because its message may quote the credential file it was parsing. */
-    internal fun reason(failure: Throwable): String = SafeFailureText.render(failure) + SafeFailureText.site(failure)
+     *  splice line it came from, because its message may quote the credential file it was parsing.
+     *  A refused OAuth account carries a sentence the pool wrote itself, never file bytes or the label, so that
+     *  sentence is the reason. */
+    internal fun reason(failure: Throwable): String = when (failure) {
+        is OAuthAccountRefused -> failure.reason
+        else -> SafeFailureText.render(failure) + SafeFailureText.site(failure)
+    }
 
     // Timestamps every log line and tees it to a persistent daemon.log (so failures and slow turns
     // survive restarts and are `tail -f`-able) in addition to stderr. The turn path only enqueues an

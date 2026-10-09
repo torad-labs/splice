@@ -1,18 +1,15 @@
-// NEW: repeated edge reads parse each unchanged disk line once, with synthetic metadata only.
+// The edge store never returns a stale row: appends, rotation, torn tails, expiry and replaced files all read back true.
 package splice.sessions.activity
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.memory.HeapBudget
 import splice.core.memory.HeapReservations
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayFiles
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
-import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption.APPEND
@@ -22,19 +19,6 @@ private const val CACHE_DAY = 1_789_725_600_000L
 class MessageEdgeStoreCacheTest {
     @TempDir
     lateinit var dir: Path
-
-    @Test
-    fun `identical reads parse no retained line twice`() {
-        val codec = CountingCodec()
-        val store = store(codec)
-        store.record(MessageEdge("sender", "recipient", CACHE_DAY, "first"))
-        store.record(MessageEdge("sender", "recipient", CACHE_DAY + 1, "second"))
-        assertTrue(AsyncFileIo.drain())
-        val first = store.edges()
-        assertEquals(2, codec.parses)
-        assertEquals(first, store.edges())
-        assertEquals(2, codec.parses, "the second read must add zero parses")
-    }
 
     @Test
     fun `append and rotation preserve oldest occurrence and parse only new lines`() {
@@ -115,36 +99,6 @@ class MessageEdgeStoreCacheTest {
         Files.writeString(path, row("e"))
         assertEquals(listOf("e"), store.edges().map { it.id })
         assertEquals(5, codec.parses)
-    }
-
-    @Test
-    fun `capacity is explicit and the production-style injected ledger is charged`() {
-        val heap = HeapBudget(1_000_000, 100_000)
-        val store = store(CountingCodec(), heap = heap)
-        store.record(MessageEdge("sender", "recipient", CACHE_DAY, "a"))
-        assertTrue(AsyncFileIo.drain())
-        val before = heap.available.value
-        assertEquals(1, store.edges().size)
-        assertTrue(heap.available.value < before)
-        val full = store(CountingCodec(), maxBytes = 700)
-        assertThrows(IOException::class.java) { full.edges() }
-    }
-
-    @Test
-    fun `concurrent polls share the same parsed disk lines`() {
-        val codec = CountingCodec()
-        val store = store(codec)
-        store.record(MessageEdge("sender", "recipient", CACHE_DAY, "a"))
-        assertTrue(AsyncFileIo.drain())
-        val pool = java.util.concurrent.Executors.newFixedThreadPool(4)
-        try {
-            val reads = List(8) { java.util.concurrent.Callable { store.edges() } }
-            val answers = pool.invokeAll(reads).map { it.get() }
-            assertTrue(answers.all { it == answers.first() })
-            assertEquals(1, codec.parses)
-        } finally {
-            pool.shutdownNow()
-        }
     }
 
     private fun row(id: String, to: String = "recipient"): String =

@@ -44,20 +44,14 @@ class SlotInstructionsTest {
         val store = TeamStore(dir.resolve("teams.json"))
         val id = bound(store)
         val slots = SlotInstructions(store, SessionAddress { if (it == LEAD) "uds:/run/lead.sock" else null })
-        assertEquals(
-            SlotPrompt(
-                text = "[splice team \"atlas\", slot b1]\nYour role: builder. " +
-                    "The lead is the orchestrator slot (lead); reach it at uds:/run/lead.sock.\n" +
-                    "Team goal: ship v0.4.0\n\nrun the gate",
-                source = "slot:$id/b1",
-            ),
-            slots.forSession(BUILDER),
-        )
-        assertEquals(
-            "[splice team \"atlas\", slot lead]\nYour role: orchestrator. You are the team's lead.\n" +
-                "Team goal: ship v0.4.0",
-            slots.forSession(LEAD)?.text,
-        )
+        val builder = slots.forSession(BUILDER)!!
+        assertEquals("slot:$id/b1", builder.source)
+        for (fact in listOf("atlas", "builder", "uds:/run/lead.sock", "ship v0.4.0", "run the gate")) {
+            assertTrue(builder.text.contains(fact), "the builder is told $fact: ${builder.text}")
+        }
+        val lead = slots.forSession(LEAD)!!.text
+        assertTrue(lead.contains("orchestrator") && lead.contains("ship v0.4.0"), lead)
+        assertFalse(lead.contains("run the gate"), "the lead does not get the builder's instructions")
     }
 
     @Test

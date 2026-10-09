@@ -63,7 +63,7 @@ class SessionsCommandTest {
 
     // V4-293: a session that never went through splice printed "unknown head", like one splice cannot place.
     @Test
-    fun `a direct session prints direct and one splice cannot place prints unknown head - V4-293`(@TempDir dir: Path) {
+    fun `a direct session prints direct and one splice cannot place prints unknown head`(@TempDir dir: Path) {
         Files.writeString(dir.resolve("21.json"), """{"pid":21,"name":"direct-one","status":"idle","updatedAt":$now}""")
         Files.writeString(dir.resolve("22.json"), """{"pid":22,"name":"lost-one","status":"idle","updatedAt":$now}""")
         val registry = SessionRegistry(
@@ -127,7 +127,7 @@ class SessionsCommandTest {
      *  file, so a name that reaches a session from the terminal reaches it from the console too: an
      *  emoji stays whole, a lone surrogate and every control or format character go. */
     @Test
-    fun `the send line is the console's call on the shared fixtures - V4-324`(@TempDir dir: Path) {
+    fun `the send line is the console's call on the shared fixtures`(@TempDir dir: Path) {
         val fixture = checkNotNull(javaClass.getResource("send-targets.json")) { "send-targets.json" }.readText()
         val cases = Json.parseToJsonElement(fixture).jsonObject.getValue("cases").jsonArray.map { it.jsonObject }
         cases.forEachIndexed { at, case ->

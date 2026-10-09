@@ -286,7 +286,7 @@ class TeamsRoutesTest {
     }
 
     @Test
-    fun `a local day read after UTC midnight keeps the labels its morning wrote - V4-285`() {
+    fun `a local day read after UTC midnight keeps the labels its morning wrote`() {
         val id = rig.team().id
         morningAndEvening(rig) { at -> rig.stores.activity.label(LEAD, "claude", "at $at", at) }
 
@@ -296,7 +296,7 @@ class TeamsRoutesTest {
     }
 
     @Test
-    fun `a local day read after UTC midnight keeps its morning's edges at a one-day edge window - V4-285`() {
+    fun `a local day read after UTC midnight keeps its morning's edges at a one-day edge window`() {
         val oneDay = TeamRig(tmp.resolve("one-day"), retentionDays = 1)
         val id = oneDay.team().id
         morningAndEvening(oneDay) { at -> oneDay.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", at, "t$at")) }
@@ -307,7 +307,7 @@ class TeamsRoutesTest {
     }
 
     @Test
-    fun `a range whose width overflows the 25-hour cap is refused, as any negative from is - V4-285`() {
+    fun `a range whose width overflows the 25-hour cap is refused, as any negative from is`() {
         val id = rig.team().id
         val (min, max) = Long.MIN_VALUE.toString() to Long.MAX_VALUE.toString()
         for (read in listOf(routes().reads.chat(id, null, min, max), routes().reads.activity(id, null, min, max))) {

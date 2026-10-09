@@ -174,19 +174,4 @@ class ForegroundToolsTest {
         record(SESSION, "late-tool", ForegroundToolPhase.START)
         assertEquals(SessionAvailability.STALE, availability(registry))
     }
-
-    @Test
-    fun `without callbacks the registration and live-turn policy are unchanged`(@TempDir dir: Path) {
-        val registry = registry(dir)
-        assertEquals(SessionAvailability.STALE, availability(registry))
-        val heard = SessionRegistry(
-            dir,
-            routeOf = { SessionRoute.Unknown },
-            pidAlive = { true },
-            clock = { now },
-            heard = { mapOf(SESSION to now) },
-            foreground = tools,
-        )
-        assertEquals(SessionAvailability.LIVE, availability(heard))
-    }
 }

@@ -14,12 +14,18 @@ message: "SharedSummaryParts is constructed ONCE per turn (TurnMeta's default) â
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
-ignores:
-  - core/src/main/kotlin/**/turn/Turn.kt
 rule:
   any:
-    # bare construction
+    # bare construction, except as the default of the `summaryParts` constructor parameter: TurnMeta's default is the
+    # one construction, exempt by that shape and not by the file that holds it
     - pattern: SharedSummaryParts()
+      not:
+        inside:
+          kind: class_parameter
+          stopBy: end
+          has:
+            kind: simple_identifier
+            regex: '^summaryParts$'
     # fully-qualified construction â€” a DIFFERENT node (navigation_expression) the bare
     # pattern cannot reach; this is the exact shape used to red-proof the wiring test.
     - pattern: $$$.SharedSummaryParts()

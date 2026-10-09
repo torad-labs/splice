@@ -132,18 +132,21 @@ public class FileCompactionRecordings(
 
     private fun expired(file: Path): Boolean = now() - Files.getLastModifiedTime(file).toMillis() > ttlMs
 
-    /** The kept files of [key]: `<hash of key>.<generation>.json`, one per generation (a save leaves only the newest). */
+    /** The kept files of [key]: `<hash of key>.<generation>.json`, one per generation (a save leaves only the newest), or the legacy `<hash of key>.json`. */
     private fun keptFor(key: String): List<Path> {
         if (!Files.isDirectory(dir)) return emptyList()
-        return Files.newDirectoryStream(dir, "${keyHash(key)}.*$SUFFIX").use { it.toList() }
+        val generations = Files.newDirectoryStream(dir, "${keyHash(key)}.*$SUFFIX").use { it.toList() }
+        return generations + listOf(fileFor(key, LEGACY_GENERATION)).filter(Files::exists)
     }
 
     private fun fileFor(key: String, generation: String): Path {
         require(GENERATION.matches(generation)) { "a compaction generation is letters, digits and dashes" }
+        if (generation == LEGACY_GENERATION) return dir.resolve("${keyHash(key)}$SUFFIX")
         return dir.resolve("${keyHash(key)}.$generation$SUFFIX")
     }
 
-    private fun generationOf(file: Path): String = file.fileName.toString().removeSuffix(SUFFIX).substringAfter('.')
+    private fun generationOf(file: Path): String =
+        file.fileName.toString().removeSuffix(SUFFIX).substringAfter('.', LEGACY_GENERATION)
 
     private fun keyHash(key: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8))
@@ -156,6 +159,9 @@ private data class KeptRecording(val key: String, val frames: List<String>)
 
 private const val SUFFIX = ".json"
 private val GENERATION = Regex("[0-9A-Za-z-]+")
+
+/** The generation of an answer kept before generations existed, as `<keyhash>.json`: still served after an upgrade, spent by its own delivery. */
+private const val LEGACY_GENERATION = "legacy"
 private const val UPSTREAM = "its retry runs upstream"
 
 /** How long an answer is held for its retry, in memory and on disk alike: Claude Code retries a

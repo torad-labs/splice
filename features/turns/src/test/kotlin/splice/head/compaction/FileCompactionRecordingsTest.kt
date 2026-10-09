@@ -16,6 +16,7 @@ import splice.head.wire.FrameRecording
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
+import java.security.MessageDigest
 
 class FileCompactionRecordingsTest(@TempDir tempDir: Path) {
 
@@ -110,6 +111,46 @@ class FileCompactionRecordingsTest(@TempDir tempDir: Path) {
         }
         fresh.consumed(key, older)
         assertEquals(newer.generation, store().load(key)?.generation, "a stale generation leaves the newer file")
+    }
+
+    /** What the build before generations wrote: `<sha256 of key>.json`, holding the key and its frames. */
+    private fun writeLegacy(key: String, kept: List<String>): Path {
+        Files.createDirectories(dir)
+        val hash = MessageDigest.getInstance("SHA-256").digest(key.toByteArray()).joinToString("") { "%02x".format(it) }
+        val quoted = kept.joinToString(",") { "\"" + it.replace("\n", "\\n") + "\"" }
+        return dir.resolve("$hash.json").also { Files.writeString(it, """{"key":"$key","frames":[$quoted]}""") }
+    }
+
+    @Test
+    fun `an answer kept by the build before generations is still served after an upgrade, and spent by its delivery`() = runTest {
+        val key = checkNotNull(CompactionReplay().key("sess-1", "{}"))
+        val legacy = writeLegacy(key, frames)
+
+        val replay = CompactionReplay(store())
+        val restored = checkNotNull(replay.lookup(key)) { "the retry finds the answer the old build kept" }
+        val served = mutableListOf<String>()
+        assertTrue(restored.follow { served += it })
+        assertEquals(frames, served)
+
+        replay.consumed(key, restored)
+        assertTrue(!Files.exists(legacy), "the delivery spends the legacy file")
+        assertNull(CompactionReplay(store()).lookup(key))
+    }
+
+    @Test
+    fun `a newer answer kept over a legacy file replaces it, and the legacy delivery leaves the newer one`() {
+        val key = checkNotNull(CompactionReplay().key("sess-1", "{}"))
+        val legacy = writeLegacy(key, frames)
+        val old = checkNotNull(CompactionReplay(store()).lookup(key))
+        val replay = CompactionReplay(store())
+        val newer = wholeAnswer()
+        replay.begin(key, newer)
+        replay.finish(key, newer, keep = true)
+        assertTrue(!Files.exists(legacy), "the newer save replaces the legacy file")
+
+        replay.consumed(key, old)
+
+        assertEquals(newer.generation, store().load(key)?.generation)
     }
 
     @Test

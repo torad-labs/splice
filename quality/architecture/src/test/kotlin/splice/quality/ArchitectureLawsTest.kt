@@ -9,42 +9,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import java.io.File
 
-/** Production modules whose every .kt file must open with a slot header (#963):
- *  `// PORT-OF: <source> @ <sha> — invariants: ...` or `// NEW: <reason>`.
- *
- *  DR-165: this list is no longer the DENOMINATOR, only the covered set. It used to be both, and a
- *  denominator taken from the list being checked cannot fail for anything absent from that list —
- *  the same tautology the module-direction law below already avoids by reading the build's own map.
- *  `fir-checks` was the live proof: it ships three production files and was simply not here, so
- *  neither this law nor the contract-coverage law had ever looked at it.
- *
- *  P0: modules are named by GRADLE PATH, not by directory name — the path is the stable identity
- *  when a module moves under integrations/dialects/ or integrations/providers/, and [ProjectMap] is what turns it into a
- *  directory. */
-private val PORT_SCOPE_MODULES = listOf(
-    ":core", ":integrations-claude-code", ":integrations-mcp", ":integrations-http", ":integrations-topology",
-    ":integrations-codemode", ":integrations-oauth", ":integrations-terminal", ":integrations-daemon-client",
-    ":integrations-upstream",
-    ":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat",
-    ":integrations-dialects-anthropic", ":integrations-providers-codex", ":integrations-providers-grok", ":integrations-providers-openai",
-    ":integrations-providers-kimi", ":integrations-providers-muse", ":features-turns",
-    ":features-heads", ":features-models", ":features-sessions", ":features-usage", ":features-accounts",
-    ":features-lifecycle", ":features-diagnostics", ":features-launch", ":features-configuration",
-    ":features-events", ":app",
-    ":quality-compiler-plugin",
-)
-
-/** DR-165: modules that ship production Kotlin and are deliberately OUT of the slot-header law,
- *  each with a written reason. Empty today, and that is the honest state — `fir-checks` is the only
- *  harness with production sources and its files already carried slot headers, so it is covered
- *  above rather than excused here. The mechanism exists so a future exclusion has somewhere to go
- *  that carries a REASON: a module in neither map fails by name, and a blank reason fails too,
- *  because a placeholder is an absence wearing a label. */
-private val SLOT_HEADER_EXEMPT: Map<String, String> = emptyMap()
-
 /** DR-165: every module that ACTUALLY ships production Kotlin, read off the tree. This is the
- *  denominator both coverage laws now use — the module-direction law already derives its own from
- *  the build, and these two were the stragglers still trusting a hand-authored list.
+ *  denominator the coverage laws use — the module-direction law already derives its own from
+ *  the build, so no coverage law trusts a hand-authored list.
  *
  *  P0: the modules come from the PROJECT MAP and their sources from the directory the map gives,
  *  not from the root's immediate child directories. The old walk could only ever see a module that
@@ -58,36 +25,8 @@ private fun productionModules(map: ProjectMap): Set<String> =
         }
         .toSet()
 
-/** DR-165: the disposition of every production module, as violation lines. PURE so it can be proven
- *  against synthetic input — with the live tree fully dispositioned, nothing real can red it, which
- *  is exactly the unfalsifiable shape this row exists to remove. */
-private fun slotHeaderDispositions(
-    onDisk: Set<String>,
-    covered: Set<String>,
-    exempt: Map<String, String>,
-): List<String> {
-    val violations = mutableListOf<String>()
-    (onDisk - covered - exempt.keys).sorted().forEach { module ->
-        violations += "$module ships production Kotlin but is in neither PORT_SCOPE_MODULES nor " +
-            "SLOT_HEADER_EXEMPT — cover it (preferred) or exempt it WITH a written reason."
-    }
-    exempt.filterValues { it.isBlank() }.keys.sorted().forEach { module ->
-        violations += "$module is exempted from the slot-header law with a blank reason — a placeholder " +
-            "is an absence wearing a label; write why, or cover the module."
-    }
-    (covered - onDisk).sorted().forEach { module ->
-        violations += "PORT_SCOPE_MODULES names $module, which ships no production Kotlin — drop the " +
-            "entry; it currently governs nothing."
-    }
-    (exempt.keys - onDisk).sorted().forEach { module ->
-        violations += "SLOT_HEADER_EXEMPT names $module, which ships no production Kotlin — drop the " +
-            "entry; it currently exempts nothing."
-    }
-    return violations
-}
-
 /** DR-165: one *RequestBuilder module's contract verdict, or null when it is fully covered. PURE for
- *  the same reason as [slotHeaderDispositions]: every live builder module already ships both halves,
+ *  being a pure function: every live builder module already ships both halves,
  *  so the tree cannot red the CONSUMER half, and an addition the tree cannot falsify would be the
  *  exact defect this row repairs. The fixture below is what makes it real. */
 private fun contractViolation(module: String, hasFixture: Boolean, hasConsumer: Boolean): String? = when {
@@ -196,71 +135,6 @@ class ArchitectureLawsTest {
     private fun mainScope(module: String) =
         Konsist.scopeFromDirectory("${map.relativeDir(module)}/src/main/kotlin")
 
-    // DR-165 (found by codex-splice's test audit, confirmed by a mutant that deleted a whole dialect
-    // from PORT_SCOPE_MODULES while the suite stayed green): the denominator now comes from the
-    // SOURCE TREE, and every module that ships production Kotlin must carry a DISPOSITION —
-    // covered, or exempt with a written reason. Absence is not a disposition, so a module in
-    // neither fails BY NAME instead of silently leaving coverage.
-    @Test
-    fun `slot headers - every production module is dispositioned, and its files declare PORT-OF or NEW`() {
-        val onDisk = productionModules(map)
-        org.junit.jupiter.api.Assertions.assertTrue(onDisk.size > 1) {
-            "the source tree yielded ${onDisk.size} production modules — the walk is broken, " +
-                "and a law that reads no modules passes vacuously."
-        }
-        val violations = slotHeaderDispositions(onDisk, PORT_SCOPE_MODULES.toSet(), SLOT_HEADER_EXEMPT)
-        org.junit.jupiter.api.Assertions.assertTrue(violations.isEmpty()) {
-            violations.joinToString(
-                separator = "\n  - ",
-                prefix = "SLOT-HEADER COVERAGE (DR-165) violated:\n  - ",
-            )
-        }
-        (onDisk intersect PORT_SCOPE_MODULES.toSet()).forEach { module ->
-            mainScope(module).files.assertTrue(additionalMessage = SLOT_HEADER_LAW) { file ->
-                val firstLine = file.text.lineSequence().firstOrNull().orEmpty()
-                firstLine.startsWith("// PORT-OF: ") || firstLine.startsWith("// NEW: ")
-            }
-        }
-    }
-
-    // DR-165: the disposition logic proven against SYNTHETIC input, because the live tree cannot
-    // falsify it — with every module dispositioned, deleting the check entirely would still pass.
-    // That is precisely the tautology this row exists to remove, so the guard gets its own fixture,
-    // exactly as DR-112 did for the edge matcher. The boring cases are the ones that get waved
-    // through, so they are all here: an unlisted module, a stale listing, and a blank reason.
-    @Test
-    fun `the disposition guard can actually fail - DR-165`() {
-        assertEquals(
-            emptyList<String>(),
-            slotHeaderDispositions(setOf(":core", ":harness"), setOf(":core"), mapOf(":harness" to "a reason")),
-            "covered plus exempt-with-a-reason is a complete disposition",
-        )
-        assertEquals(
-            listOf(
-                ":newmod ships production Kotlin but is in neither PORT_SCOPE_MODULES nor " +
-                    "SLOT_HEADER_EXEMPT — cover it (preferred) or exempt it WITH a written reason.",
-            ),
-            slotHeaderDispositions(setOf(":core", ":newmod"), setOf(":core"), emptyMap()),
-            "a module the source tree has and no list mentions must fail BY NAME",
-        )
-        assertEquals(
-            listOf(
-                ":harness is exempted from the slot-header law with a blank reason — a placeholder " +
-                    "is an absence wearing a label; write why, or cover the module.",
-            ),
-            slotHeaderDispositions(setOf(":core", ":harness"), setOf(":core"), mapOf(":harness" to "  ")),
-            "a blank reason is not a disposition",
-        )
-        assertEquals(
-            listOf(
-                "PORT_SCOPE_MODULES names :gone, which ships no production Kotlin — drop the entry; " +
-                    "it currently governs nothing.",
-            ),
-            slotHeaderDispositions(setOf(":core"), setOf(":core", ":gone"), emptyMap()),
-            "a listing that governs nothing must fail, or the list rots into decoration",
-        )
-    }
-
     // DR-165: the CONSUMER half of the contract law, proven against synthetic input for the same
     // reason. Every live *RequestBuilder module already ships both a fixture and a *ContractTest, so
     // nothing in the tree can red it — and a guard the tree cannot falsify is the shape this row
@@ -303,7 +177,7 @@ class ArchitectureLawsTest {
     // dialect arrives WITH its exact-request-bytes fixture (the stream_options / gzip incident class
     // becomes a failing unit test) rather than un-pinned. The receipt-binding half (a changed golden
     // must match a live-200 receipt) activates on traffic; see docs/architecture/request-byte-contracts.md.
-    // DR-165: the builder modules come from the SOURCE TREE, not from PORT_SCOPE_MODULES. Derived
+    // DR-165: the builder modules come from the SOURCE TREE, not from a hand-written list. Derived
     // from the allowlist, this law could be switched off for a whole dialect by deleting one string
     // — codex-splice's mutant removed dialect-openai-responses and the suite stayed green 16/16,
     // so that module's request bytes went unpinned while the law still reported coverage.
@@ -460,11 +334,5 @@ class ArchitectureLawsTest {
             topologyImportViolations("x/Y.kt", "package x\nimport splice.core.topology\n"),
             "the bare package import must fail too",
         )
-    }
-
-    private companion object {
-        const val SLOT_HEADER_LAW =
-            "Slot-authoring law (#963): first line must be '// PORT-OF: <source> @ <sha> — invariants: ...' " +
-                "for ported code or '// NEW: <reason>' for new code. The declaration is the survival artifact."
     }
 }

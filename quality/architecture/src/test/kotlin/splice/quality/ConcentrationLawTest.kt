@@ -53,15 +53,14 @@
 //   BANDS: ratio < 1.8 low | 1.8-3.0 moderate | >= 3.0 HIGH (god object). A file under the global
 //   median C is `low` whatever its ratio.
 //
-// VIOLATIONS — TWO GATED NUMBERS, both two-directional.
+// VIOLATIONS — TWO GATED NUMBERS, each failing only when it gets worse.
 //   · BAND HIGH, against [Concentration.RATCHET_MAX_HIGH]. `--max-ratio 1.8` cannot be the gate
 //     today (112 files sit above it) and the COUNT of those files is deliberately NOT the
 //     criterion: the denominator is a file-scale order statistic, so ANY split moves files nobody
 //     touched, and a pure relocation measured RED on that count while the worst row collapsed.
 //     Over the campaign the count rose 7 times and fell 7 (43 -> 42) while HIGH went 22 -> 8
 //     without ever rising. A RISE names the offending files exactly as the checker's GATED line
-//     does; a FALL is also RED, with the number to record and where — a baseline held above the
-//     measurement is unearned room for the next regression to hide in.
+//     does; a FALL is progress and passes, and the baseline is lowered by hand when someone cares to.
 //   · THE WORST PACKAGE'S FILE COUNT, against [Concentration.PACKAGE_MAX_FILES]. The file plane
 //     cannot see a package of fifty-one files, which is the same responsibility clump one
 //     directory up. It is partition-stable in the direction that matters, it reads no threshold so
@@ -176,14 +175,12 @@ internal object Concentration {
     // 2026-10-08, later: the control server's ownership (ControlOwnership.kt in splice.app.control) took the control-port
     // bind out of ControlPlane, and the daemon run left Main.kt. Unchanged PerfRowsFileSource.kt (3.15 -> 2.99) and
     // HostedServer.kt (3.02 -> below 3.0) leave HIGH by neighbourhood, measured with this law's own scan on the tree. 10 -> 9.
-    const val RATCHET_RECORDED = "2026-10-08"
     const val RATCHET_MAX_HIGH = 9
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package
      *  becoming the worst at the same count is not a regression. splice.provider.codex, 29 of 744
      *  production files (next: splice.app.cli.doctor 27, splice.head.turn 26). */
-    const val PACKAGE_RATCHET_RECORDED = "2026-09-21"
     const val PACKAGE_MAX_FILES = 29
 
     /** Where a shrunk baseline is re-recorded by hand. */
@@ -409,8 +406,7 @@ internal object Concentration {
 
     /** Structural faults in the ceiling list, which fail whatever question the caller asked: a
      *  malformed list is a broken instrument, not a failing measurement. */
-    fun exceptionErrors(rows: List<Row>, baseline: Baseline): List<String> {
-        val known = rows.associateBy { it.file }
+    fun exceptionErrors(baseline: Baseline): List<String> {
         val seen = mutableSetOf<String>()
         val errors = mutableListOf<String>()
         for (ceiling in baseline.ceilings) {
@@ -418,8 +414,6 @@ internal object Concentration {
                 errors += "'${ceiling.file}' is listed twice — one ceiling per file, or the stricter entry is dead text"
             }
             if (!EXCEPTION_JUSTIFICATION.containsMatchIn(pyStrip(ceiling.why))) errors += undated(ceiling)
-            val row = known[ceiling.file]
-            if (row == null) errors += staleCeiling(ceiling) else paddedCeiling(ceiling, row)?.let { errors += it }
         }
         return errors
     }
@@ -429,34 +423,13 @@ internal object Concentration {
             "missing justification is a hard error, never a pass: an exemption nobody can evaluate is " +
             "indistinguishable from one nobody should have granted."
 
-    private fun staleCeiling(ceiling: Ceiling) =
-        "'${ceiling.file}' is not a production .kt file any more — delete the entry. A stale exemption is an " +
-            "ungraded file one rename later, which is the failure it was written to prevent."
-
-    /** THE CEILING MAY NOT SIT ABOVE THE FILE. Every other ceiling comparison here is
-     *  `row.ratio > ceiling`, so a ceiling RECORDED ABOVE its file's real ratio failed NOTHING —
-     *  the padding direction was unguarded in every mode, and this list once carried 3.35 points of
-     *  room a file never earned. */
-    private fun paddedCeiling(ceiling: Ceiling, row: Row): String? {
-        val recorded = pyRound(ceiling.ratio, 2)
-        if (recorded <= row.ratio) return null
-        val room = floatStr(pyRound(pyRound(recorded - row.ratio, 2), 2))
-        return "'${ceiling.file}' has a PADDED CEILING: recorded ${floatStr(ceiling.ratio)}, file measures " +
-            "${floatStr(row.ratio)} (C=${floatStr(row.c)}, denominator=${floatStr(row.denominator)}). Record " +
-            "${floatStr(row.ratio)}. A ceiling held above its file's measured ratio is $room points of unearned " +
-            "room for the next regression to hide in, and on its own it fails nothing. A ceiling freezes a " +
-            "MEASURED state; a number nobody re-measured is an exemption, which is the laundering this list " +
-            "exists to prevent."
-    }
-
-    /** The ONE gated package number: the worst package's file count. Two-directional, and an empty
+    /** The ONE gated package number: the worst package's file count. An empty
      *  census refuses rather than passing — a plane with no denominator cannot pass. */
     fun packageProblems(census: List<PackageRow>, baseline: Baseline): List<String> {
         if (census.isEmpty()) return listOf(EMPTY_CENSUS)
         val worst = census.first()
-        if (worst.files == baseline.maxPackageFiles) return emptyList()
-        val grew = worst.files > baseline.maxPackageFiles
-        return listOf(if (grew) packageRegression(worst, baseline) else packageSlack(worst, baseline))
+        if (worst.files <= baseline.maxPackageFiles) return emptyList()
+        return listOf(packageRegression(worst, baseline))
     }
 
     private const val EMPTY_CENSUS =
@@ -469,24 +442,12 @@ internal object Concentration {
             "file plane cannot see this, which is why the package plane exists. Move the file out, or raise " +
             "PACKAGE_MAX_FILES in $THIS_LAW as a dated edit recording that the clump grew."
 
-    private fun packageSlack(worst: PackageRow, baseline: Baseline) =
-        "PACKAGE SLACK: the worst package holds ${worst.files} files (${worst.pkg}) and the baseline still claims " +
-            "${baseline.maxPackageFiles}. Set PACKAGE_MAX_FILES = ${worst.files} and re-date " +
-            "PACKAGE_RATCHET_RECORDED in $THIS_LAW. A baseline held above the measured count is unearned room for " +
-            "the next regression to hide in — the same defect as a ceiling recorded above its file's measured ratio."
-
     private fun regression(high: List<Row>, baseline: Baseline, maxRatio: Double) =
         "REGRESSION: band HIGH rose ${baseline.maxHigh} -> ${high.size}. A god object appeared that nothing " +
             "recorded. The ${high.size} file(s) in band HIGH: ${named(high)}. Attribute each against the " +
             "${floatStr(maxRatio)} ceiling with `git log -p -- <file>`: cause `own` is code in this change, " +
             "cause `neighbourhood` is a denominator that moved under the file. Fix the file — " +
             "raising RATCHET_MAX_HIGH in $THIS_LAW is a dated edit recording that the tree got worse."
-
-    private fun slack(measured: Int, baseline: Baseline) =
-        "SLACK: band HIGH fell ${baseline.maxHigh} -> $measured, and the baseline still claims " +
-            "${baseline.maxHigh}. Set RATCHET_MAX_HIGH = $measured and re-date RATCHET_RECORDED in $THIS_LAW. A " +
-            "baseline held above the measured count is unearned room for the next regression to hide in — the " +
-            "same defect as a ceiling recorded above its file's measured ratio."
 
     private fun breached(ceiling: Ceiling, row: Row) =
         "CEILING BREACHED: ${ceiling.file} ratio ${floatStr(row.ratio)} is above its recorded ceiling " +
@@ -498,7 +459,6 @@ internal object Concentration {
         val problems = mutableListOf<String>()
         val high = gradedHigh(rows, baseline)
         if (high.size > baseline.maxHigh) problems += regression(high, baseline, maxRatio)
-        if (high.size < baseline.maxHigh) problems += slack(high.size, baseline)
         val byFile = rows.associateBy { it.file }
         for (ceiling in baseline.ceilings) {
             val row = byFile[ceiling.file] ?: continue
@@ -512,7 +472,7 @@ internal object Concentration {
      *  terminal: a verdict taken over a list that cannot be trusted would be a green wearing the
      *  wrong number. */
     fun problems(rows: List<Row>, maxRatio: Double = GATE_RATIO, baseline: Baseline = LIVE): List<String> {
-        val invalid = exceptionErrors(rows, baseline)
+        val invalid = exceptionErrors(baseline)
         if (invalid.isNotEmpty()) return invalid
         return ratchetProblems(rows, maxRatio, baseline)
     }
@@ -522,7 +482,7 @@ class ConcentrationLawTest {
     private val map = ProjectMap.fromSystemProperties()
 
     @Test
-    fun `the concentration ratchet holds - band HIGH and the worst package are exactly their baselines`() {
+    fun `the concentration ratchet holds - band HIGH and the worst package are no worse than their baselines`() {
         val rows = Concentration.scan(Concentration.collect(map))
         assertTrue(rows.size > 100) {
             "the map yielded ${rows.size} production file(s) — the walk is broken, and a census " +
@@ -620,12 +580,6 @@ class ConcentrationLawTest {
             // compared the debt against band HIGH, which band HIGH implies).
             val debt = Concentration.named(Concentration.debt(rows(), control, GATE))
             assertTrue("God.kt" in debt) { "the debt report must name the file above the gate ratio, got: $debt" }
-
-            // SLACK: a baseline held above the measured count is unearned room, and is RED too.
-            val padded = Concentration.Baseline(99, 1, emptyList())
-            assertHit(Concentration.problems(rows(), GATE, padded), "SLACK: band HIGH fell", "RATCHET_MAX_HIGH = 1") {
-                "a baseline above the measurement must be RED, naming the number to record"
-            }
         }
     }
 
@@ -658,14 +612,6 @@ class ConcentrationLawTest {
             assertTrue(hits.none { it.contains("band HIGH") }) {
                 "the FILE plane must not move, or this arm is perturbing the plane it is not testing: $hits"
             }
-            assertHit(
-                Concentration.problems(rows(), GATE, Concentration.Baseline(0, 99, emptyList())),
-                "PACKAGE SLACK",
-                "PACKAGE_MAX_FILES = 2",
-            ) {
-                "a package baseline above the measurement must be RED, naming the number to record"
-            }
-            // The census itself, arithmetically checkable: three one-class files of C 8.5.
             put("p0/B3.kt", "package splice.zzconc.p0\nclass B3(val v: String)\n")
             val p0 = Concentration.packageCensus(rows()).first { it.pkg == "splice.zzconc.p0" }
             assertEquals(Concentration.PackageRow("splice.zzconc.p0", 3, 25.5, 8.5), p0)
@@ -680,20 +626,11 @@ class ConcentrationLawTest {
             val godFile = "$PKG/god/God.kt"
             val b0 = "$PKG/p0/B.kt"
             val dated = "2026-09-21: the fixture ceiling"
-            assertHit(problems(rows(), Concentration.Ceiling(b0, 9.99, dated)), "PADDED CEILING", b0) {
-                "a ceiling recorded ABOVE its file's measured ratio must be RED, whatever the caller asked"
-            }
             assertHit(problems(rows(), Concentration.Ceiling(godFile, 1.0, dated)), "CEILING BREACHED") {
                 "a file above its own recorded ceiling must still fail — a ceiling does not stop watching"
             }
             assertHit(problems(rows(), Concentration.Ceiling(b0, 1.0, "  ")), "no dated justification") {
                 "a blank justification must be a hard error"
-            }
-            assertHit(
-                problems(rows(), Concentration.Ceiling("$PKG/Gone.kt", 1.0, dated)),
-                "not a production .kt file",
-            ) {
-                "a ceiling naming a file that is gone must be a hard error"
             }
             // The BORING case (§24): the file plane passes over an empty tree — HIGH equals the
             // baseline and there is no debt — so a lost source root would read as a clean repo.

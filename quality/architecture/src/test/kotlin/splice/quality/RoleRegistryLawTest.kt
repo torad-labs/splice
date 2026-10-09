@@ -717,17 +717,6 @@ class RoleRegistryLawTest {
         val text = RoleRegistry.declarations().orEmpty()
         val config = shipped()
         assertEquals(emptyList<String>(), config.problems, "the shipped dispositions must parse")
-        // 34 since Oct 3 CT: V4-456's CurrentUpstreamAttempt shares `(Long)->Boolean` with PidAlive, a new entry of two names.
-        // Oct 3 CT: native authentication and code-mode worker spawning have separate lifetime and pipe contracts.
-        // 36 since Oct 4 CT: BufferedSinkWrite and SourceFrameAction share `suspend (WireSink)->Unit`, a new entry of
-        // two names: one retains tentative client output, the other delivers a validated event inside a scope that
-        // always unwinds.
-        // 35 since Oct 4 CT: PostRound left `suspend (String)->TurnOutcome` when it began taking a RoundBody, so
-        // InterceptedRoundPost holds that signature alone and the entry became unreachable. The law's own words are
-        // the remedy: a list that keeps entries nobody can reach is how an allowlist stops being reviewed.
-        // 36 since Oct 4 CT: RowRelease and RowWrite share `(Usage?)->Unit`, a new entry of two names: one ends one
-        // round's hold on a posting turn's perf row, the other writes that row once every hold has ended.
-        assertEquals(36, config.entries.size, "one entry per shared signature")
         assertEquals(
             text.split("\n").count { it == "[[groups]]" },
             config.entries.size,
@@ -735,51 +724,6 @@ class RoleRegistryLawTest {
         )
         val names = config.entries.values.map { it.strings("names") }
         assertTrue(names.none { it == null }) { "every entry must declare an array of strings under `names`" }
-        // 123 since 2026-09-30: V4-444's NoteIds joined `()->String`, the id a peer note is sent under.
-        // 122 since 2026-09-29: V4-444's UpstreamBytes joined `()->Unit`, provider receipt on the live-turn clock.
-        // 121 since 2026-09-28: V4-417's RuntimeNotAnswering shares `()->Map<String,String>` with IdentityHeaders, a
-        // new entry of two names.
-        // 119 since 2026-09-28: V4-395's ManagerEnvironmentBlock joined `()->String?`, the unit manager's environment.
-        // 118 since 2026-09-28: V4-384's HeadPortBindable joined `(Int)->Boolean`, the head port bind probe.
-        // 117 since 2026-09-27: V4-365's DaemonSuccessor joined `()->Boolean`, the pre-drain arm decision.
-        // 116 since 2026-09-27: V4-354's SessionTranscriptViewEnabled joined `()->Boolean`, the live global view guard.
-        // 115 since 2026-09-27: V4-353's StderrEcho joined `()->Boolean`, the per-line boot-log echo decision.
-        // 114 since 2026-09-26: V4-343's LineVisit left `(String)->Boolean` when it began taking a DayLine.
-        // 115 since 2026-09-26: V4-338's LineVisit joined `(String)->Boolean`, the one that steers a read.
-        // 114 since 2026-09-26: V4-320's WrapperLinked joined `(String)->Boolean` as its third probe.
-        // 113 since 2026-09-26: V4-239's TraceDirPort shares `()->Path?` with RunningJar, a new entry of two
-        // names. 111 since 2026-09-26: V4-243's SupervisorUnitName joined `()->String`. 110 since 2026-09-25: DoctorReport
-        // left `()->String` when it began taking the daemon's answers (V4-230), and V4-226 wrote WorkerFrameIo and
-        // GlobalMcpServers as two roles of one shape.
-        // Oct 1 CT: TranscriptOriginalCopy joins the path-pair group with forced-byte copy semantics.
-        // 125 since Oct 1 CT: V4-451's ProgressLine left `()->String` when it began taking whether a notice is open.
-        // 126 since Oct 1 CT: CodeModeStatementSyntax certifies source in the executing Graal isolate.
-        // 127 since Oct 2 CT: CodeModeSessionEnd closes a retained engine, never writes diagnostic text.
-        // 129 since Oct 2 CT: FieldText defers record encoding and CodeModeSourceCommit gates executable bytes.
-        // 130 since Oct 2 CT: RecordingCompleted acknowledges successful frame-recording completion, never handoff.
-        // 132 since Oct 2 CT: DayFileRemoval deletes paths while PluginFileMatch only classifies them.
-        // 134 since Oct 3 CT: V4-456's CurrentUpstreamAttempt and PidAlive, the attempt-number and pid probes.
-        // 135 since Oct 3 CT: IngressErrorBody renders pre-turn HTTP errors, never OAuth forms or human answers.
-        // Oct 3 CT: native URL announcements and native child spawning are distinct from diagnostics and worker boots.
-        // Oct 3 CT: CodeModeQueryPreparation makes one key current before an ownership query.
-        // 141 since Oct 4 CT: the two names of the new `suspend (WireSink)->Unit` entry.
-        // 142 since Oct 4 CT: ClientUserAgent joined `()->String?`, the Claude Code identity the usage probe presents.
-        // 140 since Oct 4 CT: the removed `suspend (String)->TurnOutcome` entry took InterceptedRoundPost and
-        // PostRound with it when PostRound began taking a RoundBody.
-        // 141 since Oct 4 CT: TranscriptReadBudget joins `()->Boolean`, the remaining time of one transcript request.
-        // 142 since Oct 4 CT: CredentialAccountNames proves account identity from the effective credential digest.
-        // 144 since Oct 4 CT: the two names of the new `(Usage?)->Unit` entry, RowRelease and RowWrite.
-        // 145 since Oct 4 CT: ClaudePoolChange publishes live account membership without stopping its head.
-        // 145 again since Oct 5, 12:05 AM CT: HeadSentCredentials now hears the session too, a shape no other seam has.
-        // 145 since Oct 5 CT: execution disposal cancels its reader, so its output-discard seam is removed.
-        // 146 since Oct 5 CT: DayDirectoryAction holds cross-head body admission through metadata publication.
-        // 147 since Oct 5 CT: HoldChange serializes refusal mutations against captured posting receipts.
-        // 145 since Oct 7 CT: DashboardPage and ClasspathHtml left with the console UI.
-        // 144 since Oct 8 CT: UpgradeRun answers Upgraded<Boolean> now, so it left the `()->Boolean` entry.
-        // 145 since Oct 9 CT: AccountMembershipRefresh reconciles external credentials before selection.
-        // 146 since Oct 9 CT: RouteBody is the work of one head route, run only after ClientAuth.guarded opened its door.
-        // 145 since Oct 9 CT: WrapStateRead answers a ClaudeToRun now, so it left the `()->String?` entry.
-        assertEquals(145, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

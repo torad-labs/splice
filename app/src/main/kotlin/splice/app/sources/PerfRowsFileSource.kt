@@ -43,6 +43,7 @@ import splice.usage.perf.PerfRowsProjection
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
 import splice.usage.perf.ProjectedPerfRowsSource
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -196,10 +197,9 @@ public class PerfRowsFileSource internal constructor(
     }
 
     private fun fileKeys(): List<Any?> = generations.map { generation ->
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): an absent generation has no fileKey; null is the normal reading and rotation is judged by comparing the SAME two reads before and after, so a null on both passes correctly reports 'no rotation'.
-        Cancellables.runCatchingCancellable {
-            Files.getAttribute(generation, "fileKey")
-        }.getOrNull()
+        // An absent generation has no fileKey; null is the normal reading and rotation is judged by comparing the SAME
+        // two reads before and after, so a null on both passes correctly reports 'no rotation'.
+        try { Files.getAttribute(generation, "fileKey") } catch (_: IOException) { null }
     }
 
     private fun readAll(sinceMs: Long, selection: PerfSelection, rowsCache: PerfRowsCache): Scan {
@@ -437,8 +437,9 @@ public class PerfRowsFileSource internal constructor(
 
         private fun parse(line: String): JsonObject? {
             parsedLines++
-            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): one malformed row in a live-appended JSONL is normal; whole-file read failures are already routed into Scan.errors -> readError by readAll() above.
-            return Cancellables.runCatchingCancellable { json.parseToJsonElement(line) as? JsonObject }.getOrNull()
+            // One malformed row in a live-appended JSONL is normal; whole-file read failures are already routed into
+            // Scan.errors -> readError by readAll() above.
+            return JsonScalars.objectOrNull(json, line)
         }
 
         private fun row(ts: Long, obj: JsonObject, fields: Map<String, Long> = rowsCache.fields(obj)): PerfRow {

@@ -10,11 +10,12 @@
 package splice.sessions.registry
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.PathProbe
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
+import java.io.IOException
+import java.nio.file.DirectoryIteratorException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -129,12 +130,9 @@ public class SessionRegistry(
 
     /** [read] plus the enumeration failure, when the directory exists but could not be listed. */
     override fun list(): SessionListing {
-        val entries = Cancellables
-            .runCatchingCancellable { Files.newDirectoryStream(sessionsDir, "*.json").use { it.toList() } }
-        val error = entries.exceptionOrNull()?.takeUnless { it is NoSuchFileException }
+        val (files, error) = registrations()
         val heardAt = heard()
-        // ast-grep-ignore: kt-no-silent-result-collapse -- the failure is consumed on the line above: it becomes the listing's error, and only a missing directory reads as empty
-        val records = entries.getOrDefault(emptyList()).mapNotNull { record(it, heardAt) }
+        val records = files.mapNotNull { record(it, heardAt) }
             .sortedByDescending { it.updatedAt ?: 0L }
         val liveIds = records.filter { it.availability != SessionAvailability.GONE }.mapNotNull { it.sessionId }.toSet()
         records.filter { it.availability == SessionAvailability.GONE }
@@ -142,13 +140,29 @@ public class SessionRegistry(
         return SessionListing(records, error?.let { "$sessionsDir: ${SafeFailureText.render(it)}" })
     }
 
+    /** The registration files, and the failure that listing them met. Only a missing directory reads as empty with no
+     *  failure; any other one becomes the listing's error. */
+    private fun registrations(): Pair<List<Path>, Throwable?> = try {
+        Files.newDirectoryStream(sessionsDir, "*.json").use { it.toList() } to null
+    } catch (_: NoSuchFileException) {
+        emptyList<Path>() to null
+    } catch (failure: IOException) {
+        emptyList<Path>() to failure
+    } catch (failure: DirectoryIteratorException) {
+        emptyList<Path>() to failure.cause
+    }
+
+    /** True when [file] is past the record cap, or its size cannot be read: either way it is no registration. */
+    private fun oversized(file: Path): Boolean = try {
+        Files.size(file) > MAX_RECORD_BYTES
+    } catch (_: IOException) {
+        true
+    }
+
     private fun record(file: Path, heardAt: Map<String, Long>): SessionRecord? {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- an oversized, unreadable or malformed registration file names no session; it is left out of the listing
-        val obj = Cancellables
-            .runCatchingCancellable {
-                if (Files.size(file) > MAX_RECORD_BYTES) null else json.parseToJsonElement(Files.readString(file))
-            }
-            .getOrNull() as? JsonObject ?: return null
+        // An oversized, unreadable or malformed registration file names no session; it is left out of the listing.
+        val obj = (if (oversized(file)) null else PathProbe.text(file))?.let { JsonScalars.objectOrNull(json, it) }
+            ?: return null
         val pid = JsonScalars.long(obj, "pid")
         val sessionId = JsonScalars.str(obj, "sessionId")
         val updatedAt = JsonScalars.long(obj, "updatedAt")

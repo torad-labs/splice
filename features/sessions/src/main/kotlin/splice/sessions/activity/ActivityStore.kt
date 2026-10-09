@@ -26,12 +26,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayFiles
 import splice.core.storage.DayInventory
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 
 /** The day-file prefix activity rows are written under. */
@@ -109,10 +107,8 @@ public class ActivityStore(
         }.toString()
 
     private fun parse(line: String): ActivityRow? {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- a torn or foreign line in a day file is not a row; it is left out of the view
-        val row = Cancellables
-            .runCatchingCancellable { json.parseToJsonElement(line).jsonObject }
-            .getOrNull() ?: return null
+        // A torn or foreign line in a day file is not a row; it is left out of the view.
+        val row = JsonScalars.objectOrNull(json, line) ?: return null
         return rowOf(row)
     }
 

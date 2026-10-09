@@ -15,6 +15,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import splice.core.util.Cancellables
+import splice.core.util.PathProbe
 import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
@@ -85,6 +86,6 @@ public class AlertStore(private val file: Path) {
     }
 
     private fun stamp(): Long? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- no file yet answers the OFF default, not a failure
-        Cancellables.runCatchingCancellable { Files.getLastModifiedTime(file).toMillis() }.getOrNull()
+        // No file yet answers the OFF default, not a failure.
+        PathProbe.modified(file)?.toMillis()
 }

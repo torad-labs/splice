@@ -12,6 +12,7 @@ import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.claude.ClaudeProfileState
 import splice.core.auth.CredentialKey
 import splice.core.util.Cancellables
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -85,28 +86,29 @@ internal class ClaudeLoginFactsReader(
     /** The access token a CONFIG DIR's credential file holds, or null when it holds none that splice can read.
      *  Read at send and probe time only; the value never enters a log, a view or another type. */
     fun token(configDir: Path): String? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- as identity(), and no fact about a token may reach a log
-        Cancellables.runCatchingCancellable {
-            Files.newInputStream(configDir.resolve(CREDENTIALS_JSON)).use {
-                json.decodeFromStream<NativeCredentialDocument>(it)
-            }.claudeAiOauth?.accessToken?.takeIf { it.isNotBlank() }
-        }.getOrNull()
+        // As identity(), and no fact about a token may reach a log.
+        decoded<NativeCredentialDocument>(configDir.resolve(CREDENTIALS_JSON))
+            ?.claudeAiOauth?.accessToken?.takeIf { it.isNotBlank() }
 
     /** A stored display alias is metadata only; neither credential files nor stable pool ids are renamed. */
     fun displayName(record: Path): String? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- absent or unreadable alias uses the login's own stable id
-        Cancellables.runCatchingCancellable {
-            Files.newInputStream(record).use { json.decodeFromStream<ClaudeAccountRecord>(it) }.displayName
-                ?.takeIf(String::isNotBlank)
-        }.getOrNull()
+        // Absent or unreadable alias uses the login's own stable id.
+        decoded<ClaudeAccountRecord>(record)?.displayName?.takeIf(String::isNotBlank)
 
     /** When splice filed the folder [record] sits in, or null when there is no readable record: a folder from before
      *  the record existed, which sorts first for exactly that reason. */
     fun addedAt(record: Path): Long? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- no record means filed before the record; it sorts first
-        Cancellables.runCatchingCancellable {
-            Files.newInputStream(record).use { json.decodeFromStream<ClaudeAccountRecord>(it) }.addedAtEpochMillis
-        }.getOrNull()
+        // No record means filed before the record; it sorts first.
+        decoded<ClaudeAccountRecord>(record)?.addedAtEpochMillis
+
+    /** [file] decoded as [T]; null when it cannot be read or does not hold a [T]. */
+    private inline fun <reified T> decoded(file: Path): T? = try {
+        Files.newInputStream(file).use { json.decodeFromStream<T>(it) }
+    } catch (_: IOException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 }
 
 // why: the two file names Claude Code itself reads in a config dir. internal, not private: this package's folder

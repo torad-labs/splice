@@ -1,9 +1,10 @@
 // NEW: V4-444 — cached credential-free git origins for the sessions and projects wire.
 package splice.sessions.registry
 
-import splice.core.util.Cancellables
 import splice.core.util.FileIdentity
 import splice.core.util.FileStat
+import splice.core.util.PathProbe
+import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -24,8 +25,13 @@ internal object RepoOrigin {
     private val cache = LinkedHashMap<Path, CachedOrigin>()
 
     fun of(root: String): String? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- an absent or unreadable local origin is omitted from the wire; neither the config nor exception text is exposed
-        Cancellables.runCatchingCancellable { read(Path.of(root)) }.getOrNull()
+        // An absent or unreadable local origin is omitted from the wire; neither the config nor exception text
+        // is exposed.
+        try {
+            PathProbe.spelled(root)?.let(::read)
+        } catch (_: IOException) {
+            null
+        }
 
     private fun read(root: Path): String? {
         val config = configAt(root)

@@ -43,6 +43,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import splice.core.util.Cancellables
+import splice.core.util.PathProbe
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -255,6 +256,6 @@ public class TeamStore(
     }
 
     private fun stamp(): Long? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- no file yet is the empty store, not a failure
-        Cancellables.runCatchingCancellable { Files.getLastModifiedTime(file).toMillis() }.getOrNull()
+        // No file yet is the empty store, not a failure.
+        PathProbe.modified(file)?.toMillis()
 }

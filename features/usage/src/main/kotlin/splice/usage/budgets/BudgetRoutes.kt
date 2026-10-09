@@ -69,9 +69,13 @@ public class BudgetRoutes(private val source: BudgetSource, private val config: 
 
     /** Writes caps only. Spend remains a read of the same head-wide enforcement ledger. */
     public fun write(body: String, enforcement: BudgetEnforcement?): JsonReply = withStore { store ->
-        // ast-grep-ignore: kt-no-silent-result-collapse -- a body that is not JSON and a body of the wrong shape get the same answer, one 400 naming the shape expected, so the failure has nothing more to say
-        val parsed = Cancellables.runCatchingCancellable { json.decodeFromString(BudgetsWireBody.serializer(), body) }
-            .getOrNull() ?: return@withStore refuse(HttpStatusCode.BadRequest, "the body must be {\"budgets\": [...]}")
+        // A body that is not JSON and a body of the wrong shape get the same answer, one 400 naming the shape
+        // expected, so the failure has nothing more to say.
+        val parsed = try {
+            json.decodeFromString(BudgetsWireBody.serializer(), body)
+        } catch (_: IllegalArgumentException) {
+            null
+        } ?: return@withStore refuse(HttpStatusCode.BadRequest, "the body must be {\"budgets\": [...]}")
         val budgets = parsed.budgets.map { row -> Budget(row.head, row.dailyUsd, row.action ?: defaultAction()) }
         Cancellables.runCatchingCancellable { store.replace(budgets) }.fold(
             onSuccess = { JsonReply(HttpStatusCode.OK, payloadJson(it, enforcement = enforcement)) },

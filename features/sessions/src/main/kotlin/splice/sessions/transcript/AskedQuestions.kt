@@ -14,7 +14,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 
 // why: AskUserQuestion's own schema allows one to four questions; past that it is not a question Claude Code shows, so
 // the card does not show it either.
@@ -35,8 +35,8 @@ internal object AskedQuestions {
     /** The questions [tool]'s [input] asks, or null when it is not an ask-the-user call or asks nothing readable. */
     fun of(tool: String?, input: String): JsonArray? {
         if (tool != TOOL) return null
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-10-03 (V4-444): an input that is not JSON asks nothing a card can show; the card falls back to the call's own line.
-        val body = Cancellables.runCatchingCancellable { Json.parseToJsonElement(input) }.getOrNull() as? JsonObject
+        // An input that is not JSON asks nothing a card can show; the card falls back to the call's own line.
+        val body = JsonScalars.objectOrNull(Json, input)
         val questions = (body?.get("questions") as? JsonArray).orEmpty()
             .take(MAX_QUESTIONS)
             .mapNotNull { it as? JsonObject }

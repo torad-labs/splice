@@ -3,8 +3,6 @@ package splice.sessions.activity
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 
 internal const val TO_SESSION_KEY: String = "to_session"
@@ -18,9 +16,8 @@ internal class MessageEdgeCodec : MessageEdgeDecode {
     private val json = Json { ignoreUnknownKeys = true }
 
     override fun parse(line: String): MessageEdge? {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- a torn or foreign line is not a message edge
-        val row = Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }
-            .getOrNull() ?: return null
+        // A torn or foreign line is not a message edge.
+        val row = JsonScalars.objectOrNull(json, line) ?: return null
         return edgeOf(row)
     }
 

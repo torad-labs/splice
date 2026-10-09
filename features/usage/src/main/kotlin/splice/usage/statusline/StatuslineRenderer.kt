@@ -10,14 +10,12 @@ package splice.usage.statusline
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.core.model.ClientWindows
 import splice.core.model.ModelCatalog
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarn
 import splice.core.usage.UsageWarnPolicy
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.WallClock
 import splice.usage.quota.HeadUsageSource
@@ -70,9 +68,8 @@ internal class StatuslineRenderer(
         // A malformed or absent payload IS answered, on the next line, by the dim label: that is the
         // designed degradation for the one input splice does not author. No sink here, and this runs
         // once per statusline tick.
-        // ast-grep-ignore: kt-no-silent-result-collapse -- the failure is answered by the dim-label fallback on the next line
-        val root = Cancellables.runCatchingCancellable { json.parseToJsonElement(stdinJson).jsonObject }.getOrNull()
-            ?: return dim(label)
+        // The failure is answered by the dim-label fallback on the next line.
+        val root = JsonScalars.objectOrNull(json, stdinJson) ?: return dim(label)
         windowLearner.learn(root)
         val snapshot = usage?.snapshot()
         val pool = accountPool?.view(sessionId)

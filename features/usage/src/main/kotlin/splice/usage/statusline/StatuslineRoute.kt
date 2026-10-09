@@ -7,10 +7,8 @@ import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
 import splice.core.config.ConfigService
 import splice.core.config.UserHome
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.version.ClientVersionTracker
 import splice.usage.UsageHead
@@ -79,8 +77,7 @@ public class StatuslineRoute(
     // A statusline payload splice did not author and cannot answer to: a missing session id is the
     // absence of an OPTIONAL field, not a failure, and the render path has no sink — it degrades to
     // the no-session view.
-    // ast-grep-ignore: kt-no-silent-result-collapse -- a missing optional session id is absence, not a failure
-    private fun sessionId(stdin: String): String? = Cancellables.runCatchingCancellable {
-        JsonScalars.str(json.parseToJsonElement(stdin).jsonObject, "session_id")
-    }.getOrNull()
+    // A missing optional session id is absence, not a failure.
+    private fun sessionId(stdin: String): String? =
+        JsonScalars.objectOrNull(json, stdin)?.let { JsonScalars.str(it, "session_id") }
 }

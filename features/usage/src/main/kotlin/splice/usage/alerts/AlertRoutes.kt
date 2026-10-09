@@ -67,9 +67,13 @@ public class AlertRoutes(
     public fun read(): JsonReply = withStore { store -> JsonReply(HttpStatusCode.OK, settingsJson(store.settings())) }
 
     public fun write(body: String): JsonReply = withStore { store ->
-        // ast-grep-ignore: kt-no-silent-result-collapse -- a body that is not JSON and a body of the wrong shape get the same answer, one 400 naming the shape expected, so the failure has nothing more to say
-        val parsed = Cancellables.runCatchingCancellable { json.decodeFromString(AlertSettings.serializer(), body) }
-            .getOrNull() ?: return@withStore refuse(HttpStatusCode.BadRequest, BAD_ALERT_BODY)
+        // A body that is not JSON and a body of the wrong shape get the same answer, one 400 naming the shape
+        // expected, so the failure has nothing more to say.
+        val parsed = try {
+            json.decodeFromString(AlertSettings.serializer(), body)
+        } catch (_: IllegalArgumentException) {
+            null
+        } ?: return@withStore refuse(HttpStatusCode.BadRequest, BAD_ALERT_BODY)
         Cancellables.runCatchingCancellable { store.replace(parsed) }.fold(
             onSuccess = { JsonReply(HttpStatusCode.OK, settingsJson(it)) },
             onFailure = { failure ->

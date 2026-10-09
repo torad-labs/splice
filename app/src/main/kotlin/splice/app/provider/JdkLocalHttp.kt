@@ -3,10 +3,11 @@
 // :upstream, and the JDK client — the thing that actually dials — lives here in :app.
 package splice.app.provider
 
-import splice.core.util.Cancellables
 import splice.upstream.transport.LocalHttp
 import splice.upstream.transport.LocalHttpReply
+import java.io.IOException
 import java.net.URI
+import java.net.URISyntaxException
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
@@ -26,24 +27,32 @@ internal class JdkLocalHttp(
     private val client: HttpClient =
         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(CONNECT_TIMEOUT_S)).build(),
 ) : LocalHttp {
-    override fun invoke(method: String, url: String, body: String?): LocalHttpReply? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-18 (V4-103): a failed probe request IS the runtime being unreachable, which LocalHttp's null return spells; null is the complete story
-        Cancellables
-            .runCatchingCancellable {
-                val builder = HttpRequest.newBuilder(URI(url))
-                    // Only the live turn may take minutes; a probe POST (Ollama /api/show) is bounded
-                    // like a GET, so a wedged runtime cannot hold head assembly for 120 s per model.
-                    .timeout(Duration.ofSeconds(if (url.endsWith(LIVE_PATH)) LIVE_TIMEOUT_S else PROBE_TIMEOUT_S))
-                    .header("Content-Type", "application/json")
-                headers.forEach { (name, value) -> builder.header(name, value) }
-                val request = builder
-                    .method(
-                        method,
-                        body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody(),
-                    )
-                    .build()
-                val reply = client.send(request, HttpResponse.BodyHandlers.ofString())
-                LocalHttpReply(reply.statusCode(), reply.body())
-            }
-            .getOrNull()
+    // A failed probe request IS the runtime being unreachable, which LocalHttp's null return spells: a transport
+    // failure, a URL no request can be built for, or an interrupt. Anything else propagates.
+    override fun invoke(method: String, url: String, body: String?): LocalHttpReply? = try {
+        send(method, url, body)
+    } catch (_: IOException) {
+        null
+    } catch (_: URISyntaxException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    } catch (_: InterruptedException) {
+        Thread.currentThread().interrupt()
+        null
+    }
+
+    private fun send(method: String, url: String, body: String?): LocalHttpReply {
+        val builder = HttpRequest.newBuilder(URI(url))
+            // Only the live turn may take minutes; a probe POST (Ollama /api/show) is bounded
+            // like a GET, so a wedged runtime cannot hold head assembly for 120 s per model.
+            .timeout(Duration.ofSeconds(if (url.endsWith(LIVE_PATH)) LIVE_TIMEOUT_S else PROBE_TIMEOUT_S))
+            .header("Content-Type", "application/json")
+        headers.forEach { (name, value) -> builder.header(name, value) }
+        val request = builder
+            .method(method, body?.let(HttpRequest.BodyPublishers::ofString) ?: HttpRequest.BodyPublishers.noBody())
+            .build()
+        val reply = client.send(request, HttpResponse.BodyHandlers.ofString())
+        return LocalHttpReply(reply.statusCode(), reply.body())
+    }
 }

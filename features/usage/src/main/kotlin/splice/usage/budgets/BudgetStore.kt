@@ -24,6 +24,7 @@ import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
+import splice.core.util.PathProbe
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.nio.file.Files
@@ -179,6 +180,6 @@ public class BudgetStore(
     }
 
     private fun stamp(): Long? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- no file yet is the empty store, not a failure
-        Cancellables.runCatchingCancellable { Files.getLastModifiedTime(file).toMillis() }.getOrNull()
+        // No file yet is the empty store, not a failure.
+        PathProbe.modified(file)?.toMillis()
 }

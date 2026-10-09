@@ -11,11 +11,10 @@ package splice.sessions.note
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 import splice.http.JsonReply
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
@@ -117,8 +116,7 @@ public class SessionNoteRoute(
         }
     }
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- a body that is not a JSON object with a string `text` is a 400, answered by the caller
-    private fun textOf(body: String): String? = Cancellables.runCatchingCancellable {
-        json.parseToJsonElement(body).jsonObject["text"]?.jsonPrimitive?.takeIf { it.isString }?.content
-    }.getOrNull()
+    // A body that is not a JSON object with a string `text` is a 400, answered by the caller.
+    private fun textOf(body: String): String? =
+        (JsonScalars.objectOrNull(json, body)?.get("text") as? JsonPrimitive)?.takeIf { it.isString }?.content
 }

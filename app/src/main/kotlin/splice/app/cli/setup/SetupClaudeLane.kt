@@ -20,9 +20,7 @@
 package splice.app.cli.setup
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
 import splice.app.cli.AdminSupport
-import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.daemonclient.ControlPlaneClient
@@ -170,8 +168,8 @@ internal class DaemonClaudeWrap(private val env: EnvReader = EnvReader(System::g
      *  reason containing an escaped quote at the backslash and printed \n and \uXXXX literally at
      *  the terminal, while kotlinx.serialization and JsonScalars sat on the classpath. */
     private fun fieldOf(body: String, key: String): String? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-20 (V4-177 review): a body that is not a JSON object is a real, expected shape here (an HTML error page from something else bound to the port), and every caller CONSUMES the null with a named fallback — the status sentence, or "could not confirm".
-        Cancellables.runCatchingCancellable { Json.parseToJsonElement(body).jsonObject }
-            .getOrNull()
-            ?.let { JsonScalars.str(it, key) }
+        // A body that is not a JSON object is a real, expected shape here (an HTML error page from something else bound
+        // to the port), and every caller CONSUMES the null with a named fallback — the status sentence, or "could not
+        // confirm".
+        JsonScalars.objectOrNull(Json, body)?.let { JsonScalars.str(it, key) }
 }

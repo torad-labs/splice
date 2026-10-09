@@ -44,10 +44,10 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.compaction.CompactionInstructions
-import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
+import splice.core.util.PathProbe
 import splice.core.util.WallClock
 import splice.http.JsonReply
 import splice.sessions.query.SessionHead
@@ -130,8 +130,9 @@ public class ProjectsRoutes(
 
     private fun file(path: Path, kind: String, head: String?): JsonObject? {
         if (!Files.isRegularFile(path)) return null
-        // ast-grep-ignore: kt-no-silent-result-collapse -- a file that vanished or cannot be read between the check and the read is left out, and its directory is still in looked_in
-        val text = Cancellables.runCatchingCancellable { Files.readString(path) }.getOrNull() ?: return null
+        // A file that vanished or cannot be read between the check and the read is left out, and its directory is still
+        // in looked_in.
+        val text = PathProbe.text(path) ?: return null
         return buildJsonObject {
             put("kind", kind)
             put("path", path.toString())
@@ -141,9 +142,8 @@ public class ProjectsRoutes(
     }
 
     private fun memoryFiles(dir: Path): List<Path> =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- no memory directory is no memory files; the directory is named in looked_in either way
-        Cancellables.runCatchingCancellable { Files.newDirectoryStream(dir).use { it.toList() } }
-            .getOrDefault(emptyList())
+        // No memory directory is no memory files; the directory is named in looked_in either way.
+        PathProbe.entries(dir)
             .filter { it.fileName.toString().endsWith(MEMORY_SUFFIX) }
             .sorted()
 
@@ -151,9 +151,8 @@ public class ProjectsRoutes(
     private fun autoMemory(): Boolean? = heads.values
         .mapNotNull { it.transcriptRoot?.resolve("settings.json") }
         .mapNotNull { settings ->
-            // ast-grep-ignore: kt-no-silent-result-collapse -- a missing or unparseable settings file states nothing about the switch
-            Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(settings)).jsonObject }
-                .getOrNull()
+            // A missing or unparseable settings file states nothing about the switch.
+            PathProbe.text(settings)?.let { JsonScalars.objectOrNull(json, it) }
                 ?.get("autoMemoryEnabled")?.let { (it as? JsonPrimitive)?.booleanOrNull }
         }
         .distinct()

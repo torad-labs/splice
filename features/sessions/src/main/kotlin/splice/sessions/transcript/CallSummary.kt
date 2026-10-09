@@ -6,7 +6,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 import java.net.URI
 
 /** A call's input JSON read as one line a person can read: the description the model wrote, else the name of what it
@@ -17,9 +17,8 @@ internal object CallSummary {
     private val targetKeys = listOf("pattern", "query")
 
     fun of(tool: String, input: String): String {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-30 (V4-444): an input that is not JSON has nothing a card may say; empty is the answer, not a lost failure.
-        val body = Cancellables.runCatchingCancellable { Json.parseToJsonElement(input) }.getOrNull() as? JsonObject
-            ?: return ""
+        // An input that is not JSON has nothing a card may say; empty is the answer, not a lost failure.
+        val body = JsonScalars.objectOrNull(Json, input) ?: return ""
         if (tool == AskedQuestions.TOOL) return question(body) ?: ""
         return text(body["description"]) ?: pathName(body) ?: target(body) ?: host(body) ?: ""
     }
@@ -41,7 +40,11 @@ internal object CallSummary {
 
     private fun host(body: JsonObject): String? {
         val url = text(body["url"]) ?: return null
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-30 (V4-444): a malformed url has no host to name; the card says nothing for it.
-        return Cancellables.runCatchingCancellable { URI(url).host }.getOrNull()
+        // A malformed url has no host to name; the card says nothing for it.
+        return try {
+            URI(url).host
+        } catch (_: java.net.URISyntaxException) {
+            null
+        }
     }
 }

@@ -153,9 +153,13 @@ internal class TopologyWindows(
     }
 
     private fun stampOf(file: Path): Stamp? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-19 (V4-162): fail-open by design, as TopologyLoader.currentDigest: a splice.toml that cannot be stat'ed right now (an editor's rename-save in flight) keeps the windows in force, so null IS the whole reading.
-        Cancellables.runCatchingCancellable { Stamp(Files.getLastModifiedTime(file), Files.size(file)) }
-            .getOrNull()
+        // Fail-open by design, as TopologyLoader.currentDigest: a splice.toml that cannot be stat'ed right now (an
+        // editor's rename-save in flight) keeps the windows in force, so null IS the whole reading.
+        try {
+            Stamp(Files.getLastModifiedTime(file), Files.size(file))
+        } catch (_: java.io.IOException) {
+            null
+        }
 
     private fun reread(file: Path, stamp: Stamp) {
         val bytes = Cancellables.runCatchingCancellable { Files.readAllBytes(file) }

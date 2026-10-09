@@ -25,13 +25,12 @@
 package splice.sessions.registry
 
 import splice.core.config.UserHome
-import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
+import splice.core.util.PathProbe
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.nio.file.Paths
 
 // why: resolving a repo root walks the filesystem, and the console re-asks for the same cwd on
 // every poll. 2 s is short enough that a clone or a move shows up within one refresh, and long
@@ -146,10 +145,12 @@ internal class RepoResolver(
 
     /** The first line of a git pointer file with [prefix] stripped, or null when it is not one. */
     private fun pointer(file: Path, prefix: String): String? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- an unreadable or absent pointer file means "not this layout", which is the answer the caller branches on
-        Cancellables.runCatchingCancellable {
+        // An unreadable or absent pointer file means "not this layout", which is the answer the caller branches on.
+        try {
             if (Files.size(file) > MAX_POINTER_BYTES) null else Files.readAllLines(file).firstOrNull()
-        }.getOrNull()
+        } catch (_: java.io.IOException) {
+            null
+        }
             ?.trim()
             ?.takeIf { it.startsWith(prefix) }
             ?.removePrefix(prefix)
@@ -162,6 +163,6 @@ internal class RepoResolver(
         if (absolute(cwd)) realPath(cwd)?.takeIf { Files.isDirectory(it) } else null
 
     private fun realPath(raw: String): Path? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- an unresolvable path is REASON_MISSING (or not a trusted root) by definition, not a swallowed failure
-        Cancellables.runCatchingCancellable { Paths.get(raw).toRealPath() }.getOrNull()
+        // An unresolvable path is REASON_MISSING (or not a trusted root) by definition, not a swallowed failure.
+        PathProbe.spelled(raw)?.let(PathProbe::resolved)
 }

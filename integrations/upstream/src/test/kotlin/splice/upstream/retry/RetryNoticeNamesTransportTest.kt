@@ -18,7 +18,7 @@ import java.nio.channels.ClosedChannelException
 
 class RetryNoticeNamesTransportTest {
 
-    // Mutant: the attempt line prints e.message again. Every notice ends in an empty detail.
+    // message again. Every notice ends in an empty detail.
     @Test
     fun `a refused connect's retry line says it was refused, and where`() = runTest {
         val notices = mutableListOf<String>()

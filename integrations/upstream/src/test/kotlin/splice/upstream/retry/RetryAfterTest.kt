@@ -59,6 +59,16 @@ class RetryAfterTest {
     }
 
     @Test
+    fun `seconds saturate before arbitrary-length decimal narrowing, and a date past epoch milliseconds is garbage`() {
+        assertEquals(Long.MAX_VALUE / 1000 * 1000, retryAfter.retryAfterMs("${Long.MAX_VALUE / 1000}", clock))
+        assertEquals(Long.MAX_VALUE, retryAfter.retryAfterMs("${Long.MAX_VALUE / 1000 + 1}", clock))
+        assertEquals(Long.MAX_VALUE, retryAfter.retryAfterMs("9223372036854775808", clock))
+        assertEquals(Long.MAX_VALUE, retryAfter.retryAfterMs("9".repeat(100), clock))
+        assertEquals(1_000L, retryAfter.retryAfterMs("0".repeat(100) + "1", clock))
+        assertNull(retryAfter.retryAfterMs("31 Dec 999999999 23:59:59 GMT", clock))
+    }
+
+    @Test
     fun `a malformed date is garbage, not a parse crash`() {
         assertNull(retryAfter.retryAfterMs("Wed, 32 Oct 2026 07:28:00 GMT", clock))
         assertNull(retryAfter.retryAfterMs("2026-10-21T07:28:00Z", clock))

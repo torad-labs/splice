@@ -4,7 +4,7 @@
 // the followers held behind it). Before this the window was dropped into the body text and the turn ended
 // error:upstream-failed, "wait a moment and retry", for a plan spent until a day six days out (Marlin, f7f1e9308;
 // daemon.log:39520). A burst 429 that names no reset carries nothing, so it keeps every path it had.
-package splice.upstream.v4419
+package splice.upstream.transport
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -21,12 +21,6 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
-import splice.upstream.transport.PostContext
-import splice.upstream.transport.RetryPacing
-import splice.upstream.transport.UpstreamClient
-import splice.upstream.transport.UpstreamFailed
-import splice.upstream.transport.assertEnds
-import splice.upstream.transport.posted
 import java.util.concurrent.atomic.AtomicInteger
 
 private const val MS = 1_000L
@@ -40,7 +34,7 @@ private fun usageLimitBody(reset: Long) =
 
 private const val BURST_BODY = """{"error":{"type":"rate_limit_exceeded","message":"slow down"}}"""
 
-class PlanLimitOnTheFailureTest {
+class UpstreamFailurePlanLimitTest {
 
     /** A body-reading provider, as codex is: a usage_limit_reached body with a reset ahead names a 7-day window. */
     private val bodyReader = object : RefreshableAuthProvider {

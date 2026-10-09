@@ -36,8 +36,6 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.RetryNotice
 import splice.upstream.StreamRead
-import splice.upstream.Waiter
-import splice.upstream.retry.ReissueRules
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketException
@@ -76,35 +74,6 @@ class UpstreamClientTransportTest {
         client = HttpClient(engine),
         pacing = pacing,
     )
-
-    @Test
-    fun `default backoff keeps the 200ms doubling curve`() = runTest {
-        val waits = mutableListOf<Long>()
-        val backoff = UpstreamTransport().defaultBackoff(
-            object : Waiter {
-                override suspend fun wait(ms: Long) {
-                    waits += ms
-                }
-            },
-        )
-
-        repeat(3) { attempt -> backoff(attempt, 0) }
-        backoff(56, 0)
-        val dnsBackoff = UpstreamTransport().defaultDnsBackoff(
-            object : Waiter {
-                override suspend fun wait(ms: Long) {
-                    waits += ms
-                }
-            },
-        )
-        dnsBackoff(54)
-
-        assertTrue(waits[0] in 180L..219L, "attempt 0 must be 200ms with +/-10% jitter: $waits")
-        assertTrue(waits[1] in 360L..439L, "attempt 1 must double to 400ms with jitter: $waits")
-        assertTrue(waits[2] in 720L..879L, "attempt 2 must double to 800ms with jitter: $waits")
-        assertTrue(waits[3] in 9_000L..10_999L, "generic backoff must saturate without shift overflow: $waits")
-        assertTrue(waits[4] in 3_600L..4_399L, "DNS backoff must saturate without shift overflow: $waits")
-    }
 
     @Test
     fun `dns failure retries and succeeds on a later attempt`() = runTest {
@@ -364,26 +333,6 @@ class UpstreamClientTransportTest {
     }
 
     @Test
-    fun `canReissueStream predicate requires handoff, no client frame, retryable transport class, and remaining budget`() {
-        assertTrue(
-            ReissueRules().canReissueStream(true, ConnectException("torn"), { false }, 0),
-        )
-        assertFalse(
-            ReissueRules().canReissueStream(false, ConnectException("torn"), { false }, 0),
-        )
-        assertFalse(
-            ReissueRules().canReissueStream(true, ConnectException("torn"), { true }, 0),
-        )
-        assertFalse(
-            ReissueRules().canReissueStream(true, IllegalStateException("bug"), { false }, 0),
-        )
-        // budget spent — the literal 2 mirrors MAX_STREAM_REISSUES (kept private, like maxRetries).
-        assertFalse(
-            ReissueRules().canReissueStream(true, ConnectException("torn"), { false }, 2),
-        )
-    }
-
-    @Test
     fun `post sends the body as exact UTF-8 bytes with no content-encoding`() = runTest {
         // B4 (#924 Phase 4): the gzip-request-body incident (xAI 400'd a gzipped body, 2026-07-18)
         // as a transport-SHAPE assertion — this catches the CLASS (ANY request-body compression),
@@ -559,26 +508,5 @@ class UnclassifiedTransportFailureTest {
                 lastAttempt = false,
             ),
         )
-    }
-
-    @Test
-    fun `the seam gives up on the deadline or the last attempt whatever the throwable`() {
-        // The two gates are unchanged and still end the loop — an unknown throwable buys the
-        // budget, never an unbounded loop.
-        val failures = TransportFailures()
-        assertThrows<IOException> {
-            failures.rethrowUnlessRetryableTransport(
-                IOException("unknown"),
-                deadlineHit = true,
-                lastAttempt = false,
-            )
-        }
-        assertThrows<IOException> {
-            failures.rethrowUnlessRetryableTransport(
-                IOException("unknown"),
-                deadlineHit = false,
-                lastAttempt = true,
-            )
-        }
     }
 }

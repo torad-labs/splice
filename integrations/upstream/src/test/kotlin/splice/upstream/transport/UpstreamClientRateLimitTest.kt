@@ -12,7 +12,6 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
@@ -20,7 +19,6 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.ElapsedClock
 import splice.upstream.StreamStart
 import splice.upstream.retry.RateLimitCooldown
-import splice.upstream.retry.RetryAfter
 import java.util.concurrent.atomic.AtomicInteger
 
 class NativeRateLimitHeadersTest {
@@ -398,22 +396,6 @@ class UpstreamClientRateLimitTest {
         elapsed += 121_000L
         assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(2, calls.get(), "the bounded follower protection must expire")
-    }
-
-    @Test
-    fun `retry-after seconds saturate before arbitrary-length decimal narrowing`() {
-        val retryAfter = RetryAfter()
-        assertEquals(Long.MAX_VALUE / 1000 * 1000, retryAfter.retryAfterMs("${Long.MAX_VALUE / 1000}"))
-        assertEquals(Long.MAX_VALUE, retryAfter.retryAfterMs("${Long.MAX_VALUE / 1000 + 1}"))
-        assertEquals(Long.MAX_VALUE, retryAfter.retryAfterMs("${Long.MAX_VALUE}"))
-        assertEquals(Long.MAX_VALUE, retryAfter.retryAfterMs("9223372036854775808"))
-        assertEquals(Long.MAX_VALUE, retryAfter.retryAfterMs("9".repeat(100)))
-        assertEquals(1_000L, retryAfter.retryAfterMs("0".repeat(100) + "1"))
-    }
-
-    @Test
-    fun `an HTTP-date outside epoch milliseconds degrades to null`() {
-        assertNull(RetryAfter().retryAfterMs("31 Dec 999999999 23:59:59 GMT"))
     }
 
     @Test

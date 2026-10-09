@@ -1,11 +1,10 @@
 // NEW: V4-242 (2026-09-26) — a tear's words: the deepest link of its cause chain that says anything,
 // within the chain's own bound, with any URL cut to its scheme and host.
-package campaign.v4242
+package splice.upstream.failure
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
-import splice.upstream.failure.TearWords
 import java.io.IOException
 import java.net.ConnectException
 

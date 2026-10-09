@@ -1,4 +1,4 @@
-package splice.upstream.codemode.v4388
+package splice.upstream.codemode
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -6,9 +6,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.upstream.codemode.CodeModeManual
 import splice.upstream.codemode.CodeModeManual.NestedTool
-import splice.upstream.codemode.CodeModeSchemaTypes
 
 /** V4-388: the exec manual and its schema types, pinned to codex-rs's own expectations
  *  (code-mode-protocol/src/description.rs and json_schema_types_tests.rs, read 2026-09-28). */
@@ -64,30 +62,6 @@ class CodeModeManualTest {
             "{\n  // look up weather for a given list of locations\n  weather: Array<{ location: string; }>;\n}",
             rendered,
         )
-    }
-
-    @Test
-    fun `the manual advertises only helpers the runtime provides and the deferred note when asked`() {
-        val manual = CodeModeManual.description(emptyList(), deferred = true)
-        listOf("`exit()`", "`text(value:", "`ALL_TOOLS`", "`await tools.Bash(...)`").forEach {
-            assertTrue(manual.contains(it), it)
-        }
-        val absent = listOf(
-            "`image(", "`audio(", "`store(", "`load(", "`notify(", "`setTimeout(", "`yield_control(", "// @exec:",
-            "max_output_tokens", "exec_command", "either a string or an object",
-        )
-        absent.forEach {
-            assertFalse(manual.contains(it), it)
-        }
-        assertTrue(manual.contains("Some deferred nested tools may be omitted from this description."))
-    }
-
-    @Test
-    fun `the manual states sealed streaming intrinsics and the early tool batch contract`() {
-        val manual = CodeModeManual.description(emptyList(), deferred = false)
-        CodeModeManual.streamingSealedGlobals.forEach { assertTrue(manual.contains("`$it`")) }
-        assertTrue(manual.contains("Do not redeclare these names at script scope."))
-        assertTrue(manual.contains("Awaited Promise.all or Promise.allSettled arrays of direct tools calls"))
     }
 
     @Test

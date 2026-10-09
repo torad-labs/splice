@@ -3,7 +3,7 @@
 // naming it, so the reset and not the upstream's words decides whether the client waits. The same
 // bytes from a provider that reads no plan family, or with no reset named, keep V4-61's schedule and
 // the upstream's own words exactly.
-package campaign.v4233
+package splice.upstream.transport
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -22,13 +22,6 @@ import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
-import splice.upstream.transport.PostContext
-import splice.upstream.transport.RetryPacing
-import splice.upstream.transport.UpstreamClient
-import splice.upstream.transport.UpstreamFailed
-import splice.upstream.transport.assertEnds
-import splice.upstream.transport.fakeAuth
-import splice.upstream.transport.posted
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -173,7 +166,7 @@ class UpstreamClientPlanLimitTest {
     }
 
     @Test
-    fun `a restart clears the horizon but the provider's plan hold outlives it (V4-412)`() = runTest {
+    fun `a restart clears the horizon but the provider's plan hold outlives it`() = runTest {
         val engine = MockEngine { respond(PLAN_BODY, HttpStatusCode.TooManyRequests, planHeaders(resetInAnHour())) }
         val client = client(engine)
         assertEnds<UpstreamFailed> { client.posted(ctx(forwarded, mutableListOf()), "{}") { "unreachable" } }
@@ -192,7 +185,7 @@ class UpstreamClientPlanLimitTest {
     )
 }
 
-// The words #290's red arm planted, which end a persistent client's wait when they reach it.
+// The words which end a persistent client's wait when they reach it.
 private const val PLAN_BODY =
     """{"type":"error","error":{"type":"rate_limit_error","message":"Extra usage is required to keep going."}}"""
 

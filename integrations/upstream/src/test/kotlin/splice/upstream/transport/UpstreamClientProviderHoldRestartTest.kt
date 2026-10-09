@@ -1,4 +1,4 @@
-package splice.upstream.v4412
+package splice.upstream.transport
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -24,12 +24,6 @@ import splice.core.wire.RateLimitReply
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.ProviderHold
 import splice.upstream.retry.RateLimitCooldown
-import splice.upstream.transport.PostContext
-import splice.upstream.transport.RetryPacing
-import splice.upstream.transport.UpstreamClient
-import splice.upstream.transport.UpstreamFailed
-import splice.upstream.transport.assertEnds
-import splice.upstream.transport.posted
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicInteger
@@ -38,7 +32,7 @@ private const val MS = 1_000L
 private const val SIX_DAYS_S = 6L * 24 * 3_600
 
 /** V4-412 through the transport: the daemon is stopped and started over the same state file. */
-class ProviderHoldClientRestartTest {
+class UpstreamClientProviderHoldRestartTest {
     private val bodyReader = object : RefreshableAuthProvider {
         override suspend fun credentials(): Credentials? = Credentials.ApiKey("k", "x-api-key", "")
         override suspend fun refresh(): Credentials? = null

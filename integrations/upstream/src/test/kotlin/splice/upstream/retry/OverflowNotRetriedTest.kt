@@ -36,8 +36,7 @@ class OverflowNotRetriedTest {
         return calls.get()
     }
 
-    // Mutant: delete the carve-out in RetryRules.statusPlan. Both overflow cells go red — the
-    // request is sent the whole budget over.
+    // An overflow is deterministic: resending it the whole budget over cannot heal it.
     @Test
     fun `llama-server's overflow is sent once`() = runTest {
         val llama = """{"error":{"code":400,"message":"request (270000 tokens) exceeds the available context """ +
@@ -55,9 +54,8 @@ class OverflowNotRetriedTest {
         assertEquals(1, sendsFor(openAi))
     }
 
-    // V4-167. Mutant: read the overflow text before the status (V4-164). A per-minute token quota's
-    // 429 says "too many tokens", read as an overflow: no retry, no cooldown armed for the account's
-    // other turns, and the client told to compact a conversation that fits.
+    // A per-minute token quota's 429 says "too many tokens". Read as an overflow it would mean no retry, no
+    // cooldown for the account's other turns, and the client told to compact a conversation that fits.
     @Test
     fun `a rate limit that talks about tokens is a rate limit, not an overflow`() = runTest {
         val notices = mutableListOf<String>()

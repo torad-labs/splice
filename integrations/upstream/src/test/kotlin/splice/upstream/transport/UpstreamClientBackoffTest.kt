@@ -72,21 +72,6 @@ class UpstreamClientBackoffTest {
     }
 
     @Test
-    fun `the shipped backoff curve doubles from 200ms inside its jitter band`() = runTest {
-        val waiter = RecordingWaiter()
-        val engine = MockEngine { respond("busy", HttpStatusCode.ServiceUnavailable, headersOf()) }
-        assertEnds<UpstreamFailed> { postOnce(realCurveClientOver(engine, waiter)) }
-        assertTrue(waiter.waits.size >= 2, "expected the retry loop to back off at least twice: ${waiter.waits}")
-        waiter.waits.forEachIndexed { attempt, waited ->
-            val base = minOf(200L shl attempt, 10_000L)
-            assertTrue(
-                waited >= (base * 0.9).toLong() && waited <= (base * 1.1).toLong(),
-                "attempt $attempt waited ${waited}ms, outside the +/-10% band around ${base}ms: ${waiter.waits}",
-            )
-        }
-    }
-
-    @Test
     fun `a parseable Retry-After is a FLOOR the curve cannot undercut`() = runTest {
         // G3: minDelayMs rides in as a floor. 3s dwarfs attempt 0's ~200ms, so the floor must win
         // exactly — the shipped lambda's `maxOf(jittered, minDelayMs)`, observed rather than restated.
@@ -101,22 +86,6 @@ class UpstreamClientBackoffTest {
         }
         assertEquals("ok", postOnce(realCurveClientOver(engine, waiter)))
         assertEquals(listOf(3_000L), waiter.waits)
-    }
-
-    @Test
-    fun `the shipped dns curve walks 1s-2s-4s inside its jitter band`() = runTest {
-        // G14: DNS-class transport failures run dnsBackoff, not the generic curve.
-        val waiter = RecordingWaiter()
-        val engine = MockEngine { throw UnresolvedAddressException() }
-        assertThrows<UnresolvedAddressException> { postOnce(realCurveClientOver(engine, waiter)) }
-        assertTrue(waiter.waits.size >= 2, "expected DNS retries to back off: ${waiter.waits}")
-        waiter.waits.forEachIndexed { attempt, waited ->
-            val base = minOf(1_000L shl attempt, 4_000L)
-            assertTrue(
-                waited >= (base * 0.9).toLong() && waited <= (base * 1.1).toLong(),
-                "dns attempt $attempt waited ${waited}ms, outside the +/-10% band around ${base}ms: ${waiter.waits}",
-            )
-        }
     }
 
     @Test

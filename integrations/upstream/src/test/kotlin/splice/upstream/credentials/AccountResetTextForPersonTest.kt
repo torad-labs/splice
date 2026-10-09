@@ -2,13 +2,12 @@
 // month, day, clock time and zone abbreviation through LocalTimeText, "unknown" when none was named, clamped to the
 // four-digit year range so an absurd upstream instant cannot overflow the formatter. Handed a zone it says the reset in
 // that zone whatever the machine's is, the seam a test uses to name one.
-package splice.upstream.v4433
+package splice.upstream.credentials
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import splice.core.util.LocalTimeText
-import splice.upstream.credentials.AccountResetText
 import java.time.Instant
 import java.time.ZoneId
 
@@ -18,7 +17,7 @@ private val ISO_INSTANT = Regex("""\d{4}-\d{2}-\d{2}T\d{2}:\d{2}""")
 private fun said(epochSeconds: Long?, zone: String) =
     AccountResetText.forPerson(epochSeconds, LocalTimeText(ZoneId.of(zone)))
 
-class ResetForPersonTest {
+class AccountResetTextForPersonTest {
 
     @Test
     fun `a zone it is handed decides the hour and abbreviation`() {

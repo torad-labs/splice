@@ -1,6 +1,6 @@
 // NEW: V4-242 (2026-09-26) — ForeignCredential's rule, cell by cell. Every key here is a fake in the
 // shape an upstream masks one: a visible head, a run of stars, a visible tail.
-package campaign.v4242
+package splice.upstream.failure
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -10,9 +10,6 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
 import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
-import splice.upstream.failure.FailureSource
-import splice.upstream.failure.ForeignCredential
-import splice.upstream.failure.UpstreamFailureClassifier
 
 class ForeignCredentialTest {
     private val bearer = Credentials.Bearer("eyFakeSignInToken.v4242", "acct-v4242")

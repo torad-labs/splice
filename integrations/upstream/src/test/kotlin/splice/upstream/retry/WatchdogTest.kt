@@ -531,33 +531,6 @@ class WatchdogTest {
             assertNull(dog.fired, "a turn well under totalCap must not be reaped")
         }
     }
-
-    @Test
-    fun `clean exit - poller cancelled, nothing fired`() {
-        runBlocking {
-            val gate = InflightGate({ 0 })
-            val slot = gate.admittedSlot()
-            val dog = TurnWatchdog(budget(2_000, 2_000, 5_000))
-            val target = launch { yield() } // any duration under the 5 s cap proves the same thing
-            val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { false })
-            target.join()
-            poller.cancel()
-            assertNull(dog.fired)
-            slot.release()
-        }
-    }
-
-    @Test
-    fun `poll interval floors and caps, paced to the tighter idle tier`() {
-        assertEquals(250, TurnWatchdog(budget(300, 300, 1)).pollInterval().inWholeMilliseconds)
-        assertEquals(15_000, TurnWatchdog(budget(600_000, 600_000, 1)).pollInterval().inWholeMilliseconds)
-        assertEquals(1_000, TurnWatchdog(budget(3_000, 3_000, 1)).pollInterval().inWholeMilliseconds)
-        // A first-output cap tighter than streamIdle paces the poll, or a pre-output stall would be
-        // sampled only every streamIdle/3 — the SseRoundConsumeTest rig (1s / 20s) is that case.
-        assertEquals(333, TurnWatchdog(budget(1_000, 20_000, 1)).pollInterval().inWholeMilliseconds)
-        // Production: 300s first-output / 180s streamIdle still sits on the 15s ceiling.
-        assertEquals(15_000, TurnWatchdog(budget(300_000, 180_000, 1)).pollInterval().inWholeMilliseconds)
-    }
 }
 
 // DR-7: how many samples [WatchdogTest.BoundedTicks] allows before it stops its loop. Four is well

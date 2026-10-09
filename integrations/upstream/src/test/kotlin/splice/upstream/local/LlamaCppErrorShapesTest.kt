@@ -20,7 +20,7 @@ class LlamaCppErrorShapesTest {
     // of the line. A message that carries the phrase without them still compacts, blind.
     private val clientOverflowParse = Regex("prompt is too long[^0-9]*(\\d+)\\s*tokens?\\s*>\\s*(\\d+)")
 
-    // Mutant: explain() returns the vendor text as-is. The 503 is still retried, but the banner the
+    // The 503 is still retried, but the banner the
     // client prints from the third attempt reads "Loading model" with nothing saying whose model.
     @Test
     fun `a model still loading is named, and stays a retryable server condition`() {
@@ -36,7 +36,7 @@ class LlamaCppErrorShapesTest {
         assertTrue(f.message.startsWith("Loading model; the local model server has not finished loading"), f.message)
     }
 
-    // Mutant: drop the counts. The phrase survives, so the client still compacts, but it can no
+    // The phrase survives, so the client still compacts, but it can no
     // longer say by how much the conversation overran.
     @Test
     fun `a context overflow carries the line and the numbers Claude Code compacts on`() {
@@ -52,7 +52,7 @@ class LlamaCppErrorShapesTest {
         assertEquals(listOf("270000", "262144"), clientOverflowParse.find(f.message)?.groupValues?.drop(1), f.message)
     }
 
-    // Mutant: send the decode literal through the overflow rule. The request is not what is too big
+    // The request is not what is too big
     // — the other conversations on the server hold the rest of the pool — so "prompt is too long"
     // would compact a conversation that fits and throw away the retry that heals this.
     @Test

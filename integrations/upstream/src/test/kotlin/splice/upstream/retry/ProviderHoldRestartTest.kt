@@ -1,4 +1,4 @@
-package splice.upstream.v4412
+package splice.upstream.retry
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -12,9 +12,6 @@ import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.core.wire.RateLimitReply
 import splice.upstream.RetryNotice
-import splice.upstream.retry.FileProviderHoldStore
-import splice.upstream.retry.RateLimitCooldown
-import splice.upstream.retry.RateLimitTurn
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant

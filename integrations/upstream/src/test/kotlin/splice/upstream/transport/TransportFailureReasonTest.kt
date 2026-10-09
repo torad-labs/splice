@@ -31,8 +31,7 @@ class TransportFailureReasonTest {
 
     private val refused = jdk(ClosedChannelException())
 
-    // Mutant: drop the ConnectException arm. The message falls to the class-name floor and this
-    // cell goes red — the refused connect is the operator's own failure, so it is pinned exactly.
+    // The refused connect is the operator's own failure, so it is pinned exactly.
     @Test
     fun `a refused connect with no message names the endpoint and why`() {
         assertEquals(
@@ -41,8 +40,8 @@ class TransportFailureReasonTest {
         )
     }
 
-    // V4-167. Mutant: name the first link (V4-164). The resolve failure sits under two
-    // ConnectExceptions, so a host that does not exist read as a server that is not running.
+    // The resolve failure sits under two ConnectExceptions, and a host that does not exist must not read as
+    // a server that is not running.
     @Test
     fun `a host that does not resolve is named as such, not as a refusal`() {
         assertEquals(
@@ -51,8 +50,7 @@ class TransportFailureReasonTest {
         )
     }
 
-    // V4-167. Mutant: every ConnectException is a refusal (V4-164). An unroutable host was told as
-    // "nothing is listening there" when the packets never reached a machine.
+    // An unroutable host must not be told as "nothing is listening there": the packets never reached a machine.
     @Test
     fun `a connect that is not a refusal says what it was`() {
         assertEquals(
@@ -61,7 +59,7 @@ class TransportFailureReasonTest {
         )
     }
 
-    // V4-167. Mutant: append Ktor's detail as it is. Its timeout text carries the whole request url.
+    // Ktor's own timeout text carries the whole request url, which never reaches the message.
     @Test
     fun `ktor's timeout detail names the endpoint, never its path or query`() {
         val url = "http://10.0.0.5:9000/v1/chat/completions?key=s3cret"
@@ -77,8 +75,8 @@ class TransportFailureReasonTest {
         )
     }
 
-    // Mutant: test ConnectException before the timeout arm. Ktor's ConnectTimeoutException IS a
-    // ConnectException, so a timeout would read as a refusal — the opposite remedy.
+    // Ktor's ConnectTimeoutException IS a ConnectException, but a timeout must not read as a refusal: the
+    // remedy is the opposite.
     @Test
     fun `a connect timeout is a timeout, not a refusal`() {
         val ktor = io.ktor.client.network.sockets.ConnectTimeoutException("Connect timeout has expired", null)
@@ -138,7 +136,7 @@ class TransportFailureReasonTest {
     // V4-349 (Marlin's baseline walk, 2026-09-27): the console's one failure read "io.ktor.utils.io.
     // ClosedWriteChannelException from chatgpt.com:443, with no message". Ktor's OkHttp engine throws the
     // closed-channel pair with no message when the connection goes while the request or its answer is still
-    // moving. Mutant: drop the closed-channel arm, and both cells fall to the floor.
+    // moving.
     @Test
     fun `a connection that closed mid-request is said in words`() {
         val chatgpt = "https://chatgpt.com/backend-api/codex/responses"
@@ -154,7 +152,7 @@ class TransportFailureReasonTest {
 
     // The floor: an unknown class keeps its own text; with none, the line says in words what failed and
     // against which endpoint, and the class rides only as a parenthetical (V4-349: a person reads the
-    // headline, never a fully qualified class name). Mutant: the old "<class> from <where>, with no message".
+    // headline, never a fully qualified class name).
     @Test
     fun `an unknown failure keeps its text, and without one says in words that the connection failed`() {
         assertEquals("boom", reason(IOException("boom")))

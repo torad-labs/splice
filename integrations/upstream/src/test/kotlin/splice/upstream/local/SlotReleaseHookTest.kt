@@ -12,8 +12,8 @@ import splice.upstream.retry.admittedSlot
 
 class SlotReleaseHookTest {
 
-    // Mutant: release() without drainOnRelease. The lease never ends and its llama-server slot
-    // reads as busy forever, so every later conversation is sent unpinned.
+    // A turn's end must release its llama-server slot lease, or the slot reads as busy forever and every
+    // later conversation is sent unpinned.
     @Test
     fun `a hook runs when the slot is released, and only once`() = runTest {
         val slot = InflightGate(LiveLimit { 1 }).admittedSlot()
@@ -26,8 +26,7 @@ class SlotReleaseHookTest {
         assertEquals(1, ended)
     }
 
-    // Mutant: onRelease only queues. A hook registered after the release (a turn answered before
-    // its registration ran) would never fire.
+    // A hook registered after the release (a turn answered before its registration ran) must still fire.
     @Test
     fun `a hook registered after the release runs at once`() = runTest {
         val slot = InflightGate(LiveLimit { 1 }).admittedSlot()

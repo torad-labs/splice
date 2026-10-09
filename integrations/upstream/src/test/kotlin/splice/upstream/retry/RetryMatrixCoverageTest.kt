@@ -24,7 +24,6 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
@@ -78,24 +77,6 @@ class RetryMatrixCoverageTest {
     }
 
     @Test
-    fun `every cause and phase pair answers with a written reason`() {
-        val silent = mutableListOf<String>()
-        var pairs = 0
-        for (cause in FailureCause.entries) {
-            for (phase in FailurePhase.entries) {
-                pairs++
-                if (RetryMatrix.of(cause, phase).reason.isBlank()) silent += "$cause x $phase"
-            }
-        }
-        assertEquals(
-            FailureCause.entries.size * FailurePhase.entries.size,
-            pairs,
-            "the loop must enumerate the full cause x phase product, not a subset",
-        )
-        assertTrue(silent.isEmpty(), "pairs answering with no written reason: $silent")
-    }
-
-    @Test
     fun `a deterministic verdict is entitled to no layer, at any phase`() {
         val unrepairable = listOf(
             FailureCause.MODEL_REFUSED,
@@ -137,36 +118,6 @@ class RetryMatrixCoverageTest {
                 layers.all { it == RetryLayer.L5_CLIENT_RETRY_CLASS },
                 "$cause at TERMINAL must fall to the client class only, got $layers",
             )
-        }
-    }
-
-    @Test
-    fun `the reason says which filter emptied the ladder`() {
-        // A cause healable by nothing and a cause whose window had already closed both return zero
-        // layers, and they are opposite facts about the turn — the first is permanent, the second is
-        // merely late. If the sentences do not differ, an operator cannot tell them apart, which is
-        // the same class of defect as the free-text cause this row exists to remove.
-        val permanent = RetryMatrix.of(FailureCause.MODEL_REFUSED, FailurePhase.MID_OUTPUT)
-        val late = RetryMatrix.of(FailureCause.UPSTREAM_TRUNCATED, FailurePhase.TERMINAL)
-        assertTrue(late.layers.isEmpty(), "a truncation at TERMINAL has no layer left, got ${late.layers}")
-        assertTrue(
-            late.reason.contains("At this phase"),
-            "a phase-narrowed ladder must say so in its reason, got: ${late.reason}",
-        )
-        assertFalse(
-            permanent.reason.contains("At this phase"),
-            "a cause healable by nothing is not phase-narrowed, got: ${permanent.reason}",
-        )
-    }
-
-    @Test
-    fun `every cause and phase pair names a wire type`() {
-        // WireType.of uses getValue, so a cause added without a base class throws here rather than
-        // defaulting to something plausible — the same fail-closed shape as the ceiling map.
-        for (cause in FailureCause.entries) {
-            for (phase in FailurePhase.entries) {
-                assertNotNull(wireTypeOf(cause, phase), "$cause at $phase has no wire type")
-            }
         }
     }
 

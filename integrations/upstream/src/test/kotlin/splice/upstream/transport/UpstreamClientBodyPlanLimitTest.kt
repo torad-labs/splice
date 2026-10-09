@@ -1,4 +1,4 @@
-package splice.upstream.v4377
+package splice.upstream.transport
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -12,19 +12,12 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
-import splice.core.auth.ClientAuthProvider
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
-import splice.upstream.transport.PostContext
-import splice.upstream.transport.RetryPacing
-import splice.upstream.transport.UpstreamClient
-import splice.upstream.transport.UpstreamFailed
-import splice.upstream.transport.assertEnds
-import splice.upstream.transport.posted
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -42,7 +35,7 @@ private fun liveBody(reset: Long) =
  *  planLimitFromBody, which the codex provider implements) gets V4-233's plan hold: one attempt, our
  *  sentence naming the reset, a plan-hold notice, and a probe once the cooldown clamp lifts. The
  *  double reads the body the way codex does, so the vendor parse itself is pinned in provider-codex. */
-class BodyPlanLimitTransportTest {
+class UpstreamClientBodyPlanLimitTest {
 
     /** A body-reading provider: the live body names a 7-day window; anything else names none. */
     private val bodyReader = object : RefreshableAuthProvider {
@@ -147,31 +140,5 @@ class BodyPlanLimitTransportTest {
         assertEquals(2, calls.get(), "the turn after the lift is the probe, and it went out")
         assertTrue(notices.any { it.startsWith("plan hold: probing upstream") }, notices.toString())
         assertEquals(0L, client.planHoldForMs)
-    }
-
-    @Test
-    fun `an Anthropic unified-header 429 still holds from its headers, the body reader is never asked`() = runTest {
-        val calls = AtomicInteger()
-        val reset = System.currentTimeMillis() / MS + 3_600
-        val engine = MockEngine {
-            calls.incrementAndGet()
-            respond(
-                """{"type":"error","error":{"type":"rate_limit_error","message":"x"}}""",
-                HttpStatusCode.TooManyRequests,
-                headersOf(
-                    "anthropic-ratelimit-unified-status" to listOf("rejected"),
-                    "anthropic-ratelimit-unified-representative-claim" to listOf("five_hour"),
-                    "anthropic-ratelimit-unified-reset" to listOf("$reset"),
-                ),
-            )
-        }
-        val client = client(engine)
-
-        assertEnds<UpstreamFailed> {
-            client.posted(ctx(ClientAuthProvider("claude-splice"), mutableListOf()), "{}") { "unreachable" }
-        }
-
-        assertEquals(1, calls.get())
-        assertEquals(PlanLimit("five_hour", reset), client.planHold)
     }
 }

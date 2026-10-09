@@ -3,7 +3,7 @@
 // 2026-09-16T20:02:52Z, and the sentence Claude Code printed carried that instant raw, so a machine in Tokyo read the
 // evening where its own clock said 5:02 AM. Each case names its zone; the wording V4-61 chose (the window is REPORTED,
 // never asserted as the deadline), the no-reset branch and the plan branch are pinned unchanged beside the new time.
-package splice.upstream.v4428
+package splice.upstream.retry
 
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -13,8 +13,6 @@ import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.upstream.RetryNotice
-import splice.upstream.retry.RateLimitCooldown
-import splice.upstream.retry.RateLimitTurn
 import java.time.Instant
 import java.time.ZoneId
 import java.util.TimeZone
@@ -47,7 +45,7 @@ private fun <T> inZone(zone: String, block: () -> T): T {
     }
 }
 
-class BurstResetZoneTest {
+class RateLimitCooldownResetWordsTest {
 
     /** With no [zone] the constructor's own default is what runs, which is the machine's. */
     private fun fresh(zone: String? = null) = when (zone) {

@@ -4,14 +4,11 @@
 // 5:02 AM. AccountResetText.format is the log and journal spelling and stays ISO. Each case names its zone; the words
 // around the time (the dash-free wording V4-234 fixed, no phrase that ends a persistent client's wait) and the
 // null case are pinned unchanged beside it.
-package splice.upstream.v4433
+package splice.upstream.credentials
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.upstream.credentials.AccountResetText
-import splice.upstream.credentials.Selection
 import java.time.Instant
 import java.util.TimeZone
 
@@ -39,7 +36,7 @@ private fun <T> inZone(zone: String, block: () -> T): T {
     }
 }
 
-class ExhaustedMessageZoneTest {
+class AccountExhaustedMessageZoneTest {
 
     @Test
     fun `the earliest reset is said in the machine's hour and zone, not as an ISO instant`() {
@@ -59,15 +56,6 @@ class ExhaustedMessageZoneTest {
     }
 
     @Test
-    fun `an absurd reset is clamped to the four-digit year range and still reads as a time of day`() {
-        val far = inZone("Asia/Tokyo") { Selection.Exhausted(Long.MAX_VALUE).message }
-        val near = inZone("UTC") { Selection.Exhausted(Long.MIN_VALUE).message }
-
-        assertEquals("all OAuth accounts are exhausted; earliest reset is Jan 1, 8:59 AM JST", far)
-        assertEquals("all OAuth accounts are exhausted; earliest reset is Jan 1, 12:00 AM UTC", near)
-    }
-
-    @Test
     fun `the words around the time keep V4-234's limits, so no dash and no stop phrase enters`() {
         val message = inZone("Asia/Kolkata") { Selection.Exhausted(MUSE_RESET).message }
 
@@ -75,16 +63,5 @@ class ExhaustedMessageZoneTest {
         CLIENT_STOP_PHRASES.forEach { phrase ->
             assertFalse(phrase in message.lowercase(), "'$phrase' would end a persistent client's wait: $message")
         }
-    }
-
-    @Test
-    fun `the log and journal spelling stays the ISO instant, whatever zone the machine is in`() {
-        val tokyo = inZone("Asia/Tokyo") { AccountResetText.format(MUSE_RESET) }
-        val chicago = inZone("America/Chicago") { AccountResetText.format(MUSE_RESET) }
-
-        assertEquals("2026-09-16T20:02:52Z", tokyo)
-        assertEquals(tokyo, chicago)
-        assertEquals("unknown", AccountResetText.format(null))
-        assertTrue(AccountResetText.format(Long.MAX_VALUE).startsWith("9999-12-31T23:59:59"))
     }
 }

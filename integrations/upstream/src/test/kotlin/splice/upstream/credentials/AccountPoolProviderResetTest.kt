@@ -1,13 +1,12 @@
-package splice.upstream.credentials.v4398
+package splice.upstream.credentials
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import splice.upstream.credentials.AccountPoolTest
 
 private const val THIRTY_SECONDS_MS = 30_000L
 private const val NINETY_SECONDS_MS = 90_000L
 
-class PooledProviderResetTest {
+class AccountPoolProviderResetTest {
     @Test
     fun `a pool with every account cooling reads the earliest provider reset`() {
         val fixture = AccountPoolTest.Fixture()

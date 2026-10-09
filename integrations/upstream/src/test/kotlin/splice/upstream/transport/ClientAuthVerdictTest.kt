@@ -44,7 +44,7 @@ class ClientAuthVerdictTest {
             "{}",
         ) { "ok" }
 
-    /** RED before V4-220: describe() said present whatever upstream answered. */
+
     @Test
     fun `a client head whose forwarded turn got a 401 reads rejected, not present`() = runTest {
         val auth = ClientAuthProvider("claude-splice")

@@ -27,8 +27,9 @@ internal object BudgetText {
         return BudgetBlock(
             message = "splice refused this turn: head '$head' has run up ${ApiCostText.sentence(tally.usd)} " +
                 "today (UTC) against its ${ApiCostText.limit(limit)} daily budget, and the budget's action is " +
-                "block. New turns on this head are refused until 00:00 UTC; raise or clear the budget in the " +
-                "splice console to continue sooner.$uncounted$partial",
+                "block. New turns on this head are refused until 00:00 UTC; to continue sooner, raise or remove its " +
+                "limit in budgets.json in the splice state directory (an edit takes effect without a restart)." +
+                "$uncounted$partial",
             detail = "${amounts(tally.usd, limit)} unpriced_turns=${tally.unpriced}" +
                 if (partial.isEmpty()) "" else " spend_complete=false",
         )

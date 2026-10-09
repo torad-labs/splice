@@ -1,4 +1,4 @@
-package splice.provider.codex.v4397
+package splice.provider.codex
 
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -7,15 +7,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.LogSink
-import splice.provider.codex.CodeModePersistenceException
-import splice.provider.codex.CodeModeRecords
-import splice.provider.codex.CodeModeStateLocation
-import splice.provider.codex.CodexCodeModeStore
 import splice.provider.codex.state.save.StateDiskSpace
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** V4-397: a code-mode save that fails says why. On Sep 28 the root disk was full from 10:57 to
+/** a code-mode save that fails says why. On Sep 28 the root disk was full from 10:57 to
  *  11:03 AM CT, and every claudex save read only "code-mode state persistence failed", which the
  *  operator read as a code-mode bug. */
 class CodeModeSaveFailureTextTest {

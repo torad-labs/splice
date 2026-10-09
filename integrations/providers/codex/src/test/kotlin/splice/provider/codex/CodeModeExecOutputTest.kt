@@ -1,4 +1,4 @@
-package splice.provider.codex.v4388
+package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -9,15 +9,11 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
-import splice.provider.codex.BASE_REQUEST
-import splice.provider.codex.CodeModeBridgeTestSupport
-import splice.provider.codex.CodeModeExecOutput
-import splice.provider.codex.turn
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeLimits
 import splice.upstream.codemode.CodeModeStep
 
-/** V4-388: an exec output reads as codex frames it (codex-rs core/src/tools/code_mode/output.rs:31 and
+/** an exec output reads as codex frames it (codex-rs core/src/tools/code_mode/output.rs:31 and
  *  mod.rs:283): status, wall time, "Output:", the script's text, and "Script error:" last on a failure. */
 class CodeModeExecOutputTest : CodeModeBridgeTestSupport() {
     @Test

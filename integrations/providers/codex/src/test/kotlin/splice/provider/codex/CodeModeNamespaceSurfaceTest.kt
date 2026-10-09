@@ -1,6 +1,6 @@
-// NEW: V4-390 part 2 — the code-mode surface rides in the functions namespace. The dialect now hands
+// NEW: the code-mode surface rides in the functions namespace. The dialect now hands
 // the bridge a grouped lite list; the bridge reads the members, swaps in exec and groups the result.
-package splice.provider.codex.v4390
+package splice.provider.codex
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -10,7 +10,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.provider.codex.CodeModeBridgeTestSupport
 
 class CodeModeNamespaceSurfaceTest : CodeModeBridgeTestSupport() {
     @Test

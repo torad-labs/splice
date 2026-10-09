@@ -1,21 +1,16 @@
-// NEW: V4-340 — a code-mode save writes the conversation that changed, not the whole head. The store
+// NEW: a code-mode save writes the conversation that changed, not the whole head. The store
 // rewrote one file holding every record on each save: live on 2026-09-26 that file was 8.8 MB for 128
 // records, rewritten several times per script round, so a save's cost grew with every other conversation
 // on the head. What is pinned here does not name the layout: after a head has held several conversations,
 // one more script round of ONE of them changes exactly one file on disk, and that file holds that
 // conversation's records and no other's.
-package splice.provider.codex.v4340
+package splice.provider.codex
 
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.provider.codex.CodeModeBridgeConfig
-import splice.provider.codex.CodeModeRecord
-import splice.provider.codex.CodeModeRecords
-import splice.provider.codex.CodeModeStateLocation
-import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.state.CodeModeStateJournal
 import java.nio.file.Files
 import java.nio.file.Path

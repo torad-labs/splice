@@ -1,5 +1,5 @@
 // NEW: branch exclusions survive every hidden post, including completion of a resumed script.
-package splice.provider.codex.v4352
+package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -10,9 +10,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
-import splice.provider.codex.CodeModeBridgeTestSupport
-import splice.provider.codex.CodexCodeModeHistoryCodec
-import splice.provider.codex.turn
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep

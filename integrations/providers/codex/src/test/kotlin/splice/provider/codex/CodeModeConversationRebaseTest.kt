@@ -1,9 +1,9 @@
-// NEW: V4-337 — a conversation that alone reached a bound lets its finished records go at the start of
+// NEW: a conversation that alone reached a bound lets its finished records go at the start of
 // its turn, before that turn's history is built. Its scripts so far stay in its history as the ordinary
 // tool calls the client saw, a script it starts in that turn is measured on that history and places on
 // the next one, and nothing is abandoned, skipped or refused. Letting them go at the new script's
 // admission instead would have left its baseline on canonical items that no longer exist.
-package splice.provider.codex.v4337
+package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -12,11 +12,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.provider.codex.BASE_REQUEST
-import splice.provider.codex.CodeModeBridgeTestSupport
-import splice.provider.codex.CodeModeRetention
-import splice.provider.codex.CodexCodeModeBridge
-import splice.provider.codex.turn
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep

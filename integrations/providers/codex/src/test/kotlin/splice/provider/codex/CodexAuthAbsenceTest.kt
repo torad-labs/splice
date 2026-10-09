@@ -33,7 +33,7 @@ class CodexAuthAbsenceTest {
     // and refresh() flattened to "no credential file — not logged in" while intact tokens sat
     // unreadable one chmod away.
     @Test
-    fun `an inaccessible auth file is read-failed, never logged-out - DR-59`(@TempDir tmp: Path) = runTest {
+    fun `an inaccessible auth file is read-failed, never logged-out`(@TempDir tmp: Path) = runTest {
         val authPath = tmp.resolve(".codex/auth.json")
         Files.createDirectories(authPath.parent)
         authPath.writeText("""{"tokens":{"access_token":"tok-1","refresh_token":"r-1"}}""")
@@ -96,7 +96,7 @@ class CodexAuthAbsenceTest {
     // into daemon.log and /mgmt/auth through every $failure / toString diagnostic. The sentinel
     // rides in an UNTERMINATED file so the parser's excerpt window covers it.
     @Test
-    fun `diagnostics never quote credential bytes from a malformed auth file - DR-65`(@TempDir tmp: Path) = runTest {
+    fun `diagnostics never quote credential bytes from a malformed auth file`(@TempDir tmp: Path) = runTest {
         val sentinel = "sk-SENTINEL-LEAK-CANARY"
         val authPath = tmp.resolve(".codex/auth.json")
         Files.createDirectories(authPath.parent)

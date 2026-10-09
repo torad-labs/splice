@@ -1,10 +1,10 @@
-// NEW: V4-340 — the upgrade from the single file. Every daemon before it kept a head's code-mode records in
+// NEW: the upgrade from the single file. Every daemon before it kept a head's code-mode records in
 // one `<head>-code-mode.json`; live claudex sessions have records in it today, and they must survive the
 // first start of the daemon that keeps one file per conversation. The rule pinned here: a per-conversation
 // file that reads back whole is the copy the loader trusts; the single file fills only the conversations
 // with no such file, each is written to its own file, and it is deleted after every one is written. So a
 // crash between the writes and the delete loads each conversation once and loses none.
-package splice.provider.codex.v4340
+package splice.provider.codex
 
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -14,15 +14,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.LogSink
-import splice.provider.codex.CodeModeBridgeConfig
-import splice.provider.codex.CodeModeExpiredSnapshot
-import splice.provider.codex.CodeModePersistedState
-import splice.provider.codex.CodeModePhase
-import splice.provider.codex.CodeModeRecord
-import splice.provider.codex.CodeModeRecords
-import splice.provider.codex.CodeModeStateFiles
-import splice.provider.codex.CodeModeStateLocation
-import splice.provider.codex.CodexCodeModeRegistry
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock

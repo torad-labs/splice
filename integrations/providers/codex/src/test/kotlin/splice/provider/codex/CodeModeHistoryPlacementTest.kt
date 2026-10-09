@@ -1,4 +1,4 @@
-// NEW: V4-342 — nothing splice writes moves a parked script's history under it. Two of the three live
+// NEW: nothing splice writes moves a parked script's history under it. Two of the three live
 // abandons on 2026-09-26 (one gpt-5.6-sol subagent, records 8cbd23d8 and 48c27b3f) were splice's own
 // rewrites. (1) A completed record's rewrite put its continuity reasoning ahead of the native tool
 // search it made before its script, at the same offset, whenever the client did not replay the
@@ -7,7 +7,7 @@
 // as "native discovery history was edited". (2) A record abandoned in the request that started the
 // next script was rewritten to its canonical output on the following request, under the new script's
 // baseline, which had recorded its raw callbacks: abandoned again, as "logical history does not match".
-package splice.provider.codex.v4342
+package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -21,8 +21,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.reasoning.ReasoningReplay
-import splice.provider.codex.CodeModeBridgeTestSupport
-import splice.provider.codex.CodexCodeModeBridge
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 
@@ -38,7 +36,7 @@ private const val FOUND = """{"type":"tool_search_output","call_id":"search-1","
 class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
 
     @Test
-    fun `a script started in the continuation of one that searched first resumes on the next turn - V4-342`() =
+    fun `a script started in the continuation of one that searched first resumes on the next turn`() =
         runTest {
             val runtime = ScriptedRuntime(
                 ArrayDeque(
@@ -84,7 +82,7 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
         }
 
     @Test
-    fun `a record abandoned in the request that starts the next script is never rewritten under it - V4-342`() =
+    fun `a record abandoned in the request that starts the next script is never rewritten under it`() =
         runTest {
             val runtime = ScriptedRuntime(
                 ArrayDeque(
@@ -116,7 +114,7 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
         }
 
     @Test
-    fun `a record abandoned before a restart, read back from its store, is never rewritten - V4-342`() = runTest {
+    fun `a record abandoned before a restart, read back from its store, is never rewritten`() = runTest {
         val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Calls(listOf(call("r", "Read")))))))
         val read1 = startFirst(manager)
         manager.interceptor(turn(read1, "A"), disableParallel = false)

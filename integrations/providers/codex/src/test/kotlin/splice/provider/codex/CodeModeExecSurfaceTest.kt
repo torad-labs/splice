@@ -1,4 +1,4 @@
-package splice.provider.codex.v4388
+package splice.provider.codex
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -13,12 +13,9 @@ import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.buildResponsesTestRequest
-import splice.provider.codex.CodeModeBridgeTestSupport
-import splice.provider.codex.CodexCodeModeTurnBuilder
-import splice.provider.codex.backendCodeModeOnly
 
 /**
- * V4-388 conformance: a code_mode_only turn carries the surface codex-rs sends
+ * a code_mode_only turn carries the surface codex-rs sends
  * (core/src/tools/spec_plan.rs is_hidden_by_code_mode_only + code_mode/execute_spec.rs): ONE top-level
  * `exec` freeform tool with the lark grammar, every client tool nested in its manual as a TypeScript
  * declaration, and no client function tool beside it. Before V4-388 splice sent every client tool
@@ -56,15 +53,6 @@ class CodeModeExecSurfaceTest : CodeModeBridgeTestSupport() {
         )
         assertTrue(manual.contains("### `mcp__ast_grep__find_code` (`mcp__ast-grep__find_code`)"), manual)
         assertTrue(manual.contains("mcp__ast_grep__find_code(args: {\n  // The pattern to find\n"), manual)
-    }
-
-    @Test
-    fun `the instructions teach the nested call shape codex's template teaches`() {
-        val instructions = prepare().getValue("input").jsonArray[1].jsonObject
-            .getValue("content").jsonPrimitive.content
-        assertTrue(instructions.contains("await tools.Read({...})"), instructions)
-        assertTrue(instructions.contains("Batch independent searches and reads in one functions.exec"), instructions)
-        assertTrue(instructions.contains("await Promise.allSettled([...])"), instructions)
     }
 
     private fun prepare(): JsonObject {

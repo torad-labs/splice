@@ -1,4 +1,4 @@
-// NEW: V4-336 (live fix-forward) — a parked script is not cut off by the reasoning the client replays
+// NEW: a parked script is not cut off by the reasoning the client replays
 // from EARLIER turns. The reader counted a replay item as new content when its slot was not among the
 // record's native segments, and those hold only replay no function_call follows: every reasoning item
 // before an earlier ordinary tool call failed that test. So in any conversation with reasoning, every
@@ -6,7 +6,7 @@
 // "additional client content arrived" with every result back, and the one caught body carried only a
 // role=system message after its results, with 63 reasoning items in its history. The history before
 // the baseline is already held by its digest and its native segments before the reader runs.
-package splice.provider.codex.v4336
+package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -20,9 +20,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.provider.codex.CodeModeBridgeTestSupport
-import splice.provider.codex.CodexCodeModeBridge
-import splice.provider.codex.turn
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
@@ -39,7 +36,7 @@ private const val PREFACE = "I'll read the config and fix it."
 class CodeModeReasoningHistoryTest : CodeModeBridgeTestSupport() {
 
     @Test
-    fun `reasoning from an earlier tool call is history, and the script finishes with its results - V4-336`() =
+    fun `reasoning from an earlier tool call is history, and the script finishes with its results`() =
         runTest {
             val runtime = runtime()
             val manager = bridge(runtime)
@@ -52,7 +49,7 @@ class CodeModeReasoningHistoryTest : CodeModeBridgeTestSupport() {
         }
 
     @Test
-    fun `a system message after the results waits for the output in a history with reasoning - V4-336`() =
+    fun `a system message after the results waits for the output in a history with reasoning`() =
         runTest {
             val runtime = runtime()
             val manager = bridge(runtime)
@@ -71,7 +68,7 @@ class CodeModeReasoningHistoryTest : CodeModeBridgeTestSupport() {
         }
 
     @Test
-    fun `a system message with a call unanswered still stops the script in a history with reasoning - V4-336`() =
+    fun `a system message with a call unanswered still stops the script in a history with reasoning`() =
         runTest {
             val runtime = runtime()
             val manager = bridge(runtime)
@@ -84,7 +81,7 @@ class CodeModeReasoningHistoryTest : CodeModeBridgeTestSupport() {
         }
 
     @Test
-    fun `reasoning the client adds after the results still stops the script - V4-336`() = runTest {
+    fun `reasoning the client adds after the results still stops the script`() = runTest {
         val runtime = runtime()
         val manager = bridge(runtime)
         val (read, edit) = start(manager)
@@ -96,7 +93,7 @@ class CodeModeReasoningHistoryTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `reasoning right where the script started is new content, not history - V4-336`() = runTest {
+    fun `reasoning right where the script started is new content, not history`() = runTest {
         val runtime = runtime()
         val manager = bridge(runtime)
         val (read, edit) = start(manager)
@@ -110,7 +107,7 @@ class CodeModeReasoningHistoryTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `a script's own preface, replayed in a history with reasoning, is not new content - V4-336`() = runTest {
+    fun `a script's own preface, replayed in a history with reasoning, is not new content`() = runTest {
         val runtime = runtime()
         val manager = bridge(runtime)
         val (read, edit) = start(manager, preface())
@@ -127,7 +124,7 @@ class CodeModeReasoningHistoryTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `reasoning nothing recorded before the script's preface is new content - V4-336`() = runTest {
+    fun `reasoning nothing recorded before the script's preface is new content`() = runTest {
         val runtime = runtime()
         val manager = bridge(runtime)
         val (read, edit) = start(manager, preface())

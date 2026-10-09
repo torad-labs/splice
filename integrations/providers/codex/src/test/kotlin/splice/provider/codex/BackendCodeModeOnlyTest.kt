@@ -1,16 +1,13 @@
-// NEW: V4-441 — a Codex model the BACKEND marks `tool_mode = "code_mode_only"` runs on the one-`exec` surface
+// NEW: a Codex model the BACKEND marks `tool_mode = "code_mode_only"` runs on the one-`exec` surface
 // without being named in a list. gpt-6.1-sol shipped on 2026-09-29 marked so and would have run with direct
 // tools (2026-09-28's break: 98% direct calls, 1.6% exec) but for a hand edit of `code_mode_models`; the list
 // is now an addition to what the backend says, and the backend's flag is asked at TURN time (the port), so a
 // roster refreshed while the daemon runs reaches the next turn.
-package splice.provider.codex.v4441
+package splice.provider.codex
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.model.DiscoveredModel
-import splice.provider.codex.CodeModeBridgeTestSupport
-import splice.provider.codex.CodeModeOnlyModels
-import splice.provider.codex.CodexCodeModeTurnBuilder
 
 class BackendCodeModeOnlyTest : CodeModeBridgeTestSupport() {
 

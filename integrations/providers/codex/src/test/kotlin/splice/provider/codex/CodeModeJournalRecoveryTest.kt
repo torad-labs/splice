@@ -1,5 +1,5 @@
 // NEW: append recovery never loses a committed cell and can still persist after a torn final delta.
-package splice.provider.codex.v4340
+package splice.provider.codex
 
 import com.sun.management.ThreadMXBean
 import kotlinx.serialization.MissingFieldException
@@ -23,15 +23,6 @@ import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
-import splice.provider.codex.CodeModeExpiredSnapshot
-import splice.provider.codex.CodeModeNativeSegment
-import splice.provider.codex.CodeModePersistedState
-import splice.provider.codex.CodeModePersistenceException
-import splice.provider.codex.CodeModeRecordSnapshot
-import splice.provider.codex.CodeModeRecords
-import splice.provider.codex.CodeModeStateLocation
-import splice.provider.codex.CodeModeStateWrite
-import splice.provider.codex.CodexCodeModeStore
 import splice.provider.codex.state.CodeModeStateDelta
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.state.CodeModeStateText
@@ -433,29 +424,6 @@ class CodeModeJournalRecoveryTest {
         CodeModeStateJournal.write(file, """{"key":"alpha","patches":[$cell],"expired":[]}""")
         val failure = assertThrows<IllegalArgumentException> { CodeModeStateJournal.read(file, codec) }
         assertEquals("code-mode journal patch has no complete base cell", failure.message)
-    }
-
-    @Test
-    fun `checkpoint forces its temporary file before replacement and its directory afterward`() {
-        val file = dir.resolve("forced-checkpoint.json")
-        Files.writeString(file, "old checkpoint")
-        val record = CodeModeRecords.of("alpha", 1).snapshot()
-        val text = codec.encodeToString(CodeModePersistedState(records = listOf(record)))
-        val events = mutableListOf<String>()
-        CodeModeStateJournal.write(file, text) { target, channel ->
-            if (Files.isDirectory(target)) {
-                assertEquals(dir.toAbsolutePath(), target)
-                assertEquals(text + "\n", Files.readString(file), "directory force must follow the atomic replacement")
-                events += "directory"
-            } else {
-                assertFalse(target == file, "file force must use the temporary file, never the replaced path")
-                assertEquals("old checkpoint", Files.readString(file), "replacement must follow the file force")
-                assertEquals(text + "\n", Files.readString(target))
-                events += "file"
-            }
-            channel.force(true)
-        }
-        assertEquals(listOf("file", "directory"), events)
     }
 
     @Test

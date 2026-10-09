@@ -1,10 +1,10 @@
-// NEW: V4-337 — code-mode records are kept per conversation, not 128 for the whole head. A
+// NEW: code-mode records are kept per conversation, not 128 for the whole head. A
 // conversation's records are placed in its history in order, each on top of the one before
 // (CodexCodeModeHistory.canonicalize), so a record that goes takes every later one of its
 // conversation with it: the callbacks stay in history as bare toolu_splice_* calls with no splice_exec
 // wrapper. Live on 2026-09-26, 128 records covered 80 minutes across 18 conversations, and the day
 // logged 74 'history rewrite skipped' and 25 'abandoned record' lines.
-package splice.provider.codex.v4337
+package splice.provider.codex
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -13,13 +13,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.LogSink
-import splice.provider.codex.CODE_MODE_METADATA_VERSION
-import splice.provider.codex.CodeModeBridgeConfig
-import splice.provider.codex.CodeModePhase
-import splice.provider.codex.CodeModeRecord
-import splice.provider.codex.CodeModeRetention
-import splice.provider.codex.CodeModeStateLocation
-import splice.provider.codex.CodexCodeModeRegistry
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock

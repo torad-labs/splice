@@ -1,8 +1,8 @@
-// NEW: V4-340 — what the per-conversation code-mode store keeps on disk: one owner-only file per conversation
+// NEW: what the per-conversation code-mode store keeps on disk: one owner-only file per conversation
 // in an owner-only directory, named by a hash of the conversation's key, restored whole at a restart, and
 // dropped alone when it does not read back. The layout is asserted here as the operator would find it: the
 // README's "What splice keeps on your disk" names the directory, and this names what is in it.
-package splice.provider.codex.v4340
+package splice.provider.codex
 
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -12,16 +12,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.LogSink
-import splice.provider.codex.CodeModeBridgeConfig
-import splice.provider.codex.CodeModePersistenceException
-import splice.provider.codex.CodeModePhase
-import splice.provider.codex.CodeModeRecord
-import splice.provider.codex.CodeModeRecords
-import splice.provider.codex.CodeModeRetention
-import splice.provider.codex.CodeModeStateFiles
-import splice.provider.codex.CodeModeStateLocation
-import splice.provider.codex.CodeModeStateWrite
-import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.upstream.codemode.CodeModeResult
 import java.io.IOException

@@ -1,4 +1,4 @@
-package splice.provider.codex.v4388
+package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -12,15 +12,9 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.provider.codex.BASE_REQUEST
-import splice.provider.codex.CodeModeBridgeConfig
-import splice.provider.codex.CodeModeBridgeTestSupport
-import splice.provider.codex.CodexCodeModeTurnBuilder
-import splice.provider.codex.CodexCodeModeValidation
-import splice.provider.codex.backendCodeModeOnly
 import splice.upstream.RoundResult
 
-/** V4-388: what rides beside exec, when the manual says tools were withheld, and which outer names are ours. */
+/** what rides beside exec, when the manual says tools were withheld, and which outer names are ours. */
 class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
     @Test
     fun `exec rides alone as codex sends it, and a withheld client tool gets the deferred note`() {

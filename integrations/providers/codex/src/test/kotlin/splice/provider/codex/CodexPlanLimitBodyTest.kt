@@ -1,4 +1,4 @@
-package splice.provider.codex.v4377
+package splice.provider.codex
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -9,13 +9,12 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.usage.PlanLimit
-import splice.provider.codex.CodexAuthProvider
 import java.nio.file.Path
 
 private const val NOW_S = 1_790_584_000L
 private const val SIX_DAYS_S = 6L * 24 * 3_600
 
-/** V4-377: ChatGPT names a spent plan window in the 429 BODY. The provider reads it into the same
+/** ChatGPT names a spent plan window in the 429 BODY. The provider reads it into the same
  *  [PlanLimit] the transport already holds a turn on; a burst 429 and any other body read null. */
 class CodexPlanLimitBodyTest {
     private val prefetch = SupervisorJob()

@@ -501,7 +501,7 @@ class CodexAuthTest {
     }
 
     @Test
-    fun `non-jwt access token ages out at the synthesized ceiling - SH-01`(@TempDir tmp: Path) = runTest {
+    fun `non-jwt access token ages out at the synthesized ceiling`(@TempDir tmp: Path) = runTest {
         // G18's codex twin: an opaque (non-JWT) access token used to yield expiresAtMs=null and
         // be served FOREVER. The shared policy synthesizes mtime+4h: before the ceiling the token
         // serves with zero refresh traffic; past it, the stale floor forces a blocking refresh.
@@ -559,7 +559,7 @@ class CodexExpiryOverflowTest {
     // rules on, so it now takes that path: this is the SH-01 arm's shape with a HOSTILE exp in
     // place of a missing one, and the call counts are what separate the two behaviours.
     @Test
-    fun `a jwt exp too large to represent ages out at the ceiling, not immediately - DR-177`(
+    fun `a jwt exp too large to represent ages out at the ceiling, not immediately`(
         @TempDir tmp: Path,
     ) = runTest {
         var now = 0L
@@ -616,7 +616,7 @@ class CodexPeerRotationExpiryTest {
     // carrying no decodable exp never fired. The existing peer arm observes only the served token
     // and the call count, so it passes either way.
     @Test
-    fun `a peer-adopted opaque token gets the synthesized ceiling - DR-145`(@TempDir tmp: Path) =
+    fun `a peer-adopted opaque token gets the synthesized ceiling`(@TempDir tmp: Path) =
         runTest {
             val now = 5_000_000_000L
             val calls = AtomicInteger(0)
@@ -658,7 +658,7 @@ class CodexAuthIdentityTest {
         CodexAuthFile().codexAuthIdentityOrNull(path) { }
 
     @Test
-    fun `a rewritten credential with a restored FileTime is a DIFFERENT identity - DR-176`(@TempDir tmp: Path) {
+    fun `a rewritten credential with a restored FileTime is a DIFFERENT identity`(@TempDir tmp: Path) {
         val auth = tmp.resolve("auth.json")
         Files.writeString(auth, """{"tokens":{"access_token":"old"}}""")
         val before = identity(auth)
@@ -681,7 +681,7 @@ class CodexAuthIdentityTest {
     }
 
     @Test
-    fun `an untouched credential keeps its identity and stays latched - DR-176 trap control`(@TempDir tmp: Path) {
+    fun `an untouched credential keeps its identity and stays latched`(@TempDir tmp: Path) {
         val auth = tmp.resolve("auth.json")
         Files.writeString(auth, """{"tokens":{"access_token":"unchanged"}}""")
         val before = identity(auth)

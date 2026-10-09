@@ -1,14 +1,14 @@
-// NEW: V4-335 — the text a model says before it starts a splice_exec script is recorded as the same
+// NEW: the text a model says before it starts a splice_exec script is recorded as the same
 // item the client replays for it. Since V4-335 a lite turn replays that preface as
 // {role:assistant, phase:commentary, content}, and code mode recorded it as a bare {role, content}: the
 // rewrite then found no continuity where the client put it, kept the client's copy AND re-inserted
 // its own, and the unmatched copy counted as new client content that stopped the script (CI run
 // 36279360319, the packaged mock's lookup-edit: "assistant continuity was lost, duplicated, or
 // reordered"). A record written before continuity carried a phase is omitted, never placed.
-// V4-336: a script that made no client call leaves its preface in a message with no tool_use, which
+// a script that made no client call leaves its preface in a message with no tool_use, which
 // the client replays as final_answer; the record's copy is still the same item, placed once, and its
 // commentary is the truer phase: the preface did precede the splice_exec call upstream.
-package splice.provider.codex.v4335
+package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -28,11 +28,6 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.LogSink
 import splice.dialect.responses.buildResponsesTestRequest
-import splice.provider.codex.BASE_REQUEST
-import splice.provider.codex.CodeModeBridgeTestSupport
-import splice.provider.codex.CodexCodeModeBridge
-import splice.provider.codex.CodexCodeModeWire
-import splice.provider.codex.CodexQuirks
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
@@ -44,14 +39,14 @@ private const val ANSWER = "The timeout is 10 s."
 class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
 
     @Test
-    fun `the preface code mode records is the item the client replays for it - V4-335`() {
+    fun `the preface code mode records is the item the client replays for it`() {
         val recorded = CodexCodeModeWire(Json, LogSink {}).continuity(preface()).logicalItems.single()
 
         assertEquals(clientReplay().toString(), recorded.toString())
     }
 
     @Test
-    fun `a finished script's preface is placed once and its result goes back to it - V4-335`() = runTest {
+    fun `a finished script's preface is placed once and its result goes back to it`() = runTest {
         val runtime = runtime()
         val manager = bridge(runtime)
         val read = finish(manager)
@@ -63,7 +58,7 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `a finished record written before continuity carried a phase is omitted, not placed twice - V4-335`() =
+    fun `a finished record written before continuity carried a phase is omitted, not placed twice`() =
         runTest {
             val read = finish(bridge(runtime()))
             writtenByV3()
@@ -78,7 +73,7 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
         }
 
     @Test
-    fun `a script that made no client call has its preface placed once on the next turn - V4-336`() = runTest {
+    fun `a script that made no client call has its preface placed once on the next turn`() = runTest {
         val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("computed")))))
         var posts = 0
         manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
@@ -94,7 +89,7 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `a preface the client replays as the answer is still the script's own, not new content - V4-336`() =
+    fun `a preface the client replays as the answer is still the script's own, not new content`() =
         runTest {
             val runtime = runtime()
             val manager = bridge(runtime)

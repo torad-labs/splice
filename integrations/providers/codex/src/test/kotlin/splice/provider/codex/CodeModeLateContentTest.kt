@@ -1,11 +1,11 @@
-// NEW: V4-336 — a splice_exec script whose every callback returned is not cut off by client content
+// NEW: a splice_exec script whose every callback returned is not cut off by client content
 // that arrives after the results. Claude Code sends a peer's message, a task notification or a hook's
 // output as a role=system message, and it lands behind the callback results; live on 2026-09-26, 86 of
 // the claudex head's 128 code-mode records ended "additional client content arrived", 85 of them with
 // every result back, and the model re-issued the same batch. The script gets its results, then the
 // model gets the script's output and, after it, the new content. What the operator typed (a user
 // message) still stops the script, and so does any content while a callback is still unanswered.
-package splice.provider.codex.v4336
+package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -25,11 +25,6 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.request.ResponsesContextMessage
-import splice.provider.codex.BASE_REQUEST
-import splice.provider.codex.CodeModeBridgeTestSupport
-import splice.provider.codex.CodexCodeModeBridge
-import splice.provider.codex.terminatedEvidence
-import splice.provider.codex.turn
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
@@ -40,7 +35,7 @@ private const val DEVELOPER = """{"role":"developer","content":"s"}"""
 class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
 
     @Test
-    fun `a script whose every callback returned finishes when a system message follows its results - V4-336`() =
+    fun `a script whose every callback returned finishes when a system message follows its results`() =
         runTest {
             val runtime = runtime(CodeModeStep.Completed("both done"))
             val manager = bridge(runtime)
@@ -62,7 +57,7 @@ class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
         }
 
     @Test
-    fun `the lite context message a system message becomes also lets the finished script complete - V4-390`() =
+    fun `the lite context message a system message becomes also lets the finished script complete`() =
         runTest {
             val runtime = runtime(CodeModeStep.Completed("both done"))
             val manager = bridge(runtime)
@@ -80,7 +75,7 @@ class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
         }
 
     @Test
-    fun `text the operator typed after every result still stops the script - V4-336`() = runTest {
+    fun `text the operator typed after every result still stops the script`() = runTest {
         val runtime = runtime(CodeModeStep.Completed("both done"))
         val manager = bridge(runtime)
         val (read, edit) = start(manager)
@@ -95,7 +90,7 @@ class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
 
     @ParameterizedTest
     @ValueSource(strings = ["system", "user"])
-    fun `a callback still unanswered when content arrives stops the script there - V4-336`(role: String) = runTest {
+    fun `a callback still unanswered when content arrives stops the script there`(role: String) = runTest {
         val runtime = runtime()
         val manager = bridge(runtime)
         val (read, edit) = start(manager)
@@ -113,7 +108,7 @@ class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `a sequential batch with a call not yet exposed stops when a system message arrives - V4-336`() = runTest {
+    fun `a sequential batch with a call not yet exposed stops when a system message arrives`() = runTest {
         val runtime = runtime()
         val manager = bridge(runtime)
         val sink = RecordingSink()
@@ -136,7 +131,7 @@ class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `a replay item nothing put there still stops the script - V4-336`() = runTest {
+    fun `a replay item nothing put there still stops the script`() = runTest {
         val runtime = runtime(CodeModeStep.Completed("both done"))
         val manager = bridge(runtime)
         val (read, edit) = start(manager)
@@ -151,7 +146,7 @@ class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
     }
 
     @Test
-    fun `a history whose baseline was edited still stops the script - V4-336`() = runTest {
+    fun `a history whose baseline was edited still stops the script`() = runTest {
         val runtime = runtime(CodeModeStep.Completed("both done"))
         val manager = bridge(runtime)
         val (read, edit) = start(manager, opening("fix the build"))

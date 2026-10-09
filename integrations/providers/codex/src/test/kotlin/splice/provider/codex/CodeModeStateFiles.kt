@@ -1,4 +1,4 @@
-// NEW: V4-340 — the code-mode state a test's bridge left on disk. It is one file per conversation in [dir]
+// NEW: the code-mode state a test's bridge left on disk. It is one file per conversation in [dir]
 // (CodexCodeModeStore), where it used to be one file for the head; the tests that read what a save wrote,
 // or make a save fail, or rewrite what an older daemon wrote, do it through this so that they say what
 // they mean and not where the bytes are. It never uses the store's own file naming: a file is whatever

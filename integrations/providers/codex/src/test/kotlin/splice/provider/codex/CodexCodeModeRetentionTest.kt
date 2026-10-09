@@ -1,4 +1,4 @@
-// NEW: V4-287 — a code-mode record keeps the model's reasoning summaries in plaintext, and README and
+// NEW: a code-mode record keeps the model's reasoning summaries in plaintext, and README and
 // SECURITY.md promise it goes 24 hours after its last use whether or not the head is used again. The
 // registry swept only when it was built or a code-mode turn touched it, so an idle head kept a record
 // for as long as the daemon stayed up; closing an idle cell and stopping the head each restarted the

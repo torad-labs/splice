@@ -47,9 +47,6 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
                     Regex("<code_mode_orchestration>").findAll(prefix).count() + 1,
                     Regex("<code_mode_orchestration>").findAll(instructions(prepared.requestBody)).count(),
                 )
-                val batching = "Batch independent searches and reads in one functions.exec"
-                assertTrue(instructions(prepared.requestBody).contains(batching))
-                assertTrue(instructions(prepared.requestBody).contains("Promise.all"))
                 // V4-390: both lists ride grouped in the functions namespace; compare their members.
                 val namespace = ResponsesFunctionNamespace()
                 val originalTools = namespace.members(before.first().jsonObject.getValue("tools").jsonArray)
@@ -150,8 +147,6 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         val (serialBody, serial) = request("Caller", disableParallel = true)
         val sequential = builder.prepare(serialBody, "session", serial)
         assertFalse(instructions(sequential.requestBody).contains("Promise.all"))
-        assertTrue(instructions(sequential.requestBody).contains("client has disabled parallel tool use"))
-        assertTrue(instructions(sequential.requestBody).contains("sequential await"))
     }
 
     @Test

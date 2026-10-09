@@ -1,4 +1,4 @@
-// V4-179: a screenshot inside a splice_exec-owned tool_result reaches the model — persisted on the
+// a screenshot inside a splice_exec-owned tool_result reaches the model — persisted on the
 // record beside the script's bounded output, replayed from there, owned by exact bytes and position.
 // Each arm here is one clause of splice-astra's contract (ledger row V4-179).
 package splice.provider.codex

@@ -1,8 +1,8 @@
-// V4-352: an active script is parked across client tool execution. A different request with the same
+// an active script is parked across client tool execution. A different request with the same
 // conversation key can arrive before those results; it must not own or abandon that script. The
 // completed script before it is deliberately on the same history, so the two cases discriminate
 // an earlier canonical rewrite from active-owner assignment.
-package splice.provider.codex.v4352
+package splice.provider.codex
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -20,11 +20,6 @@ import org.junit.jupiter.api.Test
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.CodeModeDivergenceMarker
 import splice.core.turn.TurnOutcome
-import splice.provider.codex.CodeModeBridgeTestSupport
-import splice.provider.codex.CodeModeRetention
-import splice.provider.codex.CodexCodeModeBridge
-import splice.provider.codex.CodexCodeModeHistoryCodec
-import splice.provider.codex.turn
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep

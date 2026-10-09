@@ -145,22 +145,22 @@ internal class HeadEngine(
             call.respondText(diagnostics.healthJson(port), ContentType.Application.Json)
         }
         route.get("/v1/models") {
-            if (clientAuth.authorize(call)) {
+            clientAuth.guarded(call, Door.CALLER) {
                 call.respondText(diagnostics.modelsJson(), ContentType.Application.Json)
             }
         }
-        route.get("/wire") { if (clientAuth.authorizeOperator(call)) wire(call) }
+        route.get("/wire") { clientAuth.guarded(call, Door.OPERATOR) { wire(call) } }
         route.post("/v1/messages") {
             val arrivalAt = admission.arrivalTime()
             withContext(callDispatcher) {
-                if (clientAuth.authorizeUpstream(call)) admission.handleMessages(call, arrivalAt)
+                clientAuth.guarded(call, Door.UPSTREAM) { admission.handleMessages(call, arrivalAt) }
             }
         }
         // NAMED CHANGE: count_tokens gets a cheap dedicated handler, not the Node
         // behavior (a real quota-burning turn). Local estimate keeps pre-flight cheap.
         route.post("/v1/messages/count_tokens") {
             withContext(callDispatcher) {
-                if (clientAuth.authorize(call)) countTokens.handleCountTokens(call)
+                clientAuth.guarded(call, Door.CALLER) { countTokens.handleCountTokens(call) }
             }
         }
     }

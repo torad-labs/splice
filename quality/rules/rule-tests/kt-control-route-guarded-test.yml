@@ -17,10 +17,13 @@ valid:
   - |
     post("/v1/messages") {
         withContext(callDispatcher) {
-            if (clientAuth.authorizeUpstream(call)) admission.handleMessages(call, arrivalAt)
+            clientAuth.guarded(call, Door.UPSTREAM) { admission.handleMessages(call, arrivalAt) }
         }
     }
-  - 'get("/wire") { if (clientAuth.authorizeOperator(call)) wire(call) }'
+  - 'get("/wire") { clientAuth.guarded(call, Door.OPERATOR) { wire(call) } }'
+  # a path passed by name is the same registration
+  - 'get(path = "/api/status") { guarded(call) { respond(call, payloads.statusJson()) } }'
+  - 'route.get(path = "/health") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }'
   # dated allowlist: the unauthenticated liveness probe
   - 'get("/health") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }'
   # kotlinx buildJsonObject `put` is not a route registration — the path literal is what separates them
@@ -30,6 +33,12 @@ valid:
   # a route helper call with no handler lambda is not a registration
   - 'val path = get("/api/status")'
 invalid:
+  # a path passed by name is a registration too, guarded or not
+  - 'get(path = "/x") { respond(call, thing()) }'
+  - 'route.post(path = "/api/thing") { respond(call, thing()) }'
+  # an authorize verdict nobody reads is no door: only the guarding call runs a handler
+  - 'post("/v1/messages") { clientAuth.authorizeUpstream(call); admission.handleMessages(call, arrivalAt) }'
+  - 'get("/wire") { if (clientAuth.authorizeOperator(call)) wire(call) }'
   # a head route whose check sits inside the helper it calls reads exactly like an open route
   - 'post("/v1/messages") { withContext(callDispatcher) { admission.handleMessages(call, arrivalAt) } }'
   # the census

@@ -12,7 +12,7 @@
 // is the flip that makes 99.9% monitorable.
 //
 // EXACTLY WHAT THIS PROVES, and what it does not (review 2026-08-12 — the earlier wording claimed
-// more than the code does). HeadAdmission.handleMessages runs `authorizeUpstream(call)` FIRST:
+// more than the code does). The head's /v1/messages route opens its upstream door FIRST:
 // a marked probe is refused before authentication, acceptingOrRespond, the InflightGate,
 // the TurnDriver, or any upstream client. So this proves the head's Netty acceptor and request
 // path are RESPONSIVE — which is precisely the 91h wedge, where the event loops spun and nothing,

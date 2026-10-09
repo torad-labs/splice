@@ -53,6 +53,23 @@ private val LIST_VALUED_CLIENT_HEADERS: Set<String> = setOf("anthropic-beta")
 // the beta flags off exactly this separator, so it is the wire form, not a formatting choice.
 private const val FIELD_LINE_SEPARATOR = ", "
 
+/** Which of a head's doors a route opens. */
+internal enum class Door {
+    /** A caller who may run inference here: a local answer (models, count_tokens) needs nothing more. */
+    CALLER,
+
+    /** A turn that goes upstream: [CALLER], and on a head that only forwards, a credential to forward. */
+    UPSTREAM,
+
+    /** An operator route that is not a turn (GET /wire): the management key alone. */
+    OPERATOR,
+}
+
+/** The work a head route does once its door has opened. */
+internal fun interface RouteBody {
+    suspend operator fun invoke()
+}
+
 /** The head's client-auth seam: who may call this listener, and what of theirs rides upstream. */
 internal class ClientAuth(
     private val deps: HeadDeps,
@@ -70,7 +87,19 @@ internal class ClientAuth(
     // this split can surface the key but never break it.
     private val authDelimiterRe = Regex("[\\s,=;'\"]+")
 
-    suspend fun authorize(call: ApplicationCall): Boolean {
+    /** Runs [handler] only when [call] opens [door]. A refused call is answered here, with the door's own status and
+     *  body, and [handler] never runs: a route cannot reach its handler past a verdict it ignored
+     *  (kt-control-route-guarded accepts this call alone as a head route's door). */
+    suspend fun guarded(call: ApplicationCall, door: Door, handler: RouteBody) {
+        val opened = when (door) {
+            Door.CALLER -> authorize(call)
+            Door.UPSTREAM -> authorizeUpstream(call)
+            Door.OPERATOR -> authorizeOperator(call)
+        }
+        if (opened) handler()
+    }
+
+    private suspend fun authorize(call: ApplicationCall): Boolean {
         // A client-auth head has NO splice-held credential to protect: the turn key is what the
         // launcher plants in a client whose own credentials it replaced, and this head does the
         // opposite — it leaves the client's native auth intact and forwards it. Comparing the
@@ -116,7 +145,7 @@ internal class ClientAuth(
      * bodies the head sent on other people's behalf. This route admits the management key alone,
      * on every head kind, so what opens it is what `splice` itself holds and nothing a session has.
      */
-    suspend fun authorizeOperator(call: ApplicationCall): Boolean {
+    private suspend fun authorizeOperator(call: ApplicationCall): Boolean {
         // The OPERATOR key alone (v0.4.0): the turn key is in every launched session's environment,
         // so accepting it here handed any session every other session's upstream bodies.
         if (matchesOperatorToken(presentedCredential(call))) return true
@@ -156,7 +185,7 @@ internal class ClientAuth(
      *  credential-less liveness probe (TurnPathProbeLoop) rode upstream that way every 30s and
      *  signed the head out (2026-10-01). A head holding its own credential still serves such a call,
      *  and a local answer (count_tokens, models) never needs one. */
-    suspend fun authorizeUpstream(call: ApplicationCall): Boolean {
+    private suspend fun authorizeUpstream(call: ApplicationCall): Boolean {
         // Header presence only REFUSES dispatch. No credential or body can turn it into hidden work.
         if (call.request.headers.getAll(LivenessProbe.PROBE_HEADER_NAME) != null) {
             responses.respondInvalidRequest(call, "a liveness probe does not dispatch a turn")

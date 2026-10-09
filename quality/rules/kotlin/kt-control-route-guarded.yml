@@ -56,19 +56,25 @@
 # leans on coverage exclusions. Across all of them it found four registrations, all on a head's own port
 # (HeadEngine): /v1/models, /wire, /v1/messages and /v1/messages/count_tokens. Each authenticated, but as
 # the first line of a helper, so the registration read exactly like an open route. A head's door is its
-# ClientAuth, not the management key's guarded(call), so each check moved to its registration and the rule
-# accepts either door: `guarded(` on the control plane, `clientAuth.authorize…(` on a head. The head's
+# ClientAuth, not the management key's guarded(call), so each check moved to its registration. The head's
 # /health is the same open liveness probe the allowlist already names.
+# NARROWED 2026-10-09 (review of 40d05c6d0): two holes in that widening. A path passed by NAME, `get(path = "/x")`,
+# was not a registration to the regex, so an unguarded one passed where its positional twin failed: the path is
+# matched either way now. And `clientAuth.authorize…(call)` satisfied the rule even as a bare statement whose
+# Boolean nobody read, so the handler ran on a refused call. That is closed by structure, not by a cleverer
+# pattern: ClientAuth.guarded(call, door) { … } runs the handler only for an authorized call, the authorize
+# functions are private to ClientAuth, and the rule accepts `guarded(` alone, on either plane.
 id: kt-control-route-guarded
 language: kotlin
 severity: error
-message: "Unauthenticated route: wrap a control-plane handler in `guarded(call) { … }`, and open a head's handler with its `clientAuth.authorize…(call)` check. A route that must stay open needs a dated entry in kt-control-route-guarded's allowlist, not a trailing comment."
+message: "Unauthenticated route: wrap a control-plane handler in `guarded(call) { … }`, and a head's handler in `clientAuth.guarded(call, door) { … }`. A route that must stay open needs a dated entry in kt-control-route-guarded's allowlist, not a trailing comment."
 note: >
   The control port reads every head's config, hands out launch specs, streams logs and can stop the
   daemon; the management key is its only defence and it is applied per route. A bare registration is
   reachable by anything that can open a socket to that port, and looks identical to a guarded one in
   every tool in this repo. Compliant form: `post("/api/x") { guarded(call) { handler(call) } }`, or
-  `guarded(call, mcp = true) { … }` for the MCP access key.
+  `guarded(call, mcp = true) { … }` for the MCP access key, or on a head
+  `clientAuth.guarded(call, Door.UPSTREAM) { handler(call) }`.
 ignores:
   - "**/src/test/**"
   - "**/src/testFixtures/**"
@@ -81,7 +87,7 @@ rule:
     # file (measured: both forms report the same 25 today, so the stricter reading costs nothing
     # and the looser one has a blind spot).
     - kind: call_expression
-      regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*"/'
+      regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*(?:path\s*=\s*)?"/'
     - any:
         - pattern: get($P) { $$$B }
         - pattern: post($P) { $$$B }
@@ -99,11 +105,11 @@ rule:
         - pattern: $R.head($P) { $$$B }
         - pattern: $R.options($P) { $$$B }
         - pattern: $R.route($P) { $$$B }
-    # The handler names its door: the control plane's guarded(call), or a head's ClientAuth check.
+    # The handler names its door: the control plane's guarded(call), or a head's clientAuth.guarded(call, door).
     - not:
         has:
           stopBy: end
-          regex: '\bguarded\s*\(|\bclientAuth\.authorize\w*\s*\('
+          regex: '\bguarded\s*\('
     # ALLOWLIST — see the dated entries in this rule's header. One anchored alternative per route.
     - not:
-        regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*"(/health)"'
+        regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*(?:path\s*=\s*)?"(/health)"'

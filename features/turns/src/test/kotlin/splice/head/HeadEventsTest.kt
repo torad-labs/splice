@@ -301,8 +301,13 @@ private class Rig(root: Path) {
         }
     }
 
-    private fun rowLines(): List<String> =
-        if (Files.exists(perfFile)) Files.readAllLines(perfFile).filter { it.isNotBlank() } else emptyList()
+    /** Only newline-terminated rows: the writer appends asynchronously, so the last line can still be mid-write,
+     *  and a reader of an append-only log takes a row once its newline is there. */
+    private fun rowLines(): List<String> {
+        if (!Files.exists(perfFile)) return emptyList()
+        val text = Files.readString(perfFile)
+        return text.substring(0, text.lastIndexOf('\n') + 1).lines().filter { it.isNotBlank() }
+    }
 
     suspend fun close() {
         head.stop()

@@ -37,7 +37,9 @@ internal class CountTokens(
                 // The 413 is the gate's to write, so the cap travels back as the case it is.
                 is BodyRead.TooLarge -> Materialized.TooLarge(read.limit)
                 is BodyRead.Received -> Materialized.Done(
-                    bodyParse.parse(read.body.text).map { PromptTokenEstimate.fromBytes(read.body.bytes.toLong()) },
+                    bodyParse.parse(read.body.text).map {
+                        PromptTokenEstimate.forRequest(read.body.bytes.toLong(), it.typed)
+                    },
                 )
             }
         } ?: return
@@ -47,7 +49,7 @@ internal class CountTokens(
             responses.respondInvalidRequest(call, "invalid request body")
             return
         }
-        // Conservative and Unicode-safe: UTF-8 bytes / 3 includes structural/tool overhead.
+        // Unicode-safe: UTF-8 bytes / 3 includes structural/tool overhead; images and documents count flat, not by base64 length.
         deps.log("[${provider.key}] count_tokens estimate=$estimate (local; no upstream turn)\n")
         call.respondText(
             JsonWire.string(buildJsonObject { put("input_tokens", estimate) }),

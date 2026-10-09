@@ -31,11 +31,17 @@ abstract class LicenseInventory : DefaultTask() {
 
     @TaskAction
     fun write() {
-        val document = JsonSlurper().parse(bom.get().asFile) as? Map<*, *> ?: error("${bom.get().asFile}: not a JSON object")
+        val source = bom.get().asFile
+        val document = JsonSlurper().parse(source) as? Map<*, *> ?: error("$source: not a JSON object")
         val own = firstPartyGroup.get()
         val entries = (document["components"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
             .filter { it["group"] != own }.map { entry(it) }
-            .sortedWith(compareBy({ it.getValue("moduleName").toString() }, { it.getValue("moduleVersion").toString() }))
+            .sortedWith(
+                compareBy(
+                    { it.getValue("moduleName").toString() },
+                    { it.getValue("moduleVersion").toString() },
+                ),
+            )
         val output = inventory.get().asFile
         output.parentFile.mkdirs()
         output.writeText(JsonOutput.prettyPrint(JsonOutput.toJson(mapOf("dependencies" to entries))) + "\n")
@@ -44,7 +50,8 @@ abstract class LicenseInventory : DefaultTask() {
     private fun entry(component: Map<*, *>): Map<String, Any> {
         val group = component["group"]?.toString().orEmpty()
         val name = component["name"]?.toString().orEmpty()
-        val licenses = (component["licenses"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { license(it) }
+        val licenses = (component["licenses"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
+            .mapNotNull { license(it) }
         val urls = (component["externalReferences"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
             .filter { it["type"] == "website" }.mapNotNull { it["url"]?.toString() }
         return linkedMapOf(

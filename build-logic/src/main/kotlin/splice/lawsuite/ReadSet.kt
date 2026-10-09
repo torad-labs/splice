@@ -14,12 +14,12 @@ import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.testing.Test
-import org.gradle.kotlin.dsl.of as valueSourceOf
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
+import org.gradle.kotlin.dsl.of as valueSourceOf
 
 object ReadSet {
 

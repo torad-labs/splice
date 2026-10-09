@@ -245,7 +245,7 @@ internal object CodeModeFrames {
             JsonNull -> null
             is JsonPrimitive -> element.takeIf(JsonPrimitive::isString)?.content
                 ?: throw IOException("Code-mode worker sent an invalid error")
-            is JsonObject, is JsonArray -> throw IOException("Code-mode worker sent an invalid error")
+            null, is JsonObject, is JsonArray -> throw IOException("Code-mode worker sent an invalid error")
         }
         error?.let { requireText(it, "error") }
         return WorkerReply(calls = null, output = output, error = error)

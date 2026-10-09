@@ -1,4 +1,4 @@
-// NEW: V4-242 (2026-09-26) — a websocket round the peer closes is served over HTTP when the client has
+// NEW: a websocket round the peer closes is served over HTTP when the client has
 // seen nothing yet, and names the close when it ends the turn after output.
 //
 // The Codex outage of 2026-09-25 closed every socket with 1011 after codex.rate_limits and
@@ -7,7 +7,7 @@
 // words never reached it. These drive a real HeadServer whose websocket rounds run the real transport
 // (WsUpstream and its listener) against sockets that close exactly that way; the runner is the only
 // stand-in, because the Responses runner that owns chaining is internal to its dialect.
-package campaign.v4242
+package splice.head
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -40,13 +40,7 @@ import splice.dialect.responses.websocket.RoundFrame
 import splice.dialect.responses.websocket.TerminalEvent
 import splice.dialect.responses.websocket.WsConnector
 import splice.dialect.responses.websocket.WsUpstream
-import splice.head.HeadDeps
-import splice.head.HeadServer
-import splice.head.MockChatGptUpstream
-import splice.head.TestResponsesProvider
 import splice.head.admission.RequestMaterializationGate
-import splice.head.headDeps
-import splice.head.headStores
 import splice.upstream.NEVER_PINGED_MS
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
@@ -131,7 +125,7 @@ private class ClosingRunner(events: List<String>, log: LogSink) : WsRoundRunner 
 }
 
 private class FixedAuth : RefreshableAuthProvider {
-    override suspend fun credentials(): Credentials = Credentials.Bearer("tok-v4242", "acct-v4242")
+    override suspend fun credentials(): Credentials = Credentials.Bearer("tok", "acct")
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fixed")
 }
@@ -142,7 +136,7 @@ private class ClosingWsProvider(private val inner: Provider, private val runner:
 }
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class PeerCloseTest(@param:TempDir private val tmp: Path) {
+class WsPeerCloseFallbackTest(@param:TempDir private val tmp: Path) {
     private val mock = MockChatGptUpstream()
     private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
     private var built = 0

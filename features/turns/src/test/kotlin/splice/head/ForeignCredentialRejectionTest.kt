@@ -1,11 +1,11 @@
-// NEW: V4-242 (2026-09-26) — a 401 that names a key the account never sent is the upstream's failure.
+// NEW: a 401 that names a key the account never sent is the upstream's failure.
 //
 // During the Codex outage of 2026-09-25 the HTTP side answered 401 invalid_api_key naming a masked
 // OpenAI service key (`sk-svcac…fvMA`), while the account had sent its own sign-in token. The head
 // read every 401 as the user's credential failing: the client was told authentication_error with
 // "run: claudex login", and the account was marked unavailable, so the next turn left it. These pin
 // both halves against a head with a real two-account pool, and pin the ordinary 401 beside them.
-package campaign.v4242
+package splice.head
 
 import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
@@ -33,10 +33,6 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
-import splice.head.HeadServer
-import splice.head.awaitListening
-import splice.head.headDeps
-import splice.head.quotaFor
 import splice.head.usage.QuotaTracker
 import splice.provider.codex.CodexProvider
 import splice.upstream.ProviderTuning
@@ -118,7 +114,7 @@ private class PoolRig(root: Path, val upstream: RejectingUpstream) {
     fun turn(): String = runBlocking {
         client.post("http://127.0.0.1:${head.port}/v1/messages") {
             header("Content-Type", "application/json")
-            header("x-claude-code-session-id", "session-v4242")
+            header("x-claude-code-session-id", "session")
             setBody(
                 """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
                     "messages":[{"role":"user","content":"go"}]}""",
@@ -170,7 +166,7 @@ private class PoolRig(root: Path, val upstream: RejectingUpstream) {
     )
 }
 
-class ForeignKeyRejectionTest(@param:TempDir private val root: Path) {
+class ForeignCredentialRejectionTest(@param:TempDir private val root: Path) {
     @Test
     fun `a 401 naming a key the account never sent is reported as the upstream's failure`() {
         val rig = PoolRig(root, RejectingUpstream(rejection(FOREIGN_MASKED_KEY)))
@@ -226,8 +222,8 @@ class ForeignKeyRejectionTest(@param:TempDir private val root: Path) {
 }
 
 private const val UNAUTHORIZED = 401
-private const val PRIMARY_TOKEN = "primary-token-v4242"
-private const val BACKUP_TOKEN = "backup-token-v4242"
+private const val PRIMARY_TOKEN = "primary-token"
+private const val BACKUP_TOKEN = "backup-token"
 
 // Fakes in the shape the Codex backend masks a key: a visible head, a run of stars, a visible tail.
 // The first is no key this test holds; the second masks the primary account's own token.

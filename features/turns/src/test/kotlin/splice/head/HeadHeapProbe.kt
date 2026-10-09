@@ -1,4 +1,4 @@
-package splice.head.v4374
+package splice.head
 
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
@@ -11,13 +11,8 @@ import splice.core.model.WindowRule
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
-import splice.head.HeadDeps
-import splice.head.HeadServer
-import splice.head.TestResponsesProvider
 import splice.head.admission.MATERIALIZATION_RESIDENT_BYTES
 import splice.head.admission.RequestMaterializationGate
-import splice.head.awaitListening
-import splice.head.headDeps
 import splice.upstream.ProviderTuning
 import java.lang.management.ManagementFactory
 import java.lang.ref.Reference

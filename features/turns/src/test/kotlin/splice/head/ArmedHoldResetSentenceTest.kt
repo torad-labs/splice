@@ -1,10 +1,10 @@
-// NEW: V4-433 — the refusal a client prints while a burst hold is armed says the provider's window reset the way a person
+// NEW: the refusal a client prints while a burst hold is armed says the provider's window reset the way a person
 // reads it. HeadAdmission wrote it as an ISO instant ("resets at 2026-09-29T21:30:00Z"), the last client-facing sentence
 // that still did after V4-419, V4-425 and V4-428. Driven through a real head over a local upstream that answers every
 // request 429 with a body naming a reset an hour and a half out: the turn that meets the 429 arms the hold, and the turns
 // refused at admission behind it are read back. The journal's `provider_reset=` is the log spelling and stays ISO. Each
 // refused turn runs in its own machine zone, so a sentence that still said UTC, or the ISO instant, cannot pass.
-package splice.head.v4433
+package splice.head
 
 import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
@@ -31,9 +31,6 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LocalTimeText
 import splice.dialect.responses.ReasoningSettings
-import splice.head.HeadServer
-import splice.head.TestResponsesProvider
-import splice.head.headDeps
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient

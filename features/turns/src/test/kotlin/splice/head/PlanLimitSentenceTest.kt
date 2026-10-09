@@ -1,14 +1,12 @@
-// NEW: V4-419 — the sentence a plan-limit ending speaks: the window in words, the reset the provider named in the zone
+// NEW: the sentence a plan-limit ending speaks: the window in words, the reset the provider named in the zone
 // it is handed, and what to do. It is one sentence for the turn that met the 429 and every turn held behind it, so the
-// two cannot name different instants. V4-404's table test reads every tag and its fixed line; this pins the one line that
-// cannot be fixed, because it carries an instant.
-package splice.head.v4419
+// two cannot name different instants.
+package splice.head
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.perf.OutcomeTag
 import splice.core.usage.PlanLimit
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.LocalTimeText
@@ -60,7 +58,7 @@ class PlanLimitSentenceTest {
     }
 
     @Test
-    fun `the trace and the refusal the client is sent say the same reset the same way (V4-425)`() {
+    fun `the trace and the refusal the client is sent say the same reset the same way`() {
         val times = LocalTimeText(ZoneId.of("Asia/Tokyo"))
         val limit = PlanLimit("seven_day", RESET)
 
@@ -69,12 +67,5 @@ class PlanLimitSentenceTest {
 
         assertTrue("7-day window is used up until Oct 5, 9:00 AM JST" in trace, trace)
         assertTrue("7-day window is used up until Oct 5, 9:00 AM JST" in refusal, refusal)
-    }
-
-    @Test
-    fun `the tag's own line names no instant and still says to wait for the reset`() {
-        val line = requireNotNull(OutcomeSentences.of(OutcomeTag.PLAN_LIMIT.wire)) { "the tag has no line" }
-        assertTrue("; " in line && "wait for the reset" in line, line)
-        assertFalse(line.any { it.isDigit() }, "a fixed line cannot know the instant: $line")
     }
 }

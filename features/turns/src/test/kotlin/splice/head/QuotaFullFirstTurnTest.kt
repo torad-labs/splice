@@ -1,8 +1,8 @@
-// NEW: V4-418 — reporting only. A head whose current reading names a window fully used still lets its first turn
+// NEW: reporting only. A head whose current reading names a window fully used still lets its first turn
 // reach the upstream (V4-47's gate is unchanged): only a refused turn arms a hold, so the reading can never turn a week
 // that has just reset, or a plan the provider has since topped up, into a refusal splice invented. V4-452: the reading
 // is HeadServer.quotaFull, and it is not a refusal, so providerResetForMs stays 0 beside it.
-package splice.head.v4418
+package splice.head
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -31,12 +31,6 @@ import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.dialect.responses.ReasoningSettings
-import splice.head.HeadServer
-import splice.head.MockChatGptUpstream
-import splice.head.TestResponsesProvider
-import splice.head.awaitListening
-import splice.head.headDeps
-import splice.head.quotaFor
 import splice.head.usage.QuotaTracker
 import splice.upstream.ProviderTuning
 import java.nio.file.Path
@@ -47,14 +41,14 @@ private const val SEVEN_DAY_S = 7L * 24 * 3_600
 private const val MESSAGES_BODY =
     """{"model":"gpt-5.6-sol","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"hello"}]}"""
 
-private class ProbeAuth : RefreshableAuthProvider {
+private class QuotaFullAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-test", "acct-test")
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
 }
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class SpentReadingStillProbesTest {
+class QuotaFullFirstTurnTest {
     private val mock = MockChatGptUpstream()
     private val client = HttpClient(CIO) {
         engine { requestTimeout = 0 }
@@ -81,7 +75,7 @@ class SpentReadingStillProbesTest {
                         defaultContextWindow = 272_000,
                     ),
                     pinnedModel = "gpt-5.6-sol",
-                    auth = ProbeAuth(),
+                    auth = QuotaFullAuth(),
                     baseUrl = mock.baseUrl,
                     watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 ),

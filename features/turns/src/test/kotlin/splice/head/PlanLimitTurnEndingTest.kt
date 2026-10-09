@@ -1,4 +1,4 @@
-// NEW: V4-419 — a turn that a spent PLAN window ended is recorded as one, and says when it comes back. Marlin's walk
+// NEW: a turn that a spent PLAN window ended is recorded as one, and says when it comes back. Marlin's walk
 // (f7f1e9308, daemon.log:39520): ChatGPT answered usage_limit_reached with a reset six days out, the retry loop armed the
 // plan hold, and the turn was then recorded error:upstream-failed with the table's "wait a moment and retry"; the turns
 // held behind it read "wait for the limit to clear" with no time, though splice held the instant. Driven through a real
@@ -6,7 +6,7 @@
 // refused at admission while the hold is live (HeadAdmission), read back from the trace the Turns page reads. A burst
 // 429 that names no reset must keep both of its old endings and their sentences. The machine's zone is set to Tokyo for
 // the run, so a sentence that still said Chicago's hour or "CT" cannot pass.
-package splice.head.v4419
+package splice.head
 
 import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
@@ -40,10 +40,6 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
-import splice.head.HeadServer
-import splice.head.TestResponsesProvider
-import splice.head.headDeps
-import splice.head.headStores
 import splice.head.turn.OutcomeSentences
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate

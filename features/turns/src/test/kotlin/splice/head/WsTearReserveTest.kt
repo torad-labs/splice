@@ -1,10 +1,10 @@
-// NEW: V4-242 (2026-09-26) — which websocket tears WsRoundDrive re-serves over SSE, one condition per arm.
+// NEW: which websocket tears WsRoundDrive re-serves over SSE, one condition per arm.
 //
 // A tear is re-served only when the client has seen nothing of the round and nothing of ours caused it:
-// not the watchdog (WsRoundDriverTest's DR-7 reap arm pins that one), not a departed client, not the
+// not the watchdog, not a departed client, not the
 // turn's own cancellation. Every other tear stays with the translator, which folds it into its honest
 // terminal as before. Driven through WsRoundDrive itself, with the real responses translator beneath it.
-package campaign.v4242
+package splice.head
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -35,8 +35,6 @@ import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.JsonScalars
 import splice.dialect.responses.ReasoningSettings
-import splice.head.RecordingSink2
-import splice.head.TestResponsesProvider
 import splice.head.admission.admittedSlot
 import splice.head.compact.CompactStats
 import splice.head.pipeline.TurnPipeline
@@ -65,7 +63,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
 private class NoAuth : RefreshableAuthProvider {
-    override suspend fun credentials(): Credentials = Credentials.Bearer("tok-v4242")
+    override suspend fun credentials(): Credentials = Credentials.Bearer("tok")
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fixed")
 }
@@ -97,7 +95,7 @@ private class TerminalsOnly : WsRoundRunner {
     override fun roundBypassed(meta: TurnMeta) = Unit
 }
 
-class TornBeforeContentTest(@param:TempDir private val tmp: Path) {
+class WsTearReserveTest(@param:TempDir private val tmp: Path) {
 
     private val provider = TestResponsesProvider(
         tuning = ProviderTuning(

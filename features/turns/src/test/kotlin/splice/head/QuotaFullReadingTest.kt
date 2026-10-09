@@ -1,10 +1,10 @@
-// NEW: V4-418 — a head reads the provider's own CURRENT quota reading when it names a window fully used, before
+// NEW: a head reads the provider's own CURRENT quota reading when it names a window fully used, before
 // any turn has been refused. Marlin (f7f1e9308): claudex said nothing while its poll said the week was 100% with a
 // reset days out. V4-452 ruled what the reading IS: a reading, not a refusal. On Oct 1 claudex served 1,163 turns at a
 // week read 100%, so HeadServer.quotaFull carries it beside a head that stays ready, and providerResetForMs, the one
 // value any surface prints as out of quota, stays the held refusal's alone. A window that is not full, a reading
 // older than QuotaFreshness's 15 minutes and a window past its reset read nothing: a stale figure says nothing of now.
-package splice.head.v4418
+package splice.head
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -23,12 +23,6 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
-import splice.head.HeadDeps
-import splice.head.HeadServer
-import splice.head.TestResponsesProvider
-import splice.head.headDeps
-import splice.head.noQuota
-import splice.head.quotaFor
 import splice.head.usage.QuotaTracker
 import splice.upstream.ProviderTuning
 import splice.upstream.codemode.ProcessElapsedNow
@@ -50,13 +44,13 @@ private const val SEVEN_DAY_S = 7L * 24 * 3_600
 private const val READ_THREE_MINUTES_AGO_S = 3L * 60
 private const val READ_SIXTEEN_MINUTES_AGO_S = 16L * 60
 
-private class FakeAuth : RefreshableAuthProvider {
+private class QuotaReadingAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-test", "acct-test")
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
 }
 
-class SpentReadingResetTest {
+class QuotaFullReadingTest {
     private val elapsed = AtomicLong(0L)
     private val clock = WallClock { NOW_MS + elapsed.get() }
 
@@ -88,7 +82,7 @@ class SpentReadingResetTest {
                     defaultContextWindow = 272_000,
                 ),
                 pinnedModel = "gpt-5.6-sol",
-                auth = FakeAuth(),
+                auth = QuotaReadingAuth(),
                 baseUrl = "http://127.0.0.1:1",
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
@@ -104,7 +98,7 @@ class SpentReadingResetTest {
     private fun account(label: String, primary: Boolean, tracker: QuotaTracker) = PoolAccount(
         label = label,
         primary = primary,
-        auth = FakeAuth(),
+        auth = QuotaReadingAuth(),
         quota = AccountQuotaSource(tracker::snapshot),
         cooldown = RateLimitCooldown(ProcessElapsedNow()),
     )

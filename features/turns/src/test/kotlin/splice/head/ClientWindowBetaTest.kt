@@ -1,8 +1,6 @@
-// NEW: V4-358's head half. Claude Code strips the 1M hint from the body's `model` and says it in an
-// `anthropic-beta` instead (measured on 2.1.283, Sep 28), so a row the launch spelled 1M reaches the head as
-// its bare id. The beta is then the only witness of the window the client divides by on that request: with
-// it the counts are scaled to a 1e6 window, without it the launch env's, exactly as before.
-package splice.head.v4358
+// NEW: Claude Code strips the 1M hint from the model and says it in an `anthropic-beta`, which then decides
+// the window the counts are scaled to on that request.
+package splice.head
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -31,11 +29,6 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
-import splice.head.HeadServer
-import splice.head.MockChatGptUpstream
-import splice.head.TestResponsesProvider
-import splice.head.awaitListening
-import splice.head.headDeps
 import splice.upstream.ProviderTuning
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
@@ -47,7 +40,7 @@ private const val OTHER_BETAS = "claude-code-20250219,interleaved-thinking-2025-
 // the multipart scenario's upstream usage: input_tokens 10
 private const val UPSTREAM_INPUT_TOKENS = 10L
 
-private class FakeAuth : RefreshableAuthProvider {
+private class WindowBetaAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-test", "acct-test")
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
@@ -77,7 +70,7 @@ class ClientWindowBetaTest {
                 label = "claudex",
                 catalog = catalog,
                 pinnedModel = "gpt-6-sol",
-                auth = FakeAuth(),
+                auth = WindowBetaAuth(),
                 baseUrl = mock.baseUrl,
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 loginCommand = "claudex login",

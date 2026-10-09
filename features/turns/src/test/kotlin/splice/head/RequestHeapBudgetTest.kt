@@ -1,4 +1,4 @@
-package splice.head.v4374
+package splice.head
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue

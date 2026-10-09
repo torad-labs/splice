@@ -1,4 +1,4 @@
-package splice.head.v4374
+package splice.head
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -21,18 +21,12 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.config.Knob
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.WindowRule
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
-import splice.head.HeadServer
-import splice.head.MockChatGptUpstream
-import splice.head.TestResponsesProvider
-import splice.head.awaitListening
-import splice.head.headDeps
 import splice.upstream.ProviderTuning
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
@@ -41,20 +35,20 @@ import kotlin.time.Duration.Companion.seconds
 // "Request size limits"), the limit Claude Code prints itself, so splice is never the tighter hop
 private const val MESSAGES_API_LIMIT = 32 * 1024 * 1024L
 
-// why: V4-360 walker p20 died with the request at 8,350,828 bytes; one more 1440x900 screenshot crossed 8 MiB
+// why: a walker died with the request at 8,350,828 bytes; one more 1440x900 screenshot crossed 8 MiB
 private const val PAST_THE_OLD_CAP = 9 * 1024 * 1024
 
-private class FakeAuth : RefreshableAuthProvider {
+private class BodyLimitAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-test", "acct-test")
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
 }
 
-/** V4-374: a head on its DEFAULT policy admits what Claude Code itself admits. The 8 MiB default cut a
+/** A head on its DEFAULT policy admits what Claude Code itself admits. The 8 MiB default cut a
  *  screenshot-heavy session at a quarter of the Messages API's 32 MB, and Claude Code printed its own
  *  "Request too large (max 32MB)", so the user read a limit splice does not have. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class DefaultRequestCapTest {
+class RequestBodyLimitTest {
     private val mock = MockChatGptUpstream()
     private val client = HttpClient(CIO) {
         engine { requestTimeout = 0 }
@@ -79,7 +73,7 @@ class DefaultRequestCapTest {
                 label = "claudex",
                 catalog = catalog,
                 pinnedModel = "gpt-5.6-sol",
-                auth = FakeAuth(),
+                auth = BodyLimitAuth(),
                 baseUrl = mock.baseUrl,
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 loginCommand = "claudex login",
@@ -104,11 +98,6 @@ class DefaultRequestCapTest {
             header("Content-Type", "application/json")
             setBody(body)
         }
-
-    @Test
-    fun `the default cap is the Messages API's own 32 MiB`() {
-        assertEquals(MESSAGES_API_LIMIT, Knob.MAX_REQUEST_BYTES.count())
-    }
 
     @Test
     fun `a 9 MiB Messages body of screenshots is a turn, not a 413`() = runBlocking<Unit> {

@@ -1,6 +1,6 @@
-// NEW: V4-445 — the wrapped client's identity must survive the actual local upstream HTTP hop,
+// NEW: the wrapped client's identity must survive the actual local upstream HTTP hop,
 // while other heads retain their own identity and splice's local keys never become credentials.
-package splice.head.v4445
+package splice.head
 
 import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
@@ -25,9 +25,6 @@ import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
-import splice.head.HeadDeps
-import splice.head.HeadServer
-import splice.head.headDeps
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient

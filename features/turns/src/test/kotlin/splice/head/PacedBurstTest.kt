@@ -1,5 +1,5 @@
-// NEW: V4-456 — a provider batch reaches the client paced, on the write path every head shares.
-package splice.head.v4456
+// NEW: a provider batch reaches the client paced, on the write path every head shares.
+package splice.head
 
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch

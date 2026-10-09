@@ -1,5 +1,5 @@
-// NEW: V4-431 — the real head's error journal and perf row must name the same canonical outcome.
-package splice.head.v4431
+// NEW: the real head's error journal and perf row must name the same canonical outcome.
+package splice.head
 
 import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
@@ -27,9 +27,6 @@ import splice.core.turn.WatchdogBudget
 import splice.core.usage.PlanLimit
 import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
-import splice.head.HeadServer
-import splice.head.TestResponsesProvider
-import splice.head.headDeps
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress

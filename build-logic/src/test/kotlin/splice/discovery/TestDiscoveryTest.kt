@@ -86,9 +86,8 @@ private const val XML_HIGHER = """<?xml version="1.0" encoding="UTF-8"?>
 </testsuite>
 """
 
-// THE THIRD SHAPE (TestDiscovery.kt's header, SHAPES): a @TestFactory declares ONE method and runs
-// one child per row of a list that is EXPECTED to grow, so its expansion is not a number anyone
-// could write down and re-earn. Modelled on the real ReleaseReadinessLawTest, which ran 49 children
+// An expanding method: a @TestFactory declares ONE method and runs one child per row of a list that is
+// EXPECTED to grow, so its case count is no number anyone should write down. Modelled on the real ReleaseReadinessLawTest, which ran 49 children
 // the day the rule was decided and 56 two days later, for the healthiest possible reason.
 private val SOURCE_FACTORY = """
 package head
@@ -161,23 +160,16 @@ class TestDiscoveryTest {
         val short = audit(declared, mapOf(MODULE to mapOf("AnnotationOnlyTest" to XmlRow(0, emptySet()))))
         assertTrue(short.any { "NOT DISCOVERED" in it && "synthetic test" in it }, short.toString())
         val expanded = mapOf(MODULE to mapOf("AnnotationOnlyTest" to XmlRow(3, setOf("synthetic test"))))
-        val unreasoned = audit(declared, expanded, dispositions = emptyMap())
-        assertTrue(unreasoned.any { "HIGHER COUNT" in it }, unreasoned.toString())
-        val reasoned = audit(
-            declared,
-            expanded,
-            dispositions = mapOf("AnnotationOnlyTest" to Disposition("synthetic annotation expands to three cases", 3)),
-        )
-        assertTrue(reasoned.isEmpty(), reasoned.toString())
+        assertTrue(audit(declared, expanded).isEmpty(), "any number of cases passes")
     }
 
     @Test
-    fun `fully qualified factories retain their dynamic method marker`() {
+    fun `fully qualified factories retain their expanding method marker`() {
         val source = SOURCE_FACTORY.replace("@TestFactory", "@org.junit.jupiter.api.TestFactory")
             .replace("@Test\n", "@org.junit.jupiter.api.Test\n")
         val parsed = classes(source).single()
         assertEquals(listOf("a plain test", "one child per mutation"), parsed.methods)
-        assertEquals(setOf("one child per mutation"), parsed.dynamicMethods)
+        assertEquals(setOf("one child per mutation"), parsed.expandingMethods)
         assertTrue(audit(listOf(parsed), mapOf(MODULE to row(XML_FACTORY_HIGHER))).isEmpty())
     }
 
@@ -218,49 +210,26 @@ class TestDiscoveryTest {
         )
     }
 
+    // ── expanding methods: any number of cases passes, none at all does not ──
+
     @Test
-    fun `an undispositioned higher count is red`() {
+    fun `a plain method may gain cases and an expanding method may run any number of them`() {
         val problems = audit(classes(SOURCE_OK), mapOf(MODULE to row(XML_HIGHER)))
-        assertTrue(problems.any { "HIGHER COUNT" in it }, "expected a HIGHER COUNT problem, got: $problems")
-    }
-
-    @Test
-    fun `a blank disposition reason is red`() {
-        val dispositions = mapOf("SampleTest" to Disposition("", 4))
-        val problems = audit(classes(SOURCE_OK), mapOf(MODULE to row(XML_HIGHER)), dispositions = dispositions)
-        assertTrue(problems.any { "NO reason" in it }, "expected a NO-reason problem, got: $problems")
-    }
-
-    @Test
-    fun `a disposition whose count moved is stale`() {
-        val dispositions = mapOf("SampleTest" to Disposition("one @ParameterizedTest expands to two cases", 3))
-        val problems = audit(classes(SOURCE_OK), mapOf(MODULE to row(XML_HIGHER)), dispositions = dispositions)
-        assertTrue(problems.any { "stale" in it }, "expected a stale-disposition problem, got: $problems")
-    }
-
-    @Test
-    fun `a reasoned higher count matching its earned count is green`() {
-        val dispositions =
-            mapOf("SampleTest" to Disposition("one @ParameterizedTest expands to two extra cases", 4))
-        val problems = audit(classes(SOURCE_OK), mapOf(MODULE to row(XML_HIGHER)), dispositions = dispositions)
         assertTrue(problems.isEmpty(), "expected green, got: $problems")
     }
 
-    // ── THE THIRD SHAPE: @TestFactory, whose expansion no disposition could pin ──
-
     @Test
-    fun `a @TestFactory class needs no disposition for a count above its declared one`() {
+    fun `a @TestFactory class passes with any count above its declared one`() {
         val problems = audit(classes(SOURCE_FACTORY), mapOf(MODULE to row(XML_FACTORY_HIGHER)))
         assertTrue(problems.isEmpty(), "expected green, got: $problems")
     }
 
-    /** The vacuity guard on the arm above: the exemption is the FACTORY's, not every class's. The
-     *  identical XML against a class whose methods are all plain @Test is still red. */
+    /** The cases of an expanding method never stand in for a plain method that did not run. */
     @Test
-    fun `the same higher count without a factory is still red`() {
-        val plain = SOURCE_FACTORY.replace("@TestFactory", "@Test")
-        val problems = audit(classes(plain), mapOf(MODULE to row(XML_FACTORY_HIGHER)))
-        assertTrue(problems.any { "HIGHER COUNT" in it }, "expected a HIGHER COUNT problem, got: $problems")
+    fun `many cases do not hide a plain method that never ran`() {
+        val hidden = XML_FACTORY_HIGHER.lines().filterNot { "a plain test()" in it }.joinToString("\n")
+        val problems = audit(classes(SOURCE_FACTORY), mapOf(MODULE to row(hidden)))
+        assertTrue(problems.any { "NOT DISCOVERED" in it && "a plain test" in it }, problems.toString())
     }
 
     @Test
@@ -277,14 +246,7 @@ class TestDiscoveryTest {
     fun `the scanner reports WHICH method the factory annotation marked`() {
         val parsed = classes(SOURCE_FACTORY).single()
         assertEquals(listOf("a plain test", "one child per mutation"), parsed.methods)
-        assertEquals(setOf("one child per mutation"), parsed.dynamicMethods)
-    }
-
-    @Test
-    fun `the census marks a factory class DYNAMIC rather than HIGHER-NO-REASON`() {
-        val text = census(classes(SOURCE_FACTORY), mapOf(MODULE to row(XML_FACTORY_HIGHER)))
-        assertTrue("DYNAMIC" in text, text)
-        assertTrue("HIGHER-NO-REASON" !in text, text)
+        assertEquals(setOf("one child per mutation"), parsed.expandingMethods)
     }
 
     @Test

@@ -46,7 +46,7 @@ step "llama-server-shaped runtime up" start_runtime
 RUNTIME_PORT="$(mock_field mock_runtime.out port 2>/dev/null)"
 
 # ── 2. topology: the row `splice setup` writes for a runtime rig describes ──────────────────────
-# Line for line AddProfiles' rendering of RuntimeHeadAdd's profile (RuntimeRowPresentedTest pins the
+# Line for line AddProfiles' rendering of RuntimeHeadAdd's profile (RuntimeHeadAddTest pins the
 # client_model line through the real loader), written before install.sh so init keeps it.
 write_runtime_topology() {
   local presented=""

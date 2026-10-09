@@ -41,25 +41,13 @@
 // rather than returning an empty row that would read as "JUnit ran nothing" for a file that is
 // merely unfamiliar (see parseJUnitXml).
 //
-// SHAPES. XML count LOWER than the denominator fails BY NAME, naming the missing methods. THREE
-// shapes may legitimately report a HIGHER count. Two need a written reason in classDispositions below —
-// never a bare allowlist entry: parameterized or repeated methods expand into N cases, and a class
-// may INHERIT test methods from a base class. The third is @TestFactory (decided here, restructure
-// PR 6, against ReleaseReadinessLawTest: one factory method, 47 DynamicTest children — 2 @Test + 47
-// = 49), and it does NOT go in classDispositions: unlike @ParameterizedTest, its expansion factor is not
-// a fixed number anyone could write down and re-earn — the factory returns one DynamicTest per
-// mutation in a list that is EXPECTED to grow, and a disposition pinned to today's count would red
-// the day after someone adds a mutation, for the healthiest possible reason (a disposition list
-// that goes stale on every healthy addition is worse than no disposition at all). So the scanner
-// COUNTS @TestFactory as a declared method — it is a JUnit annotation on a declaration, exactly as
-// countable as @Test — and the comparison (audit) treats a class holding one as exempt from the
-// higher-count disposition rule: any observed count at or above declared is the expected shape for
-// that class, while observed BELOW declared still reds unconditionally — the factory method itself
-// never running, or its expansion collapsing to nothing, is exactly the hazard this wall exists to
-// catch, and teaching the denominator about the annotation leaves that hazard undiminished. A class
-// with no XML at all also needs a written reason (a test task that is disabled by configuration is
-// a decision, not an accident — but it is a decision someone must WRITE DOWN) — see
-// silentModules.
+// THE COMPARISON, BY NAME. A plain @Test method must appear by name among the class's XML testcases.
+// A @ParameterizedTest, @RepeatedTest or @TestFactory method expands into cases JUnit names by their
+// arguments or repetition, never by the method, so it cannot be matched by name: the class must show at
+// least one case beyond its plain methods for each such method. Any number of cases passes, so no table
+// of expected counts exists and a test that gains or loses a case never edits this file. A class with no
+// XML at all needs a written reason (a test task disabled by configuration is a decision, but it is a
+// decision someone must WRITE DOWN) - see silentModules.
 //
 // WHAT IT CANNOT SEE. A class that never compiles is not in any XML and not in this scan's
 // dispositions unless its module is dispositioned. A test source set outside a subproject's own
@@ -78,16 +66,15 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 /** One test class found in source: the Gradle project path it lives under, its (possibly
  *  nested-qualified, `Outer$Inner`) name, the path it was read from, and the test methods declared
- *  at member depth. [count] is what the comparison calls the DENOMINATOR. [dynamicMethods] is the
- *  subset of [methods] declared `@TestFactory` — see THE THIRD SHAPE in the file header: unlike a
- *  plain @Test/@ParameterizedTest, an observed count above what it contributes here is the expected
- *  shape, not a hazard, so [audit] never asks it for a disposition. */
+ *  at member depth. [count] is what the comparison calls the DENOMINATOR. [expandingMethods] is the
+ *  subset of [methods] declared `@ParameterizedTest`, `@RepeatedTest` or `@TestFactory`: JUnit names
+ *  their cases by argument or repetition, so they are matched by presence of extra cases, not by name. */
 data class TestClass(
     val module: String,
     val name: String,
     val path: String,
     val methods: List<String>,
-    val dynamicMethods: Set<String> = emptySet(),
+    val expandingMethods: Set<String> = emptySet(),
 ) {
     val count: Int get() = methods.size
 }
@@ -95,179 +82,6 @@ data class TestClass(
 /** One class's row in a JUnit XML results directory: the root `tests` count and every `<testcase
  *  name>` — the comparison calls this the OBSERVATION. */
 data class XmlRow(val count: Int, val names: Set<String>)
-
-/** A disposition earned for a class whose XML count is legitimately HIGHER than its declared
- *  count: [reason] it is higher, and [expectedCount] — the observed count the disposition was
- *  earned for, so a re-expansion (or a shrink) reds instead of aging silently into a permanent
- *  waiver. */
-data class Disposition(val reason: String, val expectedCount: Int)
-
-// Classes whose XML count is legitimately HIGHER than the source denominator, carried over
-// VERBATIM from the original — every entry was verified against the class's own annotations
-// before it was written, and the count beside it is the observed XML count the disposition was
-// earned for. Each is the same shape: @ParameterizedTest expands one method into N cases.
-// (Inherited test methods would be the other shape; measured across all six, none of them is
-// explained by inheritance — CodexCodeModeActiveInterruptionTest and
-// CodexCodeModeInfrastructureTest do extend CodeModeBridgeTestSupport, but that base declares no
-// tests, and their declared count matches their own annotations exactly.)
-private const val ONE_PLAIN_TWO_CASES = "1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)"
-
-val classDispositions: Map<String, Disposition> = mapOf(
-    // Completed and cancelled queue waits both charge the serving turn; canonical success/refusal is one plain test.
-    "CodeModePerfTimingTest" to
-        Disposition(ONE_PLAIN_TWO_CASES, expectedCount = 3),
-    // Retryable share refusal runs with a fresh view and with retained output still occupying the domain.
-    "TraceHeapShareTest" to Disposition("1 @ParameterizedTest expands to 2 cases (6 @Test + 2 = 8)", expectedCount = 8),
-    // The production-builder parity covers four providers; Responses input shape covers two of them.
-    "PlaygroundTurnParityTest" to
-        Disposition(
-            "2 @ParameterizedTest methods expand to 4 provider bodies + 2 Responses input shapes",
-            expectedCount = 6,
-        ),
-    // Unnamed reader death resumes before source failure or after its persisted LOST record.
-    "CodexCodeModeStatementStreamTest" to
-        Disposition("1 @ParameterizedTest expands to 2 forced orderings (9 @Test + 2 = 11)", expectedCount = 11),
-    // Legacy capacity hints run at one and two while shared-host scripts remain independent.
-    "CodeModeCapacityTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases (3 @Test + 2 = 5)", expectedCount = 5),
-    "ResponsesWsRunnerTest" to
-        Disposition("3 @ParameterizedTest methods expand to 9 cases (15 @Test + 9 = 24)", expectedCount = 24),
-    // Source-slot adoption and retained WS cancellation each expand into two XML-observed cases.
-    "IndependentSourceRoundTest" to
-        Disposition("2 @ParameterizedTest methods expand to 4 cases (4 @Test + 4 = 8)", expectedCount = 8),
-    // V4-447: reject changed source prefix, call ID, tool name, item ID and incomplete completion.
-    // V4-457 (5ee8596ba, 27873c2b1): both local rejection kinds, both pre-attachment cancellation
-    // points and three local source rejections join the five corruption cases.
-    "CodexCodeModeSourceTerminalTest" to
-        Disposition("4 @ParameterizedTest methods expand to 12 cases (8 @Test + 12 = 20)", expectedCount = 20),
-    "CodeModeDisposedSourceTest" to
-        Disposition(
-            "3 @ParameterizedTest methods expand to 2 late-loss + 2 terminal + 3 billing cases (3 @Test + 7 = 10)",
-            expectedCount = 10,
-        ),
-    // b40f250e8: client baselines across re-anchors add an 8-row CsvSource and two boolean sources.
-    "CodexCodeModeReanchorTest" to
-        Disposition(
-            "5 @ParameterizedTest methods expand to 2 + 3 + 8 + 2 + 2 cases (1 @Test + 17 = 18)",
-            expectedCount = 18,
-        ),
-    // b5bfa0a11: an item-complete suffix waits for response certification over six endings, and the
-    // incomplete ending repeats 50 times as a race cohort; each annotation declares one method.
-    "CodeModeSourceCertificationTest" to
-        Disposition("1 @RepeatedTest(50) plus 1 @ParameterizedTest of 6 cases (50 + 6 = 56)", expectedCount = 56),
-    // A sealed item rejects more bytes with and without a prefix, and a cursor never returns a pre-seal
-    // snapshot after a failed or a completed commit. 89e98adab added the two startup @Test methods.
-    "CodeModeSourceCursorCertificationTest" to
-        Disposition("2 @ParameterizedTest methods expand to 4 cases (2 @Test + 4 = 6)", expectedCount = 6),
-    // 59a0fe3f9: an already buffered suffix waits, and an incomplete or malformed stop releases the waiter.
-    "CodeModeSourceBufferedCertificationTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", expectedCount = 2),
-    // Transport cleanup plus first-event/client-opening timing each expand into two observed cases.
-    "WsRoundDriverTest" to
-        Disposition("2 @ParameterizedTest methods expand to 4 cases (14 @Test + 4 = 18)", expectedCount = 18),
-    // 89e98adab: a completed burst and a clean EOF each run text and thinking, and a custom source
-    // releases the WS turn on completion, EOF, a worker wait and a startup wait.
-    "WsCompletionTest" to
-        Disposition("3 @ParameterizedTest methods expand to 8 cases (2 + 2 + 4); no plain @Test", expectedCount = 8),
-    // Source transport, liveness, context and prose controls run the real head over both wire transports.
-    "CodeModeRoundBillingTest" to
-        Disposition("3 @ParameterizedTest methods expand to 16 cases (5 @Test + 12 + 2 + 2 = 21)", expectedCount = 21),
-    "CodeModeHeadGenerationBillingTest" to
-        Disposition(
-            "1 @ParameterizedTest expands to 4 source-ending paths across old and new head generations",
-            expectedCount = 4,
-        ),
-    "CodeModeSourceBoundaryTest" to
-        Disposition(ONE_PLAIN_TWO_CASES, expectedCount = 3),
-    "CodeModeNativeSourceTest" to
-        Disposition(
-            "2 @ParameterizedTest methods expand to 6 native lifetime/context + 2 altered envelope cases",
-            expectedCount = 8,
-        ),
-    "CodeModeCrossScriptSourceTest" to
-        Disposition(
-            "2 @ParameterizedTest methods expand to 8 callback/step/context + 2 diagnostic cases (2 @Test + 10 = 12)",
-            expectedCount = 12,
-        ),
-    // Cell close runs with and without a late reply; cancellation and fatal ownership add four plain controls.
-    "SharedWorkerChannelCellCloseTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases (4 @Test + 2 = 6)", expectedCount = 6),
-    // 8b438c6f0: a record that stored one native item many times loads it once, patched after its checkpoint or not.
-    "CodeModeNativeCopiesTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", expectedCount = 2),
-    // 8b438c6f0: after a WebSocket size refusal, a 429 and a 500 each keep their own path.
-    "WsSizeRefusalTest" to Disposition("1 @ParameterizedTest expands to 2 cases (3 @Test + 2 = 5)", expectedCount = 5),
-    // 13d44f0b2: reasoning, text, ping, empty, metadata and rate-limit progress each renew the elapsed cap
-    // on WS and on SSE, one case per transport and event (@ValueSource of 12 scenario strings).
-    "WatchdogProgressRoundTest" to
-        Disposition("1 @ParameterizedTest expands to 12 cases; no plain @Test", expectedCount = 12),
-    // The paced row is read with both an active caller and an already-cancelled caller, and V4-457's
-    // failed collect flush runs failed and cancelled.
-    "TurnPerfRowTest" to
-        Disposition("2 @ParameterizedTest methods expand to 4 cases (4 @Test + 4 = 8)", expectedCount = 8),
-    // cd33d0fd1: final rate accounting excludes plan holds and absorbed diagnostic events, over the four
-    // held/absorbed pairs. Its fully qualified annotation contributes one declared method.
-    "TurnConnEndTest" to
-        Disposition(
-            "1 fully qualified @ParameterizedTest expands to 4 @CsvSource cases (7 @Test + 4 = 11)",
-            expectedCount = 11,
-        ),
-    // V4-457: a failed or a cancelled attached flush records no first client byte.
-    "PendingSseTest" to Disposition("1 @ParameterizedTest expands to 2 cases (14 @Test + 2 = 16)", expectedCount = 16),
-    // Completed/torn/cancelled tails and zero/slow ping delivery expand the two timing methods.
-    "UpstreamEventTimingTest" to
-        Disposition("2 @ParameterizedTest methods expand to 5 cases (7 @Test + 5 = 12)", expectedCount = 12),
-    "CodeModePreAdvanceTearTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases (2 @Test + 2 = 4)", expectedCount = 4),
-    // 73aad1d4a, 14b6bc4b4 and f34d165fb: posting and result steps whose cell the round's lost source closed.
-    "CodexCodeModeSourceTearTest" to
-        Disposition(
-            "2 @ParameterizedTest methods expand to 12 cases (9 + 3 startup tears); 10 @Test + 12 = 22",
-            expectedCount = 22,
-        ),
-    // Control characters and non-ASCII must not reach HTTP echoes; empty and TAB remain valid.
-    "CodexTurnStateSseTest" to
-        Disposition("2 @ParameterizedTest methods expand to 7 cases (2 @Test + 7 = 9)", expectedCount = 9),
-    "CodexAuthAbsenceTest" to
-        Disposition("1 @ParameterizedTest expands to 4 cases (2 @Test + 4 = 6)", expectedCount = 6),
-    "CodexCodeModeActiveInterruptionTest" to
-        Disposition("1 @ParameterizedTest expands to 4 cases; no plain @Test", expectedCount = 4),
-    "CodexCodeModeInfrastructureTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", expectedCount = 2),
-    "SseReaderTest" to Disposition("1 @ParameterizedTest expands to 6 cases (11 @Test + 6 = 17)", expectedCount = 17),
-    // v0.4.0 review (PR #195): the resume hook is run with no ANTHROPIC_AUTH_TOKEN and with the
-    // operator's own one in it, and must send the turn key from its header file either way.
-    "ResumeHookTest" to Disposition("1 @ParameterizedTest expands to 2 cases (5 @Test + 2 = 7)", expectedCount = 7),
-    // V4-336: an unanswered callback stops the script whether the late content is a system or a user
-    // message, one case per role (@ValueSource system, user).
-    "CodeModeLateContentTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases (6 @Test + 2 = 8)", expectedCount = 8),
-    // V4-254 (36dbee23d): every declared row is capped by the provider list whichever field the list
-    // carries its window in, one case per field (@ValueSource context_length, context_window).
-    "AddChecksWordingTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases (4 @Test + 2 = 6)", expectedCount = 6),
-    // V4-254 (4e7601053): yes to the live check keeps the saved head for every subscription and
-    // client-auth profile, one case per profile (@ValueSource codex, grok, kimi, muse, claude).
-    "AddLiveCommandTest" to Disposition("1 @ParameterizedTest expands to 5 cases (1 @Test + 5 = 6)", expectedCount = 6),
-    // Progress timeout and shutdown expand by transport; origin, diagnostic and cause coverage add six controls.
-    "OutcomeSentenceTest" to
-        Disposition("2 @ParameterizedTest methods expand to 4 cases (12 @Test + 4 = 16)", expectedCount = 16),
-    // V4-444: real connected stream and collect clients receive the restart retry before teardown.
-    "HeadServerStopDrainTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases (2 @Test + 2 = 4)", expectedCount = 4),
-    // 9422e4392: one statement batch forces before client-visible state whether or not the post
-    // suspends between chunks (@ValueSource suspendBetweenChunks false, true).
-    "CodeModeStatementForceCostTest" to
-        Disposition(ONE_PLAIN_TWO_CASES, expectedCount = 3),
-    // V4-457 (5ee8596ba): a completed sibling cannot retire a key still starting or one borrowed
-    // (@ValueSource borrowed false, true).
-    "CodeModeSupersededCellTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases (4 @Test + 2 = 6)", expectedCount = 6),
-    // V4-457 (5ee8596ba): conversation identity survives both store save paths, with and without a
-    // changed cell (@ValueSource changedCell false, true).
-    "CodeModeConversationIdentityTest" to
-        Disposition(ONE_PLAIN_TWO_CASES, expectedCount = 3),
-)
 
 // Modules whose test task is disabled BY CONFIGURATION, so no XML can exist. The reason is the
 // disposition; cite where the decision lives. PORT NOTE: the original keyed this by the directory
@@ -285,7 +99,7 @@ object SourceScan {
     private val CLASS_DECL_PATTERN: Pattern = Pattern.compile("""\bclass\s+(\w+)""")
 
     // Short and fully qualified Jupiter annotations each declare one method, including repetitions.
-    // group(1) stays the annotation NAME and group(2) the function name; only TestFactory is dynamic.
+    // group(1) stays the annotation NAME and group(2) the function name; every annotation but Test expands into cases.
     private val MEMBER_ITEM_PATTERN: Pattern =
         Pattern.compile(
             """@(?:org\.junit\.jupiter\.(?:api|params)\.)?(Test|ParameterizedTest|RepeatedTest|TestFactory)\b""" +
@@ -295,8 +109,8 @@ object SourceScan {
     // The same shape read from the ORIGINAL text, where a backtick name is still spelled out.
     private val UNMASKED_FUN_PATTERN: Pattern = Pattern.compile("""\bfun\s+(`[^`\n]+`|\w+)\s*\(""")
 
-    // The only counted annotation whose expansion factor is no number anyone could write down.
-    private const val FACTORY_ANNOTATION = "TestFactory"
+    // The one counted annotation that is exactly one case.
+    private const val PLAIN_ANNOTATION = "Test"
 
     // The JVM binary name of a nested class joins outer and inner with a dollar sign (Outer$Inner).
     private const val NESTED_CLASS_JOIN = '$'
@@ -470,10 +284,10 @@ object SourceScan {
         return null
     }
 
-    /** One test method declared at member depth: its [name], and whether the annotation that made
-     *  it count was `@TestFactory` — THE THIRD SHAPE in the file header, decided where it is read
-     *  rather than re-derived later from the same source a second time. */
-    data class Member(val name: String, val dynamic: Boolean)
+    /** One test method declared at member depth: its [name], and whether the annotation that made it
+     *  count expands into several cases (`@ParameterizedTest`, `@RepeatedTest`, `@TestFactory`),
+     *  decided where it is read rather than re-derived later from the same source a second time. */
+    data class Member(val name: String, val expands: Boolean)
 
     /** The names of the test methods declared at MEMBER depth of a class body.
      *
@@ -497,7 +311,7 @@ object SourceScan {
     private class MemberScan(private val original: String, private val masked: String) {
         private val items = mutableListOf<Member>()
         private var pending = 0
-        private var pendingFactory = false
+        private var pendingExpands = false
         private val memberMatcher = MEMBER_ITEM_PATTERN.matcher(masked).apply { useTransparentBounds(true) }
         private val unmaskedMatcher = UNMASKED_FUN_PATTERN.matcher(original).apply { useTransparentBounds(true) }
 
@@ -535,7 +349,7 @@ object SourceScan {
 
         private fun arm(annotation: String) {
             pending += 1
-            if (annotation == FACTORY_ANNOTATION) pendingFactory = true
+            if (annotation != PLAIN_ANNOTATION) pendingExpands = true
         }
 
         private fun declare(at: Int) {
@@ -547,9 +361,9 @@ object SourceScan {
             val raw = (if (unmaskedMatcher.lookingAt()) unmaskedMatcher.group(1) else memberMatcher.group(2))
                 ?: error("member scan matched a declaration with no name at offset $at")
             if (pending > 0) {
-                items.add(Member(raw.trim('`'), pendingFactory))
+                items.add(Member(raw.trim('`'), pendingExpands))
                 pending = 0
-                pendingFactory = false
+                pendingExpands = false
             }
         }
     }
@@ -575,7 +389,7 @@ object SourceScan {
                     name = qualifiedName(span, spans),
                     path = path,
                     methods = members.map { it.name },
-                    dynamicMethods = members.filter { it.dynamic }.map { it.name }.toSet(),
+                    expandingMethods = members.filter { it.expands }.map { it.name }.toSet(),
                 )
             }
         }
@@ -717,18 +531,16 @@ private const val CLASS_WIDTH = 44
 object TestDiscovery {
 
     /** Every problem between [classes] (the denominator) and [xmlByModule] (the observation, module ->
-     *  simple class name -> row), by name; empty means green. [dispositions] and [moduleDispositions]
-     *  default to the real [classDispositions]/[silentModules] tables above but are parameters —
-     *  never module-level mutable state the way the original's `let classDispositions` was — so a test can
-     *  supply its own table without mutating the real one (see TestDiscoveryTest). */
+     *  simple class name -> row), by name; empty means green. [moduleDispositions] defaults to the real
+     *  [silentModules] table above but is a parameter, never module-level mutable state, so a test can
+     *  supply its own (see TestDiscoveryTest). */
     fun audit(
         classes: List<TestClass>,
         xmlByModule: Map<String, Map<String, XmlRow>>,
-        dispositions: Map<String, Disposition> = classDispositions,
         moduleDispositions: Map<String, String> = silentModules,
     ): List<String> {
         vacuous(classes, xmlByModule)?.let { return listOf(it) }
-        return classes.flatMap { problemsOf(it, xmlByModule, dispositions, moduleDispositions) }
+        return classes.flatMap { problemsOf(it, xmlByModule, moduleDispositions) }
     }
 
     /** Why there is nothing to compare, or null when there is. */
@@ -748,7 +560,6 @@ object TestDiscovery {
     private fun problemsOf(
         testClass: TestClass,
         xmlByModule: Map<String, Map<String, XmlRow>>,
-        dispositions: Map<String, Disposition>,
         moduleDispositions: Map<String, String>,
     ): List<String> {
         val moduleRows = xmlByModule[testClass.module].orEmpty()
@@ -758,7 +569,7 @@ object TestDiscovery {
                 "${testClass.module}: ${testClass.name} declares ${testClass.count} test " +
                     "method(s) and produced NO XML row: JUnit never ran the class",
             )
-        return listOfNotNull(countProblem(testClass, row, dispositions))
+        return listOfNotNull(notDiscovered(testClass, row))
     }
 
     /** A module with no XML at all is a problem unless a disposition WRITES DOWN why its test task is silent. */
@@ -773,42 +584,18 @@ object TestDiscovery {
         else -> null
     }
 
-    private fun countProblem(testClass: TestClass, row: XmlRow, dispositions: Map<String, Disposition>): String? =
-        when {
-            row.count < testClass.count -> notDiscovered(testClass, row)
-            // THE THIRD SHAPE (file header, SHAPES): a class holding a @TestFactory expands by
-            // a factor nobody can write down — the factory returns one DynamicTest per item in
-            // a list that is EXPECTED to grow — so any count AT OR ABOVE declared is its
-            // expected shape and it is never asked for a disposition. Measured 2026-09-21:
-            // ReleaseReadinessLawTest ran 49 the day this was decided and 56 two days later,
-            // for the healthiest possible reason. Observed BELOW declared still reds, in the
-            // branch above and unconditionally: the factory method never running, or its
-            // expansion collapsing to nothing, is exactly the hazard this wall exists to catch.
-            row.count > testClass.count && testClass.dynamicMethods.isEmpty() ->
-                higherCount(testClass, row.count, dispositions[testClass.name])
-            else -> null
-        }
-
-    private fun notDiscovered(testClass: TestClass, row: XmlRow): String {
-        val missing = testClass.methods.filter { it !in row.names }
-        val neverRan = if (missing.isNotEmpty()) "; never ran: ${missing.joinToString(", ")}" else ""
-        return "NOT DISCOVERED: ${testClass.module}:${testClass.name} declares " +
-            "${testClass.count} test method(s), the XML reports ${row.count}$neverRan (${testClass.path})"
-    }
-
-    private fun higherCount(testClass: TestClass, observed: Int, entry: Disposition?): String? = when {
-        entry == null ->
-            "HIGHER COUNT, no disposition: ${testClass.module}:${testClass.name} " +
-                "declares ${testClass.count} test method(s) but ran $observed; if " +
-                "that expansion is legitimate, add it to classDispositions with a written reason"
-        entry.reason.isBlank() ->
-            "${testClass.module}:${testClass.name} carries a disposition with NO " +
-                "reason; a blank reason is an absence wearing a label"
-        observed != entry.expectedCount ->
-            "${testClass.module}:${testClass.name} ran $observed cases, not the " +
-                "${entry.expectedCount} its disposition was written for; the " +
-                "expansion moved, so the disposition is stale and must be re-earned"
-        else -> null
+    /** The class's problem when JUnit did not run everything it declares, or null. A plain method must be
+     *  among the XML testcase names; each expanding method must account for one case beyond the plain ones. */
+    private fun notDiscovered(testClass: TestClass, row: XmlRow): String? {
+        val plain = testClass.methods.filter { it !in testClass.expandingMethods }
+        val missing = plain.filter { it !in row.names }
+        val expanding = testClass.methods.filter { it in testClass.expandingMethods }
+        val casesBeyondPlain = row.count - (plain.size - missing.size)
+        val expansionLost = expanding.isNotEmpty() && casesBeyondPlain < expanding.size
+        if (missing.isEmpty() && !expansionLost) return null
+        val never = missing + if (expansionLost) expanding else emptyList()
+        return "NOT DISCOVERED: ${testClass.module}:${testClass.name} declares ${testClass.count} test " +
+            "method(s), the XML reports ${row.count}; never ran: ${never.joinToString(", ")} (${testClass.path})"
     }
 
     // ── the census (the --report verb, ported as a function instead of a CLI arm) ──
@@ -820,12 +607,11 @@ object TestDiscovery {
     fun census(
         classes: List<TestClass>,
         xmlByModule: Map<String, Map<String, XmlRow>>,
-        dispositions: Map<String, Disposition> = classDispositions,
     ): String {
         val lines = classes.sortedWith(compareBy({ it.module }, { it.name })).map { testClass ->
             val observed = xmlByModule[testClass.module]?.get(testClass.name)?.count
             censusRow(
-                censusMark(testClass, observed, dispositions),
+                censusMark(testClass, xmlByModule[testClass.module]?.get(testClass.name)),
                 testClass.module,
                 testClass.name,
                 "declared=${testClass.count} xml=${observed?.toString() ?: "none"}",
@@ -835,14 +621,11 @@ object TestDiscovery {
             lines.joinToString("") + staleRows(classes, xmlByModule)
     }
 
-    private fun censusMark(testClass: TestClass, observed: Int?, dispositions: Map<String, Disposition>): String =
-        when {
-            observed == null -> "NO-XML"
-            observed < testClass.count -> "SHORT"
-            observed > testClass.count -> dispositions[testClass.name]?.reason
-                ?: if (testClass.dynamicMethods.isEmpty()) "HIGHER-NO-REASON" else "DYNAMIC"
-            else -> "OK"
-        }
+    private fun censusMark(testClass: TestClass, row: XmlRow?): String = when {
+        row == null -> "NO-XML"
+        notDiscovered(testClass, row) != null -> "SHORT"
+        else -> "OK"
+    }
 
     private fun censusRow(status: String, module: String, name: String, tail: String): String =
         "  ${status.padEnd(STATUS_WIDTH)} ${module.padEnd(MODULE_WIDTH)} ${name.padEnd(CLASS_WIDTH)} $tail\n"

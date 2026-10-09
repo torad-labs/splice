@@ -20,9 +20,9 @@
 // GIT_INDEX_FILE, which git sets for `git commit -- <paths>`). It runs the walls on those staged blobs and no gradle;
 // the compile, detekt and tests a commit's modules need belong to the pre-push tier.
 //
-// PRE-PUSH judges the PUSHED COMMIT, and the verdict line says so. It checks the commit out detached in a throwaway tree
-// under the temp dir (throwaway.ts), so a half-finished edit in the shared checkout never reddens a push, and removes the
-// tree when the judgement ends or is interrupted. It lints the tip's subject, then scopes the push to its own diff
+// PRE-PUSH judges the PUSHED COMMIT, and the verdict line says so. It moves the persistent build tree under the git
+// directory (prepush-tree.ts) to the commit, so a half-finished edit in the shared checkout never reddens a push and the
+// build output of the last push is still there. It lints the tip's subject, then scopes the push to its own diff
 // (prepush-scope.ts, selector.ts): the ladder rows whose inputs the diff touches run, and gradle runs the changed modules
 // and their dependents, in parallel, through the slot. The full ladder is a push to main's.
 //
@@ -37,7 +37,8 @@ import { resolveJdk21 } from "../lib/jdk.ts";
 import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
 import { parseModuleGraph } from "../lib/selector.ts";
-import { createThrowawayTree, type ThrowawayTree } from "../lib/throwaway.ts";
+import { preparePrePushTree, type PrePushTree } from "../lib/prepush-tree.ts";
+import { narrowBunTest } from "../lib/test-select.ts";
 import { commitLegs, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
 import { cancelledBySignal, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
 import { title } from "./title.ts";
@@ -98,8 +99,8 @@ export interface HookDeps {
   readonly openRun?: (head: string) => ReturnType<typeof acquireRunSentinel>;
   /** The ladder rows pre-push scopes by. Read from the checkout when absent. */
   readonly legs?: readonly Leg[];
-  /** How the commit is checked out for judgement. The default is a detached worktree under the temp dir. */
-  readonly tree?: (repoRoot: string, sha: string) => ThrowawayTree;
+  /** How the commit is checked out for judgement. The default is the persistent pre-push build tree under the git directory. */
+  readonly tree?: (repoRoot: string, sha: string) => PrePushTree;
   /** Whether another gradle process is live: the evidence a collision needs. The default reads the process list. */
   readonly rivalLive?: () => boolean;
 }
@@ -481,8 +482,8 @@ export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): 
   return 0;
 }
 
-/** Judges one pushed commit in a throwaway tree. The shared checkout is never read: its uncommitted edits belong to other
- *  seats, and a seat's half-finished work must not redden another seat's push. */
+/** Judges one pushed commit in the pre-push build tree. The shared checkout is never read: its uncommitted edits belong to
+ *  other seats, and a seat's half-finished work must not redden another seat's push. */
 async function judgeTip(
   lay: Layout,
   tip: string,
@@ -497,17 +498,19 @@ async function judgeTip(
     return 1;
   }
 
-  let tree: ThrowawayTree;
+  let tree: PrePushTree;
+  const waitStarted = performance.now();
   try {
-    tree = (deps.tree ?? createThrowawayTree)(lay.repoRoot, tip);
+    tree = (deps.tree ?? preparePrePushTree)(lay.repoRoot, tip);
   } catch (error) {
     console.error(`pre-push: ✗ cannot check the pushed commit out: ${errorText(error)}`);
     return 1;
   }
+  console.error(`pre-push timing: build tree ${(tree.setupMs / 1000).toFixed(1)} s to move to the sha, ${((performance.now() - waitStarted - tree.setupMs) / 1000).toFixed(1)} s waiting for it`);
   try {
     return await judgeIn(lay, tree.path, tip, refs, deps, started);
   } finally {
-    tree.remove();
+    tree.release();
   }
 }
 
@@ -546,7 +549,7 @@ async function judgeIn(
   console.error(`── scope: ${scope.summary} ──`);
 
   const sha = head.slice(0, 7);
-  const judgedWhat = `the pushed sha ${sha}, checked out clean in a throwaway tree`;
+  const judgedWhat = `the pushed sha ${sha}, checked out clean in the pre-push build tree`;
 
   const open = (deps.openRun ?? acquireRunSentinel)(head);
   if (open !== null) {
@@ -556,11 +559,16 @@ async function judgeIn(
 
   // The direct legs run alongside gradle, so a leg never waits for the slot. The verdict reads both.
   if (scope.direct.length > 0) console.error("── direct legs (no gradle) ──");
-  const direct = runDirectLegs(root, scope.direct);
+  // A test leg that is one `bun test <dir>` run keeps only the test files the diff can affect.
+  const directLegs = scope.direct.flatMap((leg) => narrowBunTest(root, leg, changed) ?? []);
+  const direct = runDirectLegs(root, directLegs);
   let judged: Judged | undefined;
   if (scope.gradle.length > 0) {
     console.error("── gate tier (gradle, scoped to the push) ──");
+    const gradleStarted = performance.now();
     judged = await judgedRun(deps.gate ?? slotRunner(judgeLay, "pre-push", true), root, modules, scope.gradle, deps.rivalLive);
+    const waited = /admitted after (\d+)s/.exec(judged.output)?.[1];
+    console.error(`pre-push timing: gradle ${seconds(gradleStarted)}${waited === undefined ? "" : `, of which ${waited} s waiting for the build lock`}`);
   }
   const failedLegs = await direct;
   const elapsed = seconds(started);
@@ -568,7 +576,7 @@ async function judgeIn(
   if (!gradleRed && failedLegs.length === 0) {
     const rerun = judged?.reran ? "; passed on the rerun after a collision" : "";
     console.log(`PRE-PUSH: PASS — judged ${judgedWhat}${rerun}${scopeClause}`);
-    console.error(`pre-push: ✓ ${scope.direct.length} direct leg(s)${judged ? " and gradle" : ", no gradle"} — ${elapsed}`);
+    console.error(`pre-push: ✓ ${directLegs.length} direct leg(s)${judged ? " and gradle" : ", no gradle"} — ${elapsed}`);
     return 0;
   }
   console.log(`PRE-PUSH: FAIL — judged ${judgedWhat}${scopeClause}`);

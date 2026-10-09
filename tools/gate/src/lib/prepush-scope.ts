@@ -6,8 +6,7 @@
 // and every module that depends on one, so a break a change makes in a dependent is found where it lands, and `check`
 // runs for those modules only, in parallel, each building and testing on its own. A module the diff cannot reach is not
 // built. `lawSuites` is requested on every push that is not docs-only: gradle's up-to-date check skips each suite whose
-// declared inputs did not change, and PublicSourceNamesNoHostToolTest rides in it. The jar legs run when their own inputs
-// change. The whole ladder, the jar proofs and the release rehearsal belong to a push to main.
+// declared inputs did not change, and PublicSourceNamesNoHostToolTest rides in it. A jar leg runs when product code changes or its own inputs do. The whole ladder, the jar proofs and the release rehearsal belong to a push to main.
 
 import { type ModuleGraph, select } from "./selector.ts";
 
@@ -92,16 +91,25 @@ export interface ScopeInput {
   readonly graph?: ModuleGraph;
 }
 
+/** A leg that depends on the fat jar. */
+const runsOnJar = (leg: Leg): boolean => leg.dependsOn?.includes(JAR_TASK) === true;
+
 export function prePushScope(input: ScopeInput): PrePushScope {
   const { changed } = input;
-  const inScope = input.legs.filter((leg) => changed.some((path) => matchesAny(leg.inputs ?? [], path)));
-  const legList = inScope.length === 0 ? "no legs" : `legs ${inScope.map((leg) => leg.task).join(", ")}`;
-
-  // The selector decides which modules are checked: the changed ones plus every module that depends on one, or all of them
-  // when a build-wide input changed. A docs-only diff selects no module and starts no gradle at all.
   const selection = select({ changed, modules: input.modules, moduleOf: input.moduleOf, graph: input.graph ?? new Map() });
   const docsOnly = selection.docsOnly;
   const modules = docsOnly ? [] : selection.modules;
+  // The jar legs prove the packaged product, so product code selects them; they share the one shadowJar build gradle makes
+  // for them. A change confined to the quality modules or to tooling builds no jar.
+  const productChanged =
+    !docsOnly &&
+    (selection.full ||
+      changed.some((path) => {
+        const owner = input.moduleOf(path);
+        return owner !== undefined && !owner.startsWith(":quality-");
+      }));
+  const inScope = input.legs.filter((leg) => (productChanged && runsOnJar(leg)) || changed.some((path) => matchesAny(leg.inputs ?? [], path)));
+  const legList = inScope.length === 0 ? "no legs" : `legs ${inScope.map((leg) => leg.task).join(", ")}`;
 
   // A leg runs as a gradle task when it needs gradle's graph (a jar it depends on, a directory it creates, a receipt it
   // owns). Every other in-scope leg runs directly, in parallel with gradle, and never waits for the slot.

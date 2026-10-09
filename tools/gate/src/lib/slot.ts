@@ -16,7 +16,7 @@
 //     seat, a CI cancel and a supervisor all stop a run, and the shell script dies of it in
 //     milliseconds. That is why gradle is orchestrated asynchronously below (:98-131).
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { takeExclusive } from "./flock.ts";
 import type { Layout } from "./repo.ts";
 import { exitForSignal, exitStatusOf } from "./status.ts";
@@ -41,7 +41,17 @@ export interface SlotOptions {
 }
 
 export function lockPath(layout: Layout, env: Record<string, string | undefined> = Bun.env): string {
-  return env.GRADLE_SLOT_LOCK || sharedLock(layout) || `${layout.buildRoot}/.gradle-slot.lock`;
+  return env.GRADLE_SLOT_LOCK || (isPrePushTree(layout) ? undefined : sharedLock(layout)) || `${layout.buildRoot}/.gradle-slot.lock`;
+}
+
+/**
+ * The persistent pre-push build tree (prepush-tree.ts) is a worktree of the checkout with build output and caches of its own,
+ * kept under `<git common dir>/splice-prepush/tree`. It takes the lock beside its own build root: sharing the checkout's lock
+ * made every push block every builder in the checkout for the whole push, though the two trees share no output. Its own
+ * single-user lock (the tree's flock) already serialises pushes, and buildgate's memory admission still bounds the machine.
+ */
+function isPrePushTree(layout: Layout): boolean {
+  return layout.repoRoot.includes(`${sep}splice-prepush${sep}tree`);
 }
 
 /**

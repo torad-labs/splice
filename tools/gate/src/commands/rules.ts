@@ -47,7 +47,7 @@ export async function rules(argv: readonly string[]): Promise<number> {
   }
 
   // `--tests` is the pre-commit form: a commit that changes a rule runs the rules' own cases and nothing else. The scan over
-  // the whole tree, the routing, the single-source and the config guard judge the pushed commit, in pre-push's throwaway tree.
+  // the whole tree, the routing, the single-source and the config guard judge the pushed commit, in pre-push's build tree.
   const testsOnly = argv.length === 1 && argv[0] === "--tests";
   if (argv.length > 0 && !testsOnly) {
     console.error(`gate rules: unknown argument ${argv[0]}`);

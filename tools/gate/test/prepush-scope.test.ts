@@ -32,8 +32,8 @@ describe("a pushed diff scopes the gate to what it touches", () => {
     expect(checks(s.gradle)).toEqual([":app:check", ":features-turns:check"]);
     expect(s.gradle).not.toContain(":core:compileKotlin");
     expect(s.gradle).not.toContain(":features-events:check");
-    expect(s.legs.map((leg) => leg.task)).toEqual(["walls"]);
-    expect(s.gradle).not.toContain(":oracleReplay");
+    expect(s.legs.map((leg) => leg.task)).toEqual(["walls", "oracleReplay"]);
+    expect(s.gradle).toContain(":oracleReplay");
     expect(s.gradle).not.toContain(":gateTests");
     expect(s.direct.map((leg) => leg.task)).toEqual(["walls"]);
   });
@@ -118,11 +118,16 @@ describe("the law suites and the jar legs are requested on every push, and gradl
     }
   });
 
-  test("a jar leg runs when its own inputs change and not on a Kotlin push", () => {
+  test("a jar leg runs when product code changes or its own inputs do, and not for tooling or the quality modules alone", () => {
     const ladder = JSON.parse(readFileSync(`${repoRoot}/tools/gate/config/ladder.json`, "utf8")) as { legs: Leg[] };
     const jarLegs = ladder.legs.filter((leg) => leg.dependsOn?.includes(JAR_TASK) === true).map((leg) => leg.task);
     expect(jarLegs.length).toBeGreaterThan(0);
-    for (const task of jarLegs) expect(scope(["features/turns/src/main/kotlin/x.kt"], ladder.legs).gradle, task).not.toContain(`:${task}`);
+    const product = scope(["features/turns/src/main/kotlin/x.kt"], ladder.legs);
+    for (const task of jarLegs) expect(product.gradle, task).toContain(`:${task}`);
+    expect(product.gradle.filter((task) => task.startsWith(":") && jarLegs.includes(task.slice(1))).length).toBe(jarLegs.length);
+    for (const path of ["tools/gate/src/commands/hook.ts", "quality/architecture/src/test/kotlin/splice/quality/X.kt"]) {
+      for (const task of jarLegs) expect(scope([path], ladder.legs).gradle, `${path} ${task}`).not.toContain(`:${task}`);
+    }
     const e2e = scope(["tools/e2e/src/commands/code-mode.ts"], ladder.legs);
     for (const task of jarLegs) expect(e2e.gradle, task).toContain(`:${task}`);
   });

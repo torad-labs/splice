@@ -55,6 +55,13 @@ describe("the gradle slot", () => {
     expect(lockPath(fake.layout, {})).toBe(join(fake.layout.buildRoot, line![1]!));
   });
 
+  test("the pre-push build tree takes its own lock, so a push never blocks the checkout's builders", () => {
+    const tree = join(real.repoRoot, ".git", "splice-prepush", "tree");
+    const layout = { repoRoot: tree, buildRoot: tree };
+    expect(lockPath(layout, {})).toBe(join(tree, ".gradle-slot.lock"));
+    expect(lockPath(layout, {})).not.toBe(lockPath(real, {}));
+  });
+
   test("GRADLE_SLOT_LOCK overrides it, as in the script", () => {
     expect(lockPath(real, { GRADLE_SLOT_LOCK: "/tmp/elsewhere.lock" })).toBe("/tmp/elsewhere.lock");
   });

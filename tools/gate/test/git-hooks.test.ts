@@ -356,7 +356,7 @@ describe("pre-push judges the tip", () => {
     expect(text).toContain("PRE-PUSH: PASS — judged the pushed sha");
   });
 
-  test("a dirty file in the shared checkout does not redden the push, and the throwaway tree is removed", async () => {
+  test("a dirty file in the shared checkout does not redden the push: the commit is judged in the build tree", async () => {
     const root = wallsRepo();
     writeFile(root, TARGET, CLEAN);
     git(root, ["add", TARGET]);
@@ -372,7 +372,6 @@ describe("pre-push judges the tip", () => {
     expect(text).toContain("judged the pushed sha");
     expect(trees.length).toBe(1);
     expect(trees[0]).not.toBe(root);
-    expect(existsSync(trees[0]!)).toBe(false);
   });
 
   test("a push whose tip is not the checked-out HEAD is judged as that commit", async () => {

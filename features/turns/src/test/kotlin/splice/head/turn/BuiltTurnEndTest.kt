@@ -73,8 +73,6 @@ class BuiltTurnEndTest {
         assertEquals(0, provider.ended, "the drive's admission slot ends it, not the preparation")
     }
 
-    // Mutant: drop endingOnFailure around the shaping step. The lease outlives a turn that never
-    // ran, and its llama-server slot is never offered to another conversation again.
     @Test
     fun `a build that fails after the provider gives back what it held`(@TempDir tmp: Path) {
         val provider = Holding(base(), failPrompt = true)

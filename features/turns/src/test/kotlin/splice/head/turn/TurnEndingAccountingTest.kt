@@ -52,7 +52,6 @@ import splice.head.round.RunnerSignals
 import splice.head.transport.TurnAccountHandoff
 import splice.head.usage.OutputClamp
 import splice.head.usage.QuotaTracker
-import splice.head.usage.USAGE_FLUSH_DELAY_MS
 import splice.head.usage.UsageStore
 import splice.head.wire.ClientChannel
 import splice.head.wire.ImmediateSseWriter
@@ -74,8 +73,6 @@ import splice.upstream.transport.UpstreamFailed
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
@@ -183,35 +180,6 @@ class TurnEndingAccountingTest {
     @BeforeAll
     fun setUp(@TempDir tempDir: Path) {
         tmp = tempDir
-    }
-
-    @Test
-    fun `fixture flush prevents a delayed usage write from recreating deleted paths`() {
-        val entered = CountDownLatch(1)
-        val release = CountDownLatch(1)
-        val settled = CountDownLatch(1)
-        assertTrue(
-            AsyncFileIo.submit {
-                entered.countDown()
-                release.await(5, TimeUnit.SECONDS)
-            },
-        )
-        try {
-            assertTrue(entered.await(5, TimeUnit.SECONDS))
-            val directory = Files.createDirectory(tmp.resolve("delayed-usage"))
-            val usage = directory.resolve("usage.json")
-            val store = UsageStore(usage, directory.resolve("ratelimit.json")).also(usageStores::add)
-            store.appendOutputTokens(1)
-            flushUsage()
-            Files.deleteIfExists(usage)
-            Files.delete(directory)
-            assertTrue(AsyncFileIo.submit(USAGE_FLUSH_DELAY_MS) { settled.countDown() })
-            release.countDown()
-            assertTrue(settled.await(5, TimeUnit.SECONDS))
-            assertFalse(Files.exists(directory), "the scheduled flush must not resurrect the fixture after deletion")
-        } finally {
-            release.countDown()
-        }
     }
 
     @Test

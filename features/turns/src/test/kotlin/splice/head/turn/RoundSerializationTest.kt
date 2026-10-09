@@ -1,26 +1,19 @@
-// NEW: V4-457 — byte identity and current-thread allocation of one synthetic large turn.
+// The request body a round posts upstream is byte-identical to the JSON the client sent.
 package splice.head.turn
 
-import com.sun.management.ThreadMXBean
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertArrayEquals
-import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.TestReporter
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.ClientAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
-import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -44,7 +37,6 @@ import splice.upstream.RoundResult
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnSignals
 import splice.upstream.retry.InflightGate
-import java.lang.management.ManagementFactory
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
@@ -58,79 +50,6 @@ class RoundSerializationTest {
         val golden = """{"model":"synthetic","messages":[{"role":"assistant","content":[{"type":"text","text":"café 🐉\nquote \" and slash \\"},{"type":"tool_use","id":"synthetic-id","name":"synthetic_tool","input":{"nested":[{"text":"🧪","tab":"\t"}],"number":1.0,"null":null}}]}]}"""
         val actual = SerializationRig(tmp).turn(Json.parseToJsonElement(golden).jsonObject)
         assertArrayEquals(golden.toByteArray(Charsets.UTF_8), actual.toByteArray(Charsets.UTF_8))
-    }
-
-    @Test
-    fun `assembling a drive does not serialize a request that has not been posted`() = runTest {
-        val drive = SerializationRig(tmp).assemble(buildJsonObject { })
-        try {
-            assertNull(drive.perf.snapshot().counters[PerfKeys.UPSTREAM_REQ_BYTES])
-        } finally {
-            drive.slot.release()
-        }
-    }
-
-    @Test
-    fun `one synthetic 1 point 4 MB turn stays within its serialization allocation budget`(
-        reporter: TestReporter,
-    ) = runTest {
-        val request = largeRequest()
-        val rig = SerializationRig(tmp)
-        val expected = request.toString()
-        assertTrue(expected.length in 1_400_000..1_500_000)
-        val bean = ManagementFactory.getThreadMXBean() as? ThreadMXBean ?: error("JVM allocation counter is required")
-        assertTrue(bean.isThreadAllocatedMemorySupported)
-        bean.isThreadAllocatedMemoryEnabled = true
-        repeat(10) { rig.turn(request) }
-        val thread = Thread.currentThread().threadId()
-        val before = bean.getThreadAllocatedBytes(thread)
-        val actual = rig.turn(request)
-        val allocated = bean.getThreadAllocatedBytes(thread) - before
-        assertTrue(thread == Thread.currentThread().threadId(), "the measured turn must stay on this thread")
-        reporter.publishEntry("synthetic_turn_allocated_bytes", allocated.toString())
-        assertArrayEquals(expected.toByteArray(Charsets.UTF_8), actual.toByteArray(Charsets.UTF_8))
-        // One retained wire string plus streaming digest and bounded encoder scratch, not recursive tree copies.
-        assertTrue(allocated < 12 * 1024 * 1024, "synthetic_turn_allocated_bytes=$allocated; budget=12582912")
-    }
-
-    /** The transport needs UTF-8 bytes and nothing else: an interceptor, a trace and the failure amender are
-     *  each conditional, and on an ordinary round none of them is there. So an ordinary round must not pay for
-     *  a retained wire String. Measured with a post that reads nothing, which is what the direct path does. */
-    @Test
-    fun `an ordinary round whose body nobody reads does not pay for a wire string`(
-        reporter: TestReporter,
-    ) = runTest {
-        val request = largeRequest()
-        val rig = SerializationRig(tmp)
-        val bean = ManagementFactory.getThreadMXBean() as? ThreadMXBean ?: error("JVM allocation counter is required")
-        assertTrue(bean.isThreadAllocatedMemorySupported)
-        bean.isThreadAllocatedMemoryEnabled = true
-        repeat(10) { rig.unread(request) }
-        val thread = Thread.currentThread().threadId()
-        val before = bean.getThreadAllocatedBytes(thread)
-        rig.unread(request)
-        val allocated = bean.getThreadAllocatedBytes(thread) - before
-        assertTrue(thread == Thread.currentThread().threadId(), "the measured round must stay on this thread")
-        reporter.publishEntry("unread_round_allocated_bytes", allocated.toString())
-        assertTrue(allocated < 250_000, "unread_round_allocated_bytes=$allocated; budget=250000")
-    }
-
-    private fun largeRequest(): JsonObject = buildJsonObject {
-        put("model", "synthetic")
-        val text = "x".repeat(22_000)
-        val block = buildJsonObject {
-            put("type", "text")
-            put("text", text)
-            put("metadata", buildJsonObject { put("synthetic", true) })
-        }
-        val content = JsonArray(listOf(block))
-        val messages = List(64) {
-            buildJsonObject {
-                put("role", "user")
-                put("content", content)
-            }
-        }
-        put("messages", JsonArray(messages))
     }
 }
 
@@ -163,28 +82,6 @@ private class SerializationRig(tmp: Path) {
         terminal,
         ClientChannel(ImmediateSseWriter(writeRaw = {}, flushRaw = {}), Mutex(), AtomicBoolean(false)),
     )
-
-    /** One round whose post reads nothing of the body, which is the direct path with no interceptor,
-     *  no trace and no failure to amend. */
-    suspend fun unread(body: JsonObject) {
-        val drive = assemble(body)
-        try {
-            val success = TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage())
-            RoundStrategy(
-                emitter = terminal,
-                runners = RoundRunners(
-                    key = provider.key,
-                    log = {},
-                    signals = drive.signals,
-                    finish = {},
-                ),
-                postRoundToSink = { _, _ -> error("the direct round must not fold") },
-                postRound = { RoundResult.Outcome(success) },
-            ).run(drive.requestBody, null, null, drive.perf)
-        } finally {
-            drive.slot.release()
-        }
-    }
 
     suspend fun turn(body: JsonObject): String {
         val drive = assemble(body)

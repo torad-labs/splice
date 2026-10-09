@@ -1,5 +1,5 @@
-// NEW: V4-444 — provider silence is distinct from turn age and client keep-alives.
-package splice.head.turn.v4444
+// Provider silence is distinct from turn age and client keep-alives.
+package splice.head.turn
 
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
@@ -21,10 +21,6 @@ import splice.head.TurnsHeadLookup
 import splice.head.admission.admittedSlot
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
-import splice.head.turn.LiveTurns
-import splice.head.turn.LiveTurnsByHead
-import splice.head.turn.LiveTurnsRoutes
-import splice.head.turn.LiveTurnsSource
 import splice.head.wire.ClientChannel
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.LostClient
@@ -32,7 +28,7 @@ import splice.upstream.Ticker
 import splice.upstream.retry.InflightGate
 import java.util.concurrent.atomic.AtomicBoolean
 
-class LiveTurnIdleTest {
+class LiveTurnIdleReadingTest {
     private var now = 1_000L
     private val clock = ElapsedClock { now }
     private val turns = LiveTurns(clock = clock)

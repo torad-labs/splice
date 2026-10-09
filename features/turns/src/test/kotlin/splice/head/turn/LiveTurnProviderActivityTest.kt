@@ -1,5 +1,5 @@
-// NEW: V4-444 — the real shared SSE/WS instrumentation dates provider receipt, even without output.
-package splice.head.turn.v4444
+// The real shared SSE/WS instrumentation dates provider receipt, even without output.
+package splice.head.turn
 
 import io.ktor.utils.io.ByteChannel
 import io.ktor.utils.io.writeStringUtf8
@@ -43,9 +43,6 @@ import splice.head.transport.WsRoundDrive
 import splice.head.transport.WsRoundInputs
 import splice.head.transport.WsRoundResult
 import splice.head.transport.ZeroEventCapture
-import splice.head.turn.LiveTurns
-import splice.head.turn.TurnDrive
-import splice.head.turn.ZeroEventClassifier
 import splice.head.usage.OutputClamp
 import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
@@ -63,7 +60,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class LiveTurnUpstreamTest {
+class LiveTurnProviderActivityTest {
     private class Rig(tmp: Path) {
         var now = 1_000L
         val clock = ElapsedClock { now }

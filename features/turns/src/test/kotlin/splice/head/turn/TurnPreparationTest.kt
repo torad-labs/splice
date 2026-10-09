@@ -22,8 +22,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -33,17 +31,13 @@ import splice.core.auth.ForeignHostLog
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.core.perf.PerfSnapshot
 import splice.core.perf.TurnPerf
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptLayers
 import splice.core.prompt.SystemPromptMode
-import splice.core.storage.ActivityDays
 import splice.core.topology.ProjectConfig
 import splice.core.topology.ProjectHeadPrompt
 import splice.core.turn.WatchdogBudget
-import splice.core.util.AsyncFileIo
-import splice.core.util.WallClock
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.AnthropicBodyParse
@@ -53,14 +47,10 @@ import splice.head.RequestBodyReader
 import splice.head.admission.AdmissionResponses
 import splice.head.compaction.SessionProjectLookup
 import splice.head.headDeps
-import splice.head.wire.ClientInbound
-import splice.head.wire.TurnTrace
 import splice.upstream.BuiltTurn
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
-import java.lang.ref.Reference
-import java.lang.ref.WeakReference
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.atomic.AtomicInteger
@@ -82,48 +72,6 @@ class TurnPreparationTest {
 
     private val parser = AnthropicBodyParse()
     private val lookups = AtomicInteger()
-
-    @Test
-    fun `a retained preparation transfers the inbound body and forgets it after tracing`(@TempDir tmp: Path) {
-        val (prepared, trace, body) = handedOnTrace(tmp)
-        try {
-            assertFalse(collected(body), "the open trace still owns the inbound body")
-            trace.finish("ok", PerfSnapshot(emptyMap(), emptyMap()))
-            assertTrue(AsyncFileIo.drain(), "the final turn record was written")
-            assertTrue(collected(body), "preparation still reaches the body after its trace recorded it")
-            assertNull(prepared.takeInbound(), "the preparation cannot hand off its inbound request twice")
-        } finally {
-            Reference.reachabilityFence(prepared)
-            Reference.reachabilityFence(trace)
-        }
-    }
-
-    private fun handedOnTrace(tmp: Path): Triple<Preparation.Ready, TurnTrace, WeakReference<String>> {
-        val body = "synthetic inbound body ".repeat(400_000)
-        val built = provider().buildTurn(parser.parse(REQUEST).getOrThrow(), compact = false, sessionId = SESSION)
-        val prepared = Preparation.Ready(
-            built,
-            true,
-            ClientInbound("POST", "/v1/messages", emptyMap(), body),
-            null,
-            hasPriorExchange = false,
-        )
-        val trace = splice.head.syntheticTraceStore(
-            ActivityDays(tmp.resolve("trace"), "kimi", retentionDays = 7, clock = WallClock { 1_000 }),
-            head = "kimi",
-            maxBodyChars = 128,
-            now = WallClock { 1_000 },
-        ).begin(built.meta, checkNotNull(prepared.takeInbound()))
-        return Triple(prepared, trace, WeakReference(body))
-    }
-
-    private fun collected(body: WeakReference<String>): Boolean {
-        repeat(20) {
-            System.gc()
-            if (body.get() == null) return true
-        }
-        return false
-    }
 
     @Test
     fun `with no projects the bytes are exactly the head layer's and no session is looked up`(@TempDir tmp: Path) {

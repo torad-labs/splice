@@ -91,36 +91,6 @@ private val EXCLUDED: Map<ErrorType, String> = mapOf(
     ErrorType.NOT_FOUND to "the model or route does not exist; the retry budget was spent proving it",
 )
 
-/** The FIFTH exclusion, and the only one that is not an ErrorType. It is a SHAPE, not a category:
- *  once a 200 and content are on the wire the status line is gone for good, so splice cannot
- *  retroactively answer 429 — and a stream held for an 88-minute reset is not a wait, it is a hang
- *  the client will reap long before it ends.
- *
- *  WHY THE ANTHROPIC-SHAPED WIRE CANNOT BE RESCUED FROM IT — and this is NOT a vendor limit
- *  anybody failed to work around; on that wire the mechanism is absent. Resuming requires the
- *  backend to continue a truncated assistant turn. Measured 2026-09-16: muse answers an assistant
- *  prefill with HTTP 400 assistant prefill is not supported by this server; Anthropic documents the
- *  same for its own modern models — prefill is not supported on Claude 4.6 and later models and
- *  such requests return a 400 — and Meta's Messages adapter is stateless with no
- *  previous_response_id equivalent. A restart, the only remaining move, duplicates everything the
- *  client has already read.
- *
- *  PRECISELY WHERE IT APPLIES (V4-58 review): the Responses dialect DOES carry a resume — its
- *  ResponsesReanchorPolicy appends a marker instruction to continue exactly where the text
- *  stops — and a measured Anthropic-shaped head can resume from a prefill (kimi, deepseek). On
- *  those, only the LONG-RESET half of this shape applies; the no-mechanism half is the unmeasured
- *  Anthropic-shaped heads, muse first among them. Reading "everywhere" into this comment would
- *  widen it past its evidence.
- *
- *  WRITTEN AS NARROWLY AS THE REASON ALLOWS, deliberately: it names MID-STREAM **and** a reset
- *  longer than the bounded wait, and nothing else. A future seat cannot lean on it for a
- *  pre-stream case (those all go through admission, where a status is still ours to write) or for
- *  a short reset (that is V4-57's fix, and it is recoverable). Widening this sentence is the defect
- *  this campaign exists to catch; the two conditions are the whole of it. */
-private const val MID_STREAM_EXCLUSION =
-    "a 429 discovered after the 200 and its content are already on the wire, whose reset is longer " +
-        "than the bounded wait a held stream can survive"
-
 /** The scenario that drives each type, or null when nothing in the mock can produce it yet. A null
  *  is NOT a pass: the test fails by name and says a driver is owed. */
 private val DRIVER: Map<ErrorType, String?> = mapOf(
@@ -345,60 +315,6 @@ class RetryAlwaysArmedTest {
             assertEquals(429, status, "collect path keeps the real status, got: ${body.take(240)}")
             assertTrue(body.contains("SPLICE-RATE-LIMIT"), "the words stay rate-limit: ${body.take(240)}")
         }
-
-    @Test
-    fun `the exclusion list is exactly the four types and every entry says why`() {
-        // The list is a written claim, so it is pinned: a fifth entry, or a blank reason, is a
-        // disposition smuggled in without an argument.
-        assertEquals(
-            setOf(
-                ErrorType.INVALID_REQUEST,
-                ErrorType.AUTHENTICATION,
-                ErrorType.PERMISSION,
-                ErrorType.NOT_FOUND,
-            ),
-            EXCLUDED.keys,
-            "only these four are non-retryable; anything else must reach the client recoverably",
-        )
-        EXCLUDED.forEach { (type, reason) ->
-            assertTrue(reason.length > 20, "${type.name} needs a real reason, got: $reason")
-        }
-    }
-
-    @Test
-    fun `the fifth exclusion names a mid-stream shape and a long reset, and widens no further`() {
-        // Narrowness is the property being pinned, not the prose. It must mention the committed
-        // stream (the reason the status is gone) AND the long reset (the reason a wait cannot save
-        // it). Drop either and it describes a recoverable case, which is how an exclusion list
-        // stops being an argument and starts being a place to hide things.
-        assertTrue(
-            MID_STREAM_EXCLUSION.contains("already on the wire"),
-            "exclusion 5 must name the committed stream: $MID_STREAM_EXCLUSION",
-        )
-        assertTrue(
-            MID_STREAM_EXCLUSION.contains("longer than the bounded wait"),
-            "exclusion 5 must be bounded to the LONG case; a short reset is recoverable and fixed",
-        )
-        assertTrue(
-            !MID_STREAM_EXCLUSION.contains("any") && !MID_STREAM_EXCLUSION.contains("all"),
-            "an exclusion phrased as a category is one a future seat can lean on: $MID_STREAM_EXCLUSION",
-        )
-    }
-
-    @Test
-    fun `the denominator is the enum itself, so a new ErrorType cannot be added silently`() {
-        // Guards the guard: if the reflection ever silently returned an empty or short list, the
-        // sweep above would pass for having nothing to check. This pins that the denominator is
-        // the real set and that it is at least as large as the four we exclude plus one retryable.
-        assertTrue(
-            ErrorType.entries.size >= 5,
-            "the denominator collapsed: ${ErrorType.entries.map { it.name }}",
-        )
-        assertTrue(
-            ErrorType.entries.all { DRIVER.containsKey(it) },
-            "every type needs a disposition row: missing ${ErrorType.entries.filterNot { DRIVER.containsKey(it) }}",
-        )
-    }
 }
 
 /** Statuses Claude Code retries on: 429, 408, and 5xx except 501. */

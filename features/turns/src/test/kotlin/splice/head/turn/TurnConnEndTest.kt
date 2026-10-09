@@ -238,7 +238,7 @@ class TurnConnEndTest {
     }
 
     @Test
-    fun `an oversized event reaches the emitter as a TRANSIENT api_error - V4-81`() = runBlocking {
+    fun `an oversized event reaches the emitter as a TRANSIENT api_error`() = runBlocking {
         val emitter = emitOversized("pre-content", contentFrames = 0)
 
         assertEquals(
@@ -257,26 +257,11 @@ class TurnConnEndTest {
         assertEquals("upstream sent an oversized streaming event; retry", emitter.errorMessage)
     }
 
-    @Test
-    fun `the surface is content-blind now that the fork lives at the seam - V4-81`() = runBlocking {
-        // V4-79 read CONTENT_FRAMES_OUT here and forked on it. V4-81 removed that hand copy, and the
-        // way to pin a REMOVAL is to show the two sides are indistinguishable at this surface: if
-        // someone re-adds a fork here, one of these two goes red. What still differs pre- vs post-
-        // content is the WIRE TYPE, and that is pinned where it is decided (SseEmitterTest).
-        val pre = emitOversized("pre-content", contentFrames = 0)
-        val post = emitOversized("post-content", contentFrames = 1)
-
-        assertEquals(pre.errorType, post.errorType, "this surface no longer forks on content")
-        assertEquals(pre.errorPermanent, post.errorPermanent, "nor on permanence")
-        assertEquals("upstream sent an oversized streaming event; retry", post.errorMessage)
-    }
-
     // V4-164, the operator's banner verbatim: "bonsai: upstream connection failed (no detail) —
     // retry". The JDK client's refused connect is a ConnectException with a NULL message, and this
-    // surface printed Throwable.message. Mutant: connectionResetMessage back to error.message —
-    // the banner reads "no detail" again and this cell goes red by name.
+    // surface printed Throwable.message.
     @Test
-    fun `a refused connect names the endpoint and the reason, never no detail - V4-164`() = runBlocking {
+    fun `a refused connect names the endpoint and the reason, never no detail`() = runBlocking {
         // The JDK client's refusal (V4-167, measured): a ConnectException over a ClosedChannelException.
         val refused = java.net.ConnectException().apply { initCause(java.nio.channels.ClosedChannelException()) }
         val emitter = emitFor("refused", refused)

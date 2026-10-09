@@ -1,7 +1,7 @@
 // NEW: V4-405 — discover() now lists an orphaned quota and a refused link on every OAuth head, so this drives
 // the real AccountPool over a real discover and shows that neither is ever selected for a turn or read. The
 // backups carry an empty quota beside a primary that is full: an account the pool could use would win the turn.
-package splice.oauth.v4405
+package splice.oauth
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -17,8 +17,6 @@ import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.WallClock
-import splice.oauth.OAuthAccountFile
-import splice.oauth.OAuthAccountFiles
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
@@ -33,7 +31,7 @@ private const val NOW_MS = 1_000_000L
 private const val TURNS = 5
 private const val FULL = 100.0
 
-class UnloadedAccountSelectionTest {
+class UnloadableAccountSelectionTest {
     private val kind = AuthKind.ChatgptOAuth
 
     /** Counts every way a credential can be read, so "never read" is a number rather than a claim. */

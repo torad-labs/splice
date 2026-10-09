@@ -122,7 +122,7 @@ class DeviceLoginTokenlessTest {
     }
 
     @Test
-    fun `a device poll answering 200 with no token is not a sign-in - DR-172`(@TempDir tmp: Path) {
+    fun `a device poll answering 200 with no token is not a sign-in`(@TempDir tmp: Path) {
         val authPath = tmp.resolve("auth.json")
         val (ok, printed) = runFlow(serving("{}"), authPath)
 
@@ -175,7 +175,7 @@ class DeviceLoginTokenlessTest {
     }
 
     @Test
-    fun `a device poll answering 200 with a real token signs in - DR-172 control`(@TempDir tmp: Path) {
+    fun `a device poll answering 200 with a real token signs in`(@TempDir tmp: Path) {
         val authPath = tmp.resolve("auth.json")
         val (ok, printed) = runFlow(serving("""{"access_token":"tok_device"}"""), authPath)
 
@@ -189,7 +189,7 @@ class DeviceLoginTokenlessTest {
     // every attempt was EXPIRED before the first token request; the same product on the interval made
     // the wait negative. The deadline now degrades the way DR-177's credential expiry does.
     @Test
-    fun `an expires_in past the millisecond range still polls and signs in - DR-190`(@TempDir tmp: Path) {
+    fun `an expires_in past the millisecond range still polls and signs in`(@TempDir tmp: Path) {
         val authPath = tmp.resolve("auth.json")
         val (ok, printed) = runFlow(serving("""{"access_token":"tok_device"}""", expiresIn = Long.MAX_VALUE), authPath)
 
@@ -198,7 +198,7 @@ class DeviceLoginTokenlessTest {
     }
 
     @Test
-    fun `an interval past the millisecond range waits a bounded, non-negative time - DR-190`(@TempDir tmp: Path) {
+    fun `an interval past the millisecond range waits a bounded, non-negative time`(@TempDir tmp: Path) {
         val authPath = tmp.resolve("auth.json")
         val waits = mutableListOf<Long>()
         val (ok, printed) = runFlow(

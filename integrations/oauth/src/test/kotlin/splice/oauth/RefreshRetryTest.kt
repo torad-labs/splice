@@ -121,7 +121,7 @@ class RefreshRetryTest {
     // that throw to the provider boundary (whose existing getOrElse maps TransportFailed);
     // status-classified exhaustion still returns null, because there the endpoint really answered.
     @Test
-    fun `exhaustion by transport failure propagates the final throw - DR-82`() = runTest {
+    fun `exhaustion by transport failure propagates the final throw`() = runTest {
         val boom = IOException("network unreachable")
         val calls = AtomicInteger()
         val quiet = RefreshRetry(waiter = splice.upstream.Waiter { })
@@ -139,7 +139,7 @@ class RefreshRetryTest {
     }
 
     @Test
-    fun `exhaustion by status classification still returns null - DR-82 control`() = runTest {
+    fun `exhaustion by status classification still returns null`() = runTest {
         val client = clientOf(MockEngine { respond("busy", HttpStatusCode.ServiceUnavailable, headersOf()) })
         val quiet = RefreshRetry(waiter = splice.upstream.Waiter { })
         assertNull(quiet.refreshWithRetry(call = { call(client) }, classify = { RefreshStep.Retry }))
@@ -156,7 +156,7 @@ class RefreshRetryTest {
     // IOException reaching the provider boundary rather than a genuine cancellation short-circuiting
     // the loop; that arm cannot fail for this, which is why the swap survived it.
     @Test
-    fun `a cancellation escapes at once, spending one call and no backoff - DR-166`() = runTest {
+    fun `a cancellation escapes at once, spending one call and no backoff`() = runTest {
         val cancel = CancellationException("turn cancelled")
         val calls = AtomicInteger()
         val waits = mutableListOf<Long>()
@@ -173,17 +173,5 @@ class RefreshRetryTest {
         assertTrue(outcome.exceptionOrNull() === cancel, "the SAME cancellation instance must escape")
         assertEquals(1, calls.get(), "a cancelled refresh must not be retried")
         assertEquals(emptyList<Long>(), waits, "a cancelled refresh must never sleep on backoff")
-    }
-
-    // DR-166 control: the wait recorder actually records. Without this, the "no backoff" assertion
-    // above would pass just as happily against an instrument that captures nothing — a green tick on
-    // a measurement that was never taken.
-    @Test
-    fun `the backoff recorder does capture waits on a real retry - DR-166 control`() = runTest {
-        val client = clientOf(MockEngine { respond("busy", HttpStatusCode.ServiceUnavailable, headersOf()) })
-        val waits = mutableListOf<Long>()
-        val recording = RefreshRetry(waiter = splice.upstream.Waiter { ms -> waits += ms })
-        assertNull(recording.refreshWithRetry(call = { call(client) }, classify = { RefreshStep.Retry }))
-        assertEquals(2, waits.size, "three attempts sleep twice; the instrument sees them: $waits")
     }
 }

@@ -23,7 +23,7 @@ import java.nio.file.Path
 class LoginExchangeDiagnosticsTest {
 
     @Test
-    fun `token-exchange diagnostics never quote the response body - DR-73`(@TempDir tmp: Path) {
+    fun `token-exchange diagnostics never quote the response body`(@TempDir tmp: Path) {
         val sentinel = "tok_SENTINEL_EXCHANGE"
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/token") { ex ->
@@ -105,7 +105,7 @@ class LoginTokenlessSuccessTest {
     }
 
     @Test
-    fun `a 200 carrying no access token is not a sign-in and writes nothing - DR-172`(@TempDir tmp: Path) {
+    fun `a 200 carrying no access token is not a sign-in and writes nothing`(@TempDir tmp: Path) {
         val authPath = tmp.resolve("auth.json")
         val (ok, printed) = exchange(serving("{}"), authPath)
 
@@ -119,7 +119,7 @@ class LoginTokenlessSuccessTest {
     }
 
     @Test
-    fun `a tokenless 200 leaves an existing credential untouched - DR-172`(@TempDir tmp: Path) {
+    fun `a tokenless 200 leaves an existing credential untouched`(@TempDir tmp: Path) {
         val authPath = tmp.resolve("auth.json")
         Files.writeString(authPath, """{"access_token":"still-valid"}""")
 
@@ -136,7 +136,7 @@ class LoginTokenlessSuccessTest {
     }
 
     @Test
-    fun `a 200 carrying a real token still signs in - DR-172 control`(@TempDir tmp: Path) {
+    fun `a 200 carrying a real token still signs in`(@TempDir tmp: Path) {
         val authPath = tmp.resolve("auth.json")
         val (ok, printed) = exchange(serving("""{"access_token":"tok_real"}"""), authPath)
 

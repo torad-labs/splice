@@ -1,4 +1,4 @@
-package splice.oauth.v4357
+package splice.oauth
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -10,8 +10,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKind
-import splice.oauth.LoginIo
-import splice.oauth.OAuthAccountFiles
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path

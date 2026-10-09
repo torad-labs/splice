@@ -3,7 +3,7 @@
 // a symlinked `<label>.json` both vanished from the account list: Needs you never offered to renew, and
 // V4-357's renew path was unreachable after any restart. An orphan now lists with credentialPresent false, and
 // a link lists as refused with its reason, on a path no consumer can follow to a credential.
-package splice.oauth.v4405
+package splice.oauth
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -13,13 +13,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.topology.AuthKind
 import splice.core.util.LogSink
-import splice.oauth.OAuthAccountFile
-import splice.oauth.OAuthAccountFiles
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 
-class UnloadableAccountListingTest {
+class AccountListingAfterRestartTest {
     private val kind = AuthKind.ChatgptOAuth
     private val silent = LogSink {}
 

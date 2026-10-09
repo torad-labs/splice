@@ -40,7 +40,7 @@ class LoginPersistShapeTest {
     }
 
     @Test
-    fun `the codex on-disk shape, token under tokens, is a sign-in - DR-172`(@TempDir tmp: Path) {
+    fun `the codex on-disk shape, token under tokens, is a sign-in`(@TempDir tmp: Path) {
         val authPath = tmp.resolve("auth.json")
         val json = CodexOAuth().authJsonFromTokens(
             idToken = null,
@@ -55,7 +55,7 @@ class LoginPersistShapeTest {
     }
 
     @Test
-    fun `the grok on-disk shape, token under tokens, is a sign-in - DR-172`(@TempDir tmp: Path) {
+    fun `the grok on-disk shape, token under tokens, is a sign-in`(@TempDir tmp: Path) {
         val authPath = tmp.resolve("auth.json")
         val json = GrokOAuth().grokAuthJsonFromTokenResponse(
             """{"access_token":"tok_grok","refresh_token":"r","expires_in":3600}""",
@@ -69,7 +69,7 @@ class LoginPersistShapeTest {
     }
 
     @Test
-    fun `the kimi shape is a sign-in - DR-172 control`(@TempDir tmp: Path) {
+    fun `the kimi shape is a sign-in`(@TempDir tmp: Path) {
         val authPath = tmp.resolve("auth.json")
         val json = KimiOAuth().kimiAuthJsonFromTokenResponse(
             """{"access_token":"tok_kimi","refresh_token":"r","expires_in":3600}""",
@@ -82,7 +82,7 @@ class LoginPersistShapeTest {
 
     // JsonNull is a JsonPrimitive whose content is the string "null": a null token must not read as one.
     @Test
-    fun `a JSON null token under tokens is not a sign-in - DR-172`(@TempDir tmp: Path) {
+    fun `a JSON null token under tokens is not a sign-in`(@TempDir tmp: Path) {
         val authPath = tmp.resolve("auth.json")
         val (ok, printed) = persist(authPath, """{"tokens":{"access_token":null,"refresh_token":"r"}}""")
         assertFalse(ok, printed)

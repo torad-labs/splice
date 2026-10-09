@@ -19,7 +19,7 @@ import java.nio.file.attribute.PosixFilePermissions
 class LoginIoTest {
 
     @Test
-    fun `a sign-in keeps the fields a vendor CLI stores and replaces the tokens whole - V4-298`(@TempDir tmp: Path) {
+    fun `a sign-in keeps the fields a vendor CLI stores and replaces the tokens whole`(@TempDir tmp: Path) {
         val primary = tmp.resolve("auth.json")
         Files.writeString(
             primary,
@@ -43,7 +43,7 @@ class LoginIoTest {
     }
 
     @Test
-    fun `a primary file that does not parse is said and replaced by the sign-in - V4-298`(@TempDir tmp: Path) {
+    fun `a primary file that does not parse is said and replaced by the sign-in`(@TempDir tmp: Path) {
         val primary = tmp.resolve("auth.json")
         Files.writeString(primary, "{ not json")
 

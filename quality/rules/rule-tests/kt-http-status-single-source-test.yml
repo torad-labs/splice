@@ -1,5 +1,7 @@
 id: kt-http-status-single-source
 valid:
+  # the one declaration, exempt by its shape: inside the object that owns it
+  - 'public object HttpStatus { const val TOO_MANY_REQUESTS: Int = 429 }'
   # the remedy: reference the single source, never re-declare the number
   - 'if (status == HttpStatus.TOO_MANY_REQUESTS) cooldown()'
   - 'private val retryable = setOf(HttpStatus.BAD_GATEWAY, HttpStatus.OVERLOADED)'
@@ -56,3 +58,5 @@ invalid:
     private object Statuses {
         const val TOO_MANY = 429
     }
+  # the same declaration outside that object is a second author
+  - 'public object Other { const val TOO_MANY_REQUESTS: Int = 429 }'

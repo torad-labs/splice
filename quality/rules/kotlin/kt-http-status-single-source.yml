@@ -43,16 +43,21 @@ id: kt-http-status-single-source
 language: kotlin
 severity: error
 message: "HTTP status codes are declared once, in splice.core.wire.HttpStatus (core/wire) — reference HttpStatus instead of re-declaring the number here."
-note: "429 had six spellings and 529 had three, in five files, with nothing keeping them equal (ARCH-AUDIT 2026-09-17). The sole allowed declaration site is core/src/main/kotlin/splice/core/wire/HttpStatus.kt; every other main-source declaration of a status code is red. Reference the constant, do not re-derive it."
+note: "429 had six spellings and 529 had three, in five files, with nothing keeping them equal (ARCH-AUDIT 2026-09-17). The sole allowed declaration site is `object HttpStatus` (core/wire); every other main-source declaration of a status code is red. Reference the constant, do not re-derive it."
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
-ignores:
-  # the sole allowed declaration site — exempt BY PATH, so no other file can claim the exemption
-  - core/src/main/kotlin/splice/core/wire/HttpStatus.kt
 rule:
   kind: property_declaration
   all:
+    # the sole allowed declaration site is `object HttpStatus`, exempt by that declaration and not by its file
+    - not:
+        inside:
+          kind: object_declaration
+          stopBy: end
+          has:
+            kind: type_identifier
+            regex: '^HttpStatus$'
     - has:
         stopBy: end
         kind: property_modifier

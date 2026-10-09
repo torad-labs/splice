@@ -4,6 +4,8 @@
 # neighbour that only looks alike.
 id: kt-user-home-single-resolver
 valid:
+  # the one declaration, exempt by its shape: inside the object that owns it
+  - 'public object UserHome { fun dir() = System.getProperty("user.home") }'
   - 'val home = UserHome.dir()'
   - 'val stateDir = UserHome.dir(envReader).resolve(".local/state/splice")'
   - 'val path = UserHome.expand(raw)'
@@ -29,3 +31,5 @@ invalid:
   - 'val home = env("HOME") ?: fallback'
   - 'val home = env.invoke("HOME")'
   - 'private const val HOME_VAR = "HOME"'
+  # the same declaration outside that object is a second author
+  - 'public object Other { fun dir() = System.getProperty("user.home") }'

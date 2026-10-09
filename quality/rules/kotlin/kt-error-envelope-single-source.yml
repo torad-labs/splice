@@ -89,12 +89,18 @@ note: "The envelope is a contract in both directions — Claude Code reads it to
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
-ignores:
-  # The sole builder, created by fix row V4-103. Inert until the file exists; live with no edit here.
-  - core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt
 rule:
   kind: call_expression
   all:
+    # The sole builder is `object ErrorEnvelope`: its own body is the one place the envelope is assembled, exempt by
+    # that declaration and not by the file that holds it.
+    - not:
+        inside:
+          kind: object_declaration
+          stopBy: end
+          has:
+            kind: type_identifier
+            regex: '^ErrorEnvelope$'
     # The callee, bound as a NODE — see THE CALLEE IS MATCHED BY NODE above.
     - has: {nthChild: 1, kind: simple_identifier, regex: '^(buildJsonObject|putJsonObject)$'}
     # HALF 1 — the envelope's own `type` field is the word `error`: a literal, or a constant whose

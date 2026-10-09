@@ -10,6 +10,8 @@
 # the mixed literal/constant form (SseEmitter, RateLimitCooldown).
 id: kt-error-envelope-single-source
 valid:
+  # the one author, exempt by its shape: the body of object ErrorEnvelope
+  - 'public object ErrorEnvelope { fun of(m: String) = buildJsonObject { put("type", "error"); putJsonObject("error") { put("message", m) } } }'
   # THE COMPLIANT FORM — a CALL to the single builder. No nested builder here, so nothing to match,
   # which is also why it stays green in law_pre_content_wire_type.py's denominator (d).
   - 'body = ErrorEnvelope.of(type.wireName, message)'
@@ -80,3 +82,5 @@ invalid:
   # A FIFTH spelling nobody has written yet: the `error` key as a differently-named ERROR constant.
   # Pinned so the constraint's identifier branch is proven, not assumed.
   - 'val o = buildJsonObject { put(KEY_TYPE, ERROR_TYPE); put(ERROR_KEY, buildJsonObject { put("message", m) }) }'
+  # the same assembly outside that object is a second author
+  - 'public object Other { fun of(m: String) = buildJsonObject { put("type", "error"); putJsonObject("error") { put("message", m) } } }'

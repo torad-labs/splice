@@ -54,7 +54,7 @@ public object UserHome {
             redirected = previous
         }
     }
-}
 
-private const val HOME = "HOME"
-private const val USER_HOME_PROPERTY = "user.home"
+    private const val HOME = "HOME"
+    private const val USER_HOME_PROPERTY = "user.home"
+}

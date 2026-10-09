@@ -22,32 +22,38 @@ note: "UserHome reads HOME first and falls back to user.home, so a sandbox, CI o
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
-ignores:
-  # The resolver itself.
-  - core/src/main/kotlin/splice/core/config/UserHome.kt
 rule:
-  any:
-    # The property, however it is reached: its name as a string anywhere.
-    - kind: string_content
-      regex: '^user\.home$'
-    # HOME read from the environment.
-    - all:
-        - kind: call_expression
-        - any:
-            - has: {nthChild: 1, kind: simple_identifier, regex: '^(getenv|env|envReader)$'}
+  all:
+    # The resolver itself is `object UserHome`, exempt by that declaration and not by the file that holds it.
+    - not:
+        inside:
+          kind: object_declaration
+          stopBy: end
+          has:
+            kind: type_identifier
+            regex: '^UserHome$'
+    - any:
+        # The property, however it is reached: its name as a string anywhere.
+        - kind: string_content
+          regex: '^user\.home$'
+        # HOME read from the environment.
+        - all:
+            - kind: call_expression
+            - any:
+                - has: {nthChild: 1, kind: simple_identifier, regex: '^(getenv|env|envReader)$'}
+                - has:
+                    nthChild: 1
+                    kind: navigation_expression
+                    has: {kind: navigation_suffix, has: {kind: simple_identifier, regex: '^(getenv|invoke)$'}}
             - has:
-                nthChild: 1
-                kind: navigation_expression
-                has: {kind: navigation_suffix, has: {kind: simple_identifier, regex: '^(getenv|invoke)$'}}
-        - has:
-            kind: call_suffix
-            has:
-              kind: value_arguments
-              has:
-                kind: value_argument
-                has: {kind: string_literal, has: {kind: string_content, regex: '^HOME$'}}
-    # A const that names HOME, the one indirection that would carry it past the call match.
-    - all:
-        - kind: property_declaration
-        - has: {kind: modifiers, has: {kind: property_modifier, regex: '^const$'}}
-        - has: {kind: string_literal, has: {kind: string_content, regex: '^HOME$'}}
+                kind: call_suffix
+                has:
+                  kind: value_arguments
+                  has:
+                    kind: value_argument
+                    has: {kind: string_literal, has: {kind: string_content, regex: '^HOME$'}}
+        # A const that names HOME, the one indirection that would carry it past the call match.
+        - all:
+            - kind: property_declaration
+            - has: {kind: modifiers, has: {kind: property_modifier, regex: '^const$'}}
+            - has: {kind: string_literal, has: {kind: string_content, regex: '^HOME$'}}

@@ -35,6 +35,8 @@ import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
 import splice.head.usage.QuotaTracker
 import splice.provider.codex.CodexProvider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.credentials.AccountPool
@@ -149,8 +151,7 @@ private class PoolRig(root: Path, val upstream: RejectingUpstream) {
 
     private fun provider(): CodexProvider = CodexProvider(
         tuning = ProviderTuning(
-            key = "codex",
-            label = "claudex",
+            name = ProviderName(key = "codex", label = "claudex"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-codex--",
                 models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -158,7 +159,7 @@ private class PoolRig(root: Path, val upstream: RejectingUpstream) {
             ),
             pinnedModel = "gpt-5.6-sol",
             auth = primaryAuth,
-            baseUrl = upstream.baseUrl,
+            locations = ProviderLocations(baseUrl = upstream.baseUrl),
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),
@@ -228,7 +229,7 @@ private const val BACKUP_TOKEN = "backup-token"
 // Fakes in the shape the Codex backend masks a key: a visible head, a run of stars, a visible tail.
 // The first is no key this test holds; the second masks the primary account's own token.
 private val FOREIGN_MASKED_KEY = "sk-test0" + "*".repeat(40) + "Zq9x"
-private val OWN_MASKED_KEY = "prima" + "*".repeat(12) + "4242"
+private val OWN_MASKED_KEY = "prima" + "*".repeat(12) + "oken"
 
 private const val MS_PER_S = 1_000L
 private const val HOUR_S = 3_600L

@@ -15,8 +15,7 @@
 # the add path signs into), then every other main source set. That is every `*.kt` under src/main:
 # build-logic's two Kotlin sources are in it, its `*.gradle.kts` scripts are not (their gate messages
 # are build output, never a frame). The clause boundary UpstreamFailureClassifier reads in vendor
-# prose is the regex escape \x{2014}, not a sentence. Tests stay out (their exclusion in
-# rule-coverage-exclusions.toml).
+# prose is the regex escape \x{2014}, not a sentence. Tests stay out.
 # V4-253 (2026-09-26): the report's fix separator, built from its code point and carved out here as
 # the one em-dash on the wire, is gone: `splice doctor --json` carries a check's fix in its own key.
 # V4-235 (2026-09-27): every string the gateway writes into a frame. The wall now also reads the

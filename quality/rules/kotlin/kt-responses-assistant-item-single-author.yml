@@ -17,7 +17,7 @@
 #   stream/ResponsesFold.kt                  `continuationMarker`  — commentary, bytes unchanged
 #
 # THE IGNORES are the other wires, whose assistant role is not a Responses input item and never
-# reaches a code-mode record (rule-coverage-exclusions.toml carries the same three, with the reason):
+# reaches a code-mode record (the reason is stated here):
 #   features/turns                    the Anthropic message the client reads: SSE `message_start`
 #                                     (MessageStart.kt) and the non-stream terminal (SseEmitter.kt)
 #   integrations/dialects/openai-chat the Chat Completions `messages` role (ChatWireMapper.kt)

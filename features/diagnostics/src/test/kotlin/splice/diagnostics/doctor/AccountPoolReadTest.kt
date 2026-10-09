@@ -230,7 +230,7 @@ class AccountPoolReadTest {
         plantRefusalTopology(credential)
         val run = DoctorTestPorts.doctor().collect(environment)
         val auth = run.sections.toMap().getValue("auth").single { it.name == "claude-kimi" }
-        assertEquals(CheckStatus.WARN, auth.status)
+        assertEquals(CheckStatus.WARN, auth.status, "the auth line doctor wrote for claude-kimi: ${auth.detail}")
         assertTrue(auth.detail.contains("HTTP 403"), auth.detail)
         assertTrue(
             !auth.detail.contains("newest upstream request"),

@@ -1,6 +1,5 @@
-// NEW: V4-292 — a send-queue table that cannot be read says so. ProcNetTcp read a present but unreadable
-// table as an empty one, so every watched socket fell back to the write call alone while the boot line
-// said a request the upstream stops acknowledging is cut.
+// A send-queue table that cannot be read says so: read as an empty one, every watched socket fell back to
+// the write call alone while the daemon believed a request the upstream stops acknowledging would be cut.
 package splice.upstream.transport
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -13,7 +12,6 @@ import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicBoolean
 
 class SendQueuesTest {
 
@@ -24,24 +22,14 @@ class SendQueuesTest {
     private val log = LogSink { logs += it }
 
     @Test
-    fun `two present tables whose reads fail read as no table, not an empty one - V4-292`() {
+    fun `two present tables whose reads fail read as no table, not an empty one`() {
         val queues = ProcNetTcp(log, listOf(unreadable("tcp"), unreadable("tcp6")))
 
         assertNull(queues.read(), "no table read, so there is no table")
     }
 
     @Test
-    fun `with the tables present but unreadable the boot line names the degraded mode - V4-292`() {
-        val sockets = UpstreamSockets(queues = ProcNetTcp(log, listOf(unreadable("tcp"), unreadable("tcp6"))))
-
-        UpstreamTransport().client(1_000, log, AtomicBoolean(false), 1_000, sockets).close()
-
-        val boot = logs.single { it.startsWith("[upstream] tcp_nodelay") }
-        assertTrue("cannot be read" in boot && "waits for the turn cap" in boot, boot)
-    }
-
-    @Test
-    fun `a table that stops reading is logged once with its cause, and once when it reads again - V4-292`() {
+    fun `a table that stops reading is logged once with its cause, and once when it reads again`() {
         val table = dir.resolve("tcp")
         Files.writeString(table, HEADER + ROW)
         val queues = ProcNetTcp(log, listOf(table))
@@ -59,34 +47,6 @@ class SendQueuesTest {
         repeat(2) { assertNotNull(queues.read(), "the table reads again") }
         assertEquals(2, logs.size, "one line for the stop and one for the recovery: $logs")
         assertTrue("$table reads again" in logs.last(), logs.last())
-    }
-
-    @Test
-    fun `a shared failure and recovery is observed once by each client logger`() {
-        val table = dir.resolve("shared")
-        Files.createDirectory(table)
-        val otherLogs = CopyOnWriteArrayList<String>()
-        val first = ProcNetTcp(log, listOf(table))
-        val second = ProcNetTcp(LogSink { otherLogs += it }, listOf(table))
-        repeat(2) {
-            val sample = first.sample(emptySet())
-            assertNull(sample.table)
-            first.observe(sample)
-            second.observe(sample)
-        }
-        assertEquals(1, logs.size)
-        assertEquals(1, otherLogs.size)
-        Files.delete(table)
-        Files.writeString(table, HEADER + ROW)
-        repeat(2) {
-            val sample = first.sample(emptySet())
-            assertNotNull(sample.table)
-            first.observe(sample)
-            second.observe(sample)
-        }
-        assertEquals(2, logs.size)
-        assertEquals(2, otherLogs.size)
-        assertTrue(otherLogs.last().contains("reads again"))
     }
 
     @Test

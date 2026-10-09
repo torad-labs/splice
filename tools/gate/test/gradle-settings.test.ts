@@ -16,7 +16,19 @@ describe("the declared included builds", () => {
     expect(dirs('// includeBuild("ghost")\n')).toEqual([]);
   });
 
-  test("a spelling the reader cannot resolve fails by naming the call instead of dropping the build", () => {
-    expect(() => dirs('includeBuild(file("logic"))\n')).toThrow(/fixture\/settings\.gradle\.kts:1 includeBuild\(/);
+  test("every spelling of a plain directory declares it: qualified, with a block, or through file()", () => {
+    const settings = [
+      'includeBuild("a")',
+      'settings.includeBuild("b")',
+      'includeBuild("c") { dependencySubstitution { } }',
+      'settings.includeBuild(file("d"))',
+      'pluginManagement { includeBuild("e") }',
+    ].join("\n");
+    expect(dirs(settings)).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  test("a spelling the reader cannot resolve fails by naming file and line instead of dropping the build", () => {
+    expect(() => dirs('val x = 1\nincludeBuild(path)\n')).toThrow(/fixture\/settings\.gradle\.kts:2 includeBuild\(path\)/);
+    expect(() => dirs('gradle.includeBuild("logic")\n')).toThrow(/fixture\/settings\.gradle\.kts:1 gradle\.includeBuild/);
   });
 });

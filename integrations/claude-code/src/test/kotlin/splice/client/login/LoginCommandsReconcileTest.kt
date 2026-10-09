@@ -28,12 +28,14 @@ class LoginCommandsReconcileTest {
         log: MutableList<String> = mutableListOf(),
     ) = LoginInterception.wire(
         configDir = configDir,
-        loginCommand = loginCommand,
-        signInLabel = "OpenRouter",
+        login = LoginHookSpec(
+            loginCommand = loginCommand,
+            signInLabel = "OpenRouter",
+            viaBrowser = false,
+        ),
         globalCommands = globalCommands,
-        viaBrowser = false,
         tokenCapture = null,
-        log = LogSink { log += it },
+        hooks = HookInstaller(log = LogSink { log += it }),
     )
 
     private fun globalWith(tmp: Path, vararg names: String): Path {

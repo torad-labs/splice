@@ -61,13 +61,14 @@ class LoginInterceptionWireTest {
         execProbe: HookExecProbe = fileProbe,
     ) = LoginInterception.wire(
         configDir = configDir,
-        loginCommand = loginCommand,
-        signInLabel = "OpenRouter",
+        login = LoginHookSpec(
+            loginCommand = loginCommand,
+            signInLabel = "OpenRouter",
+            viaBrowser = false,
+        ),
         globalCommands = null,
-        viaBrowser = false,
         tokenCapture = tokenCapture,
-        log = LogSink { log += it },
-        execProbe = execProbe,
+        hooks = HookInstaller(log = LogSink { log += it }, execProbe = execProbe),
     )
 
     // DR-8 redo-2 (codex noexec catch): chmod(0700) succeeds on a noexec mount while exec fails
@@ -192,14 +193,18 @@ class LoginInterceptionWireTest {
         val failure = assertThrows<IOException> {
             LoginInterception.wire(
                 configDir = tmp,
-                loginCommand = "",
-                signInLabel = "OpenRouter",
+                login = LoginHookSpec(
+                    loginCommand = "",
+                    signInLabel = "OpenRouter",
+                    viaBrowser = false,
+                ),
                 globalCommands = null,
-                viaBrowser = false,
                 tokenCapture = capture,
-                log = LogSink { },
-                chmod = { _, _ -> throw IOException("injected chmod failure") },
-                execProbe = passProbe,
+                hooks = HookInstaller(
+                    log = LogSink { },
+                    chmod = { _, _ -> throw IOException("injected chmod failure") },
+                    execProbe = passProbe,
+                ),
             )
         }
         assertTrue(
@@ -225,14 +230,18 @@ class LoginInterceptionWireTest {
         assertThrows<IOException> {
             LoginInterception.wire(
                 configDir = tmp,
-                loginCommand = "",
-                signInLabel = "OpenRouter",
+                login = LoginHookSpec(
+                    loginCommand = "",
+                    signInLabel = "OpenRouter",
+                    viaBrowser = false,
+                ),
                 globalCommands = null,
-                viaBrowser = false,
                 tokenCapture = capture,
-                log = LogSink { },
-                chmod = { _, _ -> throw IOException("injected chmod failure") },
-                execProbe = passProbe,
+                hooks = HookInstaller(
+                    log = LogSink { },
+                    chmod = { _, _ -> throw IOException("injected chmod failure") },
+                    execProbe = passProbe,
+                ),
             )
         }
         assertEquals(
@@ -261,14 +270,14 @@ class LoginInterceptionWireTest {
             assertThrows<IOException>("${thrown::class.simpleName} must still fail the launch") {
                 LoginInterception.wire(
                     configDir = tmp,
-                    loginCommand = "",
-                    signInLabel = "OpenRouter",
+                    login = LoginHookSpec(
+                        loginCommand = "",
+                        signInLabel = "OpenRouter",
+                        viaBrowser = false,
+                    ),
                     globalCommands = null,
-                    viaBrowser = false,
                     tokenCapture = capture,
-                    log = LogSink { },
-                    chmod = { _, _ -> throw thrown },
-                    execProbe = passProbe,
+                    hooks = HookInstaller(log = LogSink { }, chmod = { _, _ -> throw thrown }, execProbe = passProbe),
                 )
             }
             assertEquals(
@@ -331,14 +340,18 @@ class LoginInterceptionWireTest {
         assertThrows<CancellationException> {
             LoginInterception.wire(
                 configDir = tmp,
-                loginCommand = "",
-                signInLabel = "OpenRouter",
+                login = LoginHookSpec(
+                    loginCommand = "",
+                    signInLabel = "OpenRouter",
+                    viaBrowser = false,
+                ),
                 globalCommands = null,
-                viaBrowser = false,
                 tokenCapture = capture,
-                log = LogSink { },
-                chmod = { _, _ -> throw CancellationException("cancelled mid-wire") },
-                execProbe = passProbe,
+                hooks = HookInstaller(
+                    log = LogSink { },
+                    chmod = { _, _ -> throw CancellationException("cancelled mid-wire") },
+                    execProbe = passProbe,
+                ),
             )
         }
         assertTrue(
@@ -430,13 +443,17 @@ class LoginInterceptionWireTest {
 
         val hooks = LoginInterception.wire(
             configDir = tmp,
-            loginCommand = "openrouter login",
-            signInLabel = "OpenRouter",
+            login = LoginHookSpec(
+                loginCommand = "openrouter login",
+                signInLabel = "OpenRouter",
+                viaBrowser = false,
+            ),
             globalCommands = null,
-            viaBrowser = false,
             tokenCapture = null,
-            log = LogSink { log += it },
-            chmod = { _, _ -> throw IOException("injected chmod failure") },
+            hooks = HookInstaller(
+                log = LogSink { log += it },
+                chmod = { _, _ -> throw IOException("injected chmod failure") },
+            ),
         )
 
         assertTrue(hooks.isEmpty(), "the login hook must be dropped, not registered unexecutable: $hooks")
@@ -452,7 +469,7 @@ class LoginInterceptionWireTest {
             configDir = tmp,
             spec = capture,
             loginCommand = "openrouter login",
-            log = LogSink { log += it },
+            hooks = HookInstaller(log = LogSink { log += it }),
         )
 
         assertTrue(hooks.isEmpty())

@@ -43,6 +43,36 @@ public data class TokenCaptureSpec(
     }
 }
 
+/** How the hook scripts of one head are staged: where failures are logged, the chmod that makes a script
+ *  executable, and the optional probe that proves the directory can execute one. */
+internal class HookInstaller(
+    val log: LogSink = LogSink(DaemonLog::write),
+    val chmod: HookChmod = HookChmod(Files::setPosixFilePermissions),
+    val execProbe: HookExecProbe? = null,
+) {
+    /** DR-8 redo-2 (codex noexec catch): prove the directory can execute an owner-only script
+     *  BEFORE anything is staged or registered — a hook that registers but cannot run is
+     *  indistinguishable from no hook. Per-leg policy holds: with a capture spec the launch fails
+     *  (fail-closed on the credential interceptor); without one the head degrades loudly and
+     *  registers nothing, because registering known-unrunnable hooks is the defect. */
+    fun canExecute(configDir: Path, tokenCapture: TokenCaptureSpec?): Boolean {
+        val execFailure = execProbe?.invoke(configDir, chmod) ?: return true
+        if (tokenCapture != null) {
+            throw IOException(
+                // SAFE-RENDER-EXEMPT[2026-08-31]: the same exec-bit probe — the failure names the head config directory, never file content
+                "$configDir cannot execute a staged hook (${execFailure.message}), so the capture " +
+                    "hook would register but never run; refusing to launch uninterceptable",
+            )
+        }
+        log(
+            // SAFE-RENDER-EXEMPT[2026-08-31]: the same exec-bit probe — the failure names the head config directory, never file content
+            "[login] hooks NOT installed in $configDir (${execFailure.message}): the directory " +
+                "cannot execute scripts (noexec mount?); the head runs without an interceptor\n",
+        )
+        return false
+    }
+}
+
 internal object LoginInterception {
     private const val LOGIN_HOOK_SH = "splice-login-hook.sh"
     private const val CAPTURE_HOOK_SH = "splice-key-capture-hook.sh"
@@ -65,37 +95,25 @@ internal object LoginInterception {
      */
     fun wire(
         configDir: Path,
-        loginCommand: String,
-        signInLabel: String,
+        login: LoginHookSpec,
         globalCommands: Path?,
-        viaBrowser: Boolean = true,
         tokenCapture: TokenCaptureSpec? = null,
-        loginOutcomeFile: String = "",
-        headKey: String = "",
-        log: LogSink = LogSink(DaemonLog::write),
-        chmod: HookChmod = HookChmod(Files::setPosixFilePermissions),
-        execProbe: HookExecProbe? = null,
+        hooks: HookInstaller = HookInstaller(),
     ): Map<String, List<JsonObject>> {
-        if (loginCommand.isBlank()) HeadCommandsDir.reconcileBlankLogin(configDir, globalCommands, log)
-        if (loginCommand.isBlank() && tokenCapture == null) return emptyMap()
-        if (!dirCanExecuteHooks(configDir, tokenCapture, log, chmod, execProbe)) return emptyMap()
+        val log = hooks.log
+        val chmod = hooks.chmod
+        if (login.loginCommand.isBlank()) HeadCommandsDir.reconcileBlankLogin(configDir, globalCommands, log)
+        if (login.loginCommand.isBlank() && tokenCapture == null) return emptyMap()
+        if (!hooks.canExecute(configDir, tokenCapture)) return emptyMap()
         val upsHooks = mutableListOf<JsonObject>()
-        if (loginCommand.isNotBlank()) {
+        if (login.loginCommand.isNotBlank()) {
             val leg = Cancellables.runCatchingCancellable {
-                HeadCommandsDir.write(configDir, signInLabel, globalCommands, LOGIN_SENTINEL)
+                HeadCommandsDir.write(configDir, login.signInLabel, globalCommands, LOGIN_SENTINEL)
                 val script = HookScriptFiles.writeHookScript(
                     configDir,
                     LOGIN_HOOK_SH,
                     LoginHookScripts.loginHookScript(
-                        LoginHookSpec(
-                            loginCommand = loginCommand,
-                            signInLabel = signInLabel,
-                            viaBrowser = viaBrowser,
-                            sentinel = LOGIN_SENTINEL,
-                            outcomeFile = loginOutcomeFile,
-                            canCapturePaste = tokenCapture != null,
-                            headKey = headKey,
-                        ),
+                        login.copy(sentinel = LOGIN_SENTINEL, canCapturePaste = tokenCapture != null),
                     ),
                     chmod,
                 )
@@ -128,12 +146,12 @@ internal object LoginInterception {
         configDir: Path,
         spec: TokenCaptureSpec,
         loginCommand: String,
-        log: LogSink = LogSink(DaemonLog::write),
-        chmod: HookChmod = HookChmod(Files::setPosixFilePermissions),
-        execProbe: HookExecProbe? = null,
+        hooks: HookInstaller = HookInstaller(),
     ): Map<String, List<JsonObject>> {
+        val log = hooks.log
+        val chmod = hooks.chmod
         val leg = Cancellables.runCatchingCancellable {
-            execProbe?.invoke(configDir, chmod)?.let { failure ->
+            hooks.execProbe?.invoke(configDir, chmod)?.let { failure ->
                 // SAFE-RENDER-EXEMPT[2026-08-31]: an exec-bit probe on a directory we create — the failure names that directory, never file content
                 throw IOException("$configDir cannot execute a staged hook (${failure.message})")
             }
@@ -172,32 +190,4 @@ internal object LoginInterception {
         b: Map<String, List<JsonObject>>,
     ): Map<String, List<JsonObject>> =
         (a.keys + b.keys).associateWith { k -> a[k].orEmpty() + b[k].orEmpty() }
-
-    /** DR-8 redo-2 (codex noexec catch): prove the directory can execute an owner-only script
-     *  BEFORE anything is staged or registered — a hook that registers but cannot run is
-     *  indistinguishable from no hook. Per-leg policy holds: with a capture spec the launch fails
-     *  (fail-closed on the credential interceptor); without one the head degrades loudly and
-     *  registers nothing, because registering known-unrunnable hooks is the defect. */
-    private fun dirCanExecuteHooks(
-        configDir: Path,
-        tokenCapture: TokenCaptureSpec?,
-        log: LogSink,
-        chmod: HookChmod,
-        execProbe: HookExecProbe?,
-    ): Boolean {
-        val execFailure = execProbe?.invoke(configDir, chmod) ?: return true
-        if (tokenCapture != null) {
-            throw IOException(
-                // SAFE-RENDER-EXEMPT[2026-08-31]: the same exec-bit probe — the failure names the head config directory, never file content
-                "$configDir cannot execute a staged hook (${execFailure.message}), so the capture " +
-                    "hook would register but never run; refusing to launch uninterceptable",
-            )
-        }
-        log(
-            // SAFE-RENDER-EXEMPT[2026-08-31]: the same exec-bit probe — the failure names the head config directory, never file content
-            "[login] hooks NOT installed in $configDir (${execFailure.message}): the directory " +
-                "cannot execute scripts (noexec mount?); the head runs without an interceptor\n",
-        )
-        return false
-    }
 }

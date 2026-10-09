@@ -35,7 +35,9 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.client.login.HookExec
 import splice.client.login.HookExecProbe
+import splice.client.login.HookInstaller
 import splice.client.login.HookScriptFiles
+import splice.client.login.LoginHookSpec
 import splice.client.login.LoginInterception
 import splice.client.mcp.McpRewrite
 import splice.client.resume.ResumeHook
@@ -123,23 +125,25 @@ public class ClaudeConfigMaterializer(
         linkShared(spec.configDir, spec.policy, spec.headKey)
         val hookAdditions = LoginInterception.concat(
             LoginInterception.wire(
-                spec.configDir,
-                spec.loginCommand,
-                spec.signInLabel,
+                configDir = spec.configDir,
+                login = LoginHookSpec(
+                    loginCommand = spec.loginCommand,
+                    signInLabel = spec.signInLabel,
+                    viaBrowser = spec.signInViaBrowser,
+                    outcomeFile = spec.loginOutcomeFile,
+                    headKey = spec.headKey,
+                ),
                 globalCommands = if (spec.policy.shares(Keys.COMMANDS)) globalDir().resolve(Keys.COMMANDS) else null,
-                viaBrowser = spec.signInViaBrowser,
                 tokenCapture = spec.tokenCapture,
-                loginOutcomeFile = spec.loginOutcomeFile,
-                headKey = spec.headKey,
-                execProbe = hookExecProbe,
+                hooks = HookInstaller(execProbe = hookExecProbe),
             ),
             LoginInterception.concat(
                 if (spec.advertiseKeySetup && spec.tokenCapture != null) {
                     LoginInterception.keySetupAdvertiser(
-                        spec.configDir,
-                        spec.tokenCapture,
-                        spec.loginCommand,
-                        execProbe = hookExecProbe,
+                        configDir = spec.configDir,
+                        spec = spec.tokenCapture,
+                        loginCommand = spec.loginCommand,
+                        hooks = HookInstaller(execProbe = hookExecProbe),
                     )
                 } else {
                     emptyMap()

@@ -27,12 +27,12 @@ internal data class LoginHookSpec(
     val loginCommand: String,
     val signInLabel: String,
     val viaBrowser: Boolean,
-    val sentinel: String,
+    val sentinel: String = "",
     /** Absolute path of this head's login receipt — see LoginOutcomeFile. */
-    val outcomeFile: String,
+    val outcomeFile: String = "",
     /** True when this head can capture a bare token pasted into the prompt box. Decides the whole
      *  shape of /login for an api-key head — see [LoginHookScripts.loginHookScript]. */
-    val canCapturePaste: Boolean,
+    val canCapturePaste: Boolean = false,
     /** The head's topology key: a sign-in started as `splice login <key>` must be found too. */
     val headKey: String = "",
 )

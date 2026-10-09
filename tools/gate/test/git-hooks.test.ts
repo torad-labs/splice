@@ -30,7 +30,6 @@ import {
   shimText,
 } from "../src/commands/hook.ts";
 import { resolveJdk21 } from "../src/lib/jdk.ts";
-import { lockPath } from "../src/lib/slot.ts";
 import type { Leg } from "../src/lib/prepush-scope.ts";
 import { type Layout, layout } from "../src/lib/repo.ts";
 
@@ -161,8 +160,8 @@ function compiler(fallback: string, calls: string[][] = []): GateRunner {
 
 /** The real gradle wrapper, run through the gradle slot in a scratch repository: the root script's configuration pass is
  *  the thing under test. The slot is runUnderSlot, the function `bun tools/gate slot` calls. The verb finds its layout
- *  from its own location, so a child process runs the function on the scratch layout, and the slot's lock is the
- *  checkout's: this run queues behind every other gradle run here, as a seat's does. */
+ *  from its own location, so a child process runs the function on the scratch layout,, and the slot's lock and
+ *  holder file are the scratch repository's own, so this run never queues behind or overwrites a seat's build. */
 function gradleHere(root: string): GateRunner {
   return async (tasks) => {
     const jdk = resolveJdk21();
@@ -176,7 +175,7 @@ function gradleHere(root: string): GateRunner {
         `  layout: { repoRoot: ${JSON.stringify(root)}, buildRoot: ${JSON.stringify(root)} },`,
         `  label: "root-script-test",`,
         `  args: ${JSON.stringify(tasks)},`,
-        `  env: { JAVA_HOME: ${JSON.stringify(jdk.javaHome)}, GRADLE_SLOT_LOCK: ${JSON.stringify(lockPath(layout()))} },`,
+        `  env: { JAVA_HOME: ${JSON.stringify(jdk.javaHome)}, GRADLE_SLOT_LOCK: ${JSON.stringify(join(root, ".gradle-slot.lock"))} },`,
         `});`,
         `process.exit(status);`,
       ].join("\n"),
@@ -799,7 +798,7 @@ describe("a text-scanning law's content inputs are every tracked file, declared 
       "build.gradle.kts",
       [
         "buildscript { dependencies { classpath(files(" + JSON.stringify(classes) + ")) } }",
-        "val tracked = splice.lawsuite.ReadSet.tracked(rootProject.projectDir)",
+        "val tracked = splice.lawsuite.ReadSet.trackedProvider(project)",
         'val probe = tasks.register("probe") {',
         '    val stamp = layout.buildDirectory.file("probe.stamp")',
         "    outputs.file(stamp)",
@@ -818,7 +817,7 @@ describe("a text-scanning law's content inputs are every tracked file, declared 
 
   async function probe(root: string): Promise<string> {
     const run = await gradleHere(root)(["probe"]);
-    expect(run.status).toBe(0);
+    expect(run.status, run.output).toBe(0);
     return run.output;
   }
 

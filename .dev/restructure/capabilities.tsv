@@ -3955,3 +3955,9 @@ tools/gate/src/lib/no-python-shell.ts	created		Reads shell by structure: ast-gre
 tools/gate/src/lib/no-python-sources.ts	created		Reads process spawns in TypeScript (compiler API, import-resolved), Kotlin and Java (ast-grep) and launcher entries, by structure.
 tools/gate/test/fixtures/no-python-shapes.json	created		The independent reviewer probe of the no-python wall: files that must be refused and files that must pass, graded by the wall and the guard.
 app/src/test/kotlin/splice/app/provider/CodeModeLiveScriptTest.kt	created		V4-456: a GPT code-mode script streams to the client as it is written, before the dispatch and after the resumed step opens
+quality/compiler-plugin/src/main/kotlin/splice/firchecks/PublicSurfaceReport.kt	created		V4-92: the compiler plugin writes one public-surface report per compiled source
+quality/compiler-plugin/src/main/kotlin/splice/firchecks/PublicSurfaceWalk.kt	created		V4-92: walks a source's public declarations into the report
+quality/compiler-plugin/src/main/kotlin/splice/firchecks/SurfaceLookups.kt	created		V4-92: records the lookups a report depends on, so incremental compilation recompiles dependents
+quality/compiler-plugin/src/test/kotlin/splice/firchecks/PublicSurfaceIncrementalTest.kt	created		V4-92: drives snapshot-based incremental compilation to prove a surface change recompiles its dependents
+quality/compiler-plugin/src/test/kotlin/splice/firchecks/UnregisteredLookupsRegistrar.kt	created		V4-92: test registrar that compiles without the lookup recording, the control for the incremental proof
+quality/compiler-plugin/src/main/resources/META-INF/services/org.jetbrains.kotlin.compiler.plugin.CommandLineProcessor	created		V4-92: registers the command-line processor that reads the report options

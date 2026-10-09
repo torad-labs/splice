@@ -42,6 +42,12 @@ dependencies {
     // them in the plugin jar would clash with the host compiler's own copies.
     compileOnly(libs.kotlin.compiler.embeddable)
     testImplementation(libs.kotlin.compiler.embeddable)
+    // V4-92: PublicSurfaceIncrementalTest drives the snapshot-based incremental compilation KGP runs, through the Build
+    // Tools API in this JVM. The impl is runtime-only and brings the compiler runner; both are the toolchain's version.
+    testImplementation(libs.kotlin.build.tools.api)
+    testRuntimeOnly(libs.kotlin.build.tools.impl)
+    // KotlinToolchains.loadImplementation names its V1 adapter, which only the compat artifact carries.
+    testRuntimeOnly(libs.kotlin.build.tools.compat)
     // the fixtures compiled by the test reference splice.core.annotation.MustConsume; the test JVM's
     // own classpath (java.class.path) carries :core, so -cp resolves the annotation.
     testImplementation(project(":core"))

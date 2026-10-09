@@ -94,6 +94,12 @@ internal object DiskWrites {
         ),
         notAFile = listOf(
             NotAFile(
+                "quality/compiler-plugin/src/main/kotlin/splice/firchecks/PublicSurfaceReport.kt",
+                ".writeText(",
+                "build time only: the compiler plugin writes one public-surface report per compiled source into the " +
+                    "build's output directory; it never runs in the shipped daemon and writes nothing under splice's state",
+            ),
+            NotAFile(
                 "integrations/mcp/src/main/kotlin/splice/control/mcp/HostedServer.kt",
                 ".bufferedWriter(",
                 "a hosted MCP server's stdin: the process's output stream, not a file",

@@ -63,6 +63,10 @@ ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 # (compileOnly: the compiler provides them at plugin-load time) and drives K2JVMCompiler in tests.
 # Pinned to the toolchain version: FIR/checker API is internal and version-locked, no stability guarantee.
 kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
+# The Build Tools API, the engine KGP drives for incremental compilation: PublicSurfaceIncrementalTest runs it in-process.
+kotlin-build-tools-api = { module = "org.jetbrains.kotlin:kotlin-build-tools-api", version.ref = "kotlin" }
+kotlin-build-tools-impl = { module = "org.jetbrains.kotlin:kotlin-build-tools-impl", version.ref = "kotlin" }
+kotlin-build-tools-compat = { module = "org.jetbrains.kotlin:kotlin-build-tools-compat", version.ref = "kotlin" }
 konsist = { module = "com.lemonappdev:konsist", version.ref = "konsist" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }

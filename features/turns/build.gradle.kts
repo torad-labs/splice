@@ -43,4 +43,8 @@ tasks.test {
         "junit.jupiter.tempdir.deletion.strategy.default",
         "splice.head.HeadFileWriteCleanup",
     )
+    // Two test JVMs. This suite is the longest task in the build, and any change to :core waits for it. Its tests bind
+    // OS-assigned ports, write only to their own @TempDir, and nothing writes to the shared test home, so the classes
+    // split cleanly. Measured Oct 9, the same tree minutes apart: 9m37.5s in one JVM, 5m38.7s in two, all passing.
+    maxParallelForks = 2
 }

@@ -18,42 +18,42 @@ class UpstreamFailureRetryWordingTest {
         UpstreamFailureClassifier.classify(FailureSource.SSE, "the engine had a problem", code = code)
 
     @Test
-    fun `an em-dash cut fresh retry clause is an invitation, not negated - DR-71`() {
+    fun `an em-dash cut fresh retry clause is an invitation, not negated`() {
         assertTrue(sse("Your request cannot be processed — please try again later").transient)
     }
 
     @Test
-    fun `a line-break cut fresh retry clause is an invitation, not negated - DR-71`() {
+    fun `a line-break cut fresh retry clause is an invitation, not negated`() {
         assertTrue(sse("This upload can't be parsed\nPlease try again").transient)
     }
 
     @Test
-    fun `please retry is the same invitation as try again, negation-aware - DR-71`() {
+    fun `please retry is the same invitation as try again, negation-aware`() {
         assertTrue(sse("Something went wrong. Please retry.").transient)
         assertFalse(sse("Do not retry this request").transient)
     }
 
     @Test
-    fun `service is unavailable is a qualified outage, region restriction is not - DR-71`() {
+    fun `service is unavailable is a qualified outage, region restriction is not`() {
         assertTrue(sse("The service is unavailable").transient)
         assertFalse(sse("The selected model is unavailable in your region").transient)
     }
 
     @Test
-    fun `a clause longer than the old 120-char budget still carries its negation - DR-71`() {
+    fun `a clause longer than the old 120-char budget still carries its negation`() {
         val filler = "because the request payload has been permanently rejected by the safety system " +
             "and stored for review by the abuse team under reference identifier 123456789"
         assertFalse(sse("Do not $filler try again").transient)
     }
 
     @Test
-    fun `wont and will-not negate the retry invitation - DR-71`() {
+    fun `wont and will-not negate the retry invitation`() {
         assertFalse(sse("This request won't succeed if you try again").transient)
         assertFalse(sse("The system will not accept it if you retry").transient)
     }
 
     @Test
-    fun `engine and model overload codes are allowlisted transients - DR-71`() {
+    fun `engine and model overload codes are allowlisted transients`() {
         assertTrue(coded("engine_overloaded").transient)
         assertTrue(coded("model_overloaded").transient)
         // Overload is the vendor's own verdict, so it surfaces as the type the client retries on.
@@ -126,7 +126,7 @@ class UpstreamFailureRetryWordingTest {
     // tryAgainRe, so a clause whose visible (displayed) half is pure negation read as transient.
     // The heuristic now classifies exactly the take(MAX_MESSAGE) view the operator sees.
     @Test
-    fun `a retry invitation beyond the message budget cannot outrun its negation - DR-71 redo`() {
+    fun `a retry invitation beyond the message budget cannot outrun its negation`() {
         assertFalse(sse("Do not " + "x".repeat(2050) + " retry").transient)
     }
 }

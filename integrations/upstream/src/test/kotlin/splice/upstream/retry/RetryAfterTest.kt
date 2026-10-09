@@ -45,14 +45,14 @@ class RetryAfterTest {
     }
 
     @Test
-    fun `the HTTP-date form is honoured against the wall clock - NF-04`() {
+    fun `the HTTP-date form is honoured against the wall clock`() {
         // Cloudflare and gateway fronts emit the date form; before NF-04 it parsed to null and the
         // server's pushback was silently replaced by the 20s guess.
         assertEquals(90_000L, retryAfter.retryAfterMs(httpDate(nowMs + 90_000L), clock))
     }
 
     @Test
-    fun `an HTTP-date in the past clamps to zero, never to null - NF-04`() {
+    fun `an HTTP-date in the past clamps to zero, never to null`() {
         // Zero is "no wait" — a real verdict. Null would send the caller down the garbage path and
         // arm the default guess for a header that was perfectly well-formed.
         assertEquals(0L, retryAfter.retryAfterMs(httpDate(nowMs - 3_600_000L), clock))

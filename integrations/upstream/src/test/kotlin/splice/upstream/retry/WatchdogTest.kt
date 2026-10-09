@@ -362,7 +362,7 @@ class WatchdogTest {
     // line left every Watchdog arm AND the real HeadServer acceptance green, which means the
     // behaviour was asserted nowhere at all.
     @Test
-    fun `resetRound clears a stale Idle so the next round is not born stalled - DR-7`() {
+    fun `resetRound clears a stale Idle so the next round is not born stalled`() {
         runBlocking {
             val ticks = SteppedTicks()
             val gate = InflightGate({ 0 }, clock = ticks.clock)
@@ -391,7 +391,7 @@ class WatchdogTest {
     // The other half, and the reason it is a CAS against the observed Idle rather than a set(null):
     // totalCap is a WHOLE-TURN verdict, and no new round may erase it.
     @Test
-    fun `resetRound preserves a TotalCap verdict - DR-7`() {
+    fun `resetRound preserves a TotalCap verdict`() {
         runBlocking {
             val ticks = VirtualTicks()
             val dog = TurnWatchdog(
@@ -414,7 +414,7 @@ class WatchdogTest {
     // whole-turn cap from ever recording its own verdict. The turn would then be cancelled by the
     // cap while reporting an idle stall from a round that already ended.
     @Test
-    fun `a stale Idle would block the later TotalCap from recording - DR-7`() {
+    fun `a stale Idle would block the later TotalCap from recording`() {
         runBlocking {
             val ticks = SteppedTicks()
             val gate = InflightGate({ 0 }, clock = ticks.clock)
@@ -446,7 +446,7 @@ class WatchdogTest {
     // whole-turn verdict raised from there would reap a round and let the fold loop open the next
     // — spending past the one budget whose name means stop — so the cap check moved out entirely.
     @Test
-    fun `launchIn never raises a whole-turn TotalCap - launchTotalCap owns that cancel - DR-7`() {
+    fun `launchIn never raises a whole-turn TotalCap - launchTotalCap owns that cancel`() {
         runBlocking {
             val gate = InflightGate({ 0 })
             val slot = gate.admittedSlot()
@@ -498,7 +498,7 @@ class WatchdogTest {
     }
 
     @Test
-    fun `turn-scoped cap poller reaps with NO open stream - the NF-03 case`() {
+    fun `turn-scoped cap poller reaps with no open stream`() {
         runBlocking {
             // No slot, no launchIn: this is the connect/backoff/refresh/between-rounds window the
             // stream-scoped poller never covers. launchTotalCap alone must fire the typed sentinel.

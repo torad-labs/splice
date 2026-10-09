@@ -220,7 +220,7 @@ class InflightGateTest {
     // state. Existing arms exercise the live limit and the queue SEPARATELY; the defect is only
     // visible in the mid-state where a waiter is parked AND the limit rises AND a newcomer arrives.
     @Test
-    fun `raising the limit admits the parked waiter, not the newcomer - DR-147`() = runTest {
+    fun `raising the limit admits the parked waiter, not the newcomer`() = runTest {
         var limit = 1
         val gate = InflightGate({ limit })
         val holder = gate.admittedSlot() // holds the only slot

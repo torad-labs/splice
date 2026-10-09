@@ -425,7 +425,7 @@ class RateLimitCooldownTest {
     }
 
     @Test
-    fun `a body naming no reset keeps the V4-46 wording and still claims nothing`() {
+    fun `a body naming no reset keeps its wording and still claims nothing`() {
         val cooldown = RateLimitCooldown(ElapsedClock { 0L }, WallClock { 0L })
         cooldown.rateLimitedPlan(
             pushbackMs = 5_301_000L,
@@ -601,7 +601,7 @@ class RateLimitCooldownBudgetTest {
     }
 
     @Test
-    fun `UP-001 - a retryable 503 with a long retry-after DOES arm the shared cooldown`() = runTest {
+    fun `a retryable 503 with a long retry-after DOES arm the shared cooldown`() = runTest {
         for (status in listOf(HttpStatusCode.ServiceUnavailable, HttpStatusCode.RequestTimeout)) {
             val calls = AtomicInteger()
             val cooldown = RateLimitCooldown(ElapsedClock { 0L })

@@ -94,12 +94,12 @@ class UpstreamClientThreadRefusalTest {
         PostContext(url = url, auth = fakeAuth, extraHeaders = { emptyMap() }, onRetry = RetryNotice { retries += it })
 
     @Test
-    fun `a thread refused before the request was written whole is a connect-phase failure - V4-307`() {
+    fun `a thread refused before the request was written whole is a connect-phase failure`() {
         assertEquals(TransportFailurePhase.CONNECT, TransportFailures().classifyTransport(refusedBeforeSend))
     }
 
     @Test
-    fun `a thread refused after the request was written whole is a possible duplicate - V4-307`() {
+    fun `a thread refused after the request was written whole is a possible duplicate`() {
         val failures = TransportFailures()
 
         val phase = failures.rethrowUnlessRetryableTransport(refused, deadlineHit = false, lastAttempt = false)
@@ -109,7 +109,7 @@ class UpstreamClientThreadRefusalTest {
     }
 
     @Test
-    fun `a refused thread start is named with what it stopped, read from the thread it was for - V4-307`() {
+    fun `a refused thread start is named with what it stopped, read from the thread it was for`() {
         val taskRunner = okHttpCanceled(refusedFor("okhttp3.internal.concurrent.TaskRunner\$RealBackend"))
         val okio = okHttpCanceled(RefusedBeforeSend(refusedFor("okio.AsyncTimeout\$Companion")))
 
@@ -119,7 +119,7 @@ class UpstreamClientThreadRefusalTest {
     }
 
     @Test
-    fun `a post whose connect was refused a thread retries it by name, never as a possible duplicate - V4-307`() = runTest {
+    fun `a post whose connect was refused a thread retries it by name, never as a possible duplicate`() = runTest {
         val calls = AtomicInteger()
         val engine = MockEngine {
             if (calls.incrementAndGet() == 1) throw refusedBeforeSend
@@ -134,7 +134,7 @@ class UpstreamClientThreadRefusalTest {
     }
 
     @Test
-    fun `a post refused on every attempt ends naming the refusal - V4-307`() = runTest {
+    fun `a post refused on every attempt ends naming the refusal`() = runTest {
         val engine = MockEngine { throw refused }
 
         val ending = runCatching { clientOver(engine).posted(ctx(mutableListOf()), "{}") { "ok" } }.exceptionOrNull()
@@ -147,7 +147,7 @@ class UpstreamClientThreadRefusalTest {
     // (AsyncTimeout.insertIntoQueue starts the watchdog with no handler, okio 3.17.0). The retry sends the
     // request again, so it is a possible duplicate, whatever the refusal was.
     @Test
-    fun `a thread refused at the response read, after the upstream took the request, retries as a possible duplicate - V4-307`() {
+    fun `a thread refused at the response read, after the upstream took the request, retries as a possible duplicate`() {
         LoopbackUpstream().use { upstream ->
             val retries = CopyOnWriteArrayList<String>()
             val client = UpstreamClient(
@@ -177,7 +177,7 @@ class RefusedThreadStartPostTest {
 
     @Test
     @Timeout(CAPS_BACKSTOP_S)
-    fun `a post whose connection takes a refused thread start retries it by name and completes - V4-307`() {
+    fun `a post whose connection takes a refused thread start retries it by name and completes`() {
         LoopbackUpstream().use { upstream ->
             // This checks refusal classification and connection reuse, not host scheduling or cold class loading.
             // The transport's socket timeout and the JUnit backstop remain real.
@@ -274,7 +274,7 @@ private class CapturedRefusalSockets : SocketFactory() {
 class AfterRefusedThreadStartTest {
 
     @Test
-    fun `posts after a refused thread start still connect, over one pooled connection - V4-307`() {
+    fun `posts after a refused thread start still connect, over one pooled connection`() {
         LoopbackUpstream().use { upstream ->
             val client = refusalClient()
             val restore = refuseTaskRunnerThreads()
@@ -304,7 +304,7 @@ class OkioTimeoutsRefusedTest {
 
     @Test
     @Timeout(CAPS_BACKSTOP_S) // a cap that rode on okio would hang here, and must fail the suite, not wedge it
-    fun `with okio's timeouts off, the turn's caps still end a post the upstream never answers - V4-307`() {
+    fun `with okio's timeouts off, the turn's caps still end a post the upstream never answers`() {
         LoopbackUpstream(answering = false).use { upstream ->
             leaveOkioTimeoutsOff()
             val client = UpstreamClient(

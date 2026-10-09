@@ -153,7 +153,7 @@ class UpstreamFailureClassifierTest {
     // own "try again". Negation now covers its whole clause; a separate clause stays a real
     // invitation to retry.
     @Test
-    fun `long-form negation suppresses across its clause, a fresh clause does not - DR-45`() {
+    fun `long-form negation suppresses across its clause, a fresh clause does not`() {
         listOf(
             "do not attempt to resubmit this request or try again",
             "you must not resend this exact request and try again",
@@ -166,7 +166,7 @@ class UpstreamFailureClassifierTest {
     // deterministic restriction — bare "unavailable" is not transient wording. Qualified service
     // outages keep their retry.
     @Test
-    fun `bare unavailable is deterministic, qualified service outages stay transient - DR-10`() {
+    fun `bare unavailable is deterministic, qualified service outages stay transient`() {
         assertFalse(sse("The selected model is unavailable in your region").transient)
         listOf(
             "service unavailable",
@@ -178,7 +178,7 @@ class UpstreamFailureClassifierTest {
     // DR-10 redo, the provenance law: a structured code decides via the exact retryable
     // allowlist, and free text can never overrule it in either direction.
     @Test
-    fun `a structured code beats free text in both directions - DR-10`() {
+    fun `a structured code beats free text in both directions`() {
         val deterministic = UpstreamFailureClassifier.classify(
             FailureSource.SSE,
             "invalid_parameter The selected model is unavailable in your region, please try again",

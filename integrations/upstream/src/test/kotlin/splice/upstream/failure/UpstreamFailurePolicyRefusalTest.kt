@@ -47,7 +47,7 @@ class UpstreamFailurePolicyRefusalTest {
     // Control: an UNKNOWN status-less code keeps DR-10's verdict (api_error, non-transient) — the
     // refusal allowlist is exact, not a heuristic on wording.
     @Test
-    fun `an unknown status-less code is still a non-transient api_error - DR-10 control`() {
+    fun `an unknown status-less code is still a non-transient api_error`() {
         val r = UpstreamFailureClassifier.classify(FailureSource.SSE, "The prompt was rejected.", code = "quantum_flux")
         assertEquals(ErrorType.API_ERROR, r.type, "$r")
         assertFalse(r.transient, "$r")
@@ -65,7 +65,7 @@ class UpstreamFailurePolicyRefusalTest {
     }
 
     @Test
-    fun `real auth failure wordings keep their classification - DR-72 control`() {
+    fun `real auth failure wordings keep their classification`() {
         listOf(
             "Unauthorized",
             "authentication_error token check failed",
@@ -84,7 +84,7 @@ class UpstreamFailurePolicyRefusalTest {
     // (the shape vendor error.code fields take by construction) plus the -isation spelling and
     // authz stopped matching, the exact mirror image of the bug DR-72 fixed.
     @Test
-    fun `snake_case authorization codes are auth failures - DR-83`() {
+    fun `snake_case authorization codes are auth failures`() {
         listOf("authorization_error", "authorization_required", "authorization_failed").forEach { code ->
             val r = UpstreamFailureClassifier.classify(FailureSource.SSE, "request rejected", code = code)
             assertEquals(ErrorType.AUTHENTICATION, r.type, code)
@@ -92,7 +92,7 @@ class UpstreamFailurePolicyRefusalTest {
     }
 
     @Test
-    fun `authorisation spelling and authz wordings are auth failures - DR-83`() {
+    fun `authorisation spelling and authz wordings are auth failures`() {
         listOf("Authorisation required", "authorisation failed", "authz denied").forEach { text ->
             val r = UpstreamFailureClassifier.classify(FailureSource.SSE, text)
             assertEquals(ErrorType.AUTHENTICATION, r.type, text)

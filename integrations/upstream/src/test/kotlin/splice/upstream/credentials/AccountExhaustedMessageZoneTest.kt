@@ -56,7 +56,7 @@ class AccountExhaustedMessageZoneTest {
     }
 
     @Test
-    fun `the words around the time keep V4-234's limits, so no dash and no stop phrase enters`() {
+    fun `the words around the time carry no dash and no stop phrase`() {
         val message = inZone("Asia/Kolkata") { Selection.Exhausted(MUSE_RESET).message }
 
         assertFalse('—' in message, "no em dash in text the client shows: $message")

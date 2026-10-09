@@ -118,7 +118,7 @@ class TransportFailureReasonTest {
     private val stall = RequestWriteStalled(90_000, java.net.SocketTimeoutException("timeout"))
 
     @Test
-    fun `a stalled write is never said to have taken none of the request - V4-289 (4)`() {
+    fun `a stalled write is never said to have taken none of the request`() {
         val text = reason(stall, "https://api.x.ai/v1/responses")
 
         assertFalse(text.contains("took none"), text)
@@ -126,7 +126,7 @@ class TransportFailureReasonTest {
     }
 
     @Test
-    fun `a stalled write's line promises no resend, because the last attempt's ending says it too - V4-289 (5)`() {
+    fun `a stalled write's line promises no resend, because the last attempt's ending says it too`() {
         val text = reason(stall, "https://api.x.ai/v1/responses")
 
         assertFalse(text.contains("resend"), text)

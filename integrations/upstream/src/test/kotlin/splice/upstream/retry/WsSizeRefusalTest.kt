@@ -66,7 +66,7 @@ class WsSizeRefusalTest {
         }
 
     @Test
-    fun `the same 400 with no WebSocket refusal before it keeps V4-62's retries`() = runTest {
+    fun `the same 400 with no WebSocket refusal before it keeps its retries`() = runTest {
         val sent = send(HttpStatusCode.BadRequest, sizeRefused = false)
         val read = UpstreamFailureClassifier.classify(FailureSource.HTTP, sent.failure.body, sent.failure.status)
 

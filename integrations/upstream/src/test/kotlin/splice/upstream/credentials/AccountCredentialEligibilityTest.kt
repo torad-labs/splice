@@ -306,7 +306,7 @@ class AccountCredentialEligibilityTest {
     // (never suppresses). Pinned here because this is where the identity is actually produced from
     // a real path; the latch-level half lives in InvalidGrantLatchTest.
     @Test
-    fun `an unreadable credential file yields no identity, never a stale one - V4-70`() {
+    fun `an unreadable credential file yields no identity, never a stale one`() {
         val missing = java.nio.file.Path.of("/nonexistent/dir/credential-that-cannot-be-read.json")
         val evidence = CredentialFileEvidenceReader.read(missing)
         assertNull(evidence.identity, "an unreadable file must produce UNKNOWN, not an identity")

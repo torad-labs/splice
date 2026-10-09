@@ -105,7 +105,7 @@ class RateLimitCooldownResetWordsTest {
     }
 
     @Test
-    fun `V4-61's wording and V4-234's limits stay, so the reset is reported and no dash or stop phrase enters`() {
+    fun `the reset is reported rather than asserted as a deadline, with no dash or stop phrase`() {
         val body = inZone("Asia/Kolkata") { failFast(armedBy(MUSE_BODY)) }
 
         assertTrue("holding retries for 120s, and the upstream reports its quota window resets" in body, body)

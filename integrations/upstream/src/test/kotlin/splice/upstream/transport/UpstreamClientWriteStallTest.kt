@@ -123,13 +123,13 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
 
     // V4-289 (1): the write returns once the body is in the kernel, and the header wait ran on the turn cap.
     @Test
-    fun `a request that fits in the send buffer and is never read is cut at the write timeout - V4-289 (1)`() {
+    fun `a request that fits in the send buffer and is never read is cut at the write timeout`() {
         assertCutAndRetried(upstream(then = Serving.Reads(0)), BUFFERED_BODY)
     }
 
     // V4-289 (2): every hosted head is https.
     @Test
-    fun `the same request over TLS is cut at the write timeout - V4-289 (2)`() {
+    fun `the same request over TLS is cut at the write timeout`() {
         assertCutAndRetried(upstream(then = Serving.Reads(0), tls = true), BUFFERED_BODY, tls = true)
     }
 
@@ -137,7 +137,7 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
     // waited, with no limit, for the TLS record lock the stalled writer held; every other write timeout in
     // the process waited behind it.
     @Test
-    fun `a TLS write the upstream never takes is cut, and holds up no other connection's cut - V4-289 (2)`() {
+    fun `a TLS write the upstream never takes is cut, and holds up no other connection's cut`() {
         val tlsUpstream = upstream(then = Serving.Reads(0), tls = true)
         val plainUpstream = upstream(then = Serving.Reads(0))
         val tls = client(attempts = 1, sockets = UpstreamSockets(trust = loopback.trust))
@@ -157,7 +157,7 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
 
     // V4-289 (3): the retry took another idle connection from the pool, on the same dead path.
     @Test
-    fun `the retry after a stall goes out on a new connection, never another pooled one - V4-289 (3)`() {
+    fun `the retry after a stall goes out on a new connection, never another pooled one`() {
         val warm = Serving.Answers(WARM_MS, requests = 1)
         val upstream = upstream(warm, warm, then = Serving.Answers(0))
         val client = client()
@@ -175,7 +175,7 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
 
     // V4-289 (4): OkHttp's write timeout is per 64 KiB write, so a link slower than that was cut while it flowed.
     @Test
-    fun `a request the upstream keeps taking slowly is never cut - V4-289 (4)`() {
+    fun `a request the upstream keeps taking slowly is never cut`() {
         val upstream = upstream(then = Serving.Answers(0, pauseMs = SLOW_PAUSE_MS))
         val retries = CopyOnWriteArrayList<String>()
         val client = client(sockets = UpstreamSockets(sendBufferBytes = SLOW_SEND_BUFFER))
@@ -190,7 +190,7 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
     // in it with nothing accepted is still cut at the bound, over TLS too (the cut takes no TLS lock); a
     // request that fits in the buffers waits for the turn cap, as it did before the row.
     @Test
-    fun `with no send-queue table a waiting write is still cut, and a buffered one is never guessed at - V4-289`() {
+    fun `with no send-queue table a waiting write is still cut, and a buffered one is never guessed at`() {
         val missing = SendQueues { null }
         val tlsUpstream = upstream(then = Serving.Reads(0), tls = true)
         val plainUpstream = upstream(then = Serving.Reads(0))

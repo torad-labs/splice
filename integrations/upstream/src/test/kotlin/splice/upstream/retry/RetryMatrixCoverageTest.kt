@@ -184,7 +184,7 @@ class RetryMatrixCoverageTest {
     }
 
     @Test
-    fun `a refusal and a 5xx keep the classes the dialects hand them to - CX-07 CX-08`() {
+    fun `a refusal and a 5xx keep the classes the dialects hand them to`() {
         // W4-A's far end, retired here from w4_a_refusal_honesty.ts (2026-09-21). That wall checked
         // BOTH ends of one chain: the dialect arms read a refusal or a 5xx into a FailureCause, and
         // these two pairs are what those causes must still RESOLVE to. One end moving while the

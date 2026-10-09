@@ -86,7 +86,7 @@ class CredentialLockTest {
     }
 
     @Test
-    fun `a peer holding the lock past the budget degrades to unlocked - SH-06`(@TempDir dir: Path) = runBlocking {
+    fun `a peer holding the lock past the budget degrades to unlocked`(@TempDir dir: Path) = runBlocking {
         // The live-slow-peer case: a second channel holds the sibling .lock for LONGER than the
         // budget. withLock must return within budget+slack, log the honest degrade line, and the
         // block must still have run (bounded-and-unlocked beats hung; G1's layers own the race).
@@ -122,7 +122,7 @@ class CredentialLockTest {
     }
 
     @Test
-    fun `a peer releasing inside the budget hands the lock over normally - SH-06`(@TempDir dir: Path) = runBlocking {
+    fun `a peer releasing inside the budget hands the lock over normally`(@TempDir dir: Path) = runBlocking {
         val path = dir.resolve("auth.json")
         Files.writeString(path, "{}")
         val lockPath = dir.resolve("auth.json.lock")

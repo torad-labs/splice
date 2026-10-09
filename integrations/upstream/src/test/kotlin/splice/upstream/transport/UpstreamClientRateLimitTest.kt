@@ -525,7 +525,7 @@ class UpstreamClientRateLimitTest {
     // still arm local follower protection, without writing account-selection unavailability.
 
     @Test
-    fun `UP-001 - a non-retryable 403 with a long retry-after does not arm the shared cooldown`() = runTest {
+    fun `a non-retryable 403 with a long retry-after does not arm the shared cooldown`() = runTest {
         val calls = AtomicInteger()
         val engine = MockEngine {
             calls.incrementAndGet()

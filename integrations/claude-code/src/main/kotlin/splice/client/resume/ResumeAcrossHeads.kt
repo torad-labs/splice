@@ -137,11 +137,21 @@ public sealed class SessionAdoption {
     public data class Invalid(public val cause: String) : SessionAdoption()
 }
 
-/** The calling head's model and its whole roster: what a transcript's rows are moved onto, and what leaves them alone.
- *  One value because neither means anything to the rewrite without the other. */
+/** The calling head's model and its whole roster, and the model choice they make: a row on a served model stays, and
+ *  the rest move onto the pinned one. A null roster is a head whose client picks its own models (V4-449): no roster
+ *  exists to move onto, so a row on a Claude model stays and a row on another vendor's model moves, without its
+ *  thinking, onto the newest Claude model its transcript used. With no Claude row there is nothing to move onto: the
+ *  row still loses its thinking (another vendor's signature fails upstream) and keeps its model, which the picker
+ *  replaces. */
 public class CallingRoster(internal val pinned: String, private val served: Collection<String>?) {
-    internal fun rewrite(rewriter: TranscriptModelRewrite, transcript: Path): Int =
-        rewriter.rewrite(transcript, pinned, served)
+    /** Whether a row on a model stays where it is: a served model (the pinned one included), else a Claude one. */
+    internal fun kept(): KeptModel = served?.let { roster ->
+        val names = roster.toSet() + pinned
+        KeptModel { model -> model in names }
+    } ?: KeptModel { model -> NativeClaude.isModel(model) }
+
+    /** The model a moved row takes: the pinned one, or [newestClaude] where the client picks its own. */
+    internal fun target(newestClaude: String?): String? = if (served != null) pinned else newestClaude
 }
 
 public class ResumeAcrossHeads(
@@ -203,7 +213,7 @@ public class ResumeAcrossHeads(
      *  session still resumes, on the head's default, with Claude Code's one-line notice), so it is
      *  said in the log and the launch goes on. */
     private fun rewriteInPlace(transcript: Path, roster: CallingRoster, log: LogSink): Int {
-        val outcome = Cancellables.runCatchingCancellable { roster.rewrite(rewriter, transcript) }
+        val outcome = Cancellables.runCatchingCancellable { rewriter.rewrite(transcript, roster) }
         outcome.exceptionOrNull()?.let { cause ->
             log(
                 "[resume] $transcript could not be moved onto ${roster.pinned} (${SafeFailureText.render(cause)}); " +
@@ -276,7 +286,7 @@ public class ResumeAcrossHeads(
             Files.copy(plan.from, target, REPLACE_EXISTING)
             val sourceSubdir = plan.from.resolveSibling(sessionId)
             if (Files.isDirectory(sourceSubdir, NOFOLLOW_LINKS)) copyTree(sourceSubdir, targetSubdir, log)
-            roster.rewrite(rewriter, target)
+            rewriter.rewrite(target, roster)
         }
         val rewritten = copied.getOrElse { cause ->
             return SessionAdoption.Refused(sessionId, plan.fromHead, SafeFailureText.render(cause))

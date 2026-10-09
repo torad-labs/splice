@@ -24,6 +24,14 @@ internal fun interface KeptModel {
     operator fun invoke(model: String?): Boolean
 }
 
+/** Which models are Claude's own. Discovery IDs use a head's double-hyphen namespace, not the native Claude model
+ *  namespace. */
+internal object NativeClaude {
+    private const val ID_PREFIX = "claude-"
+
+    fun isModel(model: String?): Boolean = model?.startsWith(ID_PREFIX) == true && "--" !in model
+}
+
 /** Which rows stay ([keeps]) and the model a moved row takes ([target]; null keeps the row's own). */
 internal data class RowPolicy(val target: String?, val keeps: KeptModel)
 

@@ -57,7 +57,6 @@ import java.security.MessageDigest
 internal const val TRANSCRIPT_SUFFIX: String = ".jsonl"
 
 /** Anthropic's model namespace: a row there is a model a client on its own login can restore. */
-private const val CLAUDE_ID_PREFIX = "claude-"
 
 /** Buffer between a rewrite's rows and its staged file. */
 private const val WRITE_BUFFER_BYTES = 1 shl 20
@@ -106,17 +105,18 @@ public class TranscriptModelRewrite(
      *  it is, so it stays (v0.4.0 review: claude-splice's tree is the operator's main
      *  ~/.claude/projects, and moving its opus rows onto fable rewrote history for nothing). Returns
      *  the number of rows changed; throws [IOException] on the first file that could not be read or
-     *  written. A null [served] is a head whose client picks its own models ([clientPicked]). */
-    public fun rewrite(transcript: Path, pinnedModel: String, served: Collection<String>?): Int {
+     *  written. A null [served] is a head whose client picks its own models ([CallingRoster]). */
+    public fun rewrite(transcript: Path, pinnedModel: String, served: Collection<String>?): Int =
+        rewrite(transcript, CallingRoster(pinnedModel, served))
+
+    /** [rewrite] with the calling head's [roster] deciding which rows stay and which model a moved row takes. */
+    internal fun rewrite(transcript: Path, roster: CallingRoster): Int {
         val subdir = transcript.resolveSibling(transcript.fileName.toString().removeSuffix(TRANSCRIPT_SUFFIX))
         val children = if (Files.isDirectory(subdir, NOFOLLOW_LINKS)) jsonlUnder(subdir) else emptyList()
         val files = listOf(transcript) + children
-        val kept = served?.let { roster ->
-            val names = roster.toSet() + pinnedModel
-            KeptModel { model -> model in names }
-        } ?: clientPicked
+        val kept = roster.kept()
         val surveys = files.map { survey(it, kept) }
-        val policy = RowPolicy(served?.let { pinnedModel } ?: surveys.first().newestClaude, kept)
+        val policy = RowPolicy(roster.target(surveys.first().newestClaude), kept)
         val rewritten = surveys.sumOf { it.changed(policy) }
         if (rewritten == 0) {
             originals.rememberIfKept(transcript)
@@ -128,17 +128,6 @@ public class TranscriptModelRewrite(
         surveys.forEach { publish(it, policy) }
         return rewritten
     }
-
-    /** V4-449: where the client picks its own models no roster exists to move onto. A row on a Claude model
-     *  stays as it is; a row on another vendor's model moves, without its thinking, onto the newest Claude
-     *  model this transcript used ([Survey.newestClaude] of the transcript itself). With no Claude row there
-     *  is nothing to move onto: the row still loses its thinking (another vendor's signature fails upstream)
-     *  and keeps its model, which the picker replaces. */
-    private val clientPicked = KeptModel { model -> isNativeClaude(model) }
-
-    /** Discovery IDs use a head's double-hyphen namespace, not the native Claude model namespace. */
-    private fun isNativeClaude(model: String?): Boolean =
-        model?.startsWith(CLAUDE_ID_PREFIX) == true && "--" !in model
 
     /** One pass over a file, as counts: how many rows a move takes and how many of those hold thinking, the last
      *  native Claude model an assistant row names, and the digest of the bytes read. No row is kept: the write
@@ -163,7 +152,7 @@ public class TranscriptModelRewrite(
                 val shape = rows.read(row.text())
                 if (shape is LineShape.Assistant) {
                     val model = JsonScalars.str(shape.message, Keys.MODEL)
-                    if (isNativeClaude(model)) survey.newestClaude = model
+                    if (NativeClaude.isModel(model)) survey.newestClaude = model
                 }
                 val move = rows.moveOf(shape, kept)
                 if (move != null) {

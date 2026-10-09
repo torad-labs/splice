@@ -28,9 +28,6 @@ note: "A figure priced from a rate card is an estimate of API cost, and on a pla
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
-ignores:
-  # the sole spelling site, exempt BY PATH so no other file can claim the exemption
-  - features/usage/src/main/kotlin/splice/usage/ApiCostText.kt
 rule:
   any:
     - kind: string_content

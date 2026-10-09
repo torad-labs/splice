@@ -15,13 +15,5 @@ message: "head/ must not call coalesced.flush() directly — ClientChannel.flush
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
-ignores:
-  - features/turns/src/main/kotlin/splice/head/round/**
-  - features/turns/src/main/kotlin/splice/head/wire/**
-  - features/turns/src/main/kotlin/splice/head/usage/**
-  - features/turns/src/main/kotlin/splice/head/pipeline/**
-  - features/turns/src/main/kotlin/splice/head/reasoning/**
-  - features/turns/src/main/kotlin/splice/head/compact/**
-  - features/turns/src/main/kotlin/splice/head/perf/**
 rule:
   pattern: $C.coalesced.flush()

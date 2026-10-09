@@ -254,12 +254,9 @@ private class TopologyChecks(
 
     private fun rosters(): List<TopologyFinding> = topology.heads.mapNotNull { (key, head) ->
         topology.providers[head.provider]?.let { provider ->
-            val served = discovered.forHead(key)
-            val attempt = Cancellables.runCatchingCancellable { provider.catalogFor(head, discovered = served) }
-            attempt.exceptionOrNull()?.let { failure ->
-                // SAFE-RENDER-EXEMPT[2026-09-18]: catalogFor reads no file; its failures are its own require() texts, composed from model ids and slot names of the requested topology, never file bytes.
+            provider.catalogRefusal(head, discovered.forHead(key))?.let { refusal ->
                 val field = if (head.modelSlots.isEmpty()) "models" else "model_slots"
-                TopologyFinding("heads.$key.$field", failure.message ?: "the head's model mapping is invalid")
+                TopologyFinding("heads.$key.$field", refusal)
             }
         }
     }

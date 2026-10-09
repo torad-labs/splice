@@ -238,11 +238,12 @@ public data class ProviderConfig(
         contextWindowOverride: Long? = null,
         discovered: List<DiscoveredModel> = emptyList(),
     ): ModelCatalog {
+        val refusal = catalogRefusal(head, discovered)
+        require(refusal == null) { refusal.orEmpty() }
         val selectedModels = withListedFacts(
-            withHeadRates(modelsFor(head, rosterWith(discovered)), head.rates),
+            withHeadRates(rowsFor(head, discovered), head.rates),
             discovered,
         )
-        head.contextWindow?.let { require(it > 0) { "head context_window must be positive" } }
         val window = contextWindowOverride?.takeIf { it > 0 } ?: head.contextWindow
         return ModelCatalog(
             // The pinned row's window IS the launch env, so the catalog needs it to know what the
@@ -269,6 +270,26 @@ public data class ProviderConfig(
             open = clientPicksModels,
         )
     }
+
+    /** Why [head] has no catalog on this provider, in the words an operator reads, or null when [catalogFor] builds
+     *  one. The same decisions [catalogFor] takes, asked as a value: a writer that validates a topology names the
+     *  refusal itself and catches nothing. */
+    public fun catalogRefusal(head: HeadConfig, discovered: List<DiscoveredModel> = emptyList()): String? {
+        val roster = HeadModels(this).select(head, rosterWith(discovered))
+        if (roster is HeadModels.Roster.Refused) return roster.detail
+        return when {
+            head.contextWindow?.let { it <= 0 } == true -> "head context_window must be positive"
+            !clientPicksModels && rowsFor(head, discovered).isEmpty() -> "a catalog needs at least one picker model"
+            else -> null
+        }
+    }
+
+    /** The rows [modelsFor] selected, once [catalogRefusal] has found no reason against them. */
+    private fun rowsFor(head: HeadConfig, discovered: List<DiscoveredModel>): List<ModelEntry> =
+        when (val roster = HeadModels(this).select(head, rosterWith(discovered))) {
+            is HeadModels.Roster.Rows -> roster.entries
+            is HeadModels.Roster.Refused -> emptyList()
+        }
 
     /** Folds a head's own card over the provider entries it names (V4-37).
      *
@@ -336,24 +357,25 @@ public data class ProviderConfig(
 
     /** The pinned model's own row, windowed like any undeclared id. Not a discovered row: the
      *  operator named it, so it is the head's tier model too. */
-    private fun pinnedOnly(id: String): ModelEntry = ModelEntry(id = id, contextWindow = windowFor(DiscoveredModel(id)))
+    internal fun pinnedOnly(id: String): ModelEntry =
+        ModelEntry(id = id, contextWindow = windowFor(DiscoveredModel(id)))
 
     /** Whether an endpoint can list this provider's models at all: a local runtime and a provider
      *  that forwards the client's own login are never asked, and `exclude = ["*"]` admits nothing.
      *  Where none can, a model no row declares is a misspelling, never an endpoint's omission. */
-    private val listsModels: Boolean
+    internal val listsModels: Boolean
         get() = !isLocal && !clientPicksModels && "*" !in discovery.exclude
 
     /** A provider that forwards the client's own Claude login: Claude Code picks the models, from its own
      *  picker, so a head on it authors no model list and its catalog is open (operator, 2026-09-30:
      *  "stop hardcoding models"). */
-    private val clientPicksModels: Boolean
+    internal val clientPicksModels: Boolean
         get() = auth.kind == AuthKind.Client.wire
 
     /** [roster] with a row for [pinned] when no row serves it under its own spelling. A provider that
      *  lists no models keeps the pre-discovery rule: its declared rows are the catalog, and only an
      *  empty one gains the pinned row. */
-    private fun withPinned(roster: List<ModelEntry>, pinned: String): List<ModelEntry> {
+    internal fun withPinned(roster: List<ModelEntry>, pinned: String): List<ModelEntry> {
         val bare = ModelTierSuffix.strip(pinned)
         val served = roster.any { ModelTierSuffix.strip(it.id) == bare }
         val declaredOnly = roster.isNotEmpty() && !listsModels
@@ -370,58 +392,6 @@ public data class ProviderConfig(
         val model = discovered.firstOrNull { it.id == entry.id }
         val published = model?.maxContextWindow?.takeIf { it > 0 } ?: model?.contextWindow?.takeIf { it > 0 }
         return published?.let { minOf(window, it) } ?: window
-    }
-
-    private fun modelsFor(head: HeadConfig, roster: List<ModelEntry>): List<ModelEntry> {
-        // Legacy pins/allowlists never constrain a forwarded login. Provider rows are labels and rates,
-        // not the client's model surface; launches and materialization leave that surface untouched.
-        if (clientPicksModels) return roster
-        require(head.pinnedModel.isNotBlank()) {
-            "pinned_model is required on a head whose provider is not your own Claude login"
-        }
-        // The head's pinned model always has a row (2026-09-23): it is the one model the operator
-        // named, and a catalog without it refuses every turn the head was launched to serve. With no
-        // declared rows the roster is whatever the endpoint listed, which can omit the pinned id — a
-        // retired model, a discovery filter, an alias the roster does not spell, a start it missed.
-        head.modelSlots.forEach { (slot, id) ->
-            require(head.models == null || head.models.any { it.id == id }) {
-                "model_slots.$slot names a model outside the head models allowlist; add it to models or remove the tier"
-            }
-            require(roster.any { it.id == id } || listsModels) {
-                "model_slots.$slot names model '$id' neither declared nor discovered by provider '${head.provider}'"
-            }
-        }
-        val requested = head.models ?: return withPinned(roster, head.pinnedModel)
-        require(requested.isNotEmpty()) { "head model list must not be empty" }
-        require(requested.map { it.id }.distinct().size == requested.size) { "head model list contains duplicates" }
-        val slots = requested.mapNotNull { it.slot?.lowercase() }
-        require(slots.all { it in headModelSlots }) { "unknown Claude model slot" }
-        require(slots.distinct().size == slots.size) { "head model slots contain duplicates" }
-        val byId = roster.associateBy(ModelEntry::id)
-        // A row the head's allowlist names is the operator's decision, whichever list supplied it, so
-        // it is DECLARED for this head: it keeps the allowlist's order and may stand behind a tier.
-        // An id the roster lacks is not served at this start. Where an endpoint could have listed it,
-        // that is the endpoint's doing (retired, filtered, or not answered in time) and the row is
-        // dropped, never the head; HeadBoot names it in daemon.log. Where nothing could have listed it,
-        // it is a misspelling, refused as it was before discovery existed.
-        val selected = requested.mapNotNull { model ->
-            byId[model.id]?.copy(discovered = false) ?: run {
-                require(listsModels) {
-                    "head model '${model.id}' is not declared by provider '${head.provider}', which lists no models"
-                }
-                pinnedOnly(model.id).takeIf { model.id == head.pinnedModel }
-            }
-        }
-        // The failing id can come from OUTSIDE the TOML: resolveHeadConfig swaps pinned_model with
-        // the pinnedModel/grokModel knob for oauth heads, and env/config.json/PATCH override that
-        // knob — so a self-consistent splice.toml still fails here. Name the id, the roster, and
-        // the provenance, or the operator greps the TOML for a value that is not in it (DR-44a).
-        require(selected.any { it.id == head.pinnedModel }) {
-            "pinned model '${head.pinnedModel}' is not in the head model list " +
-                "[${selected.joinToString(", ") { it.id }}]; it was set by pinned_model in splice.toml " +
-                "unless the pinnedModel/grokModel knob (env, config.json, or PATCH) overrode it"
-        }
-        return selected
     }
 }
 

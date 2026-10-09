@@ -4,7 +4,7 @@
 // changed what it saw. This scanner walks the bytes once, tracks depth, decodes string escapes
 // (\n \t \r \b \f and the quoted pair; \uXXXX is kept literal, it can spell neither /login nor a
 // label) and returns the value of the depth-1 "prompt" key, whatever comes before or after it. No
-// jq, no python: the hook's own no-dependency rule. Byte-wise under LC_ALL=C so a long paste costs
+// jq, no interpreter: the hook's own no-dependency rule. Byte-wise under LC_ALL=C so a long paste costs
 // one pass; the caller skips the scan unless the raw input mentions /login or the sentinel at all.
 package splice.client.login
 

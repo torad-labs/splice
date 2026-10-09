@@ -15,6 +15,7 @@ package splice.launch.recipe
 import splice.client.ClaudeConfigMaterializer
 import splice.client.MaterializeSpec
 import splice.client.TrustedLaunch
+import splice.client.resume.CallingRoster
 import splice.client.resume.HeadBoundedContinue
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.SessionAdoption
@@ -161,8 +162,7 @@ public class LaunchService(
             spec.trees.own,
             spec.trees.siblings,
             sessionId,
-            spec.pinnedModel,
-            spec.availableModelIds.takeUnless { spec.forwardClientAuth },
+            CallingRoster(spec.pinnedModel, spec.availableModelIds.takeUnless { spec.forwardClientAuth }),
         )
     }
 

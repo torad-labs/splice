@@ -126,14 +126,14 @@ internal object LoginProcesses {
 
     /** The shim's exact invocation (`java -jar <jar> login <head>`, a real java executable), waiting;
      *  [hookStarted] marks it the way the hook marks every login it spawns. */
-    fun pendingLogin(
-        recorder: Path,
-        jar: Path,
-        ignoreTerm: Boolean,
-        hookStarted: Boolean = true,
-        word: String = recorder.toString(),
-        label: String? = null,
-    ): Process {
+    fun pendingLogin(recorder: Path, jar: Path, ignoreTerm: Boolean, word: String = recorder.toString()): Process =
+        launch(jar, ignoreTerm, hookStarted = true, word = word, label = null)
+
+    /** The same sign-in started from a terminal: nothing marks it as the hook's. */
+    fun terminalLogin(recorder: Path, jar: Path, word: String = recorder.toString(), label: String? = null): Process =
+        launch(jar, ignoreTerm = false, hookStarted = false, word = word, label = label)
+
+    private fun launch(jar: Path, ignoreTerm: Boolean, hookStarted: Boolean, word: String, label: String?): Process {
         val argv = mutableListOf(
             javaBin,
             "-Djdk.console=java.base",
@@ -197,11 +197,10 @@ private const val SPAWN_POLL_MS = 10L
 
 class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
 
-    private fun spec(outcomeFile: String = "/nonexistent/receipt") = LoginHookSpec(
+    private fun spec(outcomeFile: String = "/nonexistent/receipt") = HeadLogin(
         loginCommand = "claude-splice login",
         signInLabel = HOSTILE_LABEL,
         viaBrowser = false, // never true here: the browser branch SPAWNS loginCommand
-        sentinel = "SPLICE_CODEX_LOGIN",
         outcomeFile = outcomeFile,
         canCapturePaste = true,
     )
@@ -224,11 +223,10 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
 
     /** The browser branch SPAWNS loginCommand: here it is a recorder script, so the spawn is
      *  observable and harmless. Its path is the head word the pending-process pattern is built from. */
-    private fun browserSpec(recorder: Path) = LoginHookSpec(
+    private fun browserSpec(recorder: Path) = HeadLogin(
         loginCommand = "$recorder login",
         signInLabel = "Codex (ChatGPT)",
         viaBrowser = true,
-        sentinel = "SPLICE_CODEX_LOGIN",
         outcomeFile = "/nonexistent/receipt",
         canCapturePaste = false,
         headKey = "codex",
@@ -467,13 +465,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
         val recorder = recorder(tmp)
         val hook = write(tmp, "login-foreign.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
         val jar = LoginProcesses.parkJar(tmp)
-        val terminal = LoginProcesses.pendingLogin(
-            recorder,
-            jar,
-            ignoreTerm = false,
-            hookStarted = false,
-            label = "work",
-        )
+        val terminal = LoginProcesses.terminalLogin(recorder, jar, label = "work")
         try {
             val env = mapOf("SPLICE_JAR" to jar.toString())
             val ran = run("bash", hook.toString(), stdin = """{"prompt":"/login --label work"}""", dir = tmp, env = env)
@@ -495,8 +487,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
         val jar = LoginProcesses.parkJar(tmp)
         val env = mapOf("SPLICE_JAR" to jar.toString())
         // `splice login codex` in a terminal: named and left alone, nothing started.
-        val terminal =
-            LoginProcesses.pendingLogin(recorder, jar, ignoreTerm = false, hookStarted = false, word = "codex")
+        val terminal = LoginProcesses.terminalLogin(recorder, jar, word = "codex")
         try {
             val reason = decision(run("bash", hook.toString(), stdin = """{"prompt":"/login"}""", dir = tmp, env = env))
             assertTrue(reason.startsWith("A Codex (ChatGPT) sign-in started outside this session"), reason)
@@ -655,11 +646,10 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
 // a fresh session long after auth was fixed by another path. These run the real script.
 class LoginHookReceiptAgeTest(@param:TempDir private val tmp: Path) {
 
-    private fun freshSpec(outcomeFile: String) = LoginHookSpec(
+    private fun freshSpec(outcomeFile: String) = HeadLogin(
         loginCommand = "claude-splice login",
         signInLabel = "OpenRouter",
         viaBrowser = false,
-        sentinel = "SPLICE_CODEX_LOGIN",
         outcomeFile = outcomeFile,
         canCapturePaste = true,
     )

@@ -1,6 +1,6 @@
 // NEW: the bash hook script TEXTS for the /login interception, api-key token capture, and
 // key-missing advertiser (split from LoginInterception, detekt TooManyFunctions — that file
-// keeps the wiring/merging, this one keeps the generated bash). No python dependency anywhere:
+// keeps the wiring/merging, this one keeps the generated bash). No interpreter dependency anywhere:
 // scripts glob the raw hook JSON; the capture regex relies on the token charset being
 // JSON-escape-free (word chars + dashes), so raw-JSON matching is exact.
 // Named object since the 2026-08-16 style migration (HD-M8). The four generators did NOT move into
@@ -20,22 +20,6 @@ private const val RECEIPT_SLOT = "@@SPLICE_RECEIPT_MSG@@"
 
 /** Characters that mean something in a POSIX ERE (pgrep -f): escaped when a head name lands in one. */
 private val ERE_META = Regex("[^A-Za-z0-9_-]")
-
-/** Everything the /login hook needs for ONE head — a parameter object because these six always
- *  travel together and describe a single thing: how this head signs in. */
-internal data class LoginHookSpec(
-    val loginCommand: String,
-    val signInLabel: String,
-    val viaBrowser: Boolean,
-    val sentinel: String = "",
-    /** Absolute path of this head's login receipt — see LoginOutcomeFile. */
-    val outcomeFile: String = "",
-    /** True when this head can capture a bare token pasted into the prompt box. Decides the whole
-     *  shape of /login for an api-key head — see [LoginHookScripts.loginHookScript]. */
-    val canCapturePaste: Boolean = false,
-    /** The head's topology key: a sign-in started as `splice login <key>` must be found too. */
-    val headKey: String = "",
-)
 
 internal object LoginHookScripts {
 
@@ -106,10 +90,10 @@ internal object LoginHookScripts {
      *  sign-in was still waiting on its loopback callback (up to 300 s) spawned a login that died on
      *  the bind, unseen, while the hook kept promising a browser. Now the pending one is cancelled
      *  first and the reason says so, so /login always means "start over, in the browser". */
-    private fun restartedText(hook: LoginHookSpec): String =
+    private fun restartedText(hook: HeadLogin): String =
         "A previous ${hook.signInLabel} sign-in was still waiting and was cancelled. " + leadText(hook)
 
-    private fun leadText(hook: LoginHookSpec): String =
+    private fun leadText(hook: HeadLogin): String =
         when {
             hook.viaBrowser ->
                 "Opening your browser to sign in to ${hook.signInLabel}. Finish there, then continue. " +
@@ -127,7 +111,7 @@ internal object LoginHookScripts {
                     "session."
         }
 
-    fun loginHookScript(hook: LoginHookSpec): String =
+    fun loginHookScript(hook: HeadLogin): String =
         buildString {
             val d = "$" // keep the shell $ out of Kotlin interpolation
             val lead = leadText(hook)
@@ -166,7 +150,7 @@ internal object LoginHookScripts {
             // serializer with the rest of the payload — and it was landing raw inside a JSON string.
             // splice writes it (LoginOutcomeFile), but it relays provider text, and one `"` in that
             // made the whole hook answer unparseable: Claude Code then sees a broken hook, not a
-            // login confirmation. Escaped in pure bash — no jq, no python, matching this file's own
+            // login confirmation. Escaped in pure bash — no jq, no interpreter, matching this file's own
             // no-dependency rule. Backslash FIRST or it would double the escapes added after it;
             // raw newline/CR/tab are illegal inside a JSON string, so they fold to spaces.
             appendLine("  msg=\"$d{msg//\\\\/\\\\\\\\}\"")
@@ -193,11 +177,11 @@ internal object LoginHookScripts {
 
     /** The /login branch: decode the top-level prompt, then the browser block or the api-key text,
      *  then exit. The scan runs only when the raw input mentions /login or the sentinel at all. */
-    private fun loginBranch(hook: LoginHookSpec, lead: String): String =
+    private fun loginBranch(hook: HeadLogin, lead: String): String =
         buildString {
             val d = "$"
-            val sentinel = shellSingleQuote(hook.sentinel)
-            val verb = "(/login|${hook.sentinel.replace(ERE_META) { "\\" + it.value }})"
+            val sentinel = shellSingleQuote(LOGIN_SENTINEL)
+            val verb = "(/login|${LOGIN_SENTINEL.replace(ERE_META) { "\\" + it.value }})"
             // /login exactly, /login followed by whitespace (a trailing space is a common keystroke)
             // and /login with arguments all mean /login; /loginx does not. The expanded command body
             // carries the sentinel plus the arguments, so both forms reach the same branch. Only the
@@ -252,7 +236,7 @@ internal object LoginHookScripts {
     private enum class Refusal { BAD_ARGS, UNPARSED, STUCK, NO_COMMAND, DIED, FOREIGN }
 
     /** The ways the browser branch declines to start a login, each saying what to do instead. */
-    private fun refusalText(hook: LoginHookSpec, why: Refusal): String =
+    private fun refusalText(hook: HeadLogin, why: Refusal): String =
         when (why) {
             Refusal.NO_COMMAND ->
                 "The ${hook.signInLabel} login command (${hook.loginCommand.substringBefore(' ')}) is not on " +
@@ -285,7 +269,7 @@ internal object LoginHookScripts {
      *  Only a sign-in THIS hook started (marked ${LoginHookPending.ORIGIN_MARKER} in its environment)
      *  is ever cancelled: one the user started in a terminal is named and left alone (review
      *  2026-09-14: the hook killed a labeled terminal sign-in mid-consent and started the primary). */
-    private fun browserSpawn(hook: LoginHookSpec): String {
+    private fun browserSpawn(hook: HeadLogin): String {
         val d = "$"
         val stuck = "printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.STUCK)))}"
         val foreign = "printf '%s' ${shellSingleQuote(blockDecision(refusalText(hook, Refusal.FOREIGN)))}"

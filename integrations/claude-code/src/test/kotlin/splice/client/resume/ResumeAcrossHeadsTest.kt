@@ -66,7 +66,7 @@ class ResumeAcrossHeadsTest {
         JsonScalars.str(Json.parseToJsonElement(row).jsonObject["message"] as? JsonObject, Keys.MODEL)
 
     private fun adoption(calling: Path, others: List<Path>, sessionId: String): SessionAdoption =
-        resumer().adopt(calling, others, sessionId, pinned, listOf(pinned), log = {})
+        resumer().adopt(calling, others, sessionId, CallingRoster(pinned, listOf(pinned)), log = {})
 
     @Test
     fun `a foreign session is copied in, its models follow the head, and the source is untouched`(@TempDir home: Path) {
@@ -276,7 +276,8 @@ class ResumeAcrossHeadsTest {
         val calling = headConfig(home, "codex")
         val (lines, log) = logged()
 
-        val adoption = resumer().adopt(calling, listOf(home.resolve(".claude-kimi")), "s1", pinned, listOf(pinned), log)
+        val roster = CallingRoster(pinned, listOf(pinned))
+        val adoption = resumer().adopt(calling, listOf(home.resolve(".claude-kimi")), "s1", roster, log)
 
         assertTrue(adoption is SessionAdoption.Adopted, "$adoption")
         assertTrue(lines.none { "could not list" in it }, "a missing projects dir is an ordinary miss: $lines")
@@ -287,7 +288,8 @@ class ResumeAcrossHeadsTest {
         val calling = headConfig(home, "codex")
         val (lines, log) = logged()
 
-        val adoption = resumer().adopt(calling, listOf(headConfig(home, "kimi")), "s1", pinned, listOf(pinned), log)
+        val roster = CallingRoster(pinned, listOf(pinned))
+        val adoption = resumer().adopt(calling, listOf(headConfig(home, "kimi")), "s1", roster, log)
 
         assertTrue(adoption is SessionAdoption.Absent, "$adoption")
         assertTrue(lines.none { "could not list" in it }, "a missing projects dir is an ordinary miss: $lines")

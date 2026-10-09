@@ -3938,3 +3938,5 @@ integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/
 features/usage/src/test/kotlin/splice/usage/statusline/StatuslineClockReadTest.kt	created		Pins that the statusline renderer reads the clock once per tick and hands that one read to the spend segment as the session start.
 integrations/mcp/src/main/kotlin/splice/control/mcp/McpChildHistory.kt	created		A hosted child's spawn history: the crash-loop backoff, answering whether a spawn may go ahead now in the words the client is told.
 integrations/mcp/src/test/kotlin/splice/control/mcp/McpRefusalRepliesTest.kt	created		Pins the status and body bytes of the host's refusals, and proves the reading of them fails on a changed status, code, id or words.
+integrations/claude-code/src/main/kotlin/splice/client/login/HeadLogin.kt	created		The /login interception of one head, owning the staging of its commands/login.md and hook script; replaces the LoginHookSpec parameter object.
+integrations/claude-code/src/main/kotlin/splice/client/transcript/TranscriptMessageLedger.kt	created		V4-160: the messages one transcript page has made and the numbers they took, split from PageAssembly

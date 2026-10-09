@@ -61,10 +61,11 @@ class LoginInterceptionWireTest {
         execProbe: HookExecProbe = fileProbe,
     ) = LoginInterception.wire(
         configDir = configDir,
-        login = LoginHookSpec(
+        login = HeadLogin(
             loginCommand = loginCommand,
             signInLabel = "OpenRouter",
             viaBrowser = false,
+            canCapturePaste = tokenCapture != null,
         ),
         globalCommands = null,
         tokenCapture = tokenCapture,
@@ -193,7 +194,7 @@ class LoginInterceptionWireTest {
         val failure = assertThrows<IOException> {
             LoginInterception.wire(
                 configDir = tmp,
-                login = LoginHookSpec(
+                login = HeadLogin(
                     loginCommand = "",
                     signInLabel = "OpenRouter",
                     viaBrowser = false,
@@ -230,7 +231,7 @@ class LoginInterceptionWireTest {
         assertThrows<IOException> {
             LoginInterception.wire(
                 configDir = tmp,
-                login = LoginHookSpec(
+                login = HeadLogin(
                     loginCommand = "",
                     signInLabel = "OpenRouter",
                     viaBrowser = false,
@@ -270,7 +271,7 @@ class LoginInterceptionWireTest {
             assertThrows<IOException>("${thrown::class.simpleName} must still fail the launch") {
                 LoginInterception.wire(
                     configDir = tmp,
-                    login = LoginHookSpec(
+                    login = HeadLogin(
                         loginCommand = "",
                         signInLabel = "OpenRouter",
                         viaBrowser = false,
@@ -340,7 +341,7 @@ class LoginInterceptionWireTest {
         assertThrows<CancellationException> {
             LoginInterception.wire(
                 configDir = tmp,
-                login = LoginHookSpec(
+                login = HeadLogin(
                     loginCommand = "",
                     signInLabel = "OpenRouter",
                     viaBrowser = false,
@@ -443,7 +444,7 @@ class LoginInterceptionWireTest {
 
         val hooks = LoginInterception.wire(
             configDir = tmp,
-            login = LoginHookSpec(
+            login = HeadLogin(
                 loginCommand = "openrouter login",
                 signInLabel = "OpenRouter",
                 viaBrowser = false,

@@ -23,6 +23,7 @@ import org.junit.jupiter.params.provider.ValueSource
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.client.MaterializeSpec
+import splice.client.login.HookInstaller
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -155,8 +156,7 @@ class ResumeHookTest {
             dir,
             ResumeHookTarget(PORT) { dir.resolve("turn-auth-header") },
             "codex",
-            log = { log.append(it) },
-            execProbe = { _, _ -> IOException("mounted noexec") },
+            HookInstaller(log = { log.append(it) }, execProbe = { _, _ -> IOException("mounted noexec") }),
         )
 
         assertEquals(emptyMap<String, Any>(), additions, "a hook that cannot run is not registered")
@@ -177,7 +177,7 @@ class ResumeHookTest {
             dir,
             ResumeHookTarget(PORT) { throw IOException("state dir is read-only") },
             "codex",
-            log = { log.append(it) },
+            HookInstaller(log = { log.append(it) }),
         )
 
         assertEquals(emptyMap<String, Any>(), additions, "a hook that cannot authenticate is not registered")

@@ -64,7 +64,7 @@ class PortablePendingLoginTest(@param:TempDir private val tmp: Path) {
         val word = tmp.resolve("fixture-head")
         val owners = LaunchOwners(tmp.resolve("state"))
         val hook = LoginProcesses.pendingLogin(word, jar, false)
-        val foreign = LoginProcesses.pendingLogin(word, jar, false, hookStarted = false)
+        val foreign = LoginProcesses.terminalLogin(word, jar)
         try {
             owners.write(hook.pid(), word.toString(), "", "login", "hook")
             assertEquals(PendingLoginOutcome.Foreign, PendingLogins(owners).cancel(jar, listOf(word.toString())))

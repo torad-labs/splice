@@ -33,11 +33,11 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.client.login.HeadLogin
 import splice.client.login.HookExec
 import splice.client.login.HookExecProbe
 import splice.client.login.HookInstaller
 import splice.client.login.HookScriptFiles
-import splice.client.login.LoginHookSpec
 import splice.client.login.LoginInterception
 import splice.client.mcp.McpRewrite
 import splice.client.resume.ResumeHook
@@ -126,11 +126,12 @@ public class ClaudeConfigMaterializer(
         val hookAdditions = LoginInterception.concat(
             LoginInterception.wire(
                 configDir = spec.configDir,
-                login = LoginHookSpec(
+                login = HeadLogin(
                     loginCommand = spec.loginCommand,
                     signInLabel = spec.signInLabel,
                     viaBrowser = spec.signInViaBrowser,
                     outcomeFile = spec.loginOutcomeFile,
+                    canCapturePaste = spec.tokenCapture != null,
                     headKey = spec.headKey,
                 ),
                 globalCommands = if (spec.policy.shares(Keys.COMMANDS)) globalDir().resolve(Keys.COMMANDS) else null,
@@ -149,7 +150,8 @@ public class ClaudeConfigMaterializer(
                     emptyMap()
                 },
                 resumeHook?.let { target ->
-                    ResumeHook.install(spec.configDir, target, spec.headKey, log, execProbe = hookExecProbe)
+                    val hooks = HookInstaller(log = log, execProbe = hookExecProbe)
+                    ResumeHook.install(spec.configDir, target, spec.headKey, hooks)
                 } ?: emptyMap(),
             ),
         )

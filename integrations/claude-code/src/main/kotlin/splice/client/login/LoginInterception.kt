@@ -18,6 +18,7 @@ import splice.core.config.envNameRegex
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -56,17 +57,15 @@ internal class HookInstaller(
      *  (fail-closed on the credential interceptor); without one the head degrades loudly and
      *  registers nothing, because registering known-unrunnable hooks is the defect. */
     fun canExecute(configDir: Path, tokenCapture: TokenCaptureSpec?): Boolean {
-        val execFailure = execProbe?.invoke(configDir, chmod) ?: return true
+        val failure = execProbe?.invoke(configDir, chmod) ?: return true
         if (tokenCapture != null) {
             throw IOException(
-                // SAFE-RENDER-EXEMPT[2026-08-31]: the same exec-bit probe — the failure names the head config directory, never file content
-                "$configDir cannot execute a staged hook (${execFailure.message}), so the capture " +
+                "$configDir cannot execute a staged hook (${SafeFailureText.render(failure)}), so the capture " +
                     "hook would register but never run; refusing to launch uninterceptable",
             )
         }
         log(
-            // SAFE-RENDER-EXEMPT[2026-08-31]: the same exec-bit probe — the failure names the head config directory, never file content
-            "[login] hooks NOT installed in $configDir (${execFailure.message}): the directory " +
+            "[login] hooks NOT installed in $configDir (${SafeFailureText.render(failure)}): the directory " +
                 "cannot execute scripts (noexec mount?); the head runs without an interceptor\n",
         )
         return false
@@ -74,10 +73,8 @@ internal class HookInstaller(
 }
 
 internal object LoginInterception {
-    private const val LOGIN_HOOK_SH = "splice-login-hook.sh"
     private const val CAPTURE_HOOK_SH = "splice-key-capture-hook.sh"
     private const val KEYSETUP_HOOK_SH = "splice-keysetup-hook.sh"
-    private const val LOGIN_SENTINEL = "SPLICE_CODEX_LOGIN"
     private const val USER_PROMPT_SUBMIT = "UserPromptSubmit"
 
     /**
@@ -95,29 +92,20 @@ internal object LoginInterception {
      */
     fun wire(
         configDir: Path,
-        login: LoginHookSpec,
+        login: HeadLogin,
         globalCommands: Path?,
         tokenCapture: TokenCaptureSpec? = null,
         hooks: HookInstaller = HookInstaller(),
     ): Map<String, List<JsonObject>> {
         val log = hooks.log
         val chmod = hooks.chmod
-        if (login.loginCommand.isBlank()) HeadCommandsDir.reconcileBlankLogin(configDir, globalCommands, log)
-        if (login.loginCommand.isBlank() && tokenCapture == null) return emptyMap()
+        if (!login.offered) HeadCommandsDir.reconcileBlankLogin(configDir, globalCommands, log)
+        if (!login.offered && tokenCapture == null) return emptyMap()
         if (!hooks.canExecute(configDir, tokenCapture)) return emptyMap()
         val upsHooks = mutableListOf<JsonObject>()
-        if (login.loginCommand.isNotBlank()) {
+        if (login.offered) {
             val leg = Cancellables.runCatchingCancellable {
-                HeadCommandsDir.write(configDir, login.signInLabel, globalCommands, LOGIN_SENTINEL)
-                val script = HookScriptFiles.writeHookScript(
-                    configDir,
-                    LOGIN_HOOK_SH,
-                    LoginHookScripts.loginHookScript(
-                        login.copy(sentinel = LOGIN_SENTINEL, canCapturePaste = tokenCapture != null),
-                    ),
-                    chmod,
-                )
-                upsHooks += HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS)
+                upsHooks += login.stage(configDir, globalCommands, hooks)
             }
             if (leg.isFailure) {
                 log(

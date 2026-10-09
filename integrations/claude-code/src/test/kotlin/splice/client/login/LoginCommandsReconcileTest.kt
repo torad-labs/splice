@@ -28,7 +28,7 @@ class LoginCommandsReconcileTest {
         log: MutableList<String> = mutableListOf(),
     ) = LoginInterception.wire(
         configDir = configDir,
-        login = LoginHookSpec(
+        login = HeadLogin(
             loginCommand = loginCommand,
             signInLabel = "OpenRouter",
             viaBrowser = false,

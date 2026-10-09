@@ -22,16 +22,12 @@
 package splice.client.resume
 
 import kotlinx.serialization.json.JsonObject
-import splice.client.login.HookChmod
-import splice.client.login.HookExecProbe
+import splice.client.login.HookInstaller
 import splice.client.login.HookScriptFiles
 import splice.core.client.FOREGROUND_OWNER_ENV
 import splice.core.client.FOREGROUND_OWNER_HEADER
 import splice.core.util.Cancellables
-import splice.core.util.DaemonLog
-import splice.core.util.LogSink
 import java.io.IOException
-import java.nio.file.Files
 import java.nio.file.Path
 
 /** The SessionStart `source` value Claude Code sends for --resume, --continue and /resume — the one
@@ -74,12 +70,12 @@ internal object ResumeHook {
         configDir: Path,
         target: ResumeHookTarget,
         headKey: String,
-        log: LogSink = LogSink(DaemonLog::write),
-        chmod: HookChmod = HookChmod(Files::setPosixFilePermissions),
-        execProbe: HookExecProbe? = null,
+        hooks: HookInstaller = HookInstaller(),
     ): Map<String, List<JsonObject>> {
+        val log = hooks.log
+        val chmod = hooks.chmod
         val leg = Cancellables.runCatchingCancellable {
-            execProbe?.invoke(configDir, chmod)?.let { failure ->
+            hooks.execProbe?.invoke(configDir, chmod)?.let { failure ->
                 // SAFE-RENDER-EXEMPT[2026-09-19]: an exec-bit probe on a directory we create — the failure names that directory, never file content
                 throw IOException("$configDir cannot execute a staged hook (${failure.message})")
             }

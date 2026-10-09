@@ -90,7 +90,7 @@ class CodeModeExecSurfaceTest : CodeModeBridgeTestSupport() {
             media(),
             codeModeOnly = backendCodeModeOnly,
         )
-        return builder.prepare(body, false, "session", built).requestBody
+        return builder.prepare(body, "session", built).requestBody
     }
 
     private companion object {

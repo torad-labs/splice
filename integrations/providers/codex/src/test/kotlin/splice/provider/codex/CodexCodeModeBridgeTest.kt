@@ -370,22 +370,21 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("ok")))))
         val builder = CodexCodeModeTurnBuilder(manager, media(), codeModeOnly = backendCodeModeOnly)
         listOf("gpt-6-astra", "gpt-6-sol", "gpt-6-astra[1m]", "GPT-6-SOL[500K]").forEach { model ->
-            val prepared = builder.prepare(toolBody(), false, "s", built(model, lite = true))
+            val prepared = builder.prepare(toolBody(), "s", built(model, lite = true))
             assertTrue(prepared.roundInterceptor != null, model)
         }
         listOf("not-gpt-6-astra", "gpt-6-astra-preview", "gpt-6-astra[preview]").forEach { model ->
-            val prepared = builder.prepare(toolBody(), false, "s", built(model, lite = true))
+            val prepared = builder.prepare(toolBody(), "s", built(model, lite = true))
             assertTrue(prepared.roundInterceptor == null, model)
         }
-        val compact = builder.prepare(toolBody(), true, "s", built("gpt-6-astra", lite = true))
-        val toolless = builder.prepare(toollessBody(), false, "s", built("gpt-6-astra", lite = true))
-        val nonLite = builder.prepare(toolBody(), false, "s", built("gpt-6-astra", lite = false))
-        val named = builder.prepare(namedChoiceBody(), false, "s", built("gpt-6-astra", lite = true))
-        // 2026-09-21: a compaction is built exactly like a turn — same splice_exec declaration, same
-        // guidance, same interceptor — so its upstream bytes share the turn's cached prefix.
-        assertTrue(compact.roundInterceptor != null, "a compaction rides the bridge like any turn")
-        val turn = builder.prepare(toolBody(), false, "s", built("gpt-6-astra", lite = true))
-        assertEquals(turn.requestBody, compact.requestBody, "compact and turn build byte-identical bodies")
+        val toolless = builder.prepare(toollessBody(), "s", built("gpt-6-astra", lite = true))
+        val nonLite = builder.prepare(toolBody(), "s", built("gpt-6-astra", lite = false))
+        val named = builder.prepare(namedChoiceBody(), "s", built("gpt-6-astra", lite = true))
+        // 2026-09-21: a compaction is built exactly like a turn — same splice_exec declaration, same guidance, same
+        // interceptor — so its upstream bytes share the turn's cached prefix. 2026-10-09: the preparation no longer
+        // takes the provider's compaction flag, so that equivalence is structural and no call can diverge on it.
+        val turn = builder.prepare(toolBody(), "s", built("gpt-6-astra", lite = true))
+        assertTrue(turn.roundInterceptor != null, "an eligible turn rides the bridge")
         assertTrue(toolless.roundInterceptor == null)
         assertTrue(nonLite.roundInterceptor == null)
         assertTrue(named.roundInterceptor == null)
@@ -407,7 +406,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         assertTrue(delivered.contains("delivered to the model beside this script's output"), delivered)
         assertTrue(delivered.contains("text only"), delivered)
         // The whole turn still prepares: the interceptor is armed, nothing throws.
-        val prepared = builder.prepare(nonTextResultBody(), false, "s", built("gpt-6-astra", lite = true))
+        val prepared = builder.prepare(nonTextResultBody(), "s", built("gpt-6-astra", lite = true))
         assertNotNull(prepared.roundInterceptor)
 
         val omitted = builder.toolResults(unreadableResultBody()).single().output
@@ -428,7 +427,6 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("ok")))))
         val built = CodexCodeModeTurnBuilder(manager, media(), codeModeOnly = backendCodeModeOnly).prepare(
             historicalImageResultBody(),
-            compact = false,
             sessionId = "s",
             built = built("gpt-6-astra", lite = true),
         )

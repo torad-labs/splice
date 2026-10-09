@@ -70,12 +70,11 @@ public class InflightGate(
     private var waited = 0L
     private var waitMsTotal = 0L
 
-    // A resumable FIFO cell. MUST be a plain class: queue.remove() matches by reference IDENTITY,
-    // which is the whole point — a data class gives structural equality over mutable fields, which
-    // is exactly why the prior version bolted on a synthetic `id` to undo it (craft review). So
-    // UseDataClass is a FALSE POSITIVE here (a data class would reintroduce the bug); suppressed
-    // with rationale, never a debt-hiding suppression. `resumed`/`continuation` are coordination.
-    @Suppress("UseDataClass")
+    // A resumable FIFO cell. Its identity IS its meaning: queue.remove() matches the one cell a
+    // waiter parked, and structural equality over these mutable fields would remove a different
+    // waiter's cell that happens to hold equal values — the bug the prior version undid by bolting
+    // on a synthetic `id`. So the cell declares reference equality itself, below, rather than
+    // inheriting a data class's. `resumed`/`continuation` are coordination, not data.
     private class Waiter(
         var resumed: Boolean = false,
         var continuation: CancellableContinuation<Boolean>? = null,
@@ -85,6 +84,11 @@ public class InflightGate(
         /** A ready source loan uses its existing counted permit, not an inflight increment. */
         var borrowed: Slot? = null,
     ) {
+        /** One parked waiter is one cell: never another cell holding equal values (see above). */
+        override fun equals(other: Any?): Boolean = this === other
+
+        override fun hashCode(): Int = System.identityHashCode(this)
+
         fun turn(admitted: Boolean, immediate: Boolean, now: Long): Turn = when {
             !admitted -> Turn.Refused
             borrowed != null -> Turn.Borrowed(checkNotNull(borrowed))

@@ -46,7 +46,7 @@ public class CodexProvider(
     override fun perTurnHeaders(meta: TurnMeta): Map<String, String> = routing.forTurn(meta)
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn =
-        codeModeTurns.prepare(body, compact, sessionId, super.buildTurn(body, compact, sessionId))
+        codeModeTurns.prepare(body, sessionId, super.buildTurn(body, compact, sessionId))
 
     override fun onHeadStop() {
         codeMode.onHeadStop()

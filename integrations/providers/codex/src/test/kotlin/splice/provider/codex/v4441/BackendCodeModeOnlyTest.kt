@@ -36,7 +36,7 @@ class BackendCodeModeOnlyTest : CodeModeBridgeTestSupport() {
      *  that is not eligible comes back as the very object it went in as. */
     private fun offered(builder: CodexCodeModeTurnBuilder, model: String): Boolean {
         val original = built(model, lite = true)
-        return builder.prepare(toolBody(), false, "session", original) !== original
+        return builder.prepare(toolBody(), "session", original) !== original
     }
 
     @Test

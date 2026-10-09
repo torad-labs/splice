@@ -30,11 +30,10 @@ internal class CodexCodeModeTurnBuilder(
 ) {
     private val operatorModels: Set<String> = CodexCodeModeModels.normalize(models.orEmpty())
 
-    /** [compact] is part of the provider's buildTurn contract and deliberately not read: the bridge
-     *  rides compactions exactly as it rides turns (see [eligible]). */
+    /** The provider's compaction flag is deliberately absent: the bridge rides a compaction exactly as it rides a
+     *  turn, so a preparation that could read the flag could also diverge on it (see [eligible]). */
     fun prepare(
         body: AnthropicTurnBody,
-        @Suppress("UNUSED_PARAMETER") compact: Boolean,
         sessionId: String?,
         built: BuiltTurn,
     ): BuiltTurn {

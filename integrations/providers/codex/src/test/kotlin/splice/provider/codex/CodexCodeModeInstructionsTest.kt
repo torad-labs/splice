@@ -34,7 +34,7 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         listOf("Caller instructions  \n", "", "<code_mode_orchestration>caller text</code_mode_orchestration>")
             .forEach { system ->
                 val (body, original) = request(system)
-                val prepared = builder.prepare(body, false, "session", original)
+                val prepared = builder.prepare(body, "session", original)
                 val before = original.requestBody.getValue("input").jsonArray
                 val after = prepared.requestBody.getValue("input").jsonArray
                 val prefix = instructions(original.requestBody)
@@ -69,30 +69,29 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
     @Test
     fun `disabled and excluded turns preserve the exact request bytes`() {
         val (body, original) = request("Caller instructions")
-        val disabled = CodexCodeModeTurnBuilder(null, media()).prepare(body, false, "session", original)
+        val disabled = CodexCodeModeTurnBuilder(null, media()).prepare(body, "session", original)
         assertSame(original, disabled)
         val builder = CodexCodeModeTurnBuilder(
             bridge(ScriptedRuntime(ArrayDeque())),
             media(),
             codeModeOnly = backendCodeModeOnly,
         )
-        // 2026-09-21: a compaction is no longer excluded — it must build the same bytes as a turn, so
-        // its prefix stays cached (CodexCodeModeBridgeTest pins the byte identity).
-        val compact = builder.prepare(body, true, "session", original)
-        assertEquals(builder.prepare(body, false, "session", original).requestBody, compact.requestBody)
+        // 2026-09-21: a compaction is no longer excluded — it must build the same bytes as a turn, so its prefix stays
+        // cached. 2026-10-09: the preparation no longer takes the compaction flag, so a compaction cannot build
+        // anything else; what stays pinned here is the bytes an eligible body builds.
         listOf(
-            builder.prepare(toollessBody(), false, "session", original),
-            builder.prepare(namedChoiceBody(), false, "session", original),
+            builder.prepare(toollessBody(), "session", original),
+            builder.prepare(namedChoiceBody(), "session", original),
         ).forEach { excluded ->
             assertEquals(original.requestBody.toString(), excluded.requestBody.toString())
             assertTrue(excluded.roundInterceptor == null)
         }
         listOf("gpt-5.5", "gpt-6-astra-preview", "other").forEach { model ->
             val excluded = original.copy(meta = original.meta.copy(upstreamModel = model))
-            assertSame(excluded, builder.prepare(body, false, "session", excluded))
+            assertSame(excluded, builder.prepare(body, "session", excluded))
         }
         val nonLite = built("gpt-6-astra", lite = false)
-        assertSame(nonLite, builder.prepare(body, false, "session", nonLite))
+        assertSame(nonLite, builder.prepare(body, "session", nonLite))
     }
 
     // V4-441: there is no built-in list. The backend's marks (backendCodeModeOnly, asked each turn) cover
@@ -116,11 +115,11 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
             "GPT-5.6-Sol[1m]",
         ).forEach { model ->
             val eligible = original.copy(meta = original.meta.copy(upstreamModel = model))
-            val prepared = marked.prepare(body, false, "session", eligible)
+            val prepared = marked.prepare(body, "session", eligible)
             assertTrue(instructions(prepared.requestBody).contains("functions.exec"), model)
         }
         val hidden = original.copy(meta = original.meta.copy(upstreamModel = "codex-auto-review"))
-        assertSame(hidden, marked.prepare(body, false, "session", hidden), "the backend hides it: no mark to read")
+        assertSame(hidden, marked.prepare(body, "session", hidden), "the backend hides it: no mark to read")
         val listed = CodexCodeModeTurnBuilder(
             bridge(ScriptedRuntime(ArrayDeque())),
             media(),
@@ -128,11 +127,11 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         )
         listOf("gpt-5.6-terra", "codex-auto-review").forEach { model ->
             val named = original.copy(meta = original.meta.copy(upstreamModel = model))
-            val prepared = listed.prepare(body, false, "session", named)
+            val prepared = listed.prepare(body, "session", named)
             assertTrue(instructions(prepared.requestBody).contains("functions.exec"), model)
         }
         val astra = original.copy(meta = original.meta.copy(upstreamModel = "gpt-6-astra"))
-        assertSame(astra, listed.prepare(body, false, "session", astra), "no mark and not named: direct tools")
+        assertSame(astra, listed.prepare(body, "session", astra), "no mark and not named: direct tools")
     }
 
     @Test
@@ -144,11 +143,11 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         )
         val (ordinaryBody, ordinary) = request("Caller")
         assertEquals("false", ordinary.requestBody.getValue("parallel_tool_calls").jsonPrimitive.content)
-        val concurrent = builder.prepare(ordinaryBody, false, "session", ordinary)
+        val concurrent = builder.prepare(ordinaryBody, "session", ordinary)
         assertTrue(instructions(concurrent.requestBody).contains("Promise.all"))
 
         val (serialBody, serial) = request("Caller", disableParallel = true)
-        val sequential = builder.prepare(serialBody, false, "session", serial)
+        val sequential = builder.prepare(serialBody, "session", serial)
         assertFalse(instructions(sequential.requestBody).contains("Promise.all"))
         assertTrue(instructions(sequential.requestBody).contains("client has disabled parallel tool use"))
         assertTrue(instructions(sequential.requestBody).contains("sequential await"))
@@ -163,9 +162,9 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         )
         val (body, original) = request("Caller")
         val snapshot = original.requestBody.toString()
-        val first = builder.prepare(body, false, "session", original).requestBody
+        val first = builder.prepare(body, "session", original).requestBody
         repeat(3) {
-            assertEquals(first, builder.prepare(body, false, "session", original).requestBody)
+            assertEquals(first, builder.prepare(body, "session", original).requestBody)
             assertEquals(snapshot, original.requestBody.toString())
         }
         assertEquals(1, Regex("<code_mode_orchestration>").findAll(instructions(first)).count())
@@ -184,13 +183,13 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         )
         val builder = CodexCodeModeTurnBuilder(bridge(runtime), media(), codeModeOnly = backendCodeModeOnly)
         val (initialBody, initial) = request("Caller")
-        val first = builder.prepare(initialBody, false, "session", initial)
+        val first = builder.prepare(initialBody, "session", initial)
         val readSink = RecordingSink()
         checkNotNull(first.roundInterceptor).intercept(first.requestBody.toString(), readSink) { outerOutcome() }
         val readId = readSink.tools.single().id
         val readMessages = INITIAL_MESSAGES + callback(readId, "Read", "A")
         val (readBody, readBuilt) = request("Caller", messages = readMessages)
-        val second = builder.prepare(readBody, false, "session", readBuilt)
+        val second = builder.prepare(readBody, "session", readBuilt)
         val editSink = RecordingSink()
         val waiting = checkNotNull(second.roundInterceptor).intercept(second.requestBody.toString(), editSink) {
             error("a dependent local resumption must not call the model")
@@ -198,7 +197,7 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         assertTrue((waiting as TurnOutcome.Success).hasToolUse)
         val editId = editSink.tools.single().id
         val (editBody, editBuilt) = request("Caller", messages = readMessages + callback(editId, "Edit", "B"))
-        val third = builder.prepare(editBody, false, "session", editBuilt)
+        val third = builder.prepare(editBody, "session", editBuilt)
         var finalBody = ""
         val result = checkNotNull(third.roundInterceptor).intercept(third.requestBody.toString(), RecordingSink()) {
             finalBody = it

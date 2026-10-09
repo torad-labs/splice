@@ -25,6 +25,7 @@ import splice.core.wire.MediaSource
 import splice.core.wire.TextBlock
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
+import splice.core.wire.UnknownBlock
 
 internal class ChatWireMapper(private val quirks: ChatQuirks) {
 
@@ -39,8 +40,17 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
                 put(CONTENT, sys)
             }
         }
-        body.messages.forEach { msg -> appendMessage(this, msg.role, msg.content) }
+        val alternation = ChatAlternation()
+        body.messages.forEach { msg ->
+            val mapped = buildJsonArray { appendMessage(this, msg.role, msg.content) }
+            alternation.accept(mapped.filterIsInstance<JsonObject>())
+        }
+        alternation.messages().forEach { add(it) }
     }
+
+    /** A block kind splice does not enumerate cannot ride this wire; it leaves a marker, never a silent drop. */
+    private fun unknownBlockMarkers(content: List<splice.core.wire.ContentBlock>): List<String> =
+        content.filterIsInstance<UnknownBlock>().map { it.omissionMarker(quirks.providerTag) }
 
     // the content-block split is the mapping contract
     fun appendMessage(
@@ -53,7 +63,7 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         val toolUses = content.filterIsInstance<ToolUseBlock>()
         // Dropped media leaves an HONEST MARKER (the v25 doctrine: screenshots silently
         // vanishing is the regression class; the model must know something was omitted).
-        val markers = quirks.omissionMarkers(content)
+        val markers = quirks.omissionMarkers(content) + unknownBlockMarkers(content)
         val imageBlocks = content.filterIsInstance<ImageBlock>()
         // DR-155: split off the images a vendor floor PROVES are undersized before anything maps
         // them, so the two drop reasons stay two reasons. `mappable` is what the old code saw.

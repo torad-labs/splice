@@ -35,12 +35,10 @@ internal class ChatRequestAssembler(private val quirks: ChatQuirks, private val 
             stream = true,
             tools = if (emitTools) wire.toolsArray(body) else null,
             toolChoice = if (emitTools) ToolChoiceMapping.openAiToolChoice(body.toolChoice) else null,
+            parallelToolCalls = serialToolCallsAsked(body, emitTools),
             reasoningEffort = if (quirks.reasoning.emitReasoningEffort) effort else null,
-            reasoning = if (quirks.reasoning.emitReasoningEffort && effort != null) {
-                buildJsonObject { put("effort", effort) }
-            } else {
-                null
-            },
+            reasoning = effort?.takeIf { quirks.reasoning.emitReasoningEffort }
+                ?.let { buildJsonObject { put("effort", it) } },
             promptCacheKey = knobs.cacheKey,
             idSlot = knobs.idSlot,
             streamOptions = if (quirks.emitUsageInStream) {
@@ -53,4 +51,8 @@ internal class ChatRequestAssembler(private val quirks: ChatQuirks, private val 
         body.maxTokens?.takeIf { it > 0 }?.let { fields[quirks.maxTokensField] = JsonPrimitive(it) }
         return JsonObject(fields)
     }
+
+    /** parallel_tool_calls false only when the client asked for serial tool calls and tools ride the request. */
+    private fun serialToolCallsAsked(body: AnthropicRequest, emitTools: Boolean): Boolean? =
+        if (emitTools && body.toolChoice?.disableParallelToolUse == true) false else null
 }

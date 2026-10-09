@@ -161,7 +161,7 @@ internal class TranscriptRecords {
     fun resultText(content: JsonElement?): String = when (content) {
         is JsonPrimitive -> content.content
         is JsonArray -> joinedTexts(content)
-        else -> ""
+        null, is JsonObject -> ""
     }
 
     private fun joinedTexts(blocks: JsonArray): String =

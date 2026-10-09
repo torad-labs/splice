@@ -54,7 +54,9 @@ internal class TranscriptRecordShape {
         JsonToken.VALUE_STRING -> string(parser, place, name)
         JsonToken.VALUE_NUMBER_INT, JsonToken.VALUE_NUMBER_FLOAT, JsonToken.VALUE_TRUE, JsonToken.VALUE_FALSE ->
             scalar(parser, place, name)
-        else -> null
+        JsonToken.NOT_AVAILABLE, JsonToken.END_OBJECT, JsonToken.END_ARRAY, JsonToken.FIELD_NAME,
+        JsonToken.VALUE_EMBEDDED_OBJECT, JsonToken.VALUE_NULL, null,
+        -> null
     }
 
     private fun objectValue(parser: JsonParser, place: Place, name: String): JsonObject? =

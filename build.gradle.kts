@@ -69,6 +69,10 @@ val closedWhenModules =
         ":features-lifecycle",
         ":features-usage",
         ":integrations-codemode",
+        ":features-sessions",
+        ":features-configuration",
+        ":core",
+        ":integrations-claude-code",
     )
 val closedWhenArgs = listOf("-P", "plugin:splice.fir-checks:closedWhen=true")
 val releaseVersion = (JsonSlurper().parse(file("package.json")) as Map<*, *>)["version"].toString()
@@ -105,9 +109,18 @@ subprojects {
 // Kover is applied versionless to every Kotlin JVM module from the root. Each module still resolves
 // the version through the catalog alias in the root plugins{} block, and the root `kover { merge }`
 // configuration aggregates all subproject reports into one XML at :koverXmlReport.
+//
+// COVERAGE ON REQUEST. Kover's agent instruments every class a test JVM loads, and nothing in the gate reads coverage: no
+// verification rule is set, and the only reader is the coverage workflow's :koverXmlReport. So a test JVM carries the agent
+// only when a kover task was asked for by name. Measured on four modules' test tasks, Oct 9: 42.1 s with the agent, 36.5 s
+// without it.
+val coverageRequested = gradle.startParameter.taskNames.any { it.substringAfterLast(':').startsWith("kover") }
 subprojects {
     plugins.withId("org.jetbrains.kotlin.jvm") {
         apply(plugin = "org.jetbrains.kotlinx.kover")
+        extensions.configure<kotlinx.kover.gradle.plugin.dsl.KoverProjectExtension> {
+            currentProject { instrumentation { disabledForAll.set(!coverageRequested) } }
+        }
     }
 }
 

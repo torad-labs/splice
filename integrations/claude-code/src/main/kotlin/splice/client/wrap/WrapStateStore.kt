@@ -90,7 +90,7 @@ public class WrapStateStore(
         }
         when (val access = SecureFile.ownerOnlyFile(owner)) {
             is FileTightening.Open -> error("launcher owner record is not owner-only: ${access.why}")
-            else -> Unit
+            is FileTightening.Held, is FileTightening.Tightened -> Unit
         }
     }
 

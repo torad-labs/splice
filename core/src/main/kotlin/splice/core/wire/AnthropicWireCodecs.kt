@@ -37,7 +37,7 @@ internal object ContentSerializer : KSerializer<List<ContentBlock>> {
             // as no content, not as the literal text "null" landing in the transcript.
             is JsonNull -> emptyList()
             is JsonPrimitive -> listOf(TextBlock(element.content))
-            else -> input.json.decodeFromJsonElement(listSerializer, element)
+            is JsonObject, is JsonArray -> input.json.decodeFromJsonElement(listSerializer, element)
         }
     }
 
@@ -54,7 +54,7 @@ internal object SystemTextSerializer : KSerializer<String?> {
         val input = decoder as JsonDecoder
         return when (val element = input.decodeJsonElement()) {
             is JsonPrimitive -> element.content
-            else -> jsonObjectListTexts(element)
+            is JsonObject, is JsonArray -> jsonObjectListTexts(element)
         }
     }
 

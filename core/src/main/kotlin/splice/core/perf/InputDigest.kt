@@ -96,7 +96,7 @@ public data class InputPrefix(
             when (val content = entry["content"]) {
                 is JsonPrimitive -> content.isString
                 is JsonArray -> content.all(::textBlock)
-                else -> false
+                null, is JsonObject -> false
             }
     }
 

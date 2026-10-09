@@ -46,7 +46,10 @@ internal class AddRefusalText {
     fun cli(r: AddRefusal): String = when (r) {
         is AddRefusal.PortUnavailable -> "no free loopback head port in ${r.from}..${r.to}; free a port and retry"
         is AddRefusal.Models -> cliModels(r.problem)
-        else -> cliStandard(r)
+        is AddRefusal.KeyTaken, is AddRefusal.CommandTaken, is AddRefusal.Unparseable, is AddRefusal.NameRequired,
+        is AddRefusal.BaseUrlRequired,
+        AddRefusal.QuotedValue,
+        -> cliStandard(r)
     }
 
     private fun cliStandard(r: AddRefusal): String = when (r) {
@@ -56,7 +59,7 @@ internal class AddRefusalText {
         is AddRefusal.NameRequired -> "--name is required for '${r.profile}' (lowercase letters, digits, dashes)"
         is AddRefusal.BaseUrlRequired -> "--base-url is required for '${r.profile}'"
         AddRefusal.QuotedValue -> "values must not contain quotes"
-        else -> error("handled by cli: ${r::class.simpleName}")
+        is AddRefusal.PortUnavailable, is AddRefusal.Models -> error("handled by cli: ${r::class.simpleName}")
     }
 
     /** The console form's sentence: no flag, no em-dash. */
@@ -64,7 +67,10 @@ internal class AddRefusalText {
         is AddRefusal.PortUnavailable ->
             "No free loopback head port in ${r.from}..${r.to}; free a port and try again."
         is AddRefusal.Models -> consoleModels(r.problem)
-        else -> consoleStandard(r)
+        is AddRefusal.KeyTaken, is AddRefusal.CommandTaken, is AddRefusal.Unparseable, is AddRefusal.NameRequired,
+        is AddRefusal.BaseUrlRequired,
+        AddRefusal.QuotedValue,
+        -> consoleStandard(r)
     }
 
     /** The editable input an opening refusal names, independent of either surface's sentence. */
@@ -83,7 +89,7 @@ internal class AddRefusalText {
         is AddRefusal.NameRequired -> "'${r.profile}' needs a name: lowercase letters, digits and dashes."
         is AddRefusal.BaseUrlRequired -> "'${r.profile}' needs a base URL."
         AddRefusal.QuotedValue -> "The base URL and the command must not contain quotes."
-        else -> error("handled by console: ${r::class.simpleName}")
+        is AddRefusal.PortUnavailable, is AddRefusal.Models -> error("handled by console: ${r::class.simpleName}")
     }
 
     /** The CLI's line after the file's path: nothing was written. */

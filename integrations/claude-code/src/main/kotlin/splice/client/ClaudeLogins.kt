@@ -94,7 +94,7 @@ public class ClaudeLogins(
         val moved = Cancellables.runCatchingCancellable {
             when (val live = HeadLogin.read(head.configDir)) {
                 is Live.Unreadable -> ClaudeLoginResult.Refused(Refusals.unreadable(head, live.why))
-                else -> move(head, label, live, discard)
+                Live.Absent, is Live.Held -> move(head, label, live, discard)
             }
         }
         return moved.getOrElse { failure ->

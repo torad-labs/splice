@@ -5,8 +5,6 @@
 package splice.firchecks
 
 import org.jetbrains.kotlin.com.intellij.psi.PsiElement
-import org.jetbrains.kotlin.compiler.plugin.CliOption
-import org.jetbrains.kotlin.config.CompilerConfigurationKey
 import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.diagnostics.DiagnosticReporter
@@ -26,19 +24,6 @@ import org.jetbrains.kotlin.fir.resolve.toRegularClassSymbol
 import org.jetbrains.kotlin.fir.types.ConeKotlinType
 import org.jetbrains.kotlin.fir.types.coneType
 import org.jetbrains.kotlin.fir.types.isBooleanOrNullableBoolean
-
-internal val closedWhenKey: CompilerConfigurationKey<Boolean> =
-    CompilerConfigurationKey.create("splice closed-when wall")
-
-/** `-P plugin:splice.fir-checks:closedWhen=true` turns the wall on for one compilation. The build names the modules it is on for,
- *  so the wall reaches the whole tree one module at a time and the day it is on everywhere this option goes away. */
-internal val closedWhenOption: CliOption = CliOption(
-    optionName = "closedWhen",
-    valueDescription = "<true>",
-    description = "Make an else arm on a when over an enum, a sealed type or a Boolean a compile error",
-    required = false,
-    allowMultipleOccurrences = false,
-)
 
 /** The wall's diagnostics. Registered with the compiler in [MustConsumeFirExtensionRegistrar]. */
 internal object ClosedWhenErrors : KtDiagnosticsContainer() {

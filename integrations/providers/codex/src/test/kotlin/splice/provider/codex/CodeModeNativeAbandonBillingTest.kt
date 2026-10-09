@@ -160,7 +160,7 @@ internal class CodeModeNativeAbandonBillingTest : CodeModeStatementStreamSupport
                     }
                 }
             }
-            else -> {
+            NativeAbandonEnding.TERMINAL, NativeAbandonEnding.HELD_TERMINAL -> {
                 finishSource(source)
                 withTimeout(1_500) { round.outcome() }
             }

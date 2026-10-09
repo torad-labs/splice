@@ -1,7 +1,7 @@
 // NEW: (discipline L4) the K2 compiler-plugin entry point. Discovered via the
 // META-INF/services/org.jetbrains.kotlin.compiler.plugin.CompilerPluginRegistrar resource. Its two -P options,
 // publicSurfaceReportDir and publicSurfaceSourceRoot (FirChecksCommandLineProcessor), add the V4-92 public-surface
-// reports, one per compiled source, to that compilation. Its third, closedWhen, turns the closed-when wall on.
+// reports, one per compiled source, to that compilation.
 package splice.firchecks
 
 import org.jetbrains.kotlin.backend.common.extensions.IrGenerationExtension
@@ -20,7 +20,7 @@ internal class MustConsumeCompilerPluginRegistrar : CompilerPluginRegistrar() {
 
     override fun ExtensionStorage.registerExtensions(configuration: CompilerConfiguration) {
         FirExtensionRegistrarAdapter.registerExtension(
-            MustConsumeFirExtensionRegistrar(closedWhen = configuration.get(closedWhenKey) == true),
+            MustConsumeFirExtensionRegistrar(),
         )
         surfaceReports(configuration)?.let { IrGenerationExtension.registerExtension(it) }
     }

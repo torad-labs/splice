@@ -73,6 +73,10 @@ val closedWhenModules =
         ":features-configuration",
         ":core",
         ":integrations-claude-code",
+        ":features-events",
+        ":integrations-providers-kimi",
+        ":integrations-providers-openai",
+        ":quality-architecture",
         ":integrations-dialects-openai-responses",
         ":features-diagnostics",
     )

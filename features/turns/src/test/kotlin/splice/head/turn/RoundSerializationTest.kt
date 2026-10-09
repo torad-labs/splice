@@ -31,13 +31,13 @@ import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.UsagePayloadBuilder
-import splice.upstream.RetryBackoff
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
+import splice.upstream.RetryBackoff
 import splice.upstream.RoundResult
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnSignals

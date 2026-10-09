@@ -42,7 +42,7 @@ import { astGrepBin } from "../lib/astgrep.ts";
 import { resolveJdk21 } from "../lib/jdk.ts";
 import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
-import { commitLegs, LAW_SUITES_TASK, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
+import { commitLegs, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
 import { cancelledBySignal, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
 import { title } from "./title.ts";
 
@@ -55,8 +55,6 @@ export const HOOK_VERBS = ["pre-commit", "pre-push"] as const;
 const ZERO_SHA = /^0+$/;
 const LADDER = "tools/gate/config/ladder.json";
 const KOTLIN = /\.kts?$/;
-/** The plugin whose presence means the checkout registers `lawSuites`; a checkout without it has no law task to request. */
-const LAW_SUITE_PLUGIN = "build-logic/src/main/kotlin/splice.law-suite.gradle.kts";
 /** A root script: configuration evaluates it, so the `help` task checks it. */
 const ROOT_SCRIPT = /^[^/]+\.gradle\.kts$/;
 /** build-logic's own sources: main is what its compile checks, test is what its test compile checks, and its build
@@ -632,11 +630,11 @@ export async function commitGate(lay: Layout, deps: HookDeps = {}): Promise<numb
   if (census !== 0) return census;
   const legs = await commitLegsLeg(lay, deps);
   if (legs !== 0) return legs;
-  return preCommit(lay, deps);
+  return preCommit(lay);
 }
 
 /** The pre-commit judgement of this commit. Returns the exit code. */
-export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<number> {
+export async function preCommit(lay: Layout): Promise<number> {
   const started = performance.now();
   const root = lay.repoRoot;
   const changed = changedPaths(root);
@@ -647,10 +645,7 @@ export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<numbe
     return 1;
   }
   const touched = changed.filter((p) => KOTLIN.test(p));
-  // A law reads files that are not Kotlin (a README, a baseline, a script), so a commit with no Kotlin still asks for lawSuites where
-  // the checkout registers them; gradle's up-to-date check keeps that cheap when nothing a law reads changed.
-  const lawsRegistered = existsSync(join(root, LAW_SUITE_PLUGIN));
-  if (touched.length === 0 && !lawsRegistered) {
+  if (touched.length === 0) {
     console.error("pre-commit: no Kotlin in this commit; nothing to judge");
     return 0;
   }
@@ -679,40 +674,23 @@ export async function preCommit(lay: Layout, deps: HookDeps = {}): Promise<numbe
   }
 
   const modules = gradleModules(root);
-  const tasks = new Set<string>();
-  const unmapped: string[] = [];
-  for (const path of touched) {
-    const checks = checksFor(modules, path);
-    if (checks === undefined) unmapped.push(path);
-    else for (const task of checks) tasks.add(task);
-  }
+  const unmapped = touched.filter((path) => checksFor(modules, path) === undefined);
   if (unmapped.length > 0) {
     for (const path of unmapped) console.error(`  ✗ ${path}: no gradle check covers this file`);
     console.error(`pre-commit: ✗ ${unmapped.length} Kotlin file(s) with no check — ${seconds(started)}`);
     return 1;
   }
 
-  // The cross-module laws ride in the same request as the push makes: gradle fingerprints each law task's declared read set, so a
-  // commit that touches a file a law reads reruns that law, and one that touches nothing a law reads runs none. The selector is
-  // gradle's own up-to-date check over the inputs each module declares (splice.law-suite), shared with prePushScope, never a list.
-  if (lawsRegistered) tasks.add(LAW_SUITES_TASK);
-
-  const judged = await judgedRun(deps.gate ?? slotRunner(lay, "pre-commit", false), root, modules, [...tasks], deps.rivalLive);
-  if (judged.status === 0) {
-    const late = driftedSince(root, changed, judgedAt);
-    if (late.length > 0) {
-      for (const breach of late) console.error(`  ✗ ${breach.reason}`);
-      console.error(`pre-commit: ✗ ${late.length} path(s) changed while the gate judged them — ${seconds(started)}`);
-      return 1;
-    }
-    console.error(`  ✓ ${[...tasks].join(" ")}`);
-    console.error(`pre-commit: PASS — ${seconds(started)}${judged.reran ? " (after one collision rerun)" : ""}`);
-    return 0;
+  // No gradle here: the compile, detekt and law legs this hook once ran are pre-push's, which compiles every module, runs `check`
+  // for each module the push changes and requests lawSuites. This hook is the fast tier and finishes within a minute.
+  const late = driftedSince(root, changed, judgedAt);
+  if (late.length > 0) {
+    for (const breach of late) console.error(`  ✗ ${breach.reason}`);
+    console.error(`pre-commit: ✗ ${late.length} path(s) changed while the gate judged them — ${seconds(started)}`);
+    return 1;
   }
-  console.error(tailOf(judged.output));
-  for (const line of failureLines(root, judged.output)) console.error(line);
-  console.error(`pre-commit: ✗ gradle red${redNote(judged)} — ${seconds(started)}`);
-  return 1;
+  console.error(`pre-commit: PASS — ${seconds(started)}`);
+  return 0;
 }
 
 /** The pre-push judgement of the pushed tip against the worktree. [stdin] is git's ref list:

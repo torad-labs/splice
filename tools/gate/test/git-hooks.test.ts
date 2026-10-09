@@ -208,54 +208,14 @@ const pushOf = (sha: string): string => `refs/heads/feat/x ${sha} refs/heads/fea
 /** The fixtures have no ladder: a pre-push test that is not about the ladder injects this empty one. */
 const NO_LEGS: Leg[] = [];
 
-/** The checkout registers lawSuites: the plugin file is committed, as it is in the real repository. */
-function registerLaws(root: string): void {
-  writeFile(root, "build-logic/src/main/kotlin/splice.law-suite.gradle.kts", "// plugin\n");
-  git(root, ["add", "build-logic/src/main/kotlin/splice.law-suite.gradle.kts"]);
-  git(root, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "plugin"]);
-}
-
 describe("pre-commit judges the bytes the commit holds", () => {
   test("RED: a staged violation blocks the commit, and gradle is never asked", async () => {
     const root = wallsRepo();
     writeFile(root, TARGET, VIOLATION);
     git(root, ["add", TARGET]);
     const calls: string[][] = [];
-    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(1);
+    expect(await preCommit(lay(root))).toBe(1);
     expect(calls).toEqual([]);
-  });
-
-  test("GREEN: the fixed bytes pass the walls and the module's compile and detekt", async () => {
-    const root = wallsRepo();
-    writeFile(root, TARGET, CLEAN);
-    git(root, ["add", TARGET]);
-    const calls: string[][] = [];
-    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(0);
-    expect(calls).toEqual([[":core:compileKotlin", ":core:compileTestKotlin", ":core:detekt"]]);
-  });
-
-  test("GREEN: a checkout that registers lawSuites asks for them with the module check, so gradle decides which laws rerun", async () => {
-    const root = wallsRepo();
-    registerLaws(root);
-    writeFile(root, TARGET, CLEAN);
-    git(root, ["add", TARGET]);
-    const calls: string[][] = [];
-    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(0);
-    expect(calls).toEqual([[":core:compileKotlin", ":core:compileTestKotlin", ":core:detekt", "lawSuites"]]);
-  });
-
-  test("RED: a law that goes red on the commit refuses it and the verdict names the law", async () => {
-    const root = wallsRepo();
-    registerLaws(root);
-    writeFile(root, TARGET, CLEAN);
-    git(root, ["add", TARGET]);
-    const red: GateRunner = async () => ({
-      status: 1,
-      output: "DaemonStopOrderTest > the teardown does not discard whether the file lane actually flushed() FAILED\n> Task :quality-architecture:test FAILED\n",
-    });
-    const { result, text } = await captured(() => preCommit(lay(root), { gate: red }));
-    expect(result).toBe(1);
-    expect(text).toContain("DaemonStopOrderTest");
   });
 
   test("a commit with no Kotlin in it passes without running a scan", async () => {
@@ -265,29 +225,13 @@ describe("pre-commit judges the bytes the commit holds", () => {
     expect(await preCommit(lay(root))).toBe(0);
   });
 
-  test("RED: a commit with no Kotlin still asks for lawSuites, and a law that reads the README refuses it", async () => {
-    const root = wallsRepo();
-    registerLaws(root);
-    writeFile(root, "README.md", "violates a law\n");
-    git(root, ["add", "README.md"]);
-    const calls: string[][] = [];
-    const red: GateRunner = async (tasks) => {
-      calls.push([...tasks]);
-      return { status: 1, output: "ReadmeLawTest > the readme names a host tool() FAILED\n" };
-    };
-    const { result, text } = await captured(() => preCommit(lay(root), { gate: red }));
-    expect(result).toBe(1);
-    expect(calls).toEqual([["lawSuites"]]);
-    expect(text).toContain("ReadmeLawTest");
-  });
-
   test("two sets of bytes are refused, naming the path: the index holds the clean form, the worktree the violation", async () => {
     const root = wallsRepo();
     writeFile(root, TARGET, CLEAN);
     git(root, ["add", TARGET]);
     writeFile(root, TARGET, VIOLATION);
     const calls: string[][] = [];
-    const { result, text } = await captured(() => preCommit(lay(root), { gate: compiler(root, calls) }));
+    const { result, text } = await captured(() => preCommit(lay(root)));
     expect(result).toBe(1);
     expect(calls).toEqual([]);
     expect(text).toContain(`${TARGET}: the index and the worktree hold different content or mode`);
@@ -299,7 +243,7 @@ describe("pre-commit judges the bytes the commit holds", () => {
     git(root, ["add", TARGET]);
     writeFile(root, TARGET, CLEAN);
     expect(refused(root, [TARGET])).toEqual([TARGET]);
-    expect(await preCommit(lay(root), { gate: compiler(root) })).toBe(1);
+    expect(await preCommit(lay(root))).toBe(1);
   });
 
   test("a clean filter does not hide the difference: the index holds the filtered blob, the worktree its raw bytes", () => {
@@ -327,32 +271,6 @@ describe("pre-commit judges the bytes the commit holds", () => {
     expect(refused(root, [TARGET])).toEqual([TARGET]);
   });
 
-  test("RED: a commit that only deletes a Kotlin file runs the module the file left", async () => {
-    const root = wallsRepo();
-    writeFile(root, TARGET, CLEAN);
-    git(root, ["add", TARGET]);
-    commit(root, "chore(test): probe");
-    git(root, ["rm", "-q", TARGET]);
-    const calls: string[][] = [];
-    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(0);
-    expect(calls).toEqual([[":core:compileKotlin", ":core:compileTestKotlin", ":core:detekt"]]);
-  });
-
-  test("RED: a Kotlin file moved out of its module runs the module it left and the module it reaches", async () => {
-    const root = wallsRepo();
-    writeFile(root, "settings.gradle.kts", `${MODULE_SETTINGS}include(":app")\nproject(":app").projectDir = file("app")\n`);
-    git(root, ["add", "settings.gradle.kts"]);
-    writeFile(root, TARGET, CLEAN);
-    git(root, ["add", TARGET]);
-    commit(root, "chore(test): probe");
-    mkdirSync(join(root, "app", "src", "main", "kotlin", "splice", "app"), { recursive: true });
-    git(root, ["mv", TARGET, "app/src/main/kotlin/splice/app/Probe.kt"]);
-    const calls: string[][] = [];
-    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(0);
-    expect(calls.length).toBe(1);
-    expect(calls[0]).toEqual(expect.arrayContaining([":core:compileKotlin", ":core:detekt", ":app:compileKotlin", ":app:detekt"]));
-  });
-
   test("RED: a Kotlin path whose type changes from a file to a symlink is refused, and gradle is never asked", async () => {
     const root = wallsRepo();
     writeFile(root, TARGET, CLEAN);
@@ -363,7 +281,7 @@ describe("pre-commit judges the bytes the commit holds", () => {
     symlinkSync("Seat.kt", join(root, TARGET));
     git(root, ["add", TARGET]);
     const calls: string[][] = [];
-    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(1);
+    expect(await preCommit(lay(root))).toBe(1);
     expect(calls).toEqual([]);
   });
 
@@ -374,7 +292,7 @@ describe("pre-commit judges the bytes the commit holds", () => {
     commit(root, "chore(test): probe");
     git(root, ["rm", "-q", "--cached", TARGET]);
     const calls: string[][] = [];
-    const { result, text } = await captured(() => preCommit(lay(root), { gate: compiler(root, calls) }));
+    const { result, text } = await captured(() => preCommit(lay(root)));
     expect(result).toBe(1);
     expect(calls).toEqual([]);
     expect(text).toContain(`commit deletes ${TARGET} but the worktree still holds it`);
@@ -386,18 +304,8 @@ describe("pre-commit judges the bytes the commit holds", () => {
     symlinkSync("Probe.kt", join(root, SEAT_FILE.replace("Seat.kt", "Link.kt")));
     git(root, ["add", TARGET, SEAT_FILE.replace("Seat.kt", "Link.kt")]);
     const calls: string[][] = [];
-    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(1);
+    expect(await preCommit(lay(root))).toBe(1);
     expect(calls).toEqual([]);
-  });
-
-  test("a file with a group execute bit and no owner execute bit is a 100644 file: only the owner bit makes 100755", async () => {
-    const root = wallsRepo();
-    writeFile(root, TARGET, CLEAN);
-    git(root, ["add", TARGET]);
-    chmodSync(join(root, TARGET), 0o654);
-    const calls: string[][] = [];
-    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(0);
-    expect(calls.length).toBe(1);
   });
 
   test("a symlink whose target holds a byte that is not UTF-8 is judged by its raw bytes", async () => {
@@ -422,42 +330,10 @@ describe("pre-commit judges the bytes the commit holds", () => {
     writeFile(root, "scripts/Helper.kts", "val x = 1\n");
     git(root, ["add", "scripts/Helper.kts"]);
     const calls: string[][] = [];
-    expect(await preCommit(lay(root), { gate: compiler(root, calls) })).toBe(1);
+    expect(await preCommit(lay(root))).toBe(1);
     expect(calls).toEqual([]);
   });
 
-  test("a red in another seat's dirty file blocks the commit: nothing is waived by the file's owner, and the owner is named", async () => {
-    const root = wallsRepo();
-    writeFile(root, TARGET, CLEAN);
-    git(root, ["add", TARGET]);
-    writeFile(root, SEAT_FILE, VIOLATION);
-    const lock = join(root, ".git", "seat-locks", SEAT_FILE.replaceAll("/", "%"));
-    mkdirSync(lock, { recursive: true });
-    writeFileSync(join(lock, "owner"), "splice-builder9\n");
-    const { result, text } = await captured(() => preCommit(lay(root), { gate: compiler(root) }));
-    expect(result).toBe(1);
-    expect(text).toContain(`${SEAT_FILE} — seat lock: splice-builder9`);
-  });
-});
-
-describe("a root script is checked by gradle's configuration pass", () => {
-  test("RED: a broken settings script blocks the commit, judged by the real gradle", async () => {
-    const root = wallsRepo();
-    linkWrapper(root);
-    writeFile(root, "settings.gradle.kts", "val broken = (\n");
-    git(root, ["add", "settings.gradle.kts"]);
-    const { result, text } = await captured(() => preCommit(lay(root), { gate: gradleHere(root) }));
-    expect(result).toBe(1);
-    expect(text).toContain("Script compilation error");
-  }, 240_000);
-
-  test("GREEN: the fixed settings script passes the same real configuration pass", async () => {
-    const root = wallsRepo();
-    linkWrapper(root);
-    writeFile(root, "settings.gradle.kts", 'rootProject.name = "scratch"\n');
-    git(root, ["add", "settings.gradle.kts"]);
-    expect(await preCommit(lay(root), { gate: gradleHere(root) })).toBe(0);
-  }, 240_000);
 });
 
 const CENSUS_HEADER = "source\tdisposition\tdestination\treason";
@@ -593,34 +469,6 @@ describe("the census leg judges the commit's own bytes and refuses a finding the
 });
 
 describe("the contract holds until the gate has judged the bytes it reads", () => {
-  test("RED: a worktree file swapped while gradle runs is refused by name, though the gate passed", async () => {
-    const root = wallsRepo();
-    writeFile(root, TARGET, CLEAN);
-    git(root, ["add", TARGET]);
-    const gate: GateRunner = async () => {
-      writeFile(root, TARGET, VIOLATION);
-      return { status: 0, output: "BUILD SUCCESSFUL\n" };
-    };
-    const { result, text } = await captured(() => preCommit(lay(root), { gate }));
-    expect(result).toBe(1);
-    expect(text).toContain(`${TARGET}: the index and the worktree hold different content or mode`);
-  });
-
-  test("RED: a file changed and changed back while gradle runs is refused, since the bytes it read are not known", async () => {
-    const root = wallsRepo();
-    writeFile(root, TARGET, CLEAN);
-    git(root, ["add", TARGET]);
-    const gate: GateRunner = async () => {
-      writeFile(root, TARGET, VIOLATION);
-      await Bun.sleep(20);
-      writeFile(root, TARGET, CLEAN);
-      return { status: 0, output: "BUILD SUCCESSFUL\n" };
-    };
-    const { result, text } = await captured(() => preCommit(lay(root), { gate }));
-    expect(result).toBe(1);
-    expect(text).toContain(`${TARGET}: changed while the gate judged it`);
-  });
-
   test("RED: a directory replaced by a file: deleting its old child is absent, not a crash", async () => {
     const root = wallsRepo();
     writeFile(root, "old/item.txt", "item\n");
@@ -630,7 +478,7 @@ describe("the contract holds until the gate has judged the bytes it reads", () =
     rmSync(join(root, "old"), { recursive: true, force: true });
     writeFile(root, "old", "a file now\n");
     git(root, ["add", "old"]);
-    const { result } = await captured(() => preCommit(lay(root), { gate: compiler(root) }));
+    const { result } = await captured(() => preCommit(lay(root)));
     expect(result).toBe(0);
   });
 

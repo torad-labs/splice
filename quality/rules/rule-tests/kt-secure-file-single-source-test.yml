@@ -1,5 +1,7 @@
 id: kt-secure-file-single-source
 valid:
+  # the one declaration, exempt by its shape: a const val
+  - 'internal const val OWNER_ONLY_MODE: String = "rw-------"'
   - 'SecureFile.writeAtomic0600(path, content)'
   - 'Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rwx------"))'
 invalid:

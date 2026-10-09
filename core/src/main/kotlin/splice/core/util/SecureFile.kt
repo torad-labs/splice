@@ -32,7 +32,8 @@ public sealed class FileTightening {
 // "why it is still open"); with RETURN_VALUE_NOT_USED an error, dropping one does not compile.
 @MustUseReturnValues
 public object SecureFile {
-    private val OWNER_ONLY = PosixFilePermissions.fromString("rw-------")
+    internal const val OWNER_ONLY_MODE: String = "rw-------"
+    private val OWNER_ONLY = PosixFilePermissions.fromString(OWNER_ONLY_MODE)
     private val OWNER_ONLY_DIR = PosixFilePermissions.fromString("rwx------")
     private val OPEN_TO_OTHERS = PosixFilePermissions.fromString("---rwxrwx")
 

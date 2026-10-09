@@ -1,4 +1,4 @@
-package splice.codemode.v4388
+package splice.codemode
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -7,8 +7,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
-import splice.codemode.JvmCodeModeRuntime
-import splice.codemode.SCRIPT_DEADLINE_MS
 import splice.codemode.host.HostLaunch
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep

@@ -5,6 +5,7 @@ package splice.provider.codex.state
 import kotlinx.serialization.json.Json
 import splice.core.memory.HeapReservations
 import splice.core.util.Cancellables
+import splice.core.util.FileTightening
 import splice.core.util.JsonlForce
 import splice.core.util.JsonlSink
 import splice.core.util.SecureFile
@@ -58,8 +59,8 @@ internal object CodeModeStateJournal {
             // A delta is not a checkpoint. Refuse this race so the caller recreates its full durable cache.
             if (Files.notExists(path)) throw NoSuchFileException(path.toString())
             when (val tightening = SecureFile.ownerOnlyFile(path)) {
-                is splice.core.util.FileTightening.Open -> throw IOException(tightening.why)
-                else -> Unit
+                is FileTightening.Open -> throw IOException(tightening.why)
+                is FileTightening.Held, is FileTightening.Tightened -> Unit
             }
             trimTornTail(path)
             JsonlSink.appendLine(

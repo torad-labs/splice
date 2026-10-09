@@ -40,7 +40,7 @@ internal class ResponsesHarvest {
                     when (part) {
                         is JsonPrimitive -> JsonScalars.strOrEmpty(part)
                         is JsonObject -> JsonScalars.strOrEmpty(part[FIELD_TEXT])
-                        else -> ""
+                        is JsonArray -> ""
                     }
                 },
         )
@@ -65,7 +65,7 @@ internal class ResponsesHarvest {
                     is JsonObject ->
                         JsonScalars.strOrEmpty(part[FIELD_TEXT])
                             .ifEmpty { JsonScalars.strOrEmpty(part[FIELD_CONTENT]) }
-                    else -> ""
+                    is JsonArray -> ""
                 }
             },
         ).ifEmpty { null }
@@ -73,7 +73,7 @@ internal class ResponsesHarvest {
             JsonScalars.strOrEmpty(v[FIELD_TEXT])
                 .ifEmpty { JsonScalars.strOrEmpty(v[FIELD_CONTENT]) }
                 .ifEmpty { null }
-        else -> null
+        null -> null
     }
 
     /** Pull text + thinking from a completed Responses object (when SSE deltas were sparse). */

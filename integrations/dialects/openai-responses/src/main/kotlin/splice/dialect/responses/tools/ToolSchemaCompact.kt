@@ -54,7 +54,7 @@ internal class SchemaCompact(
             mapSchemaChildren(m, includeDefs = true) { stripDescriptions(it) }
             JsonObject(m)
         }
-        else -> v
+        is JsonPrimitive -> v
     }
 
     /** Local-ref carriers become `{}` FIRST, then the root tables drop — so behavior never depends

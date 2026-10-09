@@ -58,7 +58,10 @@ internal class DoctorAuthVerdict {
             CredentialVerdict.Unverified ->
                 "client-native: no successful turn answered on this head since the daemon started, " +
                     "so the login is unverified"
-            else -> "client-native: declared auth.kind = client, so there is no key to set"
+            null,
+            CredentialVerdict.Held,
+            is CredentialVerdict.Rejected,
+            -> "client-native: declared auth.kind = client, so there is no key to set"
         }
         auth.envVar != null -> "${auth.envVar} is set"
         else -> "signed in"

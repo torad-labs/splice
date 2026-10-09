@@ -10,8 +10,12 @@ import splice.core.wire.ContentBlock
 import splice.core.wire.DocumentBlock
 import splice.core.wire.ImageBlock
 import splice.core.wire.MediaSource
+import splice.core.wire.RedactedThinkingBlock
 import splice.core.wire.TextBlock
+import splice.core.wire.ThinkingBlock
 import splice.core.wire.ToolResultBlock
+import splice.core.wire.ToolUseBlock
+import splice.core.wire.UnknownBlock
 import splice.dialect.responses.request.ImageDisposition
 import splice.dialect.responses.request.ResponsesToolResultMedia
 import splice.upstream.BuiltTurn
@@ -153,7 +157,8 @@ internal class CodexCodeModeTurnBuilder(
             is TextBlock -> part.text
             is ImageBlock -> imageMarker(toolUseId, part.source, dispositions.next())
             is DocumentBlock -> omitted(toolUseId, "document", part.source, DOCUMENT_REASON)
-            else -> omitted(toolUseId, "non-text content", null, DOCUMENT_REASON)
+            is RedactedThinkingBlock, is ThinkingBlock, is ToolResultBlock, is ToolUseBlock, is UnknownBlock ->
+                omitted(toolUseId, "non-text content", null, DOCUMENT_REASON)
         }
 
     private fun imageMarker(toolUseId: String, source: MediaSource?, disposition: ImageDisposition): String =
@@ -187,7 +192,8 @@ private class CodeModeLegacyMarkers {
         is TextBlock -> part.text
         is ImageBlock -> omitted(toolUseId, "image", part.source)
         is DocumentBlock -> omitted(toolUseId, "document", part.source)
-        else -> omitted(toolUseId, "non-text content", null)
+        is RedactedThinkingBlock, is ThinkingBlock, is ToolResultBlock, is ToolUseBlock, is UnknownBlock ->
+            omitted(toolUseId, "non-text content", null)
     }
 
     private fun omitted(toolUseId: String, kind: String, source: MediaSource?): String {

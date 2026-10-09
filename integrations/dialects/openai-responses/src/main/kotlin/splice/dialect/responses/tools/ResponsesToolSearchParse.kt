@@ -5,6 +5,7 @@ package splice.dialect.responses.tools
 
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -45,7 +46,7 @@ internal class ResponsesToolSearchParse {
         val obj = when (arguments) {
             is JsonObject -> arguments
             is JsonPrimitive -> parseArgumentsString(JsonScalars.strOrEmpty(arguments))
-            else -> null
+            null, is JsonArray -> null
         } ?: return "" to null
         return JsonScalars.strOrEmpty(obj["query"]) to frames.intOr(obj["limit"])
     }

@@ -19,9 +19,14 @@ import kotlinx.serialization.json.buildJsonObject
 import splice.core.util.JsonWire
 import splice.core.wire.AnthropicMessage
 import splice.core.wire.CLIENT_JSON_DEPTH_CAP
+import splice.core.wire.DocumentBlock
+import splice.core.wire.ImageBlock
+import splice.core.wire.RedactedThinkingBlock
 import splice.core.wire.TextBlock
+import splice.core.wire.ThinkingBlock
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
+import splice.core.wire.UnknownBlock
 
 internal object LoopGuard {
     const val TRIGGER = 3
@@ -53,7 +58,13 @@ internal object LoopGuard {
             when (block) {
                 is ToolUseBlock -> calls[block.id] = block.name to canonical(block.input)
                 is ToolResultBlock -> onResult(block)
-                else -> Unit
+                is DocumentBlock,
+                is ImageBlock,
+                is RedactedThinkingBlock,
+                is TextBlock,
+                is ThinkingBlock,
+                is UnknownBlock,
+                -> Unit
             }
         }
 

@@ -61,7 +61,7 @@ internal class SchemaDefPrune(private val shapes: SchemaShapes) {
                     forEachSchemaChild(v) { collectRefs(it, out, intoDefs) }
                 }
             }
-            else -> Unit
+            is JsonPrimitive -> Unit
         }
     }
 

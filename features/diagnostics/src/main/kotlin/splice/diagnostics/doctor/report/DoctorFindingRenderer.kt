@@ -16,7 +16,7 @@ internal class DoctorFindingRenderer(private val output: TerminalOutput) {
             CheckStatus.WARN -> palette.paint(palette.strain, WARN_GLYPH)
             // An INFO reaching here has a fix but is not a fault — a fresh machine with no topology
             // is not sick. It gets the room without the alarm.
-            else -> palette.paint(palette.quiet, NOTE_GLYPH)
+            CheckStatus.OK, CheckStatus.INFO -> palette.paint(palette.quiet, NOTE_GLYPH)
         }
         output.line("")
         output.line("  $glyph " + palette.paint(palette.strong, check.name))

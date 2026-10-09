@@ -73,6 +73,8 @@ val closedWhenModules =
         ":features-configuration",
         ":core",
         ":integrations-claude-code",
+        ":integrations-dialects-openai-responses",
+        ":features-diagnostics",
     )
 val closedWhenArgs = listOf("-P", "plugin:splice.fir-checks:closedWhen=true")
 val releaseVersion = (JsonSlurper().parse(file("package.json")) as Map<*, *>)["version"].toString()

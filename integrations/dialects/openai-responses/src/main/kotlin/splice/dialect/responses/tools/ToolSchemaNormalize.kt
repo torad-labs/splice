@@ -60,7 +60,7 @@ internal class SchemaShapes {
         is JsonPrimitive -> if (t.isString && t.content in knownTypes) listOf(t.content) else emptyList()
         is JsonArray -> t.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
             .filter { it in knownTypes }
-        else -> emptyList()
+        null, is JsonObject -> emptyList()
     }
 }
 
@@ -114,7 +114,7 @@ internal class SchemaSanitize(private val shapes: SchemaShapes) {
             when (val table = m[t]) {
                 null -> Unit
                 is JsonObject -> m[t] = JsonObject(table.mapValues { sanitize(it.value) })
-                else -> m.remove(t)
+                is JsonArray, is JsonPrimitive -> m.remove(t)
             }
         }
     }

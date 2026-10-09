@@ -55,6 +55,7 @@ internal class TurnConnEnd(
     /** The upstream sent a frame over our own size limit, before or after content reached the client. */
     suspend fun emitOversized(drive: TurnDrive, e: SseFrameTooLarge) {
         log(telemetry.errTurn("upstream-frame-too-large", drive, ": ${e.text}"))
+        drive.trace?.failureSentence(frameTooLargeSentence(e))
         // DR-128: account BEFORE the emit — a dead-client write makes emitError rethrow after
         // sealing, and the turn must not vanish from the perf JSONL and G20 counters (the
         // 2026-07-19 storm shape: dead clients + failing upstream). Same law on every surface.
@@ -76,6 +77,13 @@ internal class TurnConnEnd(
             "upstream sent an oversized streaming event; retry",
             permanent = false,
         )
+    }
+
+    /** The wire record's words for an oversized frame: the label, which limit, and how big the frame had grown. Never
+     *  the frame's content. */
+    private fun frameTooLargeSentence(e: SseFrameTooLarge): String {
+        val size = e.observed?.let { ", frame reached $it characters" }.orEmpty()
+        return "frame_too_large: ${e.text}$size$RETRY_HINT"
     }
 
     private fun refusedRuntimePort(error: Throwable): Int? {

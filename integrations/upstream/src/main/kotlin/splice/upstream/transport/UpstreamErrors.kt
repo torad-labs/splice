@@ -23,8 +23,13 @@ public class UpstreamAuthMissing : UpstreamEnding()
  *  so the transport classifiers walk it exactly as they walk a raw IOException. */
 public class StreamTornBeforeClient(public val cause: java.io.IOException) : UpstreamEnding()
 
-/** The upstream sent a frame over our own safety limit: [kind] says which of the two limits, [limit] its size. */
-public class SseFrameTooLarge(public val kind: String, public val limit: Int) : UpstreamEnding() {
+/** The upstream sent a frame over our own safety limit: [kind] says which of the two limits, [limit] its size, and
+ *  [observed] how many characters the frame had reached when the read stopped (null when the reader did not count). */
+public class SseFrameTooLarge(
+    public val kind: String,
+    public val limit: Int,
+    public val observed: Int? = null,
+) : UpstreamEnding() {
     public val text: String get() = "$kind exceeds the $limit-character safety limit"
 }
 

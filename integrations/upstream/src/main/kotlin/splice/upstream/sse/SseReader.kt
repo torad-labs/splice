@@ -65,7 +65,7 @@ public class SseReader(
             // check done); never re-checked mid-stream (a later U+FEFF is an ordinary character).
             if (!bomChecked) bomChecked = stripLeadingBomWhenReady(lineBuffer)
             if (lineBuffer.length > maxLineChars) {
-                exceeded = SseFrameTooLarge("SSE line", maxLineChars)
+                exceeded = SseFrameTooLarge("SSE line", maxLineChars, lineBuffer.length)
                 return@flow
             }
             rawObserver = notifyRawObserver(rawObserver, lineBuffer, before)

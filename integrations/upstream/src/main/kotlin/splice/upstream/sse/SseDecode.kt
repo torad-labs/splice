@@ -109,7 +109,7 @@ internal class SseEventAssembler(
     fun append(buf: StringBuilder, start: Int, end: Int) {
         val separator = if (dataBuffer.isEmpty()) 0 else 1
         if (dataBuffer.length + separator + (end - start) > maxEventChars) {
-            tooLarge = SseFrameTooLarge("SSE event", maxEventChars)
+            tooLarge = SseFrameTooLarge("SSE event", maxEventChars, dataBuffer.length + separator + (end - start))
             return
         }
         if (separator == 1) dataBuffer.append('\n')

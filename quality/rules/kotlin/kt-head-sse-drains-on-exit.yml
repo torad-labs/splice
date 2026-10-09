@@ -16,10 +16,10 @@
 # answer in the head written with respondTextWriter would carry the drop with it and pass every test
 # that runs on an idle machine.
 #
-# Matched on the identifier, so the import and the call are each a finding. The one file that may name
-# WriterContent is the wrapper itself, recognised by what it does (a finally that closes the channel clean), not by a
-# path. Every daemon stream answers through it since 2026-10-09: the head's turns, and the control plane's events and
-# MCP streams through SseChannelResponse, in the same file.
+# Matched on the identifier, so the import and the call are each a finding. The one writer that may run is the one
+# SseResponse builds inside the try whose own finally closes the channel clean; the rule checks that per writer, not
+# per file or per path (2026-10-09). Every daemon stream answers through SseResponse since then: the head's turns, and
+# the control plane's events and MCP streams through SseChannelResponse.
 id: kt-head-sse-drains-on-exit
 language: kotlin
 severity: error
@@ -31,14 +31,21 @@ rule:
   all:
     - kind: simple_identifier
       regex: ^(respondTextWriter|respondBytesWriter|respondOutputStream|WriterContent|ChannelWriterContent|OutputStreamContent)$
-    # The wrapper is recognised by what it does, not by its path: a file whose body closes the channel CLEAN in a
-    # finally (flushAndClose) is the file that delivers the frames a throwing body wrote, so it may name the writers.
+    # A writer passes only when IT runs inside a try whose own finally closes the channel clean (flushAndClose). The
+    # search stops at the nearest try, lambda, function, finally or catch, so a flushAndClose anywhere else in the
+    # file (an unrelated cleanup, an outer try around a lambda, the finally or catch of the same try) counts for
+    # nothing. Every other stream answers through SseResponse or SseChannelResponse and names no writer at all.
     - not:
         inside:
-          kind: source_file
-          stopBy: end
+          stopBy:
+            any:
+              - kind: function_declaration
+              - kind: lambda_literal
+              - kind: try_expression
+              - kind: finally_block
+              - kind: catch_block
+          kind: try_expression
           has:
-            stopBy: end
             kind: finally_block
             has:
               stopBy: end

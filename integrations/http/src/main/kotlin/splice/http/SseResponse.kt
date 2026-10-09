@@ -32,7 +32,6 @@ package splice.http
 
 import io.ktor.http.ContentType
 import io.ktor.http.content.OutgoingContent
-import io.ktor.http.content.WriterContent
 import io.ktor.http.withCharset
 import io.ktor.utils.io.ByteWriteChannel
 import java.io.Writer
@@ -51,16 +50,17 @@ public fun interface SseBody {
  * compaction replay all end on a frame written last, and a stream whose last frame can vanish is the
  * "empty or malformed response (HTTP 200)" class the cancellation seal exists to prevent.
  */
-public class SseResponse(body: SseBody) : OutgoingContent.WriteChannelContent() {
+public class SseResponse(private val body: SseBody) : OutgoingContent.WriteChannelContent() {
 
     // `text/event-stream; charset=UTF-8`, the value respondTextWriter's defaultTextContentType gave.
-    private val writer = WriterContent({ body(this) }, ContentType.Text.EventStream.withCharset(Charsets.UTF_8))
+    override val contentType: ContentType = ContentType.Text.EventStream.withCharset(Charsets.UTF_8)
 
-    override val contentType: ContentType = writer.contentType
-
+    // Ktor's writer is built INSIDE the try whose finally closes the channel clean: kt-head-sse-drains-on-exit
+    // accepts a raw writer only there, so the guarantee is visible at the writer itself. Named in full rather than
+    // imported, because an import is a writer outside any try.
     override suspend fun writeTo(channel: ByteWriteChannel) {
         try {
-            writer.writeTo(channel)
+            io.ktor.http.content.WriterContent({ body(this) }, contentType).writeTo(channel)
         } finally {
             channel.flushAndClose()
         }

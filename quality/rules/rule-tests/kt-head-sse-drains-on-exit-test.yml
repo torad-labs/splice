@@ -1,5 +1,13 @@
 id: kt-head-sse-drains-on-exit
 valid:
+  - |
+    suspend fun safe(channel: ByteWriteChannel) {
+      try {
+        io.ktor.http.content.WriterContent({ write(frame) }, type).writeTo(channel)
+      } finally {
+        channel.flushAndClose()
+      }
+    }
   - 'call.respond(SseResponse { out -> out.write(frame) })'
   - 'call.respondText(body, ContentType.Application.Json)'
   - 'val note = "respondTextWriter"'
@@ -9,3 +17,17 @@ invalid:
   - 'call.respondOutputStream { write(bytes) }'
   - 'call.respond(WriterContent({ write(frame) }, ContentType.Text.EventStream))'
   - 'import io.ktor.server.response.respondTextWriter'
+  - |
+    suspend fun unsafe(call: ApplicationCall) {
+      call.respondBytesWriter(ContentType.Text.EventStream) { writeStringUtf8(frame) }
+    }
+    suspend fun cleanup(channel: ByteWriteChannel) {
+      try { } finally { channel.flushAndClose() }
+    }
+  - |
+    suspend fun inFinally(channel: ByteWriteChannel, call: ApplicationCall) {
+      try { } finally {
+        channel.flushAndClose()
+        call.respondBytesWriter { }
+      }
+    }

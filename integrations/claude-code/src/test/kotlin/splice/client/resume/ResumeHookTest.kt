@@ -161,7 +161,7 @@ class ResumeHookTest {
 
         assertEquals(emptyMap<String, Any>(), additions, "a hook that cannot run is not registered")
         assertFalse(Files.exists(dir.resolve(ResumeHook.RESUME_HOOK_SH)))
-        assertTrue(log.contains("resume hook NOT installed") && log.contains("noexec"), log.toString())
+        assertTrue(log.contains("resume hook NOT installed") && log.contains("message withheld"), log.toString())
     }
 
     // v0.4.0 review round 2: the install writes the turn key's header file, inside its guarded leg. The
@@ -182,7 +182,7 @@ class ResumeHookTest {
 
         assertEquals(emptyMap<String, Any>(), additions, "a hook that cannot authenticate is not registered")
         assertFalse(Files.exists(dir.resolve(ResumeHook.RESUME_HOOK_SH)))
-        assertTrue(log.contains("resume hook NOT installed") && log.contains("read-only"), log.toString())
+        assertTrue(log.contains("resume hook NOT installed") && log.contains("message withheld"), log.toString())
     }
 
     // v0.4.0 review round 2: written once at daemon start, a header file removed afterwards stayed gone,

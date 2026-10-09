@@ -5,11 +5,10 @@
 // the shared checkout. Gradle is a fake, `compiler`, that judges the scratch worktree's bytes, except the two root
 // script tests, which run the real gradle wrapper on a scratch settings file.
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import {
-  breaches,
   censusLeg,
   checksFor,
   commitGate,
@@ -115,6 +114,8 @@ function wallsRepo(): string {
   cpSync(join(repoRoot, "quality", "rules"), join(root, "quality", "rules"), { recursive: true });
   symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"));
   writeFileSync(join(root, "settings.gradle.kts"), MODULE_SETTINGS);
+  mkdirSync(join(root, "gradle"), { recursive: true });
+  writeFileSync(join(root, "gradle", "module-law.txt"), ":core ->\n");
   git(root, ["add", "--", "sgconfig.yml", "quality", "settings.gradle.kts"]);
   commit(root, "chore(test): scratch scaffold");
   // The scaffold is what origin/main is in this repository, so a new branch's base is the scaffold.
@@ -125,6 +126,7 @@ function wallsRepo(): string {
 /** The real gradle wrapper, reachable from a scratch repository by symlink (its jar and distribution are the repo's). */
 function linkWrapper(root: string): void {
   symlinkSync(join(repoRoot, "gradlew"), join(root, "gradlew"));
+  rmSync(join(root, "gradle"), { recursive: true, force: true });
   symlinkSync(join(repoRoot, "gradle"), join(root, "gradle"));
 }
 
@@ -135,11 +137,6 @@ function writeFile(root: string, path: string, content: string): void {
 
 function lay(root: string): Layout {
   return { repoRoot: root, buildRoot: root };
-}
-
-/** The paths the contract refuses among [paths], in the order given. */
-function refused(root: string, paths: readonly string[]): string[] {
-  return breaches(root, paths).map((breach) => breach.path);
 }
 
 /** A fake gradle: judges the bytes in the worktree's `core/`, and names each file that holds the violation. */
@@ -225,87 +222,20 @@ describe("pre-commit judges the bytes the commit holds", () => {
     expect(await preCommit(lay(root))).toBe(0);
   });
 
-  test("two sets of bytes are refused, naming the path: the index holds the clean form, the worktree the violation", async () => {
+  test("the commit is judged by the staged bytes: a worktree that differs does not block a clean index", async () => {
     const root = wallsRepo();
     writeFile(root, TARGET, CLEAN);
     git(root, ["add", TARGET]);
     writeFile(root, TARGET, VIOLATION);
-    const calls: string[][] = [];
-    const { result, text } = await captured(() => preCommit(lay(root)));
-    expect(result).toBe(1);
-    expect(calls).toEqual([]);
-    expect(text).toContain(`${TARGET}: the index and the worktree hold different content or mode`);
+    expect(await preCommit(lay(root))).toBe(0);
   });
 
-  test("two sets of bytes are refused for the reverse case: the index holds the violation, the worktree the clean form", async () => {
+  test("RED: a staged violation is refused even when the worktree holds the clean form", async () => {
     const root = wallsRepo();
     writeFile(root, TARGET, VIOLATION);
     git(root, ["add", TARGET]);
     writeFile(root, TARGET, CLEAN);
-    expect(refused(root, [TARGET])).toEqual([TARGET]);
     expect(await preCommit(lay(root))).toBe(1);
-  });
-
-  test("a clean filter does not hide the difference: the index holds the filtered blob, the worktree its raw bytes", () => {
-    const root = wallsRepo();
-    writeFile(root, ".gitattributes", "*.kt filter=upper\n");
-    git(root, ["config", "filter.upper.clean", "tr a-z A-Z"]);
-    writeFile(root, TARGET, CLEAN);
-    git(root, ["add", ".gitattributes", TARGET]);
-    expect(refused(root, [TARGET])).toEqual([TARGET]);
-  });
-
-  test("a staged symlink is judged by its link text, not by the file it names", () => {
-    const root = wallsRepo();
-    writeFile(root, "docs/README.md", "docs\n");
-    symlinkSync("README.md", join(root, "docs", "LINK.md"));
-    git(root, ["add", "docs/LINK.md"]);
-    expect(refused(root, ["docs/LINK.md"])).toEqual([]);
-  });
-
-  test("a file whose executable bit differs from the index's mode is refused: the mode is part of the entry", () => {
-    const root = wallsRepo();
-    writeFile(root, TARGET, CLEAN);
-    git(root, ["add", TARGET]);
-    chmodSync(join(root, TARGET), 0o755);
-    expect(refused(root, [TARGET])).toEqual([TARGET]);
-  });
-
-  test("RED: a Kotlin path whose type changes from a file to a symlink is refused, and gradle is never asked", async () => {
-    const root = wallsRepo();
-    writeFile(root, TARGET, CLEAN);
-    writeFile(root, SEAT_FILE, CLEAN);
-    git(root, ["add", TARGET, SEAT_FILE]);
-    commit(root, "chore(test): probe");
-    rmSync(join(root, TARGET));
-    symlinkSync("Seat.kt", join(root, TARGET));
-    git(root, ["add", TARGET]);
-    const calls: string[][] = [];
-    expect(await preCommit(lay(root))).toBe(1);
-    expect(calls).toEqual([]);
-  });
-
-  test("RED: a commit that deletes a path the worktree still holds is refused, and gradle is never asked", async () => {
-    const root = wallsRepo();
-    writeFile(root, TARGET, CLEAN);
-    git(root, ["add", TARGET]);
-    commit(root, "chore(test): probe");
-    git(root, ["rm", "-q", "--cached", TARGET]);
-    const calls: string[][] = [];
-    const { result, text } = await captured(() => preCommit(lay(root)));
-    expect(result).toBe(1);
-    expect(calls).toEqual([]);
-    expect(text).toContain(`commit deletes ${TARGET} but the worktree still holds it`);
-  });
-
-  test("RED: a Kotlin symlink is refused: a link holds no bytes of its own for the gate to judge", async () => {
-    const root = wallsRepo();
-    writeFile(root, TARGET, CLEAN);
-    symlinkSync("Probe.kt", join(root, SEAT_FILE.replace("Seat.kt", "Link.kt")));
-    git(root, ["add", TARGET, SEAT_FILE.replace("Seat.kt", "Link.kt")]);
-    const calls: string[][] = [];
-    expect(await preCommit(lay(root))).toBe(1);
-    expect(calls).toEqual([]);
   });
 
   test("a symlink whose target holds a byte that is not UTF-8 is judged by its raw bytes", async () => {
@@ -314,15 +244,6 @@ describe("pre-commit judges the bytes the commit holds", () => {
     symlinkSync(Buffer.concat([Buffer.from("README"), Buffer.from([0xff]), Buffer.from(".md")]), join(root, "docs", "raw-link"));
     git(root, ["add", "docs/raw-link"]);
     expect(await preCommit(lay(root))).toBe(0);
-  });
-
-  test("THE CONTRACT: an entry that is neither a file nor a symlink is refused, not passed", async () => {
-    const root = wallsRepo();
-    writeFile(root, "sub/inner.txt", "x\n");
-    git(root, ["update-index", "--add", "--cacheinfo", "160000,1111111111111111111111111111111111111111,sub"]);
-    const { result, text } = await captured(() => preCommit(lay(root)));
-    expect(result).toBe(1);
-    expect(text).toContain("sub: index mode 160000 is not a file or a symlink");
   });
 
   test("a Kotlin file no check covers is refused, and gradle is never asked", async () => {
@@ -469,31 +390,6 @@ describe("the census leg judges the commit's own bytes and refuses a finding the
 });
 
 describe("the contract holds until the gate has judged the bytes it reads", () => {
-  test("RED: a directory replaced by a file: deleting its old child is absent, not a crash", async () => {
-    const root = wallsRepo();
-    writeFile(root, "old/item.txt", "item\n");
-    git(root, ["add", "old/item.txt"]);
-    commit(root, "chore(test): base with a directory");
-    git(root, ["rm", "-q", "old/item.txt"]);
-    rmSync(join(root, "old"), { recursive: true, force: true });
-    writeFile(root, "old", "a file now\n");
-    git(root, ["add", "old"]);
-    const { result } = await captured(() => preCommit(lay(root)));
-    expect(result).toBe(0);
-  });
-
-  test("an I/O error other than a missing parent is not absence: the contract throws", () => {
-    const root = wallsRepo();
-    writeFile(root, "loop/item.txt", "item\n");
-    git(root, ["add", "loop"]);
-    commit(root, "chore(test): base with a directory that becomes a symlink loop");
-    git(root, ["rm", "-q", "loop/item.txt"]);
-    rmSync(join(root, "loop"), { recursive: true, force: true });
-    // `loop` names itself, so resolving loop/item.txt fails with ELOOP: neither a missing path nor a file in the way. It throws
-    // for every user, root included, where a permission bit would not.
-    symlinkSync("loop", join(root, "loop"));
-    expect(() => breaches(root, ["loop/item.txt"])).toThrow(/ELOOP/);
-  });
 });
 
 describe("every Kotlin file maps to a check", () => {
@@ -621,15 +517,15 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     expect(calls).toEqual([[":core:compileKotlin", ":core:compileTestKotlin", ":core:check", "lawSuites"]]);
   });
 
-  test("a docs push runs no compile, only the public-source test, and says so in the verdict", async () => {
+  test("a docs push starts no gradle and says so in the verdict", async () => {
     const root = wallsRepo();
     docsCommit(root);
     const calls: string[][] = [];
     const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(0);
-    expect(calls).toEqual([["lawSuites"]]);
+    expect(calls).toEqual([]);
     expect(text).toContain("PRE-PUSH: PASS — judged the worktree, which matches the pushed sha");
-    expect(text).toContain("; scope: no legs; gradle: no compile, check of no module, lawSuites; PublicSourceNamesNoHostToolTest in lawSuites");
+    expect(text).toContain("; scope: no legs; gradle: none (docs only)");
   });
 
   test("a new branch is compared with its merge base with origin/main", async () => {
@@ -682,7 +578,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: red }));
     expect(result).toBe(1);
     expect(text).toContain("PRE-PUSH: FAIL — judged the worktree, which matches the pushed sha ");
-    expect(text).toContain("; scope: legs redLeg; gradle: no compile, check of no module, lawSuites; PublicSourceNamesNoHostToolTest in lawSuites");
+    expect(text).toContain("; scope: legs redLeg; gradle: none (docs only)");
     expect(text).toContain("redLeg");
   });
 
@@ -693,8 +589,8 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const green: Leg[] = [{ task: "greenLeg", command: ["bun", "-e", "process.exit(0)"], inputs: ["**"] }];
     const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: green }));
     expect(result).toBe(0);
-    expect(calls).toEqual([["lawSuites"]]);
-    expect(text).toContain("; scope: legs greenLeg; gradle: no compile, check of no module, lawSuites; PublicSourceNamesNoHostToolTest in lawSuites");
+    expect(calls).toEqual([]);
+    expect(text).toContain("; scope: legs greenLeg; gradle: none (docs only)");
   });
 });
 

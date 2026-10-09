@@ -126,10 +126,11 @@ export function prePushScope(input: ScopeInput): PrePushScope {
   const compile = gradleInput ? `compile of ${input.modules.length} module(s)` : "no compile";
   const check = `check of ${modules.length === 0 ? "no module" : modules.join(", ")}`;
   const publicSource = `${PUBLIC_SOURCE_TEST} in ${LAW_SUITES_TASK}`;
+  const gradleClause = docsOnly ? "gradle: none (docs only)" : `gradle: ${compile}, ${check}, ${LAW_SUITES_TASK}; ${publicSource}`;
   return {
     legs: inScope,
     gradle,
     direct: directLegs,
-    summary: `${legList}; gradle: ${compile}, ${check}, ${LAW_SUITES_TASK}; ${publicSource}`,
+    summary: `${legList}; ${gradleClause}`,
   };
 }

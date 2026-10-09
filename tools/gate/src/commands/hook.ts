@@ -8,24 +8,17 @@
 // another gradle run in this checkout leaves behind (see isCollision). A collision reruns the tasks that failed or
 // were never reached, once; a red after the rerun, or a second collision, fails.
 //
-// ONE SET OF BYTES. The walls read the index and gradle reads the worktree. `git commit -- <paths>` writes the
-// worktree's bytes, so the two agree; a path whose index blob is not what `git add` would store from the
-// worktree is refused, because the gate would judge bytes the commit does not hold.
-//
-// THE THREAT MODEL OF THE CONTRACT CHECKS. The hook reads each touched path's worktree entry before gradle runs and again
-// after it returns (driftedSince). That catches a seat editing a touched path while the gate runs, the realistic case on a
-// shared checkout. It is not a security boundary: a change that lands between the two reads of one path is not seen, since
-// the hook cannot observe a file between two syscalls. The guarantee is the contract as of the two reads. Later reviews
-// judge this file against that line, not against a stronger one.
+// STAGED BYTES ONLY. Pre-commit judges the index, never the worktree: the walls read the staged blobs, so a seat commits
+// only its own lines of a shared file and another seat's half-finished edit never blocks a commit. The worktree is
+// pre-push's to judge, and its verdict says so.
 //
 // EVERY KOTLIN FILE HAS A CHECK. A Kotlin path maps to the gradle tasks that compile it: its module (compile,
 // test compile, detekt), build-logic (its compile), or a root script (the configuration pass, `help`, which
 // compiles every script of the build). A Kotlin path that maps to no check refuses the commit.
 //
 // PRE-COMMIT judges the COMMIT. Its paths come from the index git is writing (`git diff --cached` honours
-// GIT_INDEX_FILE, which git sets for `git commit -- <paths>`). Gradle runs only the checks those paths map to, so a
-// commit's cost follows its own modules. A break a commit makes in a clean caller in another module is not seen
-// here: the pre-push tier compiles every module.
+// GIT_INDEX_FILE, which git sets for `git commit -- <paths>`). It runs the walls on those staged blobs and no gradle;
+// the compile, detekt and tests a commit's modules need belong to the pre-push tier.
 //
 // PRE-PUSH judges the WORKTREE, and the verdict line says so. The worktree must be the pushed tip's HEAD, or the
 // push is refused. It lints the tip's subject, then scopes the push to its own diff (prepush-scope.ts): the ladder
@@ -35,7 +28,7 @@
 // NOTHING HERE IS SKIPPABLE. There is no environment switch and no flag. `--no-verify` is the only bypass, and
 // it is forbidden to seats.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, type Stats, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { astGrepBin } from "../lib/astgrep.ts";
@@ -144,12 +137,6 @@ export function dirtyPaths(root: string): string[] {
   return [...new Set([...tracked, ...untracked])].sort();
 }
 
-const FILE_MODE = "100644";
-const EXECUTABLE_MODE = "100755";
-const SYMLINK_MODE = "120000";
-/** What a worktree path holds when it is a directory or another kind: never an entry a commit can hold. */
-const OTHER_KIND = "other";
-
 /** The entries the index holds: `path -> "<mode> <blob>"`. */
 function indexEntries(root: string): Map<string, string> {
   const entries = new Map<string, string>();
@@ -159,115 +146,6 @@ function indexEntries(root: string): Map<string, string> {
     entries.set(entry.slice(tab + 1), `${mode} ${blob}`);
   }
   return entries;
-}
-
-/** The blob `git add` would store for [bytes]: hashed as given, with no filter and no text decoding. */
-function hashBytes(root: string, bytes: Buffer): string {
-  const hashed = spawnSync("git", ["hash-object", "--no-filters", "--stdin"], { cwd: root, input: bytes });
-  if (hashed.status !== 0) throw new Error(`git hash-object failed: ${hashed.stderr.toString().trim()}`);
-  return hashed.stdout.toString("utf8").trim();
-}
-
-/** The stat of a worktree path, or undefined when it is absent. A parent that is now a regular file (ENOTDIR) means the
- *  path is absent, which is what a commit that deletes it requires; any other error is thrown, and the caller refuses. */
-function lstatAt(abs: string): Stats | undefined {
-  try {
-    return lstatSync(abs, { throwIfNoEntry: false });
-  } catch (error) {
-    if ((error as { code?: string }).code === "ENOTDIR") return undefined;
-    throw error;
-  }
-}
-
-/** Each path's worktree signature: inode, size, mode and change times, or "absent". Two signatures that differ mean the
- *  path changed in between, even when it changed back, so the bytes the gate read are not known to be the commit's. */
-function worktreeSignature(root: string, paths: readonly string[]): Map<string, string> {
-  return new Map(
-    paths.map((path) => {
-      const st = lstatAt(join(root, path));
-      return [path, st === undefined ? "absent" : `${st.ino}:${st.size}:${st.mode}:${st.mtimeMs}:${st.ctimeMs}`];
-    }),
-  );
-}
-
-/** What each worktree path holds as an index entry, the way `git add` would store it. A symlink is its raw link bytes,
- *  never the file it names. A file is its raw bytes, and only the owner execute bit makes it 100755, as git does. A
- *  missing path has no entry; a directory or another kind is OTHER_KIND. */
-function worktreeEntries(root: string, paths: readonly string[]): Map<string, string> {
-  const entries = new Map<string, string>();
-  const files = new Map<string, string>();
-  for (const path of paths) {
-    const abs = join(root, path);
-    const stat = lstatAt(abs);
-    if (stat === undefined) continue;
-    if (stat.isSymbolicLink()) {
-      entries.set(path, `${SYMLINK_MODE} ${hashBytes(root, readlinkSync(abs, { encoding: "buffer" }))}`);
-    } else if (stat.isFile()) {
-      files.set(path, (stat.mode & 0o100) !== 0 ? EXECUTABLE_MODE : FILE_MODE);
-    } else {
-      entries.set(path, OTHER_KIND);
-    }
-  }
-  if (files.size > 0) {
-    const names = [...files.keys()];
-    const hashed = spawnSync("git", ["hash-object", "--no-filters", "--stdin-paths"], { cwd: root, encoding: "utf8", input: `${names.join("\n")}\n` });
-    if (hashed.status !== 0) throw new Error(`git hash-object failed: ${hashed.stderr.trim()}`);
-    const hashes = hashed.stdout.trim().split("\n");
-    names.forEach((path, i) => entries.set(path, `${files.get(path)} ${hashes[i] ?? ""}`));
-  }
-  return entries;
-}
-
-/** A path a commit changes that the worktree does not match, with the reason, named for the path. */
-export interface Breach {
-  readonly path: string;
-  readonly reason: string;
-}
-
-/** What changed while the gate judged the commit's paths: the contract again, and each path whose signature moved. */
-function driftedSince(root: string, changed: readonly string[], judgedAt: ReadonlyMap<string, string>): Breach[] {
-  const refused = breaches(root, changed);
-  const named = new Set(refused.map((breach) => breach.path));
-  const now = worktreeSignature(root, changed);
-  const moved = changed
-    .filter((path) => !named.has(path) && now.get(path) !== judgedAt.get(path))
-    .map((path) => ({ path, reason: `${path}: changed while the gate judged it; the bytes it judged are not known to be the commit's` }));
-  return [...refused, ...moved];
-}
-
-/** THE CONTRACT. For every path a commit changes, the worktree holds the entry the commit holds, in existence, type,
- *  git-normalized mode and raw bytes; a path the commit deletes is absent from the worktree. Every other case is refused,
- *  named: a mode that is neither a file nor a symlink, a Kotlin symlink (a link holds no bytes of its own to judge), a
- *  directory where a file is staged, a type change, and two sets of bytes. The gate judges what the commit holds, so it
- *  never reads a file the commit does not hold. */
-export function breaches(root: string, changed: readonly string[]): Breach[] {
-  if (changed.length === 0) return [];
-  const indexed = indexEntries(root);
-  const worktree = worktreeEntries(root, changed);
-  const out: Breach[] = [];
-  for (const path of changed) {
-    const onDisk = worktree.get(path);
-    const staged = indexed.get(path);
-    if (staged === undefined) {
-      if (onDisk !== undefined) out.push({ path, reason: `commit deletes ${path} but the worktree still holds it` });
-      continue;
-    }
-    const mode = staged.split(" ")[0] ?? "";
-    if (mode !== FILE_MODE && mode !== EXECUTABLE_MODE && mode !== SYMLINK_MODE) {
-      out.push({ path, reason: `${path}: index mode ${mode} is not a file or a symlink, and the gate judges neither` });
-    } else if (mode === SYMLINK_MODE && KOTLIN.test(path)) {
-      out.push({ path, reason: `${path}: a Kotlin symlink; the gate judges the bytes a commit holds, and a link holds none` });
-    } else if (onDisk === undefined) {
-      out.push({ path, reason: `${path}: the index holds it but the worktree does not` });
-    } else if (onDisk === OTHER_KIND) {
-      out.push({ path, reason: `${path}: the worktree holds a directory or another kind, not a file` });
-    } else if ((mode === SYMLINK_MODE) !== onDisk.startsWith(`${SYMLINK_MODE} `)) {
-      out.push({ path, reason: `${path}: the type changed between a symlink and a file` });
-    } else if (onDisk !== staged) {
-      out.push({ path, reason: `${path}: the index and the worktree hold different content or mode` });
-    }
-  }
-  return out;
 }
 
 /** A staged blob, exactly as the commit holds it. The walls read the index, never the worktree. */
@@ -639,21 +517,12 @@ export async function preCommit(lay: Layout): Promise<number> {
   const started = performance.now();
   const root = lay.repoRoot;
   const changed = changedPaths(root);
-  const refused = breaches(root, changed);
-  if (refused.length > 0) {
-    for (const breach of refused) console.error(`  ✗ ${breach.reason}`);
-    console.error(`pre-commit: ✗ ${refused.length} path(s) the worktree does not match the commit on — ${seconds(started)}`);
-    return 1;
-  }
   const touched = changed.filter((p) => KOTLIN.test(p));
   if (touched.length === 0) {
     console.error("pre-commit: no Kotlin in this commit; nothing to judge");
     return 0;
   }
   console.error(`══ pre-commit ══  ${touched.length} Kotlin file(s) in this commit`);
-  // The bytes the gate judges are the bytes the commit holds at this point; gradle runs after, so the check below re-reads.
-  const judgedAt = worktreeSignature(root, changed);
-
   // The walls scan the bytes a commit holds: a deletion has none to scan. Module selection covers every change.
   const indexed = indexEntries(root);
   const kotlin = touched.filter((p) => indexed.has(p));
@@ -684,12 +553,6 @@ export async function preCommit(lay: Layout): Promise<number> {
 
   // No gradle here: the compile, detekt and law legs this hook once ran are pre-push's, which compiles every module, runs `check`
   // for each module the push changes and requests lawSuites. This hook is the fast tier and finishes within a minute.
-  const late = driftedSince(root, changed, judgedAt);
-  if (late.length > 0) {
-    for (const breach of late) console.error(`  ✗ ${breach.reason}`);
-    console.error(`pre-commit: ✗ ${late.length} path(s) changed while the gate judged them — ${seconds(started)}`);
-    return 1;
-  }
   console.error(`pre-commit: PASS — ${seconds(started)}`);
   return 0;
 }

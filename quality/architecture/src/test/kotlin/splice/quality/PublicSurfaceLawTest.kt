@@ -659,8 +659,10 @@ class PublicSurfaceLawTest {
     fun `a shrink passes - an entry that stopped offending is progress, never a failure - V4-92`(@TempDir root: File) {
         with(Tree(root)) {
             write(LIB_API to API, OTHER_USE to USE)
-            assertEquals(emptyList<String>(), audit(baseline(API_ID)), "a baseline entry that has gained a consumer passes")
-            assertEquals(emptyList<String>(), audit(baseline(DELETED_ID)), "a baseline entry whose declaration is gone passes")
+            val gained = audit(baseline(API_ID))
+            assertEquals(emptyList<String>(), gained, "a baseline entry that has gained a consumer passes")
+            val deleted = audit(baseline(DELETED_ID))
+            assertEquals(emptyList<String>(), deleted, "a baseline entry whose declaration is gone passes")
         }
     }
 

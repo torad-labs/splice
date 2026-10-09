@@ -523,6 +523,7 @@ class ConstructorWidthLawTest {
                 ratchet(baseline("\"$FIXTURE_REL SelftestData13\": { \"params\": 99, \"subsystems\": 0 }")),
                 "an entry recorded above the measured width passes",
             )
+            write("Fixture.kt" to params(ConstructorWidth.MAX_PARAMS))
             assertEquals(
                 emptyList<String>(),
                 ratchet(baseline("\"app/src/main/kotlin/Gone.kt WasWideOnce\": { \"params\": 20, \"subsystems\": 0 }")),

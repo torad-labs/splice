@@ -82,9 +82,6 @@ internal object ConstSingleSource {
     const val BASELINE_RESOURCE = "const-single-source-baseline.json"
     const val BASELINE_PATH = "quality/architecture/src/test/resources/$BASELINE_RESOURCE"
 
-    /** The name this law gives itself in a NAMED-SCAR finding. */
-    private const val THIS_FILE = "ConstSingleSourceLawTest.kt"
-
     /** THE NAMED SCARS — duplicated names the audit identified as ONE meaning, each with the reason
      *  it is one. Red regardless of the ratchet baseline; this list IS the fix row's checklist. It
      *  is the only hand-authored list here, so it is cross-checked: an entry that no longer names a
@@ -832,11 +829,14 @@ class ConstSingleSourceLawTest {
             // The other half of "the list is what makes it strict": the same copy, NOT listed, held.
             assertEquals(emptyList<String>(), audit(recorded), "the same copy, unlisted, is held by the baseline")
 
+            // The duplicate is fixed: one file keeps the name, the other is a different constant.
+            write(B_KT to dup("ERR_BODY_LIMIT", "9"))
             assertEquals(
                 emptyList<String>(),
                 audit(baseline(), mapOf("NEVER_DUPLICATED" to "a reason for a duplicate that does not exist")),
                 "a listed name whose duplicate is fixed passes",
             )
+            write(*files)
             assertHit(audit(baseline(), mapOf("ERR_BODY_CAP" to "   ")), "NAMED-SCAR", "ERR_BODY_CAP", "NO reason") {
                 "a listed name with a blank reason is RED by name"
             }

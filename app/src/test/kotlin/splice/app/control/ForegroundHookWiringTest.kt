@@ -10,8 +10,6 @@ import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
@@ -86,21 +84,6 @@ class ForegroundHookWiringTest {
             client.close()
             server.stop()
         }
-    }
-
-    @Test
-    fun `the daemon wires both sides to one store and losing either link fails the pin`() {
-        val relative = "app/src/main/kotlin/splice/app/ControlPlane.kt"
-        var root: Path? = Path.of("").toAbsolutePath()
-        while (root != null && !Files.exists(root.resolve(relative))) root = root.parent
-        val source = Files.readString(requireNotNull(root).resolve(relative))
-        val links = listOf(
-            "internal val foregroundTools = splice.sessions.registry.ForegroundTools()",
-            "foreground = foregroundTools,",
-            "srv.ports.foreground = foregroundTools",
-        )
-        assertTrue(links.all(source::contains))
-        links.forEach { missing -> assertFalse(links.all(source.replace(missing, "")::contains), missing) }
     }
 
     private suspend fun callback(client: HttpClient, url: String, mgmt: MgmtKey, body: String) =

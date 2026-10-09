@@ -1,4 +1,4 @@
-package splice.app.control.v4371
+package splice.app.control.api.diagnostics
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -37,9 +37,9 @@ import splice.usage.quota.UsageView
 import java.nio.file.Files
 import java.nio.file.Path
 
-class DoctorTraceWiringTest {
+class DoctorPendingTraceRestartTest {
     @Test
-    fun `in-process doctor reads booted trace after an explicit opt-out`(@TempDir tmp: Path) = runBlocking {
+    fun `the doctor route reports a trace opt-out as pending restart while config still serves the booted value`(@TempDir tmp: Path) = runBlocking {
         val file = tmp.resolve("splice.toml")
         val initial = topology()
         Files.writeString(file, initial)

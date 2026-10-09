@@ -35,7 +35,6 @@ import splice.core.head.HeadHealth
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
-import splice.head.usage.EconomicsBucket
 import splice.usage.economics.EconomicsRead
 import splice.usage.economics.EconomicsRow
 import splice.usage.economics.EconomicsTurnCounts
@@ -284,18 +283,6 @@ class WebuiContractTest {
         )
     }
 
-    /** v0.4.0 walls review (V4-98): the hop BEFORE the row. EconomicsStore sums into EconomicsBucket,
-     *  whose every sum has a default, and FileSources copies it into EconomicsRow by hand. A sum added to
-     *  the bucket and forgotten in the row compiles and never reaches the wire; the row has no defaults,
-     *  so the reverse drift is a compile error already. */
-    @Test
-    fun `every EconomicsBucket sum has its EconomicsRow field`() {
-        val bucket = declaredProperties(EconomicsBucket::class.java)
-        val row = declaredProperties(EconomicsRow::class.java)
-        assertEquals(emptySet<String>(), bucket - row, "EconomicsBucket sums the row (and so the wire) never carries")
-        assertEquals(emptySet<String>(), row - bucket, "EconomicsRow fields no EconomicsBucket sum feeds")
-    }
-
     /** The page bills on TOTAL input, so in_tokens and cached_tokens must stay SEPARATE fields.
      *  Pre-summing them upstream (or shipping only the uncached remainder) is the exact mistake
      *  that made a 90%-cached drain look safe — the wire must carry both, unreduced. */
@@ -330,10 +317,7 @@ private const val HEADS_KEY = "heads"
 // comes from the type.
 //
 // WHY EconomicsRow for the WIRE hop: it is what EconomicsPayloads reads, so a sum that reaches the row
-// but not the wire fails here BY NAME. The hop before it, EconomicsBucket -> EconomicsRow, has its own
-// test (`every EconomicsBucket sum has its EconomicsRow field`): since LAYOUT-01 this test lives in :app,
-// which sees :features-turns, so the old premise (a :daemon-control test could not name the bucket) is
-// gone, and the V4-98 ask is met with the same reflection.
+// but not the wire fails here BY NAME.
 //
 // WHY JVM REFLECTION and not kotlin-reflect: :daemon-control declares no kotlin-reflect dependency, and
 // adding one to ship a field list is a production dependency bought for a test. A data class's

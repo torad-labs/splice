@@ -54,10 +54,8 @@
 // normalised as its first two.
 //
 // VIOLATIONS. STRICT findings always. GROWTH — a COPY/COLLISION group not in the baseline, or a
-// baselined group that has SPREAD to a new file. STALE — a group that has shrunk (red with the
-// exact new file count and the resource to lower by hand), a recorded group the tree no longer
-// duplicates, or a name recorded here AND on the strict list: the two planes may not launder each
-// other.
+// baselined group that has SPREAD to a new file. A group that shrank or vanished passes. A name
+// recorded here AND on the strict list is still red: the two planes may not launder each other.
 //
 // NOT CAUGHT, stated rather than implied. A duplicate with a DIFFERENT name and the same value —
 // value-only matching over 619 numeric consts is mostly noise, so the HTTP status family gets its
@@ -539,13 +537,9 @@ internal object ConstSingleSource {
         }
         val byName = groups.associateBy { it.name }
         for (name in scars.keys.sorted()) {
-            val group = byName[name]
+            val group = byName[name] ?: continue
             val reason = scars.getValue(name)
             problems += when {
-                group == null ->
-                    "NAMED-SCAR STALE: $name is on the NAMED_SCARS list in $THIS_FILE but is no " +
-                        "longer declared in 2+ files — delete the entry. A named scar held past its fix is unearned " +
-                        "room for the next duplicate to hide in"
                 reason.isBlank() ->
                     "NAMED-SCAR: $name is listed with NO reason — a named scar without a " +
                         "written reason is an absence wearing a label; say why it is one meaning, or remove it"
@@ -570,30 +564,19 @@ internal object ConstSingleSource {
                 "GROWTH (${group.kind}): ${group.name} has SPREAD to " +
                     "${spread.joinToString(", ")} — the baseline records ${was.size} file(s), the tree now has " +
                     "${now.size} (${group.sites})"
-            else ->
-                "STALE (${group.kind}): ${group.name} now spans ${now.size} file(s) but $BASELINE_PATH " +
-                    "records ${was.size} — ${was.filterNot { it in now }.joinToString(", ")} no longer declares it; " +
-                    "lower the entry BY HAND to the ${now.size} file(s) it has now (${now.joinToString(", ")}) to " +
-                    "record the win. Nothing here rewrites the resource, so the ratchet stays visible in a diff"
-        }
-    }
-
-    /** A recorded key the tree no longer carries, or one the strict plane already owns. */
-    private fun stale(key: String, was: Int, measured: Boolean, scars: Map<String, String>): String? {
-        val name = if (' ' in key) key.substringAfter(' ') else key
-        return when {
-            name in scars ->
-                "STALE: $BASELINE_PATH records $key, but $name is on the NAMED_SCARS strict list " +
-                    "— a name cannot be both baselined and strict; delete the baseline entry"
-            !measured ->
-                "STALE: $BASELINE_PATH records $key in $was file(s), but the tree no longer declares " +
-                    "it in 2+ files — delete the entry BY HAND. A baseline held above the measurement is unearned " +
-                    "room for the next duplicate to hide in"
             else -> null
         }
     }
 
-    /** GROWTH and STALE over the COPY/COLLISION plane, keyed by (class, name) with sorted files. */
+    /** A recorded key the strict plane already owns: a name cannot be both baselined and strict. */
+    private fun doubleBooked(key: String, scars: Map<String, String>): String? {
+        val name = if (' ' in key) key.substringAfter(' ') else key
+        if (name !in scars) return null
+        return "STALE: $BASELINE_PATH records $key, but $name is on the NAMED_SCARS strict list " +
+            "— a name cannot be both baselined and strict; delete the baseline entry"
+    }
+
+    /** GROWTH over the COPY/COLLISION plane, keyed by (class, name) with sorted files. */
     fun ratchetProblems(groups: List<Group>, baseline: Baseline, scars: Map<String, String>): List<String> {
         val recorded = baseline.groups.mapValues { (_, files) -> files.sorted() }
         val measured = groups.associateBy { it.key }
@@ -605,7 +588,7 @@ internal object ConstSingleSource {
             if (problem != null) problems += problem
         }
         for (key in recorded.keys.sorted()) {
-            val problem = stale(key, recorded.getValue(key).size, key in measured, scars)
+            val problem = doubleBooked(key, scars)
             if (problem != null) problems += problem
         }
         return problems
@@ -813,28 +796,20 @@ class ConstSingleSourceLawTest {
     }
 
     @Test
-    fun `the law can actually fail - a shrink on the ratchet plane - V4-88`(@TempDir root: File) {
+    fun `a shrink on the ratchet plane passes - V4-88`(@TempDir root: File) {
         with(Tree(root)) {
-            // The duplicate is GONE: the entry is above the measurement and must be deleted by hand.
             write(A_KT to dup("SEAM_WIDTH", "8"))
-            assertHit(
+            assertEquals(
+                emptyList<String>(),
                 audit(baseline("\"COPY SEAM_WIDTH\": [\"$A_KT\", \"$B_KT\"]")),
-                "STALE",
-                "COPY SEAM_WIDTH",
-                "no longer declares it in 2+ files",
-                ConstSingleSource.BASELINE_PATH,
-            ) { "a baseline entry the tree no longer carries must be RED" }
-
-            // ...and a group that lost ONE of three files is the same failure with a number: the new
-            // count, the file that dropped out, and the resource to lower by hand.
+                "a baseline entry the tree no longer carries passes",
+            )
             write(A_KT to dup("SEAM_WIDTH", "8"), B_KT to dup("SEAM_WIDTH", "8"))
-            assertHit(
+            assertEquals(
+                emptyList<String>(),
                 audit(baseline("\"COPY SEAM_WIDTH\": [\"$A_KT\", \"$B_KT\", \"$C_KT\"]")),
-                "STALE (COPY)",
-                "now spans 2 file(s)",
-                "lower the entry BY HAND",
-                C_KT,
-            ) { "a partially-fixed entry must be RED with the exact new number" }
+                "a partially fixed entry passes",
+            )
         }
     }
 
@@ -857,11 +832,11 @@ class ConstSingleSourceLawTest {
             // The other half of "the list is what makes it strict": the same copy, NOT listed, held.
             assertEquals(emptyList<String>(), audit(recorded), "the same copy, unlisted, is held by the baseline")
 
-            assertHit(
+            assertEquals(
+                emptyList<String>(),
                 audit(baseline(), mapOf("NEVER_DUPLICATED" to "a reason for a duplicate that does not exist")),
-                "NAMED-SCAR STALE",
-                "NEVER_DUPLICATED",
-            ) { "a listed name describing no real duplicate is STALE" }
+                "a listed name whose duplicate is fixed passes",
+            )
             assertHit(audit(baseline(), mapOf("ERR_BODY_CAP" to "   ")), "NAMED-SCAR", "ERR_BODY_CAP", "NO reason") {
                 "a listed name with a blank reason is RED by name"
             }

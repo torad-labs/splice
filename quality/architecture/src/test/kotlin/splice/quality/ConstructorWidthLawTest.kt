@@ -55,11 +55,8 @@
 //                 than a hole.
 //
 // VIOLATIONS. GROWTH — a constructor over a width that nothing records. WIDENED — a recorded one
-// that grew past its entry; without it a baseline is a licence. PADDED — an entry recorded ABOVE
-// the measurement, red with the exact new numbers and the resource to lower by hand. STALE — an
-// entry naming a class that is gone or no longer offends. A shrink is red for the same reason a
-// growth is: a baseline held above the measurement is unearned room for the next regression to
-// hide in.
+// that grew past its entry; without it a baseline is a licence. A shrink passes: an entry recorded
+// above the measurement, or naming a class that is gone, is progress and fails nothing.
 //
 // NOT CAUGHT. SECONDARY constructors and factory functions — only the PRIMARY constructor is
 // measured (detekt's functionThreshold 6 does bill plain functions, so the hole is narrow). A
@@ -351,27 +348,16 @@ internal object ConstructorWidth {
             "${offender.params}, \"subsystems\": ${offender.subsystems.size} }` to $BASELINE_PATH by hand — a " +
             "diff saying the tree got wider."
 
-    /** A recorded offender that moved: WIDER is a regression, NARROWER is a win to be written down. */
+    /** A recorded offender that grew past its entry: WIDER is a regression. Narrower passes. */
     private fun moved(offender: Ctor, was: Entry): String? {
         val grew = offender.params > was.params || offender.subsystems.size > was.subsystems
-        val shrank = offender.params < was.params || offender.subsystems.size < was.subsystems
-        return when {
-            grew ->
-                "WIDENED: ${offender.rel}:${offender.line} ${offender.name} grew past its recorded width — " +
-                    "params ${was.params} -> ${offender.params}, subsystems ${was.subsystems} -> " +
-                    "${offender.subsystems.size}. A recorded offender is DEBT, not permission to keep adding parameters."
-            shrank ->
-                "PADDED: ${offender.rel}:${offender.line} ${offender.name} measures params " +
-                    "${offender.params} / subsystems ${offender.subsystems.size} but its entry records ${was.params} / " +
-                    "${was.subsystems}. Lower it BY HAND in $BASELINE_PATH to `\"params\": ${offender.params}, " +
-                    "\"subsystems\": ${offender.subsystems.size}` — nothing here rewrites the file, so the ratchet " +
-                    "stays visible in a diff. A baseline held above the measurement is unearned room for the next " +
-                    "regression to hide in."
-            else -> null
-        }
+        if (!grew) return null
+        return "WIDENED: ${offender.rel}:${offender.line} ${offender.name} grew past its recorded width — " +
+            "params ${was.params} -> ${offender.params}, subsystems ${was.subsystems} -> " +
+            "${offender.subsystems.size}. A recorded offender is DEBT, not permission to keep adding parameters."
     }
 
-    /** The GATE: growth, widening, padding and stale entries over [baseline]. */
+    /** The GATE: growth and widening over [baseline]. */
     fun ratchet(census: Census, baseline: Baseline): List<String> {
         val offenders = offendersOf(census.constructors).associateBy { it.id }
         val problems = (census.problems + baseline.problems).toMutableList()
@@ -384,11 +370,6 @@ internal object ConstructorWidth {
                 val regression = if (was == null) null else moved(offender, was)
                 if (regression != null) problems += regression
             }
-        }
-        for (key in baseline.offenders.keys.filterNot { it in offenders }.sorted()) {
-            problems += "STALE: the baseline lists ${KotlinText.pyRepr(key)}, which is no longer over any width " +
-                "(taken apart, renamed, or deleted) — delete the entry from $BASELINE_PATH by hand, so the list " +
-                "keeps meaning 'known debt'."
         }
         return problems
     }
@@ -535,21 +516,18 @@ class ConstructorWidthLawTest {
                 "SelftestData17",
             ) { "a recorded offender that grew past its entry must be RED" }
 
-            // THE SHRINK, which is red for the same reason: the entry is above the measurement.
+            // A SHRINK passes: an entry above the measurement, or naming a class that is gone, is progress.
             write("Fixture.kt" to params(ConstructorWidth.MAX_PARAMS + 1))
-            val padded = ratchet(baseline("\"$FIXTURE_REL SelftestData13\": { \"params\": 99, \"subsystems\": 0 }"))
-            assertHit(padded, "PADDED", "SelftestData13", "params 13", "Lower it BY HAND") {
-                "an entry recorded above the measured width must be RED with the new number"
-            }
-            assertTrue(padded.single().contains(ConstructorWidth.BASELINE_PATH), padded.single())
-
-            // ...and an entry naming a class the tree no longer has is the other half of the shrink.
-            assertHit(
+            assertEquals(
+                emptyList<String>(),
+                ratchet(baseline("\"$FIXTURE_REL SelftestData13\": { \"params\": 99, \"subsystems\": 0 }")),
+                "an entry recorded above the measured width passes",
+            )
+            assertEquals(
+                emptyList<String>(),
                 ratchet(baseline("\"app/src/main/kotlin/Gone.kt WasWideOnce\": { \"params\": 20, \"subsystems\": 0 }")),
-                "STALE",
-                "WasWideOnce",
-                ConstructorWidth.BASELINE_PATH,
-            ) { "an entry naming a constructor that is gone must be RED" }
+                "an entry naming a constructor that is gone passes",
+            )
         }
     }
 

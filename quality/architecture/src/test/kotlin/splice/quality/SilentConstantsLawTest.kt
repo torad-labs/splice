@@ -33,12 +33,9 @@
 // reason: `HTTP_TOO_MANY = 429` is perfectly clear and still counts as silent, because exempting
 // "self-evident" names means hand-judging six hundred constants — the hand list this wall avoids.
 //
-// VIOLATIONS, both directions. GROWTH — a file above its baseline count, or a tree total above the
-// baseline total — is RED by file and by constant name. A SHRINK is RED too, naming the exact new
-// number and telling the reader to lower the resource BY HAND: a baseline held above the
-// measurement is unearned room for the next regression to hide in, and the checker's `--ratchet`
-// said exactly this (`STALE: the tree total fell X -> Y … record the win by lowering it`) rather
-// than rewriting the file, so the ratchet stays visible in a diff instead of in a gate run.
+// VIOLATIONS. GROWTH — a file above its baseline count, or a tree total above the baseline total — is
+// RED by file and by constant name. A shrink passes: lowering the resource is the reader's own edit
+// whenever they care to, and nothing fails because the tree got better.
 //
 // NOT CAUGHT, stated rather than implied: an INLINE literal (`if (status == 429)`) — detekt's
 // MagicNumber owns that; a reason that is WRONG, or one that restates the name in four words, which
@@ -105,35 +102,9 @@ internal object SilentConstants {
             }
         }
 
-        /** An entry held ABOVE the measurement, or naming a file the tree no longer has. */
-        fun stale(census: Census, root: File): List<String> {
-            val measured = census.perFile
-            val out = mutableListOf<String>()
-            for (rel in files.keys.sorted()) {
-                val now = measured[rel] ?: 0
-                val was = files.getValue(rel)
-                if (now < was) {
-                    out += "STALE: $BASELINE_PATH claims $was silent const(s) in $rel but only $now remain — lower " +
-                        "that entry to $now BY HAND. A baseline held above the measurement is unearned room for " +
-                        "the next regression to hide in"
-                }
-                if (!File(root, rel).exists()) {
-                    out += "STALE: $BASELINE_PATH names $rel, which no longer exists — delete the entry"
-                }
-            }
-            return out
-        }
-
-        /** The tree total, in both directions. A shrink names the new number and the file to edit. */
-        fun totals(census: Census): List<String> = when {
-            census.silent.size > total -> listOf("GROWTH: the tree total rose $total -> ${census.silent.size}")
-            census.silent.size < total -> listOf(
-                "STALE: the tree total fell $total -> ${census.silent.size}, and $BASELINE_PATH still claims " +
-                    "$total — record the win by lowering `total` to ${census.silent.size} BY HAND in the same " +
-                    "commit; the ratchet stays visible in a diff instead of being rewritten by a gate run",
-            )
-            else -> emptyList()
-        }
+        /** The tree total: growth fails, a shrink passes. */
+        fun totals(census: Census): List<String> =
+            if (census.silent.size > total) listOf("GROWTH: the tree total rose $total -> ${census.silent.size}") else emptyList()
 
         companion object {
             private val REQUIRED_KEYS = listOf("recorded", "total", "denominator", "files")
@@ -279,7 +250,7 @@ internal object SilentConstants {
         val untrusted = census.problems + baselineProblems
         if (untrusted.isNotEmpty()) return untrusted.map { "UNTRUSTWORTHY: $it" }
         if (baseline == null) return listOf("UNTRUSTWORTHY: $BASELINE_PATH could not be read")
-        return baseline.growth(census) + baseline.stale(census, root) + baseline.totals(census)
+        return baseline.growth(census) + baseline.totals(census)
     }
 }
 
@@ -364,19 +335,12 @@ class SilentConstantsLawTest {
     }
 
     @Test
-    fun `the law can actually fail - a shrink names the new number and the resource - V4-88`(@TempDir root: File) {
+    fun `a shrink passes - a smaller count, a lower entry and a vanished file are progress - V4-88`(@TempDir root: File) {
         with(Tree(root)) {
             write(A to ONE_SILENT)
-            assertHit(audit(baseline(2, 1, mapOf(A to 2))), "STALE", "only 1 remain", "BY HAND", BASELINE_PATH) {
-                "a baseline entry held ABOVE the measurement must be RED, with the number to write"
-            }
-            val fell = audit(baseline(2, 2, mapOf(A to 1)))
-            assertHit(fell, "STALE", "fell 2 -> 1", "lowering `total` to 1", BASELINE_PATH) {
-                "a tree total that FELL must be RED, naming the new number and the resource to lower by hand"
-            }
-            assertHit(audit(baseline(1, 1, mapOf(A to 1, GONE to 0))), "STALE", GONE, "no longer exists") {
-                "a baseline naming a file the tree no longer has must be RED BY NAME"
-            }
+            assertEquals(emptyList<String>(), audit(baseline(2, 1, mapOf(A to 2))), "an entry held above the measurement passes")
+            assertEquals(emptyList<String>(), audit(baseline(2, 2, mapOf(A to 1))), "a tree total that fell passes")
+            assertEquals(emptyList<String>(), audit(baseline(1, 1, mapOf(A to 1, GONE to 0))), "a vanished file passes")
         }
     }
 

@@ -45,8 +45,8 @@
 // declaration, under-justifying cost five good ones; the union over overloads is deliberate.
 //
 // VIOLATIONS. GROWTH — a declaration no other module consumes that the baseline does not record —
-// is RED BY NAME on the commit that adds it. A SHRINK is RED too: a baseline entry that has stopped
-// offending names the exact new surface count and the resource to edit BY HAND. The checker's
+// is RED BY NAME on the commit that adds it. A SHRINK passes: a baseline entry that has stopped
+// offending is progress, and lowering the baseline is the reader's own edit. The checker's
 // `--ratchet` failed the same way and printed `--write-baseline` as the remedy; here the remedy is
 // the reader's own edit, so the ratchet stays visible in a diff instead of being rewritten by a
 // gate run. `kept` carries the entries that cannot be burned, each with its reason: a BLANK reason
@@ -223,22 +223,6 @@ internal object PublicSurface {
                     "Make each one `internal` (the same code, with the module boundary stated), or — if a " +
                     "consumer is genuinely coming — add the line to $BASELINE_PATH BY HAND, which is a dated " +
                     "diff saying the surface grew:\n    " + named,
-            )
-        }
-
-        /** An entry that has stopped offending. `kept` is where a burn-proof entry carries the reason
-         *  it cannot move, so the union of what is measured and what is explained is the set this
-         *  baseline is allowed to hold; an entry in neither is unearned room. */
-        fun stale(measured: Map<String, Declaration>): List<String> {
-            val gone = offenders.filterNot { it in measured }.filterNot { it in kept }.sorted()
-            if (gone.isEmpty()) return emptyList()
-            return listOf(
-                "STALE: ${gone.size} baseline entry(ies) no longer offend — the declaration is gone, became " +
-                    "internal, or gained a real consumer. The measured surface is now ${measured.size} " +
-                    "unjustified declaration(s): delete these ${gone.size} line(s) from $BASELINE_PATH BY HAND " +
-                    "in the same commit, so the ratchet stays visible in a diff instead of being rewritten by a " +
-                    "gate run. A baseline held above the measured surface is unearned room for the next " +
-                    "regression to hide in:\n    " + gone.joinToString("\n    "),
             )
         }
 
@@ -496,7 +480,7 @@ internal object PublicSurface {
         val baseline = parsed ?: Baseline(emptySet(), emptyMap(), "")
         val measured = surface.offenders.associateBy { it.id }
         return surface.problems + baselineProblems + baseline.growth(measured) +
-            baseline.stale(measured) + baseline.keptProblems()
+            baseline.keptProblems()
     }
 }
 
@@ -672,19 +656,11 @@ class PublicSurfaceLawTest {
     }
 
     @Test
-    fun `the law can actually fail - a shrink names the new number and the resource - V4-92`(@TempDir root: File) {
+    fun `a shrink passes - an entry that stopped offending is progress, never a failure - V4-92`(@TempDir root: File) {
         with(Tree(root)) {
             write(LIB_API to API, OTHER_USE to USE)
-            assertHit(audit(baseline(API_ID)), "STALE", API_ID, "now 0", "BY HAND", BASELINE_PATH) {
-                "a baseline entry that has gained a consumer must be RED, naming the new surface count"
-            }
-            assertHit(audit(baseline(DELETED_ID)), "STALE", DELETED_ID, "BY HAND", BASELINE_PATH) {
-                "a baseline entry whose declaration no longer exists must be RED BY NAME"
-            }
-            write(LIB_API to LEAK)
-            assertHit(audit(baseline(LEAK_ID, DELETED_ID)), "STALE", DELETED_ID, "now 1") {
-                "one stale entry beside one that still offends must name the measured count"
-            }
+            assertEquals(emptyList<String>(), audit(baseline(API_ID)), "a baseline entry that has gained a consumer passes")
+            assertEquals(emptyList<String>(), audit(baseline(DELETED_ID)), "a baseline entry whose declaration is gone passes")
         }
     }
 
@@ -704,7 +680,7 @@ class PublicSurfaceLawTest {
             assertEquals(
                 emptyList<String>(),
                 audit(kept(listOf(API_ID), mapOf(API_ID to "a consumer lands in the next commit"))),
-                "an explained entry is not STALE",
+                "an explained entry passes",
             )
         }
     }

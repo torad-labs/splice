@@ -70,26 +70,25 @@ internal class RecordingSink : WireSink {
     }
 }
 
+/** A round whose client stays, with its own summary parts and no dedupe: a test that needs otherwise says so
+ *  through copy. */
 internal fun ctx(
     compact: Boolean = false,
     emit: Boolean = false,
-    clientGone: Boolean = false,
     fired: WatchdogFired? = null,
     collect: Boolean = false,
-    dedupe: Boolean = false,
-    shared: SharedSummaryParts = SharedSummaryParts(),
     capture: ((List<String>, List<String>) -> Unit)? = null,
 ) = StreamTurnContext(
     compact = compact,
     emitEncryptedReasoning = EmitEncryptedReasoning(emit),
     encodeReasoningEnvelope = { "env:" + it["id"]?.toString().orEmpty() },
-    clientGone = { clientGone },
+    clientGone = { false },
     watchdogFired = { fired },
     streamIdleMsForMessage = 180_000,
     upstreamTimeoutMsForMessage = 900_000,
     collectReasoningEnvelopes = collect,
-    dedupeRepeatedSummaryParts = dedupe,
-    summaryPartsShared = shared,
+    dedupeRepeatedSummaryParts = false,
+    summaryPartsShared = SharedSummaryParts(),
     onTurnReasoning = capture ?: { _, _ -> },
 )
 
@@ -341,7 +340,7 @@ class ResponsesStreamTranslatorTest {
 
     @Test
     fun `client gone without terminal is ClientAbandoned - never an error frame`() = runTest {
-        val outcome = ResponsesStreamTranslator(ctx(clientGone = true)).driveTurn(
+        val outcome = ResponsesStreamTranslator(ctx().copy(clientGone = { true })).driveTurn(
             listOf(
                 ev("""{"type":"response.output_text.delta","output_index":0,"delta":"x"}"""),
             ).asFlow(),

@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.core.reasoning.ReasoningReplay
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.buildResponsesTestRequest
 import splice.provider.codex.CodeModeBridgeTestSupport
@@ -84,7 +83,6 @@ class CodeModeExecSurfaceTest : CodeModeBridgeTestSupport() {
             ),
             body,
             model = "gpt-6-sol",
-            decode = { ReasoningReplay.decodeReasoningEnvelope(it) },
         )
         val built = built("gpt-6-sol", lite = true).copy(requestBody = request)
         val builder = CodexCodeModeTurnBuilder(

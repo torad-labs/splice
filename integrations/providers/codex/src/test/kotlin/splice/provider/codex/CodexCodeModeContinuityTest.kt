@@ -136,7 +136,6 @@ class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {
             model = "gpt-6-astra",
             showReasoning = ReasoningDisplay.TEXT,
             replayReasoning = replayReasoning,
-            decode = { ReasoningReplay.decodeReasoningEnvelope(it) },
         ).toString()
     }
 

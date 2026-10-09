@@ -18,6 +18,7 @@ import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import splice.dialect.responses.websocket.ResponsesWsIdentity.PendingCommit
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -60,7 +61,7 @@ class ResponsesWsSessionConcurrencyTest {
                         if (i % 3 == 0) {
                             session.cleared(key)
                         } else {
-                            session.completed(key, req, "resp-$i", generation = 1L, epoch = epoch)
+                            session.completed(key, PendingCommit(req, 1L, epoch), "resp-$i")
                         }
                     }
                 } catch (t: Throwable) {

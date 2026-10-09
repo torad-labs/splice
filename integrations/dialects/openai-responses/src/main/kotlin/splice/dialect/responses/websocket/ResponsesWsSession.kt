@@ -196,18 +196,17 @@ internal class ResponsesWsSession(
      *  prefix (never the delta — the server now holds the chained context PLUS what we sent). */
     fun completed(
         key: String,
-        request: JsonObject,
+        sent: ResponsesWsIdentity.PendingCommit,
         responseId: String?,
-        generation: Long,
-        epoch: Long,
         pendingCalls: Set<String> = emptySet(),
         evidence: WsServerEvidence = WsServerEvidence(),
     ): Unit = synchronized(lock) {
+        val request = sent.request
         val now = clock()
         trimLocked(now)
         val input = request[FIELD_INPUT] as? JsonArray
         // A stale epoch means something invalidated this conversation while the round was in flight.
-        val fresh = epoch == (epochs[key] ?: seq)
+        val fresh = sent.epoch == (epochs[key] ?: seq)
         // Unconditional in the old shape too — replacing the key moves it to the LRU tail.
         chains.remove(key)?.let { totalBytes -= it.bytes }
         // Two guards rather than one `committable` boolean: the null checks now sit in branches that
@@ -223,7 +222,7 @@ internal class ResponsesWsSession(
             evidence.reasoning.entries.sumOf { (id, cipher) ->
                 JsonWire.byteSize(id) + JsonWire.byteSize(cipher)
             }
-        chains[key] = Chain(logicalInput, responseId, props, generation, bytes, now, pendingCalls).also {
+        chains[key] = Chain(logicalInput, responseId, props, sent.generation, bytes, now, pendingCalls).also {
             it.evidence = evidence
         }
         totalBytes += bytes

@@ -93,10 +93,8 @@ internal class ResponsesWsIdentity(
         )
         session.completed(
             chain,
-            commit.request,
+            commit,
             JsonScalars.str(response?.get("id")),
-            commit.generation,
-            commit.epoch,
             commit.calls + pendingCalls(response),
             evidence,
         )

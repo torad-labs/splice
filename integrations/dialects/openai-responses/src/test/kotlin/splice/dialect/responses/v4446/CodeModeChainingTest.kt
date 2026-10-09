@@ -21,6 +21,7 @@ import splice.core.reasoning.ReasoningReplay
 import splice.core.util.LogSink
 import splice.dialect.responses.request.responsesRequestJson
 import splice.dialect.responses.websocket.ResponsesWsIdentity
+import splice.dialect.responses.websocket.ResponsesWsIdentity.PendingCommit
 import splice.dialect.responses.websocket.ResponsesWsSession
 import splice.dialect.responses.websocket.WsFrame
 import splice.dialect.responses.websocket.WsServerEvidence
@@ -73,10 +74,8 @@ class CodeModeChainingTest {
         val r1 = request(listOf(USER))
         s.completed(
             KEY,
-            r1,
+            PendingCommit(r1, GEN, s.epochOf(KEY)),
             "resp_1",
-            GEN,
-            s.epochOf(KEY),
             pendingCalls = setOf("call_1"),
             evidence = WsServerEvidence(
                 calls = mapOf("call_1" to exec(1)),
@@ -130,10 +129,8 @@ class CodeModeChainingTest {
         val first = request(listOf(USER))
         session.completed(
             KEY,
-            first,
+            PendingCommit(first, GEN, session.epochOf(KEY)),
             "resp_1",
-            GEN,
-            session.epochOf(KEY),
             pendingCalls = setOf("call_1"),
             evidence = WsServerEvidence(
                 calls = mapOf("call_1" to exec(1)),
@@ -155,10 +152,8 @@ class CodeModeChainingTest {
         val r1 = request(listOf(USER, reasoning(1), exec(1), execOut(1)))
         s.completed(
             KEY,
-            r1,
+            PendingCommit(r1, GEN, s.epochOf(KEY)),
             "resp_2",
-            GEN,
-            s.epochOf(KEY),
             pendingCalls = setOf("call_2"),
             evidence = WsServerEvidence(
                 calls = mapOf("call_2" to exec(2)),
@@ -180,10 +175,8 @@ class CodeModeChainingTest {
         val first = request(listOf(USER))
         session.completed(
             KEY,
-            first,
+            PendingCommit(first, GEN, session.epochOf(KEY)),
             "resp_1",
-            GEN,
-            session.epochOf(KEY),
             pendingCalls = setOf("call_1"),
             evidence = WsServerEvidence(calls = mapOf("call_1" to exec(1))),
         )
@@ -200,10 +193,8 @@ class CodeModeChainingTest {
         val first = request(listOf(USER))
         session.completed(
             KEY,
-            first,
+            PendingCommit(first, GEN, session.epochOf(KEY)),
             "resp_1",
-            GEN,
-            session.epochOf(KEY),
             pendingCalls = setOf("call_1", "call_2"),
             evidence = WsServerEvidence(
                 calls = linkedMapOf(
@@ -227,10 +218,8 @@ class CodeModeChainingTest {
         val r1 = request(listOf(USER))
         s.completed(
             KEY,
-            r1,
+            PendingCommit(r1, GEN, s.epochOf(KEY)),
             "resp_1",
-            GEN,
-            s.epochOf(KEY),
             pendingCalls = setOf("call_1"),
             evidence = WsServerEvidence(
                 calls = mapOf("call_1" to exec(1)),
@@ -253,10 +242,8 @@ class CodeModeChainingTest {
         val r1 = request(listOf(USER, reasoning(1), exec(1), execOut(1)))
         s.completed(
             KEY,
-            r1,
+            PendingCommit(r1, GEN, s.epochOf(KEY)),
             "resp_1",
-            GEN,
-            s.epochOf(KEY),
             pendingCalls = setOf("call_2"),
             evidence = WsServerEvidence(
                 calls = mapOf("call_2" to exec(2)),

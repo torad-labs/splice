@@ -6,6 +6,7 @@ package splice.dialect.responses
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.parse.AnthropicTurnBody
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.SharedSummaryParts
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
@@ -19,14 +20,13 @@ import splice.dialect.responses.stream.ResponsesStreamTranslator
 import splice.upstream.ReanchorPolicy
 import splice.upstream.StreamTranslator
 
-/** The request body the builder produces for [body] on [model], with prior reasoning decoded by [decode]. */
+/** The request body the builder produces for [body] on [model]. Prior reasoning is decoded as a turn decodes it. */
 fun buildResponsesTestRequest(
     quirks: ResponsesQuirks,
     body: AnthropicTurnBody,
     model: String,
     showReasoning: ReasoningDisplay = ReasoningDisplay.OFF,
     replayReasoning: Boolean = false,
-    decode: (String) -> JsonObject? = { null },
 ): JsonObject = ResponsesRequestBuilder(quirks).build(
     body.typed,
     body.raw,
@@ -38,7 +38,7 @@ fun buildResponsesTestRequest(
         configSummary = null,
         showReasoning = showReasoning,
         replayReasoning = InjectPriorReasoning(replayReasoning),
-        decodeReasoningEnvelope = ReasoningEnvelopeDecoder { decode(it) },
+        decodeReasoningEnvelope = ReasoningEnvelopeDecoder { ReasoningReplay.decodeReasoningEnvelope(it) },
     ),
 ).req
 

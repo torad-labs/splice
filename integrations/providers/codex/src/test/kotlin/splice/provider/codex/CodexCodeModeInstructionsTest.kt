@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.parse.AnthropicTurnBody
-import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.ResponsesFunctionNamespace
 import splice.dialect.responses.ResponsesQuirks
@@ -244,7 +243,6 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
             ),
             body,
             model = "gpt-6-astra",
-            decode = { ReasoningReplay.decodeReasoningEnvelope(it) },
         )
         return body to built("gpt-6-astra", lite = true).copy(requestBody = request)
     }

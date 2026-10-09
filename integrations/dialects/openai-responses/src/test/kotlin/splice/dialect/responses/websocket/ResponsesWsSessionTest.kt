@@ -29,6 +29,7 @@ import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.dialect.responses.request.responsesRequestJson
+import splice.dialect.responses.websocket.ResponsesWsIdentity.PendingCommit
 
 private val CODEX = ResponsesQuirks(providerTag = "claudex")
 private const val KEY = "conv-1"
@@ -114,7 +115,7 @@ class ResponsesWsSessionTest {
     fun `a tool round chains and sends only the function_call_output`() {
         val s = ResponsesWsSession()
         val r1 = build(convo(1))
-        s.completed(KEY, r1, "resp_1", GEN, s.epochOf(KEY), evidence = CALL_2_EVIDENCE)
+        s.completed(KEY, PendingCommit(r1, GEN, s.epochOf(KEY)), "resp_1", evidence = CALL_2_EVIDENCE)
         val r2 = build(convo(2))
         val f = s.frameFor(KEY, r2, GEN)
 
@@ -141,10 +142,8 @@ class ResponsesWsSessionTest {
         val s = ResponsesWsSession()
         s.completed(
             KEY,
-            build(convo(1)),
+            PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)),
             "resp_1",
-            GEN,
-            s.epochOf(KEY),
             pendingCalls = setOf("call_2"),
             evidence = CALL_2_EVIDENCE,
         )
@@ -162,10 +161,8 @@ class ResponsesWsSessionTest {
         val s = ResponsesWsSession()
         s.completed(
             KEY,
-            build(convo(1)),
+            PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)),
             "resp_1",
-            GEN,
-            s.epochOf(KEY),
             pendingCalls = setOf("call_2"),
             evidence = CALL_2_EVIDENCE,
         )
@@ -176,10 +173,8 @@ class ResponsesWsSessionTest {
         val s2 = ResponsesWsSession()
         s2.completed(
             KEY,
-            build(convo(1)),
+            PendingCommit(build(convo(1)), GEN, s2.epochOf(KEY)),
             "resp_1",
-            GEN,
-            s2.epochOf(KEY),
             pendingCalls = setOf("call_2"),
             evidence = CALL_2_EVIDENCE,
         )
@@ -197,10 +192,8 @@ class ResponsesWsSessionTest {
         val s = ResponsesWsSession()
         s.completed(
             KEY,
-            build(convo(1)),
+            PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)),
             "resp_1",
-            GEN,
-            s.epochOf(KEY),
             pendingCalls = setOf("call_2"),
             evidence = CALL_2_EVIDENCE,
         )
@@ -220,10 +213,8 @@ class ResponsesWsSessionTest {
         val s = ResponsesWsSession()
         s.completed(
             KEY,
-            build(convo(1)),
+            PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)),
             "resp_1",
-            GEN,
-            s.epochOf(KEY),
             evidence = CALL_2_EVIDENCE.copy(assistantTexts = listOf("thinking out loud")),
         )
         val f = s.frameFor(KEY, build(convo(2, assistantText = "thinking out loud")), GEN)
@@ -271,10 +262,8 @@ class ResponsesWsSessionTest {
         val s = ResponsesWsSession()
         s.completed(
             KEY,
-            build(convo(1)),
+            PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)),
             "resp_1",
-            GEN,
-            s.epochOf(KEY),
             evidence = WsServerEvidence(reasoning = mapOf("rs_final" to "cipher")),
         )
         val f = s.frameFor(KEY, build(convo(1, trailingUserText = "and now this")), GEN)
@@ -288,7 +277,7 @@ class ResponsesWsSessionTest {
     @Test
     fun `a new connection generation full-sends`() {
         val s = ResponsesWsSession()
-        s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY), evidence = CALL_2_EVIDENCE)
+        s.completed(KEY, PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)), "resp_1", evidence = CALL_2_EVIDENCE)
         assertFalse(s.frameFor(KEY, build(convo(2)), GEN + 1).chained)
     }
 
@@ -296,7 +285,7 @@ class ResponsesWsSessionTest {
     @Test
     fun `an effort flip full-sends`() {
         val s = ResponsesWsSession()
-        s.completed(KEY, build(convo(1), effort = "high"), "resp_1", GEN, s.epochOf(KEY))
+        s.completed(KEY, PendingCommit(build(convo(1), effort = "high"), GEN, s.epochOf(KEY)), "resp_1")
         val f = s.frameFor(KEY, build(convo(2), effort = "low"), GEN)
         assertFalse(f.chained, "reasoning.effort is pinned per response; a change must not ride a chain")
     }
@@ -305,7 +294,7 @@ class ResponsesWsSessionTest {
     @Test
     fun `a rewritten prefix full-sends`() {
         val s = ResponsesWsSession()
-        s.completed(KEY, build(convo(2)), "resp_1", GEN, s.epochOf(KEY))
+        s.completed(KEY, PendingCommit(build(convo(2)), GEN, s.epochOf(KEY)), "resp_1")
         // A different opening message rewrites input[0] — everything after it is untrustworthy.
         val rewritten = build(
             """{"model":"m","messages":[{"role":"user","content":"DIFFERENT start"},""" +
@@ -321,7 +310,7 @@ class ResponsesWsSessionTest {
     fun `an identical retry full-sends rather than chaining an empty delta`() {
         val s = ResponsesWsSession()
         val r = build(convo(2))
-        s.completed(KEY, r, "resp_1", GEN, s.epochOf(KEY))
+        s.completed(KEY, PendingCommit(r, GEN, s.epochOf(KEY)), "resp_1")
         assertFalse(s.frameFor(KEY, r, GEN).chained)
     }
 
@@ -332,11 +321,11 @@ class ResponsesWsSessionTest {
         val key = checkNotNull(ResponsesConversationIdentity.chainKey("same-session", "same-first-prompt"))
         val original = build(convo(1))
         val alternate = build(convo(1).replace("out1", "out2"))
-        session.completed(key, original, "response-a", GEN, session.epochOf(key))
+        session.completed(key, PendingCommit(original, GEN, session.epochOf(key)), "response-a")
         val b = session.frameFor(key, alternate, GEN)
         assertFalse(b.chained, "the changed result rewrote a held prefix")
         assertEquals(null, b.frameObj()["previous_response_id"])
-        session.completed(key, alternate, "response-b", GEN, session.epochOf(key))
+        session.completed(key, PendingCommit(alternate, GEN, session.epochOf(key)), "response-b")
         val a = session.frameFor(key, build(convo(1, trailingUserText = "continue")), GEN)
         assertFalse(a.chained, "A must not continue from B's committed response")
         assertEquals(null, a.frameObj()["previous_response_id"])
@@ -348,10 +337,8 @@ class ResponsesWsSessionTest {
         val key = checkNotNull(ResponsesConversationIdentity.chainKey("same-session", "same-first-prompt"))
         session.completed(
             key,
-            build(convo(1)),
+            PendingCommit(build(convo(1)), GEN, session.epochOf(key)),
             "response-a",
-            GEN,
-            session.epochOf(key),
             setOf("call_2"),
             evidence = CALL_2_EVIDENCE,
         )
@@ -376,10 +363,8 @@ class ResponsesWsSessionTest {
         val key = checkNotNull(ResponsesConversationIdentity.chainKey("same-session", "same-first-prompt"))
         session.completed(
             key,
-            build(convo(1)),
+            PendingCommit(build(convo(1)), GEN, session.epochOf(key)),
             "response-a",
-            GEN,
-            session.epochOf(key),
             setOf("call_2"),
             evidence = CALL_2_EVIDENCE.copy(assistantTexts = listOf("branch A said something else")),
         )
@@ -394,7 +379,7 @@ class ResponsesWsSessionTest {
         val session = ResponsesWsSession()
         val key = checkNotNull(ResponsesConversationIdentity.chainKey("same-session", "same-first-prompt"))
         val base = build(convo(1))
-        session.completed(key, base, "response-a", GEN, session.epochOf(key))
+        session.completed(key, PendingCommit(base, GEN, session.epochOf(key)), "response-a")
         val search = buildJsonObject {
             put("type", JsonPrimitive("tool_search_call"))
             put("call_id", JsonPrimitive("shared-search-id"))
@@ -420,7 +405,7 @@ class ResponsesWsSessionTest {
     fun `an unknown item type in the suffix full-sends`() {
         val s = ResponsesWsSession()
         val base = build(convo(1))
-        s.completed(KEY, base, "resp_1", GEN, s.epochOf(KEY))
+        s.completed(KEY, PendingCommit(base, GEN, s.epochOf(KEY)), "resp_1")
         val withAlien = JsonObject(
             base.toMutableMap().apply {
                 put(
@@ -441,7 +426,12 @@ class ResponsesWsSessionTest {
         val r1 = build(convo(1))
         val epochAtSend = s.epochOf(KEY) // the in-flight round captures this...
         s.cleared(KEY) // ...then something bypasses (busy round rides SSE)
-        s.completed(KEY, r1, "resp_1", GEN, epochAtSend, evidence = CALL_2_EVIDENCE) // ...and the terminal lands LATE
+        s.completed(
+            KEY,
+            PendingCommit(r1, GEN, epochAtSend),
+            "resp_1",
+            evidence = CALL_2_EVIDENCE,
+        ) // ...and the terminal lands LATE
         assertFalse(
             s.frameFor(KEY, build(convo(2)), GEN).chained,
             "a stale-epoch commit must NOT resurrect the chain — the next round full-sends",
@@ -458,7 +448,12 @@ class ResponsesWsSessionTest {
         val r1 = build(convo(1))
         val epochAtSend = s.epochOf(KEY) // conversation A's round captures its epoch...
         s.cleared("conv-unrelated") // ...an UNRELATED conversation tears mid-flight...
-        s.completed(KEY, r1, "resp_1", GEN, epochAtSend, evidence = CALL_2_EVIDENCE) // ...and A's clean terminal lands
+        s.completed(
+            KEY,
+            PendingCommit(r1, GEN, epochAtSend),
+            "resp_1",
+            evidence = CALL_2_EVIDENCE,
+        ) // ...and A's clean terminal lands
         assertTrue(
             s.frameFor(KEY, build(convo(2)), GEN).chained,
             "A's commit survives B's clear — the fence is per conversation",
@@ -471,7 +466,7 @@ class ResponsesWsSessionTest {
         val s = ResponsesWsSession()
         s.cleared(KEY) // epoch moves; a round STARTED AFTER it captures the new value
         val r1 = build(convo(1))
-        s.completed(KEY, r1, "resp_1", GEN, s.epochOf(KEY), evidence = CALL_2_EVIDENCE)
+        s.completed(KEY, PendingCommit(r1, GEN, s.epochOf(KEY)), "resp_1", evidence = CALL_2_EVIDENCE)
         assertTrue(s.frameFor(KEY, build(convo(2)), GEN).chained)
     }
 
@@ -479,11 +474,11 @@ class ResponsesWsSessionTest {
     @Test
     fun `a cleared conversation full-sends, and a null response id never commits`() {
         val s = ResponsesWsSession()
-        s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY), evidence = CALL_2_EVIDENCE)
+        s.completed(KEY, PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)), "resp_1", evidence = CALL_2_EVIDENCE)
         s.cleared(KEY)
         assertFalse(s.frameFor(KEY, build(convo(2)), GEN).chained)
 
-        s.completed(KEY, build(convo(1)), null, GEN, s.epochOf(KEY))
+        s.completed(KEY, PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)), null)
         assertFalse(s.frameFor(KEY, build(convo(2)), GEN).chained, "a terminal without an id is not chainable")
     }
 
@@ -491,14 +486,14 @@ class ResponsesWsSessionTest {
     @Test
     fun `chains are scoped per conversation key`() {
         val s = ResponsesWsSession()
-        s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY), evidence = CALL_2_EVIDENCE)
+        s.completed(KEY, PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)), "resp_1", evidence = CALL_2_EVIDENCE)
         assertFalse(s.frameFor("other-conv", build(convo(2)), GEN).chained)
     }
 
     @Test
     fun `a chain larger than the total byte cap is evicted to full-send status quo`() {
         val s = ResponsesWsSession(maxTotalBytes = 1)
-        s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY), evidence = CALL_2_EVIDENCE)
+        s.completed(KEY, PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)), "resp_1", evidence = CALL_2_EVIDENCE)
 
         assertFalse(
             s.frameFor(KEY, build(convo(2)), GEN).chained,
@@ -509,8 +504,13 @@ class ResponsesWsSessionTest {
     @Test
     fun `count pressure evicts the least recently used chain`() {
         val s = ResponsesWsSession(maxConversations = 1)
-        s.completed("old", build(convo(1)), "resp_old", GEN, s.epochOf("old"))
-        s.completed("new", build(convo(1)), "resp_new", GEN, s.epochOf("new"), evidence = CALL_2_EVIDENCE)
+        s.completed("old", PendingCommit(build(convo(1)), GEN, s.epochOf("old")), "resp_old")
+        s.completed(
+            "new",
+            PendingCommit(build(convo(1)), GEN, s.epochOf("new")),
+            "resp_new",
+            evidence = CALL_2_EVIDENCE,
+        )
 
         assertFalse(s.frameFor("old", build(convo(2)), GEN).chained)
         assertTrue(s.frameFor("new", build(convo(2)), GEN).chained)
@@ -520,7 +520,7 @@ class ResponsesWsSessionTest {
     fun `an idle chain expires wholesale`() {
         var now = 0L
         val s = ResponsesWsSession(ttlMs = 10, clock = ElapsedClock { now })
-        s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY), evidence = CALL_2_EVIDENCE)
+        s.completed(KEY, PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)), "resp_1", evidence = CALL_2_EVIDENCE)
         now = 11
 
         assertFalse(
@@ -533,7 +533,7 @@ class ResponsesWsSessionTest {
     fun `building a chained frame refreshes the idle TTL`() {
         var now = 0L
         val s = ResponsesWsSession(ttlMs = 10, clock = ElapsedClock { now })
-        s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY), evidence = CALL_2_EVIDENCE)
+        s.completed(KEY, PendingCommit(build(convo(1)), GEN, s.epochOf(KEY)), "resp_1", evidence = CALL_2_EVIDENCE)
         now = 9
         assertTrue(s.frameFor(KEY, build(convo(2)), GEN).chained)
         now = 18

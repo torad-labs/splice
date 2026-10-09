@@ -49,27 +49,25 @@ private val GROK = ResponsesQuirks(
 private fun displayOf(raw: String): ReasoningDisplay =
     ReasoningDisplay.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: ReasoningDisplay.OFF
 
+/** Options for [model]. Effort, summary and session id are unset: a test that needs one says so through copy. */
 private fun opts(
     compact: Boolean = false,
-    effort: String? = null,
-    summary: String? = null,
     show: String = "text",
     replay: Boolean = false,
     includeEncrypted: Boolean? = null,
     model: String = "gpt-5.6-sol",
-    sessionId: String? = null,
 ) = BuildOptions(
     compact = compact,
     originalModel = "claude-codex--$model",
     upstreamModel = model,
-    configEffort = effort,
-    configSummary = summary,
+    configEffort = null,
+    configSummary = null,
     showReasoning = displayOf(show),
     replayReasoning = InjectPriorReasoning(replay),
     // Default: include when reasoning is shown (independent of input-replay, and of compact —
     // ResponsesTurnOptions derives it the same way, so a compaction's request matches a turn's).
     includeEncryptedReasoning = RequestEncryptedReasoning(includeEncrypted ?: (show != "off")),
-    sessionId = sessionId,
+    sessionId = null,
     decodeReasoningEnvelope = { data ->
         buildJsonObject {
             put("type", JsonPrimitive("reasoning"))
@@ -90,7 +88,7 @@ class ResponsesRequestBuilderTest {
         val budgetBody = """{"model":"m","thinking":{"type":"enabled","budget_tokens":32000},
             "messages":[{"role":"user","content":"x"}]}"""
         // budget 32k -> xhigh (beats config low)
-        var req = build(budgetBody, options = opts(effort = "low"))
+        var req = build(budgetBody, options = opts().copy(configEffort = "low"))
         assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
         // explicit body field beats the budget
         req = build(
@@ -135,7 +133,7 @@ class ResponsesRequestBuilderTest {
         assertEquals("detailed", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
         req = build(
             """{"model":"m","effort":"medium","messages":[{"role":"user","content":"x"}]}""",
-            options = opts(show = "text", summary = "concise"),
+            options = opts(show = "text").copy(configSummary = "concise"),
         )
         assertEquals("medium", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
         // configSummary is operator-controlled — concise stays concise when TOML/env says so.
@@ -310,7 +308,7 @@ class ResponsesRequestBuilderTest {
     @Test
     fun `compact inherits the session model and effort - the cache law`() {
         val body = """{"model":"m","system":"base","messages":[{"role":"user","content":"go"}]}"""
-        val req = build(body, options = opts(compact = true, effort = "high", model = "gpt-5.6-sol"))
+        val req = build(body, options = opts(compact = true, model = "gpt-5.6-sol").copy(configEffort = "high"))
         // model is the session's own upstream model — never swapped for a compaction run
         assertEquals("gpt-5.6-sol", req["model"]?.jsonPrimitive?.content)
         // effort is inherited from the session (config "high"), never pinned lower
@@ -411,7 +409,7 @@ class ResponsesRequestBuilderTest {
         assertTrue(a!!.startsWith("splice-") && a.length == "splice-".length + 32)
         val parsed = AnthropicParse.parseAnthropicBody("""{"model":"m","messages":[]}""")
         assertNull(stableIds.stablePromptCacheKey(parsed.typed))
-        val grokReq = build(body, quirks = GROK, options = opts(sessionId = "sess-1"))
+        val grokReq = build(body, quirks = GROK, options = opts().copy(sessionId = "sess-1"))
         assertEquals("claude-grok:sess-1", grokReq["prompt_cache_key"]?.jsonPrimitive?.content)
     }
 

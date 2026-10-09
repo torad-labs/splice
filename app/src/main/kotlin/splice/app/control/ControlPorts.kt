@@ -3,8 +3,8 @@
 // Every one of these exists because :daemon-control must NOT depend on :app — the module law puts the
 // control plane below the daemon that owns the heads, so each thing the server needs to know about
 // the running daemon arrives as an injected question rather than a back-reference. Until now all
-// five arrived as raw function types, declared twice each (ControlServer and ControlPayloads) with
-// nothing but a shared parameter name to say they were the same question.
+// five arrived as raw function types, declared twice each, with nothing but a shared parameter
+// name to say they were the same question.
 //
 // WHY BY ROLE AND NEVER BY SHAPE, here: [FailedHeads] is `() -> Int`, as is
 // [splice.upstream.retry.LiveLimit] one module over, and they are opposites — one REPORTS what already went

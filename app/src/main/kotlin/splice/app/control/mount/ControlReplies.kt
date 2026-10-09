@@ -14,8 +14,7 @@ internal object ControlReplies {
     suspend fun respond(call: ApplicationCall, body: String) =
         call.respondText(body, ContentType.Application.Json)
 
-    /** The query-param tail clamp both /api/perf and /api/logs/{head} apply — hoisted out of
-     *  ControlPayloads.perfJson's and HeadRoutes.logsJson's original call sites. */
+    /** The query-param tail clamp both /api/perf (UsageMount) and /api/logs/{head} (FleetMount) apply. */
     fun tail(call: ApplicationCall, default: Int): Int =
         (call.request.queryParameters["tail"]?.toIntOrNull() ?: default).coerceIn(1, MAX_TAIL)
 }

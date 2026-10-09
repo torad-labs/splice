@@ -31,17 +31,16 @@ public fun interface TimedWork<T> {
 
 /** [ElapsedClock] owns durations; [WallClock] anchors their epoch starts once per turn.
  *  Later wall-clock changes cannot move a retained interval or alter its duration.
- *  Production always passes the head's monotonic clock explicitly — `TurnPerf(clock)` at
+ *  Production always passes the head's monotonic clock explicitly — `TurnPerf(clock = clock)` at
  *  HeadServer.handleMessages, off `HeadDeps.clock` = `MonoClock::nowMs` — so the wall-clock DEFAULT
  *  below is reached only by tests that construct a bare `TurnPerf()`. It is left as it was rather
  *  than quietly retuned to `MonoClock::nowMs`: that would be a behaviour change on a frozen tree,
  *  and it belongs to whoever measures it, not to a typing wave. */
-public class TurnPerf(private val clock: ElapsedClock, wallClock: WallClock) {
-    // ast-grep-ignore: kt-no-secondary-constructor -- Preserve the existing () and (ElapsedClock) JVM constructors and single trailing-lambda clock calls while adding an independently injectable epoch anchor; all initialization stays in the primary constructor.
-    @JvmOverloads
-    public constructor(clock: ElapsedClock = ElapsedClock(System::currentTimeMillis)) :
-        this(clock, WallClock(System::currentTimeMillis))
-
+public class TurnPerf(
+    wallClock: WallClock = WallClock(System::currentTimeMillis),
+    // Last, so a trailing lambda is the elapsed clock: `TurnPerf { now }`.
+    private val clock: ElapsedClock = ElapsedClock(System::currentTimeMillis),
+) {
     private val startedAt: Long = clock()
     private val startedAtEpochMs: Long = wallClock()
     private val lock = TurnPerfLock()

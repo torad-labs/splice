@@ -41,7 +41,7 @@ class PendingSseTest {
     fun `only the first attached successful flush records arrival to client byte`() = runTest {
         var now = 100L
         val clock = ElapsedClock { now }
-        val perf = TurnPerf(clock)
+        val perf = TurnPerf(clock = clock)
         perf.recordArrival(10L)
         now = 105L
         perf.markOnce(PerfKeys.FIRST_BYTE)

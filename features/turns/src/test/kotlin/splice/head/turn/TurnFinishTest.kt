@@ -156,7 +156,7 @@ class TurnPerfRowTest {
         val clock = ElapsedClock { testScheduler.currentTime }
         val rig = Rig(tmp, "paced-row-$cancelBeforeRecording", clock)
         val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
-        val drive = rig.drive(emitter).copy(perf = TurnPerf(clock))
+        val drive = rig.drive(emitter).copy(perf = TurnPerf(clock = clock))
         val pacing = drive.channel.launchPacer(
             this,
             kotlinx.coroutines.Job(),
@@ -205,7 +205,7 @@ class TurnPerfRowTest {
         val clock = ElapsedClock { now }
         val rig = Rig(tmp, "collected-row", clock)
         val terminal = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
-        val drive = rig.drive(terminal).copy(perf = TurnPerf(clock))
+        val drive = rig.drive(terminal).copy(perf = TurnPerf(clock = clock))
         try {
             drive.collectPerf.defer()
             rig.telemetry.recordPerf(drive, "overloaded", true, "synthetic-cause", 3)
@@ -336,7 +336,7 @@ class TurnPerfRowTest {
         val clock = ElapsedClock { testScheduler.currentTime }
         val rig = Rig(tmp, "torn-tail-reanchor", clock)
         val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
-        val drive = rig.drive(emitter).copy(perf = TurnPerf(clock))
+        val drive = rig.drive(emitter).copy(perf = TurnPerf(clock = clock))
         val runner = ReanchorRunner(
             key = "synthetic",
             log = {},

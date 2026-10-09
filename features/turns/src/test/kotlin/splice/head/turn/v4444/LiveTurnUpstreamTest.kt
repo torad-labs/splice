@@ -117,7 +117,7 @@ class LiveTurnUpstreamTest {
                 pipeline = pipeline,
                 t0 = now,
                 trace = null,
-                perf = TurnPerf(clock),
+                perf = TurnPerf(clock = clock),
                 turnHeaders = emptyMap(),
                 signals = RunnerSignals(),
                 channel = ClientChannel(

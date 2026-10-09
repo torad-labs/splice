@@ -134,7 +134,7 @@ class CredentialHoldAdmissionPoolTest {
 
         suspend fun respond(call: ApplicationCall) {
             val slot = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
-            val admitted = AdmittedTurn(slot, 0L, TurnPerf(ElapsedClock { 0L }))
+            val admitted = AdmittedTurn(slot, 0L, TurnPerf(clock = ElapsedClock { 0L }))
             val meta = TurnMeta(
                 false, ReasoningDisplay.OFF, false, "model", "model", 100, "high", null, null,
             ).copy(sessionId = "synthetic-command")

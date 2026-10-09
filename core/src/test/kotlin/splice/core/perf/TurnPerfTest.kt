@@ -269,7 +269,7 @@ class TurnPerfTest {
     @Test
     fun `epoch maxima keep zero ties and immutable intervals through a wall clock jump`() {
         var wall = 1_000_000L
-        val perf = TurnPerf(ElapsedClock { 5_000 }, WallClock { wall })
+        val perf = TurnPerf(clock = ElapsedClock { 5_000 }, wallClock = WallClock { wall })
         perf.recordArrival(4_000)
         perf.intervals.record(PerfKeys.OUT_HOLD_MAX_MS, 10, 10)
         assertEquals(0L, perf.snapshot().counters[PerfKeys.OUT_HOLD_MAX_MS])
@@ -289,7 +289,7 @@ class TurnPerfTest {
     @Test
     fun `retired read callbacks cannot change the turn maximum and retries never join read gaps`() {
         val clock = FakeClock()
-        val perf = TurnPerf(ElapsedClock { clock.now }, WallClock { 1_000_000 })
+        val perf = TurnPerf(clock = ElapsedClock { clock.now }, wallClock = WallClock { 1_000_000 })
         val first = UpstreamAttemptTiming(perf)
         first.readStarted()
         clock.tick(10)
@@ -318,7 +318,7 @@ class TurnPerfTest {
     @Test
     fun `binding an older WS demand cannot replace the demand already observed`() {
         val clock = FakeClock()
-        val perf = TurnPerf(ElapsedClock { clock.now }, WallClock { 1_000_000 })
+        val perf = TurnPerf(clock = ElapsedClock { clock.now }, wallClock = WallClock { 1_000_000 })
         val timing = WsAttemptTiming(perf)
         timing.requested(clock.now)
         clock.tick(10)

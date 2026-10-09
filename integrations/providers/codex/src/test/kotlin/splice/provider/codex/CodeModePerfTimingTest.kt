@@ -31,7 +31,7 @@ internal class CodeModePerfTimingTest : CodeModeBridgeTestSupport() {
     @Test
     fun `canonical elapsed time covers success and refusal without changing transport bytes`() = runTest {
         var ticks = 0L
-        val perf = TurnPerf(ElapsedClock { ticks++ * 7 }, WallClock { 0 })
+        val perf = TurnPerf(clock = ElapsedClock { ticks++ * 7 }, wallClock = WallClock { 0 })
         val target = object : InterceptedRoundPost {
             override val perf: TurnPerf = perf
             override suspend fun invoke(bodyJson: String) = error("synthetic timing never posts")
@@ -54,7 +54,7 @@ internal class CodeModePerfTimingTest : CodeModeBridgeTestSupport() {
         val manager = bridge(ScriptedRuntime(ArrayDeque()))
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
-        val perf = TurnPerf(ElapsedClock { testScheduler.currentTime }, WallClock { 0 })
+        val perf = TurnPerf(clock = ElapsedClock { testScheduler.currentTime }, wallClock = WallClock { 0 })
         val owner = async {
             manager.interceptor(turn(sessionId = "synthetic-perf-session"), disableParallel = false)
                 .intercept(BASE_REQUEST, RecordingSink()) {

@@ -85,7 +85,7 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
         val row = PostingRow(source)
         val user = Json.parseToJsonElement("""{"role":"user","content":"synthetic request"}""")
         val input = Json.parseToJsonElement(BASE_REQUEST).jsonObject.getValue("input").jsonArray + user
-        val perf = TurnPerf(ElapsedClock { 0 }, WallClock { 0 })
+        val perf = TurnPerf(clock = ElapsedClock { 0 }, wallClock = WallClock { 0 })
         val refusing = object : RedirectableRoundPost by source {
             override val perf = perf
             override suspend fun into(bodyJson: String, sink: splice.upstream.sse.WireSink): TurnOutcome = throw refusal

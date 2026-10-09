@@ -85,7 +85,7 @@ class UpstreamWriteTimingTest {
     @Test
     fun `prompt positive Source reads stay separate from a caller decode stall`() {
         val now = AtomicLong(100)
-        val perf = TurnPerf(ElapsedClock { now.get() }, WallClock { 1_000_000 })
+        val perf = TurnPerf(clock = ElapsedClock { now.get() }, wallClock = WallClock { 1_000_000 })
         val server = delayedHeadersServer(CompletableDeferred(), CountDownLatch(0))
         val client = UpstreamTransport().defaultClient(10_000)
         val config = client.engine.config

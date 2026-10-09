@@ -236,7 +236,7 @@ class PerfStatsTest {
     @Test
     fun `interval starts persist beside the winning maxima and stay absent when unobserved`(@TempDir tmp: Path) {
         val stats = PerfStats(tmp.resolve("perf.jsonl"), clock = { 2_000_000 })
-        val perf = TurnPerf(ElapsedClock { 5_000 }, WallClock { 1_000_000 })
+        val perf = TurnPerf(clock = ElapsedClock { 5_000 }, wallClock = WallClock { 1_000_000 })
         for ((key, startKey) in listOf(
             PerfKeys.UP_GAP_MAX_MS to PerfKeys.UP_GAP_MAX_START_EPOCH_MS,
             PerfKeys.OUT_HOLD_MAX_MS to PerfKeys.OUT_HOLD_MAX_START_EPOCH_MS,

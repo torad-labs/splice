@@ -350,7 +350,7 @@ class TurnStreamerCleanupTest {
         )
         private val deps = headDeps(tmp = tmp, upstream = upstream, gate = gate, log = { logs.add(it) })
         private val factory = TurnDriveFactory(provider, deps, HeadHealthCounters())
-        private val perf = TurnPerf(clock)
+        private val perf = TurnPerf(clock = clock)
         private val inputs = TurnInputs(
             built = BuiltTurn(
                 Json.parseToJsonElement("""{"model":"synthetic-model","input":[]}""").jsonObject,

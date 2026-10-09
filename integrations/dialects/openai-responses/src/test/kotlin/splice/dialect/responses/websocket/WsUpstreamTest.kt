@@ -750,7 +750,7 @@ class WsUpstreamInboxListenerTest {
     @Test
     fun `listener demand wait and delayed rearm retain distinct epoch intervals`() {
         var now = 5_000L
-        val perf = TurnPerf(ElapsedClock { now }, WallClock { 1_000_000 })
+        val perf = TurnPerf(clock = ElapsedClock { now }, wallClock = WallClock { 1_000_000 })
         val pulse = WsPulse("synthetic", OpenSockets { 0 }, ElapsedClock { now })
         pulse.bindTiming(WsAttemptTiming(perf))
         val inbox = Channel<JsonObject>(Channel.UNLIMITED)

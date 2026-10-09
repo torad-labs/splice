@@ -200,7 +200,7 @@ class PacedBurstTest {
 
     @Test
     fun `the longest hold keeps its epoch start through normal and emergency release`() {
-        val measured = TurnPerf(ElapsedClock { 5_000 }, WallClock { 1_000_000 })
+        val measured = TurnPerf(clock = ElapsedClock { 5_000 }, wallClock = WallClock { 1_000_000 })
         val pacer = DeltaPacer().also { it.active = true }
         assertTrue(!pacer.hold(delta(0), measured, true, 5_000))
         assertTrue(pacer.hold(delta(1), measured, true, 5_001))

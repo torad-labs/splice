@@ -84,7 +84,7 @@ class UpstreamEventTimingTest {
     @Test
     fun `prompt reads and a decode stall retain distinct gaps and epoch starts`() = runTest {
         var now = 5_000L
-        val perf = TurnPerf(ElapsedClock { now }, WallClock { 1_000_000 })
+        val perf = TurnPerf(clock = ElapsedClock { now }, wallClock = WallClock { 1_000_000 })
         val timing = UpstreamAttemptTiming(perf)
         val events = flow {
             repeat(2) {

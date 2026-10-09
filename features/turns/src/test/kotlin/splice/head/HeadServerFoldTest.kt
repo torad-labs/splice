@@ -268,7 +268,7 @@ class HeadServerFoldTest {
     // stream — because the direct-controller version of this test is the fake that let the gap
     // survive: it proved the controller would continue if asked, while nothing ever asked it.
     @Test
-    fun `a round stalled mid-reasoning salvages its partial and continues - DR-7`() = runTest {
+    fun `a round stalled mid-reasoning salvages its partial and continues`() = runTest {
         val stallServer = stallHead()
         stallServer.start()
         val stallPort = stallServer.port
@@ -304,7 +304,7 @@ class HeadServerFoldTest {
     }
 
     @Test
-    fun `totalCap reaps a turn stalled BEFORE upstream headers and frees the slot - NF-03`() = runTest {
+    fun `totalCap reaps a turn stalled BEFORE upstream headers and frees the slot`() = runTest {
         // The window launchIn never covered: the mock sleeps 3s before sending response headers,
         // no stream ever opens, and this head's totalCap is 1s. Pre-fix, nothing sampled the cap
         // here — the turn ran the full stall while pinning its gate slot. The verify-spec sketched

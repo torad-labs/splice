@@ -34,7 +34,7 @@ class GatewayStateAbsenceTest {
     }
 
     @Test
-    fun `an inaccessible ratelimit file logs once and degrades, absence stays quiet - DR-60`(@TempDir tmp: Path) {
+    fun `an inaccessible ratelimit file logs once and degrades, absence stays quiet`(@TempDir tmp: Path) {
         val log = mutableListOf<String>()
         val absent = RateLimitFile(tmp.resolve("never.json"), LogSink { log += it })
         assertNull(absent.read())
@@ -56,7 +56,7 @@ class GatewayStateAbsenceTest {
     }
 
     @Test
-    fun `an inaccessible compact stats file logs once and renders empty - DR-60`(@TempDir tmp: Path) {
+    fun `an inaccessible compact stats file logs once and renders empty`(@TempDir tmp: Path) {
         val log = mutableListOf<String>()
         val absentStats = CompactStats(tmp.resolve("never.jsonl"), log = LogSink { log += it })
         assertEquals(0, absentStats.read().total)
@@ -74,7 +74,7 @@ class GatewayStateAbsenceTest {
     }
 
     @Test
-    fun `an inaccessible perf log logs once and renders empty - DR-60`(@TempDir tmp: Path) {
+    fun `an inaccessible perf log logs once and renders empty`(@TempDir tmp: Path) {
         val log = mutableListOf<String>()
         val absentStats = PerfStats(tmp.resolve("never.jsonl"), log = LogSink { log += it })
         assertTrue(absentStats.tailNumeric().isEmpty())
@@ -95,7 +95,7 @@ class GatewayStateAbsenceTest {
     // EMPTY (zero-byte create after ENOSPC, an all-torn tail) left the latch armed and every
     // LATER unreadable episode silent forever. Any healthy read closes the episode.
     @Test
-    fun `a healthy-but-empty read re-arms the once-per-episode latch - DR-60`(@TempDir tmp: Path) {
+    fun `a healthy-but-empty read re-arms the once-per-episode latch`(@TempDir tmp: Path) {
         val log = mutableListOf<String>()
         val (file, locked) = lockedFile(tmp, "p.jsonl", """{"total":1}""")
         val stats = PerfStats(file, log = LogSink { log += it })

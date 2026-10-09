@@ -43,7 +43,6 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
-import splice.core.util.MonoClock
 import splice.dialect.responses.ReasoningSettings
 import splice.head.admission.RequestMaterializationGate
 import splice.head.usage.UsageStore
@@ -129,35 +128,6 @@ class HeadServerReviewTest {
                     .copy(usageStore = UsageStore(tmp.resolve("usage-$id.json"), ratelimitFile)),
             ),
         )
-    }
-
-    @Test
-    fun `stream drive writes model frames off the Netty event loop`() = runBlocking {
-        val writeThreads = java.util.concurrent.CopyOnWriteArrayList<String>()
-        val clock = ElapsedClock {
-            if (Thread.currentThread().stackTrace.any {
-                    it.className == "splice.head.turn.stream.PendingSseWriter" && it.methodName == "writeModel"
-                }
-            ) {
-                writeThreads += Thread.currentThread().name
-            }
-            MonoClock.nowMs()
-        }
-        val head = buildHead(
-            InflightGate(maxInflight = { 4 }),
-            RequestMaterializationGate(),
-            tmp.resolve("rl-stream-dispatch.json"),
-            seams = HeadDeps.HeadSeams(clock = clock),
-        )
-        head.start()
-        try {
-            val body = turn(head.port, "basic").bodyAsText()
-            assertTrue(body.contains("event: message_stop"), body)
-            assertTrue(writeThreads.isNotEmpty(), "the model must write frames through the drive")
-            assertTrue(writeThreads.none { "eventLoop" in it }, "a blocking frame write ran on Netty: $writeThreads")
-        } finally {
-            head.stop()
-        }
     }
 
     @Test

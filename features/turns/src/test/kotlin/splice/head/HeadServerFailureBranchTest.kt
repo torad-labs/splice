@@ -251,7 +251,7 @@ class HeadServerFailureBranchTest {
     // The words do not move either way: the message still says "; retry", which is addressed to the
     // OPERATOR (fix the config), not to the client.
     @Test
-    fun `an unparseable base_url is permanent and keeps its api_error - V4-81`() = runBlocking {
+    fun `an unparseable base_url is permanent and keeps its api_error`() = runBlocking {
         val head = buildHead(BranchFakeAuth(), wrap = { ConfigParseThrowingProvider(it) })
         head.start()
         val headPort = head.port

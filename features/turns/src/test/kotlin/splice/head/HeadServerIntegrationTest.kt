@@ -233,7 +233,7 @@ class HeadServerIntegrationTest {
     // declaration order, so a reordered field, a dropped `stream:true`, or a Chat-only knob leaking
     // in all go RED here. Update the pin only after reading the diff.
     @Test
-    fun `upstream wire body is the canonical Responses request, byte for byte (DR-168)`() = runTest {
+    fun `upstream wire body is the canonical Responses request, byte for byte`() = runTest {
         val before = mock.upstreamBodies.size
         messages("basic")
         val captured = mock.upstreamBodies.drop(before)

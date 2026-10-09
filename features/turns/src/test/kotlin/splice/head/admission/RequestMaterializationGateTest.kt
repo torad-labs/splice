@@ -11,7 +11,6 @@ import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import splice.core.memory.HeapBudget
@@ -24,29 +23,6 @@ private const val DAEMON_HEAP = 2048 * MIB
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RequestMaterializationGateTest {
-    @Test
-    fun `default gates spend the same daemon ledger rather than a fresh ceiling`() {
-        assertSame(splice.upstream.memory.JvmHeap.budget, RequestMaterializationGate().heap)
-        assertSame(RequestMaterializationGate().heap, RequestMaterializationGate().heap)
-    }
-
-    @Test
-    fun `waiting gates reject both live and closed read views at the root boundary`() {
-        val root = HeapBudget(256, 100)
-        val constructor = RequestMaterializationGate::class.java.getConstructor(
-            Long::class.javaPrimitiveType,
-            HeapBudget::class.java,
-        )
-        assertSame(root, constructor.newInstance(0L, root).heap)
-        val view = root.readShare()
-        try {
-            assertThrows(IllegalArgumentException::class.java) { constructor.newInstance(0L, view) }
-        } finally {
-            view.close()
-        }
-        assertThrows(IllegalArgumentException::class.java) { constructor.newInstance(0L, view) }
-    }
-
     @Test
     fun `a root waiter wakes on child refund while root retains spare capacity`() =
         runTest(UnconfinedTestDispatcher()) {

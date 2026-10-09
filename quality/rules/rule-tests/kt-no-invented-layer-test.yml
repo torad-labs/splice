@@ -16,6 +16,9 @@ valid:
         val controller = "ControllerName"
         fun contract(): Int = 1
     }
+  # a backtick-quoted name that does not end in a layer word.
+  - |
+    class `FoldPolicy`(private val limit: Int)
 invalid:
   - |
     class SessionController(private val limit: Int)
@@ -27,3 +30,9 @@ invalid:
     public data class TurnContract(val id: String)
   - |
     object RelayController
+  - |
+    class `SessionController`(private val limit: Int)
+  - |
+    object `RelayPresenter`
+  - |
+    interface `TurnContract`

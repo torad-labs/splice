@@ -4,6 +4,7 @@ package splice.app.auth.claude
 import kotlinx.coroutines.CoroutineScope
 import splice.client.wrap.WrapStateRead
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.topology.Topology
 import splice.core.util.LogSink
 import splice.core.util.WallClock
@@ -34,7 +35,7 @@ internal class ClaudeLoginWiring(
         val topology = topologyPath?.let(TopologyLoader::loadOrMaterialize) ?: Topology()
         val processes = ProcessEnvironment()
         val registry = SessionRegistry(
-            home.resolve(".claude/sessions"),
+            home.resolve(UserHome.CLAUDE_DIR).resolve("sessions"),
             RouteOfPid { pid ->
                 processes.route(pid) { port -> topology.heads.entries.firstOrNull { it.value.port == port }?.key }
             },

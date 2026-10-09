@@ -276,7 +276,7 @@ internal class ControlPlane(
                 launchService = launchService(home, sharing, controlPort),
                 shutdownDaemon = shutdownDaemon,
                 sessions = SessionRegistry(
-                    home.resolve(".claude").resolve("sessions"),
+                    home.resolve(UserHome.CLAUDE_DIR).resolve("sessions"),
                     RouteOfPid { pid -> environment.route(pid) { port -> headOfPort(heads, port) } },
                     heard = console.sessionsHeard,
                     foreground = foregroundTools,

@@ -31,8 +31,8 @@ private const val MAX_PROJECT_MISSES = 1_024
 /** Maps Claude Code's session id to its working directory. The live registry wins; headless runs
  *  fall back to the transcript whose directory encodes the cwd and whose rows retain it exactly. */
 public class SessionProject(
-    private val sessionsDir: Path = UserHome.dir().resolve(".claude/sessions"),
-    private val projectsDir: Path = UserHome.dir().resolve(".claude/projects"),
+    private val sessionsDir: Path = UserHome.claudeDir().resolve("sessions"),
+    private val projectsDir: Path = UserHome.claudeDir().resolve("projects"),
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     private val headProjectsDirs: List<Path> = emptyList(),
 ) {

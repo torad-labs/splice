@@ -40,7 +40,7 @@ internal class SessionsWiring(
 ) {
     val sessionHeads = SessionHeadAdapter.adapt(heads)
     val historyIndex = TranscriptHistoryIndex()
-    val historyRoots = listOf(SessionHistoryRoot(null, UserHome.dir().resolve(".claude"))) +
+    val historyRoots = listOf(SessionHistoryRoot(null, UserHome.claudeDir())) +
         sessionHeads.mapNotNull { (head, source) -> source.transcriptRoot?.let { SessionHistoryRoot(head, it) } }
     private val sessionAccounts = object : SessionAccountOf {
         override fun forRecords(records: List<SessionRecord>): SessionAccountOf {

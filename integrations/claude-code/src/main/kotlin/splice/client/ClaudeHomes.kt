@@ -24,7 +24,7 @@ internal class RealPathOrSelf {
  *  (`$HOME/.claude.json`, a historical quirk — never inside `.claude/`), while its CLAUDE_CONFIG_DIR
  *  (agents, commands, plugins, …) is `.claude` itself; every SUFFIXED identity carries both under
  *  the one directory `$HOME/.claude-<suffix>` (verified on this box: `~/.claude-bonsai/.claude.json`
- *  is a real, independent file, not a symlink). Named off Keys.CLAUDE, never a `.claude` literal of
+ *  is a real, independent file, not a symlink). Named off Keys.VANILLA_DIR, never a `.claude` literal of
  *  its own (kt-no-vanilla-config-dir scopes that wall to this package; the constant is the one
  *  dispositioned spelling). */
 internal class ClaudeHomes(private val homeParent: Path) {
@@ -33,7 +33,7 @@ internal class ClaudeHomes(private val homeParent: Path) {
     fun configDirs(): List<Path> {
         val siblings = Cancellables.runCatchingCancellable {
             Files.newDirectoryStream(homeParent).use { stream ->
-                stream.filter { Files.isDirectory(it) && it.name.startsWith(Keys.CLAUDE) }
+                stream.filter { Files.isDirectory(it) && it.name.startsWith(Keys.VANILLA_DIR) }
             }
         }.getOrElse { emptyList() }
         return siblings.sortedBy { it.toString() }
@@ -42,7 +42,7 @@ internal class ClaudeHomes(private val homeParent: Path) {
     /** Every root a `.claude.json` state file can sit under: `$HOME` for the vanilla identity, each
      *  suffixed CLAUDE_CONFIG_DIR for the rest. */
     fun roots(): List<Path> =
-        (listOf(homeParent) + configDirs().filter { it.name != Keys.CLAUDE }).sortedBy { it.toString() }
+        (listOf(homeParent) + configDirs().filter { it.name != Keys.VANILLA_DIR }).sortedBy { it.toString() }
 
     fun claudeJsonFiles(): List<Path> = roots().map { it.resolve(Keys.CLAUDE_JSON) }
 }

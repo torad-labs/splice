@@ -24,6 +24,13 @@ public object UserHome {
     public fun dir(env: EnvReader = EnvReader(System::getenv)): Path =
         redirected ?: Paths.get(of(env, System.getProperty(USER_HOME_PROPERTY)))
 
+    /** The vanilla Claude Code config dir's name under the home: the client's own state, which no head writes
+     *  (V4-115). Every reader of `~/.claude` names it through this, so the one spelling lives in one place. */
+    public const val CLAUDE_DIR: String = ".claude"
+
+    /** `~/.claude` against [dir]: the vanilla client's config dir, its sessions registry and its transcripts. */
+    public fun claudeDir(env: EnvReader = EnvReader(System::getenv)): Path = dir(env).resolve(CLAUDE_DIR)
+
     /** The shell's HOME when it names a directory; null means a pasted `$HOME` path cannot work. */
     public fun environmentHome(env: EnvReader): String? = env(HOME)?.takeIf(String::isNotBlank)
 

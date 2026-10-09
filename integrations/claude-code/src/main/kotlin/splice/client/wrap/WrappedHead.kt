@@ -154,7 +154,7 @@ public class WrappedHead(
 ) : WrapStateRead {
     private val commandPath: Path get() = installPaths.binDir.resolve(CLAUDE_COMMAND)
     private val shimPath: Path get() = installPaths.shareDir.resolve(SHIM_NAME)
-    private val vanillaDir: Path get() = home.resolve(Keys.CLAUDE)
+    private val vanillaDir: Path get() = home.resolve(Keys.VANILLA_DIR)
 
     /** The real claude binary while wrap is in place (its state file is the proof), else null. A recorded binary
      *  the updater has since deleted, or one a newer installed version has passed, is put right first

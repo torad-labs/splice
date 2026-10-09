@@ -3,6 +3,8 @@
 // the writer is not billed for the contract table (concentration, 2026-08-19).
 package splice.client
 
+import splice.core.config.UserHome
+
 /** On-disk items a head may share by symlinking into the operator's global ~/.claude/<item>.
  *  `sessions` is the cross-session-messaging peer registry: sharing it is what lets every head's
  *  ListAgents see every other head's sessions (the message sockets are already machine-global).
@@ -29,8 +31,9 @@ internal val portKeys: List<String> = listOf(
 /** The `~/.claude*` path fragments and `.claude.json` keys are the byte-for-byte state contract with
  *  Claude Code; naming them once keeps the contract in a single place instead of duplicated literals. */
 internal object Keys {
-    const val CLAUDE_DIR = ".claude"
-    const val CLAUDE = ".claude"
+    /** The vanilla `~/.claude` dir's name, which core owns (UserHome.CLAUDE_DIR); one alias here keeps this
+     *  module's readers on the one spelling without each importing core's config package. */
+    const val VANILLA_DIR = UserHome.CLAUDE_DIR
     const val CLAUDE_JSON = ".claude.json"
     const val SETTINGS = "settings.json"
     const val CLAUDE_MD = "CLAUDE.md"

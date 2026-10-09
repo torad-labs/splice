@@ -132,7 +132,7 @@ public class SessionsCommand(private val output: TerminalOutput, private val err
         val heads = readHeads(envReader)
         val environment = ProcessEnvironment()
         return SessionRegistry(
-            UserHome.dir(envReader).resolve(".claude/sessions"),
+            UserHome.claudeDir(envReader).resolve("sessions"),
             RouteOfPid { pid ->
                 environment.route(pid) { port -> heads.entries.firstOrNull { it.value.port == port }?.key }
             },

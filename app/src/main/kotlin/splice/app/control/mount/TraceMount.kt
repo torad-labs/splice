@@ -60,7 +60,7 @@ internal class TraceMount(
                 // then every other head's own tree. The request supplies neither a path nor a root.
                 val own = sessionHeads[key]?.transcriptRoot
                 val others = sessionHeads.values.mapNotNull { it.transcriptRoot }.filter { it != own }
-                (listOfNotNull(own) + listOf(UserHome.dir().resolve(".claude")) + others).distinct()
+                (listOfNotNull(own) + listOf(UserHome.claudeDir()) + others).distinct()
             }
         },
         SessionTranscriptViewEnabled { config.getConfig().transcriptView },

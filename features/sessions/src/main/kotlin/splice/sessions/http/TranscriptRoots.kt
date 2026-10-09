@@ -11,7 +11,7 @@ public class TranscriptRoots(
     private val heads: Map<String, SessionHead> = emptyMap(),
     /** The vanilla config root. Read only, never written (HEAD ISOLATION); a parameter so a test
      *  never reads the operator's own ~/.claude. */
-    private val vanilla: Path = UserHome.dir().resolve(".claude"),
+    private val vanilla: Path = UserHome.claudeDir(),
 ) {
     /** Every head's own tree, once. */
     public fun headTrees(): List<Path> = heads.values.mapNotNull { it.transcriptRoot }.distinct()

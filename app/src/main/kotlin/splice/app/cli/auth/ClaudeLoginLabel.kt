@@ -26,7 +26,7 @@ import java.nio.file.Path
 internal class ClaudeLoginLabel(
     private val output: TerminalOutput,
     private val logins: ClaudeLogins = ClaudeLogins(),
-    private val sessionsDir: Path = UserHome.dir().resolve(".claude/sessions"),
+    private val sessionsDir: Path = UserHome.claudeDir().resolve("sessions"),
     private val processes: ProcessEnvironment = ProcessEnvironment(),
 ) {
     internal fun login(headKey: String, topology: Topology, label: String?, discard: Boolean): Boolean {

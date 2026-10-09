@@ -25,7 +25,7 @@ import splice.upstream.codemode.ProcessTicker
 internal class CodeModeSessionLiveness(
     scope: CoroutineScope,
     private val source: SessionSource = SessionRegistry(
-        UserHome.dir().resolve(".claude").resolve("sessions"),
+        UserHome.claudeDir().resolve("sessions"),
         RouteOfPid { SessionRoute.Unknown },
     ),
     private val ticker: Ticker = ProcessTicker(),

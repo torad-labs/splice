@@ -42,6 +42,7 @@ import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
 import splice.core.config.Knob
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.model.HeadDiscoveredModels
 import splice.core.storage.ACTIVITY_DIRECTORY
 import splice.core.topology.TopologyParse
@@ -224,7 +225,10 @@ internal object ConsoleWiring {
 
     private fun sessionRegistry(statePaths: StatePaths): SessionRegistry {
         val home = statePaths.rootDir.parent ?: statePaths.rootDir
-        return SessionRegistry(home.resolve(".claude").resolve("sessions"), RouteOfPid { SessionRoute.Unknown })
+        return SessionRegistry(
+            home.resolve(UserHome.CLAUDE_DIR).resolve("sessions"),
+            RouteOfPid { SessionRoute.Unknown },
+        )
     }
 }
 

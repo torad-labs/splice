@@ -175,7 +175,7 @@ public class ClaudeConfigMaterializer(
         // (~/.claude-x -> ~/.claude) passed this guard and every mutation materialize performs
         // next landed in the operator's REAL global dir. Identity is judged on real paths; the
         // .claude* NAME is still judged on the spelling the operator chose.
-        val isolated = target.fileName.toString().startsWith(Keys.CLAUDE_DIR) &&
+        val isolated = target.fileName.toString().startsWith(Keys.VANILLA_DIR) &&
             realOf(target) != realOf(globalDir().toAbsolutePath().normalize())
         require(isolated) {
             "refuse to materialize into '$configDir': it must be an isolated .claude* dir, not the global ~/.claude"
@@ -194,7 +194,7 @@ public class ClaudeConfigMaterializer(
         }
     }
 
-    private fun globalDir() = home.resolve(Keys.CLAUDE)
+    private fun globalDir() = home.resolve(Keys.VANILLA_DIR)
 
     // settings is merged (not linked); mcps arrive via .claude.json. Everything else that the
     // policy shares is symlinked from the operator's global dir — the two machine-generated trees

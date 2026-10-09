@@ -6,6 +6,7 @@ import splice.app.head.HeadConfigDirs
 import splice.client.ClaudeHead
 import splice.client.ClaudeLoginTarget
 import splice.core.config.StatePaths
+import splice.core.config.UserHome
 import splice.core.topology.Topology
 import java.nio.file.Path
 
@@ -31,7 +32,7 @@ internal class ClaudeLoginLocations(
         return listOf(
             ClaudeLoginLocation(
                 ClaudeLoginPlaceId.NATIVE,
-                ClaudeLoginTarget(ClaudeHead(key, home.resolve(".claude")), home.resolve(".claude.json")),
+                ClaudeLoginTarget(ClaudeHead(key, home.resolve(UserHome.CLAUDE_DIR)), home.resolve(".claude.json")),
                 stores.resolve("native"),
             ),
             ClaudeLoginLocation(

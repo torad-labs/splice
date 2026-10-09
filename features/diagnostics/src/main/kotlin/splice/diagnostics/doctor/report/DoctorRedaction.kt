@@ -11,6 +11,7 @@
 // e-mail addresses and UUID-shaped ids are masked, the home directory reads as ~.
 package splice.diagnostics.doctor.report
 
+import splice.core.config.UserHome
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.diagnostics.doctor.doctorLinks
@@ -23,7 +24,8 @@ import java.nio.file.Path
  *  checkout, a scratch directory, a private file) is masked whole. */
 private val ALLOWED_PATH_PREFIXES = listOf(
     "~/.config/splice", "~/.local/share/splice", "~/.local/bin", "~/.cache/splice",
-    "~/.claude", "~/.lmstudio", "~/.ollama", "/usr", "/etc", "/api", "/health", "/v1", "/launch", "/statusline",
+    "~/${UserHome.CLAUDE_DIR}", "~/.lmstudio", "~/.ollama",
+    "/usr", "/etc", "/api", "/health", "/v1", "/launch", "/statusline",
 )
 
 /** What [DoctorRedaction.host] reports for a URL that does not parse — the outcome the parse

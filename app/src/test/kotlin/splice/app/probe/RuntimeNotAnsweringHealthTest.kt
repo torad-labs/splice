@@ -1,10 +1,6 @@
-// NEW: V4-417 — /health and the heads route carry each local runtime's reach. Both read the daemon's
-// held snapshot (LocalRuntimeWatch), so neither waits on a probe; a runtime that answers is unmarked; and
-// ok / readyHeads / failedHeads stay what they were, because launch shims wait on
-// readyHeads + failedHeads == heads and a silent runtime is the operator's machine, not a broken daemon.
-// The last test is the real chain: a refused loopback port and one that answers, probed by the real
-// LocalRuntimeReach, held by the real watch, and read back through the real health body and heads route.
-package splice.app.v4417
+// /health and the heads route carry each local runtime's reach from the daemon's held snapshot: a silent
+// runtime is named, one that answers is unmarked, and ok / readyHeads / failedHeads stay what launch shims wait on.
+package splice.app.probe
 
 import com.sun.net.httpserver.HttpServer
 import kotlinx.serialization.json.Json
@@ -56,7 +52,7 @@ private class UpHead(override val key: String) : Head {
     override fun healthSnapshot() = HeadHealth(ok = true, running = true, port = 0, version = "kt-1")
 }
 
-class RuntimeNotAnsweringRoutesTest {
+class RuntimeNotAnsweringHealthTest {
     private fun managed(key: String) = ManagedHead(
         head = UpHead(key),
         auth = object : splice.core.auth.AuthProvider {

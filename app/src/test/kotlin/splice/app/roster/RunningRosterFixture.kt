@@ -1,5 +1,5 @@
-// NEW: V4-440 — production head, stores and control routes retained across controlled hourly refreshes.
-package splice.app.v4440
+// A real assembled head, its stores and the control routes, kept across controlled hourly roster refreshes.
+package splice.app.roster
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancelAndJoin
@@ -104,7 +104,7 @@ internal class RunningRosterFixture(tmp: Path, parent: CoroutineScope) {
         private set
     val requests: List<String> get() = upstream.requests
 
-    suspend fun start(frozenBootCatalog: Boolean = false) {
+    suspend fun start() {
         SecureFile.writeAtomic0600(keyFile, "synthetic-fixture-key")
         rosters.resolve(mapOf("synthetic" to provider))
         val ctx = ProviderBuild(
@@ -117,7 +117,7 @@ internal class RunningRosterFixture(tmp: Path, parent: CoroutineScope) {
             loginCommand = "",
             discovered = rosters,
         )
-        val attached = if (frozenBootCatalog) ctx else windows.attach(ctx, false)
+        val attached = windows.attach(ctx, false)
         managed = factory().assembleHead(attached, 0)
         managed.head.start()
         control = controlServer()

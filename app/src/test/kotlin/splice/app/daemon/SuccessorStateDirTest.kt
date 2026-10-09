@@ -1,4 +1,5 @@
-package splice.app.v4365
+// The unsupervised successor daemon reads the same management key from the same state directory.
+package splice.app.daemon
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -10,7 +11,7 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import java.nio.file.Path
 
-class StateContinuityTest {
+class SuccessorStateDirTest {
     @Test
     fun `the unsupervised successor reads the same management key from the same state directory`(@TempDir tmp: Path) {
         val paths = StatePaths(baseOverride = tmp.resolve("chosen-state"))

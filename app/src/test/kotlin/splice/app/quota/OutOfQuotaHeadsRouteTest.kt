@@ -1,11 +1,6 @@
-// NEW: V4-429 — the heads route carries each running head's out-of-quota instant, as V4-417 carried a
-// silent runtime, so the console can read a head OK only when splice does. Fleet read claudex OK while
-// /health (quotaResetAtEpochSeconds), `splice status` and usage all said it was out of quota until Oct 5:
-// the route the page polls carried nothing of it. What is pinned here: the refusing head has the instant
-// in epoch seconds (the same figure /health carries), a head that is not refusing and a head that is not
-// running have none, and /health's ready and failed counts stay what they were, because launch shims wait
-// on readyHeads + failedHeads == heads.
-package splice.app.v4429
+// The heads route carries each running head's out-of-quota instant in epoch seconds (the figure /health carries),
+// a head that is not refusing or not running carries none, and /health's ready and failed counts are unchanged.
+package splice.app.quota
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject

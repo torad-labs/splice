@@ -1,5 +1,5 @@
-// NEW: V4-440 — refreshed membership respects accepted TOML windows, declared cards and head allowlists.
-package splice.app.v4440
+// Refreshed roster membership respects accepted TOML windows, declared cards and head allowlists.
+package splice.app.roster
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse

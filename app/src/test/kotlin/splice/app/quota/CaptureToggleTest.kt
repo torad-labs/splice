@@ -1,8 +1,6 @@
-// V4-359/V4-387: when trace defaults on, capture Off persists literal false. An absent
-// override means on, and only the trace key changes; retention and body-cap siblings survive.
-// In :app (V4-373) because it round-trips through the real parser: :integrations-topology is not a
-// test dependency :features-turns may take (ModuleLawsTest, HD-11), and :app depends on both.
-package splice.app.v4359
+// Turning capture off persists a literal trace = "false" override (an absent override means on) and keeps
+// the retention and body-cap siblings. Runs in :app because it round-trips through the real topology parser.
+package splice.app.quota
 
 import io.ktor.http.HttpStatusCode
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -42,7 +40,7 @@ discovery_prefix = "claude-local--"
 pinned_model = "m"
 """
 
-class CaptureOffStaleTest {
+class CaptureToggleTest {
     private data class Fixture(val route: CaptureRoutes, val file: Path, val boot: Topology) {
         fun current(): Topology = TopologyLoader.parse(Files.readString(file))
     }

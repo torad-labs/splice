@@ -1,9 +1,6 @@
-// NEW: V4-410 — the pool credential splice refuses (a symlinked <label>.json, V4-405) reaches the head's account
-// surface as refused, in words, and nothing opens it. The wiring is the real Codex arm over a real pool dir. The
-// link's target is a VALID labeled credential: had any reader followed the link, its account would describe as
-// signed in, so present=false through the arm is the proof that it was never opened. An orphan (a quota with no
-// credential) carries no refusal, so it still reads as a missing credential the console can renew.
-package splice.app.v4410
+// A credential file that is a symbolic link wires as refused (never read through the link), an orphan quota
+// wires as a plain missing credential, and the head's account descriptions carry the refusal for the link alone.
+package splice.app.accounts
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runTest
@@ -37,7 +34,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
-class RefusedAccountWiringTest {
+class RefusedLinkedAccountTest {
     private val kind = AuthKind.ChatgptOAuth
     private val files = OAuthAccountFiles()
 

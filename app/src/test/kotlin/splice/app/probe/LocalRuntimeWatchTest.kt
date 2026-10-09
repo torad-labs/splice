@@ -1,8 +1,6 @@
-// NEW: V4-417 — the daemon keeps each local runtime's reach from a background probe, off the request
-// path. Marlin's walk of f7f1e9308: `splice status` said "runtime not answering on :8099-:8102" for four
-// local heads while Fleet read them OK and /health said 11 ready, because V4-415 asked the runtimes only
-// from the CLI. The watch holds the last answer; a read of it never waits on a probe.
-package splice.app.v4417
+// The daemon keeps each local runtime's reach from a background probe, off the request path: a read of the
+// last answer never waits on a probe, a silent runtime is named, and a runtime that returns is dropped.
+package splice.app.probe
 
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.jupiter.api.Assertions.assertEquals

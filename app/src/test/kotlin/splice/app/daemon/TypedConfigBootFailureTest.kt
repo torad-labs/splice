@@ -1,10 +1,6 @@
-// NEW: V4-366 — a splice.toml value of the wrong type stops the boot with one sentence and its fix, not
-// "[daemon] UNCAUGHT on main:" and seven frames. Found by the V4-355 live check: the typed diagnostic
-// ('splice.toml: heads.local.overrides.trace at line 17 expects quoted string') reached the uncaught
-// handler, which printed the frames of a failure that is the operator's own line, and no fix. The boot
-// here is the real one: a splice.toml on disk, DaemonProcess.prepare, and whatever it throws is handed to
-// the handler main installs. Unknown failures keep DR-170's frames (DaemonBootFailureTest pins the rest).
-package splice.app.v4366
+// A splice.toml value of the wrong type stops the boot with one sentence and its fix, not an UNCAUGHT report with
+// frames. The boot is the real one (a splice.toml on disk, DaemonProcess.prepare); unknown failures keep their frames.
+package splice.app.daemon
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -44,7 +40,7 @@ private val HEAD = """
     pinned_model = "m1"
 """.trimIndent() + "\n"
 
-class TypedBootFailureTest {
+class TypedConfigBootFailureTest {
 
     @TempDir
     lateinit var tmp: Path
@@ -116,8 +112,8 @@ class TypedBootFailureTest {
         val (stderr, log) = report(RuntimeException("planted $PLANTED"))
         for ((where, shown) in listOf("stderr" to stderr, "daemon.log" to log)) {
             assertTrue(shown.contains("UNCAUGHT on ${Thread.currentThread().name}"), "$where: $shown")
-            assertTrue(shown.contains(FRAME), "$where: DR-170 keeps the frames: $shown")
-            assertFalse(shown.contains(PLANTED), "$where: DR-65 keeps the message out: $shown")
+            assertTrue(shown.contains(FRAME), "$where: an unknown failure keeps its frames: $shown")
+            assertFalse(shown.contains(PLANTED), "$where: the message stays out: $shown")
         }
     }
 }

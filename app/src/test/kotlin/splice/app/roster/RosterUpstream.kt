@@ -1,5 +1,5 @@
-// NEW: V4-440 — loopback-only chat upstream with synthetic usage and captured requests.
-package splice.app.v4440
+// Loopback-only chat upstream with synthetic usage and captured requests.
+package splice.app.roster
 
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress

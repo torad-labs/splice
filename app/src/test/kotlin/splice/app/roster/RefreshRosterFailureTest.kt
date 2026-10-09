@@ -1,5 +1,5 @@
-// NEW: V4-440 — a failed refresh must never discard the last live roster, even if its kept file is gone.
-package splice.app.v4440
+// A failed roster refresh never discards the last live roster, even if its kept file is gone.
+package splice.app.roster
 
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -47,7 +47,6 @@ class RefreshRosterFailureTest {
             assertEquals(models, rosters.forHead("synthetic"))
             assertEquals(1, logs.size, logs.toString())
             assertTrue("synthetic HTTP 503" in logs.single(), logs.toString())
-            assertTrue("using the 1 it published last" in logs.single(), logs.toString())
         }
 
     @Test

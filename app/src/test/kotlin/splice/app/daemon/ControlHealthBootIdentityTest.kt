@@ -1,4 +1,5 @@
-package splice.app.v4379
+// /health holds one boot identity per daemon, and a replacement daemon gets another.
+package splice.app.daemon
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -9,7 +10,7 @@ import splice.app.control.api.ControlHealthReport
 import splice.app.control.healthFor
 import splice.app.control.readinessFor
 
-class RestartBootIdentityTest {
+class ControlHealthBootIdentityTest {
     @Test
     fun `health holds one boot identity and a replacement daemon gets another`() {
         fun health(bootedAt: Long): ControlHealthReport =

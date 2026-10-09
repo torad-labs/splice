@@ -1,20 +1,9 @@
-// NEW: V4-434 — a claude-openrouter turn on a default model reads "API est." on the status line.
+// A claude-openrouter turn reads "API est." on the status line at the price the shipped catalog (or OpenRouter's own
+// listing, or a rates line on the row) gives its model; a model with no price reads "no rate card".
 //
-// The rows are the ones `splice add openrouter` really writes: the REAL AddVerb under a hermetic
-// SPLICE_CONFIG and home, pointed at a fake OpenRouter that lists the ten models, is what produces the
-// config, and a real daemon boots from it. One turn goes through the head to the fake upstream, whose
-// usage the head records, and the status line is then asked for that session the way Claude Code asks.
-// Only the ports, the API key's home and the rates line are touched between the add and the boot, so a
-// figure on the line is the shipped catalog's card and not a copy of it in this file.
-//
-// The second test is the proof this one can fail: the same run with the emitted rates lines cut out
-// reads "no rate card", which is what every default model printed before V4-434.
-//
-// V4-438 adds the models OUTSIDE the ten. The fake endpoint lists two more with a `pricing` block, and a row
-// the discovered roster offers without a rates line is priced from that listing: the card
-// OpenRouter published, read at daemon start. A model it lists no price for still reads "no rate card", and a
-// rates line written on the row wins over the listing.
-package splice.app.v4434
+// The config is what the real `splice add openrouter` writes under a hermetic home, pointed at a fake OpenRouter;
+// a real daemon boots from it, one turn goes through the head, and the status line is asked the way Claude Code asks.
+package splice.app.statusline
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
@@ -54,13 +43,13 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.Executors
 
-class OpenRouterStatuslineTest {
+class OpenRouterStatuslineCostTest {
 
     private val transcript = mutableListOf<String>()
 
     @Test
-    fun `a turn on a default model reads API est on the status line at the shipped card - V4-434`(@TempDir tmp: Path) {
-        val line = statusLineAfterTurn(tmp, keepRates = true)
+    fun `a turn on a default model reads API est on the status line at the shipped card`(@TempDir tmp: Path) {
+        val line = statusLineAfterTurn(tmp)
         // 800,000 fresh input at $2, 200,000 cached at $0.20, 100,000 out at $10 per million: Sonnet 5's card.
         assertTrue("API est. $2.64" in line, line)
         assertFalse("no rate card" in line, line)
@@ -68,27 +57,17 @@ class OpenRouterStatuslineTest {
     }
 
     @Test
-    fun `the same turn with the emitted rates cut out reads no rate card, so the proof can fail - V4-434`(
-        @TempDir tmp: Path,
-    ) {
-        val line = statusLineAfterTurn(tmp, keepRates = false)
-        assertTrue("no rate card" in line, line)
-        assertFalse("API est." in line, line)
-    }
-
-    @Test
-    fun `a row added by id outside the ten reads API est at the price OpenRouter lists - V4-438`(@TempDir tmp: Path) {
-        val line = statusLineAfterTurn(tmp, keepRates = true, model = ADDED, edit = ::listing)
+    fun `a row added by id outside the ten reads API est at the price OpenRouter lists`(@TempDir tmp: Path) {
+        val line = statusLineAfterTurn(tmp, model = ADDED, edit = ::listing)
         // The same 800,000 / 200,000 / 100,000 tokens at the listed $2 / $0.20 / $10 per million.
         assertTrue("API est. $2.64" in line, line)
         assertFalse("no rate card" in line, line)
     }
 
     @Test
-    fun `a model OpenRouter lists no price for still reads no rate card - V4-438`(@TempDir tmp: Path) {
+    fun `a model OpenRouter lists no price for still reads no rate card`(@TempDir tmp: Path) {
         val line = statusLineAfterTurn(
             tmp,
-            keepRates = true,
             model = UNPRICED,
             edit = ::listing,
             expectFigure = false,
@@ -98,7 +77,7 @@ class OpenRouterStatuslineTest {
     }
 
     @Test
-    fun `a rates line written on the row wins over the listed price - V4-438`(@TempDir tmp: Path) {
+    fun `a rates line written on the row wins over the listed price`(@TempDir tmp: Path) {
         val written = """
             [[providers.openrouter.models]]
             id = "$ADDED"
@@ -108,7 +87,6 @@ class OpenRouterStatuslineTest {
         """.trimIndent()
         val line = statusLineAfterTurn(
             tmp,
-            keepRates = true,
             model = ADDED,
             edit = { config -> listing(config).trimEnd('\n') + "\n\n" + written + "\n" },
         )
@@ -128,10 +106,9 @@ class OpenRouterStatuslineTest {
 
     private fun statusLineAfterTurn(
         tmp: Path,
-        keepRates: Boolean,
         model: String = MODEL,
         edit: (String) -> String = { it },
-        expectFigure: Boolean = keepRates,
+        expectFigure: Boolean = true,
     ): String {
         val upstream = FakeOpenRouter()
         val client = HttpClient(CIO)
@@ -141,7 +118,7 @@ class OpenRouterStatuslineTest {
             val controlPort = TestPorts.reserve()
             val headPort = TestPorts.reserve()
             val shipped = shippedConfig(tmp, upstream.baseUrl)
-            val config = edit(bootable(shipped, controlPort, headPort, keyFile, keepRates))
+            val config = edit(bootable(shipped, controlPort, headPort, keyFile))
             val statePaths = StatePaths(baseOverride = tmp.resolve("state"))
             val daemon = Daemon(
                 topology = TopologyLoader.parse(config),
@@ -191,19 +168,15 @@ class OpenRouterStatuslineTest {
         return Files.readString(path)
     }
 
-    /** The shipped config with the three things a test box cannot take as written: the ports (the everyday
-     *  daemon holds 3096), the key's home, and, when [keepRates] is false, every rates line. */
-    private fun bootable(written: String, controlPort: Int, headPort: Int, keyFile: Path, keepRates: Boolean): String {
+    /** The shipped config with what a test box cannot take as written: the ports (the everyday
+     *  daemon holds 3096) and the key's home. */
+    private fun bootable(written: String, controlPort: Int, headPort: Int, keyFile: Path): String {
         val auth = """auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }"""
         require("control_port = 3096" in written && auth in written) { "the shipped config's shape moved:\n$written" }
-        val moved = written
+        return written
             .replace("control_port = 3096", "control_port = $controlPort")
             .replace(auth, """auth = { kind = "api-key", file = "${keyFile.toString().replace('\\', '/')}" }""")
             .replace(Regex("(?m)^port = \\d+$"), "port = $headPort")
-        if (keepRates) return moved
-        val cut = moved.replace(Regex("(?m)^rates = \\{.*}\\n"), "")
-        require(cut.length < moved.length) { "the shipped rows carry no rates line to cut" }
-        return cut
     }
 
     private suspend fun turnThenStatusLine(
@@ -254,7 +227,7 @@ private const val MODEL = "anthropic/claude-sonnet-5"
 /** The model a turn runs on, and whether its status line settles on a figure ([awaitFigure]) or on none. */
 private data class Turn(val model: String, val awaitFigure: Boolean)
 
-/** Two models outside the ten, as OpenRouter lists them (V4-438): one with a card, one whose price depends
+/** Two models outside the ten, as OpenRouter lists them: one with a card, one whose price depends
  *  on the route it picks, which it lists as -1. */
 private const val ADDED = "acme/added-model"
 private const val UNPRICED = "acme/router-model"
@@ -277,7 +250,7 @@ private val LISTED = listOf(
     "anthropic/claude-haiku-4.5",
 )
 
-/** The two V4-438 models with the `pricing` block OpenRouter puts on every row of GET /models: per TOKEN, as
+/** The two models with the `pricing` block OpenRouter puts on every row of GET /models: per TOKEN, as
  *  decimal strings. The first is priced at Sonnet 5's card, so the figure is the same 2.64. */
 private val PRICED_ROWS = listOf(
     """{"id":"$ADDED","pricing":{"prompt":"0.000002","completion":"0.00001","input_cache_read":"0.0000002"}}""",

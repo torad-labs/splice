@@ -1,10 +1,6 @@
-// NEW: V4-421 — the list and the resume route must not disagree about which sessions can be resumed:
-// that disagreement is the defect (a listed session the resume route answered 404 for). The list's
-// `resumable` and ResumeAcrossHeads.plan, the resolution the resume route and the launch both use, are
-// asked here over the SAME trees on disk, through the real transcript reader. The trees include a head
-// whose `projects` is a symlink into a shared one (four heads on the everyday daemon are), which is how a
-// vanilla transcript reaches a head, and a vanilla tree no head links, which a resume does not search.
-package splice.app.v4421
+// The sessions list and the resume plan never disagree about which sessions can be resumed, asked over the same
+// transcript trees on disk, including a head whose projects directory links into a shared one.
+package splice.app.sessions
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -33,7 +29,7 @@ private const val ABSENT = "dddddddd-0000-4000-8000-000000000005"
 private const val UNLINKED_VANILLA = "dddddddd-0000-4000-8000-000000000006"
 private val ALL = listOf(OWN, OTHER_HEAD, THROUGH_LINK, EMPTY, ABSENT, UNLINKED_VANILLA)
 
-class ListMatchesResumeTest {
+class SessionListResumeAgreementTest {
     @TempDir lateinit var tmp: Path
 
     private fun tree(name: String): Path = Files.createDirectories(tmp.resolve(name))

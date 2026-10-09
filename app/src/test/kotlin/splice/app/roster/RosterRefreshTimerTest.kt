@@ -1,5 +1,5 @@
-// NEW: V4-440 — refresh waits an hour, repeats after provider failures, and stops with the daemon scope.
-package splice.app.v4440
+// Roster refresh waits an hour, repeats after provider failures, and stops with the daemon scope.
+package splice.app.roster
 
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.runBlocking

@@ -1,5 +1,5 @@
-// NEW: V4-440 — real roster refresh moves a retained Codex arm's backend tool-mode facts.
-package splice.app.v4440
+// A real roster refresh moves a retained Codex arm's backend tool-mode on its next built turn.
+package splice.app.roster
 
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -35,7 +35,7 @@ private const val MODE_BODY = """{"model":"gpt-6-synthetic","max_tokens":8,"stre
 "tools":[{"name":"synthetic_tool","input_schema":{"type":"object"}}],
 "messages":[{"role":"user","content":"synthetic request"}]}"""
 
-class RefreshedCodeModeTest {
+class RosterRefreshToolModeTest {
     @Test
     @Timeout(10)
     fun `roster refresh changes tool mode on the next build of the existing provider`(

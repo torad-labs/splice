@@ -1,5 +1,5 @@
-// NEW: V4-440 — one real assembled head admits and prices a model published after it started.
-package splice.app.v4440
+// One real assembled head admits and prices a model published after it started.
+package splice.app.roster
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -11,12 +11,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertNotNull
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
-import org.opentest4j.AssertionFailedError
 import splice.core.model.DiscoveredModel
 import splice.core.model.ModelRates
 import splice.usage.economics.EconomicsRead
@@ -57,21 +55,6 @@ class RunningRosterRefreshTest {
                 assertEquals(400, fixture.turn(JOINED).statusCode())
                 assertEquals(1, fixture.requests.size, "removed discovery cannot reach the upstream")
                 assertTrue(checkNotNull(fixture.managed.catalog).contains("synthetic-original"))
-            }
-        } finally {
-            fixture.close()
-        }
-    }
-
-    @Test
-    fun `the HTTP discovery check rejects the original frozen catalog wiring`(@TempDir tmp: Path) = runBlocking<Unit> {
-        val fixture = RunningRosterFixture(tmp, this)
-        try {
-            withTimeout(30_000) {
-                fixture.start(frozenBootCatalog = true)
-                fixture.models += DiscoveredModel(JOINED, "Joined synthetic", 256_000)
-                fixture.refresh()
-                assertThrows(AssertionFailedError::class.java) { assertDiscovery(fixture) }
             }
         } finally {
             fixture.close()

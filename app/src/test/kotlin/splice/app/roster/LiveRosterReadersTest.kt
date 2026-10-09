@@ -1,5 +1,5 @@
-// NEW: V4-440 — a roster changed after assembly reaches membership, discovery, pricing and the launch picker.
-package splice.app.v4440
+// A roster changed after assembly reaches membership, discovery, pricing and the launch picker.
+package splice.app.roster
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonArray

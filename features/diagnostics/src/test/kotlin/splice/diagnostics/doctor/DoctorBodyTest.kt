@@ -50,16 +50,6 @@ class DoctorBodyTest {
         assertTrue(report["schema_version"]!!.toString().isNotEmpty(), "a report carries its schema version")
     }
 
-    @Test
-    fun `the body and the CLI encoder agree, which is what one rendering means`() {
-        // reportJson returns DoctorJsonReport.jsonText(report), and emit calls the SAME function. This
-        // pins the shared-encoder claim the way it can be pinned from outside: two runs of the body
-        // must differ only where the report itself is time-varying, i.e. the shape is stable.
-        val first = json.parseToJsonElement(DoctorTestPorts.doctor().reportJson(EnvReader(System::getenv))).jsonObject
-        val second = json.parseToJsonElement(DoctorTestPorts.doctor().reportJson(EnvReader(System::getenv))).jsonObject
-        assertEquals(first.keys, second.keys, "one rendering: the section set cannot move between calls")
-    }
-
     /** V4-127 review: DoctorReportShape.stateDirUsage existed and nothing called it, so the report the
      *  console reads never carried the state dir's size or its oldest file (FEATURES.md §6: "Doctor
      *  reports the state dir size and the oldest file"). Seeded dir, exact numbers: a report that

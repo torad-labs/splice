@@ -81,7 +81,7 @@ class DoctorHeadKeyTest {
     // OPENROUTER_API_KEY is deliberately absent, so a provider-keyed headAuthOf reports this healthy
     // head as unauthed (FAIL) and names the wrong variable.
     @Test
-    fun `the derived KEY_API_KEY comes from the head key, never the provider key - DR-167`(@TempDir tmp: Path) {
+    fun `the derived KEY_API_KEY comes from the head key, never the provider key`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))

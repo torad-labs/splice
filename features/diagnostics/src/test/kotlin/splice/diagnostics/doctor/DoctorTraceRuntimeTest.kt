@@ -1,4 +1,4 @@
-package splice.diagnostics.doctor.v4371
+package splice.diagnostics.doctor
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -9,8 +9,6 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.config.StatePaths
 import splice.daemonclient.DaemonProbe
 import splice.daemonclient.TraceConfigProbe
-import splice.diagnostics.doctor.CheckStatus
-import splice.diagnostics.doctor.DoctorTraceChecks
 import splice.topology.TopologyLoader
 import java.nio.file.Path
 

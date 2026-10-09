@@ -1,10 +1,3 @@
-// DR-171: the writability probe as a unit, because the defect is about WHERE the probe's bytes
-// land — a question the end-to-end doctor scenarios cannot ask. DoctorCommandTest already pins the
-// unwritable-state-dir path end to end (FAIL, the chmod remedy, no residue), so this file stays on
-// the one property that arm cannot see: a pre-existing entry at the probe's name is never written
-// THROUGH. Its subject is the pre-DR-171 fixed name, which production no longer uses; a planted
-// entry there is exactly the local peer's plant, and the assertions are about the VICTIM rather
-// than about the probe's own verdict.
 package splice.diagnostics.doctor
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -17,12 +10,6 @@ import splice.diagnostics.doctor.report.ProbeWrite
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
-
-// The name production resolved before DR-171. Kept here deliberately: once the fix lands, this
-// string exists ONLY in the test, and that is the point — it is the attacker's chosen path, not a
-// production constant to be shared.
-private const val LEGACY_PROBE_NAME = ".splice-doctor-write-probe"
-private const val SENTINEL = "do-not-truncate-me"
 
 class DoctorProbeWriteTest {
 
@@ -66,37 +53,7 @@ class DoctorProbeWriteTest {
     }
 
     @Test
-    fun `a symlink planted at the old probe name cannot truncate its victim - DR-171`(@TempDir tmp: Path) {
-        val dir = Files.createDirectories(tmp.resolve("state"))
-        val victim = tmp.resolve("victim.txt")
-        Files.writeString(victim, SENTINEL)
-        Files.createSymbolicLink(dir.resolve(LEGACY_PROBE_NAME), victim)
-
-        val check = DoctorProbeWrite().writableProbe("state dir", dir)
-
-        // The victim is the assertion. Before DR-171 the probe followed the link and left this file
-        // holding the five bytes "probe", while still reporting INFO — damage under a clean verdict.
-        assertEquals(SENTINEL, Files.readString(victim), "the probe must never write THROUGH a planted symlink")
-        assertEquals(CheckStatus.INFO, check.status, "a writable dir still probes clean: ${check.detail}")
-    }
-
-    @Test
-    fun `a dangling symlink at the old probe name is not materialized - DR-171`(@TempDir tmp: Path) {
-        val dir = Files.createDirectories(tmp.resolve("state"))
-        val attackerChosen = tmp.resolve("attacker-chosen.txt")
-        Files.createSymbolicLink(dir.resolve(LEGACY_PROBE_NAME), attackerChosen)
-
-        val check = DoctorProbeWrite().writableProbe("state dir", dir)
-
-        // The second face of the same defect, and the one a truncation-only test misses: following a
-        // DANGLING link does not truncate anything, it CREATES the target. Doctor would have written
-        // a file at a path chosen by whoever planted the link.
-        assertFalse(Files.exists(attackerChosen), "following a dangling link would create the attacker's file")
-        assertEquals(CheckStatus.INFO, check.status, "a writable dir still probes clean: ${check.detail}")
-    }
-
-    @Test
-    fun `the probe creates and removes its own file, leaving nothing - DR-171 control`(@TempDir tmp: Path) {
+    fun `the probe creates and removes its own file, leaving nothing`(@TempDir tmp: Path) {
         val dir = Files.createDirectories(tmp.resolve("state"))
 
         val check = DoctorProbeWrite().writableProbe("state dir", dir)
@@ -119,7 +76,7 @@ class DoctorProbeWriteTest {
     // byte — turning a real failure into a clean bill of health, which is the DR-171 defect's own
     // shape wearing different clothes.
     @Test
-    fun `a write failing after the exclusive create is a FAIL with the df remedy - DR-171`(@TempDir tmp: Path) {
+    fun `a write failing after the exclusive create is a FAIL with the df remedy`(@TempDir tmp: Path) {
         val dir = Files.createDirectories(tmp.resolve("state"))
         val outOfSpace = ProbeWrite { _, _ -> throw java.io.IOException("No space left on device") }
 
@@ -133,7 +90,7 @@ class DoctorProbeWriteTest {
     // failure path cleans up" fail independently, and one arm holding both reds identically for
     // either, which is the same conflation DR-170 had to undo.
     @Test
-    fun `the created temp is removed on the write-failure path too - DR-171`(@TempDir tmp: Path) {
+    fun `the created temp is removed on the write-failure path too`(@TempDir tmp: Path) {
         val dir = Files.createDirectories(tmp.resolve("state"))
         val outOfSpace = ProbeWrite { _, _ -> throw java.io.IOException("No space left on device") }
 

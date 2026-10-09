@@ -98,7 +98,7 @@ class DoctorReportHardeningTest {
     }
 
     @Test
-    fun `an unknown selection is reported as unknown, never as the primary - V4-10 S3`() {
+    fun `an unknown selection is reported as unknown, never as the primary`() {
         val accounts = listOf(account("primary", true), account("work", true))
         val pool = HeadAccountPoolView("work", accounts, null, selectionUnknown = true)
         val out = build(DoctorRun(topology("codex"), emptyList(), mapOf("codex" to pool)))

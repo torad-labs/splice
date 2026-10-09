@@ -69,7 +69,7 @@ class DoctorCommandTest {
     // and doctor said "no topology yet — splice init" over a PRESENT operator config. Only
     // proven absence is first-run; indeterminate access is a Broken FAIL naming the path.
     @Test
-    fun `an inaccessible config parent reports broken, never first-run - DR-69`(@TempDir tmp: Path) {
+    fun `an inaccessible config parent reports broken, never first-run`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -342,7 +342,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `a daemon with failed heads is a FAIL, never everything-checks-out - JW-02`(@TempDir tmp: Path) {
+    fun `a daemon with failed heads is a FAIL, never everything-checks-out`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -392,7 +392,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `an edited splice_toml shows a stale-topology WARN with the restart fix - JW-04`(@TempDir tmp: Path) {
+    fun `an edited splice_toml shows a stale-topology WARN with the restart fix`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -441,7 +441,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `doctor names the logs path in the logs dir, not the state dir - JW-08`(@TempDir tmp: Path) {
+    fun `doctor names the logs path in the logs dir, not the state dir`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         fakeBinaries(bin, "claude", "node", "curl", "bash")
@@ -452,7 +452,7 @@ class DoctorCommandTest {
     }
 
     @Test
-    fun `two heads on one port is a config FAIL naming both - JW-13`(@TempDir tmp: Path) {
+    fun `two heads on one port is a config FAIL naming both`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
@@ -473,7 +473,7 @@ class DoctorCommandTest {
 class DoctorWritableDirsTest {
 
     @Test
-    fun `an unwritable state dir is a FAIL with a chmod fix, and the probe is cleaned up - JW-17`(@TempDir tmp: Path) {
+    fun `an unwritable state dir is a FAIL with a chmod fix, and the probe is cleaned up`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         fakeBinaries(bin, "claude", "node", "curl", "bash")
@@ -511,7 +511,7 @@ class DoctorWritableDirsTest {
     // never be written. The arm above proves the state dir is probed; this one proves the logs dir
     // is too, and that it fails the run rather than printing a path nobody can write to.
     @Test
-    fun `an unwritable logs dir is a FAIL of its own - JW-17`(@TempDir tmp: Path) {
+    fun `an unwritable logs dir is a FAIL of its own`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val share = Files.createDirectories(tmp.resolve("share"))
         fakeBinaries(bin, "claude", "node", "curl", "bash")
@@ -576,7 +576,7 @@ class DoctorTopologyLeakTest {
     // The sentinel IS the value the parser trips on (an invalid Dialect), so a verbatim
     // e.message render must leak it — red on the raw-message shape, green through render().
     @Test
-    fun `a broken topology's parse text never quotes config bytes - DR-92`(@TempDir tmp: Path) {
+    fun `a broken topology's parse text never quotes config bytes`(@TempDir tmp: Path) {
         val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
         Files.writeString(
             configDir.resolve("splice.toml"),

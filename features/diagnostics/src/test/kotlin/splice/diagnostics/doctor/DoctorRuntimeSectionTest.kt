@@ -171,7 +171,7 @@ class DoctorRuntimeSectionTest {
     // the whole report still containing it and the arm still green. A fix belongs to a row: this
     // grades the row that names the errors, which is the one an operator acts on.
     @Test
-    fun `the error-counter row carries its own fix, not one borrowed from a sibling row - JW-05`(@TempDir tmp: Path) {
+    fun `the error-counter row carries its own fix, not one borrowed from a sibling row`(@TempDir tmp: Path) {
         val statePaths = splice.core.config.StatePaths(baseOverride = tmp.resolve("state"))
         val rows = DoctorRuntime().headRuntimeRows(
             splice.daemonclient.DaemonProbe.HeadRuntime(key = "codex", localOriginErrors = 1, providerErrors = 7),
@@ -187,7 +187,7 @@ class DoctorRuntimeSectionTest {
     }
 
     @Test
-    fun `a clean head states it and offers no fix, so the WARN fix is not a constant - JW-05`(@TempDir tmp: Path) {
+    fun `a clean head states it and offers no fix, so the WARN fix is not a constant`(@TempDir tmp: Path) {
         val statePaths = splice.core.config.StatePaths(baseOverride = tmp.resolve("state"))
         val rows = DoctorRuntime().headRuntimeRows(
             splice.daemonclient.DaemonProbe.HeadRuntime(key = "codex", localOriginErrors = 0, providerErrors = 0),
@@ -245,7 +245,7 @@ class DoctorRuntimeSectionTest {
     }
 
     @Test
-    fun `non-zero provider errors and a failing perf tail are WARN rows with fixes - JW-05`(@TempDir tmp: Path) {
+    fun `non-zero provider errors and a failing perf tail are WARN rows with fixes`(@TempDir tmp: Path) {
         val server = com.sun.net.httpserver.HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val version = splice.core.GATEWAY_VERSION
         server.createContext("/health") { ex ->
@@ -311,7 +311,7 @@ class DoctorRuntimeSectionTest {
     // mirror of the restart defect, pointing at permissions on a file that is not there. The state
     // dir is deliberately readable here: the ONLY thing wrong is that the key does not exist yet.
     @Test
-    fun `a live daemon with no key minted says so, not unreadable - DR-174`(@TempDir tmp: Path) {
+    fun `a live daemon with no key minted says so, not unreadable`(@TempDir tmp: Path) {
         val server = com.sun.net.httpserver.HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val version = splice.core.GATEWAY_VERSION
         server.createContext("/health") { ex ->
@@ -335,7 +335,7 @@ class DoctorRuntimeSectionTest {
     }
 
     @Test
-    fun `runtime section is INFO-skipped when the daemon is stopped - JW-05`(@TempDir tmp: Path) {
+    fun `runtime section is INFO-skipped when the daemon is stopped`(@TempDir tmp: Path) {
         val freePort = TestPorts.reserve()
         val (_, out) = runDoctor(baseEnv(tmp, freePort))
         assertTrue(out.contains("skipped (daemon stopped)"), out)
@@ -348,7 +348,7 @@ class DoctorRuntimeSectionTest {
     // NoSuchElementException. The render loop runs OUTSIDE guarded(), so nothing caught it: an
     // install whose only sin was having no heads yet got a stack trace instead of a report.
     @Test
-    fun `a live daemon with zero heads still prints a report - DR-173`(@TempDir tmp: Path) {
+    fun `a live daemon with zero heads still prints a report`(@TempDir tmp: Path) {
         val server = com.sun.net.httpserver.HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val version = splice.core.GATEWAY_VERSION
         server.createContext("/health") { ex ->

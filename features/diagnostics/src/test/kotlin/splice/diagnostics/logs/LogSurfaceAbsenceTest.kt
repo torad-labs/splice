@@ -18,7 +18,7 @@ import java.nio.file.attribute.PosixFilePermissions
 class LogSurfaceAbsenceTest {
 
     @Test
-    fun `an unreadable log names itself in-band - DR-68`(@TempDir tmp: Path) {
+    fun `an unreadable log names itself in-band`(@TempDir tmp: Path) {
         val dir = Files.createDirectories(tmp.resolve("logs"))
         val log = dir.resolve("daemon.log")
         Files.writeString(log, "[claudex] a line\n")
@@ -33,7 +33,7 @@ class LogSurfaceAbsenceTest {
     }
 
     @Test
-    fun `a genuinely absent log stays the quiet empty tail - DR-68 control`(@TempDir tmp: Path) {
+    fun `a genuinely absent log stays the quiet empty tail`(@TempDir tmp: Path) {
         assertEquals("", LogFileSource(tmp.resolve("absent.log")).tail(5))
     }
 
@@ -42,7 +42,7 @@ class LogSurfaceAbsenceTest {
     // `size > 0` guard (the DR-63 isNotEmpty scar reintroduced) warned once across
     // denied → healthy-empty → denied instead of once per denied episode.
     @Test
-    fun `a healthy zero-byte stat re-arms the follow latch - DR-68`(@TempDir tmp: Path) {
+    fun `a healthy zero-byte stat re-arms the follow latch`(@TempDir tmp: Path) {
         val dir = Files.createDirectories(tmp.resolve("logs"))
         val log = dir.resolve("daemon.log")
         Files.writeString(log, "x")

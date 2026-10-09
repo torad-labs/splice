@@ -57,7 +57,7 @@ class DoctorHeadChecksTest {
         rows.single { it.name == "head $key" }
 
     @Test
-    fun `a head whose port nobody holds is a WARN naming the port - JW-02`() {
+    fun `a head whose port nobody holds is a WARN naming the port`() {
         // A bound-but-unassembled head and an unbound one are the same to the counters; only the
         // probe tells them apart, and this is the case the operator is chasing when a wrapper
         // command hangs.
@@ -70,7 +70,7 @@ class DoctorHeadChecksTest {
     }
 
     @Test
-    fun `a head whose port is held reads listening, so the probe is not a constant - JW-02`() {
+    fun `a head whose port is held reads listening, so the probe is not a constant`() {
         ServerSocket(0).use { held ->
             val rows = checks.headChecks(
                 DaemonSnapshot(port = 1, probe = up(1, 1, 0)),
@@ -93,7 +93,7 @@ class DoctorHeadChecksTest {
     }
 
     @Test
-    fun `failed heads are a FAIL counting both sides - JW-02`() {
+    fun `failed heads are a FAIL counting both sides`() {
         val rows = checks.headChecks(DaemonSnapshot(port = 1, probe = up(3, 1, 2)), null)
         val summary = rows.single { it.detail.contains("FAILED to start") }
         assertEquals(CheckStatus.FAIL, summary.status, "dead heads are a failure, not a note: $summary")
@@ -101,7 +101,7 @@ class DoctorHeadChecksTest {
     }
 
     @Test
-    fun `a listener without the counters produces no row rather than a fabricated one - JW-02`() {
+    fun `a listener without the counters produces no row rather than a fabricated one`() {
         // A foreign or ancient listener answers /health without heads/readyHeads/failedHeads. A
         // real daemon always sends all three, so absence is "nothing honest to report" — never a
         // zero, which would read as a healthy daemon with no heads.
@@ -110,7 +110,7 @@ class DoctorHeadChecksTest {
     }
 
     @Test
-    fun `a stopped daemon is probed for nothing - JW-02`() {
+    fun `a stopped daemon is probed for nothing`() {
         // A stopped daemon's closed ports are expected, not findings: probing them would turn
         // every `splice doctor` on a stopped install into a wall of WARNs.
         val free = TestPorts.reserve()

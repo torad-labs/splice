@@ -38,7 +38,7 @@ class DoctorShimAbsenceTest {
     }
 
     @Test
-    fun `an unreadable wrapper diagnoses as access, not as not-linked - DR-69`(@TempDir tmp: Path) {
+    fun `an unreadable wrapper diagnoses as access, not as not-linked`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         Files.writeString(bin.resolve("claudex"), "#!/bin/sh\n")
         val check = withDenied(bin) {
@@ -49,14 +49,14 @@ class DoctorShimAbsenceTest {
     }
 
     @Test
-    fun `a genuinely missing wrapper still reads not linked - DR-69 control`(@TempDir tmp: Path) {
+    fun `a genuinely missing wrapper still reads not linked`(@TempDir tmp: Path) {
         val bin = Files.createDirectories(tmp.resolve("bin"))
         val check = DoctorPathCheck(DoctorTestPorts.probes()).wrapperCheck(bin.resolve("claudex"), "claudex")
         assertTrue(check.toString().contains("not linked"), check.toString())
     }
 
     @Test
-    fun `an unreadable shim throws from installedShimVersion and warns UNREADABLE - DR-69`(@TempDir tmp: Path) {
+    fun `an unreadable shim throws from installedShimVersion and warns UNREADABLE`(@TempDir tmp: Path) {
         val share = Files.createDirectories(tmp.resolve("share"))
         Files.writeString(share.resolve("splice-launch"), "const SPLICE_SHIM_VERSION = \"9.9.9\";\n")
         val env = shareEnv(tmp)
@@ -96,14 +96,14 @@ class DoctorShimAbsenceTest {
     }
 
     @Test
-    fun `a genuinely absent shim is null marker and no warning - DR-69 control`(@TempDir tmp: Path) {
+    fun `a genuinely absent shim is null marker and no warning`(@TempDir tmp: Path) {
         val env = shareEnv(tmp)
         assertNull(InstallShim().installedShimVersion(env))
         assertEquals(null, InstallShim().shimStalenessWarning(env))
     }
 
     @Test
-    fun `doctor's shim check classifies denied access as unreadable, not missing - DR-69`(@TempDir tmp: Path) {
+    fun `doctor's shim check classifies denied access as unreadable, not missing`(@TempDir tmp: Path) {
         val share = Files.createDirectories(tmp.resolve("share"))
         Files.writeString(share.resolve("splice-launch"), "const SPLICE_SHIM_VERSION = \"9.9.9\";\n")
         Files.createDirectories(tmp.resolve("bin"))
@@ -119,7 +119,7 @@ class DoctorShimAbsenceTest {
     // needs exactly the reinstall the unreadable branch forbids. MgmtKey/DoctorPathCheck already
     // carry the three-way idiom; these pin it onto the shim surfaces.
     @Test
-    fun `doctor's shim check names a dangling shim and the reinstall remedy - DR-85`(@TempDir tmp: Path) {
+    fun `doctor's shim check names a dangling shim and the reinstall remedy`(@TempDir tmp: Path) {
         val share = Files.createDirectories(tmp.resolve("share"))
         Files.createSymbolicLink(share.resolve("splice-launch"), share.resolve("gone-target"))
         Files.createDirectories(tmp.resolve("bin"))
@@ -130,7 +130,7 @@ class DoctorShimAbsenceTest {
     }
 
     @Test
-    fun `a dangling shim staleness warning names dangling, not access - DR-85`(@TempDir tmp: Path) {
+    fun `a dangling shim staleness warning names dangling, not access`(@TempDir tmp: Path) {
         val share = Files.createDirectories(tmp.resolve("share"))
         Files.createSymbolicLink(share.resolve("splice-launch"), share.resolve("gone-target"))
         val warning = InstallShim().shimStalenessWarning(shareEnv(tmp))
@@ -141,7 +141,7 @@ class DoctorShimAbsenceTest {
     // consumer fail" is right for the spawn consumer, but doctor rendering OK for a jar it cannot
     // stat inverts DR-69's own contract. The row must name the third state.
     @Test
-    fun `doctor's jar check names an unreadable jar instead of OK - DR-86`(@TempDir tmp: Path) {
+    fun `doctor's jar check names an unreadable jar instead of OK`(@TempDir tmp: Path) {
         val spliceShare = Files.createDirectories(
             tmp.resolve("home").resolve(".local").resolve("share").resolve("splice"),
         )

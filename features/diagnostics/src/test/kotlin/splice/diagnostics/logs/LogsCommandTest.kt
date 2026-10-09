@@ -51,7 +51,7 @@ class LogsCommandTest {
     }
 
     @Test
-    fun `head filter restricts to one head's lines - JW-08`(@TempDir tmp: Path) {
+    fun `head filter restricts to one head's lines`(@TempDir tmp: Path) {
         val env = stateEnv(tmp)
         writeLog(tmp, "[claudex] mine", "[claude-grok] theirs", "[claudex] mine too")
         val (ok, out) = capture(env, listOf("--head", "claudex"))
@@ -75,7 +75,7 @@ class LogsCommandTest {
 
     // V4-309: a flag is never a value. `--head --help` read the log for a head named "--help".
     @Test
-    fun `a flag in a value slot fails with usage - V4-309`(@TempDir tmp: Path) {
+    fun `a flag in a value slot fails with usage`(@TempDir tmp: Path) {
         writeLog(tmp, "[codex] one")
         val ran = listOf(listOf("--head", "--help"), listOf("--head", "-h"), listOf("--tail", "--follow"))
             .filter { capture(stateEnv(tmp), it).first }
@@ -106,7 +106,7 @@ class LogsFollowDeltaTest {
     private fun warned() = java.util.concurrent.atomic.AtomicBoolean(false)
 
     @org.junit.jupiter.api.Test
-    fun `a follow poll prints each new line exactly once - DR-100`(@TempDir tmp: Path) {
+    fun `a follow poll prints each new line exactly once`(@TempDir tmp: Path) {
         val log = tmp.resolve("daemon.log")
         Files.writeString(log, "old 1\nold 2\nold 3\n")
         val baseline = Files.size(log)
@@ -119,7 +119,7 @@ class LogsFollowDeltaTest {
     }
 
     @org.junit.jupiter.api.Test
-    fun `a 25-line burst inside one poll surfaces all 25 lines - DR-100`(@TempDir tmp: Path) {
+    fun `a 25-line burst inside one poll surfaces all 25 lines`(@TempDir tmp: Path) {
         val log = tmp.resolve("daemon.log")
         Files.writeString(log, "seed\n")
         val baseline = Files.size(log)
@@ -132,7 +132,7 @@ class LogsFollowDeltaTest {
     }
 
     @org.junit.jupiter.api.Test
-    fun `a torn final line waits for its newline instead of printing half - DR-100`(@TempDir tmp: Path) {
+    fun `a torn final line waits for its newline instead of printing half`(@TempDir tmp: Path) {
         val log = tmp.resolve("daemon.log")
         Files.writeString(log, "seed\n")
         val baseline = Files.size(log)
@@ -151,7 +151,7 @@ class LogsFollowDeltaTest {
     }
 
     @org.junit.jupiter.api.Test
-    fun `the head filter rides the delta path - DR-100`(@TempDir tmp: Path) {
+    fun `the head filter rides the delta path`(@TempDir tmp: Path) {
         val log = tmp.resolve("daemon.log")
         Files.writeString(log, "[claudex] seed\n")
         val baseline = Files.size(log)
@@ -187,7 +187,7 @@ class LogsFollowDeltaTest {
     // writes through an 8 KB BufferedWriter, so any longer line reaches disk in several write(2)
     // calls. The baseline must come from the same read as the text.
     @org.junit.jupiter.api.Test
-    fun `a discontinuity re-baselines to what was printed, not the size stat - DR-135`(@TempDir tmp: Path) {
+    fun `a discontinuity re-baselines to what was printed, not the size stat`(@TempDir tmp: Path) {
         val log = tmp.resolve("daemon.log")
         Files.writeString(log, (1..30).joinToString("") { "gen1 $it\n" })
         val bigBaseline = Files.size(log)
@@ -222,7 +222,7 @@ class LogsFollowDeltaTest {
     // forever — a PERMANENT freeze losing every subsequent line, twice a second, silently. Skipping
     // one over-long line is the never-below-status-quo trade, and the skip is announced in-band.
     @org.junit.jupiter.api.Test
-    fun `a line longer than the tail window does not wedge --follow - DR-138`(@TempDir tmp: Path) {
+    fun `a line longer than the tail window does not wedge --follow`(@TempDir tmp: Path) {
         val log = tmp.resolve("daemon.log")
         Files.writeString(log, "seed\n")
         val baseline = Files.size(log)
@@ -254,7 +254,7 @@ class LogsFollowDeltaTest {
     // followTail independently stat'd Files.size — the same stat-versus-read split one level up,
     // reached on every --follow start against a torn tail rather than only on a roll.
     @org.junit.jupiter.api.Test
-    fun `the follow start baselines from what it printed, not a size stat - DR-135`(@TempDir tmp: Path) {
+    fun `the follow start baselines from what it printed, not a size stat`(@TempDir tmp: Path) {
         val log = tmp.resolve("daemon.log")
         Files.writeString(log, "shown\ntorn-head") // writer caught mid-line, codex's repro shape
         val (baseline, shown) = pollCapture {

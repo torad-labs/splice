@@ -1,14 +1,10 @@
-// NEW: V4-424 — `splice doctor` gives the fix boot gives for a splice.toml type error (Marlin's walk of
-// ef86845f3: boot said to quote the value, doctor pointed at a source-tree path and said to delete the
-// config), and a syntax error's advice names no source path and never says to delete the file.
-package splice.diagnostics.v4424
+package splice.diagnostics.doctor
 
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.testing.TestPorts
-import splice.diagnostics.doctor.DoctorTestPorts
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -33,7 +29,7 @@ private val TYPED_ERROR = """
     trace = true
 """.trimIndent() + "\n"
 
-class DoctorTypeFixTest {
+class DoctorConfigErrorAdviceTest {
     @TempDir
     lateinit var tmp: Path
 

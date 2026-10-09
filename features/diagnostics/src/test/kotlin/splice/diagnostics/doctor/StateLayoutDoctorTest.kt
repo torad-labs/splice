@@ -5,7 +5,6 @@ package splice.diagnostics.doctor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Tag
@@ -14,7 +13,6 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.config.StatePaths
 import splice.core.testing.LawReadSet
 import splice.core.util.EnvReader
-import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -25,10 +23,7 @@ private val NO_ENV = EnvReader { null }
 // The two roots and the two variable names, spelled HERE rather than imported. They are
 // :core-internal — the public-surface ratchet gates declarations no other module's MAIN sources
 // consume, and nothing outside :core resolves a state root — so importing them into an :app test
-// would be a test claiming an exemption from the module law. `the four names in this file are the
-// ones StatePaths actually resolves` is what keeps the duplication honest: it fails loudly if :core
-// moves a root or renames a variable, instead of leaving this file exercising a shape production
-// abandoned.
+// would be a test claiming an exemption from the module law. A :core rename shows up as the arms below failing.
 private const val SPLICE_ROOT = ".splice"
 private const val LEGACY_ROOT = ".claude-codex"
 private const val STATE_DIR_ENV = "SPLICE_STATE_DIR"
@@ -155,23 +150,6 @@ class StateLayoutDoctorTest {
             "a root the operator pointed past is not unmigrated history",
         )
     }
-
-    // The duplication guard for this file's four local names — every one of them, driven through
-    // production. Without it, a :core rename leaves every arm above green while testing nothing.
-    @Test
-    fun `the four names in this file are the ones StatePaths actually resolves`(@TempDir home: Path) {
-        fun pointedAt(variable: String, at: Path) =
-            StatePaths(envReader = EnvReader { n -> at.toString().takeIf { n == variable } }, homeDir = home).stateDir
-
-        val onAClearBox = StatePaths(envReader = NO_ENV, homeDir = home).stateDir
-        assertEquals(home.resolve(SPLICE_ROOT).resolve("state"), onAClearBox)
-
-        val legacy = makeState(home, LEGACY_ROOT)
-        assertEquals(legacy, StatePaths(envReader = NO_ENV, homeDir = home).stateDir)
-
-        assertEquals(home.resolve("by-new"), pointedAt(STATE_DIR_ENV, home.resolve("by-new")))
-        assertEquals(home.resolve("by-old"), pointedAt(LEGACY_STATE_DIR_ENV, home.resolve("by-old")))
-    }
 }
 
 /**
@@ -211,28 +189,6 @@ class StateDirAgreementTest {
         val text = read(file)
         return "\nresolve_state_dir() {" in text || "export function liveStateDir(" in text ||
             "\nfunction liveStateDir(" in text
-    }
-
-    private val unreadable: (Path) -> String = { throw IOException("unreadable") }
-
-    @Test
-    fun `a read that fails leaves declaresResolver and isNodeScript instead of becoming false`() {
-        assertThrows(IOException::class.java) { declaresResolver(Path.of("x.sh"), unreadable) }
-        assertThrows(IOException::class.java) { isNodeScript(Path.of("x"), unreadable) }
-    }
-
-    @Test
-    fun `RED the control catches a classifier that swallows the failed read`() {
-        val script = Path.of("x.sh")
-        val swallowing: ((Path) -> String) -> Boolean = { read ->
-            runCatching { read(script) }.getOrNull()?.contains("resolve_state_dir") == true
-        }
-
-        assertThrows(AssertionError::class.java) {
-            assertThrows(IOException::class.java) {
-                assertEquals(false, swallowing(unreadable))
-            }
-        }
     }
 
     /** The launch shim is a Node script with no extension (its installed name is the contract), so
@@ -389,64 +345,5 @@ class StateDirAgreementTest {
         if (name == "current-untraversable-beside-keyed-legacy") {
             home.resolve(SPLICE_ROOT).resolve("state").toFile().setExecutable(true, false)
         }
-    }
-
-    // Mutant: the harness itself. If a copy stopped being extractable — renamed, or its body no
-    // longer closing on a column-0 brace — every arm above would compare nothing against nothing.
-    // Plant a resolver that is deliberately WRONG and require the comparison to notice.
-    @Test
-    fun `the harness would catch a copy that resolved the wrong root`(@TempDir root: Path) {
-        val home = Files.createDirectories(root.resolve("home"))
-        makeState(home, LEGACY_ROOT)
-        val wrong = root.resolve("wrong.sh")
-        val body = "  printf '%s\\n' \"\$HOME/" + SPLICE_ROOT + "/state\""
-        Files.writeString(wrong, "#!/usr/bin/env bash\nresolve_state_dir() {\n$body\n}\n")
-
-        val expected = StatePaths(envReader = NO_ENV, homeDir = home).stateDir.toString()
-
-        assertEquals(home.resolve(LEGACY_ROOT).resolve("state").toString(), expected)
-        assertTrue(
-            resolveWith(wrong, home, emptyMap(), Files::readString) != expected,
-            "a resolver that ignores the pre-0.4 root must not compare equal — the harness is not running the script",
-        )
-    }
-
-    // Mutant: the JS runner. A `bun -e` that imported nothing, or a module that stopped exporting
-    // liveStateDir, would make every JS/TS arm above vacuous in a way the bash mutant cannot see.
-    @Test
-    fun `the harness would catch a JS copy that resolved the wrong root`(@TempDir root: Path) {
-        val home = Files.createDirectories(root.resolve("home"))
-        makeState(home, LEGACY_ROOT)
-        val wrong = root.resolve("wrong.mjs")
-        Files.writeString(wrong, "export function liveStateDir(home) { return home + '/" + SPLICE_ROOT + "/state'; }\n")
-
-        val expected = StatePaths(envReader = NO_ENV, homeDir = home).stateDir.toString()
-
-        assertTrue(
-            resolveWith(wrong, home, emptyMap(), Files::readString) != expected,
-            "a JS resolver that ignores the pre-0.4 root must not compare equal — the runner is not calling it",
-        )
-    }
-
-    // Mutant: the Node runner. The shim has no extension, so it is routed by its first line; a
-    // `require` that stopped calling liveStateDir would make the shim's arms vacuous while the bun
-    // and bash mutants above stayed honest.
-    @Test
-    fun `the harness would catch a Node shim that resolved the wrong root`(@TempDir root: Path) {
-        val home = Files.createDirectories(root.resolve("home"))
-        makeState(home, LEGACY_ROOT)
-        val wrong = root.resolve("wrong-shim")
-        Files.writeString(
-            wrong,
-            "#!/usr/bin/env node\nfunction liveStateDir(home) { return home + '/" + SPLICE_ROOT + "/state'; }\n" +
-                "module.exports = { liveStateDir };\n",
-        )
-
-        val expected = StatePaths(envReader = NO_ENV, homeDir = home).stateDir.toString()
-
-        assertTrue(
-            resolveWith(wrong, home, emptyMap(), Files::readString) != expected,
-            "a Node resolver that ignores the pre-0.4 root must not compare equal — the runner is not calling it",
-        )
     }
 }

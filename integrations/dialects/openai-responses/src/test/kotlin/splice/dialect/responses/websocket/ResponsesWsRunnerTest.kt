@@ -85,8 +85,11 @@ private class Rig(private val script: (Int) -> List<String>) {
     /** The live socket's listener, so a test can deliver a server ping the way the JDK would. */
     var listener: WebSocket.Listener? = null
 
-    @Suppress("UNUSED_PARAMETER")
-    private fun connect(unusedUri: URI, headers: Map<String, String>, l: WebSocket.Listener): WebSocket {
+    /** The URI the runner last connected to. */
+    var connectedUri: URI? = null
+
+    private fun connect(uri: URI, headers: Map<String, String>, l: WebSocket.Listener): WebSocket {
+        connectedUri = uri
         listener = l
         handshakes += headers
         // Its OWN listener, not the shared field: a rig with two live sockets would otherwise feed

@@ -297,13 +297,12 @@ internal class CodeModeLiveRound(
     }
 
     private fun reject(error: Throwable): TurnOutcome.Failure {
-        val failure = CodeModeRejection.outcome(error)
-        localFailure = failure
+        val rejected = CodeModeRejection.outcome(error)
+        localFailure = rejected
         sourceInterrupted = false
-        // SAFE-RENDER-EXEMPT[2026-10-03]: failure is the domain outcome from CodeModeRejection.outcome, whose throwable input uses SafeFailureText.render or CodeModePersistenceException.outcome's safe literals.
-        source.fail(failure.message)
+        source.fail(rejected.message)
         try {
-            localFailure = CodeModeRejection.lose(record, failure, registry)
+            localFailure = CodeModeRejection.lose(record, rejected, registry)
         } finally {
             ready.complete(null)
         }

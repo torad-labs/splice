@@ -150,13 +150,10 @@ public class GrokOAuth {
     public fun entitlementSentence(body: String): String? {
         if (!isEntitlementRejection(body)) return null
         val topUp = VENDOR_LINK.find(body)?.value
-        val cause = "grok: this account has run out of credits or needs a Grok subscription " +
+        val sentence = "grok: this account has run out of credits or needs a Grok subscription " +
             "(xAI personal-team-blocked / spending-limit). A refresh cannot change a billing state, " +
             "so splice did not re-authenticate."
-        // SAFE-RENDER-EXEMPT[2026-09-16]: neither value is a throwable — cause is a fixed literal and
-        // topUp is a host-constrained, length-bounded vendor URL, so no exception text and no
-        // arbitrary body bytes can reach the operator through this sentence.
-        return if (topUp == null) cause else "$cause Top up: $topUp"
+        return if (topUp == null) sentence else "$sentence Top up: $topUp"
     }
 
     private fun jsonObjectOrEmpty(el: JsonElement): JsonObject =

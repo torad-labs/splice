@@ -26,19 +26,17 @@ internal object CodeModeRejection {
 
     fun lose(
         record: CodeModeRecord?,
-        failure: TurnOutcome.Failure,
+        rejected: TurnOutcome.Failure,
         registry: CodexCodeModeRegistry,
     ): TurnOutcome.Failure {
         val cleanup = Cancellables.runCatchingBestEffort {
-            // SAFE-RENDER-EXEMPT[2026-10-03]: failure is the domain outcome from outcome(), whose throwable input uses SafeFailureText.render or CodeModePersistenceException.outcome's safe literals.
-            record?.takeUnless(CodeModeRecord::terminal)?.let { registry.lose(it, failure.message) }
-        }.exceptionOrNull() ?: return failure
+            record?.takeUnless(CodeModeRecord::terminal)?.let { registry.lose(it, rejected.message) }
+        }.exceptionOrNull() ?: return rejected
         return if (cleanup is CodeModePersistenceException) {
             cleanup.outcome()
         } else {
-            failure.copy(
-                // SAFE-RENDER-EXEMPT[2026-10-03]: failure is the domain outcome from outcome(), whose throwable input uses SafeFailureText.render or CodeModePersistenceException.outcome's safe literals.
-                message = "${failure.message}; splice code-mode rejection cleanup failed " +
+            rejected.copy(
+                message = rejected.message + "; splice code-mode rejection cleanup failed " +
                     "(${SafeFailureText.render(cleanup)})",
             )
         }

@@ -16,9 +16,9 @@
 # All 13 sites were CONVERTED, not exempted: an injected `log: (String) -> Unit` now threads from
 # Daemon into the four auth providers, ConfigService, ResponsesProvider (+ its three subclasses)
 # and RefreshOutcome (whose `= System.err::println` default was itself a hit). The `= {}` default
-# keeps ~50 test construction sites untouched. One deliberate carve-out remains, inline:
-# AsyncFileIo.recordDrop, because persistentLogger writes daemon.log BY calling AsyncFileIo.submit
-# — the log lane cannot report its own failure through itself.
+# keeps ~50 test construction sites untouched. The last carve-out, AsyncFileIo.recordDrop, is gone
+# (2026-10-09): the lane cannot log its own drops while it is saturated, because daemon.log is one of
+# its writes, so it counts an episode and reports it through the normal logger once it drains.
 id: kt-no-println
 language: kotlin
 severity: error

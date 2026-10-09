@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
@@ -67,8 +68,7 @@ class AsyncFileIoTest {
         assertEquals(emptyList<Path>(), AsyncFileIo.pendingUnder(root).paths)
     }
 
-    private fun saturateThenDrain(heldByOthers: Int) {
-        val maxPendingTasks = 2_048 // splice.core.util.AsyncFileIo.MAX_PENDING_TASKS (private const)
+    private fun saturateThenDrain(heldByOthers: Int, onDrained: (rejected: Int) -> Unit = {}) {
         val margin = 32 // submissions past the cap, to prove rejection isn't a one-off boundary fluke
 
         repeat(heldByOthers) {
@@ -98,7 +98,7 @@ class AsyncFileIoTest {
             val held = AsyncFileIo.pendingCount()
             assertTrue(held >= 1 + heldByOthers, "the blocking task and the other caller's tasks hold slots ($held)")
 
-            repeat(maxPendingTasks + margin) {
+            repeat(MAX_PENDING_TASKS + margin) {
                 val ok = AsyncFileIo.submit {
                     ran.incrementAndGet()
                     ranPermits.release()
@@ -106,14 +106,14 @@ class AsyncFileIoTest {
                 if (ok) accepted.incrementAndGet() else rejected.incrementAndGet()
             }
 
-            // The cap is exact: the lane holds maxPendingTasks, never one more and never one fewer. Only the
+            // The cap is exact: the lane holds MAX_PENDING_TASKS, never one more and never one fewer. Only the
             // slots free when the loop began were ours to take; a task another thread submits mid-loop can take
             // one of them, which is why this bounds `accepted` from above instead of pinning it.
             val saturated = AsyncFileIo.pendingCount()
-            assertEquals(maxPendingTasks, saturated, "expected the lane to saturate exactly at its cap")
-            val free = maxPendingTasks - held
+            assertEquals(MAX_PENDING_TASKS, saturated, "expected the lane to saturate exactly at its cap")
+            val free = MAX_PENDING_TASKS - held
             assertTrue(accepted.get() <= free, "accepted ${accepted.get()} past the $free free slots")
-            assertEquals(maxPendingTasks + margin, accepted.get() + rejected.get(), "all submissions counted")
+            assertEquals(MAX_PENDING_TASKS + margin, accepted.get() + rejected.get(), "all submissions counted")
             assertTrue(rejected.get() >= margin, "expected submit() to return false once the pending cap was saturated")
             assertRejectedFileRow()
         } finally {
@@ -136,6 +136,26 @@ class AsyncFileIoTest {
 
         assertTrue(AsyncFileIo.drain(10_000), "drain timed out waiting for the queue to empty")
         assertAcceptedFileRow()
+        onDrained(rejected.get())
+    }
+
+    /** No println: the drops of a saturated episode reach the injected sink once, after the lane has room again,
+     *  naming at least the drops seen here. The report runs as a task finishes, after drain() returned, so one more
+     *  drain orders it. */
+    @Test
+    fun `a drop episode is reported once through the injected sink when the lane has room again`() {
+        val reports = CopyOnWriteArrayList<String>()
+        AsyncFileIo.reportDropsTo(LogSink { reports += it })
+        try {
+            saturateThenDrain(heldByOthers = 0) { rejected ->
+                assertTrue(AsyncFileIo.drain(10_000), "the second drain orders the first one's report")
+                val episode = reports.singleOrNull { it.contains("dropped while the lane was saturated") }
+                val count = episode?.let { Regex("""(\d+) task\(s\) dropped""").find(it)?.groupValues?.get(1) }
+                assertTrue((count?.toInt() ?: 0) >= rejected, "one report naming the $rejected drops: $reports")
+            }
+        } finally {
+            AsyncFileIo.reportDropsTo(LogSink(DaemonLog::write))
+        }
     }
 
     private fun holdRepeatedFileWrites() {
@@ -166,5 +186,8 @@ class AsyncFileIoTest {
 
     private companion object {
         const val OTHER_CALLER_DELAY_MS = 50L
+
+        // splice.core.util.AsyncFileIo.MAX_PENDING_TASKS, which is private there.
+        const val MAX_PENDING_TASKS = 2_048
     }
 }

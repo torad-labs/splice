@@ -2,16 +2,13 @@
 package splice.core.util
 
 import java.nio.file.Path
-import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledThreadPoolExecutor
-import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -41,7 +38,10 @@ public fun interface FileIoTask {
 public object AsyncFileIo {
     private val pending = AtomicInteger()
     private val dropped = AtomicInteger()
-    private val warned = AtomicBoolean(false)
+    private val episodeDrops = AtomicInteger()
+
+    @Volatile
+    private var dropSink: LogSink = LogSink(DaemonLog::write)
     private val pathLock = Any()
     private val latestByPath = HashMap<Path, CompletableFuture<Boolean>>()
     private val pendingByPath = HashMap<Path, Int>()
@@ -52,20 +52,6 @@ public object AsyncFileIo {
     // contract — the name (so a stack dump says which lane is blocked) and daemon-ness (so a
     // pending file write can never keep a dying JVM alive).
     private val threads = Executors.defaultThreadFactory()
-    private val warnings = ThreadPoolExecutor(
-        1,
-        1,
-        0L,
-        TimeUnit.MILLISECONDS,
-        ArrayBlockingQueue(1),
-        { task ->
-            threads.newThread(task).apply {
-                name = "splice-file-io-warning"
-                isDaemon = true
-            }
-        },
-        ThreadPoolExecutor.DiscardPolicy(),
-    )
     private val executor = ScheduledThreadPoolExecutor(1) { task ->
         threads.newThread(task).apply {
             name = "splice-file-io"
@@ -86,7 +72,7 @@ public object AsyncFileIo {
             try {
                 task()
             } finally {
-                if (pending.decrementAndGet() == 0) warned.set(false)
+                if (pending.decrementAndGet() <= REPORT_BELOW && episodeDrops.get() > 0) reportDrops()
             }
         }
         return try {
@@ -178,16 +164,27 @@ public object AsyncFileIo {
      *  instead of assuming none (AsyncFileIoTest). */
     internal fun pendingCount(): Int = pending.get()
 
-    // The file lane cannot report its own saturation through daemon.log (which it writes).
-    // A separate bounded warning lane owns stderr, so even a blocked boot log cannot stall a turn.
-    // One warning per episode; draining the file lane re-arms the next transition.
+    /** Where a drop episode is reported: the daemon's logger ([DaemonLog]) unless a caller injects its own. */
+    public fun reportDropsTo(sink: LogSink) {
+        dropSink = sink
+    }
+
+    // The lane cannot report its own saturation while it is saturated: daemon.log is one of its writes. So the
+    // drops of an episode are counted while it lasts, and reported once, through the normal logger, when a task
+    // finishes with the lane back under half its cap, where the line has room. Not at zero: a delayed task holds
+    // its slot until it runs, so steady delayed work would keep the count off zero and the drops unreported.
     private fun recordDrop() {
-        val total = dropped.incrementAndGet()
-        if (warned.compareAndSet(false, true)) {
-            warnings.execute {
-                // ast-grep-ignore: kt-no-println -- the file lane cannot log its own rejection through itself
-                System.err.println("[async-file-io] $total task(s) dropped (pending cap or rejection)")
-            }
+        dropped.incrementAndGet()
+        episodeDrops.incrementAndGet()
+    }
+
+    private fun reportDrops() {
+        val episode = episodeDrops.getAndSet(0)
+        if (episode > 0) {
+            dropSink(
+                "[async-file-io] $episode task(s) dropped while the lane was saturated (pending cap or " +
+                    "rejection); ${dropped.get()} since start\n",
+            )
         }
     }
 
@@ -199,5 +196,6 @@ public object AsyncFileIo {
     }
 
     private const val MAX_PENDING_TASKS = 2_048
+    private const val REPORT_BELOW = MAX_PENDING_TASKS / 2
     private const val DEFAULT_DRAIN_TIMEOUT_MS = 5_000L
 }

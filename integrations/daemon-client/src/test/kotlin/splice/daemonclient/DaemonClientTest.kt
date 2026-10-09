@@ -97,7 +97,7 @@ class DaemonClientTest {
     // V4-293: a verdict this build cannot read (a newer word, a dated state with no date) read as Held,
     // "nothing to verify"; only a daemon that sent none predates verdicts.
     @Test
-    fun `an unreadable verdict reads Unverified and an absent one Held - V4-293`() {
+    fun `an unreadable verdict reads Unverified and an absent one Held`() {
         val seen = DaemonProbe.parseAuthSeen(
             """{"old":{"present":true},"undated":{"present":true,"verdict":{"state":"rejected"}},""" +
                 """"newer":{"present":true,"verdict":{"state":"revoked","at_epoch_ms":5}},""" +

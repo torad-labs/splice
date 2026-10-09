@@ -23,7 +23,7 @@ private val TOML_BLOCK = Regex("```toml\n(.*?)\n```", RegexOption.DOT_MATCHES_AL
 class FeaturesDocumentLawTest {
 
     @Test
-    fun `FEATURES 2_3's splice_toml example is a file the loader parses - V4-315`() {
+    fun `FEATURES 2_3's splice_toml example is a file the loader parses`() {
         val topology = TopologyLoader.parse(example())
         assertEquals(listOf("settings", "mcps"), topology.claude.share)
         val head = topology.heads.getValue("claudex")

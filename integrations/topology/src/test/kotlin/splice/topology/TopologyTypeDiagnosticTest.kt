@@ -1,6 +1,6 @@
-// V4-355: a malformed topology must identify the key, line and required shape without repeating
+// A malformed topology must identify the key, line and required shape without repeating
 // operator-owned values. The daemon's actual failure renderer must carry the safe diagnosis too.
-package splice.topology.v4355
+package splice.topology
 
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -8,11 +8,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.SafeFailureText
-import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 
-private const val MARKER = "V4355_VALUE_MUST_NOT_LEAVE_FILE"
+private const val MARKER = "OPERATOR_VALUE_MUST_NOT_LEAVE_FILE"
 
 class TopologyTypeDiagnosticTest {
     private fun failure(root: Path, text: String): Exception {

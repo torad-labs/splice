@@ -13,7 +13,7 @@ internal class TomlStructurePreflightTest {
     // passed preflight and ktoml merged both bodies (the DR-44-redo scar, resurrected for the
     // offset-0 table). Direct check() calls: the loader call site is pinned by the DR-44 arm.
     @Test
-    fun `reopening the FIRST table of a header-first config fails loud - DR-96`() {
+    fun `reopening the FIRST table of a header-first config fails loud`() {
         val doctored = "[daemon]\ncontrol_port = 4400\n\n[providers.x]\ndialect = \"openai-chat\"\n\n" +
             "[daemon]\ncontrol_port = 4401\n"
         val thrown = assertThrows(IllegalArgumentException::class.java) { TomlStructurePreflight.check(doctored) }
@@ -22,12 +22,12 @@ internal class TomlStructurePreflightTest {
     }
 
     @Test
-    fun `a legal header-first config still passes preflight - DR-96 control`() {
+    fun `a legal header-first config still passes preflight`() {
         TomlStructurePreflight.check("[daemon]\ncontrol_port = 4400\n\n[providers.x]\ndialect = \"openai-chat\"\n")
     }
 
     @Test
-    fun `a preamble config still rejects a reopened non-first table - DR-96 control`() {
+    fun `a preamble config still rejects a reopened non-first table`() {
         val doctored = "# preamble comment\ntitle = \"x\"\n\n[daemon]\ncontrol_port = 4400\n\n" +
             "[providers.x]\ndialect = \"openai-chat\"\n\n[daemon]\ncontrol_port = 4401\n"
         val thrown = assertThrows(IllegalArgumentException::class.java) { TomlStructurePreflight.check(doctored) }

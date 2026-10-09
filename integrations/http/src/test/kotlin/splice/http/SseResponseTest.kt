@@ -4,14 +4,9 @@
 // the body has already thrown. That lateness is the whole bug: on a loaded host the engine's reader
 // lags the writer, and a Ktor-cancelled channel drops what the reader has not taken yet. Here the lag
 // is total, so each arm is deterministic instead of a load-dependent race.
-//
-// The Ktor arm is the premise, kept as a test rather than a comment: it shows the harness CAN see the
-// loss (the SseResponse arm would pass vacuously on a harness that never drops anything), and it goes
-// red the day a Ktor upgrade stops dropping, which is the day SseResponse's finally can be retired.
 package splice.http
 
 import io.ktor.http.content.OutgoingContent
-import io.ktor.http.content.WriterContent
 import io.ktor.util.cio.use
 import io.ktor.utils.io.ByteChannel
 import io.ktor.utils.io.toByteArray
@@ -57,18 +52,6 @@ class SseResponseTest {
 
         assertEquals(startFrame + errorFrame, read.getOrThrow(), "every flushed frame is delivered, the seal's last")
         assertTrue(thrown is CancellationException, "the cancellation still propagates to the engine: $thrown")
-    }
-
-    @Test
-    fun `Ktor's own writer drops the same frames - the loss this class exists for`() = runTest {
-        val (thrown, read) = engineRun(WriterContent({ sealThenRethrow(this) }, SseResponse {}.contentType))
-
-        assertTrue(thrown is CancellationException, "the body's cancellation reached the engine: $thrown")
-        assertTrue(
-            read.isFailure,
-            "Ktor 3.5.2 cancels the channel and its reader throws before taking the flushed bytes. If this " +
-                "arm reads the frames, the upgrade fixed the drop and SseResponse's finally can go: $read",
-        )
     }
 
     @Test

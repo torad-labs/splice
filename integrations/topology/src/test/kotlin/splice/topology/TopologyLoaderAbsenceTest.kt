@@ -21,7 +21,7 @@ import java.nio.file.attribute.PosixFilePermissions
 class TopologyLoaderAbsenceTest {
 
     @Test
-    fun `a dangling splice-toml symlink aborts loud, never materialized through - DR-66`(@TempDir tmp: Path) {
+    fun `a dangling splice-toml symlink aborts loud, never materialized through`(@TempDir tmp: Path) {
         Files.createDirectories(tmp.resolve("dotfiles")) // target dir exists; the file is not synced yet
         val target = tmp.resolve("dotfiles").resolve("splice.toml")
         val link = tmp.resolve("splice.toml")
@@ -37,7 +37,7 @@ class TopologyLoaderAbsenceTest {
     // here — from its starter-write attempt — so both sides abort; what this pins is that the
     // operator's file stays byte-intact and no starter appears, the never-below-status-quo floor.
     @Test
-    fun `an existing splice-toml behind a denied parent aborts intact - DR-66`(@TempDir tmp: Path) {
+    fun `an existing splice-toml behind a denied parent aborts intact`(@TempDir tmp: Path) {
         val dir = Files.createDirectories(tmp.resolve("cfg"))
         val file = dir.resolve("splice.toml")
         val precious = "# operator topology - must survive\n"
@@ -52,7 +52,7 @@ class TopologyLoaderAbsenceTest {
     }
 
     @Test
-    fun `genuine absence still materializes the starter - DR-66 control`(@TempDir tmp: Path) {
+    fun `genuine absence still materializes the starter`(@TempDir tmp: Path) {
         val file = tmp.resolve("fresh").resolve("splice.toml")
         val loaded = TopologyLoader.loadOrMaterializeWithDigest(file)
         assertTrue(Files.exists(file), "starter created on true first run")
@@ -65,7 +65,7 @@ class TopologyLoaderAbsenceTest {
     // winner's bytes must be what gets loaded. A truncating claim (the CREATE_NEW-removal
     // mutant) overwrites the winner and reds both assertions.
     @Test
-    fun `a concurrent creator between proven absence and the claim wins - DR-66`(@TempDir tmp: Path) {
+    fun `a concurrent creator between proven absence and the claim wins`(@TempDir tmp: Path) {
         val file = tmp.resolve("cfg").resolve("splice.toml")
         val foreign = "[daemon]\ncontrol_port = 4242\n"
         val interleaved = splice.topology.StarterWrite { path, starter ->

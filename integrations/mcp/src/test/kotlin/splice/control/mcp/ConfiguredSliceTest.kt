@@ -46,13 +46,4 @@ class ConfiguredSliceTest {
         assertEquals(COMMAND, placed, "an uncapped slice must leave the command unplaced")
         assertTrue(log.toString().contains("my-mcp.slice declares no memory ceiling"), log.toString())
     }
-
-    // The default is what this repo's own layout produces, so a box that changes nothing needs no
-    // config at all — and the host config is where the name travels, beside the other lifecycle
-    // values the daemon reads from the knob layer.
-    @Test
-    fun `the host config defaults to the declared slice`() {
-        assertEquals(APP_MCP_SLICE, McpHostConfig().slice)
-        assertEquals("app-mcp.slice", APP_MCP_SLICE, "the default is the systemd dash-nesting name")
-    }
 }

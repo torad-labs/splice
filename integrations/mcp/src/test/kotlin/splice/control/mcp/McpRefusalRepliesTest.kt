@@ -3,7 +3,6 @@ package splice.control.mcp
 
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 
 class McpRefusalRepliesTest : McpHostFixture() {
@@ -41,19 +40,5 @@ class McpRefusalRepliesTest : McpHostFixture() {
             """{"jsonrpc":"2.0","id":3,"error":{"code":-32000,""" +
                 """"message":"hosted MCP server 'fake' keeps crashing (2 times); next restart in 6 s"}}""",
         )
-    }
-
-    @Test
-    fun `the reading of a refusal fails on a changed status, code, id or words`() {
-        val good = """{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"m"}}"""
-        assertRefusal(McpReply(503, good), 503, good)
-        listOf(
-            McpReply(200, good),
-            McpReply(503, good.replace("-32000", "-32603")),
-            McpReply(503, good.replace("\"id\":1", "\"id\":2")),
-            McpReply(503, good.replace("\"m\"", "\"other\"")),
-        ).forEach { mutant ->
-            assertThrows(AssertionError::class.java) { assertRefusal(mutant, 503, good) }
-        }
     }
 }

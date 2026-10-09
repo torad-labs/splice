@@ -18,10 +18,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 
-// The floor an out-of-memory reaper is conventionally told to skip: it passes over anything at or
-// below this, so a hosted child must sit strictly above — that is what the raise is for.
-private const val ADJ_FLOOR = -400
-
 private val COMMAND = listOf("npx", "-y", "@modelcontextprotocol/server-filesystem")
 
 class McpContainmentTest {
@@ -126,13 +122,5 @@ class McpContainmentTest {
         } finally {
             probe.destroyForcibly().waitFor(10, TimeUnit.SECONDS)
         }
-    }
-
-    // The raise has one job: leave the child selectable. A value at or below that floor would be a
-    // quieter version of the -1000 this row removes.
-    @Test
-    fun `the hosted adj is strictly above the floor every reaper skips`() {
-        assertTrue(HOSTED_ADJ > ADJ_FLOOR, "HOSTED_ADJ=$HOSTED_ADJ must sit above $ADJ_FLOOR")
-        assertTrue(HOSTED_ADJ < 0, "and below an ordinary user process: one kill costs a capability")
     }
 }

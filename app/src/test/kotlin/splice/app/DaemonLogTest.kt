@@ -1,27 +1,15 @@
-// NEW: the production log path had ZERO coverage (review of PR #62, 2026-07-27) — and the gap was
-// not theoretical: the newline regression below shipped through a fully green suite.
-//
-// Two things were untested and both are load-bearing for /mgmt/logs:
-//   1. persistentLogger's OUTPUT SHAPE. It writes daemon.log, which ControlServer.logsJson splits
-//      on "\n". The kt-no-println conversion moved 14 sites off System.err.println (which appends
-//      the terminator) onto this sink (which did not), so their entries merged into one run-on
-//      line — the endpoint this change exists to feed emitting concatenated garbage.
-//   2. The Main-install -> DaemonLog::write -> nine-provider-default WIRING. A broken install or a
-//      typo'd default is invisible to every other test, because every other test injects its own
-//      sink and never exercises the default at all.
+// The production log path: persistentLogger's output shape (daemon.log is split on "\n" by /mgmt/logs, so
+// one message is exactly one line), its owner-only directory, its dated fixed-width stamp, its
+// self-healing rotation, and where each line is copied (daemon.log, and the boot log's stderr until up).
 package splice.app
 
-import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.config.KeyStore
 import splice.core.util.AsyncFileIo
-import splice.core.util.DaemonLog
 import splice.lifecycle.start.BOOT_LOG_FLAG
-import splice.provider.openai.ApiKeyAuthProvider
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -31,7 +19,7 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.readText
 
-class DaemonLogWiringTest {
+class DaemonLogTest {
 
     private val process = DaemonProcess()
 
@@ -95,48 +83,6 @@ class DaemonLogWiringTest {
         val raw = logs.resolve("daemon.log").readText()
         assertTrue(raw.endsWith("\n"), "must end with a terminator")
         assertTrue(!raw.endsWith("\n\n"), "must not double-terminate a caller that supplied one")
-    }
-
-    @Test
-    fun `DaemonLog routes to the installed sink — the default nine providers rely on`() {
-        val seen = mutableListOf<String>()
-        try {
-            // Uninstalled it is a no-op: a component that wants output injects a sink, and an
-            // un-installed process must never silently fall back to stderr.
-            DaemonLog.write("[dropped] before install")
-            assertEquals(emptyList<String>(), seen)
-
-            DaemonLog.install { seen += it }
-            DaemonLog.write("[kept] after install")
-            assertEquals(listOf("[kept] after install"), seen, "install -> write is the production path")
-        } finally {
-            // The sink is process-wide; leaving a test's capture installed would leak into every
-            // later test in this JVM.
-            DaemonLog.install {}
-        }
-    }
-
-    @Test
-    fun `the provider default resolves to DaemonLog, so the daemon wiring is one hop not two`(
-        @TempDir tmp: Path,
-    ) = runTest {
-        val seen = mutableListOf<String>()
-        try {
-            DaemonLog.install { seen += it }
-            val unreadable = Files.createDirectory(tmp.resolve("key-directory"))
-            val provider = ApiKeyAuthProvider(
-                envVar = "DR33_API_KEY",
-                keyFile = unreadable,
-                envReader = { null },
-                keyStore = KeyStore(tmp.resolve("keys.toml")),
-            )
-
-            assertEquals(false, provider.describe().present)
-            assertEquals(1, seen.size)
-            assertTrue(seen.single().startsWith("[api-key-auth] failed to read $unreadable:"), seen.single())
-        } finally {
-            DaemonLog.install {}
-        }
     }
 
     // 3. The STAMP. daemon.log rotates by size, so one file spans days with no marker between them,

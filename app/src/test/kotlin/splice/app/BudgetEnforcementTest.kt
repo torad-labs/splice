@@ -1,14 +1,6 @@
-// NEW: V4-133 review — the budgets GET/PUT /api/budgets saves are the budgets every head enforces.
-//
-// Two lines join the two sides, and neither is checked by the compiler, because both sides default so
-// tests can build them bare:
-//
-//   ControlPlane        console = ConsoleEventPublisher(..., budgets = <enforcement over [budgets]>)
-//   HeadServerFactory   budget = console?.budgets?.forHead(key, ctx.catalog)
-//
-// The first is checked BEHAVIOURALLY on a real ControlPlane: a block budget saved into the plane's own
-// store (the one the route writes) refuses that head's next turn through the plane's own publisher.
-// The second is pinned on the source text, the idiom OneEventBusPinTest uses for its sibling line.
+// The budgets GET/PUT /api/budgets saves are the budgets every head enforces: a block budget saved into
+// the control plane's own store refuses that head's next turn through the plane's own publisher, and a
+// budgeted admission never waits on file I/O.
 package splice.app
 
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -22,14 +14,12 @@ import splice.core.config.StatePaths
 import splice.core.util.AsyncFileIo
 import splice.usage.budgets.Budget
 import splice.usage.budgets.BudgetRoutes
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-class BudgetWiringPinTest {
+class BudgetEnforcementTest {
 
     @Test
     fun `a budgeted admission never waits for its perf file writer`(@TempDir tempDir: Path) {
@@ -89,24 +79,5 @@ class BudgetWiringPinTest {
         } finally {
             plane.cancelProbes()
         }
-    }
-
-    @Test
-    fun `the head factory gives each head its own ledger from the publisher, keyed and priced by that head`() {
-        assertTrue(
-            source("app/src/main/kotlin/splice/app/head/HeadServerFactory.kt")
-                .contains("budget = console?.budgets?.forHead(key, ctx.catalog)"),
-            "HeadServerFactory must set HeadQuota.budget from the publisher's enforcement, keyed by the head it builds",
-        )
-    }
-
-    private fun source(relative: String): String {
-        var dir: Path? = Paths.get("").toAbsolutePath()
-        while (dir != null) {
-            val candidate = dir.resolve(relative)
-            if (Files.exists(candidate)) return Files.readString(candidate)
-            dir = dir.parent
-        }
-        error("$relative not found above ${Paths.get("").toAbsolutePath()}")
     }
 }

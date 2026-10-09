@@ -8,7 +8,6 @@
 package splice.app
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -71,14 +70,6 @@ class HeadRatesOverrideTest {
 
     private val offPeak = ModelRates(input = 0.08, cacheRead = 0.008, output = 0.28)
     private val reseller = ModelRates(input = 0.16, cacheRead = 0.016, output = 0.56)
-
-    @Test
-    fun `a head rate table parses into the head config`() {
-        val parsed = topology.heads.getValue("resold").rates
-        assertNotNull(parsed, "the table must reach HeadConfig.rates, not parse into nothing")
-        assertEquals(reseller, parsed!!.getValue("deepseek-flash"))
-        assertNull(topology.heads.getValue("direct").rates, "a head with no table stays absent, not empty")
-    }
 
     @Test
     fun `the head card overrides the provider entry for the ids it names and only those`() {

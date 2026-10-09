@@ -15,7 +15,7 @@ import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 
-class HeadSystemPromptWiringTest {
+class HeadSystemPromptConfigTest {
 
     @TempDir
     lateinit var tmp: Path

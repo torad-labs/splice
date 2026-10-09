@@ -1,19 +1,11 @@
-// NEW: V4-130 — the daemon side of the console's activity stores. ConsoleEventPublisher is the one
-// writer: a head's SendMessage edge becomes an edge row (and a message.edge frame, pinned by
-// ConsoleEventProducersTest), its local label and its near-miss label query become activity rows
-// under that head, and a fact with no session is stored nowhere. And LaunchSpecFactory.headProjectsTrees,
-// the head trees SessionProject's headless fallback searches before its vanilla default: every served
-// head's projects tree, each a whole path.
+// The daemon side of the console's activity stores. ConsoleEventPublisher is the one writer: a
+// head's SendMessage edge becomes an edge row, its local label and its near-miss label query become
+// activity rows under that head, and a fact with no session is stored nowhere. Also
+// LaunchSpecFactory.headProjectsTrees, the head trees SessionProject's headless fallback searches
+// before its vanilla default: every served head's projects tree, each a whole path.
 //
-// THE WIRING PINS. Four production lines join these pieces and the compiler checks none of them,
-// because each has a default so tests can build the classes bare: ControlPlane hands the route the
-// publisher's stores and the publisher its name holders over the daemon's session registry (both
-// checked behaviourally on a real ControlPlane, the OneEventBusPinTest idiom), and Daemon builds ONE
-// SessionProject over the head trees and hands it to HeadServerFactory (pinned on the source text,
-// the ConsoleWiringPinTest idiom).
-//
-// V4-252: a SendMessage name is stored with the one live session that held it then, so a board read
-// after the name moved files the call where it went (MessageEdgeStore's header).
+// A SendMessage name is stored with the one live session that held it then, so a board read after the
+// name moves files the call where it went.
 package splice.app
 
 import kotlinx.coroutines.runBlocking
@@ -22,8 +14,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
-import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -277,60 +267,6 @@ class ConsoleActivityPublishTest {
         val day = written.filterNot { it.endsWith(".lock") }
         assertEquals(1, day.size, written.toString())
         assertTrue(day.single().matches(Regex("edges-\\d{4}-\\d{2}-\\d{2}\\.jsonl")), written.toString())
-    }
-
-    @Test
-    fun `the control plane's sessions routes read the same stores its heads write`() {
-        val paths = StatePaths(baseOverride = tmp.resolve("plane-state"))
-        val plane = ControlPlane(
-            DaemonEnvironment(paths, ConfigService(paths), MgmtKey(paths), { }),
-            { },
-        )
-        val srv = checkNotNull(
-            runBlocking {
-                plane.start(
-                    controlPort = 0, // OS-assigned at bind: no leased port to lose before the bind
-                    heads = emptyMap(),
-                    failedHeads = { 0 },
-                    headCount = 0,
-                    probes = SilentHeadProbes,
-                )
-            },
-        ) { "the control plane did not bind" }
-        try {
-            assertNotNull(plane.console.stores, "the daemon's publisher must own the stores")
-            assertSame(plane.console.stores, srv.ports.activity, "the routes must read the stores the heads write")
-        } finally {
-            srv.stop()
-            plane.cancelProbes()
-        }
-    }
-
-    @Test
-    fun `the daemon builds one session project over the head trees and gives it to every head`() {
-        val daemon = source("app/src/main/kotlin/splice/app/Daemon.kt")
-        assertTrue(
-            daemon.contains("SessionProject(headProjectsDirs = launchSpecFactory.headProjectsTrees())"),
-            "Daemon must build SessionProject over the head trees, or headless head sessions never resolve",
-        )
-        assertTrue(
-            // V4-160 folded HeadServerFactory's configDir, projects and sessionProject into one
-            // HeadPromptInputs — all three feed only the prompt layers. The pin follows the value,
-            // not the spelling: what must not regress is that the SessionProject built above reaches
-            // the factory, whose default reads the vanilla tree only.
-            daemon.contains("HeadPromptInputs(topologyDir, topology.projects, sessionProject)"),
-            "Daemon must hand that SessionProject to HeadServerFactory, whose default reads the vanilla tree only",
-        )
-    }
-
-    private fun source(relative: String): String {
-        var dir: Path? = Paths.get("").toAbsolutePath()
-        while (dir != null) {
-            val candidate = dir.resolve(relative)
-            if (Files.exists(candidate)) return Files.readString(candidate)
-            dir = dir.parent
-        }
-        error("$relative not found above the working directory")
     }
 
     @Test

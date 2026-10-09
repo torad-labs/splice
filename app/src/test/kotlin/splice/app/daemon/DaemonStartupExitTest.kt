@@ -14,12 +14,20 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.STOP_DEADLINE_MS
+import splice.app.TEARDOWN_TAIL_GRACE_MS
 import splice.core.testing.TestPorts
 import java.net.ServerSocket
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 
-private const val EXIT_BOUND_S = 25L
+// THE CHILD'S OWN HALT FLOOR, not a stopwatch on this host. The child always ends itself: the ordered stop exits 0, or
+// the teardown watchdog prints "halting" and halts it at STOP_DEADLINE_MS + TEARDOWN_TAIL_GRACE_MS (57 s). A ceiling
+// below that floor fails a child that is still stopping correctly — at 25 s it did, on a host running four test JVMs
+// and a peer's build. So the wait sits PAST the floor, with slack for the fork and the classload, and a child still
+// alive at it means neither the ordered stop nor the watchdog ended it. The "halting" assertion below is what catches
+// a stop that ran long: this bound only separates a hung child from a slow one.
+private const val EXIT_BOUND_S = (STOP_DEADLINE_MS + TEARDOWN_TAIL_GRACE_MS) / 1_000 + 15L
 
 class DaemonStartupExitTest {
 
@@ -45,8 +53,8 @@ class DaemonStartupExitTest {
     private fun assertOrdered(run: Run) {
         assertTrue(run.output.contains(STARTUP_HELD)) { "the child never reached the held startup:\n${run.output}" }
         assertTrue(run.exited) {
-            "the JVM was still alive ${EXIT_BOUND_S}s after System.exit during startup, so the ordered stop never " +
-                "closed the control listener the startup held:\n${run.output}"
+            "the JVM was still alive ${EXIT_BOUND_S}s after System.exit during startup, past its own halt floor, so " +
+                "neither the ordered stop nor the teardown watchdog ended it:\n${run.output}"
         }
         assertTrue(run.output.contains(PORT_CLOSED_LOCK_HELD)) {
             "the control listener was not closed, or the daemon lock was already released when it closed:\n${run.output}"

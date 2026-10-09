@@ -1,4 +1,4 @@
-// NEW: native account facts and credential joins come from independent files, never the head aggregate.
+// native account facts and credential joins come from independent files, never the head aggregate.
 package splice.app.auth.claude
 
 import org.junit.jupiter.api.Assertions.assertEquals

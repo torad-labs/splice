@@ -1,4 +1,4 @@
-// NEW: synthetic provider profiles prove identity for the exact credential, without preserving private profile fields.
+// synthetic provider profiles prove identity for the exact credential, without preserving private profile fields.
 package splice.app.auth.claude
 
 import io.ktor.client.HttpClient

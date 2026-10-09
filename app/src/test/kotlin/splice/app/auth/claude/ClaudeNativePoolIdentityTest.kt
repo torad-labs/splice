@@ -1,4 +1,4 @@
-// NEW: two native places proving one subscription cannot invent a second quota after its refusal.
+// two native places proving one subscription cannot invent a second quota after its refusal.
 package splice.app.auth.claude
 
 import io.ktor.client.HttpClient

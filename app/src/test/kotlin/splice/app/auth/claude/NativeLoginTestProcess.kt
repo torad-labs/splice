@@ -1,4 +1,4 @@
-// NEW: deterministic native-auth pipes and child lifetime without executing a login or provider request.
+// deterministic native-auth pipes and child lifetime without executing a login or provider request.
 package splice.app.auth.claude
 
 import kotlinx.coroutines.CompletableDeferred

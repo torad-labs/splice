@@ -1,4 +1,4 @@
-// NEW: the real late native owner must become a selectable, ordered, read-only pool on its head.
+// the real late native owner must become a selectable, ordered, read-only pool on its head.
 package splice.app.auth.claude
 
 import io.ktor.client.HttpClient

@@ -1,4 +1,4 @@
-// NEW: which refusal the console's accounts port gives a head it cannot edit. The distinction is load-bearing: the
+// Which refusal the console's accounts port gives a head it cannot edit. The distinction is load-bearing: the
 // `client` arm (ClaudeAccountsArm) dispatches on UnsupportedAuthKind, so if this port answers UnknownHead for a
 // configured Claude head, every add and remove on that head goes back to 404 on a head the console has drawn, with
 // the arm's own tests still green because they stub this port out.

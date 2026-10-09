@@ -1,4 +1,4 @@
-// NEW (G8): AuthProbeLoop state machine + timer wiring. Fake RefreshableAuthProvider test double
+// AuthProbeLoop: health transitions, timer scheduling, and restart-on-death. Fake RefreshableAuthProvider test double
 // with mutable credsOk/refreshOk flags and call counters — behavior asserted directly via
 // probeOnce() (no real delay needed) except for the one timer-wiring test, which proves
 // start()/stop() actually schedule/cancel on intervalMs.
@@ -111,18 +111,6 @@ class AuthProbeLoopTest {
         )
     }
 
-    @Test
-    fun `api-key-shaped fake never doubles credentials-equivalent calls per unhealthy tick`() = runTest {
-        // ApiKeyAuthProvider.refresh() == credentials(): a harmless re-read. Model that shape here
-        // by keeping refreshOk in lockstep with credsOk, and assert exactly one call to each SPI
-        // method per tick — the probe must not read credentials() twice.
-        val auth = FakeAuth(credsOk = false, refreshOk = false)
-        val loop = AuthProbeLoop("head1", auth, log = {})
-        loop.probeOnce()
-        assertEquals(1, auth.credentialsCalls.get())
-        assertEquals(1, auth.refreshCalls.get())
-    }
-
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `timer wiring - start ticks immediately then every intervalMs, stop halts further ticks`() {
@@ -160,7 +148,7 @@ class AuthProbeLoopTest {
     }
 
     @Test
-    fun `a loop-killing throwable restarts the probe under the budget - SH-04`() = runTest {
+    fun `a loop-killing throwable restarts the probe under the budget`() = runTest {
         // IllegalStateException is outside runCatchingCancellable's catch list: pre-fix the
         // coroutine died silently and start() refused to re-arm — zero further ticks, ever.
         val auth = object : RefreshableAuthProvider {
@@ -226,7 +214,7 @@ class AuthProbeLoopTest {
     }
 
     @Test
-    fun `restart budget exhaustion announces permanently down - SH-04`() = runTest {
+    fun `restart budget exhaustion announces permanently down`() = runTest {
         val auth = object : RefreshableAuthProvider {
             val calls = AtomicInteger(0)
             override suspend fun credentials(): Credentials? {

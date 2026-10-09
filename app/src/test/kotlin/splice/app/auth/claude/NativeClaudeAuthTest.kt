@@ -1,4 +1,4 @@
-// NEW: native auth resolves the executable, destination and bounded browser announcement without live credentials.
+// native auth resolves the executable, destination and bounded browser announcement without live credentials.
 package splice.app.auth.claude
 
 import kotlinx.coroutines.cancelAndJoin

@@ -1,4 +1,4 @@
-// NEW: command-local credentials, account files and safe-copy stores are independent under a synthetic home.
+// command-local credentials, account files and safe-copy stores are independent under a synthetic home.
 package splice.app.auth.claude
 
 import org.junit.jupiter.api.Assertions.assertEquals

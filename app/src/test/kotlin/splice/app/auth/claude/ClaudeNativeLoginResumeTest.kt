@@ -1,4 +1,4 @@
-// NEW: external native login must resume its session without stale holds or sticky standby credentials.
+// external native login must resume its session without stale holds or sticky standby credentials.
 package splice.app.auth.claude
 
 import io.ktor.client.HttpClient

@@ -1,4 +1,4 @@
-// NEW: actual sign-in landing and removal must change a booted Claude head's next credential choice.
+// actual sign-in landing and removal must change a booted Claude head's next credential choice.
 package splice.app.auth.claude
 
 import io.ktor.client.HttpClient

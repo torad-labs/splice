@@ -1,4 +1,4 @@
-// NEW: V4-132 — LoginSessions is the off-request login-id/poll seam (POST /api/auth/{head}/login
+// LoginSessions is the off-request login-id/poll seam (POST /api/auth/{head}/login
 // runs DeviceLoginFlow/OAuthLoginFlow OFF the request that started it; GET .../login/{id} reads
 // back what has landed so far). The flow machinery itself is exercised directly in
 // DeviceLoginObserverTest and OAuthLoginObserverTest — running a real LoginCommand attempt here

@@ -1,4 +1,4 @@
-// NEW: real native-only wiring verifies the declared client head without a failover or credential mutation.
+// real native-only wiring verifies the declared client head without a failover or credential mutation.
 package splice.app.auth.claude
 
 import io.ktor.client.HttpClient

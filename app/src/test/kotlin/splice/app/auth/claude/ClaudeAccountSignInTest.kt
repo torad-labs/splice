@@ -1,4 +1,4 @@
-// NEW: "Sign in to another account" on a Claude head. The two rules a person's logins depend on: a sign-in for one
+// "Sign in to another account" on a Claude head. The two rules a person's logins depend on: a sign-in for one
 // head or label never writes another's folder, and adding an account never replaces an account already filed.
 // No real sign-in runs here: the native child is a fixture, and every credential is synthetic.
 package splice.app.auth.claude

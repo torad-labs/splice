@@ -1,4 +1,4 @@
-// NEW: current credential joins cannot read either the head aggregate or another native command's observations.
+// current credential joins cannot read either the head aggregate or another native command's observations.
 package splice.app.auth.claude
 
 import org.junit.jupiter.api.Assertions.assertEquals

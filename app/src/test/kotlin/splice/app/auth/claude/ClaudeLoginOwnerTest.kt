@@ -1,4 +1,4 @@
-// NEW: native replacement holds managed launch, saves actual bytes, and clears every child on cancellation.
+// native replacement holds managed launch, saves actual bytes, and clears every child on cancellation.
 package splice.app.auth.claude
 
 import kotlinx.coroutines.CompletableDeferred

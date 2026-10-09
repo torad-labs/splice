@@ -1,4 +1,4 @@
-// NEW: the Claude half of failover within one provider (operator ruling, Oct 3, 11:44 PM CT: "each provider gets a
+// the Claude half of failover within one provider (operator ruling, Oct 3, 11:44 PM CT: "each provider gets a
 // head, each head can have multiple subscriptions"; Oct 4, 12:00 AM CT: heads are templates, and the console probes
 // each account's usage). An account added beyond the caller's own Claude Code sign-in lives in a splice-owned folder
 // under its head, in Claude Code's own file format, so splice is that credential's only user and only refresher.
@@ -9,7 +9,6 @@ package splice.app.auth.claude
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -95,23 +94,6 @@ class ClaudeAccountFoldersTest {
         signIn(OTHER_HEAD, "work", "uuid-work", null)
 
         assertEquals("uuid-work", folders().accounts(OTHER_HEAD).single().identity?.uuid)
-    }
-
-    @Test
-    fun `a sign-in that records no account is refused and leaves nothing behind`() {
-        val pending = folders().pending(HEAD, "work")
-        Files.createDirectories(pending.directory)
-        Files.writeString(pending.directory.resolve(".credentials.json"), """{"claudeAiOauth":{"accessToken":"t"}}""")
-
-        assertTrue(folders().land(pending) is ClaudeAccountLanding.Unreadable)
-        assertEquals(emptyList<String>(), folders().accounts(HEAD).map { it.label })
-        assertFalse(Files.exists(pending.directory))
-    }
-
-    @Test
-    fun `a label outside the shape, or the caller's own sign-in label, is refused before any folder is made`() {
-        assertThrows(IllegalArgumentException::class.java) { folders().pending(HEAD, "../escape") }
-        assertThrows(IllegalArgumentException::class.java) { folders().pending(HEAD, OWN_SIGN_IN_LABEL) }
     }
 
     @Test

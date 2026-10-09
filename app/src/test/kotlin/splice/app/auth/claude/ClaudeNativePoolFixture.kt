@@ -1,4 +1,4 @@
-// NEW: synthetic native-login assembly shared by selector, quota and captured-owner controls.
+// synthetic native-login assembly shared by selector, quota and captured-owner controls.
 package splice.app.auth.claude
 
 import io.ktor.client.HttpClient

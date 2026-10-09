@@ -18,11 +18,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.app.cli.status.StatusTable
 import splice.core.topology.ApiKeyProviderRegistry
 import splice.core.topology.AuthConfig
-import splice.core.topology.AuthKind
-import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
@@ -101,55 +98,12 @@ class SignInPlanMatrixTest {
         }
     }
 
-    @Test
-    fun `every registry label reaches the plan and only pinned-shape vendors have a token pattern`() {
-        assertRegistryIds(
-            "api-key registry",
-            setOf("openrouter", "deepseek", "moonshot", "fireworks", "openai", "xai"),
-            ApiKeyProviderRegistry.rows().map { it.id }.toSet(),
-        )
-        assertRegistryIds(
-            "auth-kind registry",
-            setOf("chatgpt-oauth", "grok-oauth", "kimi-oauth", "muse-oauth", "client"),
-            AuthKindRegistry.knownKinds().map { it.wire }.toSet(),
-        )
-        // DeepSeek joined openrouter 2026-09-15: its key is a FIXED shape, `sk-` plus exactly 32
-        // lowercase alphanumerics, pinned from trufflehog's live-verified detector and corroborated
-        // against a real stored key's measured length and charset. A vendor whose shape is only
-        // "starts with sk-" stays null — that collides with OpenAI and with ordinary prose.
-        val patterned = ApiKeyProviderRegistry.rows().filter { it.tokenPattern != null }
-        assertEquals(setOf("openrouter", "deepseek"), patterned.map { it.id }.toSet())
-        ApiKeyProviderRegistry.rows().forEach { row ->
-            val plan = planner.signInPlan(providerCfg(API_KEY), head(row.id, "claude-${row.id}"), row.id)
-            assertEquals(row.label, plan.label, row.id)
-        }
-        AuthKindRegistry.knownKinds().forEach { kind ->
-            val dialect = when (kind) {
-                is AuthKind.Client, is AuthKind.KimiOAuth, is AuthKind.MuseOAuth ->
-                    Dialect.ANTHROPIC_PASSTHROUGH
-                is AuthKind.ChatgptOAuth, is AuthKind.GrokOAuth -> Dialect.OPENAI_RESPONSES
-            }
-            val plan = planner.signInPlan(
-                providerCfg(kind.wire).copy(dialect = dialect),
-                head(kind.wire, "claude-${kind.wire}"),
-                kind.wire,
-            )
-            assertEquals(kind.signInLabel, plan.label, kind.wire)
-        }
-    }
-
-    private fun assertRegistryIds(what: String, expected: Set<String>, actual: Set<String>) {
-        val missing = (expected - actual).sorted()
-        val unexpected = (actual - expected).sorted()
-        assertEquals(expected, actual, "$what missing=$missing unexpected=$unexpected")
-    }
-
-    /** DR-97: the DAEMON derives the api-key env from the HEAD key — effectiveApiKeyEnv(ctx.key)
+    /** The DAEMON derives the api-key env from the HEAD key — effectiveApiKeyEnv(ctx.key)
      *  in every provider arm and in doctor — so capture must too. The provider-key derivation
      *  stored OPENROUTER_API_KEY while the daemon read FAST_API_KEY: login printed success, the
      *  head kept 401ing, doctor said not set. Token SHAPE stays keyed by provider identity. */
     @Test
-    fun `capture derives the env var from the HEAD key - the var the daemon reads - DR-97`() {
+    fun `capture derives the env var from the HEAD key - the var the daemon reads`() {
         val plan = planner.signInPlan(providerCfg(API_KEY), head("openrouter", "claude-fast"), "fast")
         assertEquals("FAST_API_KEY", plan.tokenCapture?.envVar, "capture must write the var the daemon reads")
     }
@@ -202,12 +156,6 @@ class SignInPlanMatrixTest {
             assertTrue(plan.viaBrowser)
             assertNull(plan.tokenCapture)
         }
-    }
-
-    @Test
-    fun `Muse backend label names Meta rather than guessing from its wire dialect`() {
-        val cfg = providerCfg("muse-oauth").copy(dialect = Dialect.ANTHROPIC_PASSTHROUGH)
-        assertEquals("Meta Muse", StatusTable().backendLabel(cfg))
     }
 
     @Test

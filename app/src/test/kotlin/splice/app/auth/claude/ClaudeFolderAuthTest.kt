@@ -1,4 +1,4 @@
-// NEW: the Claude half of failover within one provider. An account splice added lives in a folder splice owns, so
+// the Claude half of failover within one provider. An account splice added lives in a folder splice owns, so
 // splice is its ONLY user and its only refresher: the token comes from the folder, a token near its expiry is
 // refreshed once however many turns ask at the same moment, and the rotated pair is saved back owner-only in Claude
 // Code's own file format. The caller's own sign-in is the one login splice never refreshes.

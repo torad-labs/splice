@@ -1,4 +1,4 @@
-// NEW: the `client` arm of the accounts port. A Claude head's add reaches its own sign-in and its remove deletes
+// the `client` arm of the accounts port. A Claude head's add reaches its own sign-in and its remove deletes
 // that account's own folder; every other head's answer is the generic port's, unchanged. No real sign-in and no real
 // head run here, and every credential written is synthetic.
 package splice.app.auth.claude

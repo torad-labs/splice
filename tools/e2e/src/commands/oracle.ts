@@ -87,6 +87,7 @@ const END = "mock.listen(0, '127.0.0.1');";
 
 const EMPTY_LOCK_STALE_MS = 30_000; // >> the create->write window; only a crashed pre-write lock survives it
 const REQUEST_TIMEOUT_MS = 60_000; // a replayed fixture answers in ms; 60s means WEDGED, not slow
+const RUN_LOCK_WAIT_MS = 10 * 60_000; // a whole replay takes ~20 s; ten minutes of waiting means a wedged holder
 // CI-hermetic fixed scratch ports (OSS-M pattern), BELOW the kernel's ephemeral range (Linux 32768+,
 // macOS 49152+): at 39490 a parallel ladder task's outbound socket took the head port mid-boot.
 const HEAD_PORT = 29490;
@@ -746,9 +747,19 @@ command = "claudex"
   // daemon (mislabelled "leaked"), so two CI jobs on one runner mutually assassinated at ~50%.
   // An exclusive, non-blocking lock makes concurrent = fail-fast-and-refuse; only after we hold it
   // does the preflight treat a port-squatter as a genuine leak from an interrupted PRIOR run.
+  // A run that finds the lock held WAITS its turn, bounded, rather than refusing: a replay takes about 20 s, and a local
+  // gate and a push each judge in their own build tree, so their replays can meet on this box. Refusing turned that
+  // meeting into a red leg. Only the lock's holder ever reaches the preflight, so waiting keeps the F6 guarantee.
   const lockPath = join(tmpdir(), "splice-oracle-replay.lock");
-  if (!acquireRunLock(lockPath)) {
-    throw new HarnessError("another oracle replay holds the run lock — concurrent runs share fixed ports; retry when it finishes");
+  const lockDeadline = Date.now() + RUN_LOCK_WAIT_MS;
+  let announced = false;
+  while (!acquireRunLock(lockPath)) {
+    if (Date.now() >= lockDeadline) {
+      throw new HarnessError(`another oracle replay held the run lock for ${RUN_LOCK_WAIT_MS / 1000} s — concurrent runs share fixed ports`);
+    }
+    if (!announced) console.error("oracle: another replay holds the run lock (fixed ports); waiting for it to finish");
+    announced = true;
+    await Bun.sleep(500);
   }
   process.on("exit", () => {
     try {

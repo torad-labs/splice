@@ -175,7 +175,10 @@ internal object Concentration {
     // 2026-10-08, later: the control server's ownership (ControlOwnership.kt in splice.app.control) took the control-port
     // bind out of ControlPlane, and the daemon run left Main.kt. Unchanged PerfRowsFileSource.kt (3.15 -> 2.99) and
     // HostedServer.kt (3.02 -> below 3.0) leave HIGH by neighbourhood, measured with this law's own scan on the tree. 10 -> 9.
-    const val RATCHET_MAX_HIGH = 9
+    // 2026-10-09: UpstreamClient.kt (3.65) and RetryPolicy.kt (3.56) enter HIGH by neighbourhood, both files
+    // unchanged in logic and imports: the new small RoundResult, StreamRead and RetryBudget files lowered their
+    // packages' medians, measured with this law's own scan on the tree. 9 -> 11.
+    const val RATCHET_MAX_HIGH = 11
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

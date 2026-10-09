@@ -6,6 +6,7 @@ package splice.core.util
 public object FormEncoding {
     private const val BYTE_MASK = 0xFF
     private const val ASCII_LIMIT = 0x80
+    internal const val PERCENT_HEX = "%%%02X"
 
     /** RFC 3986 percent-encoding — spaces become %20, never + (the CLI-parity gotcha). */
     public fun percentEncode(value: String): String = buildString {
@@ -13,7 +14,7 @@ public object FormEncoding {
             val c = b.toInt() and BYTE_MASK
             val ch = c.toChar()
             val unreserved = ch.isLetterOrDigit() && c < ASCII_LIMIT
-            if (unreserved || ch in "-_.~") append(ch) else append("%%%02X".format(c))
+            if (unreserved || ch in "-_.~") append(ch) else append(PERCENT_HEX.format(c))
         }
     }
 

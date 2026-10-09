@@ -1,10 +1,14 @@
 id: kt-form-encoding-single-source
 valid:
+  # the one declaration, exempt by its shape: a const val
+  - 'internal const val PERCENT_HEX = "%%%02X"'
   - 'FormEncoding.percentEncode(value)'
   - 'append("%02X".format(c))'
   # split-percent concatenation with an unrelated literal must stay clean
   - 'append("color-" + "%02X".format(v))'
 invalid:
+  # a second spelling that is not a const declaration is the drift this wall exists for
+  - 'val PERCENT_HEX = "%%%02X"'
   - 'append("%%%02X".format(c))'
   # split-literal bypass: reproduces %%%02X byte-for-byte without ever containing that literal
   - 'append("%" + "%02X".format(c))'

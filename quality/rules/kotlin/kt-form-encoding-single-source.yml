@@ -12,12 +12,16 @@ message: "Use FormEncoding.percentEncode/formEncode (core/util) — the percent-
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
-ignores:
-  - core/src/main/kotlin/splice/core/util/FormEncoding.kt
 rule:
   any:
-    - kind: string_literal
-      regex: '%%%02X'
+    # the one declaration of the format is a const val, exempt by that shape and not by the file that holds it
+    - all:
+        - kind: string_literal
+          regex: '%%%02X'
+        - not:
+            inside:
+              matches: single-source-declaration
+              stopBy: end
     - pattern: $PCT + $HEX
 constraints:
   PCT:

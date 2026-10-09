@@ -103,7 +103,7 @@ recording because each looks plausible:
    paid for keep serving. A 257-round session keeps rounds 1..256 injecting; only the tail goes
    uninjected (tail-append, prefix-stable).
 
-Pinned by `PrefixStabilityDiagnostic` (every turn both extends the previous prefix exactly AND
+Pinned by `ResponsesPrefixStabilityTest` (every turn both extends the previous prefix exactly AND
 actually injects every round's reasoning — the second assertion exists because prefix-extension
 alone is vacuously satisfied by a cache that injects nothing) and by `ReasoningCacheTest` pins for
 neighbor-eviction, freeze-admission, wholesale stale eviction, retry-grace, and the null-key status
@@ -181,7 +181,7 @@ class of mid-array prefix drift this document measures. See
 ## Reproduce
 
 ```
-cd gateway && ./gradlew :dialect-openai-responses:test --tests 'PrefixStabilityDiagnostic'
+cd gateway && ./gradlew :dialect-openai-responses:test --tests 'ResponsesPrefixStabilityTest'
 ```
 
 The telemetry analysis reads `~/.claude-codex/logs/daemon.log` directly; the daemon has no

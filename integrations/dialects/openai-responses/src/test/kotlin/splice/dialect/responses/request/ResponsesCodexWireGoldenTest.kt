@@ -1,4 +1,4 @@
-package splice.dialect.responses.v4389
+package splice.dialect.responses.request
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -7,11 +7,9 @@ import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
-import splice.dialect.responses.request.BuildOptions
-import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.dialect.responses.tools.ToolDeferralPolicy
 
-class CodexWireGoldenTest {
+class ResponsesCodexWireGoldenTest {
     private val quirks = ResponsesQuirks(
         providerTag = "claudex",
         emitEmptyLiteInstructions = false,
@@ -46,12 +44,12 @@ class CodexWireGoldenTest {
         ).req.toString()
     }
 
-    // Frozen against the builder BEFORE V4-389 changes either mode. The strings encode full DTOs,
+    // Frozen byte-exact. The strings encode full DTOs,
     // including order, code-mode exec, and the client-executed search shape on lite turns.
     private val codeModeTool = """{"type":"function","name":"splice_exec","description":"Code mode",""" +
         """"strict":false,"parameters":{"type":"object","properties":{}}}"""
 
-    // V4-390: a lite turn's function tools ride inside codex's `functions` namespace.
+    // A lite turn's function tools ride inside codex's `functions` namespace.
     private val liteFunctions = """{"type":"namespace","name":"functions","description":"","tools":[$codeModeTool]}"""
     private val mcpTool = """{"type":"function","name":"mcp__synthetic_0","description":"Synthetic tool 0",""" +
         """"strict":false,"parameters":{"type":"object","properties":{"value":{"type":"string"}}}}"""

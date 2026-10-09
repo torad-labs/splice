@@ -1,7 +1,7 @@
-// NEW: V4-390 — a lite turn never sends a `system` input item. Claude Code sends a peer's message, a
+// A lite turn never sends a `system` input item. Claude Code sends a peer's message, a
 // task notification or hook output as role=system; codex-rs sends mid-conversation context as a
 // developer message (core/src/context/hook_additional_context.rs:21) and no system item at all.
-package splice.dialect.responses.v4390
+package splice.dialect.responses.request
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -14,9 +14,6 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
-import splice.dialect.responses.request.BuildOptions
-import splice.dialect.responses.request.ResponsesContextMessage
-import splice.dialect.responses.request.ResponsesRequestBuilder
 
 private val LITE = ResponsesQuirks(providerTag = "claudex", responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6"))
 
@@ -31,7 +28,7 @@ private const val BODY = """{"model":"claude-codex--gpt-6-sol","stream":true,"ma
       {"role":"system","content":"$PEER"},
       {"role":"user","content":"Keep going."}]}"""
 
-class ContextMessageRoleTest {
+class ResponsesContextMessageRoleTest {
     @Test
     fun `a lite turn sends Claude Code's system message as a typed developer message`() {
         val input = input("gpt-6-sol")

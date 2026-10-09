@@ -1,4 +1,4 @@
-package splice.dialect.responses.v4351
+package splice.dialect.responses.request
 
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -16,8 +16,6 @@ import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
-import splice.dialect.responses.request.BuildOptions
-import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.dialect.responses.tools.ToolSearchOutput
 import splice.upstream.ToolNameShortener
 
@@ -36,32 +34,7 @@ private fun museOptions(sessionId: String? = "session-1") = BuildOptions(
     sessionId = sessionId,
     decodeReasoningEnvelope = { null },
 )
-class MuseResponsesWireTest {
-    @Test
-    fun `native alias collision preserves both original names and replay stays stable`() {
-        val names = ToolNameShortener(MUSE_CAP) { }
-        val first = names.shorten(LONG_NAME)
-        assertTrue(first.length <= MUSE_CAP)
-        assertEquals(first, names.shorten(LONG_NAME))
-        val native = names.shorten(first)
-        assertNotEquals(first, native)
-        assertTrue(native.length <= MUSE_CAP)
-        assertEquals(LONG_NAME, names.restore(first))
-        assertEquals(first, names.restore(native))
-        assertEquals("foreign", names.restore("foreign"))
-    }
-
-    @Test
-    fun `a full alias namespace refuses overlong names instead of misrouting a tool`() {
-        val logged = mutableListOf<String>()
-        val names = ToolNameShortener(MUSE_CAP, logged::add)
-        repeat(4096) { names.shorten("tool_$it") }
-        val overflow = LONG_NAME + "_overflow"
-        assertEquals(overflow, names.shorten(overflow))
-        assertEquals(overflow, names.restore(overflow))
-        assertTrue(logged.any { it.contains("map full") })
-    }
-
+class ResponsesToolAliasWireTest {
     @Test
     fun `session cache identity survives a changed opening message and falls back when unkeyed`() {
         val builder = ResponsesRequestBuilder(

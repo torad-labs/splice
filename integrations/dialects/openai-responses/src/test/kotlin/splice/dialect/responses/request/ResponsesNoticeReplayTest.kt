@@ -1,4 +1,4 @@
-package splice.dialect.responses.request.v4385
+package splice.dialect.responses.request
 
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -11,8 +11,6 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.SpliceNotice
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
-import splice.dialect.responses.request.BuildOptions
-import splice.dialect.responses.request.ResponsesRequestBuilder
 
 class ResponsesNoticeReplayTest {
     @Test

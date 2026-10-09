@@ -35,7 +35,7 @@ class ResponsesImageFloorTest {
     // which is false in a way an operator cannot debug: the source was read perfectly and the
     // BACKEND refused the size. Mutant: route the floor drop through imagePart's null.
     @Test
-    fun `an undersized image says it was undersized, not that the source was unsupported - DR-155`() {
+    fun `an undersized image says it was undersized, not that the source was unsupported`() {
         val items = floored(
             """{"model":"m","messages":[{"role":"user","content":[
                 {"type":"image","source":{"type":"base64","media_type":"image/png","data":"${png(1, 1)}"}}
@@ -47,7 +47,7 @@ class ResponsesImageFloorTest {
     }
 
     @Test
-    fun `an image exactly at the floor still becomes an input_image - DR-155`() {
+    fun `an image exactly at the floor still becomes an input_image`() {
         val items = floored(
             """{"model":"m","messages":[{"role":"user","content":[
                 {"type":"image","source":{"type":"base64","media_type":"image/png","data":"${png(8, 8)}"}}
@@ -60,7 +60,7 @@ class ResponsesImageFloorTest {
     // THE DEFAULT IS THE SAFETY ARGUMENT: a head that did not opt in never decodes and never drops.
     // Mutant: give minImageEdgePx a non-null default.
     @Test
-    fun `with no floor configured the same 1x1 becomes an input_image - DR-155`() {
+    fun `with no floor configured the same 1x1 becomes an input_image`() {
         val items = items(
             """{"model":"m","messages":[{"role":"user","content":[
                 {"type":"image","source":{"type":"base64","media_type":"image/png","data":"${png(1, 1)}"}}
@@ -74,7 +74,7 @@ class ResponsesImageFloorTest {
     // A screenshot tool whose output silently lost its image is the exact regression the v25 marker
     // doctrine exists to prevent, and this path emitted NOTHING for a dropped image before DR-155.
     @Test
-    fun `an undersized tool_result image is declared instead of vanishing - DR-155`() {
+    fun `an undersized tool_result image is declared instead of vanishing`() {
         val items = floored(
             """{"model":"m","messages":[
                 {"role":"assistant","content":[{"type":"tool_use","id":"t3","name":"shot","input":{}}]},
@@ -95,7 +95,7 @@ class ResponsesImageFloorTest {
     // tool_result image now declares itself, as the message walk and the chat dialect (DR-94) both
     // already did for the identical failure.
     @Test
-    fun `an unreadable tool_result image is declared, not dropped in silence - DR-164`() {
+    fun `an unreadable tool_result image is declared, not dropped in silence`() {
         val items = floored(
             """{"model":"m","messages":[
                 {"role":"assistant","content":[{"type":"tool_use","id":"t7","name":"shot","input":{}}]},
@@ -117,7 +117,7 @@ class ResponsesImageFloorTest {
     // and OWN reasons, never one merged count — an undersized image read perfectly and the backend
     // refused the size, so calling it an unsupported source is a lie the operator cannot debug.
     @Test
-    fun `an unreadable and an undersized tool_result image each get their own marker - DR-164`() {
+    fun `an unreadable and an undersized tool_result image each get their own marker`() {
         val items = floored(
             """{"model":"m","messages":[
                 {"role":"assistant","content":[{"type":"tool_use","id":"t8","name":"shot","input":{}}]},
@@ -141,7 +141,7 @@ class ResponsesImageFloorTest {
     // CONTROL (green both sides): a tool_result whose images ALL map emits no marker at all. The
     // count is a DELTA, so a guard keyed on "any images present" would mark every healthy screenshot.
     @Test
-    fun `a fully readable tool_result image emits no drop marker - DR-164 control`() {
+    fun `a fully readable tool_result image emits no drop marker`() {
         val items = floored(
             """{"model":"m","messages":[
                 {"role":"assistant","content":[{"type":"tool_use","id":"t10","name":"shot","input":{}}]},
@@ -157,7 +157,7 @@ class ResponsesImageFloorTest {
     // An image splice cannot read is not an image splice may delete. "aGk=" is base64 of the word
     // "hi" — the fixture every other suite here uses — and it must still forward under a floor.
     @Test
-    fun `an image the probe cannot read forwards under the floor - DR-155`() {
+    fun `an image the probe cannot read forwards under the floor`() {
         val items = floored(
             """{"model":"m","messages":[{"role":"user","content":[
                 {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}

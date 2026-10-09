@@ -1,8 +1,8 @@
-// NEW: V4-382 — the Responses dialect's `instructions` no longer carries Claude Code's per-session attribution block.
+// The Responses dialect's `instructions` no longer carries Claude Code's per-session attribution block.
 // Its fingerprint hashes the session's first user prompt, so two sessions (or a subagent, or the turn after a compaction)
 // sent different first bytes, and the backend's prompt cache forked at the very front (bonsai, Sep 18: the post-compaction
 // prompt forked at token 47,374). Two requests that differ only in that fingerprint must build the same instructions.
-package splice.dialect.responses.v4382
+package splice.dialect.responses.request
 
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -13,10 +13,8 @@ import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
-import splice.dialect.responses.request.BuildOptions
-import splice.dialect.responses.request.ResponsesRequestBuilder
 
-class AttributionBlockInstructionsTest {
+class ResponsesAttributionBlockTest {
     private fun instructions(fingerprint: String): String {
         val parsed = AnthropicParse.parseAnthropicBody(
             """{"model":"m","system":[

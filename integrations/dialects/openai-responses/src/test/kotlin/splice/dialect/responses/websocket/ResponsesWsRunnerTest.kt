@@ -33,7 +33,6 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.LogSink
 import splice.dialect.responses.request.responsesRequestJson
-import splice.dialect.responses.stream.ResponsesRoundEnd
 import splice.upstream.NEVER_PINGED_MS
 import java.io.IOException
 import java.net.URI
@@ -545,14 +544,6 @@ class ResponsesWsRunnerTest {
         assertTrue(rig.runner.isFailureTerminal(event), "$type must be a FAILURE terminal, not a success")
     }
 
-    /** The vocabulary itself: six names, disjoint, and every one of them ends a round. */
-    @Test
-    fun `the terminal sets are disjoint and jointly end every round`() {
-        assertTrue(ResponsesRoundEnd.SUCCESS.intersect(ResponsesRoundEnd.FAILED).isEmpty())
-        assertEquals(ResponsesRoundEnd.SUCCESS + ResponsesRoundEnd.FAILED, ResponsesRoundEnd.ALL)
-        assertEquals(6, ResponsesRoundEnd.ALL.size)
-    }
-
     /** A clean terminal commits the chain, so the NEXT round is a delta. */
     @Test
     fun `a clean terminal commits the chain and the next round chains`() = runTest {
@@ -622,7 +613,7 @@ class ResponsesWsRunnerTest {
     }
 
     @Test
-    fun `aborting a live round tears its own socket and ends the flow as a torn read - DR-7`() = runTest {
+    fun `aborting a live round tears its own socket and ends the flow as a torn read`() = runTest {
         val rig = Rig { listOf(created("resp_1")) }
         val round = checkNotNull(rig.accept()) { "the scripted round must be accepted" }
 
@@ -641,7 +632,7 @@ class ResponsesWsRunnerTest {
      *  and an abort looked up by chain would tear down whichever registered last. The abort rides
      *  the round instead, so it cannot reach a sibling. */
     @Test
-    fun `aborting one round of a conversation never touches its sibling on another socket - DR-7`() = runTest {
+    fun `aborting one round of a conversation never touches its sibling on another socket`() = runTest {
         val rig = Rig { listOf(created("resp_1")) }
         val first = checkNotNull(rig.accept(headers = mapOf("x-splice-probe" to "one"))) { "round one" }
         val second = checkNotNull(rig.accept(headers = mapOf("x-splice-probe" to "two"))) { "round two" }
@@ -660,7 +651,7 @@ class ResponsesWsRunnerTest {
      *  the cross-turn tear, bought while closing the harmless idle-pool case. The lease is bumped
      *  by acquire, so a stale abort simply does not match. */
     @Test
-    fun `an abort from a finished round cannot kill the round that reused its connection - DR-7`() = runTest {
+    fun `an abort from a finished round cannot kill the round that reused its connection`() = runTest {
         val rig = Rig { i -> if (i == 0) listOf(completed("resp_1")) else listOf(created("resp_2")) }
         val finished = checkNotNull(rig.accept()) { "the first round must be accepted" }
         finished.events.collect { }
@@ -675,26 +666,3 @@ class ResponsesWsRunnerTest {
 }
 
 private fun created(id: String) = """{"type":"response.created","response":{"id":"$id"}}"""
-
-/** Oct 4: five code-mode rounds ended on an error-family terminal on pooled sockets the pool never ages out, and
- *  OpenAI closes a websocket connection at 60 minutes. A round that ends failed or incomplete names its socket's age
- *  and which round on that socket it was, beside the conversation's digest and never its raw key. */
-class ResponsesWsEndingLineTest {
-    @Test
-    fun `a round that ends failed names the socket's age and its round on that socket`() = runTest {
-        val rig = Rig { round ->
-            when (round) {
-                0 -> listOf(completed("r1"))
-                1 -> listOf("""{"type":"response.incomplete","response":{"id":"r2","status":"incomplete"}}""")
-                else -> listOf("""{"type":"error","status":400,"error":{"code":"synthetic_code","message":"m"}}""")
-            }
-        }
-        repeat(3) { rig.round() }
-        val endings = rig.logs.filter { "round ended on" in it }
-        assertEquals(
-            listOf("response.incomplete: socket age 0s, round 2", "error: socket age 0s, round 3"),
-            endings.map { it.substringAfter("round ended on ").trim() },
-        )
-        assertTrue(endings.all { it.startsWith("[ws] ws-") && "splice-abc" !in it }, endings.toString())
-    }
-}

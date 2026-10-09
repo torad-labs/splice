@@ -1,4 +1,4 @@
-package splice.dialect.responses.v4389
+package splice.dialect.responses.tools
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -16,11 +16,8 @@ import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ResponsesRequestBuilder
-import splice.dialect.responses.tools.ToolDeferralPolicy
-import splice.dialect.responses.tools.ToolSearchMode
-import splice.dialect.responses.tools.ToolSurfaceRecovery
 
-class HostedToolRecoveryTest {
+class ResponsesHostedToolRecoveryTest {
     @Test
     fun `hosted search works when every declared tool is deferred`() {
         val parsed = AnthropicParse.parseAnthropicBody(

@@ -30,7 +30,7 @@ private const val PATIENCE_MS = 20_000L
 class JdkWebSocketConnectorTest {
 
     @Test
-    fun `a peer that accepts and then says nothing cannot hang the handshake - DR-185`() {
+    fun `a peer that accepts and then says nothing cannot hang the handshake`() {
         val server = ServerSocket(0)
         val held = mutableListOf<Socket>()
         val accepter = thread(isDaemon = true) {

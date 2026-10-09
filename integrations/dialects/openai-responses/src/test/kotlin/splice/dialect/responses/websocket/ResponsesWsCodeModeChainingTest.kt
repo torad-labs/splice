@@ -1,10 +1,8 @@
-// NEW: V4-446 — a code-mode round chains on the WebSocket the way a function-call round does. Since
-// V4-388 every GPT tool call is `exec`, a custom tool, and the delta classifier knew only function
-// calls, so 199 of 199 traced code-mode continuations bailed to a full send of the whole
-// conversation (parity audit 2026-09-29: 103 of 6,877 WebSocket rounds chained). The item shapes
-// below are the live claudex wire's (trace of 2026-09-29), not the builder's: code mode's history is
-// written by the codex provider, so the dialect's builder never emits them.
-package splice.dialect.responses.v4446
+// A code-mode round chains on the WebSocket the way a function-call round does: the model's exec call is a
+// custom tool call, and a continuation that answers it sends only the script output instead of the whole
+// conversation. The item shapes below are the live wire's, not the builder's: code mode's history is written
+// by the codex provider, so the dialect's builder never emits them.
+package splice.dialect.responses.websocket
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -20,11 +18,7 @@ import org.junit.jupiter.api.Test
 import splice.core.reasoning.ReasoningReplay
 import splice.core.util.LogSink
 import splice.dialect.responses.request.responsesRequestJson
-import splice.dialect.responses.websocket.ResponsesWsIdentity
 import splice.dialect.responses.websocket.ResponsesWsIdentity.PendingCommit
-import splice.dialect.responses.websocket.ResponsesWsSession
-import splice.dialect.responses.websocket.WsFrame
-import splice.dialect.responses.websocket.WsServerEvidence
 
 private const val KEY = "conv-1"
 private const val GEN = 3L
@@ -64,7 +58,7 @@ private fun WsFrame.previous(): String? =
 private fun typesOf(items: List<JsonObject>): List<String> =
     items.map { it["type"]?.jsonPrimitive?.content ?: "message:${it["role"]?.jsonPrimitive?.content}" }
 
-class CodeModeChainingTest {
+class ResponsesWsCodeModeChainingTest {
 
     /** The one round GPT makes all day since V4-388: the model's exec call comes back answered. The
      *  server produced the reasoning and the exec call, so only the script's output is new. */

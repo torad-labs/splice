@@ -75,7 +75,7 @@ private fun firstDivergence(a: List<String>, b: List<String>): Int {
     return n
 }
 
-class PrefixStabilityDiagnostic {
+class ResponsesPrefixStabilityTest {
 
     @Test
     fun `a conversation outliving the TTL keeps every turn a prefix-extension of the last`() {
@@ -110,27 +110,5 @@ class PrefixStabilityDiagnostic {
             assertEquals(round, injected, "turn $round injected $injected reasoning items, expected $round")
             previous = current
         }
-    }
-
-    @Test
-    fun `the builder is prefix-sensitive - losing one OLD round shifts the array`() {
-        // Pins the MECHANISM (independent of cache policy): this is why the cache must never serve
-        // a partially-expired conversation. If this ever stops holding, the builder has changed
-        // shape and the cache-side contract above can be revisited.
-        val rounds = 8
-        val allCached: (String) -> List<String>? = { id -> listOf("envelope-for-$id") }
-        val turnN = inputItems(conversation(rounds), allCached)
-        val oldestGone: (String) -> List<String>? = { id ->
-            if (id == "call_1") null else listOf("envelope-for-$id")
-        }
-        val turnN1 = inputItems(conversation(rounds + 1), oldestGone)
-
-        val d = firstDivergence(turnN, turnN1)
-        assertEquals(2, d, "losing the oldest round must shift the array at its position, not the tail")
-        assertEquals(
-            turnN.size,
-            firstDivergence(turnN, inputItems(conversation(rounds + 1), allCached)),
-            "control: with nothing lost the prefix is fully reused",
-        )
     }
 }

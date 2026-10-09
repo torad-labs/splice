@@ -224,7 +224,7 @@ class LoopGuardTest {
 class LoopGuardDepthTest {
 
     @Test
-    fun `deeply nested tool input cannot blow the canonicalization - DR-95`() {
+    fun `deeply nested tool input cannot blow the canonicalization`() {
         var deep: JsonElement = JsonPrimitive(1)
         repeat(60_000) {
             val inner = deep

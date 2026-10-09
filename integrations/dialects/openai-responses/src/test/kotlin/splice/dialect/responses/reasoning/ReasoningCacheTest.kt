@@ -70,7 +70,7 @@ class ReasoningCacheTest {
         // from the middle of the input array and shifts everything after it. Turn N+1 then stops
         // being a prefix-extension of turn N and OpenAI re-bills the remainder. Before the fix,
         // round 1 expired on the raw insertion TTL while later rounds lived on -- measured at 7.7%
-        // prefix reuse (PrefixStabilityDiagnostic).
+        // prefix reuse (ResponsesPrefixStabilityTest).
         var now = 0L
         val c = ReasoningCache(ttlMs = 100, clock = { now })
         c.put(CONV, listOf("call_1"), listOf("e1"))

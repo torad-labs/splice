@@ -443,7 +443,7 @@ class ResponsesWsSessionTest {
      *  clear bumped seq mid-flight and voided this key's commit — on a busy daemon every tear
      *  anywhere silently defeated chaining for every concurrent conversation. */
     @Test
-    fun `another conversation's clear does not void an in-flight commit - DR-78`() {
+    fun `another conversation's clear does not void an in-flight commit`() {
         val s = ResponsesWsSession()
         val r1 = build(convo(1))
         val epochAtSend = s.epochOf(KEY) // conversation A's round captures its epoch...

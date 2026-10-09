@@ -1,6 +1,6 @@
-// NEW: V4-390 part 2 — a lite turn's tools ride grouped into the `functions` namespace, the list
+// A lite turn's tools ride grouped into the `functions` namespace, the list
 // codex-rs create_tools_json_for_responses_lite builds (tools/src/tool_spec.rs:95-142).
-package splice.dialect.responses.v4390
+package splice.dialect.responses
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -13,8 +13,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
-import splice.dialect.responses.ResponsesFunctionNamespace
-import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.request.BuildOptions
 import splice.dialect.responses.request.ResponsesRequestBuilder
@@ -28,7 +26,7 @@ private const val TOOLS_BODY = """{"model":"claude-codex--gpt-6-sol","stream":tr
       {"name":"Read","description":"Reads a file.","input_schema":{"type":"object"}},
       {"name":"Bash","description":"Runs a command.","input_schema":{"type":"object"}}]}"""
 
-class FunctionNamespaceTest {
+class ResponsesFunctionNamespaceTest {
     private val namespace = ResponsesFunctionNamespace()
 
     @Test

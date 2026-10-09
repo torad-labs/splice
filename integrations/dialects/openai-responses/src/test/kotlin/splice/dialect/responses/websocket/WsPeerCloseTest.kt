@@ -1,12 +1,7 @@
-// NEW: V4-242 (2026-09-26) — a socket the peer closes says so in the failure it leaves behind.
-//
-// The Codex outage of 2026-09-25 closed 167 sockets with 1011 right after codex.rate_limits and
-// codex.response.metadata, before any output. The status and the reason reached the daemon log and
-// nothing else: the listener closed the round's inbox with no cause, so the tear the round threw was a
-// bare "websocket stream ended mid-round", and what the client was finally shown held none of the
-// upstream's words. These run the real transport (WsUpstream, InboxListener, WsRoundStream) against a
-// socket that answers exactly that way.
-package campaign.v4242
+// A socket the peer closes says so in the failure it leaves behind: the close status, its reason and the
+// events the round saw first. These run the real transport (WsUpstream, InboxListener, WsRoundStream) against a
+// socket that answers the way the Codex backend did when it closed with 1011 right after its preamble events.
+package splice.dialect.responses.websocket
 
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
@@ -15,17 +10,13 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import splice.core.util.LogSink
-import splice.dialect.responses.websocket.RoundFrame
-import splice.dialect.responses.websocket.TerminalEvent
-import splice.dialect.responses.websocket.WsConnector
-import splice.dialect.responses.websocket.WsUpstream
 import java.io.IOException
 import java.net.http.WebSocket
 import java.nio.ByteBuffer
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
 
-class PeerCloseNamesItselfTest {
+class WsPeerCloseTest {
     /** Answers each round's frame with [events], then closes with [status] and [reason] when [close]
      *  is set — the JDK delivers both on the socket's own thread, one callback at a time, as here. */
     private class AnsweringSocket(

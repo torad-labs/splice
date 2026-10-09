@@ -308,7 +308,7 @@ class ResponsesStreamTranslatorTest {
     // away on the ONE turn class the cost doctrine is written about. The buffer copies stay
     // skipped (nothing re-anchors a compaction); only the billed burn rides.
     @Test
-    fun `a failed compact turn still carries its billed usage - DR-130`() = runTest {
+    fun `a failed compact turn still carries its billed usage`() = runTest {
         val sink = RecordingSink()
         val outcome = ResponsesStreamTranslator(ctx(compact = true)).driveTurn(
             listOf(
@@ -856,7 +856,7 @@ class ResponsesRunawayGuardTest {
     }
 
     @Test
-    fun `runaway upstream trips the shared buffer cap into an honest local failure - NF-06`() = runTest {
+    fun `runaway upstream trips the shared buffer cap into an honest local failure`() = runTest {
         // 25 x 1M-char text deltas, never a response.completed — the misbehaving-upstream shape.
         // The guard must latch at the shared cap, stop feeding the buffers, and end the turn as a
         // non-provider-reported API_ERROR (never a crash, never a provider attribution).
@@ -890,7 +890,7 @@ class ResponsesRunawayGuardTest {
 // CX-01 in its own class: ResponsesStreamTranslatorTest sits at detekt's LargeClass ceiling.
 class ResponsesToolArgsValidationTest {
     @Test
-    fun `truncated tool arguments plus a terminal is a Failure, not corrupt Success - CX-01`() = runTest {
+    fun `truncated tool arguments plus a terminal is a Failure, not corrupt Success`() = runTest {
         // .done arrives with a mid-string-truncated buffer; pre-fix the block closed as Success.
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
@@ -910,7 +910,7 @@ class ResponsesToolArgsValidationTest {
     }
 
     @Test
-    fun `an opened tool with zero argument deltas is a Failure - CX-01`() = runTest {
+    fun `an opened tool with zero argument deltas is a Failure`() = runTest {
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev(
@@ -926,7 +926,7 @@ class ResponsesToolArgsValidationTest {
     }
 
     @Test
-    fun `valid tool arguments still succeed - CX-01`() = runTest {
+    fun `valid tool arguments still succeed`() = runTest {
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev(
@@ -955,7 +955,7 @@ class ResponsesRefusalHonestyTest {
     // of chat's `a refusal on the content_filter frame carries the model's words` test. The
     // model's stated reason IS the verdict — the generic content-filter phrase discards it.
     @Test
-    fun `a refusal that also trips the content filter carries the model's words - CX-08 ranking`() = runTest {
+    fun `a refusal that also trips the content filter carries the model's words`() = runTest {
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev("""{"type":"response.refusal.delta","output_index":0,"delta":"Refusing: policy."}"""),
@@ -1191,7 +1191,7 @@ class ResponsesRefusalHonestyTest {
 class ResponsesItemDoneToolArgsTest {
 
     @Test
-    fun `truncated args closed by output_item done latch CX-01 - DR-77`() = runTest {
+    fun `truncated args closed by output_item done latch`() = runTest {
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev(
@@ -1213,7 +1213,7 @@ class ResponsesItemDoneToolArgsTest {
     }
 
     @Test
-    fun `item-done-only complete args are emitted and stay a clean success - DR-77`() = runTest {
+    fun `item-done-only complete args are emitted and stay a clean success`() = runTest {
         val sink = RecordingSink()
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
@@ -1234,7 +1234,7 @@ class ResponsesItemDoneToolArgsTest {
     }
 
     @Test
-    fun `the streamed-then-args-done flow is untouched - DR-77 control`() = runTest {
+    fun `the streamed-then-args-done flow is untouched`() = runTest {
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev(
@@ -1260,7 +1260,7 @@ class ResponsesItemDoneToolArgsTest {
     // latched, TerminalStates graded a clean Success, and the client received tool_use carrying
     // truncated JSON. Same latch, same first-reason-wins, now applied before the sweep.
     @Test
-    fun `truncated args left for the end-of-turn sweep still latch CX-01 - DR-106`() = runTest {
+    fun `truncated args left for the end-of-turn sweep still latch`() = runTest {
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev(
@@ -1282,7 +1282,7 @@ class ResponsesItemDoneToolArgsTest {
     // its args never validated, and the client saw two content_block_start(tool_use) with the
     // first dangling. The occupant now closes and validates through closeOpenBlocks first.
     @Test
-    fun `a duplicate added at one output_index closes and validates the evicted block - DR-107`() = runTest {
+    fun `a duplicate added at one output_index closes and validates the evicted block`() = runTest {
         val sink = RecordingSink()
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
@@ -1317,7 +1317,7 @@ class ResponsesItemDoneToolArgsTest {
     // output_index — the text block's wire never closed. With clean tool args the turn stays a
     // Success; the assertion is pure wire hygiene.
     @Test
-    fun `a function_call reusing a text block's index closes the text block first - DR-107`() = runTest {
+    fun `a function_call reusing a text block's index closes the text block first`() = runTest {
         val sink = RecordingSink()
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
@@ -1346,7 +1346,7 @@ class ResponsesItemDoneToolArgsTest {
     // (protocol-corrupt) and polluted the emittedText/textBuf honesty state. Mistargeted deltas
     // drop, the same fate as the passthrough's PT-001 unmapped-index deltas.
     @Test
-    fun `a text delta aimed at an open tool block's index is dropped - DR-108`() = runTest {
+    fun `a text delta aimed at an open tool block's index is dropped`() = runTest {
         val sink = RecordingSink()
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
@@ -1374,7 +1374,7 @@ class ResponsesItemDoneToolArgsTest {
     // input_json_delta inside a text block, and the .done shape could even CLOSE the text block
     // through the args path. Dropped the same way.
     @Test
-    fun `an args delta aimed at an open text block's index is dropped - DR-108`() = runTest {
+    fun `an args delta aimed at an open text block's index is dropped`() = runTest {
         val sink = RecordingSink()
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
@@ -1398,7 +1398,7 @@ class ResponsesItemDoneToolArgsTest {
     // (b.tool false), so the turn graded a clean Success while the client got a corrupt wire. No
     // output_item.added arrives here, so DR-107's eviction never runs and cannot cover this.
     @Test
-    fun `a late tool-args harvest aimed at an open text block is dropped - DR-134`() = runTest {
+    fun `a late tool-args harvest aimed at an open text block is dropped`() = runTest {
         val sink = RecordingSink()
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
@@ -1427,7 +1427,7 @@ class ResponsesItemDoneToolArgsTest {
 class ResponsesStringErrorTest {
 
     @Test
-    fun `a string-typed error payload keeps the vendor's text - DR-109`() = runTest {
+    fun `a string-typed error payload keeps the vendor's text`() = runTest {
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev("""{"type":"error","error":"rate limit exceeded, slow down"}"""),
@@ -1443,7 +1443,7 @@ class ResponsesStringErrorTest {
     }
 
     @Test
-    fun `a string-typed error under response also keeps its text - DR-109`() = runTest {
+    fun `a string-typed error under response also keeps its text`() = runTest {
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev("""{"type":"response.failed","response":{"error":"backend proxy timeout"}}"""),

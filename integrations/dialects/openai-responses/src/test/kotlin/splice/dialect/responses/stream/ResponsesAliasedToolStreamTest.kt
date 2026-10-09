@@ -1,4 +1,4 @@
-package splice.dialect.responses.v4351
+package splice.dialect.responses.stream
 
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
@@ -9,15 +9,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
-import splice.dialect.responses.stream.RecordingSink
-import splice.dialect.responses.stream.ResponsesStreamTranslator
-import splice.dialect.responses.stream.ctx
 import splice.upstream.ToolNameShortener
 
 private const val MUSE_CAP = 64
 private const val TOOL_NAME = "mcp__plugin_some_long_server_name__a_long_tool_name_from_claude_code_123456789"
 
-class MuseResponsesStreamTest {
+class ResponsesAliasedToolStreamTest {
     @Test
     fun `Meta summary deltas are visible while encrypted reasoning and tool identity survive`() = runTest {
         val names = ToolNameShortener(MUSE_CAP) { }

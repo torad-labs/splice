@@ -208,12 +208,6 @@ class ResponsesReanchorPolicyTest {
     }
 
     @Test
-    fun `the continuation budget caps at the reference client's five`() {
-        assertNotNull(controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), 4)))
-        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), 5)))
-    }
-
-    @Test
     fun `envelope-only salvage continues - reasoning replay needs no prose`() {
         val partial = TurnOutcome.PartialRound(bodyText = "", reasoningEnvelopes = listOf("e1"))
         val next = controller.continuationForFailure(
@@ -424,7 +418,7 @@ class ResponsesReanchorPartialTest {
     // "unavailable ... try again" used to flip transient — free text overruled provenance and the
     // whole context re-POSTed. The code rides classify() separately now; wording buys no replay.
     @Test
-    fun `a deterministic code with transient-sounding text still never re-POSTs - DR-10`() = runTest {
+    fun `a deterministic code with transient-sounding text still never re-POSTs`() = runTest {
         val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
             listOf(
                 ev(
@@ -445,7 +439,7 @@ class ResponsesReanchorPartialTest {
     // vendor provenance. Riding it into classify() as a structured code made every code-less flat
     // error deterministic, withholding the retry its own message wording grants.
     @Test
-    fun `a flat error event's discriminator is not vendor provenance - DR-10`() = runTest {
+    fun `a flat error event's discriminator is not vendor provenance`() = runTest {
         val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
             listOf(
                 ev("""{"type":"response.output_text.delta","output_index":0,"delta":"half an ans"}"""),

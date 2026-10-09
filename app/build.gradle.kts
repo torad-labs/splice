@@ -122,6 +122,19 @@ tasks.test {
     // the whole CLASS - every future arm that redirects user.home - not just the two that
     // happen to assert the premise today.
     environment = environment.filterKeys { it != "XDG_CONFIG_HOME" && it != "SPLICE_CONFIG" }
+
+    // THE APP TESTS RUN IN FOUR JVMs AT ONCE, each with a home of its own. They write config and Graal worker files under
+    // their home, so forks sharing one would race on those files. The wrapper java gives every JVM
+    // a fresh `fork-<pid>` home under build/fork-homes, and the doFirst below clears the previous run's.
+    maxParallelForks = 4
+    val forkHomes = layout.buildDirectory.dir("fork-homes").get().asFile
+    val forkJava = rootProject.layout.projectDirectory.file("gradle/fork-home/bin/java").asFile
+    executable = forkJava.absolutePath
+    doFirst {
+        forkHomes.deleteRecursively()
+        forkHomes.mkdirs()
+        environment("SPLICE_FORK_HOME_BASE", forkHomes.absolutePath)
+    }
 }
 
 // THE PUBLIC-SOURCE LAW reads every tree a public repository ships, by name and as text (PublicSourceNamesNoHostToolTest.kt).

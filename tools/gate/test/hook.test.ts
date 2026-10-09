@@ -27,6 +27,8 @@ const VIOLATION = 'class Probe {\n    fun endTurn(out: Writer) {\n        out.wr
 const CLEAN = "class Probe {\n    fun endTurn(out: Writer) {\n        out.close()\n    }\n}\n";
 const L3_TARGET = "core/src/main/kotlin/splice/core/Probe.kt"; // in scope, NOT the emitter
 const L3_EXEMPT = "features/turns/src/main/kotlin/splice/head/wire/SseEmitter.kt"; // the sole emitter
+// The one declaration of the terminal: exempt by its shape (a const val), not by the file that holds it.
+const DECLARATION = 'internal const val MESSAGE_STOP: String = "message_stop"\n';
 const L3_RULE = "kt-l3-sole-wire-terminals";
 
 let root = "";
@@ -84,8 +86,9 @@ describe("gate rules --stdin: the write-time wall", () => {
     expect(runHook("pretooluse", writeEvent(L3_TARGET, CLEAN)).decision).toBeNull();
   });
 
-  test("files glob binds: the same shape inside the sole emitter passes", () => {
-    expect(runHook("pretooluse", writeEvent(L3_EXEMPT, VIOLATION)).decision).toBeNull();
+  test("the sole declaration of the literal passes by its shape, and the same call inside the emitter file still blocks", () => {
+    expect(runHook("pretooluse", writeEvent(L3_EXEMPT, DECLARATION)).decision).toBeNull();
+    expectBlock(runHook("pretooluse", writeEvent(L3_EXEMPT, VIOLATION)), "a path is no longer an exemption");
   });
 
   test("inline suppression is honored", () => {
@@ -127,8 +130,8 @@ describe("gate rules --stdin: the write-time wall", () => {
     });
     try {
       expect(
-        runHook("pretooluse", at(L3_EXEMPT, VIOLATION)).decision,
-        "the sole emitter's exemption must bind inside the worktree",
+        runHook("pretooluse", at(L3_EXEMPT, DECLARATION)).decision,
+        "the declaration's exemption must bind inside the worktree",
       ).toBeNull();
       expect(expectBlock(runHook("pretooluse", at(L3_TARGET, VIOLATION)), "a violation in the worktree must block")).toContain(L3_RULE);
     } finally {

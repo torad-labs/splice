@@ -71,15 +71,19 @@ public class AccountOrderRoute(private val resolver: AccountHeadResolver) {
     )
 
     private suspend fun labels(call: ApplicationCall): List<String>? {
-        val parsed = body.parse(call) ?: return null
+        // JsonBody.parse answers null for a body that is not a JSON object, and its contract leaves
+        // the refusal to the caller (JsonBody.kt:18). This returned without writing one, so Ktor fell
+        // through to 404 Not Found on a head that exists and is selectable — telling the client the
+        // head was missing when the body was the problem. It is the same malformed-order 400 as below.
+        val parsed = body.parse(call) ?: return malformedOrder(call)
         val array = parsed["order"] as? JsonArray
         val labels = array?.mapNotNull { (it as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content }
-        return if (labels == null || labels.size != array.size) {
-            AccountReplies.respondError(call, "body must contain an 'order' array of labels", HttpStatusCode.BadRequest)
-            null
-        } else {
-            labels
-        }
+        return if (labels == null || labels.size != array.size) malformedOrder(call) else labels
+    }
+
+    private suspend fun malformedOrder(call: ApplicationCall): Nothing? {
+        AccountReplies.respondError(call, "body must contain an 'order' array of labels", HttpStatusCode.BadRequest)
+        return null
     }
 
     private suspend fun respond(call: ApplicationCall, target: Target) = AccountReplies.respond(

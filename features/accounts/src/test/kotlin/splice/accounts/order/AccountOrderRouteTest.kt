@@ -54,6 +54,10 @@ class AccountOrderRouteTest {
             """{"order":[null]}""",
             """{"order":["other"]}""",
             """{"order":["primary","primary"]}""",
+            // A body that is not a JSON object at all. These answered 404 Not Found on a head that
+            // exists and is selectable, because the route returned without writing its refusal.
+            "not json at all",
+            "[1,2,3]",
         )) {
             val refused = client.put("/api/auth/head/order") { setBody(body) }
             assertEquals(HttpStatusCode.BadRequest, refused.status, body)

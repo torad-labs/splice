@@ -27,19 +27,16 @@ public object ForeignCredential {
         return masked.isNotEmpty() && masked.none { (head, tail) -> secret.startsWith(head) && secret.endsWith(tail) }
     }
 
-    /** [failure] as the upstream's own when it is an authentication failure whose [body] names a
+    /** [read] as the upstream's own when it is an authentication failure whose [body] names a
      *  credential [sent] cannot be: an API error, transient because the upstream refused itself and may
-     *  stop, in words that say so. Anything else is [failure] unchanged. */
-    public fun upstreamsOwn(failure: ClassifiedFailure, body: String?, sent: Credentials?): ClassifiedFailure {
-        if (failure.type != ErrorType.AUTHENTICATION || !named(body, sent)) return failure
-        return failure.copy(
+     *  stop, in words that say so. Anything else is [read] unchanged. */
+    public fun upstreamsOwn(read: ClassifiedFailure, body: String?, sent: Credentials?): ClassifiedFailure {
+        if (read.type != ErrorType.AUTHENTICATION || !named(body, sent)) return read
+        return read.copy(
             type = ErrorType.API_ERROR,
             // The star run is shortened, so the upstream's sentence fits the client's snippet whole.
-            // SAFE-RENDER-EXEMPT[2026-09-26]: failure is a ClassifiedFailure, never a throwable, and its
-            // message is the classifier's reading of the upstream's HTTP body, whose one secret-shaped part
-            // is the upstream's own masked key, shortened further here (precedent: GrokOAuth.kt:157).
             message = "the upstream rejected a credential this account did not send: " +
-                failure.message.replace(STAR_RUN, SHORT_STARS),
+                read.message.replace(STAR_RUN, SHORT_STARS),
             transient = true,
             cause = FailureCause.UPSTREAM_REPORTED,
         )

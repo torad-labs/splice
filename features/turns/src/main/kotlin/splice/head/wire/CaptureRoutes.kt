@@ -120,12 +120,10 @@ public class CaptureRoutes(
         return captureJson(key, parsed.enabled, retentionDays, maxBodyChars)
     }
 
-    // SAFE-RENDER-EXEMPT[2026-09-20]: TopologyFinding.message is TopologyChecks' own curated
-    // validation text (a path and a reason: missing provider, bad port), never a stored secret or
-    // a throwable's raw text — the same data TopologyRoutes.kt's GET/PUT /api/topology already
-    // renders via plain `put("message", finding.message)`.
     private fun refusalMessage(result: TopologyWriteResult.Refused): String =
-        result.findings.joinToString("; ") { "${it.path}: ${it.message}" }.ifEmpty { "splice.toml write refused" }
+        result.findings
+            .joinToString("; ") { (path, text) -> "$path: $text" }
+            .ifEmpty { "splice.toml write refused" }
 
     private fun decode(writer: TopologyWriter): Topology =
         json.decodeFromJsonElement(Topology.serializer(), writer.current())

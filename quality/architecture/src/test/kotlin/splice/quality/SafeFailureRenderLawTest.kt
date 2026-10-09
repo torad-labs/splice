@@ -105,7 +105,7 @@ internal object SafeFailureRender {
     // A throwable rendered INTO TEXT. Both interpolation forms, because the BARE one is strictly
     // WORSE: `$failure` calls toString(), the class name PLUS the same message.
     private val RENDERED = Regex(
-        ESC_DOLLAR + "\\{[^}]*\\.message[^}]*\\}" +
+        ESC_DOLLAR + "\\{[^}]*\\bexceptionOrNull\\s*\\(\\s*\\)\\s*\\??\\.\\s*message[^}]*\\}" +
             "|" + ESC_DOLLAR + "\\{\\s*" + THROWABLE_NAMED + "\\s*\\}" +
             "|" + ESC_DOLLAR + THROWABLE_NAMED + "\\b",
     )
@@ -186,6 +186,10 @@ internal object SafeFailureRender {
     private val INTERPOLATED_NAME = Regex(
         ESC_DOLLAR + "\\{\\s*(\\w+)\\s*\\}" + "|" + ESC_DOLLAR + "(\\w+)\\b",
     )
+
+    /** `${name.message}`: the member read of a name, so a throwable bound to a local is caught by its binding, and
+     *  a `.message` on anything the binding plane does not call a throwable (a finding, a view) is not a render. */
+    private val INTERPOLATED_MESSAGE = Regex(ESC_DOLLAR + "\\{\\s*(\\w+)\\s*\\??\\.\\s*message\\b[^}]*\\}")
 
     /** The disposition marker: dated so a review can age it, reasoned so it can be judged. */
     private val EXEMPT = Regex("SAFE-RENDER-EXEMPT\\[(\\d{4}-\\d{2}-\\d{2})\\]:[ \\t]*(.*)")
@@ -698,7 +702,7 @@ internal object SafeFailureRender {
     /** A bound name, at the MATCH's own column — a name can be declared, shadowed or closed out of
      *  scope partway along one line. */
     private fun boundNameRendered(line: String, perCol: List<Set<String>>): Boolean =
-        INTERPOLATED_NAME.findAll(line).any { hit ->
+        (INTERPOLATED_NAME.findAll(line) + INTERPOLATED_MESSAGE.findAll(line)).any { hit ->
             val name = hit.groupValues[1].ifEmpty { hit.groupValues[2] }
             val col = hit.range.first
             col < perCol.size && perCol[col].contains(name)
@@ -1095,7 +1099,7 @@ fun a(e: Throwable) = Files.exists(p).also { log("x (${'$'}{SafeFailureText.rend
             RED,
             """package p
 import java.nio.file.Files
-fun a(e: Throwable) = Files.exists(p).also { log("x (${'$'}{e.message})") }""",
+fun a() = try { Files.exists(p) } catch (e: Exception) { log("x (${'$'}{e.message})") }""",
         ),
         Arm(
             "bare \$failure fails",
@@ -1119,7 +1123,7 @@ fun a(failure: Throwable) = java.nio.file.Files.getLastModifiedTime(x).also { lo
             """package p
 import java.nio.file.Files
 // SAFE-RENDER-EXEMPT[2026-08-31]: a bind failure names a port and an address, never file bytes
-fun a(e: Throwable) = Files.exists(p).also { log("x (${'$'}{e.message})") }""",
+fun a() = try { Files.exists(p) } catch (e: Exception) { log("x (${'$'}{e.message})") }""",
         ),
         Arm(
             "blank reason fails",
@@ -1128,7 +1132,7 @@ fun a(e: Throwable) = Files.exists(p).also { log("x (${'$'}{e.message})") }""",
             """package p
 import java.nio.file.Files
 // SAFE-RENDER-EXEMPT[2026-08-31]:
-fun a(e: Throwable) = Files.exists(p).also { log("x (${'$'}{e.message})") }""",
+fun a() = try { Files.exists(p) } catch (e: Exception) { log("x (${'$'}{e.message})") }""",
         ),
         Arm(
             "placeholder reason fails",
@@ -1137,7 +1141,7 @@ fun a(e: Throwable) = Files.exists(p).also { log("x (${'$'}{e.message})") }""",
             """package p
 import java.nio.file.Files
 // SAFE-RENDER-EXEMPT[2026-08-31]: TODO decide later
-fun a(e: Throwable) = Files.exists(p).also { log("x (${'$'}{e.message})") }""",
+fun a() = try { Files.exists(p) } catch (e: Exception) { log("x (${'$'}{e.message})") }""",
         ),
         Arm(
             "short reason fails",
@@ -1146,7 +1150,7 @@ fun a(e: Throwable) = Files.exists(p).also { log("x (${'$'}{e.message})") }""",
             """package p
 import java.nio.file.Files
 // SAFE-RENDER-EXEMPT[2026-08-31]: fs only
-fun a(e: Throwable) = Files.exists(p).also { log("x (${'$'}{e.message})") }""",
+fun a() = try { Files.exists(p) } catch (e: Exception) { log("x (${'$'}{e.message})") }""",
         ),
         Arm(
             "undated marker fails",
@@ -1155,7 +1159,7 @@ fun a(e: Throwable) = Files.exists(p).also { log("x (${'$'}{e.message})") }""",
             """package p
 import java.nio.file.Files
 // SAFE-RENDER-EXEMPT: a bind failure names a port and an address, never any file bytes
-fun a(e: Throwable) = Files.exists(p).also { log("x (${'$'}{e.message})") }""",
+fun a() = try { Files.exists(p) } catch (e: Exception) { log("x (${'$'}{e.message})") }""",
         ),
         Arm(
             "out-of-scope file is not flagged",

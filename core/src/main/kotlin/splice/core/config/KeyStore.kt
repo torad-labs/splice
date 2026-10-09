@@ -14,6 +14,7 @@ import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.core.util.PathProbe
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.nio.channels.FileChannel
@@ -200,10 +201,8 @@ public class KeyStore(
                 warnedCorruptMtime.set(null)
                 return TolerantRead(read.getOrDefault(emptyMap()), null)
             } else {
-                // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: MTIME_UNREADABLE only keys the dedup; the warning below is logged either way
-                val mtime = Cancellables.runCatchingCancellable {
-                    Files.getLastModifiedTime(path)
-                }.getOrDefault(MTIME_UNREADABLE)
+                // MTIME_UNREADABLE only keys the dedup; the warning below is logged either way.
+                val mtime = PathProbe.modified(path) ?: MTIME_UNREADABLE
                 val seen = warnedCorruptMtime.get()
                 if (mtime != seen && warnedCorruptMtime.compareAndSet(seen, mtime)) {
                     // Epistemically honest consequence (DR-40, codex): "your keys are still in the

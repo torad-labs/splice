@@ -2,7 +2,7 @@
 // separate from WrappedHead's symlink/state transaction; both reconciliation and unwrap use it.
 package splice.client.wrap
 
-import splice.core.util.Cancellables
+import splice.core.util.PathProbe
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -22,8 +22,8 @@ internal object WrapBinaryVersions {
      *  version-named file counts, so a partial download or any other executable there is never chosen. */
     fun newestBeside(gone: Path): Path? {
         val dir = gone.parent ?: return null
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-29: an unreadable directory has no newest version; the caller says so
-        val entries = Cancellables.runCatchingCancellable { Files.list(dir).use { it.toList() } }.getOrNull().orEmpty()
+        // An unreadable directory has no newest version; the caller says so.
+        val entries = PathProbe.entries(dir)
         return entries.filter { isVersion(it) && Files.isRegularFile(it) && Files.isExecutable(it) }
             .maxWithOrNull(compareBy<Path, List<Int>>(VersionOrder) { versionParts(it.fileName.toString()) })
     }

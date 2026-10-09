@@ -7,6 +7,7 @@ package splice.client.wrap
 import splice.client.login.LoginHookScripts
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.core.util.PathProbe
 import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -106,8 +107,8 @@ internal object HeadCommandsDir {
         // rename so no reader ever sees the name absent. A staged-name collision (crashed attempt
         // debris, or a fault-injection double) fails BEFORE dst is touched.
         val alreadyCorrect = present && dst.isSymbolicLink() &&
-            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an unreadable link is not "already correct"; it is replaced below
-            Cancellables.runCatchingCancellable { Files.readSymbolicLink(dst) }.getOrNull() == src
+            // An unreadable link is not "already correct"; it is replaced below.
+            PathProbe.linkTarget(dst) == src
         when {
             alreadyCorrect || (present && dst.isDirectory(NOFOLLOW_LINKS)) -> Unit
             !present -> Files.createSymbolicLink(dst, src)

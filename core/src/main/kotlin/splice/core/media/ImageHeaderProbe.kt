@@ -92,8 +92,13 @@ public class ImageHeaderProbe {
             if (window.length == HEADER_B64_CHARS) break
         }
         val aligned = window.substring(0, window.length - window.length % B64_GROUP)
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: invalid base64 is "unknown" by contract (KDoc above), not a failure
-        return runCatching { Base64.getDecoder().decode(aligned) }.getOrNull()?.let { probe(it) }
+        // Invalid base64 is "unknown" by contract (KDoc above), not a failure.
+        val bytes = try {
+            Base64.getDecoder().decode(aligned)
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        return probe(bytes)
     }
 
     // The IHDR tag is REQUIRED, not just the 8-byte magic: the first chunk's length field alone

@@ -18,10 +18,9 @@ package splice.core.config
 
 import splice.core.auth.BearerScheme
 import splice.core.auth.ScopedKey
-import splice.core.util.Cancellables
+import splice.core.util.PathProbe
 import splice.core.util.SecureFile
 import java.nio.charset.StandardCharsets.UTF_8
-import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 
@@ -47,8 +46,8 @@ public class TurnKey(private val management: MgmtKey) {
     public fun headerFile(): Path {
         val path = management.keyFile.resolveSibling(TURN_AUTH_HEADER_FILE)
         val wanted = "Authorization: Bearer $value\n"
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: unreadable means rewrite; writeAtomic0600 below throws on a real failure
-        val current = Cancellables.runCatchingCancellable { Files.readString(path) }.getOrNull()
+        // Unreadable means rewrite; writeAtomic0600 below throws on a real failure.
+        val current = PathProbe.text(path)
         if (current != wanted) SecureFile.writeAtomic0600(path, wanted)
         return path
     }

@@ -3,8 +3,8 @@ package splice.core.process
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import splice.core.util.Cancellables
 import splice.core.util.SecureFile
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -54,14 +54,20 @@ public class LaunchOwners(
         )
     }
 
+    private fun record(file: Path): LaunchOwner? = try {
+        if (Files.size(file) > RECORD_LIMIT) null else json.decodeFromString<LaunchOwner>(Files.readString(file))
+    } catch (_: IOException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
     /** Unknown, malformed and reused identities never name a head. A gone record is reaped. */
     public fun read(pid: Long): LaunchOwner? {
         if (pid <= 0) return null
         val file = directory.resolve("$pid.json")
-        // ast-grep-ignore: kt-no-silent-result-collapse -- an unreadable or malformed owner record is no evidence of ownership
-        val owner = Cancellables.runCatchingCancellable {
-            if (Files.size(file) > RECORD_LIMIT) null else json.decodeFromString<LaunchOwner>(Files.readString(file))
-        }.getOrNull() ?: return null
+        // An unreadable or malformed owner record is no evidence of ownership.
+        val owner = record(file) ?: return null
         val process = processes.inspect(pid)
         if (process == null) Files.deleteIfExists(file)
         return owner.takeIf {

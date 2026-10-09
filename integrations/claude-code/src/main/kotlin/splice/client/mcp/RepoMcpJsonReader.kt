@@ -6,7 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.client.ClaudeHomes
 import splice.client.Keys
 import splice.client.RealPathOrSelf
-import splice.core.util.Cancellables
+import splice.core.util.PathProbe
 import java.nio.file.Path
 
 /** Kind REPO: a repo's own `.mcp.json`. The denominator is every project path any home's
@@ -31,7 +31,7 @@ public class RepoMcpJsonReader(private val homeParent: Path) : McpSourceReader {
 
     private fun projectPaths(file: Path): List<Path> {
         val projects = json.topLevel(file)[Keys.PROJECTS] as? JsonObject ?: return emptyList()
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a key that is not a path names no repo to read
-        return projects.keys.mapNotNull { Cancellables.runCatchingCancellable { Path.of(it) }.getOrNull() }
+        // A key that is not a path names no repo to read.
+        return projects.keys.mapNotNull(PathProbe::spelled)
     }
 }

@@ -15,9 +15,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.JsonWire
@@ -72,11 +70,13 @@ public object ReasoningReplay {
     // foreign/garbled payloads pass through as null
     public fun decodeReasoningEnvelope(data: String?, log: LogSink = LogSink(DaemonLog::write)): JsonObject? {
         val parsed = data?.takeIf { it.isNotEmpty() }?.let { encoded ->
-            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an undecodable envelope is dropped AND logged below (CMP-002)
-            Cancellables.runCatchingCancellable {
-                val text = Base64.getDecoder().decode(encoded).toString(Charsets.UTF_8)
-                lenient.parseToJsonElement(text).jsonObject
-            }.getOrNull()
+            // An undecodable envelope is dropped AND logged below (CMP-002). Bad base64 and bad JSON both throw
+            // IllegalArgumentException.
+            try {
+                JsonScalars.objectOrNull(lenient, Base64.getDecoder().decode(encoded).toString(Charsets.UTF_8))
+            } catch (_: IllegalArgumentException) {
+                null
+            }
         }
         val tagOk = (parsed?.get(FIELD_TAG) as? JsonPrimitive)?.content == REASONING_ENVELOPE_TAG
         val versionOk = (parsed?.get(FIELD_VERSION) as? JsonPrimitive)?.content == REASONING_ENVELOPE_VERSION.toString()

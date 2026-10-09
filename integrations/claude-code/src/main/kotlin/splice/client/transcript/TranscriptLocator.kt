@@ -29,7 +29,7 @@
 package splice.client.transcript
 
 import splice.client.Keys
-import splice.core.util.Cancellables
+import splice.core.util.PathProbe
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -51,19 +51,19 @@ internal interface TranscriptFiles {
 
 internal object DiskTranscriptFiles : TranscriptFiles {
     override fun directories(dir: Path): List<Path> =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- an absent or unreadable projects tree holds no transcript, which is what Missing reports with every path it searched
-        Cancellables.runCatchingCancellable { Files.newDirectoryStream(dir).use { it.filter(Files::isDirectory) } }
-            .getOrDefault(emptyList())
+        // An absent or unreadable projects tree holds no transcript, which is what Missing reports with every path
+        // it searched.
+        PathProbe.entries(dir).filter(Files::isDirectory)
 
     override fun isFile(path: Path): Boolean = Files.isRegularFile(path)
 
     override fun modified(path: Path): Long? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- a directory that does not exist has no time; null is recorded as its state, so its creation moves the stamp
-        Cancellables.runCatchingCancellable { Files.getLastModifiedTime(path).to(TimeUnit.NANOSECONDS) }.getOrNull()
+        // A directory that does not exist has no time; null is recorded as its state, so its creation moves the stamp.
+        PathProbe.modified(path)?.to(TimeUnit.NANOSECONDS)
 
     override fun realPath(dir: Path): Path =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- a projects dir that does not exist has no real path; its absolute name keys it, and walking it finds nothing
-        Cancellables.runCatchingCancellable { dir.toRealPath() }.getOrDefault(dir.toAbsolutePath().normalize())
+        // A projects dir that does not exist has no real path; its absolute name keys it, and walking it finds nothing.
+        PathProbe.resolved(dir) ?: dir.toAbsolutePath().normalize()
 }
 
 // why: well above the sessions one daemon lists at once, live and from history; past it the least recently used is

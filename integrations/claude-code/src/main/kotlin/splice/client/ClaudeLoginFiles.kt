@@ -16,6 +16,7 @@ import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.util.PathProbe
 import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -91,8 +92,8 @@ internal class LoginStore(private val dir: Path) {
 
     fun selected(): String? {
         val file = dir.resolve(SELECTED_FILE)
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: no readable marker is "nothing selected" by contract
-        val marker = Cancellables.runCatchingCancellable { Files.readString(file).trim() }.getOrNull()
+        // No readable marker is "nothing selected" by contract.
+        val marker = PathProbe.text(file)?.trim()
         return marker?.takeIf { it.isNotEmpty() && it in labels() }
     }
 
@@ -128,12 +129,12 @@ internal class LoginStore(private val dir: Path) {
 
     /** Used only to prove which saved name belongs to the live credential; no token enters the result. */
     fun credentialKey(label: String): String? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- an unreadable copy proves no live display name or edit target
-        Cancellables.runCatchingCancellable {
-            val oauth = json.parseToJsonElement(credentials(label)).jsonObject["claudeAiOauth"] as? JsonObject
+        // An unreadable copy proves no live display name or edit target.
+        PathProbe.text(credential(label))?.let { text ->
+            val oauth = JsonScalars.objectOrNull(json, text)?.get("claudeAiOauth") as? JsonObject
             val token = oauth?.get("accessToken")?.let(JsonScalars::strIfString)?.takeIf(String::isNotBlank)
             token?.let { CredentialKey.fromHeaders(mapOf("Authorization" to "Bearer $it")) }
-        }.getOrNull()
+        }
 
     fun relabel(old: String, label: String) {
         val selected = selected()

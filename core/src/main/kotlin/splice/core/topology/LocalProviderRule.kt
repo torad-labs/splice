@@ -5,6 +5,7 @@
 package splice.core.topology
 
 import java.net.URI
+import java.net.URISyntaxException
 
 internal class LocalProviderRule {
     private val loopbackHosts = setOf("localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0")
@@ -13,6 +14,12 @@ internal class LocalProviderRule {
         dialect == Dialect.OPENAI_CHAT && isLoopback(baseUrl)
 
     fun isLoopback(baseUrl: String): Boolean =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a base URL that does not parse is not loopback
-        runCatching { URI(baseUrl).host }.getOrNull()?.lowercase() in loopbackHosts
+        // A base URL that does not parse is not loopback.
+        host(baseUrl)?.lowercase() in loopbackHosts
+
+    private fun host(baseUrl: String): String? = try {
+        URI(baseUrl).host
+    } catch (_: URISyntaxException) {
+        null
+    }
 }

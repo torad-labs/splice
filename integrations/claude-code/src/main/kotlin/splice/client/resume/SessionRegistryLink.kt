@@ -17,6 +17,7 @@ package splice.client.resume
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.core.util.PathProbe
 import splice.core.util.SafeFailureText
 import java.nio.file.CopyOption
 import java.nio.file.Files
@@ -61,8 +62,8 @@ internal class SessionRegistryLink(
     fun link(globalSessions: Path, dst: Path, log: LogSink = LogSink(DaemonLog::write)) {
         if (!ensureGlobalRegistry(globalSessions, log)) return
         if (dst.isSymbolicLink()) {
-            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an unreadable link is relinked below, and a failed relink logs its cause
-            val target = Cancellables.runCatchingCancellable { Files.readSymbolicLink(dst) }.getOrNull()
+            // An unreadable link is relinked below, and a failed relink logs its cause.
+            val target = PathProbe.linkTarget(dst)
             if (target == globalSessions) return
         } else if (Files.exists(dst, NOFOLLOW_LINKS) && !Files.isDirectory(dst, NOFOLLOW_LINKS)) {
             // Unexpected content is preserved, but no longer SILENTLY (DR-39, codex): a head

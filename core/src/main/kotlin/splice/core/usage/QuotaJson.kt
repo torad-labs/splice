@@ -8,11 +8,10 @@ import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 
 public class QuotaJson {
     private val json = Json { ignoreUnknownKeys = true }
@@ -24,16 +23,16 @@ public class QuotaJson {
         put("updated_at", snapshot.updatedAt)
     }.toString()
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: corrupt content is no snapshot until the next poll rewrites it (QuotaTracker.readFile)
-    public fun decode(text: String): QuotaSnapshot? = Cancellables.runCatchingCancellable {
-        val root = json.parseToJsonElement(text).jsonObject
-        QuotaSnapshot(
+    // Corrupt content is no snapshot until the next poll rewrites it (QuotaTracker.readFile).
+    public fun decode(text: String): QuotaSnapshot? {
+        val root = JsonScalars.objectOrNull(json, text) ?: return null
+        return QuotaSnapshot(
             fiveHour = (root["five_hour"] as? JsonObject)?.let(::window),
             sevenDay = (root["seven_day"] as? JsonObject)?.let(::window),
             plan = (root["plan"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
             updatedAt = (root["updated_at"] as? JsonPrimitive)?.longOrNull ?: 0L,
-        )
-    }.getOrNull()?.takeIf { !it.isEmpty }
+        ).takeIf { !it.isEmpty }
+    }
 
     private fun window(into: JsonObjectBuilder, w: QuotaWindow) {
         into.put("used_percent", w.usedPercent)

@@ -14,15 +14,15 @@ package splice.core.compaction
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 import splice.core.config.UserHome
-import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.JsonScalars
 import splice.core.util.MonoClock
+import splice.core.util.PathProbe
+import java.io.IOException
+import java.io.UncheckedIOException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
 
 private const val PROJECT_MISS_TTL_MS = 5_000L
@@ -93,41 +93,33 @@ public class SessionProject(
             .firstOrNull()
     }
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a transcript Claude Code wrote that cannot be read names no cwd; projectFor records a retried miss
-    private fun cwdFromTranscript(file: Path, sessionId: String): Path? = Cancellables
-        .runCatchingCancellable {
-            Files.newBufferedReader(file).useLines { lines ->
-                lines.mapNotNull(::parseJson)
-                    .firstNotNullOfOrNull { row ->
-                        val rowSession = JsonScalars.str(row, "sessionId")
-                        if (rowSession == sessionId) JsonScalars.str(row, "cwd")?.let(::absolutePath) else null
-                    }
-            }
+    // A transcript Claude Code wrote that cannot be read names no cwd; projectFor records a retried miss.
+    private fun cwdFromTranscript(file: Path, sessionId: String): Path? = try {
+        Files.newBufferedReader(file).useLines { lines ->
+            lines.mapNotNull(::parseJson)
+                .firstNotNullOfOrNull { row ->
+                    val rowSession = JsonScalars.str(row, "sessionId")
+                    if (rowSession == sessionId) JsonScalars.str(row, "cwd")?.let(::absolutePath) else null
+                }
         }
-        .getOrNull()
+    } catch (_: IOException) {
+        null
+    } catch (_: UncheckedIOException) {
+        null
+    }
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an unreadable registry entry names no project; projectFor records a retried miss
-    private fun readJson(path: Path): JsonObject? = Cancellables
-        .runCatchingCancellable { parseJson(Files.readString(path)) }
-        .getOrNull()
+    // An unreadable registry entry names no project; projectFor records a retried miss.
+    private fun readJson(path: Path): JsonObject? = PathProbe.text(path)?.let(::parseJson)
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: text that is not a JSON object is data, not a failure; every caller skips it
-    private fun parseJson(text: String): JsonObject? = Cancellables
-        .runCatchingCancellable { json.parseToJsonElement(text).jsonObject }
-        .getOrNull()
+    // Text that is not a JSON object is data, not a failure; every caller skips it.
+    private fun parseJson(text: String): JsonObject? = JsonScalars.objectOrNull(json, text)
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a recorded cwd that is not a valid absolute path names no project
-    private fun absolutePath(raw: String): Path? = Cancellables
-        .runCatchingCancellable { Paths.get(raw).normalize().takeIf { it.isAbsolute } }
-        .getOrNull()
+    // A recorded cwd that is not a valid absolute path names no project.
+    private fun absolutePath(raw: String): Path? = PathProbe.spelled(raw)?.normalize()?.takeIf { it.isAbsolute }
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an unresolvable dir is deduplicated by its normalized absolute path instead
-    private fun realPath(dir: Path): Path = Cancellables
-        .runCatchingCancellable { dir.toRealPath() }
-        .getOrDefault(dir.toAbsolutePath().normalize())
+    // An unresolvable dir is deduplicated by its normalized absolute path instead.
+    private fun realPath(dir: Path): Path = PathProbe.resolved(dir) ?: dir.toAbsolutePath().normalize()
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a missing or unlistable directory holds no candidates; projectFor records a retried miss
-    private fun directoryEntries(path: Path): List<Path> = Cancellables
-        .runCatchingCancellable { Files.newDirectoryStream(path).use { it.toList() } }
-        .getOrDefault(emptyList())
+    // A missing or unlistable directory holds no candidates; projectFor records a retried miss.
+    private fun directoryEntries(path: Path): List<Path> = PathProbe.entries(path)
 }

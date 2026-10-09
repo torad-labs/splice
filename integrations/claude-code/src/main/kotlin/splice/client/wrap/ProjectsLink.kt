@@ -62,6 +62,7 @@ package splice.client.wrap
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.core.util.PathProbe
 import splice.core.util.SafeFailureText
 import java.nio.file.CopyOption
 import java.nio.file.FileSystemException
@@ -161,8 +162,8 @@ internal class ProjectsLink(
     fun link(globalProjects: Path, dst: Path, log: LogSink = LogSink(DaemonLog::write)) {
         if (!ensureGlobalProjects(globalProjects, log)) return
         if (dst.isSymbolicLink()) {
-            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an unreadable link is relinked below, and a failed relink logs its cause
-            val target = Cancellables.runCatchingCancellable { Files.readSymbolicLink(dst) }.getOrNull()
+            // An unreadable link is relinked below, and a failed relink logs its cause.
+            val target = PathProbe.linkTarget(dst)
             if (target == globalProjects) {
                 sweepLeftovers(dst, globalProjects, log)
                 return

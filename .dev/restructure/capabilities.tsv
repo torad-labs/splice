@@ -3962,3 +3962,4 @@ integrations/http/src/test/kotlin/splice/http/SseResponseTest.kt	created		its te
 tools/gate/src/lib/gradle-settings.ts	created		reads the included builds settings.gradle.kts declares from its syntax tree, failing on a spelling it cannot resolve so no build drops out of the coverage denominator
 tools/gate/test/gradle-settings.test.ts	created		pins that the repo's included builds are counted and an unresolvable declaration fails instead of dropping a build
 features/turns/src/test/kotlin/splice/head/admission/TurnQuotaTest.kt	created		the head resolves one quota tracker per turn, pinned through admission instead of the deleted kt-quota-tracker-single-resolution wall
+core/src/main/kotlin/splice/core/util/PathProbe.kt	created		the filesystem reads whose whole answer to unreadable is nothing there, each naming the exceptions it takes, so callers drop runCatching collapses

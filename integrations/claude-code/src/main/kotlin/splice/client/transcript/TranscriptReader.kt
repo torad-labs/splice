@@ -73,7 +73,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.client.Keys
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.sessions.transcript.CONVERSATION_READ_UNAVAILABLE
 import splice.sessions.transcript.MAX_TRANSCRIPT_PAGE
@@ -85,6 +84,7 @@ import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
 import splice.sessions.transcript.TranscriptReadBudget
 import splice.sessions.transcript.TranscriptRole
+import java.io.IOException
 import java.nio.channels.Channels
 import java.nio.file.Files
 import java.nio.file.Path
@@ -119,8 +119,12 @@ public class TranscriptReader(
     override fun last(sessionId: String, roots: List<Path>, cwd: String?): TranscriptMessage? {
         val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId, cwd) else null
         if (file == null) return null
-        // ast-grep-ignore: kt-no-silent-result-collapse -- a removed or unreadable transcript has no available activity; the registry row still exists independently
-        return Cancellables.runCatchingCancellable { tail.read(file) }.getOrNull()
+        // A removed or unreadable transcript has no available activity; the registry row still exists independently.
+        return try {
+            tail.read(file)
+        } catch (_: IOException) {
+            null
+        }
     }
 
     override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup {
@@ -263,9 +267,13 @@ public class TranscriptReader(
     }
 
     private fun parse(bytes: ByteArray): JsonObject? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- an unparseable line is COUNTED by PageAssembly (skipped["unparseable"]), never fatal: one bad line must not lose the session
-        Cancellables.runCatchingCancellable { json.parseToJsonElement(bytes.toString(Charsets.UTF_8)).jsonObject }
-            .getOrNull()
+        // An unparseable line is COUNTED by PageAssembly (skipped["unparseable"]), never fatal: one bad line must not
+        // lose the session.
+        try {
+            json.parseToJsonElement(bytes.toString(Charsets.UTF_8)).jsonObject
+        } catch (_: IllegalArgumentException) {
+            null
+        }
 
     /** `<offset>.<index>`, both non-negative; "1.2.3" and "-1.0" are refused, never guessed at. */
     private fun parseCursor(cursor: String?): Position? {

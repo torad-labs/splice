@@ -25,6 +25,7 @@ import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.core.util.PathProbe
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.nio.file.Files
@@ -218,9 +219,8 @@ public class ConfigService(
     private val discardStreakLogged = AtomicBoolean(false)
 
     private fun logFileLayerDiscard(cause: Throwable?) {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: a null mtime falls to the streak guard below; the discard is logged either way
-        val mtime = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(statePaths.configFile) }
-            .getOrNull()
+        // A null mtime falls to the streak guard below; the discard is logged either way.
+        val mtime = PathProbe.modified(statePaths.configFile)
         if (mtime != null) {
             val seen = discardLoggedFor.get()
             if (mtime == seen || !discardLoggedFor.compareAndSet(seen, mtime)) return

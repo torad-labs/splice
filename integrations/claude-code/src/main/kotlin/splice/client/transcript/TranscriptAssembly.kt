@@ -8,7 +8,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.sessions.transcript.SKIPPED_SIDECHAIN
 import splice.sessions.transcript.SKIPPED_UNPARSEABLE
@@ -169,7 +168,11 @@ internal class TranscriptRecords {
         blocks.mapNotNull { (it as? JsonObject)?.let { b -> JsonScalars.str(b, "text") } }.joinToString("\n")
 
     fun timestamp(record: JsonObject): Long? = JsonScalars.str(record, "timestamp")?.let { raw ->
-        // ast-grep-ignore: kt-no-silent-result-collapse -- ts is optional in the contract; a record whose timestamp does not parse simply carries none
-        Cancellables.runCatchingCancellable { java.time.Instant.parse(raw).toEpochMilli() }.getOrNull()
+        // ts is optional in the contract; a record whose timestamp does not parse simply carries none.
+        try {
+            java.time.Instant.parse(raw).toEpochMilli()
+        } catch (_: java.time.format.DateTimeParseException) {
+            null
+        }
     }
 }

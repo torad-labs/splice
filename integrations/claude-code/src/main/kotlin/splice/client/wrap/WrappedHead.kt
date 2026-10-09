@@ -35,6 +35,7 @@ import splice.core.config.StatePaths
 import splice.core.util.Cancellables
 import splice.core.util.FileTightening
 import splice.core.util.JsonScalars
+import splice.core.util.PathProbe
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -64,11 +65,11 @@ public class WrapStateStore(
         prettyPrint = true
     }
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: unwrap() refuses on null, naming missing or unreadable state; status omits the path
-    public fun read(): WrapState? = Cancellables.runCatchingCancellable {
-        val obj = json.parseToJsonElement(Files.readString(file)) as JsonObject
-        val realBinaryPath = JsonScalars.str(obj, "real_binary_path") ?: return@runCatchingCancellable null
-        WrapState(
+    // unwrap() refuses on null, naming missing or unreadable state; status omits the path.
+    public fun read(): WrapState? {
+        val obj = PathProbe.text(file)?.let { JsonScalars.objectOrNull(json, it) } ?: return null
+        val realBinaryPath = JsonScalars.str(obj, "real_binary_path") ?: return null
+        return WrapState(
             realBinaryPath = realBinaryPath,
             shadowedSymlinkTarget = JsonScalars.strOrEmpty(obj["shadowed_symlink_target"]),
             shimPath = JsonScalars.strOrEmpty(obj["shim_path"]),
@@ -76,7 +77,7 @@ public class WrapStateStore(
             claudeJsonBackupPath = JsonScalars.strOrEmpty(obj["claude_json_backup_path"]),
             wrappedAtEpochMillis = JsonScalars.long(obj, "wrapped_at_epoch_millis") ?: 0L,
         )
-    }.getOrNull()
+    }
 
     public fun write(state: WrapState) {
         val body = buildJsonObject {
@@ -179,8 +180,8 @@ public class WrappedHead(
         val cmd = commandPath
         val shim = shimPath
         val wrapped = isWrapShim(cmd, shim)
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-29: an unresolvable command reports no resolvesTo
-        val resolvesTo = Cancellables.runCatchingCancellable { cmd.toRealPath().toString() }.getOrNull()
+        // An unresolvable command reports no resolvesTo.
+        val resolvesTo = PathProbe.resolved(cmd)?.toString()
         return ClaudeHeadStatus(
             mode = if (wrapped) "wrapped" else "separate",
             resolvesTo = resolvesTo,
@@ -256,8 +257,8 @@ public class WrappedHead(
 
     private fun readyFromSymlink(cmd: Path): WrapPreflight {
         val shadowedTarget = Files.readSymbolicLink(cmd).toString()
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: the null becomes the dangling-link Refused below
-        val realBinaryPath = Cancellables.runCatchingCancellable { cmd.toRealPath().toString() }.getOrNull()
+        // The null becomes the dangling-link Refused below.
+        val realBinaryPath = PathProbe.resolved(cmd)?.toString()
         return if (realBinaryPath != null) {
             WrapPreflight.Ready(shadowedTarget, realBinaryPath)
         } else {
@@ -321,8 +322,8 @@ public class WrappedHead(
      *  the shim back. */
     private fun rewrap(cmd: Path, shim: Path, state: WrapState): ReconcileResult {
         val target = Files.readSymbolicLink(cmd).toString()
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-29: a target that does not resolve is the Waiting below, not a failure to report
-        val real = Cancellables.runCatchingCancellable { cmd.toRealPath() }.getOrNull()
+        // A target that does not resolve is the Waiting below, not a failure to report.
+        val real = PathProbe.resolved(cmd)
             ?: return ReconcileResult.Waiting("$cmd -> $target does not resolve yet")
         stateStore.write(
             state.copy(
@@ -342,10 +343,9 @@ public class WrappedHead(
      *  NOT wrapped — the honest default when the fact cannot be established (only proven state is
      *  asserted, matching every other absence read in this package). */
     private fun isWrapShim(cmd: Path, shim: Path): Boolean {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: unresolvable reads as NOT wrapped by contract (KDoc above)
-        val cmdReal = Cancellables.runCatchingCancellable { cmd.toRealPath() }.getOrNull() ?: return false
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: unresolvable reads as NOT wrapped by contract (KDoc above)
-        val shimReal = Cancellables.runCatchingCancellable { shim.toRealPath() }.getOrNull() ?: return false
+        // Unresolvable reads as NOT wrapped by contract (KDoc above).
+        val cmdReal = PathProbe.resolved(cmd) ?: return false
+        val shimReal = PathProbe.resolved(shim) ?: return false
         return cmdReal == shimReal
     }
 

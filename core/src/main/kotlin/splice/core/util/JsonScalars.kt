@@ -10,6 +10,7 @@
 // parameter — `el.str()` reads `JsonScalars.str(el)`. Same bodies, same names, same semantics.
 package splice.core.util
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -70,4 +71,11 @@ public object JsonScalars {
         keys.firstNotNullOfOrNull { key ->
             str(obj?.get(key))?.toDoubleOrNull()?.toLong()
         }
+
+    /** [text] parsed by [json] as an object; null when it is not valid JSON or not an object. */
+    public fun objectOrNull(json: Json, text: String): JsonObject? = try {
+        json.parseToJsonElement(text) as? JsonObject
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 }

@@ -2108,7 +2108,6 @@ quality/rules/kotlin/kt-no-unsafe-bang-bang.yml	retain	quality/rules/kotlin/kt-n
 quality/rules/kotlin/kt-no-unsafe-cast.yml	retain	quality/rules/kotlin/kt-no-unsafe-cast.yml	Architecture and static enforcement
 quality/rules/kotlin/kt-no-vanilla-config-dir.yml	retain	quality/rules/kotlin/kt-no-vanilla-config-dir.yml	Architecture and static enforcement
 quality/rules/kotlin/kt-outcome-tag-single-source.yml	retain	quality/rules/kotlin/kt-outcome-tag-single-source.yml	Architecture and static enforcement
-quality/rules/kotlin/kt-quota-tracker-single-resolution.yml	retain	quality/rules/kotlin/kt-quota-tracker-single-resolution.yml	Architecture and static enforcement
 quality/rules/kotlin/kt-secure-file-single-source.yml	retain	quality/rules/kotlin/kt-secure-file-single-source.yml	Architecture and static enforcement
 quality/rules/kotlin/kt-shared-summary-parts-single-source.yml	retain	quality/rules/kotlin/kt-shared-summary-parts-single-source.yml	Architecture and static enforcement
 quality/rules/kotlin/kt-state-paths-single-source.yml	retain	quality/rules/kotlin/kt-state-paths-single-source.yml	Architecture and static enforcement
@@ -2166,7 +2165,6 @@ quality/rules/rule-tests/kt-no-unsafe-bang-bang-test.yml	retain	quality/rules/ru
 quality/rules/rule-tests/kt-no-unsafe-cast-test.yml	retain	quality/rules/rule-tests/kt-no-unsafe-cast-test.yml	Architecture and static enforcement
 quality/rules/rule-tests/kt-no-vanilla-config-dir-test.yml	retain	quality/rules/rule-tests/kt-no-vanilla-config-dir-test.yml	Architecture and static enforcement
 quality/rules/rule-tests/kt-outcome-tag-single-source-test.yml	retain	quality/rules/rule-tests/kt-outcome-tag-single-source-test.yml	Architecture and static enforcement
-quality/rules/rule-tests/kt-quota-tracker-single-resolution-test.yml	retain	quality/rules/rule-tests/kt-quota-tracker-single-resolution-test.yml	Architecture and static enforcement
 quality/rules/rule-tests/kt-secure-file-single-source-test.yml	retain	quality/rules/rule-tests/kt-secure-file-single-source-test.yml	Architecture and static enforcement
 quality/rules/rule-tests/kt-shared-summary-parts-single-source-test.yml	retain	quality/rules/rule-tests/kt-shared-summary-parts-single-source-test.yml	Architecture and static enforcement
 quality/rules/rule-tests/kt-state-paths-single-source-test.yml	retain	quality/rules/rule-tests/kt-state-paths-single-source-test.yml	Architecture and static enforcement
@@ -3963,3 +3961,4 @@ integrations/http/src/main/kotlin/splice/http/SseResponse.kt	created		the head S
 integrations/http/src/test/kotlin/splice/http/SseResponseTest.kt	created		its test, moved with it
 tools/gate/src/lib/gradle-settings.ts	created		reads the included builds settings.gradle.kts declares from its syntax tree, failing on a spelling it cannot resolve so no build drops out of the coverage denominator
 tools/gate/test/gradle-settings.test.ts	created		pins that the repo's included builds are counted and an unresolvable declaration fails instead of dropping a build
+features/turns/src/test/kotlin/splice/head/admission/TurnQuotaTest.kt	created		the head resolves one quota tracker per turn, pinned through admission instead of the deleted kt-quota-tracker-single-resolution wall

@@ -193,5 +193,4 @@ class PerfSessionAccountIndexTest {
             "a same-sized suffix repair still needs a byte proof when stamps cannot prove it",
         )
     }
-
 }

@@ -1,5 +1,10 @@
 id: kt-l2-single-mirror-definition
 valid:
+  # the one definition, exempt by its shape: a member of class Mirror
+  - |
+    internal class Mirror {
+        public suspend fun mirrorInto(sink: WireSink, thinking: String) {}
+    }
   - 'fun mirrorText(sink: WireSink) {}'
   - 'mirrorInto(sink, thinking, opts)'
   - 'fun process(mirrorInto: String) {}'
@@ -8,4 +13,9 @@ invalid:
   - |
     public suspend fun mirrorInto(sink: WireSink, thinking: String) {
         sink.addTextBlock(thinking)
+    }
+  # the same member of any other class is a second definition
+  - |
+    internal class Other {
+        public suspend fun mirrorInto(sink: WireSink, thinking: String) {}
     }

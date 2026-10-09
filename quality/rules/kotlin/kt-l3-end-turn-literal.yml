@@ -11,16 +11,20 @@
 id: kt-l3-end-turn-literal
 language: kotlin
 severity: error
-message: "L3: `end_turn` is derived inside SseEmitter.emitTerminal — no other file may hold the literal."
+message: "L3: `end_turn` is declared once, as SseEmitter's END_TURN const, and derived inside SseEmitter.emitTerminal — no other literal may hold it."
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
-ignores:
-  - features/turns/src/main/kotlin/**/wire/SseEmitter.kt
 rule:
   any:
-    - kind: string_content
-      regex: \bend_turn\b
+    # the one declaration of each literal is a const val, exempt by that shape and not by the file that holds it
+    - all:
+        - kind: string_content
+          regex: \bend_turn\b
+        - not:
+            inside:
+              matches: single-source-declaration
+              stopBy: end
     - all:
         - kind: additive_expression
         - has:

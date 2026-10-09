@@ -25,6 +25,7 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
+import splice.core.wire.ANTHROPIC_ASSISTANT_ROLE
 import splice.core.wire.ErrorEnvelope
 import splice.upstream.sse.SourceFrameAction
 import splice.upstream.sse.WireSink
@@ -34,8 +35,9 @@ import java.util.concurrent.atomic.AtomicReference
 
 private const val TYPE = "type"
 private const val MESSAGE = "message"
-private const val MESSAGE_DELTA = "message_delta"
-private const val MESSAGE_STOP = "message_stop"
+internal const val MESSAGE_DELTA: String = "message_delta"
+internal const val MESSAGE_STOP: String = "message_stop"
+internal const val END_TURN: String = "end_turn"
 
 // Only the sole terminal owns the protocol event names; generic relays cannot write these frames.
 internal val nativeProtocolEvents: Set<String> = setOf(
@@ -281,7 +283,7 @@ internal class SseEmitter(
             buildJsonObject {
                 put("id", msg.id)
                 put(TYPE, MESSAGE)
-                put("role", "assistant")
+                put("role", ANTHROPIC_ASSISTANT_ROLE)
                 put("content", buildJsonArray { msg.content.forEach { add(it) } })
                 put("model", msg.model)
                 put("stop_reason", deriveStopReason(msg.hasToolUse, msg.incomplete))
@@ -295,7 +297,7 @@ internal class SseEmitter(
         internal fun deriveStopReason(hasToolUse: Boolean, incomplete: Boolean): String = when {
             hasToolUse -> "tool_use"
             incomplete -> "max_tokens"
-            else -> "end_turn"
+            else -> END_TURN
         }
     }
 }

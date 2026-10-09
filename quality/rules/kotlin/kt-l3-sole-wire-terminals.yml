@@ -12,16 +12,20 @@
 id: kt-l3-sole-wire-terminals
 language: kotlin
 severity: error
-message: "L3: only features/turns/src/main/kotlin/**/wire/SseEmitter.kt may hold `message_stop`/`message_delta` literals."
+message: "L3: `message_stop`/`message_delta` are declared once, as SseEmitter's MESSAGE_STOP and MESSAGE_DELTA consts — no other literal may hold them."
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
-ignores:
-  - features/turns/src/main/kotlin/**/wire/SseEmitter.kt
 rule:
   any:
-    - kind: string_content
-      regex: \b(message_stop|message_delta)\b
+    # the one declaration of each literal is a const val, exempt by that shape and not by the file that holds it
+    - all:
+        - kind: string_content
+          regex: \b(message_stop|message_delta)\b
+        - not:
+            inside:
+              matches: single-source-declaration
+              stopBy: end
     - all:
         - kind: additive_expression
         - has:

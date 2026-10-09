@@ -1,9 +1,13 @@
 id: kt-l3-end-turn-literal
 valid:
+  # the one declaration, exempt by its shape: a const val
+  - 'internal const val END_TURN: String = "end_turn"'
   - 'val reason = StopReason.TOOL_USE'
   - '// end_turn named in a comment is fine'
   - 'val msg = "stream ended: " + reason'
   - 'val msg = "the " + "turnaround"'
 invalid:
+  # a literal that is not a const declaration is the drift this wall exists for
+  - 'val END_TURN = "end_turn"'
   - 'val reason = "end_turn"'
   - 'val reason = "end_" + "turn"'

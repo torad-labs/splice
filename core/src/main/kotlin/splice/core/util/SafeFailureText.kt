@@ -72,8 +72,8 @@ public object SafeFailureText {
         is TopologySlotsFailure -> failure.problem.detail
         is TopologyTypeFailure ->
             "splice.toml: ${failure.key} at line ${failure.line} expects ${failure.expected.label}"
-        // SAFE-RENDER-EXEMPT[2026-09-01]: these exact filesystem/network classes carry paths,
-        // hosts or timeouts, never parsed file values; this sanctioned renderer cannot recurse.
+        // These exact filesystem/network classes carry paths, hosts or timeouts, never parsed file values.
+        // This function is the wall's sink, named by file and function in SafeFailureRenderLawTest.
         is java.nio.file.FileSystemException,
         is java.net.SocketException,
         is java.net.UnknownHostException,
@@ -81,6 +81,14 @@ public object SafeFailureText {
         is java.io.EOFException,
         -> failure.toString()
         else -> "failure (message withheld: it may quote file bytes)"
+    }
+
+    /** The first line of the text a decoder gave for an input its CALLER masked before decoding, every secret in
+     *  it replaced by the mask. Such a text can quote only the operator's own request and the mask, never a stored
+     *  secret or file bytes, so it is the one throwable text this object hands out whole. A caller that has not
+     *  masked its input uses [render]. */
+    public fun maskedInputRefusal(failure: Throwable): String {
+        return failure.message.orEmpty().lineSequence().first()
     }
 
     /** Where [failure] was thrown, as ` at File.kt:LINE` for the first frame in splice's own code. A

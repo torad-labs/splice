@@ -95,10 +95,11 @@ public class TopologyRoutes(private val source: TopologyWriterSource, private va
     /** Decode the MASKED request first, so a decoder message can only ever quote the mask; then put
      *  the stored secrets back, decode again, and write. */
     private fun attempt(writer: TopologyWriter, requested: JsonObject): Attempt {
-        decode(requested).exceptionOrNull()?.let { failure ->
-            // SAFE-RENDER-EXEMPT[2026-09-18]: the decoded input is the request body with every extra_headers value masked, so the decoder's text quotes the operator's own request and the mask, never a stored secret or file bytes; only its first line is kept.
-            return Attempt(refused(TopologyFinding(TOPOLOGY, failure.message.orEmpty().lineSequence().first())))
-        }
+        val masked = decode(requested).fold(
+            onSuccess = { null },
+            onFailure = { SafeFailureText.maskedInputRefusal(it) },
+        )
+        if (masked != null) return Attempt(refused(TopologyFinding(TOPOLOGY, masked)))
         val secrets = TopologySecrets()
         val stored = writer.current()
         val unmasked = secrets.unmasked(requested, stored)

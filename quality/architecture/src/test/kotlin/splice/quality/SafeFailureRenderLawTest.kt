@@ -172,8 +172,14 @@ internal object SafeFailureRender {
     // so the body can still be read for compliance evidence without re-declaring anything.
     private val INNER_DECL = Regex("\\b(?:val|var)\\b")
 
+    /** The one function the whole wall routes through, named by file and function. */
+    private const val SANCTIONED_SINK_FILE = "core/src/main/kotlin/splice/core/util/SafeFailureText.kt"
+    private val SANCTIONED_SINK_DECL = Regex(
+        "\\bfun\\s+(?:render|maskedInputRefusal)\\s*\\(\\s*failure\\s*:\\s*Throwable\\s*\\)",
+    )
+
     /** A site that already obeys the law, enumerated DELIBERATELY even though it can never violate. */
-    private val COMPLIANT = Regex("SafeFailureText\\.render\\(")
+    private val COMPLIANT = Regex("SafeFailureText\\.(?:render|maskedInputRefusal)\\(")
 
     /** Any interpolated identifier, so the binding tier can be asked "does THIS name mean a
      *  throwable at THIS column" in one pass rather than once per known name. */
@@ -770,14 +776,42 @@ internal object SafeFailureRender {
         val markers = inScope(source)
         if (markers.isEmpty()) return emptyList()
         val lens = lens(source)
-        return lens.lines.indices.mapNotNull { idx -> site(lens, idx, path, markers) }
+        val sink = if (path == SANCTIONED_SINK_FILE) sanctionedSink(lens) else emptyList()
+        return lens.lines.indices.mapNotNull { idx -> site(lens, idx, path, markers, sink.any { idx in it }) }
     }
 
-    private fun site(lens: Lens, idx: Int, path: String, markers: List<String>): Site? {
+    /** The lines of [SANCTIONED_SINK_FUNCTION]'s body, from the line declaring it to the line closing its brace.
+     *  This function IS the sink every other site routes through, so what it does with a throwable is the
+     *  rule itself and not a violation of it; it is named by file and by function, so a raw render anywhere else
+     *  in that file, or in any other file, is judged as every site is. */
+    private fun sanctionedSink(lens: Lens): List<IntRange> = lens.text.indices
+        .filter { SANCTIONED_SINK_DECL.containsMatchIn(lens.text[it]) }
+        .mapNotNull { start -> bodyEnd(lens, start)?.let { start..it } }
+
+    private fun bodyEnd(lens: Lens, start: Int): Int? {
+        var depth = 0
+        var opened = false
+        for (idx in start until lens.text.size) {
+            for (ch in lens.text[idx]) {
+                depth += braceStep(ch)
+                opened = opened || ch == '{'
+            }
+            if (opened && depth == 0) return idx
+        }
+        return null
+    }
+
+    private fun braceStep(ch: Char): Int = when (ch) {
+        '{' -> 1
+        '}' -> -1
+        else -> 0
+    }
+
+    private fun site(lens: Lens, idx: Int, path: String, markers: List<String>, inSink: Boolean): Site? {
         val rendered = rendersThrowable(lens, idx)
         val routed = COMPLIANT.containsMatchIn(lens.text[idx])
         if (!rendered && !routed) return null
-        val verdict = disposition(lens, idx)
+        val verdict = if (inSink) Verdict(COMPLIANT_VERDICT, null) else disposition(lens, idx)
         return Site(path, idx + 1, lens.lines[idx].trim(), verdict.verdict, verdict.detail, markers)
     }
 
@@ -915,6 +949,32 @@ class SafeFailureRenderLawTest {
         }
     }
 
+    /** The sanctioned renderer is the sink by identity: its own body may render a throwable, and nothing else in
+     *  its file, and nothing in any other file, may. */
+    @Test
+    fun `the sanctioned renderer is the sink by identity - DR-65`(@TempDir root: File) {
+        with(Tree(root)) {
+            val coreMap = ProjectMap.parse(root, ":core=core;:app=app", setOf("build"))
+            fun census() = SafeFailureRender.sites(SafeFailureRender.sources(coreMap), root)
+            val file = "core/src/main/kotlin/splice/core/util/SafeFailureText.kt"
+            place(file, SANCTIONED_RENDERER)
+            val census = census()
+            assertEquals(emptyList<String>(), SafeFailureRender.violations(census), "render's own body is the sink")
+            assertTrue(census.any { it.text.contains("failure.toString()") }, "the sink's render is still in the roll")
+
+            place(file, SANCTIONED_RENDERER + SANCTIONED_NEIGHBOUR)
+            assertHit(SafeFailureRender.violations(census()), "SafeFailureText.kt:", BLAME) {
+                "a raw render beside render, in the same file, is RED"
+            }
+
+            File(root, file).delete()
+            place("$PROBE_DIR/Other.kt", SANCTIONED_RENDERER.replace("splice.core.util", "splice.probe"))
+            assertHit(SafeFailureRender.violations(census()), "Other.kt:", BLAME) {
+                "the same body in any other file is RED"
+            }
+        }
+    }
+
     /** THE BORING CASE — the smallest tree this wall can grade — and the two ways a file leaves the
      *  denominator. A routed site STAYS in the roll, because scoring only the raw form would let the
      *  count shrink by one every time a site was fixed. */
@@ -981,6 +1041,21 @@ class SafeFailureRenderLawTest {
 
     private companion object {
         const val PROBE_DIR = "app/src/main/kotlin/splice/probe"
+
+        const val SANCTIONED_RENDERER = """package splice.core.util
+
+import java.nio.file.Files
+
+public object SafeFailureText {
+    public fun render(failure: Throwable): String = when (failure) {
+        is java.io.EOFException -> failure.toString()
+        else -> "withheld"
+    }
+}
+"""
+        const val SANCTIONED_NEIGHBOUR = """
+internal fun beside(failure: Throwable): String = Files.exists(p).let { "x ${'$'}{failure.message}" }
+"""
         const val OUTSIDE_MAP = "unmapped/src/main/kotlin/splice/outside/Outside.kt"
         const val BLAME = "renders a throwable raw"
         const val VACUITY_FILES = 100

@@ -769,7 +769,7 @@ tools/         engineering tools: gate/ (the ladder and its selftests), e2e/ (fi
                release/ (release validation and licenses), codemods/ (source migrations)
 install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
 .claude/       the write-time hook wiring (settings.json); its tests live in tools/gate/test/
-.dev/          research notes, the restructure census, release runbooks
+.dev/          research notes, the restructure move records, release runbooks
 docs/         architecture and design docs (PROVENANCE.md, the request-byte contract), product specs (specs/), README assets
 .github/       workflows, the community health files, issue and PR templates
 ```

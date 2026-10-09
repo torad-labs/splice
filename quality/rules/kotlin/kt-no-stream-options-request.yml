@@ -24,13 +24,16 @@ files:
 # TEXT, delimiters included — a Kotlin raw string (`"""include_usage"""`) has different delimiters
 # and different full text, so it walked straight through while producing the identical banned
 # runtime string. Anchored against the inner string_content node instead, which is delimiter-
-# agnostic: it matches the content of both `"include_usage"` and `"""include_usage"""` alike. The
-# `integrations/dialects/openai-chat/**` exemption is unaffected and still discriminates against the 2
-# real files there that legitimately carry the string.
-ignores:
-  - integrations/dialects/openai-chat/**
+# agnostic: it matches the content of both `"include_usage"` and `"""include_usage"""` alike.
+# The chat dialect's one spelling is a const val (INCLUDE_USAGE), exempt by that shape and not by the module that
+# holds it; `gate rules` fails when the literal is declared more than once.
 rule:
-  kind: string_literal
-  has:
-    kind: string_content
-    regex: '^include_usage$'
+  all:
+    - kind: string_literal
+    - has:
+        kind: string_content
+        regex: '^include_usage$'
+    - not:
+        inside:
+          matches: single-source-declaration
+          stopBy: end

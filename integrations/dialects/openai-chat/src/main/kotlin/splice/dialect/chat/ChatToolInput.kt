@@ -11,10 +11,13 @@ import splice.core.util.JsonWire
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ToolUseBlock
 
+/** The role word of an assistant message in a Chat Completions request. */
+private const val CHAT_ASSISTANT_ROLE: String = "assistant"
+
 internal class ChatToolInput {
     fun appendCalls(sink: JsonArrayBuilder, toolUses: List<ToolUseBlock>, texts: String) {
         sink.addJsonObject {
-            put("role", "assistant")
+            put("role", CHAT_ASSISTANT_ROLE)
             if (texts.isNotEmpty()) put(CONTENT, texts) else put(CONTENT, null as String?)
             put(
                 "tool_calls",

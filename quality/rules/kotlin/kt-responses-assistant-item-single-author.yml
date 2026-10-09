@@ -8,21 +8,17 @@
 #
 # CENSUS AT AUTHORING (2026-09-26, derived from the tree at 84f1af3c7 with this rule): three
 # hand-built assistant items in the Responses dialect, all moved onto the factory in V4-342 with
-# their bytes pinned (v4342/AssistantTextSingleAuthorTest). Seven with the ignores dropped: the
-# other four are THE IGNORES below.
+# their bytes pinned (v4342/AssistantTextSingleAuthorTest). The other four were the other wires, see below.
 #   tools/ResponsesToolSearchPolicy.kt  `assistantText`       — no phase; now commentary, the
 #                                                                    phase the builder gives prose
 #                                                                    a tool_use follows
 #   reasoning/ResponsesReanchorPolicy.kt `reanchorMarker`      — commentary, bytes unchanged
 #   stream/ResponsesFold.kt                  `continuationMarker`  — commentary, bytes unchanged
 #
-# THE IGNORES are the other wires, whose assistant role is not a Responses input item and never
-# reaches a code-mode record (the reason is stated here):
-#   features/turns                    the Anthropic message the client reads: SSE `message_start`
-#                                     (MessageStart.kt) and the non-stream terminal (SseEmitter.kt)
-#   integrations/dialects/openai-chat the Chat Completions `messages` role (ChatWireMapper.kt)
-#   integrations/dialects/anthropic   the Anthropic passthrough re-anchor's assistant turn
-#                                     (PassthroughReanchorPolicy.kt)
+# THE OTHER WIRES say their own assistant role word and are not this rule's subject: the Anthropic message the client
+# reads (core's ANTHROPIC_ASSISTANT_ROLE, used by MessageStart, SseEmitter and the passthrough re-anchor) and the Chat
+# Completions `messages` role (the chat dialect's CHAT_ASSISTANT_ROLE). Each wire names its own constant, so no module
+# is excluded by path and a Responses item written by hand still reads `assistant` or ROLE_ASSISTANT here.
 #
 # THE MATCHER is the second argument of a `put` call: the constant `ROLE_ASSISTANT` or the literal
 # word `assistant`. That is the value of an assistant item's role, however the key is spelled, and
@@ -36,11 +32,6 @@ note: "Code mode compares the items it recorded with the client's replay by valu
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
-ignores:
-  # Other wires: their assistant role is not a Responses input item (see THE IGNORES above).
-  - features/turns/**
-  - integrations/dialects/openai-chat/**
-  - integrations/dialects/anthropic/**
 rule:
   all:
     - kind: call_expression

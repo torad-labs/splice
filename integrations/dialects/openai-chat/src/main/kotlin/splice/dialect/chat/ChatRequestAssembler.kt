@@ -14,6 +14,9 @@ import splice.core.wire.AnthropicRequest
 import splice.core.wire.ToolChoiceMapping
 
 /** The per-request knob pair threaded to [ChatRequestAssembler.chatRequestObject] (LongParameterList budget). */
+/** The one spelling of the stream option that makes an OpenAI-compatible chat stream carry a usage frame. */
+internal const val INCLUDE_USAGE: String = "include_usage"
+
 internal data class ChatKnobs(val effort: String?, val cacheKey: String?, val idSlot: Int? = null)
 
 internal class ChatRequestAssembler(private val quirks: ChatQuirks, private val wire: ChatWireMapper) {
@@ -41,7 +44,7 @@ internal class ChatRequestAssembler(private val quirks: ChatQuirks, private val 
             promptCacheKey = knobs.cacheKey,
             idSlot = knobs.idSlot,
             streamOptions = if (quirks.emitUsageInStream) {
-                buildJsonObject { put("include_usage", true) }
+                buildJsonObject { put(INCLUDE_USAGE, true) }
             } else {
                 null
             },

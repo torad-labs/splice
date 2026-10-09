@@ -58,6 +58,7 @@ import kotlinx.serialization.json.put
 import splice.core.turn.DEFAULT_MAX_CONTINUATIONS
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
+import splice.core.wire.ANTHROPIC_ASSISTANT_ROLE
 import splice.upstream.ReanchorPolicy
 import splice.upstream.ReanchorRound
 
@@ -115,7 +116,7 @@ public class PassthroughReanchorPolicy(
     }
 
     private fun assistantPrefill(text: String): JsonObject = buildJsonObject {
-        put("role", "assistant")
+        put("role", ANTHROPIC_ASSISTANT_ROLE)
         put(
             "content",
             buildJsonArray {

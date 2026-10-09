@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import splice.core.wire.ANTHROPIC_ASSISTANT_ROLE
 
 private const val TYPE = "type"
 private const val MESSAGE = "message"
@@ -67,7 +68,7 @@ internal class MessageStart(
             putJsonObject(MESSAGE) {
                 put("id", messageId)
                 put(TYPE, MESSAGE)
-                put("role", "assistant")
+                put("role", ANTHROPIC_ASSISTANT_ROLE)
                 putJsonArray("content") {}
                 put("model", model)
                 put("stop_reason", null as String?)

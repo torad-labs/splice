@@ -8,10 +8,7 @@ package splice.app.provider
 import kotlinx.coroutines.CoroutineScope
 import splice.app.TokenUrlRefreshCall
 import splice.core.config.StatePaths
-import splice.core.topology.AuthKind
-import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Dialect
-import splice.core.topology.DialectWires
 import splice.core.util.LogSink
 import splice.oauth.grok.GrokRefresh
 import java.util.concurrent.atomic.AtomicBoolean
@@ -90,27 +87,9 @@ internal class ProviderAssembly(
         return ctx.copy(providerCfg = declared.copy(dialect = Dialect.OPENAI_RESPONSES, baseUrl = responsesBase))
     }
 
-    /** Registered auth kinds are promises with a finite compatibility matrix. Kimi OAuth also binds
-     *  to the Kimi provider ID that owns its Moonshot wire identity. Unknown/custom kinds
-     *  intentionally retain the api-key fallback in each arm. */
+    /** A pairing [AuthCompatibility] refuses never reaches here: the boot names it first. This is the invariant. */
     private fun requireCompatibleAuth(ctx: ProviderBuild) {
-        val kind = AuthKindRegistry.from(ctx.providerCfg.auth.kind) ?: return
-        val dialect = ctx.providerCfg.dialect
-        val provider = ctx.head.provider
-        require(isCompatible(kind, dialect, provider)) {
-            "head '${ctx.key}' has incompatible auth kind '${kind.wire}' " +
-                "for provider '$provider' and dialect '${DialectWires.name(dialect)}'"
-        }
+        val refusal = AuthCompatibility.refusal(ctx.key, ctx.head.provider, ctx.providerCfg)
+        require(refusal == null) { refusal.orEmpty() }
     }
-
-    private fun isCompatible(kind: AuthKind, dialect: Dialect, provider: String): Boolean = when (kind) {
-        AuthKind.ChatgptOAuth -> dialect == Dialect.OPENAI_RESPONSES
-        AuthKind.GrokOAuth -> dialect == Dialect.OPENAI_RESPONSES || dialect == Dialect.OPENAI_CHAT
-        AuthKind.KimiOAuth -> dialect == Dialect.ANTHROPIC_PASSTHROUGH && provider == "kimi"
-        AuthKind.MuseOAuth -> museDialectAllowed(dialect, provider)
-        AuthKind.Client -> dialect == Dialect.ANTHROPIC_PASSTHROUGH
-    }
-
-    private fun museDialectAllowed(dialect: Dialect, provider: String): Boolean =
-        provider == "muse" && (dialect == Dialect.OPENAI_RESPONSES || dialect == Dialect.ANTHROPIC_PASSTHROUGH)
 }

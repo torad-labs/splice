@@ -45,10 +45,11 @@ internal class CodeModeWorkerLossTest {
                 ),
             )
             val initial = Sink()
-            manager.interceptor(turn(), disableParallel = false).intercept(body(), initial) { outer() }
+            manager.interceptor(turn(), disableParallel = false).interceptOutcome(body(), initial) { outer() }
             val id = initial.ids.single()
             val pending = async {
-                manager.interceptor(turn(id), disableParallel = false).intercept(body(id), Sink()) { completed() }
+                manager.interceptor(turn(id), disableParallel = false)
+                    .interceptOutcome(body(id), Sink()) { completed() }
             }
             runtime.entered.await()
             real.close()
@@ -57,7 +58,7 @@ internal class CodeModeWorkerLossTest {
             assertEquals(ErrorType.OVERLOADED, failure.type)
             assertFalse(failure.deterministic)
             var continued = ""
-            val retry = manager.interceptor(turn(id), disableParallel = false).intercept(body(id), Sink()) {
+            val retry = manager.interceptor(turn(id), disableParallel = false).interceptOutcome(body(id), Sink()) {
                 continued = it
                 completed()
             }

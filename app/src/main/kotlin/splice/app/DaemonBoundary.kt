@@ -95,19 +95,9 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
         Result.failure(failure)
     }
 
-    /** The operator-facing reason a boundary-captured failure carries, for the rare throwable with
-     *  no message. Named by BRANCH over the three classes [runCatchingDaemonBoundary] can actually
-     *  produce — the catch list above IS the closed set — rather than by reflecting on the runtime
-     *  class, which is what this used to do. */
-    // SAFE-RENDER-EXEMPT[2026-09-13]: HeadBoot assembly may discover pooled credential files.
-    // OAuthAccountFiles wraps parser failures in an authored outer message and its metadata checks
-    // never quote field values, so the message returned here cannot carry credential content.
-    internal fun reason(failure: Throwable): String = failure.message ?: when (failure) {
-        is IOException -> "IOException"
-        is IllegalArgumentException -> "IllegalArgumentException"
-        is IllegalStateException -> "IllegalStateException"
-        else -> "boundary failure"
-    }
+    /** The operator-facing reason a boundary-captured failure carries: rendered as [SafeFailureText] does, with the
+     *  splice line it came from, because its message may quote the credential file it was parsing. */
+    internal fun reason(failure: Throwable): String = SafeFailureText.render(failure) + SafeFailureText.site(failure)
 
     // Timestamps every log line and tees it to a persistent daemon.log (so failures and slow turns
     // survive restarts and are `tail -f`-able) in addition to stderr. The turn path only enqueues an

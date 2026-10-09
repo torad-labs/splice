@@ -7,6 +7,7 @@ package splice.app.head
 import splice.app.DaemonBoundary
 import splice.app.HeadAssembly
 import splice.app.control.ManagedHead
+import splice.app.provider.AuthCompatibility
 import splice.core.config.StatePaths
 import splice.core.topology.HeadConfig
 import splice.core.topology.Topology
@@ -43,21 +44,22 @@ internal class HeadBoot {
         // out so the assembly loop keeps a single continue (detekt LoopWithTooManyJumpStatements).
         for ((key, head) in topology.heads.filterKeys { it !in collidingHeads && it !in invalidPorts.keys }) {
             val providerCfg = topology.providers[head.provider]
-            if (providerCfg == null) {
-                failed[key] = "unknown provider '${head.provider}'"
-                log("[$key][boot] SKIPPED: unknown provider '${head.provider}'\n")
+            val unbootable = if (providerCfg == null) {
+                "unknown provider '${head.provider}'"
+            } else {
+                AuthCompatibility.refusal(key, head.provider, providerCfg)
+            }
+            if (unbootable != null) {
+                failed[key] = unbootable
+                log("[$key][boot] SKIPPED: $unbootable\n")
                 continue
             }
-            boundary.runCatchingDaemonBoundary { assemble(key, head, providerCfg) }
+            boundary.runCatchingDaemonBoundary { assemble(key, head, checkNotNull(providerCfg)) }
                 .onSuccess {
                     heads[key] = it
                     logUnlisted(key, head, it, log)
                 }
                 .onFailure {
-                    // SAFE-RENDER-EXEMPT[2026-09-13]: assembly discovers pooled credential files,
-                    // but OAuthAccountFiles wraps parser failures in an authored outer message and
-                    // never quotes parsed metadata values. Other assembly refusals retain the
-                    // auth/dialect tuple AuthDialectCompatibilityBootTest pins for diagnosis.
                     val reason = boundary.reason(it)
                     failed[key] = reason
                     log("[$key][boot] SKIPPED (build failed): $reason\n")

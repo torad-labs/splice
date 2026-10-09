@@ -72,7 +72,7 @@ class CodeModeBridgeRuntimeTest {
             ).copy(startTimeoutMs = 1_000),
         ).use { runtime ->
             val outcome = bridge(runtime).interceptor(turn(), disableParallel = false)
-                .intercept(BRIDGE_BASE_REQUEST, Sink()) { outer("/* private source marker */ return 1;") }
+                .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) { outer("/* private source marker */ return 1;") }
             assertTrue(outcome is TurnOutcome.Failure)
             val failure = outcome as TurnOutcome.Failure
             assertEquals(upstreamUsage, failure.salvagedUsage)
@@ -83,7 +83,7 @@ class CodeModeBridgeRuntimeTest {
             runtime().use { recovered ->
                 var posted = ""
                 val retry = bridge(recovered).interceptor(turn(), disableParallel = false)
-                    .intercept(BRIDGE_BASE_REQUEST, Sink()) {
+                    .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) {
                         posted = it
                         TurnOutcome.Success(false, false, Usage(), messageClosed = true)
                     }
@@ -111,8 +111,9 @@ class CodeModeBridgeRuntimeTest {
         ).use { runtime ->
             val manager = bridge(runtime)
             val pending = async {
-                manager.interceptor(turn(), disableParallel = false)
-                    .intercept(BRIDGE_BASE_REQUEST, Sink()) { outer("return 'boot-recovered';") } as TurnOutcome.Failure
+                val outcome = manager.interceptor(turn(), disableParallel = false)
+                    .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) { outer("return 'boot-recovered';") }
+                outcome as TurnOutcome.Failure
             }
             val child = withTimeout(5_000) { spawned.await() }
             // The turn must select the first boot before its EOF, not race automatic prewarm recovery.
@@ -123,7 +124,7 @@ class CodeModeBridgeRuntimeTest {
             assertFalse(first.deterministic)
             var posted = ""
             val retry = manager.interceptor(turn(), disableParallel = false)
-                .intercept(BRIDGE_BASE_REQUEST, Sink()) {
+                .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) {
                     posted = it
                     TurnOutcome.Success(false, false, Usage(), messageClosed = true)
                 }
@@ -131,7 +132,7 @@ class CodeModeBridgeRuntimeTest {
             assertEquals("boot-recovered", completedOutput(posted))
             assertEquals(2, spawns.get())
             manager.interceptor(turn(), disableParallel = false)
-                .intercept(BRIDGE_BASE_REQUEST, Sink()) {
+                .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) {
                     assertEquals("boot-recovered", completedOutput(it))
                     TurnOutcome.Success(false, false, Usage(), messageClosed = true)
                 }
@@ -146,7 +147,7 @@ class CodeModeBridgeRuntimeTest {
             val bridge = bridge(runtime)
             val sink = Sink()
             val first = bridge.interceptor(turn(), disableParallel = false)
-                .intercept(BRIDGE_BASE_REQUEST, sink) {
+                .interceptOutcome(BRIDGE_BASE_REQUEST, sink) {
                     outer(
                         """
                         await tools.call('Read', {});
@@ -161,7 +162,7 @@ class CodeModeBridgeRuntimeTest {
             var upstream = ""
             var posts = 0
             val completed = bridge.interceptor(turn(id, "result"), disableParallel = false)
-                .intercept(requestWithResult(id, "result"), Sink()) {
+                .interceptOutcome(requestWithResult(id, "result"), Sink()) {
                     posts++
                     upstream = it
                     TurnOutcome.Success(false, false, Usage(), messageClosed = true)
@@ -183,7 +184,7 @@ class CodeModeBridgeRuntimeTest {
             val bridge = bridge(runtime)
             val startup = async {
                 bridge.interceptor(turn(), disableParallel = false)
-                    .intercept(BRIDGE_BASE_REQUEST, Sink()) { outer("while (true) {}") }
+                    .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) { outer("while (true) {}") }
             }
             val child = withTimeout(5_000) { spawned.await() }
             yield()
@@ -201,7 +202,7 @@ class CodeModeBridgeRuntimeTest {
             val occupied = runtime.start("await tools.call('Read', {});", setOf("Read"))
             val source = "//" + "é".repeat(32_768)
             val failure = bridge(runtime).interceptor(turn(), disableParallel = false)
-                .intercept(BRIDGE_BASE_REQUEST, Sink()) { outer(source) } as TurnOutcome.Failure
+                .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) { outer(source) } as TurnOutcome.Failure
             assertTrue(failure.message.contains("source exceeds"), failure.message)
             assertEquals(upstreamUsage, failure.salvagedUsage)
             assertTrue(occupied.advance() is CodeModeStep.Calls)
@@ -217,7 +218,7 @@ class CodeModeBridgeRuntimeTest {
             assertEquals(65_536, source.encodeToByteArray().size)
             var posts = 0
             val outcome = bridge(runtime).interceptor(turn(), disableParallel = false)
-                .intercept(BRIDGE_BASE_REQUEST, Sink()) {
+                .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) {
                     if (++posts == 1) {
                         outer(source)
                     } else {
@@ -257,7 +258,7 @@ class CodeModeBridgeRuntimeTest {
 
     private suspend fun script(bridge: CodexCodeModeBridge, source: String, callId: String): TurnOutcome {
         var posts = 0
-        return bridge.interceptor(turn(), disableParallel = false).intercept(BRIDGE_BASE_REQUEST, Sink()) {
+        return bridge.interceptor(turn(), disableParallel = false).interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) {
             if (++posts == 1) {
                 outer(source, callId)
             } else {
@@ -275,13 +276,13 @@ class CodeModeBridgeRuntimeTest {
                 val bridge = bridge(runtime, "result-$bytes.json")
                 val sink = Sink()
                 bridge.interceptor(turn(), disableParallel = false)
-                    .intercept(BRIDGE_BASE_REQUEST, sink) { outer("return await tools.call('Read', {});") }
+                    .interceptOutcome(BRIDGE_BASE_REQUEST, sink) { outer("return await tools.call('Read', {});") }
                 val id = sink.ids.single()
                 val output = "é".repeat(bytes / 2)
                 var posts = 0
                 var upstream = ""
                 val outcome = bridge.interceptor(turn(id, output), disableParallel = false)
-                    .intercept(requestWithResult(id, output), Sink()) {
+                    .interceptOutcome(requestWithResult(id, output), Sink()) {
                         posts++
                         upstream = it
                         TurnOutcome.Success(false, false, Usage(), messageClosed = true)
@@ -299,12 +300,12 @@ class CodeModeBridgeRuntimeTest {
             val bridge = bridge(runtime)
             val sink = Sink()
             bridge.interceptor(turn(), disableParallel = false)
-                .intercept(BRIDGE_BASE_REQUEST, sink) { outer(threeCallsSource()) }
+                .interceptOutcome(BRIDGE_BASE_REQUEST, sink) { outer(threeCallsSource()) }
             assertEquals(3, sink.ids.size)
             val oversized = sink.ids.map { CodeModeResult(it, 0.toChar().toString().repeat(65_536)) }
             val stateBefore = saved()
             val rejected = bridge.interceptor(turn().copy(toolResults = oversized), disableParallel = false)
-                .intercept(requestWithResults(oversized), Sink()) { error("must not post oversized results") }
+                .interceptOutcome(requestWithResults(oversized), Sink()) { error("must not post oversized results") }
             assertTrue(rejected is TurnOutcome.Failure)
             assertEquals(ErrorType.INVALID_REQUEST, (rejected as TurnOutcome.Failure).type)
             assertEquals("code-mode result frame exceeds the size limit", rejected.message)
@@ -313,7 +314,7 @@ class CodeModeBridgeRuntimeTest {
             val corrected = sink.ids.map { CodeModeResult(it, "corrected") }
             var upstream = ""
             val completed = bridge.interceptor(turn().copy(toolResults = corrected), disableParallel = false)
-                .intercept(requestWithResults(corrected), Sink()) {
+                .interceptOutcome(requestWithResults(corrected), Sink()) {
                     upstream = it
                     TurnOutcome.Success(false, false, Usage(), messageClosed = true)
                 }
@@ -328,21 +329,21 @@ class CodeModeBridgeRuntimeTest {
             val bridge = bridge(runtime)
             val initial = Sink()
             bridge.interceptor(turn(), disableParallel = true)
-                .intercept(BRIDGE_BASE_REQUEST, initial) { outer(threeCallsSource()) }
+                .interceptOutcome(BRIDGE_BASE_REQUEST, initial) { outer(threeCallsSource()) }
             var nextId = initial.ids.single()
             val accepted = mutableListOf<CodeModeResult>()
             repeat(2) {
                 accepted += CodeModeResult(nextId, 0.toChar().toString().repeat(65_536))
                 val next = Sink()
                 val exposed = bridge.interceptor(turn().copy(toolResults = accepted.toList()), disableParallel = true)
-                    .intercept(requestWithResults(accepted), next) { error("worker is still waiting") }
+                    .interceptOutcome(requestWithResults(accepted), next) { error("worker is still waiting") }
                 assertTrue(exposed is TurnOutcome.Success)
                 nextId = next.ids.single()
             }
             val stateBefore = saved()
             val oversized = accepted + CodeModeResult(nextId, 0.toChar().toString().repeat(65_536))
             val rejected = bridge.interceptor(turn().copy(toolResults = oversized), disableParallel = true)
-                .intercept(requestWithResults(oversized), Sink()) { error("must not post oversized results") }
+                .interceptOutcome(requestWithResults(oversized), Sink()) { error("must not post oversized results") }
             assertTrue(rejected is TurnOutcome.Failure)
             assertEquals(ErrorType.INVALID_REQUEST, (rejected as TurnOutcome.Failure).type)
             assertEquals("code-mode result frame exceeds the size limit", rejected.message)
@@ -351,7 +352,7 @@ class CodeModeBridgeRuntimeTest {
             val corrected = accepted + CodeModeResult(nextId, "corrected")
             var upstream = ""
             val completed = bridge.interceptor(turn().copy(toolResults = corrected), disableParallel = true)
-                .intercept(requestWithResults(corrected), Sink()) {
+                .interceptOutcome(requestWithResults(corrected), Sink()) {
                     upstream = it
                     TurnOutcome.Success(false, false, Usage(), messageClosed = true)
                 }
@@ -366,7 +367,7 @@ class CodeModeBridgeRuntimeTest {
             val bridge = bridge(runtime)
             val first = Sink()
             bridge.interceptor(turn(), disableParallel = false)
-                .intercept(BRIDGE_BASE_REQUEST, first) {
+                .interceptOutcome(BRIDGE_BASE_REQUEST, first) {
                     outer(
                         """
                         const first = await tools.call('Read', {});
@@ -378,12 +379,12 @@ class CodeModeBridgeRuntimeTest {
             val prior = CodeModeResult(first.ids.single(), 0.toChar().toString().repeat(65_536))
             val next = Sink()
             bridge.interceptor(turn().copy(toolResults = listOf(prior)), disableParallel = false)
-                .intercept(requestWithResults(listOf(prior)), next) { error("worker is still waiting") }
+                .interceptOutcome(requestWithResults(listOf(prior)), next) { error("worker is still waiting") }
             assertEquals(2, next.ids.size)
             val results = listOf(prior) + next.ids.map { CodeModeResult(it, prior.output) }
             var upstream = ""
             val completed = bridge.interceptor(turn().copy(toolResults = results), disableParallel = false)
-                .intercept(requestWithResults(results), Sink()) {
+                .interceptOutcome(requestWithResults(results), Sink()) {
                     upstream = it
                     TurnOutcome.Success(false, false, Usage(), messageClosed = true)
                 }

@@ -23,7 +23,7 @@ private fun build(
 ): JsonObject {
     val body = AnthropicParse.parseAnthropicBody(json).typed
     return ChatRequestBuilder(quirks)
-        .build(body, upstreamModel = model, originalModel = "claude-kimi--$model", compact = compact)
+        .build(body, ChatRoute(model, "claude-kimi--$model"), compact = compact)
         .req
 }
 

@@ -367,7 +367,7 @@ class AccountLoginTest {
                 OAuthLoginAccount(account.kind, account.primary, account.label),
                 "the same fields are not the same login: one of these holds the lease",
             )
-            val refused = assertThrows<IllegalStateException> { account.copy(label = "elsewhere") }
+            val refused = assertThrows<IllegalStateException> { account.withReservedLabel("elsewhere") }
             assertEquals("re-plan an OAuth login account BEFORE it holds a reservation", refused.message)
         } finally {
             spec.account?.releaseReservation()

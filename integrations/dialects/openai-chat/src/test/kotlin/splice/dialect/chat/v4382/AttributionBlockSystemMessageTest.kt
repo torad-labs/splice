@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
+import splice.dialect.chat.ChatRoute
 
 class AttributionBlockSystemMessageTest {
     private fun systemMessage(fingerprint: String): String {
@@ -21,7 +22,7 @@ class AttributionBlockSystemMessageTest {
                "messages":[{"role":"user","content":"hi"}]}""",
         ).typed
         val built = ChatRequestBuilder(ChatQuirks(providerTag = "bonsai"))
-            .build(body, upstreamModel = "bonsai", originalModel = "claude-bonsai--bonsai", compact = false)
+            .build(body, ChatRoute("bonsai", "claude-bonsai--bonsai"), compact = false)
         val first = built.req.getValue("messages").jsonArray.first().jsonObject
         assertEquals("system", first.getValue("role").jsonPrimitive.content)
         return first.getValue("content").jsonPrimitive.content

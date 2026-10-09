@@ -49,12 +49,11 @@ public class GrokOAuth {
         nonce: String,
         clientId: String,
         env: EnvReader,
-        redirectUri: String = GrokOAuthEndpoints.REDIRECT_URI,
     ): String {
         val params = listOf(
             "response_type" to "code",
             "client_id" to clientId,
-            "redirect_uri" to redirectUri,
+            "redirect_uri" to GrokOAuthEndpoints.REDIRECT_URI,
             "scope" to GrokOAuthEndpoints.SCOPE,
             "code_challenge" to challenge,
             "code_challenge_method" to "S256",

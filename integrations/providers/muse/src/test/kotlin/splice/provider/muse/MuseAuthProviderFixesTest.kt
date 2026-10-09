@@ -59,8 +59,6 @@ internal fun provider(
     file: Path,
     clock: WallClock = WallClock(System::currentTimeMillis),
     authCacheMs: Long = 30_000L,
-    prefetchScope: kotlinx.coroutines.CoroutineScope? = null,
-    flightContext: CoroutineContext = ProcessDispatchers().background(),
     mint: MuseKeyMintCall,
 ): MuseAuthProvider = MuseAuthProvider(
     authPath = file,
@@ -68,6 +66,20 @@ internal fun provider(
     clock = clock,
     mintCall = mint,
     authCacheMs = authCacheMs,
+)
+
+/** A provider whose background work runs where the test says: a prefetch scope, a single-flight context, or both. */
+internal fun backgroundProvider(
+    file: Path,
+    prefetchScope: kotlinx.coroutines.CoroutineScope? = null,
+    flightContext: CoroutineContext = ProcessDispatchers().background(),
+    mint: MuseKeyMintCall,
+): MuseAuthProvider = MuseAuthProvider(
+    authPath = file,
+    log = LogSink { },
+    clock = WallClock(System::currentTimeMillis),
+    mintCall = mint,
+    authCacheMs = 30_000L,
     prefetchScope = prefetchScope,
     flightContext = flightContext,
 )
@@ -173,7 +185,7 @@ class MuseAuthProviderFixesTest {
         val scope = kotlinx.coroutines.CoroutineScope(job)
         val entered = CompletableDeferred<Unit>()
         val proceed = CompletableDeferred<Unit>()
-        val auth = provider(file, prefetchScope = scope) { _, _ ->
+        val auth = backgroundProvider(file, prefetchScope = scope) { _, _ ->
             entered.complete(Unit)
             try {
                 proceed.await()
@@ -296,7 +308,7 @@ class MuseAuthProviderFixesTest {
         val calls = AtomicInteger()
         val entered = CompletableDeferred<Unit>()
         val proceed = CompletableDeferred<Unit>()
-        val auth = provider(file, flightContext = coroutineContext) { _, _ ->
+        val auth = backgroundProvider(file, flightContext = coroutineContext) { _, _ ->
             calls.incrementAndGet()
             entered.complete(Unit)
             proceed.await()
@@ -390,7 +402,7 @@ class MuseAuthProviderFixesTest {
         val calls = AtomicInteger()
         val entered = CompletableDeferred<Unit>()
         val proceed = CompletableDeferred<Unit>()
-        val auth = provider(file, flightContext = coroutineContext) { _, _ ->
+        val auth = backgroundProvider(file, flightContext = coroutineContext) { _, _ ->
             calls.incrementAndGet()
             entered.complete(Unit)
             proceed.await()
@@ -413,7 +425,7 @@ class MuseAuthProviderFixesTest {
         val calls = AtomicInteger()
         val entered = CompletableDeferred<Unit>()
         val proceed = CompletableDeferred<Unit>()
-        val auth = provider(file, flightContext = coroutineContext) { _, _ ->
+        val auth = backgroundProvider(file, flightContext = coroutineContext) { _, _ ->
             val n = calls.incrementAndGet()
             if (n == 1) {
                 entered.complete(Unit)

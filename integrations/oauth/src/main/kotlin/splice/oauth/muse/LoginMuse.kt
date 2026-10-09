@@ -57,7 +57,7 @@ public class LoginMuse(
             else -> loginReservations.reserveLabel(poolDir, requireNotNull(planned.label))
         }
         val account = if (label == AUTO) {
-            planned.copy(label = requireNotNull(reservation).label, defaultLabel = null, tokenDerivedLabel = false)
+            planned.withReservedLabel(requireNotNull(reservation).label)
         } else {
             planned
         }

@@ -24,7 +24,7 @@ class ChatContractTest {
                 """"messages":[{"role":"user","content":"Ping."}]}"""
         val body = AnthropicParse.parseAnthropicBody(anthropic).typed
         val req = ChatRequestBuilder(ChatQuirks(providerTag = "kimi"))
-            .build(body, upstreamModel = "kimi-k2", originalModel = "claude-kimi--kimi-k2", compact = false)
+            .build(body, ChatRoute("kimi-k2", "claude-kimi--kimi-k2"), compact = false)
             .req
         assertGoldenContract("chat-canonical", req) { ChatContractTest::class.java }
     }

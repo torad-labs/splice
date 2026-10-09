@@ -51,16 +51,13 @@ class MuseAuthProviderTest {
         file: Path,
         logs: MutableList<String> = mutableListOf(),
         clock: WallClock = WallClock(System::currentTimeMillis),
-        authCacheMs: Long = 30_000L,
-        prefetchScope: kotlinx.coroutines.CoroutineScope? = null,
         mint: MuseKeyMintCall,
     ): MuseAuthProvider = MuseAuthProvider(
         authPath = file,
         log = LogSink { logs += it },
         clock = clock,
         mintCall = mint,
-        authCacheMs = authCacheMs,
-        prefetchScope = prefetchScope,
+        authCacheMs = 30_000L,
     )
 
     @Test

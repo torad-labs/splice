@@ -16,8 +16,7 @@ class IdSlotRequestTest {
     private fun build(affinity: SlotAffinity?): BuiltChatRequest =
         ChatRequestBuilder(ChatQuirks(providerTag = "bonsai"), affinity = affinity).build(
             AnthropicParse.parseAnthropicBody(TURN).typed,
-            upstreamModel = "bonsai",
-            originalModel = "claude-bonsai--bonsai",
+            ChatRoute("bonsai", "claude-bonsai--bonsai"),
             compact = false,
             sessionId = "s1",
         )

@@ -71,21 +71,14 @@ public class OAuthLoginAccount(
     private val setAsideQuota = AtomicReference<Path?>(null)
     private val refusal = AtomicReference<String?>(null)
 
-    /** A RE-PLANNED destination for a login that has not started: the reservation and the persisted
-     *  label are deliberately NOT carried, because a lease belongs to exactly one account and the
-     *  caller holds it at this point (LoginKimi/LoginMuse reserve, re-plan, THEN
-     *  [holdReservation]). Hand-written rather than generated so that "carries no lease" is a
-     *  documented decision instead of a `data class` side effect nothing pointed at (V4-114). */
-    public fun copy(
-        kind: AuthKind.OAuth = this.kind,
-        primary: Boolean = this.primary,
-        label: String? = this.label,
-        defaultLabel: OAuthAccountLabel? = this.defaultLabel,
-        tokenDerivedLabel: Boolean = this.tokenDerivedLabel,
-        identity: OAuthAccountIdentity? = this.identity,
-    ): OAuthLoginAccount {
+    /** A RE-PLANNED destination for a login that has not started, now bound to a reserved [label]: the label is
+     *  final, so the default and the token-derived move are dropped. The reservation and the persisted label are
+     *  deliberately NOT carried, because a lease belongs to exactly one account and the caller holds it at this
+     *  point (LoginKimi/LoginMuse reserve, re-plan, THEN [holdReservation]). Hand-written rather than generated so
+     *  that "carries no lease" is a documented decision instead of a `data class` side effect (V4-114). */
+    public fun withReservedLabel(label: String?): OAuthLoginAccount {
         check(reservation.get() == null) { "re-plan an OAuth login account BEFORE it holds a reservation" }
-        return OAuthLoginAccount(kind, primary, label, defaultLabel, tokenDerivedLabel, identity)
+        return OAuthLoginAccount(kind, primary, label, tokenDerivedLabel = false, identity = identity)
     }
 
     public fun resolvedLabel(authJson: JsonObject? = null): String? = label ?: defaultLabel?.invoke(authJson)

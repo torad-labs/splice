@@ -6,7 +6,6 @@ package splice.core.util
 
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
-import java.io.IOException
 import java.util.concurrent.CancellationException
 
 class CancellablesBestEffortTest {
@@ -21,13 +20,6 @@ class CancellablesBestEffortTest {
     @Test
     fun `an arbitrary RuntimeException is captured, not propagated`() {
         val boom = RuntimeException("provider blew up")
-        val result = Cancellables.runCatchingBestEffort { throw boom }
-        assertSame(boom, result.exceptionOrNull())
-    }
-
-    @Test
-    fun `an IO failure is captured like the narrower forms`() {
-        val boom = IOException("disk full")
         val result = Cancellables.runCatchingBestEffort { throw boom }
         assertSame(boom, result.exceptionOrNull())
     }

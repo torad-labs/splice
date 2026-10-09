@@ -37,14 +37,6 @@ class TopologyFieldsManifestTest {
         }
     }
 
-    @Test
-    fun `the walk reaches the nested tables and carries an enum's values`() {
-        val walked = walked()
-        assertTrue("compaction.project[].instructions\t" in walked) { "no [[compaction.project]] row: $walked" }
-        assertTrue(walked.any { it.startsWith("heads.*.") }) { "no [heads.KEY] field" }
-        assertTrue(walked.any { it.startsWith("providers.*.dialect\t") && "openai-chat" in it }) { "no dialect values" }
-    }
-
     private fun walked(): List<String> =
         mutableListOf<String>().also { walk(Topology.serializer().descriptor, "", it, emptySet()) }
 

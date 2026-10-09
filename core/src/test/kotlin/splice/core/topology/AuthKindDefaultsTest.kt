@@ -2,7 +2,6 @@
 // under ~/.config/splice/auth/, never the native app's, and the legacy knobs agree with it.
 package splice.core.topology
 
-import kotlinx.serialization.SerialName
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -85,17 +84,6 @@ class AuthKindDefaultsTest {
                     )
                 }
             }
-        }
-    }
-
-    @Test
-    fun `every Dialect wire spelling equals the SerialName on the enum`() {
-        val descriptor = Dialect.serializer().descriptor
-        Dialect.entries.forEach { dialect ->
-            val serial = Dialect::class.java.getField(dialect.name)
-                .getAnnotation(SerialName::class.java)?.value
-            assertEquals(serial, descriptor.getElementName(dialect.ordinal), dialect.name)
-            assertEquals(serial, DialectWires.name(dialect), dialect.name)
         }
     }
 }

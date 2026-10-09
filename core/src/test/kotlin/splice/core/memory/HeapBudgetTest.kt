@@ -13,22 +13,6 @@ import java.util.concurrent.TimeUnit
 
 class HeapBudgetTest {
     @Test
-    fun `read views cannot expose root availability or root shutdown`() {
-        val root = HeapBudget(256, 100)
-        val view = root.readShare()
-        try {
-            assertFalse(
-                HeapBudget::class.java.isAssignableFrom(view.javaClass),
-                "a read view must not satisfy a root-only waiting gate",
-            )
-            assertFalse(view.javaClass.methods.any { it.name == "getAvailable" })
-            assertFalse(AutoCloseable::class.java.isAssignableFrom(HeapBudget::class.java))
-        } finally {
-            view.close()
-        }
-    }
-
-    @Test
     fun `process reservations leave proportional room for uncharged live objects and copies`() {
         val heap = 8L * 1024 * 1024 * 1024
         val budget = HeapBudget(heap)

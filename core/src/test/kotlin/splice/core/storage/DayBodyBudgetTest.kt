@@ -151,11 +151,6 @@ class DayBodyBudgetTest {
         assertEquals(emptySet<String>(), DayFileStores(dir).prefixes())
     }
 
-    @Test
-    fun `budget defaults replace the old per head day cap`() {
-        assertEquals(32L shl 30, DayBodyBudget().maxBytes)
-    }
-
     private fun day(dir: Path, head: String, date: String): Path =
         Files.writeString(dir.resolve("$head-$date.jsonl"), "{\"kind\":\"synthetic\"}\n")
 

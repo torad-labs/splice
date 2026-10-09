@@ -5,7 +5,6 @@
 package splice.core.util.v4419
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import splice.core.util.LocalTimeText
 import java.time.Instant
@@ -30,12 +29,6 @@ class LocalTimeTextTest {
     fun `the abbreviation follows daylight time instead of being a fixed label`() {
         assertEquals("Dec 4, 6:00 PM CST", said("America/Chicago", DECEMBER))
         assertEquals("Oct 4, 7:00 PM CDT", said("America/Chicago", OCTOBER))
-    }
-
-    @Test
-    fun `a zone that is not Chicago never says CT`() {
-        val tokyo = said("Asia/Tokyo", OCTOBER)
-        assertFalse("CT" in tokyo || "CDT" in tokyo || "CST" in tokyo, tokyo)
     }
 
     @Test

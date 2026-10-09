@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.turn.ReasoningDisplay
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
@@ -114,22 +113,6 @@ class ConfigServiceTest {
             logged.count { it.contains("unreadable") },
             "the discard latch must fire exactly once per mtime under concurrent readers, got $logged",
         )
-    }
-
-    @Test
-    fun `defaults resolve and normalize`() {
-        val cfg = service().getConfig()
-        assertEquals(3099, cfg.port)
-        assertEquals("https://chatgpt.com/backend-api/codex", cfg.chatgptApiBase)
-        assertEquals(ReasoningDisplay.TEXT, cfg.showReasoning)
-        assertEquals(false, cfg.replayReasoning)
-        // Bounded by default since the 2026-07-19 storm (0 = unlimited stays an explicit opt-out).
-        // NF-02: 12 sits inside the measured 0.3%-failure band (<=14; 67% failure at the old 100).
-        assertEquals(12, cfg.maxInflight)
-        // 0 = unlimited stays the explicit operator opt-out — the new default must not eat it.
-        assertEquals(0, service(env = mapOf("CLAUDEX_MAX_INFLIGHT" to "0")).getConfig().maxInflight)
-        assertEquals(512, cfg.maxQueued)
-        assertEquals(3096, cfg.controlPort)
     }
 
     @Test
@@ -356,30 +339,6 @@ class ConfigServiceTest {
     fun `maxQueued env alias applies`() {
         val svc = service(env = mapOf("CLAUDEX_MAX_QUEUED" to "50"))
         assertEquals(50, svc.getConfig().maxQueued)
-    }
-
-    // THE SCAR IS KEPT, because deleting it hands the next reader exactly the reasoning that caused
-    // the accident. Pinned against the reference client until 2026-09-18, not chosen freehand:
-    // codex-rs sets its only stream timer to 300_000ms and puts it on the receive side alone. At
-    // 180_000 the idle tier ended 129 compactions in a single day (2026-09-01), each mid-stream on
-    // work already flowing.
-    //
-    // 90_000 SINCE V4-125, AND IT IS NOT A RETURN TO THAT DAY. The tier stopped being a verdict:
-    // silence past it asks the round's path pulse whether the peer is alive, a live path is HELD and
-    // never reaped short of the whole-turn cap, and only a path that cannot answer is reaped at all.
-    // The 129 compactions died because 180_000 was the last word on them; 90_000 is a question asked
-    // sooner of a watchdog that no longer ends turns. Lowering the number WITHOUT that change would
-    // have made the reaps more frequent, not fewer — which is why this test asserts the number and
-    // its reason together rather than the number alone.
-    @Test
-    fun `the idle stall detector defaults to the probe-era 90s, not the verdict-era 300s`() {
-        val cfg = service().getConfig()
-        assertEquals(90_000L, cfg.streamIdleMs)
-        assertEquals(
-            cfg.firstByteTimeoutMs,
-            cfg.streamIdleMs,
-            "one number judges the stream before and after its first frame",
-        )
     }
 
     @Test

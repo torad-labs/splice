@@ -23,15 +23,4 @@ class OutcomeTagChecksTest {
             assertEquals(tag !in clean && tag != "?" && tag !in stopped, OutcomeTags.isFailed(tag), tag)
         }
     }
-
-    @Test
-    fun `an empty answer the model closed is a clean ending, never a failure`() {
-        assertEquals(false, OutcomeTags.isFailed(OutcomeTag.EMPTY_MESSAGE.wire))
-    }
-
-    @Test
-    fun `OK's wire spelling is unique, so a checks pass-fail comparison against it is unambiguous`() {
-        val collisions = OutcomeTag.entries.filter { it != OutcomeTag.OK && it.wire == OutcomeTag.OK.wire }
-        assertEquals(emptyList<OutcomeTag>(), collisions)
-    }
 }

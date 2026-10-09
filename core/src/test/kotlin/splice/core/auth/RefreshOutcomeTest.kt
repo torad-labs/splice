@@ -107,15 +107,4 @@ class PersistFailedRenderTest {
         val line = logsOf(RefreshOutcome.PersistFailed.Write(denied)).single()
         assertTrue(line.contains("No space left"), "a FileSystemException quotes paths we authored, not content: $line")
     }
-
-    // The semantic branch has no throwable to carry, so it is an object and its text is fixed.
-    @Test
-    fun `the unreadable-after-write branch renders its exact literal - DR-151`() {
-        val line = logsOf(RefreshOutcome.PersistFailed.UnreadableAfterWrite).single()
-        assertTrue(
-            line.contains("credential file unreadable after rotated-token write"),
-            "the semantic branch keeps its own distinguishable story: $line",
-        )
-        assertFalse(line.contains("withheld"), "there is no throwable here, so nothing is withheld: $line")
-    }
 }

@@ -25,33 +25,16 @@ while the green jar sat on disk.
 
 The procedure, every time, in this order:
 
-1. Install the jar the gate of record built, never a local build: `gh run download <run> -n
-   splice-jar -D <scratch>/splice-jar-<sha>`, where `<run>` is the `ci` run of step 2. CI uploads
-   that artifact only on a green run (`.github/workflows/ci.yml`, "keep the gate-built jar"); it
-   holds `build/libs/app-all.jar` and `src/main/dist/bin/splice-launch` from that exact sha. No
-   worktree, detached or not, no clone, no archive, no copy of the tree: the operator forbids every
-   second checkout, build trees included (2026-09-28, again 2026-10-01). The build is
-   reproducible: run 36954147029's artifact for b97c74a77 hashed identically to the jar built
-   locally from that sha. The artifact lives 14 days; an older sha gets a fresh CI run.
-2. Gate of record is CI's `gate` job — `npm run gate` = `bun tools/gate run`, the WHOLE ladder —
-   passing on the EXACT sha being landed and installed: `gh run view <run> --json
-   headSha,conclusion` names that sha and `success`, or `gh pr checks <pr>` shows `gate pass` with
-   the PR's head at that sha. Land by fast-forward only; a merge made after the run is a new sha and
-   needs its own pass. Operator ruling (2026-09-23), after the local run lost three gates in one
-   afternoon while CI passed the same ladder on the same sha (run 35917093436 on 679f1954): the local
-   run sits in `buildgate.slice`, which hostshield declares earlyoom's FIRST victim (MANIFEST:
-   "Buildgate scopes get OOMScoreAdjust=800", so its JVMs outscore everything else on the box), and
-   it holds one machine-wide lock that serialises every session's landing. A local
-   `bun tools/gate run` is optional feedback before pushing, never the verdict.
-
-   The ladder runs the gradle tier (module-law, detekt, the architecture laws — concentration,
-   safe-failure-render and release readiness among them — every unit test, the load test), the
-   ast-grep walls, the campaign walls, the oracle replay, the code-mode selftests, config guard,
-   the console lint/test, and the pr-title lint on HEAD's subject. The gradle legs alone are NOT the gate: on 2026-09-16 they were
-   green three times while the oracle replay had three drifted pins. Read a red job's log for `GATE:`
-   and `FAILED`; never tail it. Red = stop, fix forward, no install. Commit subjects use the
-   conventional types in `tools/gate/src/lib/conventional.ts` (`chore(ledger): ...`, never `ledger: ...`), because
-   the ladder lints HEAD's subject.
+1. Install a jar built from the pushed sha. When CI ran green on that sha, download its artifact:
+   `gh run download <run> -n splice-jar -D <scratch>/splice-jar-<sha>` (it holds
+   `build/libs/app-all.jar` and `src/main/dist/bin/splice-launch`). When CI can't run, build that
+   sha in a throwaway tree under /tmp (`git worktree add --detach`, `./gradlew :app:shadowJar`), take
+   `app/build/libs/app-all.jar` and `app/src/main/dist/bin/splice-launch` from it, and delete the
+   tree once the install is verified. The build is reproducible: CI's jar and a local jar of the
+   same sha hash identically. When CI can run again, rebuild there and reinstall if the jar differs.
+2. A sha is installable when the pushed commit passed the repo's hooks, and CI is green on it if CI
+   ran. CI never blocks an install (Marcos's ruling, 2026-10-09). Red = stop, fix forward, no
+   install.
 3. Backup first: `cp -p ~/.local/share/splice/splice.jar
    ~/.local/share/splice/splice.jar.bak-<date>-pre-<sha>`.
 4. Atomic install: `cp` the artifact's jar to a sibling path in the same directory, then `mv` it

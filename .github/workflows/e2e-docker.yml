@@ -28,8 +28,11 @@ on:
 permissions:
   contents: read
 
+# One run per branch. A feat/** branch with a pull request open into main fired this workflow twice per push, once for the
+# push and once for the pull request, under two refs and so two groups: every sha from 13a3525ef to 1972a34d6 ran it twice,
+# 4 to 10 runner-minutes each. Keyed on the branch name, the later run replaces the earlier one.
 concurrency:
-  group: e2e-docker-${{ github.ref }}
+  group: e2e-docker-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:

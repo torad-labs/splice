@@ -5,8 +5,19 @@
 # intentionally deferred to a follow-up (# TODO / PR body note).
 name: coverage
 
+# Only a change that can move Kotlin coverage runs it: module sources and resources, the build, and the fixtures the
+# suites read. A tooling, docs or npm-only pull request reran the whole Kotlin suite for a report identical to main's
+# (Dependabot npm and Actions bumps on Oct 8: 7 to 10 runner-minutes each).
 on:
   pull_request:
+    paths:
+      - '**/src/**'
+      - '**/*.gradle.kts'
+      - 'gradle/**'
+      - 'gradle.properties'
+      - 'build-logic/**'
+      - 'fixtures/**'
+      - '.github/workflows/coverage.yml'
 
 permissions:
   contents: read

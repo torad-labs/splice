@@ -121,17 +121,12 @@ public class RestartCommand(
         val running = DaemonProbe.healthVersion(port) ?: return true
         val key = stopKeyOrExplain() ?: return false
         if (waitForCompactions) CompactionWait(output, JdkUpgradeInflight(env, port)).await()
-        val live = when (val read = DaemonProbe.headPorts(port, key)) {
-            is Reading.Answered -> read.value
-            // Either way the daemon's own list is unavailable, and the toml's ports stand alone (stopScope).
-            Reading.Refused, Reading.Malformed -> null
-        }
-        val scope = stopScope(live, tomlPorts)
-        if (scope.degraded) {
+        val scope = stopScope(DaemonProbe.headPorts(port, key), tomlPorts)
+        scope.unseen?.let { why ->
             output.line(
-                "splice: WARNING: could not enumerate this daemon's head ports (config unreadable and " +
-                    "/api/heads unreachable). The stop check can only see :$port, so a head still " +
-                    "holding its port may go unnoticed and the new daemon can hit EADDRINUSE.",
+                "splice: WARNING: could not enumerate this daemon's head ports ($why). The stop check " +
+                    "cannot see every head the daemon runs, so a head still holding its port may go " +
+                    "unnoticed and the new daemon can hit EADDRINUSE.",
             )
         }
         output.line("splice: stopping daemon $running on :$port…")
@@ -163,17 +158,27 @@ public class RestartCommand(
         }
     }
 
-    internal fun stopScope(livePorts: List<Int>?, tomlPorts: List<Int>): StopScope {
-        val ports = (livePorts.orEmpty() + tomlPorts).distinct()
-        return StopScope(ports, degraded = ports.isEmpty())
+    /** A refused /api/heads leaves the toml's ports to stand alone. A malformed one is a running daemon whose
+     *  heads cannot be listed, so the scope stays degraded whatever the toml names. */
+    internal fun stopScope(live: Reading<List<Int>>, tomlPorts: List<Int>): StopScope {
+        val ports = ((live as? Reading.Answered)?.value.orEmpty() + tomlPorts).distinct()
+        val unseen = when {
+            live is Reading.Malformed -> "/api/heads answered with a list this CLI cannot read"
+            ports.isEmpty() -> "config unreadable and /api/heads unreachable"
+            else -> null
+        }
+        return StopScope(ports, unseen)
     }
 }
 
 /** Which ports a stop must see FREED, and whether that list can be trusted.
  *
- *  The union is deliberate: [livePorts] (what the running daemon actually holds) is authoritative,
- *  and [tomlPorts] is kept alongside it so a head the daemon failed to start — and therefore never
- *  lists — is still checked. Extra ports only ever make the stop check stricter. `degraded` is the
- *  honest signal for "both sources failed": an empty list makes `headPorts.none {}` vacuously true,
- *  so the caller must announce the weakened check rather than let it pass as a clean stop. */
-internal data class StopScope(val ports: List<Int>, val degraded: Boolean)
+ *  The union is deliberate: the running daemon's own list is authoritative, and the toml's ports are
+ *  kept alongside it so a head the daemon failed to start — and therefore never lists — is still
+ *  checked. Extra ports only ever make the stop check stricter. [unseen] names why the list cannot be
+ *  trusted: both sources failed, where an empty list makes `headPorts.none {}` vacuously true, or the
+ *  daemon answered with a list it could not read. The caller announces the weakened check rather than
+ *  let it pass as a clean stop. */
+internal data class StopScope(val ports: List<Int>, val unseen: String?) {
+    val degraded: Boolean get() = unseen != null
+}

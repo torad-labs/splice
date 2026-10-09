@@ -39,6 +39,7 @@ internal class DoctorRuntime {
             is DaemonRead.KeyUnreadable -> listOf(skipped("mgmt-key unreadable: ${heads.reason}"))
             DaemonRead.KeyAbsent -> listOf(skipped("mgmt-key not minted yet"))
             DaemonRead.Unreachable -> listOf(skipped("/api/heads unreachable"))
+            DaemonRead.Unreadable -> listOf(skipped("/api/heads answered with a body doctor cannot read"))
         }
     }
 

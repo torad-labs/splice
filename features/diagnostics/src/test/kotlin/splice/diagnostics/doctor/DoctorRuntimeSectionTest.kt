@@ -377,4 +377,30 @@ class DoctorRuntimeSectionTest {
             server.stop(0)
         }
     }
+
+    // A live daemon that answers /api/heads with 200 and a body doctor cannot read is up, so "unreachable" sent
+    // the operator to look for a stopped daemon. The runtime section names the unreadable answer.
+    @Test
+    fun `a 200 doctor cannot read is an unreadable answer, not an unreachable daemon`(@TempDir tmp: Path) {
+        val server = com.sun.net.httpserver.HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val version = splice.core.GATEWAY_VERSION
+        server.createContext("/health") { ex ->
+            val b = """{"ok":true,"version":"$version","heads":0,"readyHeads":0,"failedHeads":0}""".toByteArray()
+            ex.sendResponseHeaders(200, b.size.toLong())
+            ex.responseBody.use { it.write(b) }
+        }
+        server.createContext("/api/heads") { ex ->
+            val b = "[]".toByteArray()
+            ex.sendResponseHeaders(200, b.size.toLong())
+            ex.responseBody.use { it.write(b) }
+        }
+        server.start()
+        try {
+            val (_, out) = runDoctor(baseEnv(tmp, server.address.port))
+            assertTrue(out.contains("/api/heads answered with a body doctor cannot read"), out)
+            assertTrue(!out.contains("unreachable"), "a daemon that answered is not unreachable:\n$out")
+        } finally {
+            server.stop(0)
+        }
+    }
 }

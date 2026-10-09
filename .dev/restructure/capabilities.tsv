@@ -3963,3 +3963,4 @@ tools/gate/src/lib/gradle-settings.ts	created		reads the included builds setting
 tools/gate/test/gradle-settings.test.ts	created		pins that the repo's included builds are counted and an unresolvable declaration fails instead of dropping a build
 features/turns/src/test/kotlin/splice/head/admission/TurnQuotaTest.kt	created		the head resolves one quota tracker per turn, pinned through admission instead of the deleted kt-quota-tracker-single-resolution wall
 core/src/main/kotlin/splice/core/util/PathProbe.kt	created		the filesystem reads whose whole answer to unreadable is nothing there, each naming the exceptions it takes, so callers drop runCatching collapses
+features/lifecycle/src/test/kotlin/splice/lifecycle/restart/StopScopeTest.kt	created		pins which ports a restart stop must see freed, and that an unreadable head list keeps the stop degraded

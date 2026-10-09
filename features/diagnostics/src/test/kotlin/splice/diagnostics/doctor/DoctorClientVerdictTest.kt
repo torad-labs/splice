@@ -8,6 +8,7 @@ package splice.diagnostics.doctor
 import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -51,11 +52,15 @@ class DoctorClientVerdictTest {
     )
 
     /** A daemon whose /api/auth answers [verdict] for the client head; returns its port. */
-    private fun daemonSaying(verdict: String): Int {
+    private fun daemonSaying(verdict: String): Int = daemonAnswering(
+        """{"$HEAD":{"kind":"client","login":"manual","present":${!verdict.contains("rejected")},""" +
+            """"verdict":$verdict}}""",
+    )
+
+    /** A daemon whose /api/auth answers 200 with [body]; returns its port. */
+    private fun daemonAnswering(body: String): Int {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/api/auth") { exchange ->
-            val body = """{"$HEAD":{"kind":"client","login":"manual","present":${!verdict.contains("rejected")},""" +
-                """"verdict":$verdict}}"""
             val bytes = body.toByteArray()
             exchange.sendResponseHeaders(200, bytes.size.toLong())
             exchange.responseBody.use { it.write(bytes) }
@@ -80,6 +85,18 @@ class DoctorClientVerdictTest {
                 running,
                 LoopbackDaemon(JdkAccountPoolRead()),
             )
+    }
+
+    /** A daemon that answered /api/auth is up; a body doctor cannot read is said as that, never "unreachable". */
+    @Test
+    fun `an auth answer doctor cannot read is named as unreadable, not unreachable`(@TempDir tmp: Path) {
+        val port = daemonAnswering("[]")
+
+        val line = authChecks(tmp, port).single { it.name == "daemon-auth" }
+
+        assertEquals(CheckStatus.WARN, line.status, line.toString())
+        assertTrue(line.detail.contains("/api/auth answered with a body doctor cannot read"), line.detail)
+        assertFalse(line.detail.contains("unreachable"), line.detail)
     }
 
     /** RED before V4-220: the line was the declaration, OK, whatever the daemon had seen. */

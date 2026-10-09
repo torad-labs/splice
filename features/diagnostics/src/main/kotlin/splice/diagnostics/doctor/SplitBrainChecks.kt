@@ -33,6 +33,7 @@ internal class SplitBrainChecks {
                 DaemonAuthSeen.Skipped("mgmt-key unreadable (${seen.reason}); fix its permissions")
             DaemonRead.KeyAbsent -> DaemonAuthSeen.Skipped("no mgmt-key")
             DaemonRead.Unreachable -> DaemonAuthSeen.Skipped("daemon /api/auth unreachable")
+            DaemonRead.Unreadable -> DaemonAuthSeen.Skipped("daemon /api/auth answered with a body doctor cannot read")
         }
     }
 

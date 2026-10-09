@@ -34,6 +34,9 @@ internal sealed class DaemonRead<out T> {
 
     /** The daemon was asked and gave no answer. */
     data object Unreachable : DaemonRead<Nothing>()
+
+    /** The daemon answered, but with a body doctor cannot read: it is up, so this is not [Unreachable]. */
+    data object Unreadable : DaemonRead<Nothing>()
 }
 
 /** Everything doctor asks the running daemon. */
@@ -101,11 +104,11 @@ internal class LoopbackDaemon(private val pools: AccountPoolRead) : DaemonReads 
             is MgmtKeyRead.Unreadable -> DaemonRead.KeyUnreadable(key.reason)
         }
 
-    /** Doctor words a refused connection and an unreadable answer the same way ("gave no answer"); the two stay
-     *  separate readings down to here, and this is the one place they meet. */
+    /** A refused connection gave no answer; a malformed one is an answer doctor cannot read, worded apart. */
     private fun <T> answered(reading: Reading<T>): DaemonRead<T> = when (reading) {
         is Reading.Answered -> DaemonRead.Answered(reading.value)
-        Reading.Refused, Reading.Malformed -> DaemonRead.Unreachable
+        Reading.Refused -> DaemonRead.Unreachable
+        Reading.Malformed -> DaemonRead.Unreadable
     }
 }
 

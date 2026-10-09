@@ -8,7 +8,7 @@
 #
 # CENSUS AT AUTHORING (2026-09-26, derived from the tree at 84f1af3c7 with this rule): three
 # hand-built assistant items in the Responses dialect, all moved onto the factory in V4-342 with
-# their bytes pinned (v4342/AssistantTextSingleAuthorTest). The other four were the other wires, see below.
+# their bytes pinned (request/ResponsesAssistantTextAuthorTest). The other four were the other wires, see below.
 #   tools/ResponsesToolSearchPolicy.kt  `assistantText`       — no phase; now commentary, the
 #                                                                    phase the builder gives prose
 #                                                                    a tool_use follows

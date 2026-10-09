@@ -46,5 +46,9 @@ public sealed class ContentBlock {
     @Serializable(with = UnknownBlockSerializer::class)
     public data class UnknownBlock(val raw: JsonObject) : ContentBlock() {
         public val type: String get() = raw["type"]?.let { (it as? JsonPrimitive)?.content } ?: ""
+
+        /** What a dialect that cannot carry this block says in its place, so the model knows content was omitted. */
+        public fun omissionMarker(providerTag: String): String =
+            "[${type.ifEmpty { "unknown" }} block omitted by $providerTag proxy: unsupported on this backend]"
     }
 }

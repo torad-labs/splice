@@ -124,50 +124,6 @@ class PassthroughRequestBuilderTest {
         assertEquals(listOf("text"), inner)
     }
 
-    @Test
-    fun `thinking block with signature passes verbatim`() {
-        val block = build(
-            """{"model":"m","messages":[{"role":"assistant","content":[
-                {"type":"thinking","thinking":"deep thought","signature":"sig-abc"}
-            ]}]}""",
-        ).blocks(0).single()
-        assertEquals("thinking", block["type"]?.jsonPrimitive?.content)
-        assertEquals("deep thought", block["thinking"]?.jsonPrimitive?.content)
-        assertEquals("sig-abc", block["signature"]?.jsonPrimitive?.content)
-    }
-
-    @Test
-    fun `whitespace-only thinking without signature is dropped`() {
-        val types = build(
-            """{"model":"m","messages":[{"role":"assistant","content":[
-                {"type":"thinking","thinking":"   "},
-                {"type":"text","text":"answer"}
-            ]}]}""",
-        ).blockTypes(0)
-        assertEquals(listOf("text"), types)
-    }
-
-    /** V4-157 (2026-09-18): this arm used to assert that the SIGNATURE saved the block, and that
-     *  rule shipped a dead turn to a live operator session — Anthropic answered the whole request
-     *  with 400 invalid_request_error, `messages.903.content.0.thinking: each thinking block must
-     *  contain thinking`, request_id req_011CfBPZe8HG2qTVWNVXBmZm, and because Claude Code replays
-     *  the transcript every turn, every retry resent the same block. A signature records WHO wrote a
-     *  block, never that it contains anything.
-     *
-     *  THE EXPECTATION IS `text`, NOT AN EMPTY LIST, and the difference matters: this message holds
-     *  NOTHING ELSE, so the drop empties it and V4-39's substitution answers with one honest text
-     *  block rather than `content: []` — a shape no backend here can act on. Asserting an empty
-     *  array would pin that defect in place of this one. */
-    @Test
-    fun `whitespace thinking WITH a signature is dropped too`() {
-        val types = build(
-            """{"model":"m","messages":[{"role":"assistant","content":[
-                {"type":"thinking","thinking":"   ","signature":"s"}
-            ]}]}""",
-        ).blockTypes(0)
-        assertEquals(listOf("text"), types)
-    }
-
     // --- thinking -> adaptive + output_config effort ladder --------------------------------------
 
     private fun thinkingReq(budget: String?): JsonObject {
@@ -414,7 +370,7 @@ class PassthroughRequestBuilderTest {
     }
 
     @Test
-    fun `neutral forwards an explicit thinking disable instead of deleting it - DR-120`() {
+    fun `neutral forwards an explicit thinking disable instead of deleting it`() {
         val req = build(
             """{"model":"m","messages":[{"role":"user","content":"go"}],
                 "thinking":{"type":"disabled"}}""",

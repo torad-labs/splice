@@ -1,4 +1,4 @@
-package splice.dialect.anthropic.v4455
+package splice.dialect.anthropic
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -12,12 +12,10 @@ import splice.core.parse.AnthropicParse
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.SpliceSignatures
 import splice.core.util.LogSink
-import splice.dialect.anthropic.PassthroughQuirks
-import splice.dialect.anthropic.PassthroughRequestBuilder
 
-/** V4-455: a GPT session resumed on claude-splice replays the GPT head's reasoning summaries as thinking
+/** A GPT session resumed on claude-splice replays the GPT head's reasoning summaries as thinking
  *  with `signature: ""`; Anthropic refuses the whole request for one. The verifying head drops them. */
-class UnmintedThinkingTest {
+class PassthroughUnmintedThinkingTest {
     private val anthropicSignature = "EqQBCkgIBRABGAIiQL-opaque-anthropic-signature"
     private val envelope = ReasoningReplay.encodeReasoningEnvelope(
         kotlinx.serialization.json.buildJsonObject {

@@ -1,4 +1,4 @@
-package splice.dialect.anthropic.v4445
+package splice.dialect.anthropic
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -10,9 +10,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import splice.core.prompt.SystemPromptMode
-import splice.dialect.anthropic.PassthroughSystemPrompt
 
-class ClientSystemMetadataTest {
+class PassthroughClientSystemMetadataTest {
     private val prompt = PassthroughSystemPrompt()
     private val billing = block(
         "x-anthropic-billing-header: cc_version=2.1.285.bc6; cc_entrypoint=sdk-cli;",

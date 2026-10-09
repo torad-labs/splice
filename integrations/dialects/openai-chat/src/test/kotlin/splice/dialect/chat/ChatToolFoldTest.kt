@@ -1,8 +1,7 @@
-// NEW (final review 2026-07-23): the final-message tool-fold cases, split out of
-// ChatStreamTranslatorTest (which hit the detekt LargeClass ceiling). Covers finding 3 (name+args
-// both final-only open with real input), finding 5a (a nameless final-only call is surfaced, not
-// dropped), and PINS the two documented known limitations — finding 4 (id-less stream echoed with an
-// id duplicates) and finding 5b (an id-matched echo does not repair under-delivered stream args).
+// The final-message tool-fold cases, split out of ChatStreamTranslatorTest (which hit the detekt
+// LargeClass ceiling): a tool whose name and args arrive only on the consolidated final message, a
+// nameless final-only call, the prose block closing before a tool block opens, and args the stream
+// under-delivered reaching the client as a failure rather than corrupt JSON.
 package splice.dialect.chat
 
 import kotlinx.coroutines.flow.asFlow
@@ -53,7 +52,7 @@ class ChatToolFoldTest {
     // reddened the flush arm but not the final-fold one, because that arm's call had no pending
     // slot. Without this arm the mutant's coverage claim would have been overstated.
     @Test
-    fun `a final echo adopting a pending slot closes the prose block first - DR-153`() = runTest {
+    fun `a final echo adopting a pending slot closes the prose block first`() = runTest {
         val sink = FoldRec()
         val outcome = ChatStreamTranslator(foldCtx()).driveTurn(
             listOf(
@@ -85,7 +84,7 @@ class ChatToolFoldTest {
     // path alone would still miss this. FoldRec's close now carries its index, which is what makes
     // "the TEXT block (0) closed, and before the tool opened" writable at all.
     @Test
-    fun `a final-only tool closes the streamed prose block before opening - DR-153`() = runTest {
+    fun `a final-only tool closes the streamed prose block before opening`() = runTest {
         val sink = FoldRec()
         val outcome = ChatStreamTranslator(foldCtx()).driveTurn(
             listOf(
@@ -164,35 +163,7 @@ class ChatToolFoldTest {
     }
 
     @Test
-    fun `id-less streamed call echoed with an id duplicates - pins known limitation finding 4`() = runTest {
-        // KNOWN LIMITATION (pinned): a call STREAMED without an id gets a synth "toolu_<n>" slot;
-        // the trailing consolidated message echoes the SAME call but now WITH a real id. That id is
-        // not in openedToolIds and cannot be matched back to the synth slot, so the echo mints a
-        // SECOND tool_use. Left as-is deliberately — a name+args suppressor would risk dropping a
-        // legitimate distinct call. Reachable only via non-standard vendors (not codex/grok/kimi).
-        val sink = FoldRec()
-        val outcome = ChatStreamTranslator(foldCtx()).driveTurn(
-            listOf(
-                foldEv(
-                    """{"choices":[{"delta":{"tool_calls":[""" +
-                        """{"function":{"name":"run","arguments":"{\"x\":1}"}}]}}]}""",
-                ),
-                foldEv(
-                    """{"choices":[{"message":{"role":"assistant","tool_calls":[""" +
-                        """{"id":"call_real","type":"function","function":{"name":"run","arguments":"{\"x\":1}"}}""" +
-                        """]},"finish_reason":"tool_calls"}]}""",
-                ),
-            ).asFlow(),
-            sink,
-        )
-        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
-        // The duplicate is the pinned (known-wrong) behavior: synth-id open, then a second real-id open.
-        assertEquals(listOf("toolu_1000000" to "run", "call_real" to "run"), sink.toolOpens)
-        assertEquals(2, sink.calls.count { it == "openTool:run" })
-    }
-
-    @Test
-    fun `under-delivered stream args echoed by id are caught as a Failure - CX-01 supersedes finding 5b`() = runTest {
+    fun `under-delivered stream args echoed by id are caught as a Failure`() = runTest {
         // The former finding 5b was a KNOWN LIMITATION: the stream under-delivers a call's
         // arguments (partial JSON), the trailing consolidated message echoes the SAME id with the
         // COMPLETE arguments, the echo is suppressed wholesale (by id), and the wire kept only the

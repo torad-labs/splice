@@ -24,7 +24,7 @@ class ChatStreamTranslatorTest {
     // whitespace-delimited across deltas. This arm exists so that decision is PINNED: a future
     // reader who "harmonizes" the three siblings reds here and finds this note.
     @Test
-    fun `a whitespace-only reasoning delta still counts as delivered thinking - DR-144`() = runTest {
+    fun `a whitespace-only reasoning delta still counts as delivered thinking`() = runTest {
         val sink = Rec()
         val outcome = ChatStreamTranslator(ctx()).driveTurn(
             listOf(
@@ -454,7 +454,7 @@ class ChatStreamTranslatorTest {
 // CX-01 in its own class: ChatStreamTranslatorTest sits at detekt's LargeClass ceiling.
 class ChatToolArgsValidationTest {
     @Test
-    fun `truncated tool arguments plus a terminal is a Failure, not a corrupt Success - CX-01`() = runTest {
+    fun `truncated tool arguments plus a terminal is a Failure, not a corrupt Success`() = runTest {
         // The backend truncates arguments mid-string but still emits finish_reason:tool_calls —
         // the block would close as Success carrying corrupt JSON that Claude Code then parses.
         val outcome = ChatStreamTranslator(ctx()).driveTurn(
@@ -472,7 +472,7 @@ class ChatToolArgsValidationTest {
     }
 
     @Test
-    fun `an opened tool with zero argument deltas is a Failure - CX-01`() = runTest {
+    fun `an opened tool with zero argument deltas is a Failure`() = runTest {
         val outcome = ChatStreamTranslator(ctx()).driveTurn(
             listOf(
                 ev("""{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"run"}}]}}]}"""),
@@ -485,7 +485,7 @@ class ChatToolArgsValidationTest {
     }
 
     @Test
-    fun `valid tool arguments still succeed with byte-identical wire - CX-01`() = runTest {
+    fun `valid tool arguments still succeed with byte-identical wire`() = runTest {
         val sink = Rec()
         val outcome = ChatStreamTranslator(ctx()).driveTurn(
             listOf(
@@ -516,7 +516,7 @@ class ChatRefusalHonestyTest {
     // shipped the verdict garbled ("I can't help with that.I won't"). Whitespace frames are real:
     // tokenisers emit " " and "\n" as their own deltas.
     @Test
-    fun `whitespace-only refusal fragments are preserved verbatim - round2 counterexample`() = runTest {
+    fun `whitespace-only refusal fragments are preserved verbatim`() = runTest {
         val outcome = driveEvents(
             ev("""{"choices":[{"delta":{"refusal":"I can't help with that."}}]}"""),
             ev("""{"choices":[{"delta":{"refusal":" "}}]}"""),
@@ -532,7 +532,7 @@ class ChatRefusalHonestyTest {
 
     // The blank negative control must keep its teeth: a buffer of ONLY whitespace is not a refusal.
     @Test
-    fun `an all-whitespace refusal buffer is not a refusal - round2 control`() = runTest {
+    fun `an all-whitespace refusal buffer is not a refusal`() = runTest {
         val outcome = driveEvents(
             ev("""{"choices":[{"delta":{"content":"Here you go.","refusal":" "}}]}"""),
             ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),

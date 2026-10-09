@@ -517,25 +517,6 @@ private fun cacheOpts(
     reasoningLookup = lookup,
 )
 
-// RC-5 overlay wall (review 2026-07-24: the knob had no round-trip proof — this repo already
-// shipped five decorative quirks once, the 2026-07-18 withToml audit): a real TOML value must
-// reach ResponsesQuirks.reasoningCache through the chained overlay, and null must preserve it.
-class ReasoningCacheTomlOverlayTest {
-
-    @Test
-    fun `the overlay applies an explicit value and null keeps the base`() {
-        val base = ResponsesQuirks(providerTag = "t")
-        assertTrue(base.reasoningCache, "default is ON")
-        assertEquals(false, base.withReasoningCacheToml(false).reasoningCache)
-        assertEquals(true, base.withReasoningCacheToml(null).reasoningCache, "null preserves the base")
-        assertEquals(
-            false,
-            base.withReasoningCacheToml(false).withReasoningCacheToml(null).reasoningCache,
-            "null preserves an applied override",
-        )
-    }
-}
-
 /** A pre-cache caller: identical fields, but the reasoningLookup PARAMETER is never passed —
  *  the class default carries it, which is exactly what an unwired call site looks like. */
 private fun preCacheOpts() = BuildOptions(

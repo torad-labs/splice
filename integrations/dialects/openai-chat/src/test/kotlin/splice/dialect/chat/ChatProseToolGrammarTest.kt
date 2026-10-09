@@ -19,7 +19,7 @@ class ChatProseToolGrammarTest {
     private val toolStop = """{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"""
 
     @Test
-    fun `a text block is closed before a tool block opens - DR-153`() = runTest {
+    fun `a text block is closed before a tool block opens`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -34,7 +34,7 @@ class ChatProseToolGrammarTest {
     }
 
     @Test
-    fun `a thinking block is closed before a tool block opens - DR-153`() = runTest {
+    fun `a thinking block is closed before a tool block opens`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -51,7 +51,7 @@ class ChatProseToolGrammarTest {
     // Prose still runs BEFORE tool_calls within one frame, so a frame carrying both emits the prose
     // and THEN closes it as the tool opens. The router's statement order is unchanged by DR-153.
     @Test
-    fun `prose and the first tool in one frame stay in order - DR-153`() = runTest {
+    fun `prose and the first tool in one frame stay in order`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -68,7 +68,7 @@ class ChatProseToolGrammarTest {
     // The DEFERRED path: a call whose name never arrives is buffered and only opened by the
     // finish_reason flush. A close in the delta path alone would leave this one overlapping.
     @Test
-    fun `the finish-reason flush closes prose before opening the deferred tool - DR-153`() = runTest {
+    fun `the finish-reason flush closes prose before opening the deferred tool`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -91,7 +91,7 @@ class ChatProseToolGrammarTest {
     // opening a prose block would mean closing the tool first — and a later argument delta would
     // then land on a closed block and vanish. The prose is dropped; every argument byte survives.
     @Test
-    fun `prose arriving after a tool block is dropped, not interleaved - DR-153`() = runTest {
+    fun `prose arriving after a tool block is dropped, not interleaved`() = runTest {
         val sink = Rec()
         val outcome = drive(
             sink,
@@ -117,7 +117,7 @@ class ChatProseToolGrammarTest {
     // code keeps the prose block live and closes it when the tool is really born, while the mutant
     // closes an empty gap, lets the prose REOPEN a text block, and then opens the tool over it.
     @Test
-    fun `prose between a nameless slot and its flush is closed at the real open - DR-153`() = runTest {
+    fun `prose between a nameless slot and its flush is closed at the real open`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -136,7 +136,7 @@ class ChatProseToolGrammarTest {
     // adopted by the FINAL message's echo. It reaches the open through applyFinalMessage rather
     // than applyDelta, so a close placed in the delta router never runs for it at all.
     @Test
-    fun `prose between a nameless slot and its final echo is closed at the real open - DR-153`() = runTest {
+    fun `prose between a nameless slot and its final echo is closed at the real open`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -158,7 +158,7 @@ class ChatProseToolGrammarTest {
     // repeats the turn's prose on the final message would then open a text block over the live
     // tool, which is the exact grammar violation the delta guard exists to prevent.
     @Test
-    fun `final-message prose after a live tool is dropped, not interleaved - DR-153`() = runTest {
+    fun `final-message prose after a live tool is dropped, not interleaved`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -178,7 +178,7 @@ class ChatProseToolGrammarTest {
     // arguments across parallel calls, so closing tool 0 to open tool 1 would silently drop tool 0's
     // remaining args — a worse failure than the overlap. Scoped out of DR-153 on purpose.
     @Test
-    fun `parallel sibling tools are not closed by each other - DR-153`() = runTest {
+    fun `parallel sibling tools are not closed by each other`() = runTest {
         val sink = Rec()
         drive(
             sink,

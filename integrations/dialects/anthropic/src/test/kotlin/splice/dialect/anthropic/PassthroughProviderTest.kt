@@ -131,7 +131,7 @@ class PassthroughProviderTest {
     // preserved byte-for-byte, and only the valid tier strips. A broadened any-bracket regex, a
     // malformed-tolerant regex, and a [1m]-only regex each red exactly one shape.
     @Test
-    fun `only a valid trailing numeric tier strips before the wire - DR-27`() {
+    fun `only a valid trailing numeric tier strips before the wire`() {
         fun built(id: String) = provider(PassthroughQuirks(providerTag = "claude-splice")).buildTurn(
             AnthropicParse.parseAnthropicBody(
                 """{"model":"$id","messages":[{"role":"user","content":"hi"}]}""",

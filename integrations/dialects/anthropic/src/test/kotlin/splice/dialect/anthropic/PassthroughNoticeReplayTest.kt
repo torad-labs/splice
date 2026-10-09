@@ -1,4 +1,4 @@
-package splice.dialect.anthropic.v4385
+package splice.dialect.anthropic
 
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -8,10 +8,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.SpliceNotice
-import splice.dialect.anthropic.PassthroughQuirks
-import splice.dialect.anthropic.PassthroughRequestBuilder
 
-class SpliceNoticeReplayTest {
+class PassthroughNoticeReplayTest {
     private val realSignature = "opaque-real-model-signature"
 
     @Test

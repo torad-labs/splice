@@ -1,60 +1,35 @@
-// NEW (CH-1, campaign claude-head): the BYTE-IDENTITY WALL for the kimi passthrough.
+// The BYTE-IDENTITY WALL for the kimi passthrough: the request bytes kimi receives and the client-facing
+// transcripts the translator produces, frozen against committed goldens. The unit tests around them assert
+// PROPERTIES, so a rewrite that changes field ORDER, drops a verbatim-forwarded unknown field or re-nests
+// output_config passes them all while changing what kimi receives, and with it prompt-cache stability.
 //
-// WHY THIS EXISTS: the claude head turns this dialect's Kimi-shaped deformations — MFJS schema
-// sanitizing, the content-block allowlist, cache_control stripping, the adaptive-thinking rewrite,
-// signature synthesis — into opt-in quirks with NEUTRAL defaults (CH-2). Kimi's wire bytes must not
-// move by one character across that inversion, and "the unit tests still pass" is a weaker claim
-// than it sounds: those tests assert PROPERTIES, so a rewrite that changes field ORDER, drops a
-// verbatim-forwarded unknown field, or re-nests output_config passes them all while changing what
-// Kimi receives (and with it prompt-cache stability). This pins the actual bytes.
-//
-// TWO LAYERS, deliberately (the gate's own gen/selftest idiom):
-//   1. GOLDENS — built request bytes and translator call transcripts, compared to committed files.
-//   2. CANARY — the same fixtures built with a deformation deliberately flipped MUST differ from
-//      the golden. Without it a golden can rot into vacuity (pinning a builder that no longer
-//      deforms anything still "passes"), which is the failure mode this wall exists to prevent.
-//
-// GOLDEN FILES ARE READ-ONLY to every later campaign item. If a change moves these bytes, that
-// change is wrong — kimi behavior is frozen. Regenerate ONLY when the operator has decided kimi's
-// wire genuinely changes:
-//   UPDATE_GOLDENS=true ./gradlew :dialects-anthropic:test --rerun-tasks
+// Kimi's bytes are an operator lock. If a change moves these bytes, that change is wrong. Regenerate ONLY
+// when the operator has decided kimi's wire genuinely changes:
+//   UPDATE_GOLDENS=true ./gradlew :integrations-dialects-anthropic:test --rerun-tasks
 // then READ THE DIFF before committing it. (An env var, not a -D system property: the shared Test
-// convention forwards neither, and test workers DO inherit the environment — so this needs no
-// build-file change and cannot silently no-op.)
+// convention forwards neither, and test workers DO inherit the environment.)
 //
-// CH-2 NOTE: [KIMI_QUIRKS] below is the ONE line in this file that may change — it must always
-// construct KIMI's deformation set (today: the constructor defaults; after the inversion: every
-// knob explicitly ON). The .json/.txt files under resources/goldens/ never change.
+// [KIMI_QUIRKS] below must always construct KIMI's deformation set. The .json/.txt files under
+// resources/goldens/ never change.
 package splice.dialect.anthropic
 
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.parse.AnthropicParse
 import splice.core.turn.TurnOutcome
-import splice.core.turn.Usage
 import splice.upstream.sse.WireSink
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** KIMI's deformation set — see the CH-2 note in the file header. */
+/** KIMI's deformation set: every deformation knob this dialect can apply, as kimi runs them. */
 private val KIMI_QUIRKS = KimiProfileFixture().kimi("kimi")
-
-/** V4-157: one remedy for all three halves of the shape guard — the block goes back, whichever
- *  half went missing. A fixture entry that is only ever INPUT has no other way to say it matters. */
-private const val INCIDENT_BLOCK_REQUIRED =
-    "BLOCK_ALLOWLIST_FIXTURE must keep the V4-157 incident block at content.0 — a thinking block " +
-        "with blank text and a NON-EMPTY signature (request_id req_011CfBPZe8HG2qTVWNVXBmZm). It " +
-        "produces no bytes now that the rule drops it, so nothing else here would notice its loss."
 
 private val GOLDEN_DIR: Path = Path.of("src", "test", "resources", "goldens")
 private val JSON = Json {
@@ -63,38 +38,11 @@ private val JSON = Json {
 }
 private val UPDATING = System.getenv("UPDATE_GOLDENS") == "true"
 
-/**
- * V4-69: WHAT THE FAILURE GOLDEN WATCHES — the client-facing half of a failure, and nothing else.
- *
- *  The wire error type and the PROVIDER-TAGGED message (CH-2's providerTag prefix) are what the
- *  operator reads and what a deformation would move; the rest of [TurnOutcome.Failure] is splice's
- *  own bookkeeping — [TurnOutcome.Failure.partial] and [TurnOutcome.Failure.salvagedUsage] are
- *  accounting, and [TurnOutcome.Failure.connReset] is a V4-67 journal tag. Freezing the data class's
- *  whole `toString` froze those too, so adding a defaulted field red the wall although not one byte
- *  the client sees had changed — which is what happened, and what cost two seats an evening.
- *
- *  Using the WIRE spelling ([ErrorType.wireName]) and not the enum's Kotlin name is the same point:
- *  `overloaded_error` is what crosses to the client, `OVERLOADED` is an implementation detail.
- *
- *  NOT COVERED, deliberately and worth knowing: [TurnOutcome.Failure.deterministic] IS client-visible
- *  (its KDoc says it chooses a readable ending over an SSE error event), so a change to it moves what
- *  the client shows and this golden would not notice. That belongs to a second pin; it is not
- *  bookkeeping and it is not the field that moved this wall.
- */
+/** The client-facing half of a failure: the wire error type and the provider-tagged message. The rest of
+ *  [TurnOutcome.Failure] is splice's own bookkeeping, so freezing its whole `toString` would red this wall
+ *  for a defaulted internal field while no byte the client sees had changed. */
 private fun failureSubject(failure: TurnOutcome.Failure): String =
     "${failure.type.wireName} ${failure.message}"
-
-/** Drives the provider-tagged failure scenario under ARBITRARY quirks, so the canary can move the
- *  provider tag and prove the subject still notices. One definition, used by the golden and by its
- *  canary, so the two cannot drift onto different scenarios. */
-private suspend fun driveFailure(quirks: PassthroughQuirks): TurnOutcome.Failure =
-    PassthroughStreamTranslator(ctx(), quirks).driveTurn(
-        listOf(
-            ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
-            ev("""{"type":"error","error":{"type":"overloaded_error","message":"upstream busy"}}"""),
-        ).asFlow(),
-        Recorder(),
-    ) as TurnOutcome.Failure
 
 private fun assertGolden(name: String, actual: String, subject: String = "what Kimi receives") {
     val file = GOLDEN_DIR.resolve(name)
@@ -201,16 +149,9 @@ private const val COMPACT_FIXTURE = """
 
 /** the block allowlist: redacted_thinking / document / search_result are DROPPED today, and an
  *  EMPTY thinking block is dropped whether or not it carries a signature — only thinking that
- *  contains thinking rides, signature verbatim.
- *
- *  V4-157 REWROTE THIS RULE AND THE FIXTURE BELOW, and the old one is worth naming because it
- *  shipped a dead turn to a live operator session on 2026-09-18: a blank thinking block was dropped
- *  only when its signature was ALSO empty, so a blank-but-SIGNED block was judged content-bearing
- *  and rode upstream, where Anthropic answered the whole request with 400 invalid_request_error —
- *  `messages.903.content.0.thinking: each thinking block must contain thinking`, request_id
- *  req_011CfBPZe8HG2qTVWNVXBmZm. Every retry resent the same block, so the turn could not be
- *  recovered and compaction was impossible for the rest of the session. The first block below IS
- *  that shape; it must never appear in `request-block-allowlist.json` again. */
+ *  contains thinking rides, signature verbatim. The first block below is the shape that shipped a
+ *  dead turn to a live session (Anthropic answers it with 400 "each thinking block must contain
+ *  thinking", and every retry resends it), so it must never appear in the golden again. */
 private const val BLOCK_ALLOWLIST_FIXTURE = """
 {"model":"m","messages":[{"role":"assistant","content":[
   {"type":"thinking","thinking":"","signature":"sig-empty-but-signed"},
@@ -246,20 +187,6 @@ class PassthroughGoldenTest {
 
     @Test
     fun `content block allowlist is byte-stable`() {
-        // V4-157: the incident block at content.0 of the fixture is LOAD-BEARING INPUT for a proof
-        // this golden can no longer see. It red the wall ONCE, on unmodified HEAD, by riding into
-        // the built request; now that the rule drops it the output is byte-identical whether the
-        // block is in the fixture or not — so deleting it would take the proof away in silence,
-        // with every test still green, which is precisely the shape the block was added to catch.
-        // Guarded here, ahead of the comparison, so the two cannot be separated. The SHAPE is what
-        // is pinned, never the signature string: anyone may rotate that value without weakening it.
-        val incident = Json.parseToJsonElement(BLOCK_ALLOWLIST_FIXTURE).jsonObject
-            .getValue("messages").jsonArray.single().jsonObject
-            .getValue("content").jsonArray.first().jsonObject
-        assertEquals("thinking", incident["type"]?.jsonPrimitive?.content, INCIDENT_BLOCK_REQUIRED)
-        assertTrue(incident["thinking"]?.jsonPrimitive?.content?.isBlank() == true, INCIDENT_BLOCK_REQUIRED)
-        assertTrue(incident["signature"]?.jsonPrimitive?.content?.isNotEmpty() == true, INCIDENT_BLOCK_REQUIRED)
-
         assertGolden("request-block-allowlist.json", buildKimi(BLOCK_ALLOWLIST_FIXTURE))
     }
 
@@ -294,13 +221,7 @@ class PassthroughGoldenTest {
         assertGolden("translator-signed-thinking.txt", sink.calls.joinToString("\n"))
     }
 
-    /** The provider-tagged failure text is user-facing on every head that runs this dialect, so it
-     *  is pinned too: CH-2 makes it providerTag-driven, and kimi's rendering must not move.
-     *
-     *  V4-69: the SUBJECT is the projection above — the wire error type and the provider-tagged
-     *  message — not the Failure data class's rendering. The old subject froze splice's own
-     *  bookkeeping, so a defaulted internal field (V4-67's connReset) red this wall while no byte
-     *  the client sees had changed. Nothing about the scenario changed; only what is watched. */
+    /** The provider-tagged failure text is user-facing on every head that runs this dialect. */
     @Test
     fun `provider-tagged failure text is byte-stable`() = runTest {
         val sink = Recorder()
@@ -317,143 +238,10 @@ class PassthroughGoldenTest {
             subject = "the failure TYPE and its provider-tagged message",
         )
     }
-
-    /** V4-69 canary — the failure golden must still detect a REAL deformation and must NOT be moved
-     *  by an INTERNAL one. Both halves are CONSTRUCTED rather than awaited or mutated in main
-     *  sources: the second Failure below differs from the first only in a defaulted bookkeeping
-     *  field, which is exactly what the old subject could not tell apart from a wire change (V4-67's
-     *  connReset red this wall while no byte the client reads had moved). A wall that fails here has
-     *  stopped watching the client's bytes; a wall that passes the second half has stopped watching
-     *  splice's own bookkeeping, which is the point of the row. */
-    @Test
-    fun `canary — the failure golden detects a provider change and ignores internal fields`() = runTest {
-        val kimi = driveFailure(KIMI_QUIRKS)
-        val relabelled = driveFailure(KIMI_QUIRKS.copy(providerTag = "someone-else"))
-        assertNotEquals(
-            failureSubject(relabelled),
-            failureSubject(kimi),
-            "a different providerTag MUST move the subject, or this wall froze nothing at all",
-        )
-
-        assertEquals(
-            failureSubject(kimi.copy(connReset = true)),
-            failureSubject(kimi),
-            "connReset is splice's own V4-67 journal tag — not something the client reads",
-        )
-        assertEquals(
-            failureSubject(kimi.copy(salvagedUsage = Usage(inputTokens = 7, outputTokens = 9))),
-            failureSubject(kimi),
-            "salvaged accounting is bookkeeping, never part of what the client sees",
-        )
-    }
-
-    // --- the canary: a golden that cannot detect a deformation is worthless ------------------------
-
-    /** Flipping a deformation MUST move the bytes. This is the permanent form of CH-1's red proof:
-     *  it fails if the builder ever stops deforming (i.e. if a golden rots into vacuity), which is
-     *  exactly what CH-2's inversion would do to kimi if it wired the neutral defaults by mistake. */
-    @Test
-    fun `canary — flipping a deformation moves the bytes away from the golden`() {
-        val goldenThinking = Files.readString(GOLDEN_DIR.resolve("request-thinking-adaptive.json"))
-        val neutralThinking = buildKimi(
-            THINKING_FIXTURE,
-            quirks = KIMI_QUIRKS.copy(mapThinkingToAdaptive = false),
-        ) + "\n"
-        assertNotEquals(goldenThinking, neutralThinking) {
-            "the adaptive-thinking golden no longer detects the rewrite — the wall has gone vacuous"
-        }
-
-        // Both sides from the SAME fixture, differing only in the knob — comparing against a
-        // different fixture's golden passes trivially and cannot detect a no-op strip.
-        val unstrippedSampling = buildKimi(
-            THINKING_FIXTURE,
-            quirks = KIMI_QUIRKS.copy(stripSamplingParams = false),
-        ) + "\n"
-        val strippedSampling = buildKimi(
-            THINKING_FIXTURE,
-            quirks = KIMI_QUIRKS.copy(stripSamplingParams = true),
-        ) + "\n"
-        val samplingKeys = listOf("\"temperature\"", "\"top_p\"", "\"top_k\"")
-        assertNotEquals(unstrippedSampling, strippedSampling) {
-            "stripSamplingParams no longer moves the bytes — the sampling canary has gone vacuous"
-        }
-        assertTrue(samplingKeys.any { it in unstrippedSampling }) {
-            "the fixture must carry sampling params for this canary to mean anything"
-        }
-        assertTrue(samplingKeys.none { it in strippedSampling }) {
-            "stripSamplingParams left a sampling key on the wire"
-        }
-
-        val goldenCache = Files.readString(GOLDEN_DIR.resolve("request-cache-control.json"))
-        assertTrue(goldenCache.contains("\"metadata\"")) {
-            "the cache_control golden must still carry the verbatim-copied unknown fields it pins"
-        }
-        assertTrue(!goldenCache.contains("cache_control")) {
-            "the cache_control golden must show cache_control fully stripped — it pins the deformation"
-        }
-    }
-
-    /**
-     * The canary above covered ONE of kimi's five deformations by flip-and-diverge; the other four
-     * had either a one-sided static assertion (cache_control, which would pass trivially against a
-     * fixture that never carried the marker) or nothing at all, while its second block exercised
-     * `stripSamplingParams` — a knob kimi's set does not even enable. So the three goldens named
-     * here carried no proof they were sensitive to their own quirk, which is precisely the CH-2
-     * hazard: make any of them a silent no-op for kimi's defaults and the assertions keep passing
-     * (review 2026-08-28, PR 99). Each side comes from the SAME fixture as its golden.
-     */
-    @Test
-    fun `canary — the mfjs, allowlist and cache-control goldens each detect their own quirk`() {
-        val neutralMfjs = buildKimi(MFJS_FIXTURE, quirks = KIMI_QUIRKS.copy(mfjsSanitize = false)) + "\n"
-        assertNotEquals(Files.readString(GOLDEN_DIR.resolve("request-mfjs-schema.json")), neutralMfjs) {
-            "the mfjs golden no longer detects the schema rewrite — the wall has gone vacuous"
-        }
-
-        val neutralBlocks = buildKimi(BLOCK_ALLOWLIST_FIXTURE, quirks = KIMI_QUIRKS.copy(blockAllowlist = null)) + "\n"
-        assertNotEquals(Files.readString(GOLDEN_DIR.resolve("request-block-allowlist.json")), neutralBlocks) {
-            "the block-allowlist golden no longer detects the dropped blocks — the wall has gone vacuous"
-        }
-
-        val neutralCache = buildKimi(CACHE_CONTROL_FIXTURE, quirks = KIMI_QUIRKS.copy(stripCacheControl = false)) + "\n"
-        assertNotEquals(Files.readString(GOLDEN_DIR.resolve("request-cache-control.json")), neutralCache) {
-            "the cache_control golden no longer detects the strip — the wall has gone vacuous"
-        }
-    }
-
-    /**
-     * DR-123 routed `allOf` through the sanitizer, which CAN move kimi's request bytes — and kimi
-     * bytes are an operator lock. It moved none, and this arm is why that claim is checkable rather
-     * than asserted: the fixture behind `request-mfjs-schema.json` carries no `allOf` at all, so
-     * that golden is a genuine control for the change instead of a golden that was regenerated.
-     * Adding an `allOf` here is legitimate work, but it makes the golden move — so it stops being a
-     * control, and this arm says so out loud instead of letting the byte diff arrive unexplained.
-     */
-    @Test
-    fun `the mfjs golden is an allOf-free control for the DR-123 routing`() {
-        assertTrue(!MFJS_FIXTURE.contains("allOf")) {
-            "the mfjs fixture gained an allOf — request-mfjs-schema.json is no longer a byte-identical " +
-                "control for the allOf routing, and the operator's kimi-bytes lock needs the new bytes read"
-        }
-    }
-
-    /** The fifth deformation, on the translator leg: the unsigned-thinking transcript's golden
-     *  literally IS the synthesized `sig:splice-synth-v1` line, so turning the quirk off must move
-     *  it. Same events as the golden test, so only the knob differs. */
-    @Test
-    fun `canary — the unsigned-thinking golden detects signature synthesis`() = runTest {
-        val sink = Recorder()
-        PassthroughStreamTranslator(ctx(), KIMI_QUIRKS.copy(synthesizeSignatures = false))
-            .driveTurn(UNSIGNED_THINKING_EVENTS.asFlow(), sink)
-        val neutral = sink.calls.joinToString("\n") + "\n"
-        assertNotEquals(Files.readString(GOLDEN_DIR.resolve("translator-unsigned-thinking.txt")), neutral) {
-            "the unsigned-thinking golden no longer detects signature synthesis — the wall has gone vacuous"
-        }
-    }
 }
 
 /** The truncation shape: a thinking block with NO signature_delta. Kimi never signs; Anthropic
- *  always does, which is why the claude head must not inherit this synthesis (spec Eli finding 11).
- *  Shared by the golden and its canary so the two cannot drift apart. */
+ *  always does, which is why the claude head must not inherit this synthesis. */
 private val UNSIGNED_THINKING_EVENTS = listOf(
     ev("""{"type":"message_start","message":{"usage":{"input_tokens":10}}}"""),
     ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),

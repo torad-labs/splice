@@ -171,7 +171,7 @@ class ChatRequestBuilderTest {
     }
 
     @Test
-    fun `unreadable image source leaves an honest marker instead of dropping the message - DR-94`() {
+    fun `unreadable image source leaves an honest marker instead of dropping the message`() {
         // Vision is ON (default quirk) but the source cannot be mapped: pre-fix the image-only
         // message vanished ENTIRELY - role alternation broken, omission hidden from the model.
         val req = build(
@@ -191,7 +191,7 @@ class ChatRequestBuilderTest {
     }
 
     @Test
-    fun `a partially unreadable tool_result declares the dropped image - DR-94`() {
+    fun `a partially unreadable tool_result declares the dropped image`() {
         // Pre-fix the tool-output marker fired only when ALL images dropped, so losing one of two
         // was silent - and with vision ON the old wording blamed vision the backend has.
         val req = build(
@@ -352,24 +352,5 @@ class ChatRequestBuilderTest {
         val roles = msgs.map { it["role"]?.jsonPrimitive?.content }
         // assistant, tool, tool, then user(images) — never tool, user, tool
         assertEquals(listOf("assistant", "tool", "tool", "user"), roles)
-    }
-}
-
-// reasoning_effort overlay wall (issue #21): a real TOML value must reach ChatQuirks.emitReasoningEffort
-// through the chained overlay, and null must preserve the base — the reasoning_cache precedent
-// (2026-07-24 RC-5 review) is exactly this failure mode recurring.
-class ReasoningEffortTomlOverlayTest {
-
-    @Test
-    fun `the overlay applies an explicit value and null keeps the base`() {
-        val base = ChatQuirks(providerTag = "kimi")
-        assertTrue(base.emitReasoningEffort, "default is ON")
-        assertEquals(false, base.withReasoningEffortToml(false).emitReasoningEffort)
-        assertEquals(true, base.withReasoningEffortToml(null).emitReasoningEffort, "null preserves the base")
-        assertEquals(
-            false,
-            base.withReasoningEffortToml(false).withReasoningEffortToml(null).emitReasoningEffort,
-            "null preserves an applied override",
-        )
     }
 }

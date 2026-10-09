@@ -92,7 +92,7 @@ class PassthroughStreamTranslatorTest {
     // one, so the SAME upstream frame was dropped on stream:false and forwarded corrupt on
     // stream:true. Every fixture in this file sends a delta matching the block it opened.
     @Test
-    fun `a text delta aimed at an open tool block is dropped - DR-142`() = runTest {
+    fun `a text delta aimed at an open tool block is dropped`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -118,7 +118,7 @@ class PassthroughStreamTranslatorTest {
     // A thinking_delta into a text block is corrupt and dropped, but narrowing input_json_delta to
     // TOOL alone would break server_tool_use blocks, which stream their input the same way.
     @Test
-    fun `a thinking delta aimed at an open text block is dropped - DR-142`() = runTest {
+    fun `a thinking delta aimed at an open text block is dropped`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -190,7 +190,7 @@ class PassthroughStreamTranslatorTest {
     // block closed with only an empty signature would otherwise skip synthesize-at-close, and
     // Claude Code silently discards the unsigned block — the exact regression synthesis prevents.
     @Test
-    fun `an empty signature_delta does not suppress synthesis at close - DR-122`() = runTest {
+    fun `an empty signature_delta does not suppress synthesis at close`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -356,7 +356,7 @@ class PassthroughStreamTranslatorTest {
     // content-bearing and short-circuited the empty-turn honesty gate. Forwarding stays
     // unconditional (the kimi goldens pin append + sink order); only the flag is gated.
     @Test
-    fun `an empty text delta does not count as delivered content - DR-75`() = runTest {
+    fun `an empty text delta does not count as delivered content`() = runTest {
         val s = drive(
             Rec(),
             ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
@@ -370,7 +370,7 @@ class PassthroughStreamTranslatorTest {
     }
 
     @Test
-    fun `real text content still counts as delivered - DR-75 control`() = runTest {
+    fun `real text content still counts as delivered`() = runTest {
         val s = drive(
             Rec(),
             ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
@@ -760,7 +760,7 @@ class PassthroughRunawayCancellationTest {
 // detekt's LargeClass budget.
 class PassthroughRedactedThinkingTest {
     @Test
-    fun `a redacted_thinking block reaches the client sink, not the ignore bucket - DR-118`() = runTest {
+    fun `a redacted_thinking block reaches the client sink, not the ignore bucket`() = runTest {
         val sink = Rec()
         val outcome = drive(
             sink,
@@ -799,7 +799,7 @@ class PassthroughServerToolForwardTest {
             .driveTurn(evs.toList().asFlow(), sink)
 
     @Test
-    fun `neutral head forwards a server_tool_use block and its args verbatim - DR-119`() = runTest {
+    fun `neutral head forwards a server_tool_use block and its args verbatim`() = runTest {
         val sink = Rec()
         val outcome = neutralDrive(
             sink,
@@ -829,7 +829,7 @@ class PassthroughServerToolForwardTest {
     }
 
     @Test
-    fun `neutral head forwards a web_search_tool_result block verbatim - DR-119`() = runTest {
+    fun `neutral head forwards a web_search_tool_result block verbatim`() = runTest {
         val sink = Rec()
         val outcome = neutralDrive(
             sink,
@@ -850,7 +850,7 @@ class PassthroughServerToolForwardTest {
     }
 
     @Test
-    fun `neutral head forwards citations_delta on a live text block - DR-119`() = runTest {
+    fun `neutral head forwards citations_delta on a live text block`() = runTest {
         val sink = Rec()
         val outcome = neutralDrive(
             sink,
@@ -874,7 +874,7 @@ class PassthroughServerToolForwardTest {
     }
 
     @Test
-    fun `kimi profile still swallows citations_delta - DR-119 control`() = runTest {
+    fun `kimi profile still swallows citations_delta`() = runTest {
         val sink = Rec()
         val outcome = drive(
             sink,
@@ -907,7 +907,7 @@ class PassthroughBlockEvictionTest {
     // onBlockStop, which the evicted block never reaches: its thinking shipped UNSIGNED and Claude
     // Code silently discards an unsigned thinking block. The exactly-once contract became NEVER.
     @Test
-    fun `a duplicate start at a live thinking index signs the evicted block - DR-163`() = runTest {
+    fun `a duplicate start at a live thinking index signs the evicted block`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -934,7 +934,7 @@ class PassthroughBlockEvictionTest {
     // The evicted block must also be CLOSED, not merely signed — an orphan left open relies on the
     // end-of-turn closeAll sweep, which emits its stop out of order after every later block.
     @Test
-    fun `a duplicate start at a live tool index closes the evicted block - DR-163`() = runTest {
+    fun `a duplicate start at a live tool index closes the evicted block`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -962,7 +962,7 @@ class PassthroughBlockEvictionTest {
     // legitimately reused after its own content_block_stop must open clean — PT-006 already removed
     // the entry, so no second close may be invented for a block that already retired.
     @Test
-    fun `an index reused after a proper stop opens clean - DR-163 control`() = runTest {
+    fun `an index reused after a proper stop opens clean`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -983,7 +983,7 @@ class PassthroughBlockEvictionTest {
     // CONTROL (green both sides): an IGNORED occupant owns no wire, so evicting it must emit
     // NOTHING. A guard that closed unconditionally would invent a close for a block never opened.
     @Test
-    fun `evicting a wireless ignored block emits nothing - DR-163 control`() = runTest {
+    fun `evicting a wireless ignored block emits nothing`() = runTest {
         val sink = Rec()
         drive(
             sink,
@@ -1000,7 +1000,7 @@ class PassthroughBlockEvictionTest {
     // the whole wire sequence must be unchanged by this repair — the same list the primary
     // full-turn arm pins, re-asserted here as the DR-163 no-op proof.
     @Test
-    fun `a well-formed turn is untouched by the eviction guard - DR-163 control`() = runTest {
+    fun `a well-formed turn is untouched by the eviction guard`() = runTest {
         val sink = Rec()
         PassthroughStreamTranslator(ctx(), KIMI).driveTurn(fullTurnEvents().asFlow(), sink)
         assertEquals(

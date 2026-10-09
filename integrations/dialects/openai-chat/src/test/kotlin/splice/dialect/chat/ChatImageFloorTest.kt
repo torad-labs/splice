@@ -24,7 +24,7 @@ import java.util.Base64
 class ChatImageFloorTest {
 
     @Test
-    fun `an undersized image is dropped with its own marker and the turn survives - DR-155`() {
+    fun `an undersized image is dropped with its own marker and the turn survives`() {
         val req = floored(
             """{"model":"m","messages":[{"role":"user","content":[
                 {"type":"text","text":"look at this"},
@@ -40,7 +40,7 @@ class ChatImageFloorTest {
 
     // The boundary itself is legal — xAI's minimum is "at least 8", not "more than 8". Mutant: <=.
     @Test
-    fun `an image exactly at the floor still rides upstream - DR-155`() {
+    fun `an image exactly at the floor still rides upstream`() {
         val req = floored(
             """{"model":"m","messages":[{"role":"user","content":[
                 {"type":"image","source":{"type":"base64","media_type":"image/png","data":"${png(8, 8)}"}}
@@ -54,7 +54,7 @@ class ChatImageFloorTest {
     // before this feature existed — no decode, no drop, not even for the exact image that kills a
     // grok turn. Mutant: give minImageEdgePx a non-null default.
     @Test
-    fun `with no floor configured the same 1x1 rides upstream untouched - DR-155`() {
+    fun `with no floor configured the same 1x1 rides upstream untouched`() {
         val req = build(
             """{"model":"m","messages":[{"role":"user","content":[
                 {"type":"image","source":{"type":"base64","media_type":"image/png","data":"${png(1, 1)}"}}
@@ -70,7 +70,7 @@ class ChatImageFloorTest {
     // could not be read, when it read perfectly and the BACKEND refused the size. Two events, two
     // counts, two sentences.
     @Test
-    fun `an undersized and an unreadable image keep separate counts and reasons - DR-155`() {
+    fun `an undersized and an unreadable image keep separate counts and reasons`() {
         val content = floored(
             """{"model":"m","messages":[{"role":"user","content":[
                 {"type":"image","source":{"type":"base64","media_type":"image/png","data":"${png(1, 1)}"}},
@@ -86,7 +86,7 @@ class ChatImageFloorTest {
     // would say the same image was omitted twice for two different reasons — the double-marker
     // class DR-94's split exists to prevent. Mutant: drop the supportsVision gate in belowFloor.
     @Test
-    fun `a no-vision backend never adds the floor marker as a second story - DR-155`() {
+    fun `a no-vision backend never adds the floor marker as a second story`() {
         val content = build(
             """{"model":"m","messages":[{"role":"user","content":[
                 {"type":"image","source":{"type":"base64","media_type":"image/png","data":"${png(1, 1)}"}}
@@ -99,7 +99,7 @@ class ChatImageFloorTest {
     }
 
     @Test
-    fun `an undersized tool_result image is declared inside the tool output - DR-155`() {
+    fun `an undersized tool_result image is declared inside the tool output`() {
         val req = floored(
             """{"model":"m","messages":[
                 {"role":"assistant","content":[{"type":"tool_use","id":"t4","name":"shot","input":{}}]},
@@ -120,7 +120,7 @@ class ChatImageFloorTest {
     // The realistic tool_result: a real screenshot, a broken source, and a favicon-sized image. All
     // three dispositions must be individually true in one output.
     @Test
-    fun `a mixed tool_result marks each drop for what it was and forwards the rest - DR-155`() {
+    fun `a mixed tool_result marks each drop for what it was and forwards the rest`() {
         val req = floored(
             """{"model":"m","messages":[
                 {"role":"assistant","content":[{"type":"tool_use","id":"t5","name":"shot","input":{}}]},
@@ -143,7 +143,7 @@ class ChatImageFloorTest {
     // forward, because a proxy that drops what it fails to parse is a worse defect than the one
     // this row repairs. Mutant: treat a null probe as below the floor.
     @Test
-    fun `an image the probe cannot read forwards under the floor - DR-155`() {
+    fun `an image the probe cannot read forwards under the floor`() {
         val req = floored(
             """{"model":"m","messages":[{"role":"user","content":[
                 {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}

@@ -1,7 +1,7 @@
-// NEW: V4-382 — the openai-chat dialect's system message no longer carries Claude Code's per-session attribution block,
+// The openai-chat dialect's system message no longer carries Claude Code's per-session attribution block,
 // whose fingerprint hashes the first user prompt and so forks a backend's prompt cache at the front of every session,
 // subagent and post-compaction prompt. Two requests that differ only in that fingerprint build the same system message.
-package splice.dialect.chat.v4382
+package splice.dialect.chat
 
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -9,10 +9,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
-import splice.dialect.chat.ChatQuirks
-import splice.dialect.chat.ChatRequestBuilder
 
-class AttributionBlockSystemMessageTest {
+class ChatAttributionBlockTest {
     private fun systemMessage(fingerprint: String): String {
         val body = AnthropicParse.parseAnthropicBody(
             """{"model":"m","system":[

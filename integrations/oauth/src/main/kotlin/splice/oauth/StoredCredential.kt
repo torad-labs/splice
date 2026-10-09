@@ -24,7 +24,6 @@ import splice.core.config.KeyStorePath
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
-import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.provider.codex.CodexCredentialShape
 import splice.provider.grok.GrokCredentialShape
@@ -32,6 +31,7 @@ import splice.provider.kimi.KimiCredentialShape
 import splice.provider.muse.MuseCredentialShape
 import splice.topology.TopologyLoader
 import splice.upstream.credentials.CredentialShape
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -76,13 +76,16 @@ public class StoredCredential(private val json: Json = Json { ignoreUnknownKeys 
         // caller reports the absence itself: `splice add` and `splice doctor` through
         // AddCredentialFile.problem, which renders the file's actual fault, and `splice models`
         // through the "splice holds none for '<key>'" sentence it prints instead of a bare 401.
-        // The directive sits on the line directly above the expression: ast-grep attaches it to the
-        // next node, so an explanation BELOW it detaches the suppression entirely (measured against
-        // `bun tools/gate rules`, 2026-09-22; raised by the builder seat the same day).
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-22: absence is this method's whole contract; every caller names the absence itself (see above).
-        val root = Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
-            .getOrNull() ?: return null
+        val root = rootOrNull(path) ?: return null
         return shape to root
+    }
+
+    private fun rootOrNull(path: Path): JsonObject? = try {
+        json.parseToJsonElement(Files.readString(path)).jsonObject
+    } catch (_: IOException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
     }
 
     /** The api-key this provider authenticates with: the environment first, then splice's own key

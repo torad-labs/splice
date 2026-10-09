@@ -31,6 +31,7 @@ import splice.provider.muse.MuseMintMode
 import splice.provider.muse.MuseMintPersistence
 import splice.provider.muse.MuseOAuth
 import splice.provider.muse.MuseOAuthEndpoints
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -103,10 +104,12 @@ public class LoginMuse(
 
     private fun museAuthJson(responseBody: String): String {
         val token = oauth.parseMuseAccessToken(responseBody) ?: return "{}"
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): optional extra fields only — the access token itself was already read by parseMuseAccessToken above, and the null path writes the token alone.
-        val obj = Cancellables.runCatchingCancellable {
+        // Optional extra fields only: the access token itself was already read above.
+        val obj = try {
             json.parseToJsonElement(responseBody) as? JsonObject
-        }.getOrNull()
+        } catch (_: IllegalArgumentException) {
+            null
+        }
         return buildJsonObject {
             put("access_token", JsonPrimitive(token))
             keptString(obj, "token_type")?.let { put("token_type", JsonPrimitive(it)) }
@@ -172,8 +175,12 @@ public class LoginMuse(
         return accountFiles.poolDir(account.kind, authPath).resolve("$label.json")
     }
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): an absent or unparsable account file is the normal pre-login state; every caller treats the null as 'no stored account' and says so.
-    private fun readObject(path: Path): JsonObject? = Cancellables.runCatchingCancellable {
+    // An absent or unparsable account file is the normal pre-login state; every caller treats the null as 'no stored account'.
+    private fun readObject(path: Path): JsonObject? = try {
         json.parseToJsonElement(Files.readString(path)) as? JsonObject
-    }.getOrNull()
+    } catch (_: IOException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 }

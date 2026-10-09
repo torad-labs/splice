@@ -7,9 +7,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import splice.core.topology.AuthKind
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.SecureFile
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -130,11 +130,18 @@ private class ExistingIdentity(
     private val json: Json,
 ) {
     fun matches(file: Path, label: String): Boolean {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): a candidate file that does not parse cannot carry a matching identity, so false is the complete answer; this matcher is contractually silent (it must never print provider identity).
-        val saved = Cancellables.runCatchingCancellable {
-            json.parseToJsonElement(Files.readString(file)) as? JsonObject
-        }.getOrNull() ?: return false
+        // A candidate file that does not parse cannot carry a matching identity, so false is the complete answer.
+        val saved = jsonObjectOrNull(file) ?: return false
         return JsonScalars.str(saved, FIELD_KIND) == kind.wire &&
             JsonScalars.str(saved, FIELD_LABEL) == label && identity(saved) == expected
+    }
+
+    /** [path] parsed as a JSON object; null when it cannot be read or is not one. */
+    private fun jsonObjectOrNull(path: Path): JsonObject? = try {
+        json.parseToJsonElement(Files.readString(path)) as? JsonObject
+    } catch (_: IOException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
     }
 }

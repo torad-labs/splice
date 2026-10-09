@@ -238,12 +238,14 @@ internal class LoginIo(
         identityHeaders.forEach { (k, v) -> request.header(k, v) }
     }
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): provider error bodies are frequently not JSON (HTML, plain prose), so 'no error code' is the normal reading; the caller already prints the status and the sanitized body.
-    internal fun errorCode(body: String): String = Cancellables.runCatchingCancellable {
+    // Provider error bodies are frequently not JSON (HTML, plain prose), so 'no error code' is the normal reading.
+    internal fun errorCode(body: String): String = try {
         (loginJson.parseToJsonElement(body) as? JsonObject)?.let { obj ->
             (obj["error"] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
         }
-    }.getOrNull().orEmpty()
+    } catch (_: IllegalArgumentException) {
+        null
+    }.orEmpty()
 
     internal fun sanitize(s: String): String = s.filter { !it.isISOControl() }.take(ERR_BODY_CAP)
 }

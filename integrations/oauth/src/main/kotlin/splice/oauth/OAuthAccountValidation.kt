@@ -11,10 +11,20 @@ import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.upstream.credentials.AccountLabelPolicy
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
 internal class OAuthAccountValidation(private val json: Json) {
+    /** [path] parsed as a JSON object; null when it cannot be read or is not one. */
+    fun jsonObjectOrNull(path: Path): JsonObject? = try {
+        json.parseToJsonElement(Files.readString(path)) as? JsonObject
+    } catch (_: IOException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
     fun validatedLabel(kind: AuthKind.OAuth, path: Path, log: LogSink): String? {
         val label = path.fileName.toString().removeSuffix(".json")
         val raw = readCredential(kind, path)

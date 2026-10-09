@@ -264,10 +264,8 @@ public class OAuthAccountFiles(private val json: Json = Json { ignoreUnknownKeys
         if (label != newLabel && Files.exists(dir.resolve("$newLabel$JSON_SUFFIX"), LinkOption.NOFOLLOW_LINKS)) {
             refuse("an OAuth account is already labeled '$newLabel'")
         }
-        // ast-grep-ignore: kt-no-silent-result-collapse -- unreadable and unparseable both refuse() below by the same name; no second failure mode to classify separately here
-        val parsed = Cancellables.runCatchingCancellable {
-            json.parseToJsonElement(Files.readString(credential)) as? JsonObject
-        }.getOrNull() ?: refuse("credential for '$label' is not valid JSON")
+        // Unreadable and unparseable both refuse below by the same name.
+        val parsed = validation.jsonObjectOrNull(credential) ?: refuse("credential for '$label' is not valid JSON")
         val destination = writes.writeLabeled(kind, dir, newLabel, parsed)
         if (destination != credential) Files.delete(credential)
         val quota = dir.resolve("$label-quota$JSON_SUFFIX")

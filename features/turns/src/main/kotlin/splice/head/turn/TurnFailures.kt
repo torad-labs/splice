@@ -12,26 +12,20 @@ import java.io.IOException
 internal class TurnFailures(
     private val provider: Provider,
 ) {
-    /** Captures exactly the failure classes [TurnEnding.emitFailure] dispatches on: I/O and the two documented
-     *  gateway-bug classes (IllegalArgument/
-     *  IllegalState — a bad base_url parse, a Ktor internal state error), which previously escaped
-     *  as a truncated 200 with no error frame (review 2026-07-19). The stream and collect entries
-     *  share ONE boundary. */
+    /** Captures every failure [TurnEnding.emitFailure] dispatches on: I/O and any other RuntimeException, so a
+     *  NullPointerException or IndexOutOfBounds out of the turn ends in an error frame and a perf row, never a
+     *  truncated 200 (a bad base_url parse and a Ktor internal state error were the first two; the class is open, not a list).
+     *  An Error is not caught. The stream and collect entries share ONE boundary. */
     inline fun <R> catchingTurnFailure(block: () -> R): Result<R> =
         try {
             Result.success(block())
         } catch (e: IOException) {
             Result.failure(e)
         } catch (e: CancellationException) {
-            // CancellationException extends IllegalStateException — rethrown BEFORE it so a
+            // CancellationException extends IllegalStateException — rethrown BEFORE RuntimeException so a
             // cancelled turn actually stops; stream()/collect() seal the emitter then rethrow.
             throw e
-        } catch (e: IllegalArgumentException) {
-            // e.g. a URL-parse error from a bad base_url (review 2026-07-19: previously escaped
-            // as a truncated 200 with no error frame — emitFailure's branch was unreachable)
-            Result.failure(e)
-        } catch (e: IllegalStateException) {
-            // e.g. an IllegalState out of Ktor internals — same escape class as above
+        } catch (e: RuntimeException) {
             Result.failure(e)
         }
 

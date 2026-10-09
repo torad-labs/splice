@@ -1,0 +1,9 @@
+sealed class Shape {
+    class Circle : Shape()
+    class Square : Shape()
+}
+
+fun name(s: Shape): String = when (s) {
+    is Shape.Circle -> "circle"
+    else -> "other"
+}

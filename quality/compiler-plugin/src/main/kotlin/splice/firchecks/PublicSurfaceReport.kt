@@ -44,15 +44,16 @@ internal val sourceRootOption: CliOption = CliOption(
 @OptIn(ExperimentalCompilerApi::class)
 internal class FirChecksCommandLineProcessor : CommandLineProcessor {
     override val pluginId: String = PLUGIN_ID
-    override val pluginOptions: Collection<AbstractCliOption> = listOf(reportDirOption, sourceRootOption)
+    override val pluginOptions: Collection<AbstractCliOption> =
+        listOf(reportDirOption, sourceRootOption, closedWhenOption)
 
     override fun processOption(option: AbstractCliOption, value: String, configuration: CompilerConfiguration) {
-        val key = when (option.optionName) {
-            reportDirOption.optionName -> reportDirKey
-            sourceRootOption.optionName -> sourceRootKey
+        when (option.optionName) {
+            reportDirOption.optionName -> configuration.put(reportDirKey, value)
+            sourceRootOption.optionName -> configuration.put(sourceRootKey, value)
+            closedWhenOption.optionName -> configuration.put(closedWhenKey, value.toBooleanStrict())
             else -> error("unknown $PLUGIN_ID option ${option.optionName}")
         }
-        configuration.put(key, value)
     }
 }
 

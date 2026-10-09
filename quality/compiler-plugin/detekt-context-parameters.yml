@@ -1,6 +1,6 @@
 # Module-scoped detekt overlay for :quality-compiler-plugin ONLY (layered ON TOP of the shared quality/detekt/detekt.yml,
 # which stays untouched and fully enforced everywhere else). Every disable below is scoped by
-# `excludes` to the SINGLE file that uses Kotlin context parameters — every other file in this module,
+# `excludes` to the files that override a FIR checker with Kotlin context parameters (MustConsumeDiscardChecker, ClosedWhenElseChecker) — every other file in this module,
 # and every other rule, stays fully checked.
 #
 # Why: the FIR checker API (FirExpressionChecker.check) is declared with Kotlin context parameters, so
@@ -13,11 +13,11 @@
 # warningsAsErrors:true are inherited unchanged; tools/gate/src/lib/configguard.ts's guarantees are untouched.
 style:
   UnusedImports:
-    excludes: ['**/MustConsumeDiscardChecker.kt']
+    excludes: ['**/MustConsumeDiscardChecker.kt', '**/ClosedWhenElseChecker.kt']
 formatting:
   Wrapping:
-    excludes: ['**/MustConsumeDiscardChecker.kt']
+    excludes: ['**/MustConsumeDiscardChecker.kt', '**/ClosedWhenElseChecker.kt']
   SpacingAroundColon:
-    excludes: ['**/MustConsumeDiscardChecker.kt']
+    excludes: ['**/MustConsumeDiscardChecker.kt', '**/ClosedWhenElseChecker.kt']
   NoUnusedImports:
-    excludes: ['**/MustConsumeDiscardChecker.kt']
+    excludes: ['**/MustConsumeDiscardChecker.kt', '**/ClosedWhenElseChecker.kt']

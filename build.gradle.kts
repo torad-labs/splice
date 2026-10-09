@@ -46,6 +46,15 @@ val firChecksPluginJar =
     project(":quality-compiler-plugin").layout.buildDirectory
         .file("libs/fir-checks.jar")
 val firChecksPluginArg = firChecksPluginJar.map { "-Xplugin=${it.asFile.absolutePath}" }
+// CLOSED WHEN. A `when` over a sealed type, an enum or a Boolean lists every case, so adding a case is a compile error at
+// each decision instead of a silent fall into an `else`. The check is a FIR extension in the plugin above, switched per
+// module while the codebase is brought across; when every module is in the list the list and the switch go, and the check
+// is simply on.
+val closedWhenModules =
+    setOf(
+        ":integrations-terminal",
+    )
+val closedWhenArgs = listOf("-P", "plugin:splice.fir-checks:closedWhen=true")
 val releaseVersion = (JsonSlurper().parse(file("package.json")) as Map<*, *>)["version"].toString()
 
 allprojects {
@@ -72,6 +81,7 @@ subprojects {
             inputs.files(firChecksPluginJar)
                 .withPropertyName("firChecksPluginJar")
             compilerOptions.freeCompilerArgs.add(firChecksPluginArg)
+            if (project.path in closedWhenModules) compilerOptions.freeCompilerArgs.addAll(closedWhenArgs)
         }
     }
 }

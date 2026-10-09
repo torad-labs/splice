@@ -160,7 +160,7 @@ private fun build(json: String, quirks: ChatQuirks): JsonObject =
     ChatRequestBuilder(quirks)
         .build(
             AnthropicParse.parseAnthropicBody(json).typed,
-            ChatRoute("grok-4.6", "claude-grok--grok-4.6"),
+            upstreamModel = "grok-4.6",
             compact = false,
         )
         .req

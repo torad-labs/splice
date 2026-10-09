@@ -22,7 +22,7 @@ public class ChatRequestBuilder(
 
     public fun build(
         body: AnthropicRequest,
-        route: ChatRoute,
+        upstreamModel: String,
         compact: Boolean,
         sessionId: String? = null,
         raw: JsonObject = JsonObject(emptyMap()),
@@ -34,20 +34,20 @@ public class ChatRequestBuilder(
         // transcript cold. `compact` reaches TurnMeta for the response side only.
         val messages = wire.messagesArray(body.system, body)
         val emitTools = quirks.supportsTools && body.tools.isNotEmpty()
-        val effort = quirks.effortVocabulary?.effort(raw, body, route.upstream)
-            ?: effortTiers.chatReasoningEffort(body, route.upstream)
+        val effort = quirks.effortVocabulary?.effort(raw, body, upstreamModel)
+            ?: effortTiers.chatReasoningEffort(body, upstreamModel)
         // TIER-1 (#924): the request is a CLOSED ChatRequest DTO (see chatRequestObject) — a knob
         // that doesn't belong can't be added without a field.
         val cacheKey = quirks.sessionCacheKeyPrefix?.let { prefix -> sessionId?.let { "$prefix:$it" } }
         val lease = affinity?.let { it.lease(it.conversationOf(sessionId, messages)) }
         val knobs = ChatKnobs(effort, cacheKey, lease?.slot)
-        val req = assembler.chatRequestObject(route.upstream, messages, emitTools, body, knobs)
+        val req = assembler.chatRequestObject(upstreamModel, messages, emitTools, body, knobs)
         val meta = TurnMeta(
             compact = compact,
             showReasoning = showReasoning,
             stream = body.stream,
-            originalModel = route.original,
-            upstreamModel = route.upstream,
+            originalModel = body.model,
+            upstreamModel = upstreamModel,
             clientMaxTokens = body.maxTokens?.takeIf { it > 0 },
             effort = effort ?: "n/a",
             summary = if (effort != null) "detailed" else null,

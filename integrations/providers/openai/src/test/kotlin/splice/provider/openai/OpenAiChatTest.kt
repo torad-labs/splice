@@ -33,7 +33,6 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.Cancellables
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
-import splice.dialect.chat.ChatRoute
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.awaitListening
@@ -174,7 +173,7 @@ class OpenAiChatTest {
                   {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"done"}]}
                 ]}""",
         )
-        val req = ChatRequestBuilder(ChatQuirks("test")).build(parsed.typed, ChatRoute("gpt-x"), compact = false).req
+        val req = ChatRequestBuilder(ChatQuirks("test")).build(parsed.typed, "gpt-x", compact = false).req
         val messages = req["messages"]!!.jsonArray.map { it.jsonObject }
         assertEquals("system", messages[0]["role"]?.jsonPrimitive?.content)
         assertEquals("user", messages[1]["role"]?.jsonPrimitive?.content)

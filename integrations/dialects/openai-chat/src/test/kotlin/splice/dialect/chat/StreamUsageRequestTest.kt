@@ -22,7 +22,7 @@ class StreamUsageRequestTest {
     private fun request(quirks: ChatQuirks): JsonObject = ChatRequestBuilder(quirks)
         .build(
             AnthropicParse.parseAnthropicBody(TURN).typed,
-            ChatRoute("bonsai", "claude-bonsai--bonsai"),
+            upstreamModel = "bonsai",
             compact = false,
         )
         .req

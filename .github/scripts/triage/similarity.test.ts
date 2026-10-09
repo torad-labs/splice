@@ -36,3 +36,19 @@ test("rank drops the target, applies the threshold, sorts high to low and keeps 
   expect(got.map((r) => r.number)).toEqual([2, 3, 4]);
   expect(got[0]!.score).toBe(1);
 });
+
+test("round3 rounds the double's exact value, so 0.8075 (a hair under the tie) is 0.807 and a true tie is even", () => {
+  expect(round3(0.8075)).toBe(0.807);
+  expect(round3(0.0625)).toBe(0.062);
+  expect(round3(0.0635)).toBe(0.064);
+  expect(round3(0.5)).toBe(0.5);
+});
+
+test("rank follows the parent's order where scaled rounding put two candidates on the same score", () => {
+  const title = "x";
+  const target = { number: 1, title, body: "a".repeat(321) };
+  const two = { number: 2, title, body: "a".repeat(321) + "b".repeat(154) };
+  const three = { number: 3, title, body: "a".repeat(313) + "b".repeat(142) };
+  const got = rank(target, [two, three], 0.5, 5);
+  expect(got.map((g) => [g.number, g.score])).toEqual([[3, 0.808], [2, 0.807]]);
+});

@@ -1,0 +1,490 @@
+[
+ {
+  "id": "shebang-control",
+  "category": "control",
+  "path": "tools/new/tool",
+  "text": "#!/usr/bin/env python3\nprint(1)\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "shell-control",
+  "category": "control",
+  "path": "tools/new/run.sh",
+  "text": "#!/bin/sh\npython3 -V\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "python-control",
+  "category": "control",
+  "path": "tools/new/run.sh",
+  "text": "#!/bin/sh\npython -V\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "pip-control",
+  "category": "control",
+  "path": "tools/new/run.sh",
+  "text": "#!/bin/sh\npip install example\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "workflow-control",
+  "category": "control",
+  "path": ".github/workflows/review.yml",
+  "text": "jobs:\n  a:\n    steps:\n      - run: python3 -V\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "docker-control",
+  "category": "control",
+  "path": "tools/new/Dockerfile",
+  "text": "FROM debian\nRUN python3 -V\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "package-control",
+  "category": "control",
+  "path": "new/workspace/package.json",
+  "text": "{\"scripts\":{\"check\":\"python3 -V\"}}",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "kotlin-control",
+  "category": "control",
+  "path": "new/module/src/test/kotlin/T.kt",
+  "text": "val p = ProcessBuilder(\"python3\", \"-V\").start()\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "ts-control",
+  "category": "control",
+  "path": "new/workspace/src/t.ts",
+  "text": "import { spawnSync } from \"node:child_process\";\nspawnSync(\"python3\", [\"-V\"]);\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "setup-python-control",
+  "category": "control",
+  "path": ".github/workflows/review.yml",
+  "text": "jobs:\n  a:\n    steps:\n      - uses: actions/setup-python@v5\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "ledger-control",
+  "category": "control",
+  "path": ".dev/campaigns/review.toml",
+  "text": "[[items]]\nid = \"R-1\"\nstatus = \"todo\"\nverify = \"python3 -V\"\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "prose-control",
+  "category": "control",
+  "path": "README.md",
+  "text": "Run the tool with python3 -V.\n",
+  "tracked": true,
+  "expected": false
+ },
+ {
+  "id": "shell-prose-control",
+  "category": "control",
+  "path": "run.sh",
+  "text": "#!/bin/sh\necho \"no python3 here\"\n",
+  "tracked": true,
+  "expected": false
+ },
+ {
+  "id": "source-prose-control",
+  "category": "control",
+  "path": "t.ts",
+  "text": "const label = \"python3\";\n",
+  "tracked": true,
+  "expected": false
+ },
+ {
+  "id": "extensionless-shell",
+  "category": "file-kind",
+  "path": "app/src/main/dist/bin/splice-launch",
+  "text": "#!/bin/sh\npython3 -V\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "docker-suffix",
+  "category": "file-kind",
+  "path": "tools/new/service.Dockerfile",
+  "text": "FROM debian\nRUN python3 -V\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "versioned-python",
+  "category": "shell",
+  "path": "tools/new/run.sh",
+  "text": "#!/bin/sh\npython3.12 -V\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "quoted-python",
+  "category": "shell",
+  "path": "tools/new/run.sh",
+  "text": "#!/bin/sh\n\"python3\" -V\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "absolute-python",
+  "category": "shell",
+  "path": "tools/new/run.sh",
+  "text": "#!/bin/sh\n/usr/bin/python3 -V\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "sudo-options",
+  "category": "shell",
+  "path": "tools/new/run.sh",
+  "text": "#!/bin/sh\nsudo -u root python3 -V\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "indirect-pip",
+  "category": "shell",
+  "path": "tools/new/run.sh",
+  "text": "#!/bin/sh\n/usr/bin/pip3 --version\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "workflow-double-quoted",
+  "category": "shell",
+  "path": ".github/workflows/review.yml",
+  "text": "jobs:\n  a:\n    steps:\n      - run: \"python3 -V\"\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "workflow-single-quoted",
+  "category": "shell",
+  "path": ".github/workflows/review.yml",
+  "text": "jobs:\n  a:\n    steps:\n      - run: 'pip3 --version'\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "docker-json-run",
+  "category": "shell",
+  "path": "tools/new/Dockerfile",
+  "text": "FROM debian\nRUN [\"python3\", \"-V\"]\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "docker-json-entrypoint",
+  "category": "shell",
+  "path": "tools/new/Dockerfile",
+  "text": "FROM debian\nENTRYPOINT [\"python3\", \"-V\"]\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "docker-run-mount",
+  "category": "shell",
+  "path": "tools/new/Dockerfile",
+  "text": "FROM debian\nRUN --mount=type=cache,target=/tmp/cache python3 -V\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "package-quoted-command",
+  "category": "shell",
+  "path": "new/workspace/package.json",
+  "text": "{\"scripts\":{\"check\":\"\\\"python3\\\" -V\"}}",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "package-absolute-command",
+  "category": "shell",
+  "path": "new/workspace/package.json",
+  "text": "{\"scripts\":{\"check\":\"/usr/bin/python3 -V\"}}",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "kotlin-absolute-spawn",
+  "category": "source",
+  "path": "new/module/src/main/kotlin/T.kt",
+  "text": "val p = ProcessBuilder(\"/usr/bin/python3\", \"-V\").start()\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "kotlin-versioned-spawn",
+  "category": "source",
+  "path": "new/module/src/main/kotlin/T.kt",
+  "text": "val p = ProcessBuilder(\"python3.12\", \"-V\").start()\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "kotlin-shell-command",
+  "category": "source",
+  "path": "new/module/src/main/kotlin/T.kt",
+  "text": "val p = ProcessBuilder(\"sh\", \"-c\", \"true && python3 -V\").start()\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "ts-aliased-spawn",
+  "category": "source",
+  "path": "new/workspace/src/t.ts",
+  "text": "import { spawnSync as launch } from \"node:child_process\";\nlaunch(\"python3\", [\"-V\"]);\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "ts-multiline-spawn",
+  "category": "source",
+  "path": "new/workspace/src/t.ts",
+  "text": "import { spawnSync } from \"node:child_process\";\nspawnSync\n(\"python3\", [\"-V\"]);\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "ts-absolute-spawn",
+  "category": "source",
+  "path": "new/workspace/src/t.ts",
+  "text": "import { spawnSync } from \"node:child_process\";\nspawnSync(\"/usr/bin/python3\", [\"-V\"]);\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "ts-shell-command",
+  "category": "source",
+  "path": "new/workspace/src/t.ts",
+  "text": "import { execSync } from \"node:child_process\";\nexecSync(\"true && python3 -V\");\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "bun-shell-chain",
+  "category": "source",
+  "path": "new/workspace/src/t.ts",
+  "text": "await Bun.$`true && python3 -V`;\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "bun-shell-quote",
+  "category": "source",
+  "path": "new/workspace/src/t.ts",
+  "text": "await Bun.$`\"python3\" -V`;\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "launcher-absolute",
+  "category": "config",
+  "path": "launcher.json",
+  "text": "{\"mcpServers\":{\"a\":{\"command\":\"/usr/bin/python3\",\"args\":[\"-V\"]}}}\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "launcher-multiline",
+  "category": "config",
+  "path": "launcher.json",
+  "text": "{\n\"command\":\n\"python3\",\n\"args\":[\"-V\"]\n}\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "ledger-literal-string",
+  "category": "ledger",
+  "path": ".dev/campaigns/review.toml",
+  "text": "[[items]]\nid = \"R-1\"\nstatus = \"todo\"\nverify = 'python3 -V'\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "ledger-indented",
+  "category": "ledger",
+  "path": ".dev/campaigns/review.toml",
+  "text": "[[items]]\n  id = \"R-1\"\n  status = \"todo\"\n  verify = \"python3 -V\"\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "ledger-multiline-literal",
+  "category": "ledger",
+  "path": ".dev/campaigns/review.toml",
+  "text": "[[items]]\nid = \"R-1\"\nstatus = \"todo\"\nverify = '''\npython3 -V\n'''\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "ledger-quoted-command",
+  "category": "ledger",
+  "path": ".dev/campaigns/review.toml",
+  "text": "[[items]]\nid = \"R-1\"\nstatus = \"todo\"\nverify = \"\\\"python3\\\" -V\"\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "ledger-new-format-space-header",
+  "category": "ledger",
+  "path": ".dev/campaigns/review.toml",
+  "text": "[[ items ]]\nid = \"R-1\"\nstatus = \"done\"\nverify = \"bun old.ts\"\n[[ items ]]\nid = \"R-2\"\nstatus = \"todo\"\nverify = \"python3 -V\"\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "prose-shell-echo",
+  "category": "prose",
+  "path": "run.sh",
+  "text": "#!/bin/sh\necho \"run: python3 -V\"\n",
+  "tracked": true,
+  "expected": false
+ },
+ {
+  "id": "prose-workflow-name",
+  "category": "prose",
+  "path": ".github/workflows/review.yml",
+  "text": "jobs:\n  a:\n    steps:\n      - name: \"Port actions/setup-python docs\"\n        run: echo ok\n",
+  "tracked": true,
+  "expected": false
+ },
+ {
+  "id": "prose-docker-label",
+  "category": "prose",
+  "path": "Dockerfile",
+  "text": "FROM debian\nLABEL description=\"run: python3 -V\"\n",
+  "tracked": true,
+  "expected": false
+ },
+ {
+  "id": "prose-source-label-and-git-spawn",
+  "category": "prose",
+  "path": "t.ts",
+  "text": "import { spawnSync } from \"node:child_process\";\nconst label = \"python3\";\nspawnSync(\"git\", [\"status\"]);\n",
+  "tracked": true,
+  "expected": false
+ },
+ {
+  "id": "prose-source-comment",
+  "category": "prose",
+  "path": "t.ts",
+  "text": "export const a = 1; // spawnSync(\"python3\", [\"-V\"]);\n",
+  "tracked": true,
+  "expected": false
+ },
+ {
+  "id": "prose-source-documentation-template",
+  "category": "prose",
+  "path": "t.ts",
+  "text": "const doc = `Example:\nspawnSync(\"python3\", [\"-V\"]);\n`;\n",
+  "tracked": true,
+  "expected": false
+ },
+ {
+  "id": "prose-shell-missing-example",
+  "category": "prose",
+  "path": "run.sh",
+  "text": "#!/bin/sh\n# previously python3 archived-example.py\necho ok\n",
+  "tracked": true,
+  "expected": false
+ },
+ {
+  "id": "prose-shell-echo-missing-example",
+  "category": "prose",
+  "path": "run.sh",
+  "text": "#!/bin/sh\necho \"python3 archived-example.py\"\n",
+  "tracked": true,
+  "expected": false
+ },
+ {
+  "id": "self-library-exemption",
+  "category": "enumeration",
+  "path": "tools/gate/src/lib/no-python.ts",
+  "text": "import { spawnSync } from \"node:child_process\";\nspawnSync(\"python3\", [\"-V\"]);\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "self-command-exemption",
+  "category": "enumeration",
+  "path": "tools/gate/src/commands/no-python.ts",
+  "text": "import { spawnSync } from \"node:child_process\";\nspawnSync(\"python3\", [\"-V\"]);\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "self-test-exemption",
+  "category": "enumeration",
+  "path": "tools/gate/test/no-python.test.ts",
+  "text": "import { spawnSync } from \"node:child_process\";\nspawnSync(\"python3\", [\"-V\"]);\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "quoted-filename",
+  "category": "enumeration",
+  "path": "new/root/odd\"name.sh",
+  "text": "#!/bin/sh\npython3 -V\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "unicode-filename",
+  "category": "enumeration",
+  "path": "new/é/run.sh",
+  "text": "#!/bin/sh\npython3 -V\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "untracked-shell",
+  "category": "enumeration",
+  "path": "new/root/run.sh",
+  "text": "#!/bin/sh\npython3 -V\n",
+  "tracked": false,
+  "expected": true
+ },
+ {
+  "id": "untracked-ts",
+  "category": "enumeration",
+  "path": "new/root/t.ts",
+  "text": "import { spawnSync } from \"node:child_process\";\nspawnSync(\"python3\", [\"-V\"]);\n",
+  "tracked": false,
+  "expected": true
+ },
+ {
+  "id": "launcher-json-string-in-kotlin",
+  "category": "config",
+  "path": "new/module/src/test/kotlin/L.kt",
+  "text": "val c = \"\"\"{\"fake\":{\"command\":\"python3\",\"args\":[\"s.py\"]}}\"\"\"\n",
+  "tracked": true,
+  "expected": true
+ },
+ {
+  "id": "launcher-json-file",
+  "category": "config",
+  "path": "mcp.json",
+  "text": "{\"servers\":{\"a\":{\"command\":\"python3\",\"args\":[\"s.py\"]}}}\n",
+  "tracked": true,
+  "expected": true
+ }
+]

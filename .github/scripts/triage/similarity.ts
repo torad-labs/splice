@@ -105,13 +105,16 @@ export function score(aTitle: unknown, aBody: unknown, bTitle: unknown, bBody: u
   return a && b ? ratio(a, b) : 0;
 }
 
-/** Python's round(x, 3): half to even on an exactly representable tie. */
+/** Python's round(x, 3): the DOUBLE'S exact decimal value rounded to three places, half to even on an exact tie.
+ *  Scaling by 1000 first is not that: 0.8075 is a double a hair under the tie, and `x * 1000` lands exactly on 807.5. */
 export function round3(x: number): number {
-  const scaled = x * 1000;
-  const floor = Math.floor(scaled);
-  const tie = scaled - floor === 0.5;
-  const rounded = tie ? (floor % 2 === 0 ? floor : floor + 1) : Math.round(scaled);
-  return rounded / 1000;
+  const [whole = "0", fraction = ""] = x.toFixed(40).split(".");
+  const kept = fraction.slice(0, 3);
+  const rest = fraction.slice(3);
+  const half = "5" + "0".repeat(rest.length - 1);
+  const up = rest > half || (rest === half && Number(kept.slice(-1)) % 2 === 1);
+  const scaled = BigInt(whole + kept) + (up ? 1n : 0n);
+  return Number(scaled) / 1000;
 }
 
 type Issue = { number?: number; title?: string; body?: string | null };

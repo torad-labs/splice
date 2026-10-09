@@ -3950,3 +3950,6 @@ features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/Upgraded.kt	created	
 app/src/test/kotlin/splice/app/auth/claude/ClaudeNativeLoginResumeTest.kt	created		Pins that a native /login resumes the interrupted turn: the staged login is adopted into the live pool and the held request retries on the new account.
 integrations/daemon-client/src/main/kotlin/splice/daemonclient/Unanswered.kt	created		The one named reading of the daemon not answering, for the probes that return null for it.
 features/turns/src/main/kotlin/splice/head/wire/ArrivalBursts.kt	created		V4-456: the visible deltas a turn writes, grouped into bursts by arrival gap before the pacer, counted on the perf row
+tools/gate/src/lib/no-python-shell.ts	created		Reads shell by structure: ast-grep bash command nodes, shell words, the wrapper chain, sh -c and eval, to find the commands that run the interpreter.
+tools/gate/src/lib/no-python-sources.ts	created		Reads process spawns in TypeScript (compiler API, import-resolved), Kotlin and Java (ast-grep) and launcher entries, by structure.
+tools/gate/test/fixtures/no-python-shapes.json	created		The independent reviewer probe of the no-python wall: files that must be refused and files that must pass, graded by the wall and the guard.

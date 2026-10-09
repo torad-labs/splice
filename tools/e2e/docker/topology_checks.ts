@@ -36,7 +36,9 @@ function launchRecipe(port: string): void {
   const env = obj(r["env"]);
   console.log(JSON.stringify(Object.fromEntries(RECIPE_KEYS.map((k) => [k, env[k] ?? null]))), "argv:", JSON.stringify(r["argv"]));
   check(env["ANTHROPIC_BASE_URL"] === `http://127.0.0.1:${port}`, `ANTHROPIC_BASE_URL is ${env["ANTHROPIC_BASE_URL"]}`);
-  check(Number(env["API_TIMEOUT_MS"] || 0) > 900_000, `API_TIMEOUT_MS must exceed the daemon 900s wall: ${env["API_TIMEOUT_MS"]}`);
+  const timeout = String(env["API_TIMEOUT_MS"] ?? "") || "0";
+  check(/^[0-9]+$/.test(timeout), `API_TIMEOUT_MS must be a plain decimal integer: ${env["API_TIMEOUT_MS"]}`);
+  check(BigInt(timeout) > 900_000n, `API_TIMEOUT_MS must exceed the daemon 900s wall: ${env["API_TIMEOUT_MS"]}`);
   // V4-72: without persistent retry the client stops after 10 attempts (~2-3 min) and a longer
   // rate-limit hold ends the session instead of resuming when the window reopens. Every head.
   check(env["CLAUDE_CODE_RETRY_WATCHDOG"] === "1", `persistent retry must be planted: ${env["CLAUDE_CODE_RETRY_WATCHDOG"]}`);

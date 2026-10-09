@@ -32,6 +32,12 @@ describe("launch-recipe", () => {
     expect((await run(["launch-recipe", "3101"], recipe({ env: { API_TIMEOUT_MS: "" } }))).code).toBe(1));
   test("persistent retry not planted fails", async () =>
     expect((await run(["launch-recipe", "3101"], recipe({ env: { CLAUDE_CODE_RETRY_WATCHDOG: "0" } }))).code).toBe(1));
+  for (const bad of ["Infinity", "900000.5", "1e6", "0x100000", "-5", " 3600000", "3600000 ", "1_000_000"]) {
+    test(`API_TIMEOUT_MS ${JSON.stringify(bad)} is not a plain decimal integer and fails`, async () =>
+      expect((await run(["launch-recipe", "3101"], recipe({ env: { API_TIMEOUT_MS: bad } }))).code).toBe(1));
+  }
+  test("a plain decimal integer past the wall passes", async () =>
+    expect((await run(["launch-recipe", "3101"], recipe({ env: { API_TIMEOUT_MS: "900001" } }))).code).toBe(0));
   test("an empty argv fails", async () => expect((await run(["launch-recipe", "3101"], recipe({ argv: [] }))).code).toBe(1));
 });
 

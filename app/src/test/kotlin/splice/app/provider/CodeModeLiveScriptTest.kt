@@ -11,10 +11,13 @@ import com.sun.net.httpserver.HttpServer
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.post
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.client.statement.bodyAsText
 import io.ktor.utils.io.readLine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -26,6 +29,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -37,9 +41,11 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.stream.FoldConfig
 import splice.head.HeadServer
 import splice.head.headDeps
 import splice.provider.codex.CodeModeBridgeConfig
@@ -47,7 +53,11 @@ import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeWiring
 import splice.provider.codex.CodexProvider
+import splice.upstream.Provider
 import splice.upstream.ProviderTuning
+import splice.upstream.WsRound
+import splice.upstream.WsRoundAbort
+import splice.upstream.WsRoundRunner
 import splice.upstream.retry.InflightGate
 import java.net.InetSocketAddress
 import java.nio.file.Path
@@ -127,6 +137,48 @@ class CodeModeLiveScriptTest {
         }
     }
 
+    /** A folding code-mode round whose websocket draft fails before any client frame is answered again over SSE on
+     *  the same code-mode sink. The draft goes whole, its blocks with its text, so the client reads only the SSE
+     *  answer and the turn ends cleanly. While the draft's block outlived the discard, the answer's cleanup closed it
+     *  on the fold buffer, which failed the turn at flush ("Key -1 is missing"). */
+    @Test
+    @Timeout(LIVE_TEST_SECONDS)
+    fun `a failed websocket draft on a folding code-mode turn leaves the client only the SSE answer`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val upstream = SseAnswerUpstream()
+        val runtime = StatementGatewayRuntime()
+        val bridge = CodexCodeModeBridge(
+            CodeModeBridgeConfig(
+                runtimes = { runtime },
+                state = CodeModeStateLocation(tmp.resolve("records"), tmp.resolve("legacy.json")),
+                log = {},
+            ),
+        )
+        val codex = provider(upstream.url, bridge, FoldConfig(models = setOf("gpt-5.6-sol"))) {}
+        val folding = object : Provider by codex {
+            override val wsRunner: WsRoundRunner = DraftThenFailure()
+        }
+        val head = HeadServer(folding, 0, headDeps(tmp, log = {}))
+        val client = HttpClient(CIO)
+        try {
+            head.start()
+            val answer = client.post("http://127.0.0.1:${head.port}/v1/messages") {
+                bearerAuth("test-inference-token")
+                headers.append("x-claude-code-session-id", "fold-draft-session")
+                setBody(REQUEST)
+            }.bodyAsText()
+            assertTrue(answer.contains("SSE ANSWER"), answer)
+            assertFalse(answer.contains("WS DRAFT"), answer)
+            assertTrue(answer.contains("message_stop") && !answer.contains("event: error"), answer)
+        } finally {
+            head.stop()
+            runtime.close()
+            client.close()
+            upstream.close()
+        }
+    }
+
     /** What the failure says about the run: each timed delta's lateness, how the scripted upstream ended, whether the
      *  script finished, and what both sides saw. */
     private suspend fun diagnosis(
@@ -193,7 +245,12 @@ class CodeModeLiveScriptTest {
         event["type"]?.jsonPrimitive?.content == "content_block_delta" &&
             event.getValue("delta").jsonObject["type"]?.jsonPrimitive?.content == "thinking_delta"
 
-    private fun provider(url: String, bridge: CodexCodeModeBridge, log: LogSink): CodexProvider = CodexProvider(
+    private fun provider(
+        url: String,
+        bridge: CodexCodeModeBridge,
+        fold: FoldConfig? = null,
+        log: LogSink,
+    ): CodexProvider = CodexProvider(
         tuning = ProviderTuning(
             key = "codex",
             label = "live-script-test",
@@ -212,6 +269,7 @@ class CodeModeLiveScriptTest {
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
         ),
         reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
+        foldConfig = fold,
         codeMode = CodexCodeModeWiring(bridge = bridge, models = listOf("gpt-5.6-sol")),
         log = log,
     )
@@ -408,5 +466,59 @@ private class TimedScriptUpstream {
         scriptDone.countDown()
         server.stop(0)
         pool.shutdownNow()
+    }
+}
+
+/** A websocket round that writes a text draft and then fails, before the fold buffer lets any of it reach the client. */
+private class DraftThenFailure : WsRoundRunner {
+    private var attempted = false
+
+    override suspend fun attempt(
+        bodyJson: String,
+        meta: TurnMeta,
+        turnHeaders: Map<String, String>,
+        creds: Credentials,
+    ): WsRound? {
+        if (attempted) return null
+        attempted = true
+        val events = listOf(
+            """{"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"draft-item"}}""",
+            """{"type":"response.output_text.delta","output_index":0,"delta":"WS DRAFT"}""",
+            """{"type":"response.failed","response":{"status":"failed"}}""",
+        )
+        return WsRound(flow { events.forEach { emit(Json.parseToJsonElement(it).jsonObject) } }, WsRoundAbort {})
+    }
+
+    override fun isFailureTerminal(event: JsonObject): Boolean =
+        event["type"]?.jsonPrimitive?.content == "response.failed"
+
+    override fun roundEnded(meta: TurnMeta, ok: Boolean) = Unit
+
+    override fun roundBypassed(meta: TurnMeta) = Unit
+}
+
+/** The SSE upstream the head falls back to: one round that answers in text and completes. */
+private class SseAnswerUpstream {
+    private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
+        createContext("/responses") { exchange ->
+            exchange.requestBody.readAllBytes()
+            exchange.responseHeaders.add("Content-Type", "text/event-stream")
+            exchange.sendResponseHeaders(200, 0)
+            exchange.responseBody.use { output ->
+                listOf(
+                    """{"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"answer"}}""",
+                    """{"type":"response.output_text.delta","output_index":0,"delta":"SSE ANSWER"}""",
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"answer"}}""",
+                    """{"type":"response.completed","response":{"id":"answer-response","status":"completed",""" +
+                        """"output":[],"usage":{"input_tokens":11,"output_tokens":3}}}""",
+                ).forEach { output.write("data: $it\n\n".toByteArray()) }
+            }
+        }
+        start()
+    }
+    val url = "http://127.0.0.1:${server.address.port}"
+
+    fun close() {
+        server.stop(0)
     }
 }

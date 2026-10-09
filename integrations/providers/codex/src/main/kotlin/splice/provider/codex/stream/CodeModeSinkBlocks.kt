@@ -82,6 +82,12 @@ internal class CodeModeSinkBlocks {
         blocks.remove(index.value)?.index?.let { sink.closeBlock(it) }
     }
 
+    /** Forgets every block without a frame: the client step dropped what they opened, so no later close or
+     *  delta may name them. */
+    fun discard() {
+        blocks.clear()
+    }
+
     suspend fun closeAll(sink: WireSink) {
         detach(sink)
         blocks.clear()

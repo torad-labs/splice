@@ -57,6 +57,13 @@ internal class CodeModeSinkWrites {
         pending.addLast(action)
     }
 
+    /** Drops the writes still waiting for a client step: they belong to a draft no client will see. */
+    fun discard() {
+        pending.clear()
+        pendingBytes = 0
+        noticeBytes = 0
+    }
+
     suspend fun drain(sink: WireSink) {
         while (pending.isNotEmpty()) {
             pending.first().emit(sink)

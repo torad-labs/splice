@@ -172,12 +172,19 @@ internal class CodeModeSwitchingSink(
         }
     }
 
-    /** Output the client step holds but has not shown is dropped there, and the text this round remembers as
-     *  delivered goes with it: a websocket round re-served over SSE answers on this same sink, and its draft must
-     *  neither reach the client nor be reported as continuity the client saw. */
+    /** A websocket round re-served over SSE answers on this same sink, so its draft is dropped whole and at once:
+     *  what the client step holds, the block mappings that name the dropped blocks (a later closeAll would close
+     *  them on a buffer that no longer opens them), the writes still waiting for a step, and the continuity the
+     *  draft would have reported as delivered. It runs after the failed round's reader has ended (the NeedsSse
+     *  branch) and before the SSE round writes, so no write holds the attachment lock against it. */
     override fun discard() {
         target?.discard()
+        blocks.discard()
+        writes.discard()
         deliveredText.clear()
+        native.clear()
+        deliveredBytes = 0
+        continuityComplete = true
     }
 
     override suspend fun customToolSource(event: CustomToolSource) {

@@ -9,7 +9,7 @@ import io.ktor.server.request.receiveText
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import splice.core.util.Cancellables
+import java.io.IOException
 
 /** The shared `Json { ignoreUnknownKeys = true }` reader for the two routes that accept a JSON body. */
 public class JsonBody {
@@ -18,7 +18,11 @@ public class JsonBody {
     // null is this function's contract and the failure is answered by the CALLER: every route turns
     // a null body into its own 4xx (see LaunchRoutes.receiveLaunchRequest's safe-by-default comment).
     // A logger here would duplicate, once per request, what the caller already tells the operator.
-    public suspend fun parse(call: ApplicationCall): JsonObject? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- null is the contract and the caller answers the failure
-        Cancellables.runCatchingCancellable { json.parseToJsonElement(call.receiveText()).jsonObject }.getOrNull()
+    public suspend fun parse(call: ApplicationCall): JsonObject? = try {
+        json.parseToJsonElement(call.receiveText()).jsonObject
+    } catch (_: IOException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 }

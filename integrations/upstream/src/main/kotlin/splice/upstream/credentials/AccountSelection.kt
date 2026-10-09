@@ -22,6 +22,11 @@ public object AccountLabelPolicy {
         isSafe(label) || label.startsWith("native:") && isSafe(label.removePrefix("native:"))
 }
 
+/** Reconciles externally replaced credentials without resetting existing session choices or leased turns. */
+public fun interface AccountMembershipRefresh {
+    public fun refresh()
+}
+
 /** Reads one account's latest provider quota without coupling the SPI to gateway persistence. */
 public fun interface AccountQuotaSource {
     public fun snapshot(): QuotaSnapshot?

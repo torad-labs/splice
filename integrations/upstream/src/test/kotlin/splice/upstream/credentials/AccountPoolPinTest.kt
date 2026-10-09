@@ -64,6 +64,21 @@ class AccountPoolPinTest {
     }
 
     @Test
+    fun `a changed caller login never overrides an explicit pin`() {
+        val fixture = Fixture()
+        val primary = fixture.account("primary", primary = true)
+        val backup = fixture.account("plus-a")
+        val pool = fixture.pool(primary, backup)
+        pool.select("session", emptySet(), "previous-login")
+        pool.pin("plus-a")
+
+        when (val selection = pool.select("session", emptySet(), "primary")) {
+            is Selection.Chosen -> assertSame(backup, selection.account.account)
+            is Selection.Exhausted -> throw AssertionError("a usable pin must remain selected after login")
+        }
+    }
+
+    @Test
     fun `a pin stays sticky across turns, not just the one that observed the switch`() {
         val fixture = Fixture()
         val primary = fixture.account("primary", primary = true)
@@ -171,6 +186,7 @@ class AccountPoolPinTest {
                 override suspend fun describe(): AuthDescription =
                     AuthDescription(true, "test", mapOf("token" to "***"))
                 override suspend fun refresh(): Credentials = credentials()
+                override fun observedCredentialKey(): String = label
             }
             return PoolAccount(
                 label = label,

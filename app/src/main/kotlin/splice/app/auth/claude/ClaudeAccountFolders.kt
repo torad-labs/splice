@@ -178,13 +178,8 @@ internal class ClaudeAccountFolders(
         if (directory == null || !Files.isDirectory(directory)) return ClaudeAccountRemoval.NotFound
         changes?.withdraw(head, label)
         discard(directory)
-        return if (Files.exists(directory)) {
-            changes?.publish(head)
-            ClaudeAccountRemoval.Failed
-        } else {
-            changes?.publish(head)
-            ClaudeAccountRemoval.Removed
-        }
+        changes?.completeWithdrawal(head, label)
+        return if (Files.exists(directory)) ClaudeAccountRemoval.Failed else ClaudeAccountRemoval.Removed
     }
 
     /** Renames display metadata only. The stable id, credential, quota, pin and account order stay unchanged. */

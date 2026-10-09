@@ -8,6 +8,7 @@ package splice.head.admission
 
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.header
+import splice.core.auth.CredentialKey
 import splice.core.perf.OutcomeTag
 import splice.core.util.WallClock
 import splice.head.ClientAuth
@@ -162,7 +163,14 @@ internal class HeadAdmission(
         // retrying for no visible reason. Null for every head whose trace is off.
         val trace = prepared.takeInbound()?.let { deps.stores.trace?.begin(prepared.built.meta, it) }
         if (refuseIfOverBudget(call, prepared, admitted, trace)) return
-        var account = when (val selection = deps.quotaBundle.activePool?.select(prepared.built.meta.sessionId)) {
+        val callerKey = prepared.built.extraHeaders.takeIf { deps.policy.forwardClientAuth }
+            ?.let(CredentialKey::fromHeaders)
+        val selection = deps.quotaBundle.activePool?.select(
+            prepared.built.meta.sessionId,
+            excluded = emptySet(),
+            callerCredentialKey = callerKey,
+        )
+        var account = when (selection) {
             null -> null
             is Selection.Chosen -> selection.account
             is Selection.Exhausted -> {

@@ -201,11 +201,9 @@ class ClaudeNativePoolWiringTest {
         try {
             Files.delete(home.resolve(".claude/.credentials.json"))
             Files.delete(home.resolve(".claude-splice/.credentials.json"))
-            rig.plane.providerAssembly.claudePoolChanges.publish(NATIVE_HEAD)
             assertEquals(false, rig.head.accountPool?.active)
             assertNull(rig.plane.playgroundProviders.target(NATIVE_HEAD)?.login)
             seed("native")
-            rig.plane.providerAssembly.claudePoolChanges.publish(NATIVE_HEAD)
             assertEquals(true, rig.head.accountPool?.active)
             assertEquals(NATIVE_SELECTOR, rig.plane.playgroundProviders.target(NATIVE_HEAD)?.login?.label)
         } finally {
@@ -232,7 +230,6 @@ class ClaudeNativePoolWiringTest {
                 )
                 val file = fixture.replaceNative()
                 val before = Files.readAllBytes(file)
-                rig.plane.providerAssembly.claudePoolChanges.publish(NATIVE_HEAD)
                 val pin = requireNotNull(rig.head.accountPool as? HeadAccountPinSource)
                 assertTrue(pin.pin(NATIVE_SELECTOR))
                 probe.run(PlaygroundHead(NATIVE_HEAD, rig.head.auth), "synthetic", null)

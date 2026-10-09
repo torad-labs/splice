@@ -54,6 +54,16 @@ public class AccountPool(
 
     private val membership = AtomicReference(AccountMembership(accounts))
 
+    /** Native login writes outside splice. Reconcile its generation before reading selector state. */
+    @Volatile
+    public var membershipRefresh: AccountMembershipRefresh? = null
+
+    private val liveMembership: AccountMembership
+        get() {
+            membershipRefresh?.refresh()
+            return membership.get()
+        }
+
     /** Publishes membership only. Existing session choices, order, cooldown objects and leased turns survive. */
     public var members: List<PoolAccount>
         get() = membership.get().accounts
@@ -63,7 +73,7 @@ public class AccountPool(
 
     /** A forwarded caller alone is the legacy path, not a choice between stored logins. */
     public val active: Boolean
-        get() = membership.get().let { it.accounts.size > 1 || it.primary.auth !is ClientAuthProvider }
+        get() = liveMembership.let { it.accounts.size > 1 || it.primary.auth !is ClientAuthProvider }
 
     // Access order keeps active sessions sticky without retaining every session the daemon ever saw.
     // Reads reorder the map too, so selection, views and reset share its monitor.
@@ -98,7 +108,7 @@ public class AccountPool(
 
     /** The exact candidate policy, including an explicit runtime pin and fallback accounts. */
     public fun effectiveOrder(): List<String> {
-        val current = membership.get()
+        val current = liveMembership
         current.accounts.forEach { it.refreshCredentialEvidence() }
         return candidates(null, current).map(PoolAccount::label)
     }
@@ -106,24 +116,35 @@ public class AccountPool(
     /** Chooses before acceptance. Null sessions re-evaluate policy without becoming sticky.
      *  Nonempty [excluded] skips refused logins and permits only a free login, never a held fallback.
      *  Returns [Selection.Chosen] with an immutable choice, or [Selection.Exhausted] as a refusal value. */
-    public fun select(sessionId: String?, excluded: Set<String> = emptySet()): Selection {
+    public fun select(sessionId: String?, excluded: Set<String> = emptySet()): Selection =
+        select(sessionId, excluded, null)
+
+    /** A changed caller login takes precedence over automatic stickiness, but never an operator pin. */
+    public fun select(sessionId: String?, excluded: Set<String>, callerCredentialKey: String?): Selection {
         require(sessionId == null || sessionId.isNotBlank()) { "session id must not be blank" }
         val at = now()
         // Credential evidence is read (and hashed) OUTSIDE the sticky-session monitor: the lock only
         // keeps the LinkedHashMap consistent, and holding it across a filesystem round-trip makes its
         // contention window the disk's latency. Each account caches the read behind a short TTL, so
         // the in-monitor selection below reads the cache, never the credential file.
-        val current = membership.get()
+        val current = liveMembership
         current.accounts.forEach { it.refreshCredentialEvidence() }
+        val caller = CallerLogin(
+            callerCredentialKey,
+            callerCredentialKey?.let { key ->
+                current.accounts.singleOrNull { it.auth.observedCredentialKey() == key }?.label
+            },
+            sessionId,
+        )
         if (sessionId == null) {
             return synchronized(statelessLock) {
-                val chosen = selected(statelessPrevious, at, sticky = false, excluded, current)
+                val chosen = selected(statelessPrevious, at, excluded, current, caller)
                 chosen.second?.let { statelessPrevious = it }
                 chosen.first
             }
         }
         return synchronized(sessions) {
-            val chosen = selected(sessions[sessionId], at, sticky = true, excluded, current)
+            val chosen = selected(sessions[sessionId], at, excluded, current, caller)
             chosen.second?.let { session ->
                 sessions[sessionId] = session
                 if (sessions.size > MAX_TRACKED_SESSIONS) sessions.remove(sessions.keys.first())
@@ -135,11 +156,12 @@ public class AccountPool(
     private fun selected(
         previous: SessionAccount?,
         at: Long,
-        sticky: Boolean,
         excluded: Set<String>,
         current: AccountMembership,
+        caller: CallerLogin,
     ): Pair<Selection, SessionAccount?> {
-        val chosen = choose(if (sticky) previous?.label else null, at, excluded, current)
+        val preferred = caller.label.takeIf { caller.session == null || caller.key != previous?.callerKey }
+        val chosen = choose(previous?.label.takeIf { caller.session != null }, at, excluded, current, preferred)
             ?: return Selection.Exhausted(AccountAvailability.earliestReset(current.accounts, at)) to null
         // A new session starts relative to primary even when its credential is missing: choosing
         // a backup is cache-cold on that first turn and updates the head-wide last-switch notice.
@@ -149,7 +171,11 @@ public class AccountPool(
         }
         moved?.let(headLastSwitch::set)
         val selection = Selection.Chosen(AccountSelection(chosen.account, moved, chosen.lease))
-        val session = SessionAccount(chosen.account.label, moved ?: previous?.lastSwitch)
+        val session = SessionAccount(
+            chosen.account.label,
+            moved ?: previous?.lastSwitch,
+            caller.key ?: previous?.callerKey,
+        )
         return selection to session
     }
 
@@ -157,7 +183,7 @@ public class AccountPool(
     public fun view(sessionId: String?): AccountPoolView {
         val at = now()
         val session = synchronized(sessions) { sessionId?.let(sessions::get) }
-        val current = membership.get()
+        val current = liveMembership
         val accounts = current.accounts
         accounts.forEach { it.refreshCredentialEvidence() }
         return AccountPoolView(
@@ -177,7 +203,7 @@ public class AccountPool(
      *  not a function: the class sits at detekt's 15-function ceiling (see [AccountAvailability]). */
     public val providerResetForMs: Long
         get() {
-            val accounts = membership.get().accounts
+            val accounts = liveMembership.accounts
             if (accounts.none { it.cooldown.providerUnavailableForMs() > 0L }) return 0L
             accounts.forEach { it.refreshCredentialEvidence() }
             val at = now()
@@ -191,7 +217,7 @@ public class AccountPool(
 
     /** Independent product sends observe the captured login's actual cooldown, never a sibling's. */
     public val responseCooldowns: Map<String, splice.upstream.retry.RateLimitCooldown>
-        get() = membership.get().byLabel.mapValues { it.value.cooldown }
+        get() = liveMembership.byLabel.mapValues { it.value.cooldown }
 
     /** Clears only runtime stickiness/cooldowns; persisted quota and credential files stay untouched. */
     public fun reset() {
@@ -209,7 +235,7 @@ public class AccountPool(
     /** Pins [label] as the account [select] tries FIRST, ahead of the primary preference, until
      *  [unpin] or the next [reset]. False (nothing pinned) when [label] names no account here. */
     public fun pin(label: String): Boolean {
-        val account = membership.get().byLabel[label] ?: return false
+        val account = liveMembership.byLabel[label] ?: return false
         pinnedLabel.set(account.label)
         return true
     }
@@ -229,7 +255,7 @@ public class AccountPool(
     public fun nextTargetLabel(sessionId: String? = null): String? {
         val at = now()
         val previousLabel = synchronized(sessions) { sessionId?.let { sessions[it]?.label } }
-        val current = membership.get()
+        val current = liveMembership
         current.accounts.forEach { it.refreshCredentialEvidence() }
         val order = candidates(previousLabel, current)
         val free = AccountAvailability.preferredFree(order, at).firstOrNull()
@@ -261,15 +287,20 @@ public class AccountPool(
         at: Long,
         excluded: Set<String>,
         current: AccountMembership,
+        preferredLabel: String?,
     ): ChosenAccount? {
-        val order = candidates(previousLabel, current).filter { it.label !in excluded }
+        val preference = listOfNotNull(
+            pinnedLabel.get()?.let(current.byLabel::get),
+            preferredLabel?.let(current.byLabel::get),
+        )
+        val order = (preference + candidates(previousLabel, current)).distinctBy(PoolAccount::label)
+            .filter { it.label !in excluded }
         val free = AccountAvailability.preferredFree(order, at)
         val eligible = if (excluded.isEmpty()) free.ifEmpty { AccountAvailability.nearestHeld(order, at) } else free
-        return eligible.firstNotNullOfOrNull { acquire(it, at) }
+        return eligible.firstNotNullOfOrNull { account ->
+            account.acquireCredential(at, now)?.let { lease -> ChosenAccount(account, lease) }
+        }
     }
-
-    private fun acquire(account: PoolAccount, at: Long): ChosenAccount? =
-        account.acquireCredential(at, now)?.let { lease -> ChosenAccount(account, lease) }
 
     // V4-132 added the pin branch as a fifth case in the SAME `when` (rather than a fourth early
     // `return`) to stay under ReturnCount's limit of 3 — one `return when`, whatever its arm count.
@@ -324,7 +355,9 @@ public class AccountPool(
         val lease: AccountCredentialEligibility.Lease,
     )
 
-    private data class SessionAccount(val label: String, val lastSwitch: AccountSwitch?)
+    private data class CallerLogin(val key: String?, val label: String?, val session: String?)
+
+    private data class SessionAccount(val label: String, val lastSwitch: AccountSwitch?, val callerKey: String? = null)
 }
 
 /** Pure per-account availability/quota math — every function here takes the [PoolAccount] (and

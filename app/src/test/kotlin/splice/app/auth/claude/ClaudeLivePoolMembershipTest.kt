@@ -230,6 +230,35 @@ class ClaudeLivePoolMembershipTest {
     }
 
     @Test
+    fun `selector refresh cannot restore a login while its folder is being removed`() = runBlocking {
+        added("work")
+        added("office")
+        val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
+        val head = fixture(scope, PlaygroundProviders())
+        try {
+            val pool = requireNotNull(head.accountPool)
+            val pin = pool as HeadAccountPinSource
+            assertTrue(pin.pin("work"))
+            changes.withdraw(HEAD, "work")
+            assertFalse(pool.view(null).accounts.any { it.label == "work" })
+            assertFalse(pin.pin("work"), "refresh must not reopen the still-existing folder during removal")
+            assertEquals(ClaudeAccountRemoval.Removed, folders.remove(HEAD, "office"))
+            assertFalse(pool.view(null).accounts.any { it.label == "work" }, "another removal cannot complete this one")
+            changes.publish(HEAD)
+            assertFalse(
+                pool.view(null).accounts.any { it.label == "work" },
+                "another publication is not removal completion",
+            )
+            assertFalse(pin.pin("work"))
+            assertEquals(ClaudeAccountRemoval.Removed, folders.remove(HEAD, "work"))
+            assertFalse(pool.view(null).accounts.any { it.label == "work" })
+        } finally {
+            head.head.stop()
+            scope.coroutineContext[Job]?.cancelAndJoin()
+        }
+    }
+
+    @Test
     fun `a removed login's delayed refusal never holds the replacement at the same label`() = runBlocking {
         added("work")
         added("office")

@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap
 internal fun interface ClaudePoolChange {
     fun publish()
     fun withdraw(label: String) = publish()
+    fun completeWithdrawal(label: String) = publish()
 }
 
 internal class ClaudePoolChanges {
@@ -29,6 +30,10 @@ internal class ClaudePoolChanges {
 
     fun withdraw(head: String, label: String) {
         heads[head]?.withdraw(label)
+    }
+
+    fun completeWithdrawal(head: String, label: String) {
+        heads[head]?.completeWithdrawal(label)
     }
 
     fun publish(head: String): Boolean {

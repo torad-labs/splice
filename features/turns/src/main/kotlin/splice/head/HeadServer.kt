@@ -52,9 +52,12 @@ import splice.upstream.Provider
 private const val STOP_DRAIN_NS = 45_000_000_000L // 45s: above a 16s deepseek turn, inside the ladder
 private const val STOP_DRAIN_POLL_MS = 50L
 
-// why 250ms: the real held-client cut sealed in 34ms (HeadServerStopDrainTest); allow five 50ms polls.
+// The cut turn's seal AND its reply must land before Netty is torn down: a collect turn writes its 529 only after
+// the seal (CollectTurn.respond), and the slot releases after that. 250ms came from a 34ms cut on an idle machine and
+// lost the reply under a 21-minute parallel gate run (2026-10-09, HeadServerStopDrainTest [false]). 2s is sized for a
+// loaded host and still fits the ladder: 45s drain + 2s seal + 2.5s engine stop < HEAD_STOP_BUDGET_MS (50s).
 // Empty heads skip this wait entirely, and a released slot ends it early.
-private const val STOP_SEAL_NS = 250_000_000L
+private const val STOP_SEAL_NS = 2_000_000_000L
 
 public class HeadServer(
     private val provider: Provider,

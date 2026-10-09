@@ -22,9 +22,9 @@ import splice.head.turn.SESSION_TAG_CHARS
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.FrameWrite
 import splice.head.wire.SseEmitterFactory
-import splice.head.wire.SseResponse
 import splice.head.wire.TurnTerminal
 import splice.head.wire.TurnWiring
+import splice.http.SseResponse
 import splice.upstream.Provider
 
 internal class LocalResponses(

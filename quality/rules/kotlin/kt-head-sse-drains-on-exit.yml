@@ -1,4 +1,4 @@
-# 2026-09-23 — the head answers a stream ONLY through splice.head.wire.SseResponse.
+# 2026-09-23 — the daemon answers a stream ONLY through splice.http.SseResponse (SseChannelResponse for the control plane).
 #
 # Ktor 3.5.2's own streaming bodies (respondTextWriter / respondBytesWriter / respondOutputStream and
 # the WriterContent / ChannelWriterContent / OutputStreamContent they build) run inside the engine's
@@ -17,19 +17,30 @@
 # that runs on an idle machine.
 #
 # Matched on the identifier, so the import and the call are each a finding. The one file that may name
-# WriterContent is SseResponse.kt, the wrapper itself. The control plane's two streams
-# (EventsRoute, McpRoutes) are outside this module: they end only when their client or the daemon
-# goes, with no terminal frame for anyone to lose.
+# WriterContent is the wrapper itself, recognised by what it does (a finally that closes the channel clean), not by a
+# path. Every daemon stream answers through it since 2026-10-09: the head's turns, and the control plane's events and
+# MCP streams through SseChannelResponse, in the same file.
 id: kt-head-sse-drains-on-exit
 language: kotlin
 severity: error
 message: "The head streams only through SseResponse — Ktor's raw writers cancel the channel when the body throws and drop the frames the engine has not read yet, the seal's error frame last."
-files:
-  - features/turns/src/main/**/*.kt
-  - "build-logic/src/main/**/*.kt"
-  - "build-logic/src/main/**/*.kts"
 ignores:
-  - features/turns/src/main/kotlin/splice/head/wire/SseResponse.kt
+  - "**/src/test/**"
+  - "**/src/testFixtures/**"
 rule:
-  kind: simple_identifier
-  regex: ^(respondTextWriter|respondBytesWriter|respondOutputStream|WriterContent|ChannelWriterContent|OutputStreamContent)$
+  all:
+    - kind: simple_identifier
+      regex: ^(respondTextWriter|respondBytesWriter|respondOutputStream|WriterContent|ChannelWriterContent|OutputStreamContent)$
+    # The wrapper is recognised by what it does, not by its path: a file whose body closes the channel CLEAN in a
+    # finally (flushAndClose) is the file that delivers the frames a throwing body wrote, so it may name the writers.
+    - not:
+        inside:
+          kind: source_file
+          stopBy: end
+          has:
+            stopBy: end
+            kind: finally_block
+            has:
+              stopBy: end
+              kind: simple_identifier
+              regex: ^flushAndClose$

@@ -1,4 +1,6 @@
-// NEW: 2026-09-23, the head's SSE response body — Ktor's own WriterContent, plus the one guarantee
+// NEW: 2026-09-23, the head's SSE response body (moved 2026-10-09 from splice.head.wire to the HTTP integration, so the
+// control plane's two streams, events and MCP, end on the same clean close) — Ktor's own
+// WriterContent, plus the one guarantee
 // Ktor's does not give: a frame the body wrote and flushed reaches the client even when the body
 // then ends by throwing.
 //
@@ -26,7 +28,7 @@
 // NonCancellable would add exactly one thing — waiting for a reader that may never drain again — so a
 // cancelled turn on a client that stopped reading would hang here instead of ending. SseResponseTest
 // pins both the full-channel, cancelled-Job path and the lagging-reader path.
-package splice.head.wire
+package splice.http
 
 import io.ktor.http.ContentType
 import io.ktor.http.content.OutgoingContent
@@ -36,20 +38,20 @@ import io.ktor.utils.io.ByteWriteChannel
 import java.io.Writer
 
 /** What one SSE response writes: every frame, through the blocking [Writer] the response opens. */
-internal fun interface SseBody {
-    suspend operator fun invoke(out: Writer)
+public fun interface SseBody {
+    public suspend operator fun invoke(out: Writer)
 }
 
 /**
  * An SSE body written through a blocking [Writer], exactly as `respondTextWriter` writes it, whose
  * flushed frames are delivered however the body ends.
  *
- * The only way the head answers with a stream (the kt-head-sse-drains-on-exit wall keeps Ktor's raw
- * writers out of the module): TurnStreamer's driven turn and LocalResponses' local answer and
+ * The only way the daemon answers with a stream (the kt-head-sse-drains-on-exit wall keeps Ktor's raw
+ * writers out of every module): TurnStreamer's driven turn and LocalResponses' local answer and
  * compaction replay all end on a frame written last, and a stream whose last frame can vanish is the
  * "empty or malformed response (HTTP 200)" class the cancellation seal exists to prevent.
  */
-internal class SseResponse(body: SseBody) : OutgoingContent.WriteChannelContent() {
+public class SseResponse(body: SseBody) : OutgoingContent.WriteChannelContent() {
 
     // `text/event-stream; charset=UTF-8`, the value respondTextWriter's defaultTextContentType gave.
     private val writer = WriterContent({ body(this) }, ContentType.Text.EventStream.withCharset(Charsets.UTF_8))
@@ -59,6 +61,28 @@ internal class SseResponse(body: SseBody) : OutgoingContent.WriteChannelContent(
     override suspend fun writeTo(channel: ByteWriteChannel) {
         try {
             writer.writeTo(channel)
+        } finally {
+            channel.flushAndClose()
+        }
+    }
+}
+
+/** What one control-plane stream writes: every frame, flushed, to the response's channel. */
+public fun interface SseChannelBody {
+    public suspend operator fun invoke(channel: ByteWriteChannel)
+}
+
+/**
+ * An SSE body written straight to the response channel, for the streams that frame their own writes (events, MCP),
+ * closed CLEAN in a finally for the same reason [SseResponse] is: a body that ends by throwing must not cancel the
+ * channel over frames the engine's reader has not taken yet.
+ */
+public class SseChannelResponse(private val body: SseChannelBody) : OutgoingContent.WriteChannelContent() {
+    override val contentType: ContentType = ContentType.Text.EventStream
+
+    override suspend fun writeTo(channel: ByteWriteChannel) {
+        try {
+            body(channel)
         } finally {
             channel.flushAndClose()
         }

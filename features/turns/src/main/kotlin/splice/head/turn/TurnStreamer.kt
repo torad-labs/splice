@@ -43,9 +43,9 @@ import splice.head.wire.ContentReached
 import splice.head.wire.FrameRecording
 import splice.head.wire.SseEmitter
 import splice.head.wire.SseEmitterFactory
-import splice.head.wire.SseResponse
 import splice.head.wire.StreamWiring
 import splice.head.wire.TurnWiring
+import splice.http.SseResponse
 import splice.upstream.LifecycleScope
 import splice.upstream.Provider
 import splice.upstream.codemode.ProcessDispatchers

@@ -2567,10 +2567,8 @@ features/sessions/src/test/kotlin/splice/sessions/http/TeamRig.kt	created		added
 features/turns/src/main/kotlin/splice/head/TurnsHeads.kt	created		added at this path by 384469352 refactor(layout): compaction and capture routes become turns slices
 features/turns/src/main/kotlin/splice/head/compact/HeadCompactSource.kt	created		added at this path by 384469352 refactor(layout): compaction and capture routes become turns slices
 features/turns/src/main/kotlin/splice/head/trace/TracePorts.kt	created		added at this path by dbea96e2e refactor(layout): splice trace becomes a turns slice beside the TraceStore it reads
-features/turns/src/main/kotlin/splice/head/wire/SseResponse.kt	created		added at this path by bf03e3c7d fix(turns): a frame the head flushed before a throw reaches the client
 features/turns/src/test/kotlin/splice/head/HeadBudgetTest.kt	created		added by the V4-133 review fix: a real head refuses a reached block budget with a 403 before any upstream call and reports each served turn's spend from its own perf row
 features/turns/src/test/kotlin/splice/head/HeadServerBoundPortTest.kt	created		added at this path by 8b90384b6 fix(turns): a head started on port 0 reports the port it bound
-features/turns/src/test/kotlin/splice/head/wire/SseResponseTest.kt	created		added at this path by bf03e3c7d fix(turns): a frame the head flushed before a throw reaches the client
 features/usage/build.gradle.kts	created		added at this path by 2d740991f refactor(layout): turns, sessions, usage, heads and models become feature slices
 features/usage/src/main/kotlin/splice/usage/UsageHeads.kt	created		added at this path by a3b9261d6 refactor(layout): usage routes, the statusline and their read models become features/usage
 features/usage/src/main/kotlin/splice/usage/alerts/AlertDelivery.kt	created		added by the V4-133 review fix: a reached warn budget posted to the saved alert webhook, off the turn path, in the test send's {"text"} shape
@@ -3961,3 +3959,5 @@ quality/compiler-plugin/src/main/kotlin/splice/firchecks/SurfaceLookups.kt	creat
 quality/compiler-plugin/src/test/kotlin/splice/firchecks/PublicSurfaceIncrementalTest.kt	created		V4-92: drives snapshot-based incremental compilation to prove a surface change recompiles its dependents
 quality/compiler-plugin/src/test/kotlin/splice/firchecks/UnregisteredLookupsRegistrar.kt	created		V4-92: test registrar that compiles without the lookup recording, the control for the incremental proof
 quality/compiler-plugin/src/main/resources/META-INF/services/org.jetbrains.kotlin.compiler.plugin.CommandLineProcessor	created		V4-92: registers the command-line processor that reads the report options
+integrations/http/src/main/kotlin/splice/http/SseResponse.kt	created		the head SSE body moved from features/turns so the events and MCP streams close clean too (kt-head-sse-drains-on-exit)
+integrations/http/src/test/kotlin/splice/http/SseResponseTest.kt	created		its test, moved with it

@@ -10,13 +10,13 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
-import io.ktor.server.response.respondBytesWriter
 import io.ktor.server.response.respondText
 import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.selects.onTimeout
 import kotlinx.coroutines.selects.select
+import splice.http.SseChannelResponse
 import splice.http.SseWrite
 
 private const val SESSION_HEADER = "Mcp-Session-Id"
@@ -55,14 +55,16 @@ public class McpRoutes(private val host: McpHost) {
             return
         }
         try {
-            call.respondBytesWriter(ContentType.Text.EventStream) {
-                writeStringUtf8(": open\n\n")
-                flush()
-                pump(channel) { frame ->
-                    writeStringUtf8(frame)
-                    flush()
-                }
-            }
+            call.respond(
+                SseChannelResponse { out ->
+                    out.writeStringUtf8(": open\n\n")
+                    out.flush()
+                    pump(channel) { frame ->
+                        out.writeStringUtf8(frame)
+                        out.flush()
+                    }
+                },
+            )
         } finally {
             host.closeStream(name, sessionId)
         }

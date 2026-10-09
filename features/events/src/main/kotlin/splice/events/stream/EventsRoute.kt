@@ -10,10 +10,9 @@
 // the channel with a timeout, same flush per frame. The one thing it adds is the resume header.
 package splice.events.stream
 
-import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.header
-import io.ktor.server.response.respondBytesWriter
+import io.ktor.server.response.respond
 import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -22,6 +21,7 @@ import kotlinx.coroutines.selects.select
 import kotlinx.serialization.json.Json
 import splice.events.bus.ConsoleEvent
 import splice.events.bus.EventBus
+import splice.http.SseChannelResponse
 import splice.http.SseWrite
 
 /** A comment frame on this cadence keeps the connection honest while nothing is happening: a
@@ -42,14 +42,16 @@ public class EventsRoute(private val bus: EventBus) {
         val lastEventId = call.request.header(LAST_EVENT_ID_HEADER)?.trim()?.toLongOrNull()
         val subscription = bus.subscribe(lastEventId)
         try {
-            call.respondBytesWriter(ContentType.Text.EventStream) {
-                writeStringUtf8(": open\n\n")
-                flush()
-                pump(subscription.channel) { frame ->
-                    writeStringUtf8(frame)
-                    flush()
-                }
-            }
+            call.respond(
+                SseChannelResponse { out ->
+                    out.writeStringUtf8(": open\n\n")
+                    out.flush()
+                    pump(subscription.channel) { frame ->
+                        out.writeStringUtf8(frame)
+                        out.flush()
+                    }
+                },
+            )
         } finally {
             // The client went away (or the daemon is stopping): release the subscriber, or the bus
             // keeps filling a channel nobody reads for the life of the process.

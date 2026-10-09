@@ -8,7 +8,7 @@
 // The Ktor arm is the premise, kept as a test rather than a comment: it shows the harness CAN see the
 // loss (the SseResponse arm would pass vacuously on a harness that never drops anything), and it goes
 // red the day a Ktor upgrade stops dropping, which is the day SseResponse's finally can be retired.
-package splice.head.wire
+package splice.http
 
 import io.ktor.http.content.OutgoingContent
 import io.ktor.http.content.WriterContent

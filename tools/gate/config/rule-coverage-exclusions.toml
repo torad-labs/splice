@@ -223,28 +223,6 @@ cleanup, and features-turns wire sockets. :integrations-mcp owns none of those s
 """
 
 [[exclusion]]
-rule = "kt-head-sse-drains-on-exit"
-modules = [
-  "core", "integrations-upstream", "integrations-http", "integrations-claude-code", "integrations-mcp",
-  "integrations-topology", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
-  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok",
-  "integrations-providers-kimi", "integrations-providers-muse", "integrations-providers-openai",
-  "integrations-codemode", "integrations-oauth", "integrations-daemon-client", "integrations-terminal",
-  "features-sessions", "features-models", "features-heads", "features-accounts", "features-usage",
-  "features-lifecycle", "features-diagnostics", "features-launch", "features-configuration", "features-events",
-  "app", "quality-compiler-plugin",
-]
-sourceSets = ["main"]
-date = "2026-09-23"
-reason = """
-A head-local law: the head is the one server whose streams end on a frame written after a throw (the
-cancellation seal's error frame, SealedDrive rethrowing after it), and every head stream is served from
-:features-turns. The control plane's two streams (EventsRoute in :features-events, McpRoutes in
-:integrations-mcp; both lived in daemon-control until LAYOUT-01) end only when their client or the daemon
-goes, with no terminal frame to lose; no other module answers an HTTP stream.
-"""
-
-[[exclusion]]
 rule = "kt-responses-assistant-item-single-author"
 modules = ["features-turns", "integrations-dialects-openai-chat", "integrations-dialects-anthropic"]
 sourceSets = ["main"]
@@ -437,15 +415,6 @@ reason = """
 The rule's own dated census, reason by reason: a proof of absence has no event to await
 (LoginHookScriptSafetyTest, DaemonStopDeadlineTest); a readiness poll in blocking code has none
 either (TestNet); MidStreamTearContinuesTest is a deliberately paced test double.
-"""
-
-[[exclusion]]
-rule = "kt-head-sse-drains-on-exit"
-files = ["features/turns/src/main/kotlin/splice/head/wire/SseResponse.kt"]
-date = "2026-09-23"
-reason = """
-SseResponse is the wrapper the wall routes every head stream through, so it is the one file that must
-name Ktor's WriterContent: it delegates to it and adds the clean close in a finally.
 """
 
 [[exclusion]]

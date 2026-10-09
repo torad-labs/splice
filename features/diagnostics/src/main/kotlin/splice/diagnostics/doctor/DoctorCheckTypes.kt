@@ -78,5 +78,5 @@ internal data class DaemonSnapshot(val port: Int, val probe: DaemonProbe.HealthP
 internal sealed class DoctorTopology {
     data object Absent : DoctorTopology()
     data class Parsed(val topology: Topology) : DoctorTopology()
-    data class Broken(val message: String, val fix: String? = null) : DoctorTopology()
+    data class Broken(val problem: String, val fix: String? = null) : DoctorTopology()
 }

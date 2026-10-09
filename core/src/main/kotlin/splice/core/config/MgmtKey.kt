@@ -56,7 +56,7 @@ public class MgmtKey(
         // every other read failure is classified below.
         val read = Cancellables.runCatchingCancellable { Files.readString(path).trim() }
         val failure = read.exceptionOrNull()
-        val readFailure = when {
+        val problem = when {
             failure == null && read.getOrThrow().isNotEmpty() -> return read.getOrThrow()
             failure == null -> "present but blank"
             failure !is java.nio.file.NoSuchFileException -> "unreadable (${SafeFailureText.render(failure)})"
@@ -65,14 +65,13 @@ public class MgmtKey(
             Files.exists(path, LinkOption.NOFOLLOW_LINKS) -> "dangling symlink (${SafeFailureText.render(failure)})"
             else -> null
         }
-        if (readFailure != null) {
+        if (problem != null) {
             // Publish-gated wording (DR-56 redo, codex): this line fires BEFORE the write below,
             // and on an untraversable state dir that write FAILS — the old key survives and "is
             // now invalid" was a false diagnostic. The consequence is spelled conditionally so the
             // line is true on both paths.
             log(
-                // SAFE-RENDER-EXEMPT[2026-08-31]: readFailure is not a throwable but a String built by the when above, whose every throwable-bearing branch already renders through the sanitizer
-                "[mgmt-key] $path $readFailure; minting a NEW key: if the replacement publishes, " +
+                "[mgmt-key] $path $problem; minting a NEW key: if the replacement publishes, " +
                     "every existing bearer (dashboard session, scripts, the launch shim's stop " +
                     "hook) becomes invalid; re-copy the key from $path\n",
             )

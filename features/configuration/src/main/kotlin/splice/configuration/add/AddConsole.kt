@@ -36,14 +36,16 @@ private const val MAX_OPEN_ADDS = 64
 /** One console add in progress: the candidate, and what has happened to it since. */
 // MUST be a plain class: it is the monitor its sign-in and save synchronize on, and the LRU holds it by
 // id. A data class would give structural equality over the mutable fields below, so two forms for the
-// same profile would compare equal. UseDataClass is a FALSE POSITIVE here (as InflightGate.Waiter).
-@Suppress("UseDataClass")
+// same profile would compare equal.
 internal class AddSession(val id: String, val profile: String, val candidate: AddCandidate) {
     @Volatile var signInId: String? = null
 
     @Volatile var checks: List<AddCheck>? = null
 
     @Volatile var saved: AddSaved? = null
+
+    /** Whether the save already happened, so a second save or sign-in answers "already saved". */
+    fun isSaved(): Boolean = saved != null
 }
 
 /** A save that happened: the wrapper link's result and the restart the daemon took on. */
@@ -143,7 +145,7 @@ public class AddConsole(
     internal fun signIn(s: AddSession): AddSignInOutcome = synchronized(s) {
         val kind = s.candidate.provider.auth.kind
         when {
-            s.saved != null -> AddSignInOutcome.AlreadySaved
+            s.isSaved() -> AddSignInOutcome.AlreadySaved
             kind == AuthKind.Client.wire -> AddSignInOutcome.NoSignIn
             kind == API_KEY && !s.candidate.resolved.requiresKey -> AddSignInOutcome.NoKeyRequired
             !AuthKindRegistry.isOAuth(kind) -> AddSignInOutcome.ByKey(keyEnv(s))
@@ -159,7 +161,7 @@ public class AddConsole(
 
     /** The checks again, then the write, the wrapper and the restart — in the CLI's order. */
     internal fun save(s: AddSession, restart: AddDaemonRestart): AddSaveOutcome = synchronized(s) {
-        if (s.saved != null) return AddSaveOutcome.AlreadySaved
+        if (s.isSaved()) return AddSaveOutcome.AlreadySaved
         val results = verify(s, live = false)
         if (results.any { !it.ok }) return AddSaveOutcome.ChecksFailed(results)
         val local = s.candidate.resolved.authKind == API_KEY && !s.candidate.resolved.requiresKey

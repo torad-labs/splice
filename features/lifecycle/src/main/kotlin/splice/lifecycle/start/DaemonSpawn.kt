@@ -52,8 +52,7 @@ internal open class DaemonSpawn(
         }.fold(
             onSuccess = { true },
             onFailure = { e ->
-                // SAFE-RENDER-EXEMPT[2026-08-31]: ProcessBuilder.start quotes the argv we built, never file bytes; render would withhold the missing-executable text this line exists to show
-                output.line("splice: failed to start the daemon: ${e.message}")
+                output.line("splice: failed to start the daemon: ${SafeFailureText.render(e)}")
                 false
             },
         )

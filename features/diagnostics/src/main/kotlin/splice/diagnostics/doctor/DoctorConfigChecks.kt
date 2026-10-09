@@ -70,8 +70,7 @@ internal class DoctorConfigChecks(
             DoctorCheck(
                 CHECK_TOPOLOGY,
                 CheckStatus.FAIL,
-                // SAFE-RENDER-EXEMPT[2026-08-31]: topo.message is not a throwable — DoctorTopology.Broken is CONSTRUCTED at DoctorCommand.loadTopology from SafeFailureText.render(e) under DR-92, so this renders an already-sanitized String
-                "$configPath does not parse: ${topo.message}",
+                "$configPath does not parse: ${topo.problem}",
                 topo.fix ?: SYNTAX_FIX,
             ),
         )

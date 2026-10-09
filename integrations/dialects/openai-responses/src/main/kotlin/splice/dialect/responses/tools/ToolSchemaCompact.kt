@@ -43,11 +43,8 @@ internal class SchemaCompact(
 
     /** codex measures the budget on the TYPED-SUBSET serialization (compact_normalized_schema_len);
      *  a subset failure reads as length 0 there — "fits" — stopping further passes. */
-    private fun normalizedLength(v: JsonObject): Long = try {
-        JsonWire.byteSize(subset.subsetObject(v, root = false))
-    } catch (_: SubsetUnrepresentable) {
-        0L
-    }
+    private fun normalizedLength(v: JsonObject): Long =
+        subset.subsetObject(v, root = false)?.let { JsonWire.byteSize(it) } ?: 0L
 
     private fun stripDescriptions(v: JsonElement): JsonElement = when (v) {
         is JsonArray -> JsonArray(v.map { stripDescriptions(it) })

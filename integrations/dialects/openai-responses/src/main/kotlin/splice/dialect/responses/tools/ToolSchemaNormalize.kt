@@ -46,12 +46,6 @@ private val stringHintKeys = listOf(SCHEMA_ENUM, "format")
 private val numberHintKeys =
     listOf("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf")
 
-/** A schema shape codex's typed subset cannot represent — codex errors tool registration there; we
- *  unwind to the verbatim fallback in [ToolSchemaNormalizer.normalize]. */
-internal class SubsetUnrepresentable : RuntimeException() {
-    override fun fillInStackTrace(): Throwable = this
-}
-
 internal data class DefPointer(val table: String, val name: String)
 
 /** The primitive shape reads several pipeline stages share. */
@@ -169,11 +163,8 @@ internal class ToolSchemaNormalizer {
     fun normalize(schema: JsonObject): JsonObject {
         val sanitized = sanitize.sanitize(withRootProperties(schema)) as? JsonObject ?: return schema
         val compacted = compact.compact(prune.pruneUnreachableDefs(sanitized))
-        return try {
-            subset.subsetObject(compacted, root = true)
-        } catch (_: SubsetUnrepresentable) {
-            schema
-        }
+        // A shape codex's typed subset cannot represent: codex errors registration there, we keep the verbatim one.
+        return subset.subsetObject(compacted, root = true) ?: schema
     }
 
     /** mcp_tool.rs:12-19 — the backend mandates `properties`; insert `{}` when absent or null. */

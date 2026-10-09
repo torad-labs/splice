@@ -205,10 +205,10 @@ class AddModelsTest {
         assertEquals(1_050_000L, row.contextWindow)
     }
 
-    /** V4-434, RED before: a curated row `splice add-model` had to emit (the provider table lacked it) came
+    /** A curated row `splice add-model` had to emit (the provider table lacked it) came
      *  out with no card, so a turn on it read "no rate card" although the profile prices the model. */
     @Test
-    fun `an id the provider table lacks is emitted with its rate card - V4-434`(@TempDir dir: Path) {
+    fun `an id the provider table lacks is emitted with its rate card`(@TempDir dir: Path) {
         val path = seedWith(dir) { withoutProviderRow(it, LUNA) }
         assertTrue(addFirstRemaining(path), "add-model wrote nothing")
         val provider = requireNotNull(TopologyLoader.loadOrMaterialize(path).providers["openrouter"])
@@ -217,9 +217,9 @@ class AddModelsTest {
         assertEquals(requireNotNull(curated) { "the profile ships $LUNA with no card" }, row.rates)
     }
 
-    // ---- V4-220: the file is read again before the rename -----------------------------------
+    // ---- the file is read again before the rename -----------------------------------
 
-    /** RED before V4-220: the verb read splice.toml before its prompts and renamed its composition over
+    /** The verb used to read splice.toml before its prompts and renamed its composition over
      *  whatever the file held after them, so an edit made while the picker was open was lost. */
     @Test
     fun `an edit made while the picker is open is kept and the add refuses`(@TempDir dir: Path) {

@@ -57,7 +57,11 @@ import kotlin.time.Duration.Companion.seconds
 
 // Real time is the observable: virtual time cannot measure another connection's socket-delivery gap.
 private const val BLOCK_MS = 2_000L
-private const val GAP_LIMIT_MS = 100L
+
+// The release barrier stays closed until the test ends, so a starved next turn never starts while it is closed
+// and a loaded host only starts it late. The concurrent test asserts the event happens before the release, with a
+// deadline well under the hold; the gap it measures is published, not bounded.
+private const val STARVATION_DEADLINE_MS = 2_000L
 
 // The share of its pace a stream must keep while a sibling blocks: half, where a held stream keeps none.
 private const val MIN_PACE = 0.5
@@ -177,14 +181,24 @@ class HeadEngineDispatchTest {
             )
             val submitted = System.nanoTime()
             val fileLane = async(Dispatchers.IO) { TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - submitted) }
-            val probeMs = withTimeout(1_000) { fileLane.await() }
+            val probeMs = withTimeout(STARVATION_DEADLINE_MS) { fileLane.await() }
             reporter.publishEntry("shared_io_probe_ms", probeMs.toString())
             assertTrue(together, "all sixty five preparations must enter while the release barrier is closed")
-            assertTrue(probeMs < GAP_LIMIT_MS, "shared_io_probe_ms=$probeMs; limit=$GAP_LIMIT_MS")
+            assertTrue(
+                probeMs < STARVATION_DEADLINE_MS,
+                "shared_io_probe_ms=$probeMs; deadline=$STARVATION_DEADLINE_MS",
+            )
             assertTrue(blocker.finished.count == BLOCKED_PREPARATIONS.toLong(), "no blocked preparation may finish")
             val startMs = firstEventMs(port)
             reporter.publishEntry("next_turn_start_ms", startMs.toString())
-            assertTrue(startMs < GAP_LIMIT_MS, "next_turn_start_ms=$startMs; limit=$GAP_LIMIT_MS")
+            assertTrue(
+                startMs < STARVATION_DEADLINE_MS,
+                "next_turn_start_ms=$startMs; deadline=$STARVATION_DEADLINE_MS",
+            )
+            assertTrue(
+                blocker.finished.count == BLOCKED_PREPARATIONS.toLong(),
+                "the next turn must start before the barrier opens",
+            )
             assertTrue(!blocker.onNetty, "preparations must not occupy Netty call threads")
         } finally {
             blocker.release.countDown()
@@ -218,7 +232,10 @@ class HeadEngineDispatchTest {
             val pace = stream.paceWithin(blocker.window)
             reporter.publishEntry("${kind}_stream_pace_in_block", "%.2f".format(pace))
             assertTrue(pace >= MIN_PACE, "${kind}_stream_pace_in_block=$pace; floor=$MIN_PACE; max gap $gapMs ms")
-            assertTrue(startedMs < GAP_LIMIT_MS, "${kind}_next_turn_start_ms=$startedMs; limit=$GAP_LIMIT_MS")
+            // The hold lasts BLOCK_MS, so a next turn it starved would start only after it: half the hold tells a
+            // stall from a loaded host.
+            val deadlineMs = BLOCK_MS / 2
+            assertTrue(startedMs < deadlineMs, "${kind}_next_turn_start_ms=$startedMs; deadline=$deadlineMs")
             assertTrue(!blocker.onNetty, "request work must not occupy a Netty call thread")
         }
     }

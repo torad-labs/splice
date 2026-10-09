@@ -1,5 +1,10 @@
 id: kt-no-delay-in-production
 valid:
+  # the process edge: a class that IS the seam names the clock
+  - |
+    public class ProcessWaiter : Waiter {
+        override suspend fun wait(ms: Long) { delay(ms) }
+    }
   # The one-shot seam — what UpstreamClient's backoff curve and CredentialLock's poll now call.
   - 'waiter.wait(maxOf(jittered, minDelayMs))'
   # The loop-pacing seam, with the Boolean that lets a fake end the loop cleanly.
@@ -14,3 +19,8 @@ invalid:
   - 'delay(timeMillis = 5L)'
   # the Duration overload TurnWatchdog's pollers used
   - 'delay(pollInterval())'
+  # the same call in a class that is not a seam
+  - |
+    public class Other {
+        suspend fun nap(ms: Long) { delay(ms) }
+    }

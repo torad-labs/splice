@@ -1,5 +1,10 @@
 id: kt-no-hardcoded-dispatchers
 valid:
+  # the process edge: the one class that names the global lanes
+  - |
+    public class ProcessDispatchers {
+        public fun io(): CoroutineDispatcher = Dispatchers.IO
+    }
   # The injected seam, defaulted at the composition root from the runtime edge.
   - 'private val dispatcher: CoroutineDispatcher = ProcessDispatchers().io()'
   - 'withContext(stopDispatcher) { stopEveryHead() }'
@@ -37,3 +42,8 @@ invalid:
   - |
     import kotlinx.coroutines.Dispatchers.Default
     val scope = CoroutineScope(Default)
+  # the same selection in any other class
+  - |
+    public class Other {
+        public fun io(): CoroutineDispatcher = Dispatchers.IO
+    }

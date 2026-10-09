@@ -42,11 +42,19 @@ message: "No bare delay() in production — inject a Waiter (one-shot wait) or a
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
-ignores:
-  # The process runtime edge — the single main-source file allowed to name the global clock.
-  - integrations/upstream/src/main/kotlin/splice/upstream/codemode/ProcessRuntime.kt
 rule:
   # `$$$ARGS` matches zero-or-more, so one branch covers delay(ms), delay(duration) and the named
   # spelling delay(timeMillis = 5L) alike. A receiver-qualified `x.delay(...)` is deliberately NOT
   # matched: that is somebody's own method, not kotlinx.coroutines.delay.
   pattern: delay($$$ARGS)
+  # The process runtime edge is the implementation of the seam itself: a class that IS a Waiter or a Ticker is where
+  # the global clock is named, exempt by that supertype and not by the file that holds it.
+  not:
+    inside:
+      kind: class_declaration
+      stopBy: end
+      has:
+        kind: delegation_specifier
+        has:
+          kind: user_type
+          regex: '^(Waiter|Ticker)$'

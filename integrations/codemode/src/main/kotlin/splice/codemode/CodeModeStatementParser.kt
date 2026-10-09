@@ -130,10 +130,8 @@ internal class CodeModeStatementParser(private val syntax: CodeModeStatementSynt
         return if (canEnd(type, lineBreak)) parsedBoundary(text, start, type, lineBreak) else null
     }
 
-    private fun canEnd(type: TokenType, lineBreak: Boolean): Boolean = when (type) {
-        TokenType.SEMICOLON, TokenType.RBRACE -> true
-        else -> lineBreak
-    }
+    private fun canEnd(type: TokenType, lineBreak: Boolean): Boolean =
+        type == TokenType.SEMICOLON || type == TokenType.RBRACE || lineBreak
 
     private fun parsedBoundary(text: String, start: Int, type: TokenType, lineBreak: Boolean): Int? {
         val parsed = parse(text.substring(0, start)).body ?: return null

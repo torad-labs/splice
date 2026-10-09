@@ -253,7 +253,7 @@ public class MuseAuthProvider(
                 holds.recordRetry(snapshot, MAX_MINT_HOLD_MS)
                 log("[muse-auth] key mint denied (${masked(attempt.detail, snapshot)}); retry held for 60 minutes")
             }
-            else -> Unit
+            is MuseMintAttempt.Granted, MuseMintAttempt.InvalidAccountToken -> Unit
         }
         store.clearCache()
         return null

@@ -104,7 +104,11 @@ internal object SilentConstants {
 
         /** The tree total: growth fails, a shrink passes. */
         fun totals(census: Census): List<String> =
-            if (census.silent.size > total) listOf("GROWTH: the tree total rose $total -> ${census.silent.size}") else emptyList()
+            if (census.silent.size > total) {
+                listOf("GROWTH: the tree total rose $total -> ${census.silent.size}")
+            } else {
+                emptyList()
+            }
 
         companion object {
             private val REQUIRED_KEYS = listOf("recorded", "total", "denominator", "files")
@@ -335,12 +339,15 @@ class SilentConstantsLawTest {
     }
 
     @Test
-    fun `a shrink passes - a smaller count, a lower entry and a vanished file are progress - V4-88`(@TempDir root: File) {
+    fun `a shrink passes - a smaller count, a lower entry and a vanished file are progress - V4-88`(
+        @TempDir root: File,
+    ) {
         with(Tree(root)) {
             write(A to ONE_SILENT)
-            assertEquals(emptyList<String>(), audit(baseline(2, 1, mapOf(A to 2))), "an entry held above the measurement passes")
-            assertEquals(emptyList<String>(), audit(baseline(2, 2, mapOf(A to 1))), "a tree total that fell passes")
-            assertEquals(emptyList<String>(), audit(baseline(1, 1, mapOf(A to 1, GONE to 0))), "a vanished file passes")
+            val none = emptyList<String>()
+            assertEquals(none, audit(baseline(2, 1, mapOf(A to 2))), "an entry held above the measurement passes")
+            assertEquals(none, audit(baseline(2, 2, mapOf(A to 1))), "a tree total that fell passes")
+            assertEquals(none, audit(baseline(1, 1, mapOf(A to 1, GONE to 0))), "a vanished file passes")
         }
     }
 

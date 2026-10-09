@@ -89,7 +89,7 @@ public class PassthroughSystemPrompt {
             } else {
                 return request
             }
-            else -> return request
+            is JsonObject -> return request
         }
         return JsonObject(request.toMutableMap().apply { put(SYSTEM, JsonArray(blocks + textBlock(text))) })
     }

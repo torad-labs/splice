@@ -53,6 +53,22 @@ val firChecksPluginArg = firChecksPluginJar.map { "-Xplugin=${it.asFile.absolute
 val closedWhenModules =
     setOf(
         ":integrations-terminal",
+        ":integrations-providers-muse",
+        ":integrations-mcp",
+        ":integrations-providers-grok",
+        ":integrations-http",
+        ":integrations-daemon-client",
+        ":features-heads",
+        ":features-accounts",
+        ":integrations-topology",
+        ":features-launch",
+        ":features-models",
+        ":integrations-dialects-openai-chat",
+        ":integrations-dialects-anthropic",
+        ":integrations-oauth",
+        ":features-lifecycle",
+        ":features-usage",
+        ":integrations-codemode",
     )
 val closedWhenArgs = listOf("-P", "plugin:splice.fir-checks:closedWhen=true")
 val releaseVersion = (JsonSlurper().parse(file("package.json")) as Map<*, *>)["version"].toString()

@@ -103,28 +103,37 @@ private object TopologyTypeMismatch {
         return null
     }
 
-    private fun expected(key: String): TopologyTypeFailure.Expected? = when (fieldDescriptor(key)?.kind) {
-        PrimitiveKind.STRING, SerialKind.ENUM -> TopologyTypeFailure.Expected.QUOTED_STRING
-        PrimitiveKind.INT, PrimitiveKind.LONG -> TopologyTypeFailure.Expected.INTEGER
-        PrimitiveKind.BOOLEAN -> TopologyTypeFailure.Expected.BOOLEAN
-        PrimitiveKind.FLOAT, PrimitiveKind.DOUBLE -> TopologyTypeFailure.Expected.NUMBER
-        StructureKind.MAP, StructureKind.CLASS -> TopologyTypeFailure.Expected.TABLE
-        StructureKind.LIST -> TopologyTypeFailure.Expected.ARRAY
-        else -> null
-    }
+    /** The TOML shape each serial kind is written as; a kind not listed (a byte, a char, an object, a polymorphic or contextual
+     *  value) has no single spelling, so it names none. A lookup, not a `when`: the kind type is open to new cases. */
+    private val expectedByKind: Map<SerialKind, TopologyTypeFailure.Expected> = mapOf(
+        PrimitiveKind.STRING to TopologyTypeFailure.Expected.QUOTED_STRING,
+        SerialKind.ENUM to TopologyTypeFailure.Expected.QUOTED_STRING,
+        PrimitiveKind.INT to TopologyTypeFailure.Expected.INTEGER,
+        PrimitiveKind.LONG to TopologyTypeFailure.Expected.INTEGER,
+        PrimitiveKind.BOOLEAN to TopologyTypeFailure.Expected.BOOLEAN,
+        PrimitiveKind.FLOAT to TopologyTypeFailure.Expected.NUMBER,
+        PrimitiveKind.DOUBLE to TopologyTypeFailure.Expected.NUMBER,
+        StructureKind.MAP to TopologyTypeFailure.Expected.TABLE,
+        StructureKind.CLASS to TopologyTypeFailure.Expected.TABLE,
+        StructureKind.LIST to TopologyTypeFailure.Expected.ARRAY,
+    )
+
+    private fun expected(key: String): TopologyTypeFailure.Expected? =
+        fieldDescriptor(key)?.kind?.let { expectedByKind[it] }
 
     private fun fieldDescriptor(key: String): SerialDescriptor? {
         var descriptor: SerialDescriptor = Topology.serializer().descriptor
         for (segment in segments.findAll(key).map { it.value.replace("\"", "").replace("'", "") }) {
             while (descriptor.kind == StructureKind.LIST) descriptor = descriptor.getElementDescriptor(0)
-            descriptor = when (descriptor.kind) {
-                StructureKind.MAP -> descriptor.getElementDescriptor(1)
-                StructureKind.CLASS -> {
-                    val index = (0 until descriptor.elementsCount)
-                        .firstOrNull { descriptor.getElementName(it) == segment } ?: return null
-                    descriptor.getElementDescriptor(index)
-                }
-                else -> return null
+            val kind = descriptor.kind
+            descriptor = if (kind == StructureKind.MAP) {
+                descriptor.getElementDescriptor(1)
+            } else if (kind == StructureKind.CLASS) {
+                val index = (0 until descriptor.elementsCount)
+                    .firstOrNull { descriptor.getElementName(it) == segment } ?: return null
+                descriptor.getElementDescriptor(index)
+            } else {
+                return null
             }
         }
         return descriptor

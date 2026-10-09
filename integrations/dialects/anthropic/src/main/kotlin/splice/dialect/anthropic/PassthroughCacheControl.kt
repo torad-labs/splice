@@ -7,6 +7,7 @@ package splice.dialect.anthropic
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -28,7 +29,7 @@ internal class PassthroughCacheControl(private val enabled: Boolean) {
                 }
             }
             is JsonArray -> buildJsonArray { element.forEach { add(stripCacheControl(it, depth + 1)) } }
-            else -> element
+            is JsonPrimitive -> element
         }
     }
 }

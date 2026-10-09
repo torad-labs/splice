@@ -1,6 +1,7 @@
 // NEW: bounded framed protocol between splice and its bundled JavaScript worker.
 package splice.codemode
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -244,7 +245,7 @@ internal object CodeModeFrames {
             JsonNull -> null
             is JsonPrimitive -> element.takeIf(JsonPrimitive::isString)?.content
                 ?: throw IOException("Code-mode worker sent an invalid error")
-            else -> throw IOException("Code-mode worker sent an invalid error")
+            is JsonObject, is JsonArray -> throw IOException("Code-mode worker sent an invalid error")
         }
         error?.let { requireText(it, "error") }
         return WorkerReply(calls = null, output = output, error = error)

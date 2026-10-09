@@ -44,6 +44,7 @@ package splice.dialect.anthropic
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -94,7 +95,7 @@ internal class PassthroughMessageScrubber(
     /** A content value is a bare string (verbatim) or a block list (allowlist-filtered). */
     private fun scrubContent(content: JsonElement): JsonElement = when (content) {
         is JsonArray -> scrubBlocks(content)
-        else -> content
+        is JsonObject, is JsonPrimitive -> content
     }
 
     /** Filter the blocks, and never hand back an EMPTY array for a message that had blocks: that is

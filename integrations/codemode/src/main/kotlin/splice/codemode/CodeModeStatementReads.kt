@@ -36,11 +36,9 @@ internal class CodeModeStatementReads(private val body: FunctionNode) {
                 // Graal wraps both logical operands to join control-flow predecessors.
                 val left = (node.lhs as? JoinPredecessorExpression)?.expression ?: node.lhs
                 val value = (left as? LiteralNode<*>)?.value
-                when (Token.descType(node.token)) {
-                    TokenType.AND -> if (value == false) exclude(node.rhs)
-                    TokenType.OR -> if (value == true) exclude(node.rhs)
-                    else -> Unit
-                }
+                val operator = Token.descType(node.token)
+                if (operator == TokenType.AND && value == false) exclude(node.rhs)
+                if (operator == TokenType.OR && value == true) exclude(node.rhs)
                 return true
             }
 

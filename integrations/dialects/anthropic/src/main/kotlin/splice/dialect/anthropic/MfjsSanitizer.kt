@@ -97,7 +97,7 @@ public object MfjsSanitizer {
     /** Tuple-style `items` array collapses to its first element (or {} when empty) — rule 3. */
     private fun sanitizeItems(value: JsonElement, depth: Int): JsonElement = when (value) {
         is JsonArray -> value.firstOrNull()?.let { sanitizeChild(it, depth + 1) } ?: EMPTY_SCHEMA
-        else -> sanitizeChild(value, depth + 1)
+        is JsonObject, is JsonPrimitive -> sanitizeChild(value, depth + 1)
     }
 
     private fun sanitizeChild(element: JsonElement, depth: Int): JsonElement =

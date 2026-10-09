@@ -13,14 +13,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The gate of record: the check branch protection requires. It passes only when the Linux ladder and the macOS
+  # parity job both passed. The two run side by side, because the ladder used to wait for macOS to finish first,
+  # which added 4 to 7 minutes to every run (runs 37730125071 and 37836315947).
   gate:
-    needs: macos
+    needs: [ladder, macos]
     if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: require the ladder and macOS parity
+        run: test "${{ needs.ladder.result }}" = success && test "${{ needs.macos.result }}" = success
+
+  ladder:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: require macOS parity
-        run: test "${{ needs.macos.result }}" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -53,7 +61,9 @@ jobs:
         run: npm run gate
       - name: scoped repository gate
         if: ${{ github.event_name == 'pull_request' }}
-        run: bun tools/gate run --since origin/${{ github.base_ref }}
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: bun tools/gate run --since "origin/$BASE_REF"
       # Where the gate's minutes went: the profile `bun tools/gate run` asks Gradle for, and every
       # suite's JUnit report with each test's time. Kept on a red run too, which is when they are read.
       - name: keep the gate's timings

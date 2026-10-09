@@ -41,10 +41,10 @@ public class DaemonSettings(private val errors: TerminalOutput) {
      *  A blank value falls back to the knob's declared default rather than asking systemctl about
      *  an empty unit name. */
     public fun supervisorUnit(envReader: EnvReader): String {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-20 (V4-176): an unreadable TOML means "no TOML layer" here, which is the answer the state and env layers below are then decided by; [controlPort] above already PRINTS the diagnostic for the very same file on the very same upgrade path, and a second copy would report one corrupt config twice.
-        val topology = Cancellables.runCatchingCancellable {
+        // An unreadable TOML means "no TOML layer" here: the state and env layers below decide the answer.
+        val topology = Unanswered.orNull {
             TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(envReader))
-        }.getOrNull()
+        }
         val unit = ConfigService(
             TopologyStatePaths(envReader).of(topology),
             headOverrides = topology?.let { TopologyKnobLayer(it).configOverrides() } ?: emptyMap(),

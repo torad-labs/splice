@@ -3948,3 +3948,4 @@ build-logic/src/test/kotlin/splice/ladder/LadderTableTest.kt	created		Red-green 
 features/turns/src/main/kotlin/splice/head/transport/SseReserve.kt	created		added by V4-114: whether a websocket round is re-served over SSE, held as a value the round reads after its collection ends
 features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/Upgraded.kt	created		added by V4-114: what an upgrade step answers, its value or the refusal that stops the upgrade
 app/src/test/kotlin/splice/app/auth/claude/ClaudeNativeLoginResumeTest.kt	created		Pins that a native /login resumes the interrupted turn: the staged login is adopted into the live pool and the held request retries on the new account.
+integrations/daemon-client/src/main/kotlin/splice/daemonclient/Unanswered.kt	created		The one named reading of the daemon not answering, for the probes that return null for it.

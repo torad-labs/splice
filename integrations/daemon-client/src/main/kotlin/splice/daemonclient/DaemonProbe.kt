@@ -166,10 +166,9 @@ public object DaemonProbe {
 
     public fun healthVersion(port: Int): String? = healthView(port)?.version
 
-    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): same probe contract as healthView: /api/heads unreachable is the normal no-daemon reading, and null is what the caller renders.
-    public fun headsRuntime(port: Int, bearer: String): List<HeadRuntime>? = Cancellables.runCatchingCancellable {
+    public fun headsRuntime(port: Int, bearer: String): List<HeadRuntime>? = Unanswered.orNull {
         request("http://127.0.0.1:$port/api/heads", bearer = bearer) { parseHeadsRuntime(body(it)) }
-    }.getOrNull()
+    }
 
     /** An /api/heads body's per-head counters: a head without a key or a health object is skipped. */
     public fun parseHeadsRuntime(body: String): List<HeadRuntime> {
@@ -202,13 +201,12 @@ public object DaemonProbe {
      *  reports success against a port nothing ever bound. It also survives a malformed TOML, which
      *  no file-sourced list can. */
     public fun headPorts(port: Int, bearer: String): List<Int>? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): declared 'null when /api/heads is unreachable'; the stop ladder branches on that null and falls back to the topology's ports.
-        Cancellables.runCatchingCancellable {
+        Unanswered.orNull {
             request("http://127.0.0.1:$port/api/heads", bearer = bearer) { connection ->
                 val obj = json.parseToJsonElement(body(connection)).jsonObject
                 (obj["heads"] as? JsonArray).orEmpty().mapNotNull { JsonScalars.int(it as? JsonObject, "port") }
             }
-        }.getOrNull()
+        }
 
     /** One head's credential as the DAEMON sees it. [verdict] is what upstream last said about a
      *  forwarded credential (V4-220 item 6b); [CredentialVerdict.Held] from a daemon that predates it
@@ -219,10 +217,9 @@ public object DaemonProbe {
      *  Doctor compares presence against the shell's to catch the exported-after-boot trap, and reads
      *  a client head's verdict because only the daemon sees upstream's answers. */
     public fun authSeen(port: Int, key: String): Map<String, HeadAuthSeen>? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): declared 'null when unreachable'; doctor prints 'the daemon did not answer' for the null instead of a per-head verdict.
-        Cancellables.runCatchingCancellable {
+        Unanswered.orNull {
             request("http://127.0.0.1:$port/api/auth", bearer = key) { parseAuthSeen(body(it)) }
-        }.getOrNull()
+        }
 
     /** An /api/auth body's per-head credential state. */
     public fun parseAuthSeen(body: String): Map<String, HeadAuthSeen> =

@@ -4,7 +4,6 @@
 // 401/403; request() swallows non-2xx and that would paper over F1.
 package splice.daemonclient
 
-import splice.core.util.Cancellables
 import java.net.HttpURLConnection
 import java.net.URI
 
@@ -26,8 +25,7 @@ public object ControlPlaneClient {
         method: String,
         bearer: String?,
         readTimeoutMs: Int = STATUS_TIMEOUT_MS,
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): declared 'null if it never connected' — a closed control port is the normal case and the escalation ladder branches on the null; the 401/403 this exists to expose arrives as a STATUS, not as a failure.
-    ): Int? = Cancellables.runCatchingCancellable {
+    ): Int? = Unanswered.orNull {
         val connection = URI(url).toURL().openConnection() as HttpURLConnection
         try {
             connection.requestMethod = method
@@ -38,7 +36,7 @@ public object ControlPlaneClient {
         } finally {
             connection.disconnect()
         }
-    }.getOrNull()
+    }
 
     /** V4-175: status AND body, for the calls whose ANSWER IS A SENTENCE. The control plane writes
      *  every refusal as `{"error": "<reason>"}` — "claude is not currently wrapped", "the
@@ -50,8 +48,7 @@ public object ControlPlaneClient {
         method: String,
         bearer: String?,
         readTimeoutMs: Int = STATUS_TIMEOUT_MS,
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-20 (V4-175): declared 'null if it never connected', same as statusOf above; a closed control port is the normal case and the caller branches on the null.
-    ): ControlReply? = Cancellables.runCatchingCancellable {
+    ): ControlReply? = Unanswered.orNull {
         val connection = URI(url).toURL().openConnection() as HttpURLConnection
         try {
             connection.requestMethod = method
@@ -66,7 +63,7 @@ public object ControlPlaneClient {
         } finally {
             connection.disconnect()
         }
-    }.getOrNull()
+    }
 
     /** What both halves of a control-plane call agree a success is: the sender picks the stream to
      *  read from it, and [SetupClaudeLane] picks the sentence to print from it. Two spellings of

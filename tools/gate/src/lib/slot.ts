@@ -45,13 +45,13 @@ export function lockPath(layout: Layout, env: Record<string, string | undefined>
 }
 
 /**
- * The persistent pre-push build tree (prepush-tree.ts) is a worktree of the checkout with build output and caches of its own,
- * kept under `<git common dir>/splice-prepush/tree`. It takes the lock beside its own build root: sharing the checkout's lock
+ * The persistent build trees (prepush-tree.ts: pre-push's and the local gate's) are worktrees of the checkout with build output and caches of their own,
+ * kept under `<git common dir>/splice-prepush/`. Each takes the lock beside its own build root: sharing the checkout's lock
  * made every push block every builder in the checkout for the whole push, though the two trees share no output. Its own
  * single-user lock (the tree's flock) already serialises pushes, and buildgate's memory admission still bounds the machine.
  */
 function isPrePushTree(layout: Layout): boolean {
-  return layout.repoRoot.includes(`${sep}splice-prepush${sep}tree`);
+  return layout.repoRoot.includes(`${sep}splice-prepush${sep}`);
 }
 
 /**

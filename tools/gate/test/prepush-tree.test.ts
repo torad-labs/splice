@@ -1,10 +1,10 @@
-// The pre-push build tree: the pushed commit, clean, with build output kept between pushes.
+// The persistent build trees: the pushed commit (or the gated HEAD), clean, with build output kept between runs.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { preparePrePushTree } from "../src/lib/prepush-tree.ts";
+import { GATE_TREE, preparePrePushTree } from "../src/lib/prepush-tree.ts";
 
 const sh = (root: string, ...args: string[]): string => {
   const proc = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: root });
@@ -65,6 +65,19 @@ describe("the pre-push build tree", () => {
     expect(() => preparePrePushTree(root, sha, 150)).toThrow(/stayed busy/);
     held.release();
     preparePrePushTree(root, sha, 150).release();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("the gate's tree is a different tree with its own lock, so a running gate never makes a push wait", () => {
+    const root = repo();
+    const sha = sh(root, "rev-parse", "HEAD");
+    const gate = preparePrePushTree(root, sha, 150, GATE_TREE);
+    const push = preparePrePushTree(root, sha, 150);
+    expect(gate.path).not.toBe(push.path);
+    expect(readFileSync(join(gate.path, "a.txt"), "utf8")).toBe("first\n");
+    expect(() => preparePrePushTree(root, sha, 150, GATE_TREE)).toThrow(/gate build tree stayed busy/);
+    push.release();
+    gate.release();
     rmSync(root, { recursive: true, force: true });
   });
 

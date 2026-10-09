@@ -30,15 +30,20 @@ function must(cwd: string, args: readonly string[]): string {
   return run.stdout;
 }
 
-/** Moves the persistent tree to [sha] and returns it, locked. Throws when git cannot, or when the lock stays busy. */
-export function preparePrePushTree(repoRoot: string, sha: string, waitMs: number = LOCK_WAIT_MS): PrePushTree {
+/** The tree pre-push judges a pushed sha in. */
+export const PRE_PUSH_TREE = "tree";
+/** The tree a local `gate run` judges HEAD in. It is not the pre-push tree, so a half-hour gate never makes a push wait. */
+export const GATE_TREE = "gate";
+
+/** Moves the persistent tree [name] to [sha] and returns it, locked. Throws when git cannot, or when the lock stays busy. */
+export function preparePrePushTree(repoRoot: string, sha: string, waitMs: number = LOCK_WAIT_MS, name: string = PRE_PUSH_TREE): PrePushTree {
   const common = must(repoRoot, ["rev-parse", "--git-common-dir"]);
   const home = join(isAbsolute(common) ? common : resolve(repoRoot, common), "splice-prepush");
   mkdirSync(home, { recursive: true });
-  const slot = takeExclusive(join(home, "tree.lock"), waitMs);
-  if (slot === undefined) throw new Error(`the pre-push build tree stayed busy for ${Math.round(waitMs / 1000)} s`);
+  const slot = takeExclusive(join(home, `${name}.lock`), waitMs);
+  if (slot === undefined) throw new Error(`the ${name === PRE_PUSH_TREE ? "pre-push" : name} build tree stayed busy for ${Math.round(waitMs / 1000)} s`);
   const started = performance.now();
-  const path = join(home, "tree");
+  const path = join(home, name);
   try {
     if (existsSync(join(path, ".git"))) {
       must(path, ["checkout", "--detach", "--force", "-q", sha]);

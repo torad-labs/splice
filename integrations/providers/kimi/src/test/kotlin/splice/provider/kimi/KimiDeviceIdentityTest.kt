@@ -62,7 +62,7 @@ class KimiDeviceIdentityTest {
     // to the operator's session — an unreadable file must throw, never regenerate. True absence
     // (a first run) still mints.
     @Test
-    fun `an unreadable device id file never regenerates the identity - DR-59`(@TempDir dir: Path) {
+    fun `an unreadable device id file never regenerates the identity`(@TempDir dir: Path) {
         val locked = Files.createDirectories(dir.resolve("locked"))
         val path = locked.resolve("device_id")
         Files.writeString(path, "11111111-1111-1111-1111-111111111111")

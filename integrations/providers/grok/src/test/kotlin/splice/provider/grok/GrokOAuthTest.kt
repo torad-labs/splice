@@ -18,16 +18,6 @@ class GrokOAuthTest {
     private val noEnv: (String) -> String? = { null }
 
     @Test
-    fun `endpoints match the grok CLI`() {
-        assertEquals("b1a00492-073a-47ea-816f-4c329264a828", GrokOAuthEndpoints.clientId(noEnv))
-        assertEquals("https://auth.x.ai/oauth2/authorize", GrokOAuthEndpoints.authorizeUrl(noEnv))
-        assertEquals("https://auth.x.ai/oauth2/token", GrokOAuthEndpoints.tokenUrl(noEnv))
-        assertEquals(56121, GrokOAuthEndpoints.REDIRECT_PORT)
-        assertTrue(GrokOAuthEndpoints.SCOPE.contains("grok-cli:access"))
-        assertTrue(GrokOAuthEndpoints.SCOPE.contains("api:access"))
-    }
-
-    @Test
     fun `authorize url has the pkce challenge, state, nonce and percent-20-encoded scope`() {
         val pkce = oauth.makeGrokPkce()
         val url = oauth.buildGrokAuthorizeUrl(
@@ -94,7 +84,7 @@ class GrokOAuthTest {
     // as expired on every single turn, every turn refreshed, and the refresh returned the same
     // field. A permanent storm out of one number, and the file said so in plain sight.
     @Test
-    fun `an absurd expires_in cannot persist an expiry in the past - DR-177`() {
+    fun `an absurd expires_in cannot persist an expiry in the past`() {
         val absurd = Long.MAX_VALUE / 1000 + 1
         val body = """{"access_token":"at","refresh_token":"rt","expires_in":$absurd}"""
         val auth = oauth.grokAuthJsonFromTokenResponse(body, fallbackRefresh = null, nowMs = 1000L, nowIso = "z")

@@ -488,7 +488,7 @@ class MuseCredentialIdentityCollisionTest {
     // box — because the sentinel outlived the credential it was armed against. DR-176 widened the
     // identity with [sizeBytes], which a same-length rewrite does not change; content does.
     @Test
-    fun `a same-length rewrite that keeps the mtime still clears the account latch - V4-70`(
+    fun `a same-length rewrite that keeps the mtime still clears the account latch`(
         @TempDir tempDir: Path,
     ) = runTest {
         val file = authFile(tempDir, accessToken = "token-a", apiKey = "key-a")

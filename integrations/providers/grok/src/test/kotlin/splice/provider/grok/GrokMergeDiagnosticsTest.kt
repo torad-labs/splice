@@ -21,7 +21,7 @@ import java.nio.file.Path
 class GrokMergeDiagnosticsTest {
 
     @Test
-    fun `merge diagnostics never quote credential bytes - DR-73`(@TempDir dir: Path) = runTest {
+    fun `merge diagnostics never quote credential bytes`(@TempDir dir: Path) = runTest {
         val sentinel = "xai-SENTINEL-MERGE-LEAK"
         val file = dir.resolve(".grok").resolve("auth.json")
         Files.createDirectories(file.parent)

@@ -197,7 +197,7 @@ class GrokEntitlementTest {
     // the only place that answers it with vendor spelling, and it answers with the SAME list V4-38
     // uses for the refresh veto, so the two can never disagree about what a quota wall looks like.
     @Test
-    fun `a billing 403 is declared quota-exhausted, and nothing else is - V4-73`(@TempDir tempDir: Path) {
+    fun `a billing 403 is declared quota-exhausted, and nothing else is`(@TempDir tempDir: Path) {
         val auth = provider(tempDir, expiresAtMs = 2_000_000L, now = 1_000_000L)
 
         assertTrue(auth.isQuotaExhausted(403, spendingLimit), "the billing 403 IS a quota wall")

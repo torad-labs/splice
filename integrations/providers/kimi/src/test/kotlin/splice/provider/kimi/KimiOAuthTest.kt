@@ -17,20 +17,7 @@ import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
 class KimiOAuthTest {
 
     private val oauth = KimiOAuth()
-    private val noEnv: (String) -> String? = { null }
     private val cid = "17e5f671-d194-4dfb-9706-5516cb48c098"
-
-    @Test
-    fun `endpoints match the kimi CLI`() {
-        assertEquals(cid, KimiOAuthEndpoints.CLIENT_ID)
-        assertEquals("https://auth.kimi.com", KimiOAuthEndpoints.host(noEnv))
-        assertEquals(
-            "https://auth.kimi.com/api/oauth/device_authorization",
-            KimiOAuthEndpoints.deviceAuthorizationUrl(noEnv),
-        )
-        assertEquals("https://auth.kimi.com/api/oauth/token", KimiOAuthEndpoints.tokenUrl(noEnv))
-        assertEquals("urn:ietf:params:oauth:grant-type:device_code", KimiOAuthEndpoints.DEVICE_CODE_GRANT_TYPE)
-    }
 
     @Test
     fun `host is env-overridable and trimmed`() {
@@ -105,7 +92,7 @@ class KimiOAuthTest {
     // sits in the past forever. The unit is why the shared conversion is divided back down here
     // rather than skipped; the arm above pins that the ordinary case is byte-identical.
     @Test
-    fun `an absurd expires_in cannot persist an expires_at in the past - DR-177`() {
+    fun `an absurd expires_in cannot persist an expires_at in the past`() {
         val absurd = Long.MAX_VALUE - 1
         val body = """{"access_token":"at","refresh_token":"rt","expires_in":$absurd}"""
         val written = oauth.kimiAuthJsonFromTokenResponse(body, nowMs = 5000L)

@@ -345,7 +345,7 @@ class MuseAuthProviderTest {
     }
 
     @Test
-    fun `a failed mint, a denial and a lock that cannot be taken each name their cause - V4-292`(
+    fun `a failed mint, a denial and a lock that cannot be taken each name their cause`(
         @TempDir tempDir: Path,
     ) = runTest {
         val logs = mutableListOf<String>()
@@ -364,7 +364,7 @@ class MuseAuthProviderTest {
     }
 
     @Test
-    fun `an account token rejected while the file's token changes twice says so - V4-292`(
+    fun `an account token rejected while the file's token changes twice says so`(
         @TempDir tempDir: Path,
     ) = runTest {
         val file = authFile(tempDir)

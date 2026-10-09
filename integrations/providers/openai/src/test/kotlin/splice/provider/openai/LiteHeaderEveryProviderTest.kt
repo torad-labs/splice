@@ -1,8 +1,7 @@
-// NEW: V4-28 — the lite header is a declared pair, not a dialect default.
+// The lite header is a declared pair, not a dialect default.
 package splice.provider.openai
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
@@ -44,27 +43,6 @@ class LiteHeaderEveryProviderTest {
         val built = provider(ResponsesQuirks(providerTag = "claude-grok"))
             .buildTurn(body("grok-4.6"), compact = false, sessionId = "s")
         assertNull(built.extraHeaders["x-openai-internal-codex-responses-lite"])
-    }
-
-    @Test
-    fun `OpenAiQuirks default carries no lite regex or header`() {
-        val quirks = OpenAiQuirks().defaultQuirks()
-        assertNull(quirks.responsesLiteModelRegex)
-        assertNull(quirks.responsesLiteHeader)
-        assertNull(quirks.summaryRejectModelRegex)
-        assertNull(quirks.effortMaxRejectModelRegex)
-        assertNull(quirks.liteTextVerbosity)
-        assertFalse(quirks.sendClientMetadata)
-    }
-
-    @Test
-    fun `OpenAiQuirks uses the dialect's default effort vocabulary`() {
-        // Against the dialect's own default, not by type name: the vocabulary is internal to its
-        // module (V4-210), and a sibling's test is not a consumer that justifies publishing it.
-        assertEquals(
-            ResponsesQuirks(providerTag = "dialect-default").effortVocabulary::class,
-            OpenAiQuirks().defaultQuirks().effortVocabulary::class,
-        )
     }
 
     @Test

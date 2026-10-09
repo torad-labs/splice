@@ -213,7 +213,7 @@ class GrokProviderTest {
     // pre-gate flattened it to "no credential file — not logged in" while intact tokens sat
     // unreadable one chmod away. ReadFailed's flatten line says NOT-logged-out.
     @Test
-    fun `an inaccessible auth file is read-failed, never logged-out - DR-59`(@TempDir dir: Path): Unit = runBlocking {
+    fun `an inaccessible auth file is read-failed, never logged-out`(@TempDir dir: Path): Unit = runBlocking {
         val lockedDir = Files.createDirectories(dir.resolve("locked"))
         val lockedAuth = lockedDir.resolve("auth.json")
         Files.writeString(lockedAuth, """{"tokens":{"access_token":"tok"},"expires":1}""")

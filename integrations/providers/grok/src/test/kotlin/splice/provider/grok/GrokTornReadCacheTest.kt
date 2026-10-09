@@ -21,7 +21,7 @@ import java.nio.file.Path
 class GrokTornReadCacheTest {
 
     @Test
-    fun `a same-mtime rewrite is not served from the cache - DR-148`(@TempDir dir: Path) = runTest {
+    fun `a same-mtime rewrite is not served from the cache`(@TempDir dir: Path) = runTest {
         val now = 5_000_000_000L
         val file = dir.resolve(".grok").resolve("auth.json")
         Files.createDirectories(file.parent)

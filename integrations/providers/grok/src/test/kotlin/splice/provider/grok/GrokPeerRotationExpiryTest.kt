@@ -52,7 +52,7 @@ class GrokPeerRotationExpiryTest {
     // The existing peer arms cannot catch it: they assert only the served token and call count, and
     // the G1 arm above writes an `expires`, so it never exercises the drifted shape at all.
     @Test
-    fun `a peer-adopted token with no expires gets the synthesized ceiling - DR-145`(@TempDir dir: Path) = runTest {
+    fun `a peer-adopted token with no expires gets the synthesized ceiling`(@TempDir dir: Path) = runTest {
         val now = 5_000_000_000L
         val file = authFile(dir, access = "token-A", expiresAtMs = now + 3_600_000)
         val calls = AtomicInteger()

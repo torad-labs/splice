@@ -521,7 +521,7 @@ class KimiRereadFailureTest {
     // DR-65 (codex security probe): a malformed auth file still containing a live token must not
     // leak it through parse-exception text ("JSON input:" excerpts) into logs or describe fields.
     @Test
-    fun `diagnostics never quote credential bytes from a malformed auth file - DR-65`(@TempDir dir: Path) = runTest {
+    fun `diagnostics never quote credential bytes from a malformed auth file`(@TempDir dir: Path) = runTest {
         val sentinel = "kimi-SENTINEL-LEAK-CANARY"
         val file = dir.resolve("kimi-code.json")
         Files.writeString(file, """{"access_token":"$sentinel"""")
@@ -544,7 +544,7 @@ class KimiRereadFailureTest {
 class KimiSynthesizedExpiryTest {
 
     @Test
-    fun `missing expires_at synthesizes one ceiling - one refresh across N calls - SH-01`(
+    fun `missing expires_at synthesizes one ceiling - one refresh across N calls`(
         @TempDir dir: Path,
     ) = runTest {
         // Pre-fix, a file with no expires_at floored to 0: every credentials() call sat below the
@@ -576,7 +576,7 @@ class KimiSynthesizedExpiryTest {
     }
 
     @Test
-    fun `refresh merges onto the on-disk file - foreign fields survive rotation - SH-10`(@TempDir dir: Path) = runTest {
+    fun `refresh merges onto the on-disk file - foreign fields survive rotation`(@TempDir dir: Path) = runTest {
         // Pre-fix, a successful refresh wrote a fixed six-key object from scratch: device_id and
         // any vendor field kimi-cli stores beside ours vanished on every rotation.
         val file = dir.resolve(".kimi").resolve("credentials").resolve("kimi-code.json")
@@ -620,7 +620,7 @@ class KimiSynthesizedExpiryTest {
     // unreadable one chmod away. Describe names the same condition instead of rendering a clean
     // logged-out dashboard.
     @Test
-    fun `an inaccessible auth file is read-failed, never logged-out - DR-59`(@TempDir dir: Path) = runTest {
+    fun `an inaccessible auth file is read-failed, never logged-out`(@TempDir dir: Path) = runTest {
         val lockedDir = Files.createDirectories(dir.resolve("locked"))
         val authPath = lockedDir.resolve("auth.json")
         Files.writeString(authPath, """{"access_token":"tok","refresh_token":"r","expires_at":9999999999}""")
@@ -656,7 +656,7 @@ class KimiSynthesizedExpiryTest {
 class KimiPersistMergeDiagnosticsTest {
 
     @Test
-    fun `merge diagnostics never quote credential bytes - DR-73`(@TempDir dir: Path) = runTest {
+    fun `merge diagnostics never quote credential bytes`(@TempDir dir: Path) = runTest {
         val sentinel = "sk-kimi-SENTINEL-MERGE"
         val file = dir.resolve("auth.json")
         Files.writeString(
@@ -688,7 +688,7 @@ class KimiPersistMergeDiagnosticsTest {
 class KimiTornReadCacheTest {
 
     @Test
-    fun `a same-mtime rewrite is not served from the cache - DR-148`(@TempDir dir: Path) = runTest {
+    fun `a same-mtime rewrite is not served from the cache`(@TempDir dir: Path) = runTest {
         val file = dir.resolve(".kimi").resolve("credentials").resolve("kimi-code.json")
         Files.createDirectories(file.parent)
         // Explicitly Unit: Files.writeString returns Path, and an inferred lambda type makes

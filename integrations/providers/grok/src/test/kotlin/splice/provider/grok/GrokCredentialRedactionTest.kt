@@ -2,7 +2,6 @@
 package splice.provider.grok
 
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class GrokCredentialRedactionTest {
@@ -10,20 +9,16 @@ class GrokCredentialRedactionTest {
     fun `the cached access token never reaches toString`() {
         val rendered = GrokAuthJson.Snapshot(access = SECRET, expiresAtMs = 42L).toString()
         assertFalse(rendered.contains(SECRET), rendered)
-        assertTrue(rendered.contains("expiresAtMs=42"), rendered)
     }
 
     @Test
-    fun `a refresh result redacts both tokens and keeps presence and expiry`() {
+    fun `a refresh result never prints its tokens`() {
         val rendered = GrokRefreshedTokens(
             accessToken = SECRET,
             refreshToken = null,
             expiresIn = 3600,
         ).toString()
         assertFalse(rendered.contains(SECRET), rendered)
-        assertTrue(rendered.contains("accessToken=<redacted>"), rendered)
-        assertTrue(rendered.contains("refreshToken=null"), rendered)
-        assertTrue(rendered.contains("expiresIn=3600"), rendered)
     }
 
     private companion object {

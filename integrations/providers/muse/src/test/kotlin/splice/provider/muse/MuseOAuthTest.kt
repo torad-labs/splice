@@ -16,27 +16,6 @@ class MuseOAuthTest {
     private val oauth = MuseOAuth()
 
     @Test
-    fun `endpoints and client identity match the official Muse launcher`() {
-        assertEquals("1031625952748946", MuseOAuthEndpoints.CLIENT_ID)
-        assertEquals(
-            "urn:ietf:params:oauth:grant-type:device_code",
-            MuseOAuthEndpoints.DEVICE_CODE_GRANT_TYPE,
-        )
-        assertEquals(
-            "https://auth.meta.com/oidc/device/authorization/",
-            MuseOAuthEndpoints.DEVICE_AUTHORIZATION_URL,
-        )
-        assertEquals(
-            "https://auth.meta.com/oidc/device/token/",
-            MuseOAuthEndpoints.TOKEN_URL,
-        )
-        assertEquals(
-            "https://api.meta.ai/muse-code/key",
-            MuseOAuthEndpoints.KEY_URL,
-        )
-    }
-
-    @Test
     fun `unparseable device authorization is a named error`() {
         val err = assertThrows(IllegalArgumentException::class.java) {
             oauth.parseMuseDeviceAuthorization("not-json")

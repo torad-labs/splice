@@ -36,7 +36,7 @@ import java.nio.file.attribute.PosixFilePermissions
 class GrokPersistLinePrivacyTest {
 
     @Test
-    fun `a failed persist logs its line without ever quoting the credential - DR-151`(@TempDir dir: Path) = runTest {
+    fun `a failed persist logs its line without ever quoting the credential`(@TempDir dir: Path) = runTest {
         val now = 1_000_000L
         val file = dir.resolve(".grok").resolve("auth.json")
         Files.createDirectories(file.parent)

@@ -96,7 +96,7 @@ class ApiKeyAuthProviderTest {
     // read (why did auth silently stop?) never reached the log. The direct read reaches the
     // AccessDenied and getOrElse logs it; NOFOLLOW is only the post-NoSuch dangling disambiguator.
     @Test
-    fun `an inaccessible-target key-file symlink logs the read failure, not silent absence - DR-57`(
+    fun `an inaccessible-target key-file symlink logs the read failure, not silent absence`(
         @TempDir tmp: Path,
     ) = runBlocking {
         val externalDir = Files.createDirectories(tmp.resolve("external"))
@@ -137,7 +137,7 @@ class ApiKeyAuthProviderTest {
     // an untraversable parent), so even a NOFOLLOW pre-gate returns silent absence. Only a direct
     // read reaches the AccessDenied and logs it.
     @Test
-    fun `an inaccessible-parent key file logs the read failure - DR-57`(@TempDir tmp: Path) = runBlocking {
+    fun `an inaccessible-parent key file logs the read failure`(@TempDir tmp: Path) = runBlocking {
         val externalDir = Files.createDirectories(tmp.resolve("external"))
         val file = Files.writeString(externalDir.resolve("api.key"), "sk-from-file")
         Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("---------"))
@@ -156,7 +156,7 @@ class ApiKeyAuthProviderTest {
     // entry exists — the operator configured a link that broke, which is not "no key configured".
     // exists(NOFOLLOW) disambiguates the caught NoSuch; it is never a pre-gate.
     @Test
-    fun `a dangling key-file symlink logs the read failure, not silent absence - DR-57`(@TempDir tmp: Path) =
+    fun `a dangling key-file symlink logs the read failure, not silent absence`(@TempDir tmp: Path) =
         runBlocking {
             val link = tmp.resolve("key").also { Files.createSymbolicLink(it, tmp.resolve("never-created")) }
             val logs = mutableListOf<String>()
@@ -182,7 +182,7 @@ class ApiKeyAuthProviderTest {
 class ApiKeyDiagnosticsTest {
 
     @Test
-    fun `diagnostics never quote key-file bytes from a malformed key file - DR-73`(@TempDir tmp: Path) = runBlocking {
+    fun `diagnostics never quote key-file bytes from a malformed key file`(@TempDir tmp: Path) = runBlocking {
         val sentinel = "sk-SENTINEL-KEYFILE"
         val file = tmp.resolve("key.json")
         Files.writeString(file, """{"api_key":"$sentinel""")

@@ -122,7 +122,7 @@ class GrokAuthRefreshRecoveryTest {
     }
 
     @Test
-    fun `refresh response without expires_in synthesizes a new expires field - SH-02 rewrite`(
+    fun `refresh response without expires_in synthesizes a new expires field`(
         @TempDir dir: Path,
     ) = runTest {
         // SH-02 REWRITE of the old keeps-the-old-expires pin: carrying the stale value was the
@@ -235,7 +235,7 @@ class GrokAuthRefreshRecoveryTest {
     // DR-65 (codex security probe): a malformed auth.json still containing a live token must not
     // leak it through parse-exception text ("JSON input:" excerpts) into logs or describe fields.
     @Test
-    fun `diagnostics never quote credential bytes from a malformed auth file - DR-65`(@TempDir dir: Path) = runTest {
+    fun `diagnostics never quote credential bytes from a malformed auth file`(@TempDir dir: Path) = runTest {
         val sentinel = "xai-SENTINEL-LEAK-CANARY"
         val file = dir.resolve(".grok").resolve("auth.json")
         Files.createDirectories(file.parent)
@@ -256,7 +256,7 @@ class GrokAuthRefreshRecoveryTest {
     }
 
     @Test
-    fun `granted refresh with no expires_in advances the expiry - one refresh across N calls - SH-02a`(
+    fun `granted refresh with no expires_in advances the expiry - one refresh across N calls`(
         @TempDir dir: Path,
     ) = runTest {
         // Pre-fix: null expiresIn persisted a null expiry, the merge kept the stale on-disk value,
@@ -275,7 +275,7 @@ class GrokAuthRefreshRecoveryTest {
     }
 
     @Test
-    fun `sub-floor grant trips the ineffective backoff - one refresh, logged once - SH-02b`(
+    fun `sub-floor grant trips the ineffective backoff - one refresh, logged once`(
         @TempDir dir: Path,
     ) = runTest {
         // A grant whose expires_in cannot satisfy the stale floor is a SUCCESSFUL refresh the tier

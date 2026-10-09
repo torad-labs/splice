@@ -39,7 +39,9 @@ object ReadSet {
             error("the read set names '$name' twice: two roots overlap, or git listed it twice in $repo")
         }
         set.forEach { path ->
-            check(repo.resolve(path).isFile) { "the read set lists '$path', which is not a file in $repo and which git does not call deleted" }
+            check(repo.resolve(path).isFile) {
+                "the read set lists '$path', which is not a file in $repo and which git does not call deleted"
+            }
         }
         return set
     }
@@ -87,7 +89,11 @@ object ReadSet {
             .decode(ByteBuffer.wrap(name))
             .toString()
     } catch (failure: CharacterCodingException) {
-        error("git listed a name under '$root' that is not UTF-8: ${name.joinToString("") { "%02x".format(it) }} (${failure.message})")
+        error(
+            "git listed a name under '$root' that is not UTF-8: ${name.joinToString(
+                "",
+            ) { "%02x".format(it) }} (${failure.message})",
+        )
     }
 
     /** Every file git TRACKS, repo-relative and sorted, minus git's own deleted answer, strict UTF-8; each must be a regular file.
@@ -97,7 +103,9 @@ object ReadSet {
         check(set.isNotEmpty()) { "git tracks no file in $repo" }
         set.zipWithNext().firstOrNull { (a, b) -> a == b }?.let { (name) -> error("git listed '$name' twice in $repo") }
         set.forEach { path ->
-            check(repo.resolve(path).isFile) { "the tracked set lists '$path', which is not a file in $repo and which git does not call deleted" }
+            check(repo.resolve(path).isFile) {
+                "the tracked set lists '$path', which is not a file in $repo and which git does not call deleted"
+            }
         }
         return set
     }
@@ -105,7 +113,13 @@ object ReadSet {
     /** Declares [roots] as the read set of [lawTest] in [project]: fingerprints every file in it, writes the list to a file the
      *  test JVM reads, and names the repository root. */
     fun declare(project: Project, lawTest: TaskProvider<Test>, roots: List<String>) {
-        declareFiles(project, lawTest, git(project.rootProject.projectDir, roots), "law-read-set", "splice.lawReadSetFile")
+        declareFiles(
+            project,
+            lawTest,
+            git(project.rootProject.projectDir, roots),
+            "law-read-set",
+            "splice.lawReadSetFile",
+        )
     }
 
     /** Declares the exact files [set] as inputs of [task]: fingerprints each, writes them NUL-delimited to `build/<name>.txt`
@@ -120,9 +134,16 @@ object ReadSet {
 
     /** What makes [set] the inputs of any [task]: fingerprints every file, and writes the list to `build/<name>.txt` through a task
      *  of its own that [task] depends on. Returns the list file. */
-    fun declareInputs(project: Project, task: TaskProvider<out Task>, set: List<String>, name: String): RegularFileProperty {
+    fun declareInputs(
+        project: Project,
+        task: TaskProvider<out Task>,
+        set: List<String>,
+        name: String,
+    ): RegularFileProperty {
         val repo = project.rootProject.projectDir
-        val listFile = project.objects.fileProperty().fileValue(project.layout.buildDirectory.file("$name.txt").get().asFile)
+        val listFile = project.objects.fileProperty().fileValue(
+            project.layout.buildDirectory.file("$name.txt").get().asFile,
+        )
         val write = project.tasks.register("write-$name") {
             inputs.property("readSet", set)
             outputs.file(listFile)

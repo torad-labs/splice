@@ -22,8 +22,8 @@ tasks.register("catalogMetadataSync") {
     group = "gate"
     description =
         "Every version gradle/libs.versions.toml declares is pinned in gradle/verification-metadata.xml " +
-            "(libraries as components, plugins as markers, floors by presence): the Dependabot bump that " +
-            "forgot the regeneration, caught in a second instead of six minutes into the gradle leg."
+        "(libraries as components, plugins as markers, floors by presence): the Dependabot bump that " +
+        "forgot the regeneration, caught in a second instead of six minutes into the gradle leg."
     // A verdict, not an artifact: never up-to-date, the same rule as every ladder leg.
     outputs.upToDateWhen { false }
     val metadata = layout.projectDirectory.file("gradle/verification-metadata.xml")

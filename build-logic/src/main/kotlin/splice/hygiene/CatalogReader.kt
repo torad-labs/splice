@@ -11,7 +11,9 @@ import org.gradle.api.artifacts.VersionConstraint
 internal class CatalogReader(private val libs: VersionCatalog) {
     fun read(): Catalog {
         val versions = libs.versionAliases.sorted().associateWith { alias ->
-            checkNotNull(literal(libs.findVersion(alias).get(), "[versions] $alias")) { "[versions] $alias: no version" }
+            checkNotNull(
+                literal(libs.findVersion(alias).get(), "[versions] $alias"),
+            ) { "[versions] $alias: no version" }
         }
         val libraries = libs.libraryAliases.sorted().map { alias ->
             val dependency = libs.findLibrary(alias).get().get()

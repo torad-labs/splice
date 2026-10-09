@@ -40,11 +40,18 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":integrations-dialects-anthropic" to setOf(":core", ":integrations-upstream"),
     ":integrations-dialects-openai-responses" to setOf(":core", ":integrations-upstream"),
     ":integrations-dialects-openai-chat" to setOf(":core", ":integrations-upstream"),
-    ":integrations-providers-codex" to setOf(":core", ":integrations-upstream", ":integrations-dialects-openai-responses"),
-    ":integrations-providers-grok" to setOf(":core", ":integrations-upstream", ":integrations-dialects-openai-responses"),
+    ":integrations-providers-codex" to
+        setOf(":core", ":integrations-upstream", ":integrations-dialects-openai-responses"),
+    ":integrations-providers-grok" to
+        setOf(":core", ":integrations-upstream", ":integrations-dialects-openai-responses"),
     ":integrations-providers-kimi" to setOf(":core", ":integrations-upstream", ":integrations-dialects-anthropic"),
     ":integrations-providers-muse" to setOf(":core", ":integrations-upstream"),
-    ":integrations-providers-openai" to setOf(":core", ":integrations-upstream", ":integrations-dialects-openai-responses", ":integrations-dialects-openai-chat"),
+    ":integrations-providers-openai" to setOf(
+        ":core",
+        ":integrations-upstream",
+        ":integrations-dialects-openai-responses",
+        ":integrations-dialects-openai-chat",
+    ),
     ":features-turns" to setOf(":core", ":integrations-upstream", ":integrations-http", ":features-sessions"),
     // the session registry and its routes, and `splice sessions`, which names each session's head from
     // splice.toml.
@@ -66,7 +73,8 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ),
     // the daemon's own lifecycle: the draining restart, the upgrade surface, and `splice upgrade`, which
     // asks the local daemon through its client and repoints the files launch's install layout names.
-    ":features-lifecycle" to setOf(":core", ":integrations-daemon-client", ":integrations-topology", ":features-launch"),
+    ":features-lifecycle" to
+        setOf(":core", ":integrations-daemon-client", ":integrations-topology", ":features-launch"),
     // the doctor report, the one-prompt playground, and the operator's reads of a running head
     // (`splice wire`, `splice logs`) through the daemon client. `splice doctor` reads every surface it
     // diagnoses: the account pools, the local runtimes, the Claude head's wrap, the installed shim.

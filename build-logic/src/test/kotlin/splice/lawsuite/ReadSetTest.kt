@@ -19,7 +19,10 @@ class ReadSetTest {
         val process = ProcessBuilder(listOf("git", "-c", "user.name=t", "-c", "user.email=t@t") + args)
             .directory(dir.toFile())
             .redirectErrorStream(true)
-            .also { it.environment()["GIT_CONFIG_GLOBAL"] = "/dev/null"; it.environment()["GIT_CONFIG_NOSYSTEM"] = "1" }
+            .also {
+                it.environment()["GIT_CONFIG_GLOBAL"] = "/dev/null"
+                it.environment()["GIT_CONFIG_NOSYSTEM"] = "1"
+            }
             .start()
         val out = process.inputStream.readBytes().decodeToString()
         check(process.waitFor() == 0) { "git ${args.toList()} failed: $out" }
@@ -103,7 +106,9 @@ class ReadSetTest {
         git("add", "--", "tools", "docs")
         only.delete()
 
-        val thrown = assertThrows(IllegalStateException::class.java) { ReadSet.git(dir.toFile(), listOf("tools", "docs")) }
+        val thrown = assertThrows(
+            IllegalStateException::class.java,
+        ) { ReadSet.git(dir.toFile(), listOf("tools", "docs")) }
 
         assertTrue(thrown.message!!.contains("docs"), thrown.message)
     }
@@ -168,7 +173,9 @@ class ReadSetTest {
         file("tools/a.sh")
         git("add", "--", "tools")
 
-        val thrown = assertThrows(IllegalStateException::class.java) { ReadSet.git(dir.toFile(), listOf("tools", "tools/a.sh")) }
+        val thrown = assertThrows(
+            IllegalStateException::class.java,
+        ) { ReadSet.git(dir.toFile(), listOf("tools", "tools/a.sh")) }
 
         assertTrue(thrown.message!!.contains("tools/a.sh"), thrown.message)
     }
@@ -179,7 +186,9 @@ class ReadSetTest {
         file("tools/a.sh")
         git("add", "--", "tools")
 
-        val thrown = assertThrows(IllegalStateException::class.java) { ReadSet.git(dir.toFile(), listOf("tools", "checks")) }
+        val thrown = assertThrows(
+            IllegalStateException::class.java,
+        ) { ReadSet.git(dir.toFile(), listOf("tools", "checks")) }
 
         assertTrue(thrown.message!!.contains("checks"))
     }

@@ -13,10 +13,18 @@ class LawSuitesAggregateTest {
     @TempDir
     lateinit var dir: Path
 
-    private fun root(): Project = ProjectBuilder.builder().withProjectDir(dir.resolve("root").toFile().apply { mkdirs() }).build()
+    private fun root(): Project = ProjectBuilder.builder().withProjectDir(
+        dir.resolve("root").toFile().apply {
+            mkdirs()
+        },
+    ).build()
 
     private fun module(root: Project, name: String): Project =
-        ProjectBuilder.builder().withName(name).withParent(root).withProjectDir(dir.resolve(name).toFile().apply { mkdirs() }).build()
+        ProjectBuilder.builder().withName(name).withParent(root).withProjectDir(
+            dir.resolve(name).toFile().apply {
+                mkdirs()
+            },
+        ).build()
             .also { it.pluginManager.apply("java") }
 
     private fun scheduled(root: Project): List<String> {

@@ -48,7 +48,9 @@ val xmlDirsByModule = provider {
     }
 }
 
-private val scannedClasses = { testSourceDirsByModule.get().flatMap { (module, dir) -> scanModuleSources(dir, module) } }
+private val scannedClasses = {
+    testSourceDirsByModule.get().flatMap { (module, dir) -> scanModuleSources(dir, module) }
+}
 private val observedXml = { xmlDirsByModule.get().mapValues { (_, dirs) -> scanModuleXml(dirs) } }
 
 tasks.register("verifyTestDiscovery") {

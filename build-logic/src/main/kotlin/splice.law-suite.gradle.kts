@@ -1,4 +1,5 @@
-// NEW: the per-module law suite (restructure follow-up to the pre-push split): laws carry @Tag("law") and run in lawTest, not test.
+// NEW: the per-module law suite (restructure follow-up to the pre-push split): laws carry @Tag("law")
+// and run in lawTest, not test.
 // THE LAW SUITE of a module: the tests that read a file outside the module as text (another module's sources, the docs,
 // the shipped launch script). Such a test is a law, and it carries @Tag("law") on its WHOLE CLASS. A class must not straddle
 // the tag: splice.test-discovery reads each task's JUnit XML and merges a class both tasks report by its LOWER count, so a

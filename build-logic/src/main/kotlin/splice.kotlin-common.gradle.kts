@@ -45,7 +45,8 @@ detekt {
 //
 // A precompiled script plugin gets no generated `libs` accessor, which is why the literals were here
 // in the first place; VersionCatalogsExtension is the supported way to reach it from this context.
-private val catalog = CatalogReader(extensions.getByType<org.gradle.api.artifacts.VersionCatalogsExtension>().named("libs"))
+private val catalog =
+    CatalogReader(extensions.getByType<org.gradle.api.artifacts.VersionCatalogsExtension>().named("libs"))
 
 dependencies {
     "testImplementation"(platform("org.junit:junit-bom:${catalog.version("junit")}"))

@@ -34,7 +34,8 @@ class CatalogMetadataTest {
         |${components.joinToString("") { (group, name, version) -> component(group, name, version) }}
         |   </components>
         |</verification-metadata>
-        |""".trimMargin()
+        |
+        """.trimMargin()
 
     private fun component(group: String, name: String, version: String) =
         "      <component group=\"$group\" name=\"$name\" version=\"$version\">" +
@@ -46,7 +47,10 @@ class CatalogMetadataTest {
     private val floor = Triple("io.example", "transitive-floor", "9.9.9.Final")
 
     private fun problems(vararg components: Triple<String, String, String>) =
-        CatalogMetadata.problems(catalog, (CatalogMetadata.read(metadata(*components)) as MetadataRead.Pinned).components)
+        CatalogMetadata.problems(
+            catalog,
+            (CatalogMetadata.read(metadata(*components)) as MetadataRead.Pinned).components,
+        )
 
     @Test
     fun `the compliant fixture is green`() {
@@ -79,7 +83,10 @@ class CatalogMetadataTest {
         // Marker absent but the plugin's version pinned via another component: a plugin applied by
         // bare id inside a precompiled script never resolves its marker, so regeneration can never
         // add it. The obligation degrades to version presence.
-        assertEquals(emptyList<String>(), problems(ktor, zstd, Triple("org.example", "kover-gradle-plugin-impl", "0.9.9"), floor))
+        assertEquals(
+            emptyList<String>(),
+            problems(ktor, zstd, Triple("org.example", "kover-gradle-plugin-impl", "0.9.9"), floor),
+        )
     }
 
     @Test
@@ -93,9 +100,13 @@ class CatalogMetadataTest {
     fun `the reader refuses a document it cannot read as the expected shape`() {
         val noNamespace = metadata(ktor).replace("xmlns=\"${CatalogMetadata.NAMESPACE}\" ", "")
         assertTrue("namespace" in unreadable(CatalogMetadata.read(noNamespace))) { "no namespace was not refused" }
-        assertTrue("no <component>" in unreadable(CatalogMetadata.read(metadata()))) { "an empty document was not refused" }
+        assertTrue(
+            "no <component>" in unreadable(CatalogMetadata.read(metadata())),
+        ) { "an empty document was not refused" }
         val attributeless = metadata(ktor).replace(" version=\"3.5.2\"", "")
-        assertTrue("group/name/version" in unreadable(CatalogMetadata.read(attributeless))) { "a bare component was not refused" }
+        assertTrue("group/name/version" in unreadable(CatalogMetadata.read(attributeless))) {
+            "a bare component was not refused"
+        }
     }
 
     private fun unreadable(read: MetadataRead): String = (read as MetadataRead.Unreadable).reason

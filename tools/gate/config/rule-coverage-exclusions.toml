@@ -80,7 +80,7 @@ agents read and no client ever receives.
 # ─── module scope ────────────────────────────────────────────────────────────────────────────────
 
 [[exclusion]]
-rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input"]
+rules = ["kt-log-escapes-caller-input"]
 modules = [
   "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
   "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
@@ -94,6 +94,8 @@ operator- and HTTP-supplied values in its audit lines. :integrations-claude-code
 Claude Code state, declares no routes, and its existing log matches are local filesystem paths rather
 than caller-controlled control-plane records. LAYOUT-01 moved LogSafe itself to :core; its exact
 relocated file is covered by the file-scope disposition below, not this whole-module row.
+(2026-10-09: kt-control-route-guarded left this row. It binds every production root, and the head's
+own routes name their ClientAuth door at registration.)
 """
 
 [[exclusion]]
@@ -126,7 +128,7 @@ so it cannot excuse a finding in app/control.
 """
 
 [[exclusion]]
-rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-outcome-tag-single-source"]
+rules = ["kt-log-escapes-caller-input", "kt-outcome-tag-single-source"]
 files = ["app/src/main/kotlin/**/*.kt"]
 date = "2026-09-23"
 reason = """
@@ -135,6 +137,8 @@ the walls moved with it, binding app/src/main/kotlin/splice/app/control whole. T
 the 2026-09-22 disposition: it declares no guarded control route, writes no control audit line from
 caller input, and emits no perf-row outcome tag. The proof credits a files row only from each rule's
 lost-file set, so this row cannot excuse a finding in app/control.
+(2026-10-09: kt-control-route-guarded left this row. It binds every production root, and the head's
+own routes name their ClientAuth door at registration.)
 """
 
 [[exclusion]]
@@ -241,7 +245,7 @@ with the ignores dropped, three with them in.
 
 [[exclusion]]
 rules = [
-  "kt-control-route-guarded", "kt-json-scalars-single-source", "kt-log-escapes-caller-input",
+  "kt-json-scalars-single-source", "kt-log-escapes-caller-input",
   "kt-no-runcatching-in-coroutine", "kt-outcome-tag-single-source",
 ]
 modules = ["core"]
@@ -255,10 +259,12 @@ from those declared path scopes. This file disposition covers the remaining core
 coverage proof credits file rows from each rule's lost-file set, so it cannot suppress a finding in
 the selected LogSafe destination. (kt-no-silent-result-collapse was a sixth until 2026-09-24, when it
 began selecting all of core.)
+(2026-10-09: kt-control-route-guarded left this row. It binds every production root, and the head's
+own routes name their ClientAuth door at registration.)
 """
 
 [[exclusion]]
-rules = ["kt-control-route-guarded", "kt-json-scalars-single-source", "kt-log-escapes-caller-input"]
+rules = ["kt-json-scalars-single-source", "kt-log-escapes-caller-input"]
 modules = ["features-turns"]
 sourceSets = ["main"]
 files = ["features/turns/src/main/**/*.kt"]
@@ -275,6 +281,8 @@ ClientAuth.kt rather than the control plane's guarded(call); its log lines are t
 audit records of operator input; and it reads JSON through the dialect codecs. The proof credits file
 rows only from each rule's lost-file set, so this row cannot suppress a finding in a selected
 destination.
+(2026-10-09: kt-control-route-guarded left this row. It binds every production root, and the head's
+own routes name their ClientAuth door at registration.)
 """
 
 [[exclusion]]
@@ -532,7 +540,7 @@ there outright.
 """
 
 [[exclusion]]
-rules = ["kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-outcome-tag-single-source"]
+rules = ["kt-log-escapes-caller-input", "kt-outcome-tag-single-source"]
 modules = ["features-models"]
 sourceSets = ["main"]
 files = ["features/models/src/main/**/*.kt"]
@@ -543,6 +551,8 @@ selected it there, so each now selects its exact destination. The model-listing 
 keep the 2026-09-22 disposition: they declare no control route, log no caller input, and emit no
 outcome tag. The proof credits file rows only from each rule's lost-file set, so this row cannot
 suppress a finding in the selected ModelsRoute.
+(2026-10-09: kt-control-route-guarded left this row. It binds every production root, and the head's
+own routes name their ClientAuth door at registration.)
 """
 
 [[exclusion]]
@@ -577,7 +587,7 @@ to these roots instead of being excluded.
 
 [[exclusion]]
 rules = [
-  "kt-control-route-guarded", "kt-log-escapes-caller-input",
+  "kt-log-escapes-caller-input",
   "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-topology"]
@@ -589,11 +599,13 @@ scopes selected either file there: they grade control-plane routes, route loggin
 outcomes, the CLI's runBlocking bridge, client-home launching, outcome tags, quota selection, turn
 cleanup, and streaming wire catches. Every rule that DID select them was widened to
 integrations/topology instead of being excluded, and kt-no-println now reaches them too.
+(2026-10-09: kt-control-route-guarded left this row. It binds every production root, and the head's
+own routes name their ClientAuth door at registration.)
 """
 
 [[exclusion]]
 rules = [
-  "kt-control-route-guarded", "kt-log-escapes-caller-input",
+  "kt-log-escapes-caller-input",
   "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-codemode"]
@@ -606,11 +618,13 @@ exceptions as outcomes, the CLI's runBlocking bridge, client-home launching, out
 selection, turn cleanup, and streaming wire catches. Every rule that DID select it
 (kt-json-scalars-single-source, kt-no-silent-result-collapse, kt-no-runcatching-in-coroutine) was
 widened to integrations/codemode instead, and kt-no-println, which ignored app/codemode, now reaches it.
+(2026-10-09: kt-control-route-guarded left this row. It binds every production root, and the head's
+own routes name their ClientAuth door at registration.)
 """
 
 [[exclusion]]
 rules = [
-  "kt-control-route-guarded", "kt-log-escapes-caller-input",
+  "kt-log-escapes-caller-input",
   "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-oauth"]
@@ -626,11 +640,13 @@ runBlocking ENTRY exemption; in integrations/oauth they sit under kt-no-runblock
 forbids runBlocking outright — the stricter wall. The rules that did select them
 (kt-json-scalars-single-source, kt-no-silent-result-collapse, kt-no-runcatching-in-coroutine) were
 widened to integrations/oauth, and kt-no-println, which ignored app/auth and app/cli, now reaches them.
+(2026-10-09: kt-control-route-guarded left this row. It binds every production root, and the head's
+own routes name their ClientAuth door at registration.)
 """
 
 [[exclusion]]
 rules = [
-  "kt-control-route-guarded", "kt-log-escapes-caller-input",
+  "kt-log-escapes-caller-input",
   "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-terminal"]
@@ -646,11 +662,13 @@ exemption; in integrations/terminal they sit under kt-no-runblocking-in-daemon, 
 runBlocking outright — the stricter wall. The rules that did select them
 (kt-json-scalars-single-source, kt-no-silent-result-collapse, kt-no-runcatching-in-coroutine) were
 widened to integrations/terminal, and kt-no-println, which ignored app/cli, now reaches them.
+(2026-10-09: kt-control-route-guarded left this row. It binds every production root, and the head's
+own routes name their ClientAuth door at registration.)
 """
 
 [[exclusion]]
 rules = [
-  "kt-control-route-guarded", "kt-log-escapes-caller-input",
+  "kt-log-escapes-caller-input",
   "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-daemon-client"]
@@ -667,6 +685,8 @@ kt-no-runblocking-in-daemon, which forbids runBlocking outright — the stricter
 select them (kt-json-scalars-single-source, kt-no-silent-result-collapse, kt-no-runcatching-in-coroutine)
 were widened to integrations/daemon-client, and kt-no-println, which ignored app/cli and app/daemon, now
 reaches them.
+(2026-10-09: kt-control-route-guarded left this row. It binds every production root, and the head's
+own routes name their ClientAuth door at registration.)
 """
 
 [[exclusion]]

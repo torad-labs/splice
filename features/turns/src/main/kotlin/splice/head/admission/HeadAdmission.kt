@@ -11,7 +11,6 @@ import io.ktor.server.response.header
 import splice.core.auth.CredentialKey
 import splice.core.perf.OutcomeTag
 import splice.core.util.WallClock
-import splice.head.ClientAuth
 import splice.head.HeadDeps
 import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
@@ -24,7 +23,6 @@ import splice.upstream.credentials.Selection
 
 internal class HeadAdmission(
     private val deps: HeadDeps,
-    private val clientAuth: ClientAuth,
     private val admission: AdmissionGate,
     private val telemetry: AdmissionTelemetry,
     private val preparation: TurnPreparation,
@@ -41,7 +39,7 @@ internal class HeadAdmission(
     fun arrivalTime(): Long = telemetry.arrivalTime()
 
     suspend fun handleMessages(call: ApplicationCall, arrivalAt: Long = arrivalTime()) {
-        if (!clientAuth.authorizeUpstream(call) || !admission.acceptingOrRespond(call)) return
+        if (!admission.acceptingOrRespond(call)) return
         val perf = telemetry.begin(arrivalAt)
         val t0 = deps.seams.clock()
         val slot = admission.acquireSlotOrRespond(call) ?: return

@@ -13,6 +13,14 @@ valid:
             shutdownDaemon()
         }
     }
+  # a head's route names its own door, ClientAuth, at the registration
+  - |
+    post("/v1/messages") {
+        withContext(callDispatcher) {
+            if (clientAuth.authorizeUpstream(call)) admission.handleMessages(call, arrivalAt)
+        }
+    }
+  - 'get("/wire") { if (clientAuth.authorizeOperator(call)) wire(call) }'
   # dated allowlist: the unauthenticated liveness probe
   - 'get("/health") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }'
   # kotlinx buildJsonObject `put` is not a route registration — the path literal is what separates them
@@ -22,6 +30,8 @@ valid:
   # a route helper call with no handler lambda is not a registration
   - 'val path = get("/api/status")'
 invalid:
+  # a head route whose check sits inside the helper it calls reads exactly like an open route
+  - 'post("/v1/messages") { withContext(callDispatcher) { admission.handleMessages(call, arrivalAt) } }'
   # the census
   - 'post("/statusline/{head}") { statuslineRoute.statusline(call) }'
   - 'get("/statusline/{head}") { statuslineRoute.statusline(call) }'

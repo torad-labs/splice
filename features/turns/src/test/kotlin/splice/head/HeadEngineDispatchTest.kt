@@ -333,14 +333,13 @@ private fun dispatchEngine(provider: Provider, deps: HeadDeps): HeadEngine {
     val diagnostics = HeadDiagnostics(provider, deps.gate, driver, deps.stores.wireTap)
     val admission = HeadAdmission(
         deps,
-        auth,
         gate,
         AdmissionTelemetry(deps.gate, deps.seams.clock),
         TurnPreparation(provider, deps, reader, parse, auth, replay),
         responses,
         driver,
     )
-    val count = CountTokens(provider, deps, auth, gate, reader, parse, responses)
+    val count = CountTokens(provider, deps, gate, reader, parse, responses)
     return HeadEngine(
         0,
         { line -> deps.log("[${provider.key}] $line") },

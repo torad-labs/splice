@@ -26,6 +26,7 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
 import io.ktor.server.response.respondText
+import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
@@ -98,26 +99,7 @@ internal class HeadEngine(
                     install(SSE)
                     // v0.4.0: a DNS-rebinding page is refused before routing (ClientAuth.admitsHost).
                     intercept(ApplicationCallPipeline.Plugins) { if (!clientAuth.admitsHost(call)) finish() }
-                    routing {
-                        get("/health") {
-                            call.respondText(diagnostics.healthJson(this@HeadEngine.port), ContentType.Application.Json)
-                        }
-                        get("/v1/models") {
-                            if (clientAuth.authorize(call)) {
-                                call.respondText(diagnostics.modelsJson(), ContentType.Application.Json)
-                            }
-                        }
-                        get("/wire") { wire(call) }
-                        post("/v1/messages") {
-                            val arrivalAt = admission.arrivalTime()
-                            withContext(callDispatcher) { admission.handleMessages(call, arrivalAt) }
-                        }
-                        // NAMED CHANGE: count_tokens gets a cheap dedicated handler, not the Node
-                        // behavior (a real quota-burning turn). Local estimate keeps pre-flight cheap.
-                        post("/v1/messages/count_tokens") {
-                            withContext(callDispatcher) { countTokens.handleCountTokens(call) }
-                        }
-                    }
+                    routing { routes(this, callDispatcher) }
                 }
             },
         ) {
@@ -155,6 +137,34 @@ internal class HeadEngine(
         server = engine
     }
 
+    /** The head's route table. Every route names its door here, at its registration (kt-control-route-guarded):
+     *  /health is the one open probe, the operator's wire view takes the management key, and every other route
+     *  takes the head's client auth before its handler, and so before admission, sees the call. */
+    private fun routes(route: Route, callDispatcher: CoroutineDispatcher) {
+        route.get("/health") {
+            call.respondText(diagnostics.healthJson(port), ContentType.Application.Json)
+        }
+        route.get("/v1/models") {
+            if (clientAuth.authorize(call)) {
+                call.respondText(diagnostics.modelsJson(), ContentType.Application.Json)
+            }
+        }
+        route.get("/wire") { if (clientAuth.authorizeOperator(call)) wire(call) }
+        route.post("/v1/messages") {
+            val arrivalAt = admission.arrivalTime()
+            withContext(callDispatcher) {
+                if (clientAuth.authorizeUpstream(call)) admission.handleMessages(call, arrivalAt)
+            }
+        }
+        // NAMED CHANGE: count_tokens gets a cheap dedicated handler, not the Node
+        // behavior (a real quota-burning turn). Local estimate keeps pre-flight cheap.
+        route.post("/v1/messages/count_tokens") {
+            withContext(callDispatcher) {
+                if (clientAuth.authorize(call)) countTokens.handleCountTokens(call)
+            }
+        }
+    }
+
     fun stop() {
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
@@ -162,10 +172,9 @@ internal class HeadEngine(
     }
 
     /** V4-173: the operator's view of what this head sent upstream. Management key only
-     *  (authorizeOperator), and OFF answers 404 naming the knob, so an empty list can never be
+     *  (authorizeOperator, at the route's registration), and OFF answers 404 naming the knob, so an empty list can never be
      *  read as "nothing left this head". */
     private suspend fun wire(call: ApplicationCall) {
-        if (!clientAuth.authorizeOperator(call)) return
         val last = call.request.queryParameters["last"]?.toIntOrNull() ?: 0
         val payload = diagnostics.wireJson(last)
         if (payload == null) {

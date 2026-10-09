@@ -52,37 +52,27 @@
 # hazard is a handler that calls `guarded(call) { }` and then does the real work outside it. That is
 # a shape no route in this tree has, and closing it needs the guard to become the route registrar
 # (a `guardedGet("/api/x")` helper) rather than a wrapper — a design change, not a matcher.
+# WIDENED 2026-10-09 (coverage burndown): the rule binds every production root, so it no longer names files or
+# leans on coverage exclusions. Across all of them it found four registrations, all on a head's own port
+# (HeadEngine): /v1/models, /wire, /v1/messages and /v1/messages/count_tokens. Each authenticated, but as
+# the first line of a helper, so the registration read exactly like an open route. A head's door is its
+# ClientAuth, not the management key's guarded(call), so each check moved to its registration and the rule
+# accepts either door: `guarded(` on the control plane, `clientAuth.authorize…(` on a head. The head's
+# /health is the same open liveness probe the allowlist already names.
 id: kt-control-route-guarded
 language: kotlin
 severity: error
-message: "Unauthenticated control-plane route: wrap the handler in `guarded(call) { … }` (every other control route does). A route that must stay open needs a dated entry in kt-control-route-guarded's allowlist, not a trailing comment."
+message: "Unauthenticated route: wrap a control-plane handler in `guarded(call) { … }`, and open a head's handler with its `clientAuth.authorize…(call)` check. A route that must stay open needs a dated entry in kt-control-route-guarded's allowlist, not a trailing comment."
 note: >
   The control port reads every head's config, hands out launch specs, streams logs and can stop the
   daemon; the management key is its only defence and it is applied per route. A bare registration is
   reachable by anything that can open a socket to that port, and looks identical to a guarded one in
   every tool in this repo. Compliant form: `post("/api/x") { guarded(call) { handler(call) } }`, or
   `guarded(call, mcp = true) { … }` for the MCP access key.
-files:
-  - features/sessions/src/main/**/*.kt
-  - features/usage/src/main/**/*.kt
-  - integrations/http/src/main/**/*.kt
-  - integrations/mcp/src/main/**/*.kt
-  - core/src/main/kotlin/splice/core/util/LogSafe.kt
-  - features/heads/src/main/**/*.kt
-  - features/accounts/src/main/**/*.kt
-  - features/turns/src/main/kotlin/splice/head/compact/CompactPayloads.kt
-  - features/turns/src/main/kotlin/splice/head/compact/HeadCompactSource.kt
-  - features/turns/src/main/kotlin/splice/head/compaction/CompactionInstructionsRoute.kt
-  - features/turns/src/main/kotlin/splice/head/wire/CaptureRoutes.kt
-  - features/diagnostics/src/main/**/*.kt
-  - features/lifecycle/src/main/**/*.kt
-  - features/models/src/main/kotlin/splice/models/roster/ModelsRoute.kt
-  - features/launch/src/main/**/*.kt
-  - features/configuration/src/main/**/*.kt
-  - app/src/main/kotlin/splice/app/control/**/*.kt
-  - features/events/src/main/**/*.kt
-  - "build-logic/src/main/**/*.kt"
-  - "build-logic/src/main/**/*.kts"
+ignores:
+  - "**/src/test/**"
+  - "**/src/testFixtures/**"
+  - "**/src/lawFixtures/**"
 rule:
   all:
     # A route registration: an HTTP verb, a PATH string literal, and a handler lambda. The path
@@ -109,10 +99,11 @@ rule:
         - pattern: $R.head($P) { $$$B }
         - pattern: $R.options($P) { $$$B }
         - pattern: $R.route($P) { $$$B }
+    # The handler names its door: the control plane's guarded(call), or a head's ClientAuth check.
     - not:
         has:
           stopBy: end
-          regex: '\bguarded\s*\('
+          regex: '\bguarded\s*\(|\bclientAuth\.authorize\w*\s*\('
     # ALLOWLIST — see the dated entries in this rule's header. One anchored alternative per route.
     - not:
         regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*"(/health)"'

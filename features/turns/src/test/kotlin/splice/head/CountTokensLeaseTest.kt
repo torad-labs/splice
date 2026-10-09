@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
-import splice.core.auth.ForeignHostLog
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.memory.HeapBudget
 import splice.core.model.ModelCatalog
@@ -107,11 +106,9 @@ class CountTokensLeaseTest {
             reasoning = ReasoningSettings(ReasoningDisplay.OFF, false, null, null),
         )
         val responses = AdmissionResponses()
-        val auth = ClientAuth(deps, responses, ForeignHostLog("synthetic", deps.log))
         return CountTokens(
             provider,
             deps,
-            auth,
             AdmissionGate(provider, deps, AdmissionWindow(), responses),
             RequestBodyReader(1000),
             AnthropicBodyParse(),

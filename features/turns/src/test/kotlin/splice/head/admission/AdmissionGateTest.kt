@@ -664,7 +664,6 @@ private fun handler(
     val window = AdmissionWindow().apply { open() }
     return HeadAdmission(
         deps,
-        clientAuth,
         AdmissionGate(provider, deps, window, responses),
         AdmissionTelemetry(deps.gate, deps.seams.clock),
         TurnPreparation(provider, deps, reader, AnthropicBodyParse(), clientAuth),

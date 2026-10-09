@@ -93,7 +93,6 @@ public class HeadServer(
     private val diagnostics = HeadDiagnostics(provider, deps.gate, driver, deps.stores.wireTap)
     private val admission = HeadAdmission(
         deps,
-        clientAuth,
         admissionGate,
         AdmissionTelemetry(deps.gate, deps.seams.clock),
         TurnPreparation(provider, deps, bodyReader, bodyParse, clientAuth, compactionReplay),
@@ -103,7 +102,6 @@ public class HeadServer(
     private val countTokens = CountTokens(
         provider,
         deps,
-        clientAuth,
         admissionGate,
         bodyReader,
         bodyParse,

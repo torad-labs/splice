@@ -20,14 +20,12 @@ import splice.upstream.Provider
 internal class CountTokens(
     private val provider: Provider,
     private val deps: HeadDeps,
-    private val clientAuth: ClientAuth,
     private val admission: AdmissionGate,
     private val bodyReader: RequestBodyReader,
     private val bodyParse: AnthropicBodyParse,
     private val responses: AdmissionResponses,
 ) {
     suspend fun handleCountTokens(call: ApplicationCall) {
-        if (!clientAuth.authorize(call)) return
         // NO turn-gate slot here: count_tokens is a purely LOCAL estimate (no upstream stream),
         // and queueing it on maxInflight let a saturated head stall or 529 Claude Code's
         // pre-flight sizing for minutes (review 2026-07-22). Memory stays bounded by the

@@ -85,7 +85,7 @@ internal object CodeModeStateJournal {
                 FileChannel.open(parent, StandardOpenOption.READ).use { force.force(parent, it) }
             } finally {
                 Cancellables.discard(
-                    runCatching { Files.deleteIfExists(temporary) },
+                    Cancellables.runCatchingBestEffort { Files.deleteIfExists(temporary) },
                     "checkpoint temp cleanup is best-effort",
                 )
             }

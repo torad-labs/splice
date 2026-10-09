@@ -28,6 +28,11 @@
 # code, so the cheap fix is to convert all twenty uniformly; the alternative is to mirror
 # kt-no-runblocking-in-daemon's dated `cli/**` + `Main.kt` ignore pair here. The fix row picks one;
 # a wall row must not narrow its own census.
+# WIDENED 2026-10-09 (coverage burndown): every production root, no files list and no coverage exclusions. The
+# "synchronous best-effort" sites that kept raw runCatching in core, claude-code and codex moved to
+# Cancellables.runCatchingBestEffort, which also stops swallowing Errors. The combinators that capture and then
+# rethrow cancellation pass by structure (the not-inside condition below), and withCleanup is Kotlin's own
+# AutoCloseable.use, so it captures nothing. Law fixtures are test code and are ignored with src/test.
 id: kt-no-runcatching-in-coroutine
 language: kotlin
 severity: error
@@ -36,37 +41,25 @@ note: >
   Replace runCatching { ... } with runCatchingCancellable { ... } (splice.core.util) — it rethrows
   CancellationException so a cancelled coroutine actually stops. A swallowed cancellation here is how
   a cancelled turn kept spinning upstream (the 600%-CPU incident).
-files:
-  - features/sessions/src/main/**/*.kt
-  - features/models/src/main/**/*.kt
-  - core/src/main/kotlin/splice/core/terminal/CliStyle.kt
-  - features/usage/src/main/**/*.kt
-  - integrations/http/src/main/**/*.kt
-  - integrations/upstream/src/main/**/*.kt
-  - integrations/dialects/openai-responses/src/main/**/*.kt
-  - integrations/dialects/openai-chat/src/main/**/*.kt
-  - integrations/dialects/anthropic/src/main/**/*.kt
-  - features/turns/src/main/**/*.kt
-  - integrations/mcp/src/main/**/*.kt
-  - core/src/main/kotlin/splice/core/util/LogSafe.kt
-  - app/src/main/**/*.kt
-  - features/heads/src/main/**/*.kt
-  - integrations/topology/src/main/**/*.kt
-  - integrations/codemode/src/main/**/*.kt
-  - integrations/oauth/src/main/**/*.kt
-  - integrations/terminal/src/main/**/*.kt
-  - integrations/daemon-client/src/main/**/*.kt
-  - features/accounts/src/main/**/*.kt
-  - features/diagnostics/src/main/**/*.kt
-  - features/lifecycle/src/main/**/*.kt
-  - features/launch/src/main/**/*.kt
-  - features/configuration/src/main/**/*.kt
-  - features/events/src/main/**/*.kt
-  - "build-logic/src/main/**/*.kt"
-  - "build-logic/src/main/**/*.kts"
+ignores:
+  - "**/src/test/**"
+  - "**/src/testFixtures/**"
+  - "**/src/lawFixtures/**"
 rule:
-  any:
-    - pattern: runCatching { $$$BODY }
-    - pattern: runCatching($$$ARGS)
-    - pattern: kotlin.runCatching { $$$BODY }
-    - pattern: kotlin.runCatching($$$ARGS)
+  all:
+    - any:
+        - pattern: runCatching { $$$BODY }
+        - pattern: runCatching($$$ARGS)
+        - pattern: kotlin.runCatching { $$$BODY }
+        - pattern: kotlin.runCatching($$$ARGS)
+    # The safe shape by structure: the nearest enclosing function rethrows the CancellationException it captured
+    # (`if (failure is CancellationException) throw failure`), so nothing it captures can swallow a cancellation.
+    # That is how runCatchingCleanup and runCatchingBestEffort are built, and the condition names no file.
+    - not:
+        inside:
+          kind: function_declaration
+          stopBy:
+            kind: function_declaration
+          has:
+            stopBy: end
+            pattern: if ($F is CancellationException) throw $F

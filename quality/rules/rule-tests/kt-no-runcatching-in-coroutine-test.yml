@@ -3,7 +3,28 @@ valid:
   - 'runCatchingCancellable { parse(payload) }'
   - 'val x = runCatchingCancellable { risky() }.getOrNull()'
   - 'val x = runCatchingCancellable(::risky)'
+  # a function that captures and rethrows the cancellation is the safe shape by structure
+  - |
+    inline fun <R> runCatchingBestEffort(block: () -> R): Result<R> {
+        val attempt = runCatching(block)
+        val failure = attempt.exceptionOrNull() ?: return attempt
+        if (failure is CancellationException) throw failure
+        return attempt
+    }
 invalid:
+  # a rethrow of some other value is not the rethrow of what this function captured
+  - |
+    fun f(other: Throwable) {
+        val attempt = runCatching { risky() }
+        if (other is CancellationException) throw elsewhere
+    }
+  # the condition belongs to the nearest function: a nested function without its own rethrow is red
+  - |
+    fun outer() {
+        fun inner() = runCatching { risky() }.getOrNull()
+        val failure = runCatching { risky() }.exceptionOrNull()
+        if (failure is CancellationException) throw failure
+    }
   - 'runCatching { parse(payload) }'
   - 'val x = runCatching { risky() }.getOrNull()'
   - 'val x = runCatching(::risky)'

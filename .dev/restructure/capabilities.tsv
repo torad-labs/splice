@@ -3970,3 +3970,4 @@ gradle/module-law.txt	created		The project-dependency table both the build (spli
 integrations/claude-code/src/main/kotlin/splice/client/wrap/WrapStateStore.kt	created		Holds the wrap state file and the launcher-owner record, and reads a file that is there but unusable as unreadable, never as absent.
 tools/gate/src/lib/selector.ts	created		the one selector pre-commit, pre-push and the pull-request gate share: changed files to affected modules
 tools/gate/test/selector.test.ts	created		the selector against the real module law
+features/turns/src/test/kotlin/splice/head/HeadServerEndingsTest.kt	created		Pins the host 529 reaching the client as overloaded_error after a retry, and an oversized frame after content ending the stream with the content kept.

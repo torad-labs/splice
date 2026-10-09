@@ -155,6 +155,14 @@ class MockChatGptUpstream(
         // "overload_once" clears on the second POST, so the head's own retry completes the turn;
         // "overload_403" wears the same code on a 4xx, which must stay a deterministic client error.
         // The POST count in [upstreamBodies] is the retry proof — never the verdict alone.
+        // The host's own 529, which says "overloaded" by status and by error type, never by the ChatGPT code above.
+        if (scenario == "overload_529") {
+            val err = """{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"""
+            ex.sendResponseHeaders(529, err.length.toLong())
+            ex.responseBody.use { it.write(err.toByteArray()) }
+            return
+        }
+
         capacityStatus(scenario)?.let { status ->
             val err = """{"error":{"code":"server_is_overloaded","message":"The engine is currently overloaded, please try again later"}}"""
             ex.sendResponseHeaders(status, err.length.toLong())
@@ -459,6 +467,13 @@ class MockChatGptUpstream(
                 )
             }
             "oversized_sse" -> {
+                ex.responseBody.write("data: ".toByteArray())
+                ex.responseBody.write("x".repeat(1024 * 1024 + 1).toByteArray())
+            }
+            // An oversized frame AFTER content has reached the client: the tear can no longer be re-issued.
+            "oversized_after_content" -> {
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"partial answer"}""")
                 ex.responseBody.write("data: ".toByteArray())
                 ex.responseBody.write("x".repeat(1024 * 1024 + 1).toByteArray())
             }

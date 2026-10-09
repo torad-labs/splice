@@ -2,7 +2,7 @@
   "_note": "AUTHORED BY HAND against SilentConstantsLawTest, MEASURED never estimated. Every entry is a numeric `const val` in main sources with no adjacent reason comment (see that file's WHAT COUNTS AS A REASON). The gate fails on GROWTH and on a STALE entry held above the measurement, so lowering an entry is how a fix is recorded. This file is a debt inventory with a one-way valve; it is meant to shrink to nothing.",
   "recorded": "2026-09-17",
   "denominator": 566,
-  "total": 366,
+  "total": 364,
   "files": {
     "integrations/claude-code/src/main/kotlin/splice/client/login/HookScriptFiles.kt": 1,
     "integrations/claude-code/src/main/kotlin/splice/client/login/LoginHookScripts.kt": 2,
@@ -153,7 +153,7 @@
     "integrations/providers/muse/src/main/kotlin/splice/provider/muse/MuseOAuth.kt": 3,
     "integrations/providers/openai/src/main/kotlin/splice/provider/openai/ApiKeyAuthProvider.kt": 2,
     "integrations/upstream/src/main/kotlin/splice/upstream/credentials/AccountCredentialEligibility.kt": 3,
-    "integrations/upstream/src/main/kotlin/splice/upstream/credentials/AccountPool.kt": 3,
+    "integrations/upstream/src/main/kotlin/splice/upstream/credentials/AccountPool.kt": 1,
     "integrations/upstream/src/main/kotlin/splice/upstream/codemode/CodeModeLimits.kt": 7,
     "integrations/upstream/src/main/kotlin/splice/upstream/credentials/CredentialLock.kt": 6,
     "integrations/upstream/src/main/kotlin/splice/upstream/retry/RetryPolicy.kt": 1,

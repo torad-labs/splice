@@ -3979,3 +3979,5 @@ features/turns/src/test/kotlin/splice/head/HeadServerEndingsTest.kt	created		Pin
 quality/rules/utils/single-source-declaration.yml	created		Architecture and static enforcement
 tools/gate/src/lib/single-source.ts	created		Architecture and static enforcement
 tools/gate/test/single-source.test.ts	created		Architecture and static enforcement
+integrations/upstream/src/main/kotlin/splice/upstream/credentials/AccountAvailability.kt	created		AccountPool split along its pure availability and quota math
+integrations/upstream/src/main/kotlin/splice/upstream/credentials/AccountSwitchReason.kt	created		AccountPool split along the switch-reason wording it stamps

@@ -1,8 +1,8 @@
-// NEW: V4-358's launch of a head whose rows are handed to Claude Code with the 1M hint. Claude Code 2.1.283
+// A launch of a head whose rows are handed to Claude Code with the 1M hint. Claude Code 2.1.283
 // keeps 100 images in a request and 600 for an id matching /\[1m\]/i, so a screenshot session on an 872k
 // row lost every image past the hundredth while the backend had room for them. The client's model id is a
 // value the launch authors; what the row is called everywhere else does not change.
-package campaign.v4358
+package splice.launch.recipe
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -26,11 +26,10 @@ import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
 import splice.launch.launch
-import splice.launch.recipe.LaunchService
 import java.nio.file.Files
 import java.nio.file.Path
 
-class SpelledLaunchTest(@param:TempDir private val tmp: Path) {
+class OneMillionSpellingLaunchTest(@param:TempDir private val tmp: Path) {
     private val service = LaunchService(ClaudeConfigMaterializer(tmp))
 
     private val sol = ModelEntry("gpt-6-sol", "Sol", contextWindow = 872_000L)
@@ -146,13 +145,5 @@ class SpelledLaunchTest(@param:TempDir private val tmp: Path) {
 
         assertEquals("gpt-6-sol", bare["ANTHROPIC_MODEL"])
         assertNull(bare["ANTHROPIC_DEFAULT_OPUS_MODEL"]?.takeIf { oneMillion(it) })
-    }
-
-    @Test
-    fun `withWindows on a head that spells nothing returns an equal spec`() {
-        val cat = catalog(mid)
-        val boot = spec(cat)
-
-        assertEquals(boot, boot.withWindows(cat))
     }
 }

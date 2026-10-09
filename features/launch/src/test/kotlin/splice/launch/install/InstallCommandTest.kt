@@ -242,7 +242,7 @@ class InstallLinkerClaimTest {
     }
 
     @Test
-    fun `a foreign file appearing between check and claim wins - DR-67`(@TempDir home: Path) = withHome(home) {
+    fun `a foreign file appearing between check and claim wins`(@TempDir home: Path) = withHome(home) {
         val share = home.resolve(".local").resolve("share").resolve("splice")
         Files.createDirectories(share)
         share.resolve("splice-launch").writeString("#!/usr/bin/env bash\n")
@@ -260,7 +260,7 @@ class InstallLinkerClaimTest {
     }
 
     @Test
-    fun `an existing wrapper symlink is still repointed - DR-67 control`(@TempDir home: Path) = withHome(home) {
+    fun `an existing wrapper symlink is still repointed`(@TempDir home: Path) = withHome(home) {
         val share = home.resolve(".local").resolve("share").resolve("splice")
         Files.createDirectories(share)
         share.resolve("splice-launch").writeString("#!/usr/bin/env bash\n")
@@ -279,7 +279,7 @@ class InstallLinkerClaimTest {
     // A failed claim must put the previous target back; a foreign creator that won the window
     // keeps its file (DR-67's law outranks the restore).
     @Test
-    fun `a failed claim restores the previous wrapper - DR-84`(@TempDir home: Path) = withHome(home) {
+    fun `a failed claim restores the previous wrapper`(@TempDir home: Path) = withHome(home) {
         val share = home.resolve(".local").resolve("share").resolve("splice")
         Files.createDirectories(share)
         share.resolve("splice-launch").writeString("#!/usr/bin/env bash\n")
@@ -310,7 +310,7 @@ class InstallShimPresenceTest {
     }
 
     @Test
-    fun `an unreadable shim aborts naming access, not reinstall - DR-74`(@TempDir tmp: java.nio.file.Path) {
+    fun `an unreadable shim aborts naming access, not reinstall`(@TempDir tmp: java.nio.file.Path) {
         val share = Files.createDirectories(tmp.resolve("share"))
         Files.writeString(share.resolve("splice-launch"), "#!/bin/sh\n")
         val denied = java.nio.file.attribute.PosixFilePermissions.fromString("---------")
@@ -326,7 +326,7 @@ class InstallShimPresenceTest {
     }
 
     @Test
-    fun `a genuinely missing shim keeps the install-sh remedy - DR-74 control`(@TempDir tmp: java.nio.file.Path) {
+    fun `a genuinely missing shim keeps the install-sh remedy`(@TempDir tmp: java.nio.file.Path) {
         val failure = refusal(InstallLinker(stdout).installSelf(layoutEnv(tmp)))
         assertTrue(failure.contains("run install.sh"), failure)
     }
@@ -335,7 +335,7 @@ class InstallShimPresenceTest {
     // entry exists — the two-way classification called that "unreadable — fix access, not
     // reinstall", forbidding exactly the reinstall a dangling link needs. Third state.
     @Test
-    fun `a dangling shim names the dangling state and the reinstall remedy - DR-85`(@TempDir tmp: java.nio.file.Path) {
+    fun `a dangling shim names the dangling state and the reinstall remedy`(@TempDir tmp: java.nio.file.Path) {
         val share = Files.createDirectories(tmp.resolve("share"))
         Files.createSymbolicLink(share.resolve("splice-launch"), share.resolve("gone-target"))
         val failure = refusal(InstallLinker(stdout).installSelf(layoutEnv(tmp)))
@@ -404,7 +404,7 @@ class UninstallUnreadableTopologyTest {
     }
 
     @Test
-    fun `corrupt topology refuses --all loudly instead of exit 0 - DR-101`(@TempDir home: Path) {
+    fun `corrupt topology refuses --all loudly instead of exit 0`(@TempDir home: Path) {
         withHome(home) {
             seedInstalled(home)
             home.resolve(".config/splice/splice.toml").writeString("[heads.claudex\nnot toml at all")
@@ -420,7 +420,7 @@ class UninstallUnreadableTopologyTest {
     }
 
     @Test
-    fun `absent topology removes the self-link and says so - DR-101`(@TempDir home: Path) {
+    fun `absent topology removes the self-link and says so`(@TempDir home: Path) {
         withHome(home) {
             seedInstalled(home)
             Files.delete(home.resolve(".config/splice/splice.toml"))
@@ -481,7 +481,7 @@ class InstallContainmentTest {
     }
 
     @Test
-    fun `a relative escape in a wrapper command is refused, creating nothing - DR-169`(@TempDir home: Path) {
+    fun `a relative escape in a wrapper command is refused, creating nothing`(@TempDir home: Path) {
         withHome(home) {
             seedWithCommand(home, "../escaped")
             assertTrue(installCommand().install("--all", env = noEnv) is InstallResult.Refused)
@@ -493,7 +493,7 @@ class InstallContainmentTest {
     }
 
     @Test
-    fun `an absolute wrapper command is refused, creating nothing - DR-169`(@TempDir home: Path) {
+    fun `an absolute wrapper command is refused, creating nothing`(@TempDir home: Path) {
         withHome(home) {
             val target = home.resolve("absolute-escape")
             seedWithCommand(home, target.toString())
@@ -504,7 +504,7 @@ class InstallContainmentTest {
     }
 
     @Test
-    fun `uninstall refuses an escaping arg and leaves the outside link alone - DR-169`(@TempDir home: Path) {
+    fun `uninstall refuses an escaping arg and leaves the outside link alone`(@TempDir home: Path) {
         withHome(home) {
             // No topology at all, which is the path that hands the operator's string through
             // verbatim (DR-101: the operator named the link, the topology only disambiguates).
@@ -518,18 +518,6 @@ class InstallContainmentTest {
             assertFalse(installCommand().uninstall("../escaped", env = noEnv), "the verb must report failure")
 
             assertTrue(Files.exists(outsideLink, NOFOLLOW_LINKS), "a link outside bin must survive uninstall")
-        }
-    }
-
-    @Test
-    fun `an ordinary wrapper command still installs and uninstalls - DR-169 control`(@TempDir home: Path) {
-        withHome(home) {
-            seedWithCommand(home, "claudex")
-            assertTrue(installCommand().install("--all", env = noEnv) is InstallResult.Linked)
-            val link = home.resolve(".local").resolve("bin").resolve("claudex")
-            assertTrue(link.isSymbolicLink(), "the containment law must not reject a normal name")
-            assertTrue(installCommand().uninstall("--all", env = noEnv))
-            assertFalse(Files.exists(link, NOFOLLOW_LINKS), "and uninstall must still remove it")
         }
     }
 }

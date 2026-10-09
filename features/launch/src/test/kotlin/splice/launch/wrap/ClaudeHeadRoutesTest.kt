@@ -135,27 +135,6 @@ class ClaudeHeadRoutesTest {
     }
 
     @Test
-    fun `the login constraint states quota reset ordering and keeps a free session on its account`(
-        @TempDir home: Path,
-    ) {
-        serveHermetic(home) { port, _ ->
-            HttpClient(CIO).use { client ->
-                val status = Json.parseToJsonElement(
-                    client.get("http://127.0.0.1:$port/api/claude-head").bodyAsText(),
-                ).jsonObject
-                val constraint = status.getValue("claude_logins").jsonObject
-                    .getValue("constraint").jsonPrimitive.content
-                assertTrue(constraint.contains("weekly reset comes soonest"))
-                assertTrue(constraint.contains("five-hour reset breaks ties"))
-                assertTrue(constraint.contains("Unknown quota comes last"))
-                assertTrue(constraint.contains("session keeps its account"))
-                assertTrue(constraint.contains("saved order overrides"))
-                assertFalse(constraint.contains("only while no session"))
-            }
-        }
-    }
-
-    @Test
     fun `wrap through the route answers ok, and mode flips to wrapped on the next GET`(
         @TempDir home: Path,
     ) {

@@ -1,10 +1,10 @@
-// NEW: V4-232's launch of a head whose row the client resolves as a Claude model it knows (client_model). Claude
+// A launch of a head whose row the client resolves as a Claude model it knows (client_model). Claude
 // Code 2.1.283 compacts against min(its window for the row, CLAUDE_CODE_AUTO_COMPACT_WINDOW) (bundle fn
 // `CT`), and for a presented row that window is its own table's 200k, so the env must not cap below it:
 // in real tokens the client's ceiling must be the runtime's own window, whatever side of 200k it is on.
 // The head's rows reach its OWN settings.json only: a launch through the wrapped `claude` writes the
 // operator's ~/.claude, and that file keeps exactly the overrides the operator wrote.
-package campaign.v4232
+package splice.launch.recipe
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -26,13 +26,11 @@ import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
 import splice.launch.launch
-import splice.launch.recipe.LaunchCaller
-import splice.launch.recipe.LaunchService
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 
-class PresentedLaunchTest(@param:TempDir private val tmp: Path) {
+class PresentedRowLaunchTest(@param:TempDir private val tmp: Path) {
     private val service = LaunchService(ClaudeConfigMaterializer(tmp))
 
     private fun catalog(window: Long, clientModel: String? = "claude-sonnet-4-6") = ModelCatalog(
@@ -112,7 +110,7 @@ class PresentedLaunchTest(@param:TempDir private val tmp: Path) {
         val env = service.launch(spec(cat), emptyList(), dangerouslySkipPermissions = false).env
 
         assertEquals("32768", env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])
-        assertEquals("60000", env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "the 60k floor, as before V4-232")
+        assertEquals("60000", env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "the 60k floor")
         assertNull(settings(tmp.resolve(".claude-bonsai/settings.json"))["modelOverrides"])
     }
 

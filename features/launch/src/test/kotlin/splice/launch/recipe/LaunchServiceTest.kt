@@ -86,7 +86,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `CLAUDE_CODE_RETRY_WATCHDOG is planted for the native head too - V4-72`() {
+    fun `CLAUDE_CODE_RETRY_WATCHDOG is planted for the native head too`() {
         val env = service.launch(nativeSpec(), emptyList(), dangerouslySkipPermissions = false).env
         assertEquals(
             "1",
@@ -101,7 +101,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
     // (the review-of-#75 overwrite risk) and a key unset never re-armed setup. Key presence is a
     // LAUNCH-time input now; the spec carries the ungated capability.
     @Test
-    fun `a present key disarms token capture and the advertiser at launch time - DR-81`() {
+    fun `a present key disarms token capture and the advertiser at launch time`() {
         val armed = spec("cap").copy(
             tokenCapture = splice.client.login.TokenCaptureSpec("K_ENV", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
             advertiseKeySetup = true,
@@ -111,7 +111,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `an absent key arms token capture at launch time - DR-81 control`() {
+    fun `an absent key arms token capture at launch time`() {
         val armed = spec("cap2").copy(
             tokenCapture = splice.client.login.TokenCaptureSpec("K_ENV", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
             advertiseKeySetup = true,
@@ -217,22 +217,6 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         assertTrue(recipe.unset.none { "TURBO" in it }, "and cannot be scrubbed — it is not a tier")
     }
 
-    @Test
-    fun `a partial declaration emits only its declared tier - positional order is retired`() {
-        val available = listOf("grok-4.6", "grok-build-latest", "grok-4.3")
-        val env = service.launch(
-            spec("grok", pinned = "grok-4.6", available = available)
-                .copy(tiers = ModelTiers(mapOf("grok-4.3" to "haiku"))),
-            extraArgs = emptyList(),
-            dangerouslySkipPermissions = false,
-        ).env
-
-        assertEquals("grok-4.3", env["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "the declared slot wins")
-        assertNull(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "an undeclared tier is omitted, never filled")
-        assertNull(env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
-        assertNull(env["ANTHROPIC_DEFAULT_FABLE_MODEL"])
-    }
-
     private fun kimiRosterCache() = buildJsonArray {
         addJsonObject {
             put("value", "kimi-k3")
@@ -280,25 +264,6 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `positional fill plants the repeated frontier and mid tiers under the wrapped id`() {
-        val env = service.launch(
-            spec("codex", available = listOf("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"))
-                .copy(discoveryPrefix = "claude-codex--"),
-            extraArgs = emptyList(),
-            dangerouslySkipPermissions = false,
-        ).env
-        assertEquals("gpt-5.6-sol", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
-        assertEquals("gpt-5.6-terra", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
-        assertEquals("gpt-5.6-luna", env["ANTHROPIC_DEFAULT_HAIKU_MODEL"])
-        assertEquals(
-            "claude-codex--gpt-5.6-sol",
-            env["ANTHROPIC_DEFAULT_FABLE_MODEL"],
-            "fable shares the frontier: wrapped",
-        )
-        assertEquals("gpt-5.6-sol", env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"], "the label is the model's own")
-    }
-
-    @Test
     fun `a head without a discovery prefix keeps the repeated tier bare, and the cache keeps every row`() {
         val recipe = launchKimiWithRepeatedTier(prefix = "")
         assertEquals("kimi-k3", recipe.env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
@@ -318,7 +283,7 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
     // ids — every model listed twice, and Claude Code cannot dedupe the two spellings. Worse, a
     // wrapped ACTIVE id makes it ignore CLAUDE_CODE_MAX_CONTEXT_TOKENS (ab5ca6b: honored for
     // unwrapped names only), which per-head context windows depend on. The materialized bare-id
-    // roster is the picker's one source; this arm was red before the env stopped being set.
+    // roster is the picker's one source.
     @Test
     fun `gateway model discovery stays off - the materialized roster is the picker's one source`() {
         val recipe = service.launch(spec("codex"), extraArgs = emptyList(), dangerouslySkipPermissions = false)

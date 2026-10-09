@@ -58,8 +58,6 @@ class LaunchKeyWarningTest {
     private suspend fun warning(target: LaunchHead, configDir: Path): String =
         LaunchResponse().withAuthWarning(target, spec(configDir), raw).warning.orEmpty()
 
-    /** RED before V4-227: "…is not set in the daemon's environment. Requests will fail until you export
-     *  OPENROUTER_API_KEY and run: splice restart". */
     @Test
     fun `a missing key names splice key set first, with no restart for it`(@TempDir tmp: Path) = runTest {
         val text = warning(apiKeyHead(tmp, present = false, mapOf("env_var" to ENV)), tmp)

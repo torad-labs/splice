@@ -76,7 +76,7 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
 
     // V4-250's verify line: the head's live login is newer than any stored copy, and a launch keeps it.
     @Test
-    fun `a launch keeps the client-auth head's live login byte for byte - V4-250`() {
+    fun `a launch keeps the client-auth head's live login byte for byte`() {
         val live = tmp.resolve(".claude-claude-splice").createDirectories().resolve(".credentials.json")
         live.writeText("max-gen2-newer")
 
@@ -92,7 +92,7 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
      *  all, and CLAUDE_CONFIG_DIR stays unset, because Claude Code reads its global .claude.json (mcpServers,
      *  projects, the account) from ~/.claude.json only then. The head's settings ride a --settings overlay. */
     @Test
-    fun `a launch through the wrapped claude reads the operator's own state and writes none - V4-445`() {
+    fun `a launch through the wrapped claude reads the operator's own state and writes none`() {
         val home = tmp.resolve("wrapped-home").createDirectories()
         val claudeJson = """{"mcpServers":{"ast-grep":{"command":"ast-grep"}},"projects":{"/work/app":{}}}"""
         home.resolve(".claude.json").writeText(claudeJson)

@@ -43,7 +43,9 @@ import splice.core.util.SafeFailureText
 import splice.launch.LaunchHead
 import splice.launch.LaunchHeads
 import splice.launch.LaunchSpec
+import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
@@ -144,15 +146,28 @@ public class ResumeHookRoute(
         return null
     }
 
+    /** [path] with its links resolved; null when it cannot be (absent, unreadable). That is the refusal case, and the
+     *  caller names it in one sentence; a head whose projects tree cannot be resolved owns no transcript. */
+    private fun resolved(path: Path): Path? = try {
+        path.toRealPath()
+    } catch (_: IOException) {
+        null
+    }
+
+    /** [raw] as a path; null for text the filesystem cannot even spell (a NUL byte), the same refusal case. */
+    private fun spelled(raw: String): Path? = try {
+        Path.of(raw)
+    } catch (_: InvalidPathException) {
+        null
+    }
+
     /** [claimed] resolved with symlinks followed, and only when it is a regular file under the head's
      *  own projects tree resolved the same way. Anything else — absent, a directory, a path that
      *  merely starts with the same text, a link out of the tree — is null. */
     private fun transcriptInsideHead(claimed: String, configDir: Path): Path? {
         if (claimed.isBlank()) return null
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-19 (V4-169): a path that cannot be resolved (absent, unreadable, malformed) is exactly the refusal case; the caller names it in one sentence and answers 200.
-        val real = Cancellables.runCatchingCancellable { Path.of(claimed).toRealPath() }.getOrNull()
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-19 (V4-169): a head whose projects tree cannot be resolved has no transcript this route may touch; null is the complete answer.
-        val tree = Cancellables.runCatchingCancellable { configDir.resolve(PROJECTS_DIR).toRealPath() }.getOrNull()
+        val real = spelled(claimed)?.let(::resolved)
+        val tree = resolved(configDir.resolve(PROJECTS_DIR))
         if (real == null || tree == null) return null
         val inside = real.startsWith(tree) && Files.isRegularFile(real, NOFOLLOW_LINKS)
         return if (inside) real else null
@@ -165,16 +180,13 @@ public class ResumeHookRoute(
      *  which is exactly what Claude Code creates on the first write. */
     private fun unwrittenTranscriptInsideHead(hook: ResumeCall, configDir: Path): Path? {
         val claimed = hook.transcriptPath.takeIf { it.isNotBlank() }?.let { raw ->
-            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-21 (astra, PR #169): a path the filesystem cannot even spell (a NUL byte) is the refusal case, named by the caller in one sentence; the route must still answer 200.
-            Cancellables.runCatchingCancellable { Path.of(raw) }.getOrNull()
+            spelled(raw)
         }
         val name = claimed?.fileName?.toString()?.takeIf { it == hook.sessionId + UNWRITTEN_TRANSCRIPT_EXT }
         val parent = claimed?.parent?.let { dir ->
-            // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-21: a parent that cannot be resolved is the refusal case, named by the caller in one sentence.
-            Cancellables.runCatchingCancellable { dir.toRealPath() }.getOrNull()
+            resolved(dir)
         }
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-21: a head whose projects tree cannot be resolved owns no transcript; null is the complete answer.
-        val tree = Cancellables.runCatchingCancellable { configDir.resolve(PROJECTS_DIR).toRealPath() }.getOrNull()
+        val tree = resolved(configDir.resolve(PROJECTS_DIR))
         val dir = parent?.takeIf { tree != null && it.startsWith(tree) && Files.isDirectory(it, NOFOLLOW_LINKS) }
         val real = if (name != null && dir != null) dir.resolve(name) else null
         return real?.takeIf { !Files.exists(it, NOFOLLOW_LINKS) || Files.isRegularFile(it, NOFOLLOW_LINKS) }

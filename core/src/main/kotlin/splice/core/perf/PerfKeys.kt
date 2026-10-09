@@ -118,6 +118,9 @@ public object PerfKeys {
     public const val OUT_HOLD_MAX_MS: String = "out_hold_max_ms"
     public const val OUT_GAP_MAX_MS: String = "out_gap_max_ms"
 
+    /** Longest a pacer release tick ran past its 16 ms schedule, counted on turns whose frames that tick released. */
+    public const val OUT_TICK_LATE_MAX_MS: String = "out_tick_late_max_ms"
+
     /** Epoch starts belong to the same winning intervals as their corresponding maxima. */
     public const val UP_GAP_MAX_START_EPOCH_MS: String = "up_gap_max_start_epoch_ms"
     public const val OUT_HOLD_MAX_START_EPOCH_MS: String = "out_hold_max_start_epoch_ms"

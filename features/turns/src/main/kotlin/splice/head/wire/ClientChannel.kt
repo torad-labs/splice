@@ -217,8 +217,10 @@ internal class ClientChannel(
         lost: LostClient,
     ): Boolean {
         do {
+            val waitedFrom = clock()
             if (!ticker.awaitTick(PACE_TICK_MS)) return false
-            val release = Cancellables.runCatchingCleanup { releaseDue(clock) }
+            val late = (clock() - waitedFrom - PACE_TICK_MS).coerceAtLeast(0)
+            val release = Cancellables.runCatchingCleanup { releaseDue(clock, late) }
             if (release.isFailure) {
                 clientLost(turnJob, lost, PACED_FAILURE)
                 return false
@@ -227,9 +229,14 @@ internal class ClientChannel(
         return true
     }
 
-    /** Writes this tick's due frames under writeMutex; true while frames still wait. */
-    private suspend fun releaseDue(clock: ElapsedClock): Boolean = writeMutex.withLock {
-        pacer.due(clock()).forEach { socketWrite(it.frame, it.perf, clock) }
+    /** Writes this tick's due frames under writeMutex; true while frames still wait. [lateMs] is how far the tick
+     *  ran past its schedule, charged to each turn it released frames for: a daemon starved of CPU delays
+     *  every tick, a provider burst does not. */
+    private suspend fun releaseDue(clock: ElapsedClock, lateMs: Long): Boolean = writeMutex.withLock {
+        pacer.due(clock()).forEach {
+            socketWrite(it.frame, it.perf, clock)
+            it.perf.maxCount(PerfKeys.OUT_TICK_LATE_MAX_MS, lateMs)
+        }
         pacer.stillHeld()
     }
 

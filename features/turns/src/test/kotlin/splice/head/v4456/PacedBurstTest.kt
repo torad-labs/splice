@@ -43,6 +43,17 @@ class PacedBurstTest {
         }
     }
 
+    /** A ticker whose tick [lateByMs] runs past its schedule, as a CPU-starved daemon's would. */
+    private class LateTicker(private val time: Time, private val lateByMs: Long) : Ticker {
+        private var ticks = 0
+
+        override suspend fun awaitTick(intervalMs: Long): Boolean {
+            time.nowMs += intervalMs + if (ticks++ == 0) lateByMs else 0L
+            yield()
+            return true
+        }
+    }
+
     private data class Written(val frame: String, val atMs: Long)
 
     private val time = Time()
@@ -86,6 +97,25 @@ class PacedBurstTest {
         time.nowMs += 16
         write(delta(0))
         assertEquals(73L, perf.snapshot().counters[PerfKeys.OUT_GAP_MAX_MS])
+    }
+
+    @Test
+    fun `a release tick that runs late is counted on the turn whose held frames it released`() = runBlocking {
+        val pacing = channel.launchPacer(this, Job(), LateTicker(time, lateByMs = 37), time.clock, LostClient("t", {}))
+        write(delta(0))
+        assertNull(perf.snapshot().counters[PerfKeys.OUT_TICK_LATE_MAX_MS], "a frame written at once waits for no tick")
+        write(delta(1))
+        channel.finishPacing(pacing, time.clock)
+        assertEquals(37L, perf.snapshot().counters[PerfKeys.OUT_TICK_LATE_MAX_MS])
+    }
+
+    @Test
+    fun `a release tick on schedule records a measured zero`() = runBlocking {
+        val pacing = channel.launchPacer(this, Job(), FrameTicker(time), time.clock, LostClient("t", {}))
+        write(delta(0))
+        write(delta(1))
+        channel.finishPacing(pacing, time.clock)
+        assertEquals(0L, perf.snapshot().counters[PerfKeys.OUT_TICK_LATE_MAX_MS])
     }
 
     @Test

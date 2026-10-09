@@ -3,16 +3,44 @@
 // clot (concentration, 2026-08-19).
 package splice.dialect.responses
 
+import splice.core.model.ModelCatalog
 import splice.core.parse.AnthropicTurnBody
 import splice.core.reasoning.ReasoningReplay
+import splice.core.util.LogSink
 import splice.dialect.responses.reasoning.InjectPriorReasoning
+import splice.dialect.responses.reasoning.ReasoningCache
+import splice.dialect.responses.reasoning.ReasoningCachePolicy
+import splice.dialect.responses.reasoning.ReasoningLookup
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.request.BuildOptions
+import splice.dialect.responses.request.ResponsesStableIds
+import splice.dialect.responses.tools.ToolSurfaceLatch
 
-// TurnOptionsDeps lives in TurnOptionsDeps.kt (concentration, 2026-08-19).
+/** The gateway-held reasoning of one head: the cache, the key a conversation is filed under, and the opening
+ *  hash that names it. It answers a build's reasoning lookups from ONE snapshot of the conversation. */
+internal class ReasoningContinuity(
+    private val cache: ReasoningCache,
+    private val policy: ReasoningCachePolicy,
+    private val ids: ResponsesStableIds,
+) {
+    /** The lookup for [body], keyed within [sessionId] as the capture keys it (ResponsesTurnSeams). Lazy, so a
+     *  build with no tool_use blocks never touches the cache at all. */
+    fun lookupFor(body: AnthropicTurnBody, sessionId: String?): ReasoningLookup {
+        val snapshot = lazy {
+            val opening = ids.stablePromptCacheKey(body.typed)
+            cache.snapshot(policy.conversationKey(sessionId, opening))
+        }
+        return ReasoningLookup { id -> snapshot.value[id] }
+    }
+}
 
 internal class ResponsesTurnOptions(
-    private val deps: TurnOptionsDeps,
+    private val reasoning: ReasoningSettings,
+    private val quirks: ResponsesQuirks,
+    private val catalog: ModelCatalog,
+    private val log: LogSink,
+    private val continuity: ReasoningContinuity,
+    private val toolSurfaceLatch: ToolSurfaceLatch,
 ) {
 
     fun build(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuildOptions {
@@ -27,24 +55,24 @@ internal class ResponsesTurnOptions(
         return BuildOptions(
             compact = compact,
             originalModel = body.typed.model,
-            upstreamModel = deps.catalog.stripSuffixes(body.typed.model),
+            upstreamModel = catalog.stripSuffixes(body.typed.model),
             // Config-driven (TOML [daemon] / env / state); "none" suppresses when display is off.
-            configEffort = deps.reasoning.effort,
-            configSummary = deps.reasoning.summaryForRequest(),
-            showReasoning = deps.reasoning.display,
+            configEffort = reasoning.effort,
+            configSummary = reasoning.summaryForRequest(),
+            showReasoning = reasoning.display,
             // LEGACY client-round-trip replay (redacted_thinking through Claude Code) —
             // operator opt-in only; superseded by the gateway-held reasoning cache below.
-            replayReasoning = InjectPriorReasoning(deps.reasoning.replay),
+            replayReasoning = InjectPriorReasoning(reasoning.replay),
             // Ask for the opaque encrypted handle whenever reasoning is visible OR the
             // reasoning cache needs it (RC-5: the cache can only hold what the server returns).
             // Not a function of `compact`: the request is built like a turn (the builder header).
-            includeEncryptedReasoning = RequestEncryptedReasoning(showOn || deps.quirks.reasoningCache),
+            includeEncryptedReasoning = RequestEncryptedReasoning(showOn || quirks.reasoningCache),
             sessionId = sessionId,
             decodeReasoningEnvelope = { data ->
                 ReasoningReplay.decodeReasoningEnvelope(data) { msg ->
                     if (!reasoningEnvelopeDropLogged) {
                         reasoningEnvelopeDropLogged = true
-                        deps.log(msg)
+                        log(msg)
                     }
                 }
             },
@@ -58,21 +86,16 @@ internal class ResponsesTurnOptions(
             // Lazy so a build with no tool_use blocks never touches the cache at all. Wired on a
             // compaction too: the session's turns carry these reasoning items in their input, so
             // a compaction built without them shares no prefix with them (2026-09-05).
-            reasoningLookup = if (!deps.quirks.reasoningCache) {
-                { null }
+            reasoningLookup = if (!quirks.reasoningCache) {
+                ReasoningLookup { null }
             } else {
-                // V4-334: keyed within this session, as the capture keys it (ResponsesTurnSeams).
-                val snapshot = lazy {
-                    val opening = deps.ids.stablePromptCacheKey(body.typed)
-                    deps.reasoningCache.snapshot(deps.cachePolicy.conversationKey(sessionId, opening))
-                }
-                ({ id -> snapshot.value[id] })
+                continuity.lookupFor(body, sessionId)
             },
             // The provider's capability latch, read at build time: false = a shape-400 already
             // closed it this daemon lifetime; build the full status-quo request instead.
-            toolSurfaceOpen = deps.toolSurfaceLatch.open,
+            toolSurfaceOpen = toolSurfaceLatch.open,
         )
     }
 
-    fun showOn(): Boolean = deps.reasoning.visible()
+    fun showOn(): Boolean = reasoning.visible()
 }

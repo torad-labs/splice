@@ -15,7 +15,6 @@ import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 import splice.dialect.responses.request.ResponsesCompactionTail
 import splice.dialect.responses.request.ResponsesParts
-import splice.dialect.responses.request.ResponsesPartsInput
 import splice.dialect.responses.request.ResponsesSystemPrompt
 import splice.dialect.responses.stream.FoldConfig
 import splice.dialect.responses.websocket.ResponsesWsSupport
@@ -56,18 +55,7 @@ public abstract class ResponsesProvider(
     // Collaborator wiring lives in ResponsesParts.kt (concentration, 2026-08-19).
     private val compactionTail = ResponsesCompactionTail()
     private val systemPrompt = ResponsesSystemPrompt()
-    private val parts = ResponsesParts(
-        ResponsesPartsInput(
-            tuning = tuning,
-            reasoning = reasoning,
-            quirks = quirks,
-            foldConfig = foldConfig,
-            log = log,
-            streamIdleMs = watchdog.streamIdle.inWholeMilliseconds,
-            upstreamTimeoutMs = watchdog.totalCap.inWholeMilliseconds,
-            toolNames = toolNames,
-        ),
-    )
+    private val parts = ResponsesParts(tuning, reasoning, quirks, foldConfig, log, toolNames)
 
     /** Per-turn upstream headers beyond the shared Accept set (grok's x-grok-conv-id, codex's
      *  session/thread routing). Empty by default — a header that depends on the turn/session rides

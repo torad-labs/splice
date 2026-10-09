@@ -18,12 +18,12 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.LogSink
+import splice.dialect.responses.ReasoningContinuity
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesTurnOptions
 import splice.dialect.responses.ResponsesTurnSeams
 import splice.dialect.responses.ResponsesTurnSeamsDeps
-import splice.dialect.responses.TurnOptionsDeps
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
 import splice.dialect.responses.request.ResponsesStableIds
@@ -87,20 +87,16 @@ private fun codexSeams(log: LogSink = LogSink {}): ResponsesTurnSeams {
             reasoningCache = reasoningCache,
             summaryParts = ConversationSummaryParts(),
             turnOptions = ResponsesTurnOptions(
-                TurnOptionsDeps(
-                    reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
-                    quirks = quirks,
-                    cachePolicy = cachePolicy,
-                    ids = ids,
-                    catalog = ModelCatalog(
-                        discoveryPrefix = "claude-codex--",
-                        models = listOf(ModelEntry(id = "gpt-5.6-luna", contextWindow = 272_000)),
-                        defaultContextWindow = 272_000,
-                    ),
-                    log = LogSink {},
-                    reasoningCache = reasoningCache,
-                    toolSurfaceLatch = ToolSurfaceLatch(),
+                ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+                quirks,
+                ModelCatalog(
+                    discoveryPrefix = "claude-codex--",
+                    models = listOf(ModelEntry(id = "gpt-5.6-luna", contextWindow = 272_000)),
+                    defaultContextWindow = 272_000,
                 ),
+                LogSink {},
+                ReasoningContinuity(reasoningCache, cachePolicy, ids),
+                ToolSurfaceLatch(),
             ),
             foldConfig = null,
             replayReasoning = false,

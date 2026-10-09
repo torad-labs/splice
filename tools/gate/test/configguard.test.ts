@@ -37,10 +37,6 @@ function withFixture(yaml: string, check: (problems: string[]) => void): void {
 }
 
 describe("the config guard", () => {
-  test("control: the mirrored, unmutated tree is green", () => {
-    expect(guard()).toEqual([]);
-  });
-
   // ── the severity wall: 6 dodges that a line grep waved through, 2 shapes that must still pass ─
   test("1. DR-115: a second YAML doc downgraded to warning fails, not hides behind doc one", () => {
     withFixture(

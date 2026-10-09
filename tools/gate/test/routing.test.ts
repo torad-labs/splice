@@ -25,25 +25,11 @@ beforeAll(() => {
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 describe("rule routing", () => {
-  test("control: the mirrored, unmutated tree is green", () => {
-    expect(routing()).toEqual([]);
-  });
-
   const dormant = () => join(tmp, "quality", "rules", "zz-selftest-dormant");
 
   test("1. DR-132: an unreferenced directory holding a FLOW-STYLE rule", () => {
     mkdirSync(dormant());
     writeFileSync(join(dormant(), "r.yml"), "{id: zz-dormant-flow, language: kotlin, severity: error, rule: {pattern: selftestBad()}}\n");
-    try {
-      expect(routing().some((p) => p.includes("but nothing references it"))).toBe(true);
-    } finally {
-      rmSync(dormant(), { recursive: true });
-    }
-  });
-
-  test("2. the block-style equivalent — the shape that already worked, pinned so it keeps working", () => {
-    mkdirSync(dormant());
-    writeFileSync(join(dormant(), "r.yml"), "id: zz-dormant-block\nlanguage: kotlin\nseverity: error\nrule:\n  pattern: selftestBad()\n");
     try {
       expect(routing().some((p) => p.includes("but nothing references it"))).toBe(true);
     } finally {

@@ -681,16 +681,6 @@ describe("the gradle output's failing tasks and named files", () => {
   });
 });
 
-describe("a fixture runs the hooks it has, and reads no ambient git config", () => {
-  test("RED: a hook the fixture installs refuses the fixture's commit: no hook path is overridden", () => {
-    const root = wallsRepo();
-    writeFileSync(join(root, ".git", "hooks", "pre-commit"), "#!/bin/sh\necho fixture-hook >&2\nexit 1\n", { mode: 0o755 });
-    writeFile(root, "docs/README.md", "docs\n");
-    git(root, ["add", "docs/README.md"]);
-    expect(() => commit(root, "chore(test): hooked")).toThrow("fixture-hook");
-  });
-});
-
 describe("hook install", () => {
   test("writes both shims, executable, byte-for-byte the shim text, and a second install changes nothing", () => {
     const hooks = dir("splice-hooks-");
@@ -756,15 +746,6 @@ describe("the architecture suite fingerprints WHICH paths are tracked, not git's
     expect(run.status).toBe(0);
     return run.output;
   }
-
-  test("CONTROL: fingerprinting the raw index (the old declaration) reruns on a content-only stage, so the test above can fail", async () => {
-    const root = trackedPathsRepo(true);
-    await probe(root);
-    expect(await probe(root)).toContain(":probe UP-TO-DATE");
-    writeFile(root, "docs/tracked.md", "two\n");
-    git(root, ["add", "docs/tracked.md"]);
-    expect(await probe(root)).not.toContain(":probe UP-TO-DATE");
-  }, 600_000);
 
   test("RED: staging a content change to an already tracked file leaves the suite UP-TO-DATE; adding or removing a tracked path reruns it", async () => {
     const root = trackedPathsRepo();

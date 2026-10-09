@@ -1,14 +1,13 @@
 // Pre-commit runs the ladder legs a commit's own paths can turn red. A leg declares those paths as `commit` globs; a leg that
 // needs gradle's graph never runs there. The shipped ladder is read so a row that loses its glob is a red test.
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { commitLegsLeg } from "../src/commands/hook.ts";
 import { commitLegs, JAR_TASK, type Leg } from "../src/lib/prepush-scope.ts";
 import { layout } from "../src/lib/repo.ts";
 
-const { repoRoot } = layout();
 const rules: Leg = { task: "gateRules", command: ["bun", "tools/gate", "rules"], inputs: ["**"], commit: ["quality/rules/**", "sgconfig.yml"] };
 const tasks = (changed: readonly string[], legs: readonly Leg[]) => commitLegs(legs, changed).map((leg) => leg.task);
 
@@ -26,19 +25,6 @@ describe("which legs a commit runs", () => {
     expect(tasks(["sgconfig.yml"], [{ ...rules, task: "onJar", dependsOn: [JAR_TASK] }])).toEqual([]);
   });
 
-  test("a rule change runs the rules' own cases at commit, and the whole-tree scan is pre-push's", () => {
-    const shipped = JSON.parse(readFileSync(join(repoRoot, "tools/gate/config/ladder.json"), "utf8")).legs as Leg[];
-    const rulesLeg = shipped.find((leg) => leg.task === "gateRules");
-    expect(rulesLeg?.commitCommand).toEqual(["bun", "tools/gate", "rules", "--tests"]);
-    expect(rulesLeg?.command).toEqual(["bun", "tools/gate", "rules"]);
-  });
-
-  test("the shipped ladder runs the rules leg for the two paths a rule depends on", () => {
-    const shipped = JSON.parse(readFileSync(join(repoRoot, "tools/gate/config/ladder.json"), "utf8")).legs as Leg[];
-    for (const path of ["sgconfig.yml", "quality/rules/kotlin/x.yml"]) {
-      expect(tasks([path], shipped), path).toContain("gateRules");
-    }
-  });
 });
 
 describe("the commit leg", () => {

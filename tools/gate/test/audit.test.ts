@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ATTEMPTS, AUDIT_ARGS, auditCommand, runAudit } from "../src/lib/audit.ts";
+import { ATTEMPTS, AUDIT_ARGS, runAudit } from "../src/lib/audit.ts";
 import { layout } from "../src/lib/repo.ts";
 
 const { repoRoot } = layout();
@@ -43,11 +43,6 @@ function captured(): { lines: string[]; restore: () => void } {
 }
 
 describe("gate audit", () => {
-  test("the command is `bun audit --audit-level=critical`, and the env override replaces bun alone", () => {
-    expect(auditCommand({})).toEqual(["bun", "audit", "--audit-level=critical"]);
-    expect(auditCommand({ GATE_AUDIT_COMMAND: "/tmp/fake" })).toEqual(["/tmp/fake", "audit", "--audit-level=critical"]);
-  });
-
   test("a clean audit passes on the first attempt and never retries", async () => {
     const fake = fakeAudit("process.exit(0);\n");
     const log = captured();

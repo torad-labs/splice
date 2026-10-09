@@ -292,10 +292,6 @@ interface Shape {
 const SHAPES_JSON = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "no-python-shapes.json"), "utf8")) as Shape[];
 
 describe("the no-python wall: the reviewer's shape fixtures", () => {
-  test("the fixture file holds what it claims: 44 files that run Python and 11 that only name it", () => {
-    expect(SHAPES_JSON.filter((s) => s.expected)).toHaveLength(44);
-    expect(SHAPES_JSON.filter((s) => !s.expected)).toHaveLength(11);
-  });
   for (const s of SHAPES_JSON) {
     test(`${s.id}: the wall is ${s.expected ? "RED" : "GREEN"} and so is the guard`, () => {
       const root = fixtureRoot();

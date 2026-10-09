@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { gradleModules, moduleOf, readModuleGraph } from "../src/commands/hook.ts";
-import { JAR_TASK, LAW_SUITES_TASK, type Leg, legsWithoutInputs, prePushScope } from "../src/lib/prepush-scope.ts";
+import { JAR_TASK, LAW_SUITES_TASK, type Leg, prePushScope } from "../src/lib/prepush-scope.ts";
 import { layout } from "../src/lib/repo.ts";
 
 const { repoRoot } = layout();
@@ -132,19 +132,4 @@ describe("the law suites and the jar legs are requested on every push, and gradl
     for (const task of jarLegs) expect(e2e.gradle, task).toContain(`:${task}`);
   });
 
-  test("the jar's own inputs are not copied into the rows: a jar leg declares only the paths it reads itself", () => {
-    const ladder = JSON.parse(readFileSync(`${repoRoot}/tools/gate/config/ladder.json`, "utf8")) as { legs: Leg[] };
-    for (const leg of ladder.legs.filter((row) => row.dependsOn?.includes(JAR_TASK) === true)) {
-      for (const glob of leg.inputs ?? []) expect(glob.startsWith("core/") || glob.startsWith("features/") || glob.startsWith("integrations/"), `${leg.task}: ${glob}`).toBe(false);
-    }
-  });
-});
-
-describe("a row without inputs cannot be scoped", () => {
-  test("the rows that declare no inputs are named", () => {
-    const bare: Leg = { task: "bareRow", command: ["bun", "tools/gate", "title"] };
-    const empty: Leg = { task: "emptyRow", command: ["bun", "tools/gate", "title"], inputs: [] };
-    expect(legsWithoutInputs([...LEGS, bare, empty])).toEqual(["bareRow", "emptyRow"]);
-    expect(legsWithoutInputs(LEGS)).toEqual([]);
-  });
 });

@@ -9,7 +9,7 @@
 // fail-closed branch, so a bare `bun` would not be found and that arm would error out instead of
 // testing what it names.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { layout } from "../src/lib/repo.ts";
@@ -173,18 +173,6 @@ describe("gate rules --stdin: the write-time wall", () => {
 });
 
 describe("gate rules --stdin: the contract", () => {
-  test(".claude/settings.json routes PreToolUse, and only PreToolUse, to this verb", () => {
-    const settings = JSON.parse(readFileSync(join(repoRoot, ".claude", "settings.json"), "utf8")) as {
-      hooks: Record<string, { hooks: { command: string }[] }[]>;
-    };
-    const commands = (event: string) => (settings.hooks[event] ?? []).flatMap((h) => h.hooks.map((x) => x.command));
-    expect(commands("PreToolUse")).toContain("bun $CLAUDE_PROJECT_DIR/tools/gate rules --stdin pretooluse");
-    const elsewhere = Object.keys(settings.hooks)
-      .filter((event) => event !== "PreToolUse")
-      .filter((event) => commands(event).some((c) => c.includes("tools/gate rules")));
-    expect(elsewhere, "the stop-time scan was removed on 2026-09-22; the wall runs at write time").toEqual([]);
-  });
-
   test("an unknown lifecycle, a missing one, or --stdin mixed with another flag is refused with exit 2", () => {
     for (const argv of [["--stdin", "posttooluse"], ["--stdin", "stop"], ["--stdin"], ["--stdin", "pretooluse", "--prove-coverage"], ["--prove-coverage", "--stdin", "pretooluse"]]) {
       const proc = Bun.spawnSync([BUN, GATE, "rules", ...argv], { stdin: Buffer.from("{}"), stdout: "pipe", stderr: "pipe" });

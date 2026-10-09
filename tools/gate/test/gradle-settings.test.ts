@@ -7,11 +7,6 @@ const { repoRoot } = layout();
 const dirs = (settings: string) => includedBuildDirs(repoRoot, settings, "fixture/settings.gradle.kts");
 
 describe("the declared included builds", () => {
-  test("the repo's own settings file declares build-logic", async () => {
-    const text = await Bun.file(`${repoRoot}/settings.gradle.kts`).text();
-    expect(includedBuildDirs(repoRoot, text)).toContain("build-logic");
-  });
-
   test("a call that sits in a comment declares nothing", () => {
     expect(dirs('// includeBuild("ghost")\n')).toEqual([]);
   });

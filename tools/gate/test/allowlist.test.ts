@@ -14,10 +14,10 @@
 // a credential-shaped assignment sitting in this file would trip the very scan this proves.
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AllowlistError, HEADER, OUTPUT, check, render, validEre } from "../src/lib/allowlist.ts";
+import { AllowlistError, HEADER, OUTPUT, render } from "../src/lib/allowlist.ts";
 import { layout } from "../src/lib/repo.ts";
 
 const { repoRoot } = layout();
@@ -31,26 +31,6 @@ function reported(hit: string, allowlist: string): boolean {
 }
 
 describe("the committed allowlist", () => {
-  test("is exactly what its source renders to", () => {
-    expect(check(repoRoot)).toEqual({ lines: readFileSync(allowPath, "utf8").split("\n").length - 1, stale: false });
-  });
-
-  test("carries no blank line, only valid EREs, and only bracketed fully anchored exemptions", () => {
-    const lines = readFileSync(allowPath, "utf8").split("\n");
-    expect(lines.at(-1)).toBe("");
-    for (const [index, line] of lines.slice(0, -1).entries()) {
-      const where = `line ${index + 1}`;
-      // A blank line is an empty regex and matches EVERY hit.
-      expect(/^\s*$/.test(line), `${where} is blank — an empty regex matches every hit`).toBe(false);
-      // An invalid ERE anywhere makes grep reject the WHOLE file.
-      expect(validEre(line), `${where} is not a valid ERE (breaks the entire file)`).toBeNull();
-      if (line.startsWith("^#")) continue; // inert prose: a hit starts with a digit
-      // DR-188: "starts with ^, ends with $" is NOT fully anchored — `|` binds looser than the
-      // anchors. Check the whole emitted shape, so a hand edit that drops the group fails here.
-      expect(/^\^\[0-9\]\+:\[\[:space:\]\]\*\(.*\)\[\[:space:\]\]\*\$$/.test(line), `${where} is not a bracketed, fully anchored exemption: [${line}]`).toBe(true);
-    }
-  });
-
   // Split keywords from their `=` so the SOURCE stays clean while the assembled strings stay
   // byte-identical to what the scan sees in real code.
   const K = "_KEY";

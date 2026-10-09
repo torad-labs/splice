@@ -59,6 +59,39 @@ class CodeModeStreamPortsTest : CodeModeBridgeTestSupport() {
         assertThrows(IllegalStateException::class.java) { buffer.complete("not yet executed") }
     }
 
+    /** A folding head buffers a round's text until the round proves clean. A websocket round that fails before any
+     *  client frame is re-served over SSE on the same code-mode sink, so the discard must reach the buffer through
+     *  the code-mode wrapper: the client then sees only the SSE answer, and the round reports only that as delivered. */
+    @Test
+    fun `a discarded websocket draft never reaches a folding client through the code-mode sink`() = runBlocking {
+        val shown = mutableListOf<String>()
+        val folding = object : WireSink by RecordingSink() {
+            val pending = mutableListOf<String>()
+
+            override suspend fun textDelta(index: WireBlockIndex, text: String) {
+                pending += text
+            }
+
+            override fun discard() {
+                pending.clear()
+            }
+
+            fun flush() {
+                shown += pending
+                pending.clear()
+            }
+        }
+        val round = CodeModeSwitchingSink(folding) {}
+        val draft = round.openText()
+        round.textDelta(draft, "draft")
+        round.discard()
+        val answer = round.openText()
+        round.textDelta(answer, "answer")
+        folding.flush()
+        assertEquals(listOf("answer"), shown)
+        assertEquals("answer", round.detach())
+    }
+
     @Test
     fun `a detached raw block cannot bypass the frame byte budget through metadata`(): Unit = runBlocking {
         val sink = CodeModeSwitchingSink(RecordingSink()) {}

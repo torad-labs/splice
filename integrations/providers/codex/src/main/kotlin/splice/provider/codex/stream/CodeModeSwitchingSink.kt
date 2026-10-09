@@ -172,6 +172,14 @@ internal class CodeModeSwitchingSink(
         }
     }
 
+    /** Output the client step holds but has not shown is dropped there, and the text this round remembers as
+     *  delivered goes with it: a websocket round re-served over SSE answers on this same sink, and its draft must
+     *  neither reach the client nor be reported as continuity the client saw. */
+    override fun discard() {
+        target?.discard()
+        deliveredText.clear()
+    }
+
     override suspend fun customToolSource(event: CustomToolSource) {
         observer.observe(event)
     }

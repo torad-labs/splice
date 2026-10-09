@@ -365,7 +365,17 @@ export function slotRunner(lay: Layout, label: string, echo: boolean): GateRunne
     if ("error" in jdk) throw new Error(jdk.error);
     const proc = Bun.spawn(
       [process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"), "slot", label, "--", ...(label === "pre-push" ? ["--parallel", "--build-cache"] : []), ...tasks],
-      { cwd: lay.repoRoot, env: spawnEnv({ JAVA_HOME: jdk.javaHome }), stdout: "pipe", stderr: "pipe" },
+      {
+        cwd: lay.repoRoot,
+        env: spawnEnv({
+          JAVA_HOME: jdk.javaHome,
+          // The pre-push tree takes its own lock beside its build root, whatever sha the tree holds: the slot code inside an
+          // older tree would pick the checkout's shared lock, and a push would block every builder in the checkout.
+          ...(label === "pre-push" ? { GRADLE_SLOT_LOCK: join(lay.buildRoot, ".gradle-slot.lock") } : {}),
+        }),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
     );
     let output = "";
     const pump = async (stream: ReadableStream<Uint8Array>): Promise<void> => {

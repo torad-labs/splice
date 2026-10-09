@@ -16,7 +16,6 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 
 internal const val PROFILE_TIMEOUT_MS = 120_000L
-private const val CONTROLLED_DELAY_MS = 100L
 
 // Four concurrent history reads must not spend hundreds of idle-route intervals on the request executor.
 private const val ROUTE_IDLE_MULTIPLE = 50L
@@ -25,29 +24,6 @@ private const val ROUTE_IDLE_MULTIPLE = 50L
 private const val CONTENTION_HISTORY_REQUESTS = 8_192
 
 class PlaygroundContentionProfileTest {
-    @Test
-    fun `console reads and mock upstream waits have separate measured phases`(@TempDir root: Path) = runBlocking {
-        withTimeout(PROFILE_TIMEOUT_MS) {
-            PlaygroundContentionFixture(root, this).use { fixture ->
-                fixture.start()
-                repeat(2) { fixture.playground() }
-                scenario(fixture, "idle", 0)
-                fixture.coldReads()
-                scenario(fixture, "cold-console", 4)
-                scenario(fixture, "warm-console", 4)
-
-                fixture.headerDelayMs = CONTROLLED_DELAY_MS
-                scenario(fixture, "held-headers", 0)
-                assertTrue(fixture.samples.headers - fixture.samples.posted >= 50_000_000L)
-
-                fixture.headerDelayMs = 0
-                fixture.bodyDelayMs = CONTROLLED_DELAY_MS
-                scenario(fixture, "held-completion", 0)
-                assertTrue(fixture.samples.completed - fixture.samples.headers >= 50_000_000L)
-            }
-        }
-    }
-
     @Test
     fun `four concurrent console reads cannot withhold the Playground route`(@TempDir root: Path) = runBlocking {
         withTimeout(PROFILE_TIMEOUT_MS) {

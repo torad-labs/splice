@@ -1,7 +1,5 @@
-// NEW: failover within one provider (splice-lead's 6:06 PM CT followup) — on a command with two or more logins, the
-// Playground sends as the login a real turn would use next, never the head's default credential. The pool's own order
-// decides it, so a login held on its plan or placed later in Accounts is skipped exactly as a turn skips it, and the
-// login's own headers ride on top of the provider's. The echoed request names the login it went as.
+// On a command with two or more logins, the Playground sends as the login a real turn would use next, never the
+// head's default credential: the pool's own order decides, and the login's own headers ride on top of the provider's.
 package splice.app.probe
 
 import io.ktor.client.HttpClient

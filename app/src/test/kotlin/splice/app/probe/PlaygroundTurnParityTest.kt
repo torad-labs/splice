@@ -1,8 +1,6 @@
-// NEW: V4-444 — the Playground sends what a turn sends. marlin's check of 0e22c018b found every ChatGPT send refused with
-// 400 {"detail": "Input must be a list"}: the probe hand-built each dialect's body, a second copy of the request shape that
-// had drifted from the turn path. This holds the probe to the production builder on every arm ProviderAssembly dispatches
-// to (codex, an api-key Responses provider, chat, anthropic passthrough): the body it posts is the one the head's own
-// provider builds for the same one-message prompt, at the provider's own URL, under the provider's and the turn's headers.
+// The Playground sends what a turn sends. On every arm ProviderAssembly dispatches to (codex, an api-key Responses
+// provider, chat, anthropic passthrough) the body the probe posts is the one the head's own provider builds for the
+// same one-message prompt, at the provider's own URL, under the provider's and the turn's headers.
 package splice.app.probe
 
 import io.ktor.client.HttpClient

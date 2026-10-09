@@ -1,4 +1,4 @@
-// NEW: real Playground replies reach the same retained provider facts the Models card reads.
+// Real Playground replies reach the same retained provider facts the Models card reads.
 package splice.app.probe
 
 import io.ktor.client.HttpClient

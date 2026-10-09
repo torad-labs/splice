@@ -1,9 +1,7 @@
-// NEW: V4-133 — UpstreamPlaygroundProbe against providers built by the daemon's own ProviderAssembly from a REAL
-// TopologyLoader.parse, so a lookup or a request that only works against hand-built objects would still be a lie about
-// production. What the probe sends is held to the turn path by PlaygroundTurnParityTest (V4-444); this covers what it
-// hands back: the credential redacted in the echoed request, the provider's answer as it came, the model the caller
-// names, and every failure named by UpstreamPlaygroundProbe.kt: no running provider, client-forwarded auth, no
-// credential, a credential read that throws, and the upstream call itself failing.
+// UpstreamPlaygroundProbe against providers built by the daemon's own ProviderAssembly from a real TopologyLoader.parse:
+// the credential is redacted in the echoed request, the provider's answer comes back as it came, the model the caller
+// names is sent, and every failure (no provider, forwarded auth, no credential, unreadable credential, upstream error)
+// is a named PlaygroundFailure. What the probe sends is held to the turn path by PlaygroundTurnParityTest.
 package splice.app.probe
 
 import io.ktor.client.HttpClient
@@ -53,7 +51,7 @@ class UpstreamPlaygroundProbeTest {
             assertEquals("Input must be a list", error["message"]!!.jsonPrimitive.content)
         }
 
-    /** V4-444: the Playground compares models, two on one command as readily as two commands, so a run names its
+    /** The Playground compares models, two on one command as readily as two commands, so a run names its
      *  model and the head's pinned model is only the default. */
     @Test
     fun `a model the caller names is sent in place of the head's pinned one`(@TempDir root: Path) = runTest {

@@ -1,5 +1,5 @@
 // NEW: the /health body, assembled from the head set's verdict, the per-head readings and the booted config's
-// identity. The bootedAt seam (RestartBootIdentityTest) and every field name are the ones /health has always served.
+// identity. The bootedAt seam (ControlHealthBootIdentityTest) and every field name are the ones /health has always served.
 package splice.app.control.api
 
 import kotlinx.serialization.json.JsonArray

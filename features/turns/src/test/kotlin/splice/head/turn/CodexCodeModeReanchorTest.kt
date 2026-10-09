@@ -42,6 +42,7 @@ import splice.head.wire.SseEmitterFactory
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
+import splice.upstream.RetryBackoff
 import splice.upstream.ReanchorRound
 import splice.upstream.RoundBody
 import splice.upstream.RoundResult
@@ -184,12 +185,7 @@ class CodexCodeModeReanchorTest {
             bridge.interceptor(answering, disableParallel = false)
                 .intercept(next.toString(), sink) {
                     nextPosted = event(it)
-                    RoundResult.Outcome(TurnOutcome.Success(
-                        false,
-                        false,
-                        Usage(),
-                        shape = ResponseShape(messageClosed = true),
-                    ))
+                    closedSuccessRound()
                 }
             val abandons = lines.filter { "logical history does not match its persisted baseline" in it }
             if (changedBaseline) {
@@ -254,12 +250,7 @@ class CodexCodeModeReanchorTest {
             bridge.interceptor(answering, disableParallel = false)
                 .intercept(recovery.nextRequest(received, false).toString(), sink) {
                     posted = event(it)
-                    RoundResult.Outcome(TurnOutcome.Success(
-                        false,
-                        false,
-                        Usage(),
-                        shape = ResponseShape(messageClosed = true),
-                    ))
+                    closedSuccessRound()
                 }
             assertTrue(lines.none { "abandoned record" in it || "interrupted extra=STEERING" in it }, lines.toString())
             assertEquals(3, runtime.advances)
@@ -281,6 +272,7 @@ class CodexCodeModeReanchorTest {
     ) = RoundStrategy(
         emitter = sink,
         runners = RoundRunners(
+            backoff = RetryBackoff { _, _ -> },
             key = "test",
             log = {},
             signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),
@@ -426,6 +418,10 @@ class CodexCodeModeReanchorTest {
 
     private fun event(value: String): JsonObject = Json.parseToJsonElement(value).jsonObject
 
+    private fun closedSuccessRound() = RoundResult.Outcome(
+        TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true)),
+    )
+
     private class PendingRuntime(
         private val completeFirst: Boolean = false,
         private val parkSecond: Boolean = false,
@@ -469,6 +465,7 @@ class CodexCodeModeReanchorTest {
         return RoundStrategy(
             emitter = emitter,
             runners = RoundRunners(
+                backoff = RetryBackoff { _, _ -> },
                 key = "test",
                 log = {},
                 signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),

@@ -31,6 +31,7 @@ import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.UsagePayloadBuilder
+import splice.upstream.RetryBackoff
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
@@ -100,6 +101,7 @@ private class SerializationRig(tmp: Path) {
             RoundStrategy(
                 emitter = terminal,
                 runners = RoundRunners(
+                    backoff = RetryBackoff { _, _ -> },
                     key = provider.key,
                     log = {},
                     signals = drive.signals,

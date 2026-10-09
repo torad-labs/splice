@@ -22,9 +22,7 @@ import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
 import splice.upstream.RoundResult
 import splice.upstream.ToolSearchPolicy
-import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.transport.UpstreamEnding
-import splice.upstream.transport.UpstreamTransport
 
 internal class ReanchorRunner(
     private val key: String,
@@ -33,7 +31,7 @@ internal class ReanchorRunner(
     private val finish: FinishTurn,
     private val signals: RunnerSignals,
     private val toolSearch: ToolSearchPolicy? = null,
-    private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(ProcessWaiter()),
+    private val backoff: RetryBackoff,
 ) {
     private val rounds = RoundSplice()
     private val continuation = ReanchorContinuation(toolSearch, signals, rounds)

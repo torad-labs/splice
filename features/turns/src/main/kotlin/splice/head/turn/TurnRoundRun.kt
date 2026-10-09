@@ -14,6 +14,7 @@ import splice.head.transport.IndependentSourcePost
 import splice.head.transport.SseRoundDriver
 import splice.head.wire.WireTap
 import splice.upstream.Provider
+import splice.upstream.RetryBackoff
 import splice.upstream.RoundBody
 import splice.upstream.transport.UpstreamEnding
 
@@ -25,6 +26,7 @@ internal class TurnRoundRun(
     /** V4-173: the head's opt-in upstream wire tap, null on every head that did not turn it on. */
     private val wireTap: WireTap?,
     usageStamp: TurnUsageStamp,
+    private val backoff: RetryBackoff,
 ) {
     private val sourceRound = IndependentSourcePost(sseRoundDriver, usageStamp)
 
@@ -48,6 +50,7 @@ internal class TurnRoundRun(
                 log = log,
                 signals = drive.signals,
                 finish = { outcome -> turnFinish.finishTurn(drive, outcome) },
+                backoff = backoff,
                 toolSearch = drive.toolSearch,
             ),
             // V4-173: THE choke point. Every upstream request of every runner — the single round,

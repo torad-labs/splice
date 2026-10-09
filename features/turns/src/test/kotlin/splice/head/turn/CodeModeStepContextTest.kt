@@ -34,6 +34,7 @@ import splice.head.wire.TurnWiring
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
+import splice.upstream.RetryBackoff
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
@@ -70,6 +71,7 @@ class CodeModeStepContextTest {
             RoundStrategy(
                 emitter = emitter,
                 runners = RoundRunners(
+                    backoff = RetryBackoff { _, _ -> },
                     key = "test",
                     log = {},
                     signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),

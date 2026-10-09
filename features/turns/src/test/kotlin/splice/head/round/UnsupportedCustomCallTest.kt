@@ -10,6 +10,7 @@ import splice.core.turn.GatewayCustomCall
 import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.upstream.RetryBackoff
 import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
 
@@ -21,6 +22,7 @@ class UnsupportedCustomCallTest {
         RoundStrategy(
             emitter = UnusedSink(),
             runners = RoundRunners(
+                backoff = RetryBackoff { _, _ -> },
                 key = "test",
                 log = {},
                 signals = RunnerSignals(),

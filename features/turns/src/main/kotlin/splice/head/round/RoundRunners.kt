@@ -5,6 +5,7 @@ package splice.head.round
 
 import splice.core.util.LogSink
 import splice.upstream.ReanchorPolicy
+import splice.upstream.RetryBackoff
 import splice.upstream.RetryNotice
 import splice.upstream.RoundResult
 import splice.upstream.ToolSearchPolicy
@@ -18,6 +19,9 @@ internal class RoundRunners(
     log: LogSink,
     private val signals: RunnerSignals,
     private val finish: FinishTurn,
+    /** The head's configured retry curve: the fold and re-anchor runners sleep their restarts on it, as the
+     *  upstream client does for an ordinary retry, never on a curve of their own. */
+    private val backoff: RetryBackoff,
     private val toolSearch: ToolSearchPolicy? = null,
 ) {
     private val notice = RetryNotice { log(it) }
@@ -28,11 +32,11 @@ internal class RoundRunners(
 
     /** The runner for a fold-eligible turn. */
     fun fold(emitter: WireSink, post: PostRoundToSink, reanchor: ReanchorPolicy?): FoldRunner =
-        FoldRunner(emitter, post, FoldRounds(key, notice, signals, finish, reanchor, toolSearch))
+        FoldRunner(emitter, post, FoldRounds(key, notice, signals, finish, reanchor, toolSearch), backoff)
 
     /** The runner for a re-anchor or search-only turn. */
     fun reanchoring(post: PostRound): ReanchorRunner =
-        ReanchorRunner(key, notice, post, finish, signals, toolSearch)
+        ReanchorRunner(key, notice, post, finish, signals, toolSearch, backoff)
 
     /** The single-round path's end: DR-130 — the runners salvage a failed round's own burn through
      *  withFailureSalvage (DR-124); this path handed the raw outcome to finishTurn, which stamps ONLY

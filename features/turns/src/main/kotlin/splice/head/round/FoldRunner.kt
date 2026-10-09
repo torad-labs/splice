@@ -18,17 +18,15 @@ import splice.upstream.FoldPolicy
 import splice.upstream.RetryBackoff
 import splice.upstream.RoundBody
 import splice.upstream.RoundResult
-import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamEnding
-import splice.upstream.transport.UpstreamTransport
 
 internal class FoldRunner(
     // Only the buffer's `real` sink — never a terminal here (L3: FoldRunner finishes via [FoldRounds.finalize]).
     private val emitter: WireSink,
     private val postRound: PostRoundToSink,
     private val foldRounds: FoldRounds,
-    private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(ProcessWaiter()),
+    private val backoff: RetryBackoff,
 ) {
     suspend fun run(initialBody: JsonObject, fold: FoldPolicy): UpstreamEnding? = run(initialBody, fold, null)
 

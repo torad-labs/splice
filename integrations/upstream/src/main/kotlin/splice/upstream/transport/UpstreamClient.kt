@@ -40,6 +40,7 @@ import splice.core.auth.Credentials
 import splice.core.usage.PlanLimit
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
+import splice.upstream.RetryBackoff
 import splice.upstream.RoundBody
 import splice.upstream.StreamRead
 import splice.upstream.UpstreamHandler
@@ -80,6 +81,10 @@ public class UpstreamClient(
     // never a second one.
     private val transportFailures = TransportFailures()
     private val request = UpstreamRequest(client, zstdRequestBody)
+
+    /** The head's configured retry curve as a sleep, for the runners that restart a round (fold continuation,
+     *  mid-stream re-anchor): one curve per head, the one an ordinary retry here already follows. */
+    public val retryBackoff: RetryBackoff = RetryBackoff { attempt, minDelayMs -> pacing.pause(attempt, minDelayMs) }
 
     // Legacy files have no proved credential owner. Keep them untouched, never attribute their hold to a caller.
     private val cooldown = RateLimitCooldown(clock)

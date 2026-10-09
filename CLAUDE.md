@@ -49,7 +49,7 @@ The procedure, every time, in this order:
 5. `splice restart --now`, at once, with no gate in front of it (see above).
 6. Verify the OPEN file, not the path: sha256 of the jar fd under `/proc/<pid>/fd/` equals the
    artifact jar's sha256. Print both beside the result in one command block.
-7. One ledger note naming the sha, the CI run, the pid, and the backup path.
+7. One line, where the landing is reported, naming the sha, the CI run, the pid, and the backup path.
 
 ## Never ask the operator to look at a screen no seat has looked at (2026-10-07)
 
@@ -77,3 +77,28 @@ look. A seat that has not done 1-4 does not ask. A number that could mislead is 
 or its label first; a short line beside a control is allowed when its name alone would be cryptic.
 Scar, Oct 7, 7:17 PM CT: nine screens passed splice-lead and marlin on defects alone at 3394; he
 reviewed at 3828 and stopped at screen 2 ("What does note do?", cards that "all look like templates").
+
+## Project laws
+
+Marcos's standing rulings for splice, one per line.
+
+- 0.4.0 ships everything on the branch, V4-444 included, once Marcos approves V4-444 by eye.
+- Each section's "Resolved" block in `docs/specs/v0.4.0.md` is Marcos's decision and is that feature's spec.
+- Retry default is total: known errors get a specific plan; every other error gets a bounded generic retry and an honest message.
+- Idle is a probe, never an error: act only on a dead path, by re-anchoring; never reap a model thinking in silence.
+- Separation: vendor facts live in that vendor's provider module; a shared file carries at most one dispatch line per head.
+- Head isolation: no head state leaks into ~/.claude or another head; cross-head resume is an explicit -r copy with its model rewritten.
+- Reasoning effort is part of the cache key: never vary it per turn type, compaction included, and do not propose it.
+- No Python: repo tooling is bun/TypeScript; the gate's no-python leg fails on a tracked .py file.
+- A claim about how something looks is proven by reading a capture or measuring the rendered DOM, never by a passing test, a grep, or a name's absence from the source; when Marcos says a surface is wrong, the answer is a capture, not a question back.
+- Fail-closed boot: config findings refuse boot, all listed at once, and the CLI offers an interactive fix session; never boot on a finding or fix silently.
+- Kotlin style: no new top-level functions and no new companion objects; top-level const val is allowed; test paths are exempt; the quality/rules walls enforce it.
+- The architecture rules pack (`quality/rules/kotlin`) is wanted: a rule that contradicts the architecture means the architecture is wrong.
+- Adding a head is one of three moves: reuse a schema (pure TOML), declare a new one (dialect and auth grammar), or reuse one but reshape it (quirks).
+- mirror_reasoning stays false on every head: never re-enable it for parity, continuity or any agent theory; ask Marcos and wait.
+- Kimi's built requests and its goldens stay byte-identical.
+- The Responses websocket transport ships default off; turning it on is Marcos's one-line TOML change, never a code default.
+- A cross-head fallback for a hard-down primary head is Marcos's decision to make.
+- A refused claim, a blocked file or an unanswered question is never a stopping point: take the next open work and say in one line what you took and what you are still waiting on.
+- No version bump and no release cut without Marcos's explicit go.
+- GitHub settings, branch protection, rulesets and required checks are Marcos's to change.

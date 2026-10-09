@@ -14,8 +14,21 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.graaljs.polyglot)
     // The published aggregator declares platform POMs as runtime artifacts. Shadow consumes ZIPs,
-    // so use its four native JAR dependencies directly, preserving every published platform.
-    for (platform in listOf("linux-amd64", "linux-aarch64", "darwin-aarch64", "windows-amd64")) {
+    // so use its native JAR dependencies directly. Each isolate library is 140-150 MB, so a local build ships only the
+    // host's (the one a local run can load); CI and the release build ship every published platform, and
+    // -Psplice.allPlatforms=true asks for them locally.
+    val everyPlatform = listOf("linux-amd64", "linux-aarch64", "darwin-aarch64", "windows-amd64")
+    val hostOs = providers.systemProperty("os.name").get().lowercase()
+    val hostArch = providers.systemProperty("os.arch").get().lowercase()
+    val hostPlatform = when {
+        hostOs.startsWith("windows") -> "windows-amd64"
+        hostOs.startsWith("mac") -> "darwin-aarch64"
+        hostArch == "aarch64" || hostArch == "arm64" -> "linux-aarch64"
+        else -> "linux-amd64"
+    }
+    val shipEvery = providers.environmentVariable("CI").isPresent ||
+        providers.gradleProperty("splice.allPlatforms").orNull == "true"
+    for (platform in if (shipEvery) everyPlatform else listOf(hostPlatform)) {
         runtimeOnly("org.graalvm.js:js-isolate-$platform-community:${libs.versions.graaljs.get()}")
     }
     implementation(libs.graaljs.community)

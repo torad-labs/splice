@@ -1,11 +1,10 @@
-package splice.client.transcript.v4344
+package splice.client.transcript
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.client.transcript.TranscriptHistoryIndex
 import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionHistoryScan
 import java.nio.file.Files

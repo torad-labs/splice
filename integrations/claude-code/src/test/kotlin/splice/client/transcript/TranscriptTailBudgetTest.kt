@@ -1,5 +1,5 @@
 // NEW: V4-444 — a large transcript reads only its tail and an unchanged poll reads no bytes.
-package splice.client.v4444
+package splice.client.transcript
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue

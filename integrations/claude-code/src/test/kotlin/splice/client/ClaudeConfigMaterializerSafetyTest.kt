@@ -226,7 +226,7 @@ class ClaudeConfigMaterializerSafetyTest {
     // does next (shared-link swaps, writeSettings, hook injection) landed in the operator's REAL
     // ~/.claude — including turning the global CLAUDE.md into a self-loop symlink.
     @Test
-    fun `a config_dir symlinked to the global claude dir is refused - DR-102`(@TempDir home: Path) {
+    fun `a config_dir symlinked to the global claude dir is refused`(@TempDir home: Path) {
         seedGlobal(home)
         val configDir = home.resolve(".claude-x")
         Files.createSymbolicLink(configDir, home.resolve(".claude"))
@@ -377,7 +377,7 @@ class JsonStateReadsSafetyTest {
     // approved keys) through the strict abort message, and a malformed global leaked through the
     // tolerant degrade log. The abort still names the PATH — only the file's bytes are withheld.
     @Test
-    fun `state-file bytes never ride diagnostics - DR-65`(@TempDir home: Path) {
+    fun `state-file bytes never ride diagnostics`(@TempDir home: Path) {
         seedGlobal(home)
         val sentinel = "sk-SENTINEL-LEAK-CANARY"
         val configDir = home.resolve(".claude-head")

@@ -3,20 +3,13 @@
 // ones, which used to replace the shim and pin the recorded binary to a file that was gone. WrapRig.update() does
 // what the updater does, on a real filesystem, and WrappedHead.reconcile() is what the daemon runs at start and
 // when the bin directory changes. Nothing here may touch the operator's ~/.claude.json or ~/.claude.
-package splice.client.v4445
+package splice.client.wrap
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.client.wrap.ReconcileResult
-import splice.client.wrap.StoredWrap
-import splice.client.wrap.UnwrapResult
-import splice.client.wrap.VanillaState
-import splice.client.wrap.WrapResult
-import splice.client.wrap.WrapRig
-import splice.client.wrap.WrappedHead
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.isSymbolicLink

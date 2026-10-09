@@ -2,13 +2,12 @@
 // on two live sessions). The hand-off texts are found once and held against the file's size, mtime and tail:
 // a repeat call reads nothing, a grown file is read only past what was read, a shrunk or rewritten one from
 // the start, and the texts stay redacted as team chat reads them.
-package splice.client.transcript.v4427
+package splice.client.transcript
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.client.transcript.TranscriptReader
 import splice.sessions.transcript.SentTexts
 import java.nio.file.Files
 import java.nio.file.Path

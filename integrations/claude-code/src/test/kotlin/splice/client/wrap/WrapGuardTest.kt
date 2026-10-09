@@ -2,15 +2,12 @@
 // the bin directory changes. Real filesystem events on a real temp directory, no fake watch: the property under
 // test is that the updater's rename is SEEN and answered, so each test waits for the result it names, not for a
 // clock.
-package splice.client.v4445
+package splice.client.wrap
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.client.wrap.WrapGuard
-import splice.client.wrap.WrapResult
-import splice.client.wrap.WrapRig
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch

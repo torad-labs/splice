@@ -1,8 +1,6 @@
 // NEW: V4-444 — synthetic transcripts and a byte-counted positioned opener.
-package splice.client.v4444
+package splice.client.transcript
 
-import splice.client.transcript.TranscriptOpener
-import splice.client.transcript.TranscriptReader
 import java.io.InputStream
 import java.nio.channels.Channels
 import java.nio.file.Files

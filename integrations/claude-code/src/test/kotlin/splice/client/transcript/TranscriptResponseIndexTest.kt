@@ -1,14 +1,11 @@
 // Synthetic index regressions: bounded reads, continuation, rewrite, and complete selected groups.
-package splice.client.transcript.v4354
+package splice.client.transcript
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.client.transcript.TranscriptMessageLookup
-import splice.client.transcript.TranscriptOpener
-import splice.client.transcript.TranscriptReader
 import splice.sessions.transcript.MessageConversation
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptReadBudget

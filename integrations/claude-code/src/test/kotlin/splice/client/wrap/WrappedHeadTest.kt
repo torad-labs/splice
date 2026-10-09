@@ -205,7 +205,7 @@ class WrappedHeadTest {
     }
 
     @Test
-    fun `unwrap puts back the backups a wrap made before V4-445 recorded`(@TempDir home: Path) {
+    fun `unwrap puts back the backups of a wrap that recorded none`(@TempDir home: Path) {
         val rig = WrapRig(home)
         rig.linkCmdToReal()
         assertTrue(rig.head.wrap() is WrapResult.Ok)

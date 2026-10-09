@@ -2,7 +2,7 @@
 // resolved as, merged over whatever the operator's shared settings map, the head winning a key; a head
 // that presents nothing leaves the shared value exactly as it was carried before. The wrap's door takes
 // no overrides at all: it writes the operator's own ~/.claude.
-package campaign.v4232
+package splice.client
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -13,15 +13,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.client.ClaudeConfigMaterializer
-import splice.client.ClaudePolicy
-import splice.client.MaterializeSpec
 import java.nio.file.Files
 import java.nio.file.Path
 
 private val PRESENTED = mapOf("claude-sonnet-4-6" to "bonsai-2-27b")
 
-class ModelOverridesMaterializeTest {
+class ClaudeConfigMaterializerModelOverridesTest {
 
     private fun spec(home: Path, share: Set<String>) = MaterializeSpec(
         configDir = home.resolve(".claude-bonsai"),

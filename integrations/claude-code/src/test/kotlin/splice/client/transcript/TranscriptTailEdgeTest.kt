@@ -1,5 +1,5 @@
 // NEW: V4-444 — complete records, tool-result joins and changed file snapshots.
-package splice.client.v4444
+package splice.client.transcript
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue

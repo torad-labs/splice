@@ -270,7 +270,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `slash login with a trailing space or arguments is intercepted, and --label rides to the CLI - V4-13`() {
+    fun `slash login with a trailing space or arguments is intercepted, and --label rides to the CLI`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val hook = write(tmp, "login-args.sh", LoginHookScripts.loginHookScript(browserSpec(recorder(tmp))))
         val spaced = run("bash", hook.toString(), stdin = """{"prompt":"/login "}""", dir = tmp)
@@ -304,7 +304,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
     /** A label the CLI would refuse must not fall back to a bare login: that signs the PRIMARY in
      *  again and overwrites its credential. The hook refuses first and starts nothing. */
     @Test
-    fun `an argument the login command would refuse is refused by the hook and nothing starts - V4-13`() {
+    fun `an argument the login command would refuse is refused by the hook and nothing starts`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val hook = write(tmp, "login-bad.sh", LoginHookScripts.loginHookScript(browserSpec(recorder(tmp))))
         val long = "a".repeat(49)
@@ -336,7 +336,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `the top-level prompt is decoded whatever the field order, nesting or escapes - V4-13`() {
+    fun `the top-level prompt is decoded whatever the field order, nesting or escapes`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val hook = write(tmp, "login-json.sh", LoginHookScripts.loginHookScript(browserSpec(recorder(tmp))))
         // Only the TOP-LEVEL prompt is read: a nested object with its own prompt key is data.
@@ -375,7 +375,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `a large paste that mentions slash login is an ordinary prompt and is never scanned - V4-13`() {
+    fun `a large paste that mentions slash login is an ordinary prompt and is never scanned`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val hook = write(tmp, "login-large.sh", LoginHookScripts.loginHookScript(browserSpec(recorder(tmp))))
         val paste = "see /login handler\\n" + "log line\\n".repeat(120_000)
@@ -390,14 +390,14 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `the login command file expands to the sentinel plus the arguments - V4-13`() {
+    fun `the login command file expands to the sentinel plus the arguments`() {
         val md = LoginHookScripts.loginCommandMd("Codex (ChatGPT)", "SPLICE_CODEX_LOGIN")
         assertTrue(md.endsWith("SPLICE_CODEX_LOGIN \$ARGUMENTS\n"), md)
         assertTrue(md.contains("argument-hint: \"[--label NAME]\""), md)
     }
 
     @Test
-    fun `a sign-in still waiting for its callback is cancelled before a new one starts - V4-13`() {
+    fun `a sign-in still waiting for its callback is cancelled before a new one starts`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val recorder = recorder(tmp)
         val hook = write(tmp, "login-pending.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
@@ -433,7 +433,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
     /** The replacement must be resolvable BEFORE a waiting sign-in is cancelled, and must survive
      *  its first moment after: otherwise the hook destroys a working sign-in and starts nothing. */
     @Test
-    fun `a login command that cannot start leaves a pending sign-in alone and says so - review 2026-09-14`() {
+    fun `a login command that cannot start leaves a pending sign-in alone and says so`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val missing = tmp.resolve("no-such-wrapper")
         val hook = write(tmp, "login-missing.sh", LoginHookScripts.loginHookScript(browserSpec(missing)))
@@ -460,7 +460,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
     /** The hook owns only the sign-ins it started. One the user began in a terminal (`claudex login
      *  --label work`, waiting on the browser) is the same argv; it is named and left alone. */
     @Test
-    fun `a sign-in the user started in a terminal is named and left alone - review 2026-09-14`() {
+    fun `a sign-in the user started in a terminal is named and left alone`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val recorder = recorder(tmp)
         val hook = write(tmp, "login-foreign.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
@@ -480,7 +480,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `a sign-in spelled with the head key is found under either origin - review 2026-09-14`() {
+    fun `a sign-in spelled with the head key is found under either origin`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val recorder = recorder(tmp)
         val hook = write(tmp, "login-key.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
@@ -512,7 +512,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `a bystander carrying the text, with no pending sign-in, is neither killed nor a restart - V4-13`() {
+    fun `a bystander carrying the text, with no pending sign-in, is neither killed nor a restart`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val recorder = recorder(tmp)
         val hook = write(tmp, "login-bystander.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
@@ -534,7 +534,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `a pending sign-in that ignores TERM is killed, and only then does the new one start - V4-13`() {
+    fun `a pending sign-in that ignores TERM is killed, and only then does the new one start`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val recorder = recorder(tmp)
         val hook = write(tmp, "login-stuck.sh", LoginHookScripts.loginHookScript(browserSpec(recorder)))
@@ -556,7 +556,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
     /** The unparsed refusal is every head's: an api-key head used to answer an unreadable input
      *  with its paste/terminal lead text, as if a bare /login had been read. */
     @Test
-    fun `an api-key head refuses an input without a readable prompt with the unparsed text - review 2026-09-14`() {
+    fun `an api-key head refuses an input without a readable prompt with the unparsed text`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val hook = write(tmp, "login-apikey-unparsed.sh", LoginHookScripts.loginHookScript(spec()))
         val ran = run("bash", hook.toString(), stdin = """{"prompt":null,"note":"/login"}""", dir = tmp)
@@ -600,7 +600,7 @@ class LoginHookScriptSafetyTest(@param:TempDir private val tmp: Path) {
     // exists to prevent. Low severity — SecureFile.writeAtomic0600 always lands a regular file —
     // but the two readers must agree about which file they are judging.
     @Test
-    fun `a symlink receipt is judged by its target's age, like every other reader - DR-137`() {
+    fun `a symlink receipt is judged by its target's age, like every other reader`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val target = tmp.resolve("dr137-target.txt")
         Files.write(target, "sign-in failed: expired device code".toByteArray())
@@ -655,7 +655,7 @@ class LoginHookReceiptAgeTest(@param:TempDir private val tmp: Path) {
     )
 
     @Test
-    fun `a fresh receipt announces once and is consumed - control`() {
+    fun `a fresh receipt announces once and is consumed`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val receipt = tmp.resolve("receipt-fresh.txt")
         Files.writeString(receipt, "sign-in complete\n")
@@ -667,7 +667,7 @@ class LoginHookReceiptAgeTest(@param:TempDir private val tmp: Path) {
     }
 
     @Test
-    fun `a stale receipt is consumed silently, never announced - DR-103`() {
+    fun `a stale receipt is consumed silently, never announced`() {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
         val receipt = tmp.resolve("receipt-stale.txt")
         Files.writeString(receipt, "sign-in did not complete\n")

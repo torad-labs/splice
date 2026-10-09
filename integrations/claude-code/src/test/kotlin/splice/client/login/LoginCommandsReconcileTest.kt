@@ -51,7 +51,7 @@ class LoginCommandsReconcileTest {
     // unconditional delete-and-recreate churned its inode every launch — with a crash window
     // between the two syscalls where the command was simply GONE.
     @Test
-    fun `an already-correct command link survives reconciliation with its inode - DR-39`(@TempDir tmp: Path) {
+    fun `an already-correct command link survives reconciliation with its inode`(@TempDir tmp: Path) {
         val global = globalWith(tmp, "global.md")
         val commands = Files.createDirectories(tmp.resolve("commands"))
         val link = commands.resolve("global.md")
@@ -84,7 +84,7 @@ class LoginCommandsReconcileTest {
     // the staged name) fails the replacement BEFORE dst is touched. Under delete-then-create the
     // stale entry would already be gone.
     @Test
-    fun `a staged-name collision leaves the stale entry in place, never missing - DR-39`(@TempDir tmp: Path) {
+    fun `a staged-name collision leaves the stale entry in place, never missing`(@TempDir tmp: Path) {
         val global = globalWith(tmp, "global.md")
         val commands = Files.createDirectories(tmp.resolve("commands"))
         val stale = commands.resolve("global.md")
@@ -122,7 +122,7 @@ class LoginCommandsReconcileTest {
     // COMPLETE before unlinking. A collision at the stage (a regular file) fails first — under the
     // old delete-then-createDirectories the working symlink was already gone.
     @Test
-    fun `a commands-dir stage collision leaves the working symlink untouched - DR-39`(@TempDir tmp: Path) {
+    fun `a commands-dir stage collision leaves the working symlink untouched`(@TempDir tmp: Path) {
         val global = globalWith(tmp, "global.md")
         val elsewhere = Files.createDirectories(tmp.resolve("elsewhere"))
         val commands = tmp.resolve("commands")
@@ -142,7 +142,7 @@ class LoginCommandsReconcileTest {
     // promise that wire() reconciles them. wire() used to return before touching anything: local
     // commands dir + global entries + blank login => global entries absent, log empty.
     @Test
-    fun `a blank-login head still receives the operator's commands entries - DR-39`(@TempDir tmp: Path) {
+    fun `a blank-login head still receives the operator's commands entries`(@TempDir tmp: Path) {
         val global = globalWith(tmp, "global.md")
         val commands = Files.createDirectories(tmp.resolve("commands"))
         Files.writeString(commands.resolve("own.md"), "the head's own command")
@@ -160,7 +160,7 @@ class LoginCommandsReconcileTest {
     // with login.md while every shared command silently vanished. An unreadable share must fail
     // the leg loudly, never impersonate a no-commands operator.
     @Test
-    fun `an untraversable global-commands parent fails the leg loudly, never silently unshared - DR-39`(
+    fun `an untraversable global-commands parent fails the leg loudly, never silently unshared`(
         @TempDir tmp: Path,
     ) {
         val parent = Files.createDirectories(tmp.resolve("global-parent"))
@@ -183,7 +183,7 @@ class LoginCommandsReconcileTest {
     // The dangling-link face of the same class: NoSuch from the stream open, but the entry exists —
     // present-but-broken. Exercised through the blank-login reconcile leg for path coverage there.
     @Test
-    fun `a dangling global-commands link is loud on the reconcile leg - DR-39`(@TempDir tmp: Path) {
+    fun `a dangling global-commands link is loud on the reconcile leg`(@TempDir tmp: Path) {
         val dangling = tmp.resolve("dangling-commands")
         Files.createSymbolicLink(dangling, tmp.resolve("gone"))
         Files.createDirectories(tmp.resolve("commands"))
@@ -200,7 +200,7 @@ class LoginCommandsReconcileTest {
     // The staged idiom every sibling here already uses replaces the ENTRY instead (rename does not
     // follow), so the victim is untouched and the /login command lands as a real file.
     @Test
-    fun `a symlink pre-planted at login_md is replaced, not followed and truncated - DR-180`(
+    fun `a symlink pre-planted at login_md is replaced, not followed and truncated`(
         @TempDir tmp: Path,
     ) {
         val victim = tmp.resolve("victim.md")
@@ -220,7 +220,7 @@ class LoginCommandsReconcileTest {
     // prompt, so a rewrite of an EXISTING login.md must publish through a new inode rather than
     // emptying the live one and refilling it. Same reason writeHookScript has staged since DR-31.
     @Test
-    fun `rewriting an existing login_md swaps a fresh inode in, never truncates the live one - DR-180`(
+    fun `rewriting an existing login_md swaps a fresh inode in, never truncates the live one`(
         @TempDir tmp: Path,
     ) {
         Files.createDirectories(tmp.resolve("commands"))
@@ -240,7 +240,7 @@ class LoginCommandsReconcileTest {
     // whole class was written to close, and what linkOneInto means by "a real directory is operator
     // content and stays". An entry the publish cannot replace is preserved, and the leg says so.
     @Test
-    fun `an entry login_md cannot replace is preserved, never deleted first - DR-180`(@TempDir tmp: Path) {
+    fun `an entry login_md cannot replace is preserved, never deleted first`(@TempDir tmp: Path) {
         val commands = Files.createDirectories(tmp.resolve("commands"))
         val occupied = Files.createDirectories(commands.resolve("login.md"))
         val log = mutableListOf<String>()
@@ -254,7 +254,7 @@ class LoginCommandsReconcileTest {
     // The denominator's quiet member: a no-commands operator is genuine absence (NoSuch + no
     // NOFOLLOW entry) on BOTH legs — no noise, and the login leg still installs normally.
     @Test
-    fun `a genuinely absent global commands dir stays a quiet skip on both legs - DR-39`(@TempDir tmp: Path) {
+    fun `a genuinely absent global commands dir stays a quiet skip on both legs`(@TempDir tmp: Path) {
         val absent = tmp.resolve("never-created")
         Files.createDirectories(tmp.resolve("commands"))
         val log = mutableListOf<String>()

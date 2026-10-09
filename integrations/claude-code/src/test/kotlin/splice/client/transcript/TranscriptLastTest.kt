@@ -1,5 +1,5 @@
 // NEW: V4-444 — activity uses the page's main-thread record rules and merged messages.
-package splice.client.v4444
+package splice.client.transcript
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull

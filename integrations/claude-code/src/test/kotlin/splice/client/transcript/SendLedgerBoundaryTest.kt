@@ -1,10 +1,9 @@
-package splice.client.transcript.v4427
+package splice.client.transcript
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.client.transcript.TranscriptReader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption

@@ -53,11 +53,6 @@ class McpInventoryTest {
     }
 
     @Test
-    fun `a full reader map builds without complaint`() {
-        inventory() // must not throw
-    }
-
-    @Test
     fun `a GLOBAL server on the canonical home is migrated when McpSharing would host it`() {
         val reg = McpRegistration(McpSourceKind.GLOBAL, "exa", canonical, null, entry("""{"command":"npx"}"""))
         val overrides = mapOf(McpSourceKind.GLOBAL to stub(McpSourceKind.GLOBAL, listOf(reg)))

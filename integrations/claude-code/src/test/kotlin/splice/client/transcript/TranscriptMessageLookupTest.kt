@@ -2,7 +2,7 @@
 // redacted transcript. The fixture is the transcript format, not a pre-assembled message list: two
 // records of one reply must merge, a later turn must not leak into this one, and no credential text
 // may leave the lookup. A missing or pruned file answers in words rather than an empty conversation.
-package splice.client.transcript.v4354
+package splice.client.transcript
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -11,9 +11,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.client.transcript.TranscriptLocator
-import splice.client.transcript.TranscriptMessageLookup
-import splice.client.transcript.TranscriptReader
 import splice.core.util.ElapsedClock
 import splice.sessions.transcript.MessageConversation
 import splice.sessions.transcript.SentTexts
@@ -26,14 +23,14 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 
-private const val SESSION = "sess-v4354"
+private const val LOOKUP_SESSION = "sess-lookup"
 private const val RESPONSE = "msg_42_7"
 private const val PLANTED_CREDENTIAL = "DEMO_VALUE_12345"
 
 class TranscriptMessageLookupTest {
     /** One Claude Code project transcript: the selected reply spans two lines with the same id. */
     private fun transcript(root: Path) {
-        val file = root.resolve("projects/project/$SESSION.jsonl")
+        val file = root.resolve("projects/project/$LOOKUP_SESSION.jsonl")
         Files.createDirectories(file.parent)
         Files.writeString(
             file,
@@ -52,7 +49,7 @@ class TranscriptMessageLookupTest {
     fun `the selected reply is merged by its id, with only the conversation up to it`(@TempDir root: Path) {
         transcript(root)
 
-        val found = TranscriptMessageLookup().lookup(SESSION, listOf(root), RESPONSE) as MessageConversation.Found
+        val found = TranscriptMessageLookup().lookup(LOOKUP_SESSION, listOf(root), RESPONSE) as MessageConversation.Found
 
         assertEquals(RESPONSE, found.responseId)
         assertEquals(
@@ -69,7 +66,7 @@ class TranscriptMessageLookupTest {
 
     @Test
     fun `a NUL prefixed torn middle line cannot hide a later response`(@TempDir root: Path) {
-        val file = root.resolve("projects/project/$SESSION.jsonl")
+        val file = root.resolve("projects/project/$LOOKUP_SESSION.jsonl")
         Files.createDirectories(file.parent)
         val prompt = """{"type":"user","message":{"role":"user","content":"synthetic prompt"}}""" + "\n"
         val torn = """{"type":"assistant","message":{"id":"torn","content":[{"type":"text","text":"torn text"}]}}""" + "\n"
@@ -78,7 +75,7 @@ class TranscriptMessageLookupTest {
 
         val lookup = TranscriptMessageLookup()
         repeat(2) {
-            val found = lookup.lookup(SESSION, listOf(root), RESPONSE) as MessageConversation.Found
+            val found = lookup.lookup(LOOKUP_SESSION, listOf(root), RESPONSE) as MessageConversation.Found
             assertEquals(listOf("synthetic prompt", "answer"), found.messages.map { it.text })
             assertEquals(RESPONSE, found.messages.last().messageId)
         }
@@ -87,11 +84,11 @@ class TranscriptMessageLookupTest {
     @Test
     fun `no saved transcript or no matching reply is a named absence`(@TempDir root: Path) {
         val lookup = TranscriptMessageLookup()
-        val absent = lookup.lookup(SESSION, listOf(root), RESPONSE) as MessageConversation.Missing
+        val absent = lookup.lookup(LOOKUP_SESSION, listOf(root), RESPONSE) as MessageConversation.Missing
         assertTrue(absent.reason.contains("transcript", ignoreCase = true))
 
         transcript(root)
-        val pruned = lookup.lookup(SESSION, listOf(root), "msg_not_kept") as MessageConversation.Missing
+        val pruned = lookup.lookup(LOOKUP_SESSION, listOf(root), "msg_not_kept") as MessageConversation.Missing
         assertTrue(pruned.reason.contains("reply", ignoreCase = true))
     }
 
@@ -131,7 +128,7 @@ class TranscriptMessageLookupTest {
             override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =
                 SentTexts(null, emptyMap(), ids)
         }
-        val answer = TranscriptMessageLookup(pages, ElapsedClock { elapsed }).lookup(SESSION, copies, RESPONSE)
+        val answer = TranscriptMessageLookup(pages, ElapsedClock { elapsed }).lookup(LOOKUP_SESSION, copies, RESPONSE)
         assertTrue(answer is MessageConversation.Unavailable, "a slow read must say why it stopped, not claim absence")
         assertTrue((answer as MessageConversation.Unavailable).reason.contains("Open the session"))
         assertEquals(2, reads, "the next page is not read after the whole lookup's time budget")
@@ -140,13 +137,13 @@ class TranscriptMessageLookupTest {
     @Test
     fun `a credential in the selected reply is redacted before leaving the lookup`(@TempDir root: Path) {
         transcript(root)
-        val file = root.resolve("projects/project/$SESSION.jsonl")
+        val file = root.resolve("projects/project/$LOOKUP_SESSION.jsonl")
         Files.writeString(
             file,
             Files.readString(file).replace("second answer", "Authorization: Bearer $PLANTED_CREDENTIAL"),
         )
 
-        val found = TranscriptMessageLookup().lookup(SESSION, listOf(root), RESPONSE) as MessageConversation.Found
+        val found = TranscriptMessageLookup().lookup(LOOKUP_SESSION, listOf(root), RESPONSE) as MessageConversation.Found
         assertFalse(found.messages.any { it.text.contains(PLANTED_CREDENTIAL) })
         assertTrue(found.messages.any { it.text.contains("[redacted]") })
     }
@@ -170,7 +167,7 @@ class TranscriptMessageLookupTest {
                 SentTexts(null, emptyMap(), ids)
         }
 
-        val found = TranscriptMessageLookup(pages).lookup(SESSION, listOf(first, second), RESPONSE)
+        val found = TranscriptMessageLookup(pages).lookup(LOOKUP_SESSION, listOf(first, second), RESPONSE)
             as MessageConversation.Found
         assertEquals("the answer", found.messages.single { it.messageId == RESPONSE }.text)
     }
@@ -188,7 +185,7 @@ class TranscriptMessageLookupTest {
                 SentTexts(null, emptyMap(), ids)
         }
 
-        val found = TranscriptMessageLookup(pages).lookup(SESSION, listOf(dir), RESPONSE)
+        val found = TranscriptMessageLookup(pages).lookup(LOOKUP_SESSION, listOf(dir), RESPONSE)
             as MessageConversation.Found
         assertEquals(20L, found.earlier)
         assertEquals(101, found.messages.size)
@@ -226,7 +223,7 @@ class TranscriptMessageLookupTest {
                 SentTexts(null, emptyMap(), ids)
         }
 
-        val found = TranscriptMessageLookup(pages).lookup(SESSION, listOf(dir), RESPONSE)
+        val found = TranscriptMessageLookup(pages).lookup(LOOKUP_SESSION, listOf(dir), RESPONSE)
             as MessageConversation.Found
         assertEquals("the prompt", found.messages.first().text)
         assertEquals("first\n\nsecond", found.messages.single { it.messageId == RESPONSE }.text)
@@ -236,7 +233,7 @@ class TranscriptMessageLookupTest {
 
 class TranscriptLookupScaleTest {
     private fun history(root: Path): Path {
-        val file = root.resolve("projects/synthetic/$SESSION.jsonl")
+        val file = root.resolve("projects/synthetic/$LOOKUP_SESSION.jsonl")
         Files.createDirectories(file.parent)
         val payload = "synthetic history ".repeat(42)
         Files.newBufferedWriter(file).use { out ->
@@ -264,7 +261,7 @@ class TranscriptLookupScaleTest {
     fun `a recent selected reply decodes its context rather than every history page`(@TempDir root: Path) {
         val file = history(root)
         val locating = System.nanoTime()
-        assertEquals(file, TranscriptLocator().locate(listOf(root), SESSION))
+        assertEquals(file, TranscriptLocator().locate(listOf(root), LOOKUP_SESSION))
         val locationMs = (System.nanoTime() - locating) / 1_000_000
         val decoding = System.nanoTime()
         var records = 0
@@ -283,7 +280,7 @@ class TranscriptLookupScaleTest {
         }
         val lookup = TranscriptMessageLookup(pages)
         val started = System.nanoTime()
-        val answer = lookup.lookup(SESSION, listOf(root), RESPONSE)
+        val answer = lookup.lookup(LOOKUP_SESSION, listOf(root), RESPONSE)
         val lookupMs = (System.nanoTime() - started) / 1_000_000
         println(
             "conversation-profile bytes=${Files.size(file)} records=$records " +
@@ -303,10 +300,10 @@ class TranscriptLookupScaleTest {
         val file = history(root)
         val opened = CountingTranscriptOpener()
         val lookup = TranscriptMessageLookup(TranscriptReader(opened))
-        val found = lookup.lookup(SESSION, listOf(root), RESPONSE) as MessageConversation.Found
+        val found = lookup.lookup(LOOKUP_SESSION, listOf(root), RESPONSE) as MessageConversation.Found
         opened.bytes = 0L
         val warmStarted = System.nanoTime()
-        val warm = lookup.lookup(SESSION, listOf(root), RESPONSE) as MessageConversation.Found
+        val warm = lookup.lookup(LOOKUP_SESSION, listOf(root), RESPONSE) as MessageConversation.Found
         val warmMs = (System.nanoTime() - warmStarted) / 1_000_000
         assertEquals(found, warm)
         assertTrue(opened.bytes < 1 shl 20, "an unchanged request reread ${opened.bytes} history bytes")
@@ -317,7 +314,7 @@ class TranscriptLookupScaleTest {
             StandardOpenOption.APPEND,
         )
         opened.bytes = 0L
-        val appended = lookup.lookup(SESSION, listOf(root), "msg_new") as MessageConversation.Found
+        val appended = lookup.lookup(LOOKUP_SESSION, listOf(root), "msg_new") as MessageConversation.Found
         assertEquals("new reply", appended.messages.last().text)
         assertEquals(119_903L, appended.earlier)
         assertTrue(opened.bytes < 1 shl 20, "one appended response reread ${opened.bytes} history bytes")

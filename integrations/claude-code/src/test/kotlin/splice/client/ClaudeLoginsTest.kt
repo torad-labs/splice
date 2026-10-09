@@ -133,7 +133,7 @@ class ClaudeLoginsTest {
     // Invariant 1. Claude Code's refresh tokens are single-use and rotate: the copy stored at the first
     // save is stale after the first refresh, and putting it back is how 2026-09-25's revocations began.
     @Test
-    fun `a switch away and back after a token rotation brings back the newest login - V4-276 inv1`() {
+    fun `a switch away and back after a token rotation brings back the newest login`() {
         twoLabels()
         assertTrue(done(login("work")).contains("saved claude-splice's login as 'home'"))
         assertEquals("A-gen1", live())
@@ -150,7 +150,7 @@ class ClaudeLoginsTest {
 
     // Invariant 2. Every session of the head shares one credential file and refreshes it itself.
     @Test
-    fun `a switch while a session of the head is running is refused naming it, and changes nothing - V4-276 inv2`() {
+    fun `a switch while a session of the head is running is refused naming it, and changes nothing`() {
         twoLabels()
 
         val reason = refused(login("work", HeadSessions.Read(listOf("'fix the parser', pid 4242"))))
@@ -166,7 +166,7 @@ class ClaudeLoginsTest {
 
     // Invariant 3. A /login inside the head replaces the selected label's login with another account's.
     @Test
-    fun `a login to another account inside the head is never filed under the selected label - V4-276 inv3`() {
+    fun `a login to another account inside the head is never filed under the selected label`() {
         signIn("A-gen1", "uuid-a", "a@example.com")
         done(login("work"))
         signIn("C-gen1", "uuid-c", "c@example.com")
@@ -206,7 +206,7 @@ class ClaudeLoginsTest {
 
     // Invariant 4. The save-back is the only thing standing between the switch and a lost login.
     @Test
-    fun `a switch whose save-back fails changes nothing live - V4-276 inv4`() {
+    fun `a switch whose save-back fails changes nothing live`() {
         twoLabels()
         val storedHome = home.resolve("store/home.credentials.json")
         storedHome.deleteExisting()
@@ -237,7 +237,7 @@ class ClaudeLoginsTest {
     // splice-lead 2026-09-26: a copy stored before V4-276 has no record, so it is stale by construction,
     // like this box's max.credentials.json from 2026-09-20.
     @Test
-    fun `a legacy copy is never put back, and the refusal names the remedy - V4-276`() {
+    fun `a legacy copy is never put back, and the refusal names the remedy`() {
         home.resolve("store").createDirectories().resolve("max.credentials.json").writeText("max-2026-09-20")
 
         val reason = refused(login("max"))

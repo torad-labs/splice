@@ -1,8 +1,7 @@
 // V4-427: a synthetic Claude Code transcript of tens of MB with a handful of SendMessage hand-offs, and an
 // opener that counts the bytes a scan reads. Nothing here is a real session: ids, names and texts are made up.
-package splice.client.transcript.v4427
+package splice.client.transcript
 
-import splice.client.transcript.TranscriptOpener
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.nio.file.Files

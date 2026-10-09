@@ -217,7 +217,7 @@ class ResumeAcrossHeadsTest {
     // `-r` launch it describes cannot disagree. On one fixture, each plan names what the adoption then
     // does, and asking every plan writes nothing.
     @Test
-    fun `a plan names what the adoption then does, and writes nothing itself - V4-320`(@TempDir home: Path) {
+    fun `a plan names what the adoption then does, and writes nothing itself`(@TempDir home: Path) {
         val calling = headConfig(home, "codex")
         val kimi = headConfig(home, "kimi")
         write(calling.resolve(Keys.PROJECTS).resolve(encodedCwd("repo")).resolve("unrelated.jsonl"), "{}\n")

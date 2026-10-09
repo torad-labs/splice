@@ -1,11 +1,10 @@
 // V4-354: the existing paged reader merges Claude Code's assistant records by message.id and must
 // carry that id on the assembled message so a perf row can select the reply it actually caused.
-package splice.client.transcript.v4354
+package splice.client.transcript
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.client.transcript.TranscriptReader
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptRole
 import java.nio.file.Files

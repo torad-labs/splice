@@ -114,7 +114,7 @@ class SessionRegistryLinkTest {
     // full text while a throwable outside the list is withheld whole — that is the property the
     // DR-65 law buys, and without this arm the route above is indistinguishable from `.message`.
     @Test
-    fun `a non-filesystem commit failure is withheld rather than quoted - DR-140`(@TempDir tmp: Path) {
+    fun `a non-filesystem commit failure is withheld rather than quoted`(@TempDir tmp: Path) {
         val local = tmp.resolve("local-sessions")
         val global = tmp.resolve("global-sessions")
         Files.createDirectories(local)
@@ -218,7 +218,7 @@ class SessionRegistryLinkTest {
     // success into a thrown (and caller-logged) not-linked failure. The staged leftover is a
     // courtesy; the link outcome must stand.
     @Test
-    fun `a staged-cleanup throw never converts a successful link into a failure - DR-104`(@TempDir tmp: Path) {
+    fun `a staged-cleanup throw never converts a successful link into a failure`(@TempDir tmp: Path) {
         val cfg = Files.createDirectories(tmp.resolve("cfg"))
         val global = Files.createDirectories(tmp.resolve("global-sessions"))
         val dst = cfg.resolve("sessions")

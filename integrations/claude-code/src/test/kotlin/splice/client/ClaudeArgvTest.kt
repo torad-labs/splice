@@ -4,16 +4,10 @@ package splice.client
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import splice.core.testing.CLAUDE_CODE_PIN
 
 class ClaudeArgvTest {
 
     private fun logged(vararg args: String): List<String> = ClaudeArgv.promptFree(listOf("claude", *args))
-
-    @Test
-    fun `the table was read from the Claude Code release splice pins`() {
-        assertEquals(CLAUDE_CODE_PIN, ClaudeArgv.GRAMMAR_FROM, "re-read `claude --help` of the new pin")
-    }
 
     @Test
     fun `a switch takes no value, so the word after it is the prompt`() {

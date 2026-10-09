@@ -38,7 +38,6 @@ class KeyCaptureNoRestartTest {
     private fun recorded(calls: Path): List<String> =
         if (Files.exists(calls)) Files.readAllLines(calls) else emptyList()
 
-    /** RED before V4-227: the recorded calls were [key set OPENROUTER_API_KEY --stdin, restart]. */
     @Test
     fun `a pasted key is stored and nothing restarts`(@TempDir tmp: Path) {
         assumeTrue(bashAvailable(), "bash is required to execute the generated hook")

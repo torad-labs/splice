@@ -72,7 +72,7 @@ class LoginOutcomeFileTest {
      *  above covered the traversal escape, which that sanitizer genuinely stopped; it could not see
      *  a collision, because collapsing is exactly what it was written to do. */
     @Test
-    fun `heads whose keys differ only in a sanitized character do not share a receipt - DR-179`(
+    fun `heads whose keys differ only in a sanitized character do not share a receipt`(
         @TempDir tmp: Path,
     ) {
         assertNotEquals(
@@ -99,7 +99,7 @@ class LoginOutcomeFileTest {
      *  to `_5f`. `a.b` vs `a2eb` breaks a markerless hex escape. Distinct keys in, distinct
      *  receipts out, or one head eats another's confirmation. */
     @Test
-    fun `distinct head keys map to distinct receipts across the collision set - DR-179`(@TempDir tmp: Path) {
+    fun `distinct head keys map to distinct receipts across the collision set`(@TempDir tmp: Path) {
         // The ASCII list alone left the injectivity claim pinned over a subset, so two more groups.
         //
         // MULTIBYTE, because every non-ASCII byte is NEGATIVE as a signed Byte and the escape leans

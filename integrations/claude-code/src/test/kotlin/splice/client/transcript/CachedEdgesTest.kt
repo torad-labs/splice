@@ -1,4 +1,4 @@
-package splice.client.transcript.v4427
+package splice.client.transcript
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.client.transcript.TranscriptReader
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.sessions.activity.ActivityStores

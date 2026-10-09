@@ -96,7 +96,7 @@ export type GateRunner = (tasks: readonly string[], root?: string) => Promise<Ga
 
 export interface HookDeps {
   readonly gate?: GateRunner;
-  readonly openRun?: (head: string) => ReturnType<typeof acquireRunSentinel>;
+  readonly openRun?: (head: string, tree: string) => ReturnType<typeof acquireRunSentinel>;
   /** The ladder rows pre-push scopes by. Read from the checkout when absent. */
   readonly legs?: readonly Leg[];
   /** How the commit is checked out for judgement. The default is the persistent pre-push build tree under the git directory. */
@@ -561,9 +561,9 @@ async function judgeIn(
   const sha = head.slice(0, 7);
   const judgedWhat = `the pushed sha ${sha}, checked out clean in the pre-push build tree`;
 
-  const open = (deps.openRun ?? acquireRunSentinel)(head);
+  const open = (deps.openRun ?? acquireRunSentinel)(head, root);
   if (open !== null) {
-    console.error(`pre-push: refusing — a gate of record is already open over this commit (${describeOpenRun(open)})`);
+    console.error(`pre-push: refusing — a verdict is already open over the pre-push build tree (${describeOpenRun(open)})`);
     return RUN_ALREADY_OPEN_EXIT;
   }
 

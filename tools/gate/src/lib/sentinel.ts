@@ -38,7 +38,7 @@
 // couples this to a layout we do not control.
 import { dlopen, FFIType, suffix } from "bun:ffi";
 import { closeSync, ftruncateSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const LOCK_EX = 2;
 const LOCK_NB = 4;
@@ -56,12 +56,19 @@ export interface OpenRun {
 }
 
 /** `SPLICE_GATE_SENTINEL` exists so the tests can point at a scratch path; a test that locked the
- *  real one would block the machine's next gate for the length of the suite. */
-export function sentinelPath(): string {
+ *  real one would block the machine's next gate for the length of the suite.
+ *
+ *  ONE SENTINEL PER TREE. A verdict covers the tree it runs in, so [tree] names it: the local gate's build tree, the
+ *  pre-push build tree, or a CI runner's checkout. With one sentinel for every tree, a local gate in its own tree made
+ *  every push refuse for the gate's whole run (Oct 9: builder2's push behind a gate in .git/splice-prepush/gate), though
+ *  the two verdicts read different trees. No [tree] is the shared checkout's own name, kept for the probe. */
+export function sentinelPath(tree?: string): string {
   const override = process.env.SPLICE_GATE_SENTINEL;
   if (override) return override;
   const runtime = process.env.XDG_RUNTIME_DIR ?? join(process.env.HOME ?? "/tmp", ".cache");
-  return join(runtime, "splice", "gate-run.lock");
+  if (tree === undefined) return join(runtime, "splice", "gate-run.lock");
+  const key = new Bun.CryptoHasher("sha256").update(resolve(tree)).digest("hex").slice(0, 12);
+  return join(runtime, "splice", `gate-run-${key}.lock`);
 }
 
 /** Held for the life of the process, deliberately never closed: releasing IS dying. */
@@ -72,8 +79,8 @@ let held: number | undefined;
  * means. Returns the OPEN RUN when another gate already holds it, so the caller can name what it is
  * refusing to run beside.
  */
-export function acquireRunSentinel(headAtStart: string): OpenRun | null {
-  const path = sentinelPath();
+export function acquireRunSentinel(headAtStart: string, tree?: string): OpenRun | null {
+  const path = sentinelPath(tree);
   mkdirSync(dirname(path), { recursive: true });
   const fd = openSync(path, "a+");
   if (libc.flock(fd, LOCK_EX | LOCK_NB) !== 0) {
@@ -96,8 +103,8 @@ export function acquireRunSentinel(headAtStart: string): OpenRun | null {
 }
 
 /** What a peer asks. null means no verdict is open over this tree. */
-export function probeRunSentinel(): OpenRun | null {
-  const path = sentinelPath();
+export function probeRunSentinel(tree?: string): OpenRun | null {
+  const path = sentinelPath(tree);
   mkdirSync(dirname(path), { recursive: true });
   const fd = openSync(path, "a+");
   const free = libc.flock(fd, LOCK_EX | LOCK_NB) === 0;

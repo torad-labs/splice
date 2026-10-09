@@ -68,6 +68,30 @@ describe("the gate run sentinel", () => {
     expect(path.endsWith("/splice/gate-run.lock"), `${path} must be splice's own runtime dir`).toBe(true);
   });
 
+  // A local gate judges in its own build tree and pre-push in another, so a verdict open over one must not make the other
+  // refuse. On Oct 9 one sentinel for every tree held a push back for a gate's whole run.
+  test("each tree has its own sentinel: a verdict open over one tree leaves another tree free", () => {
+    delete process.env.SPLICE_GATE_SENTINEL;
+    const runtime = mkdtempSync(join(tmpdir(), "gate-sentinel-runtime-"));
+    workspaces.push(runtime);
+    const before = process.env.XDG_RUNTIME_DIR;
+    process.env.XDG_RUNTIME_DIR = runtime;
+    try {
+      const gate = "/repo/.git/splice-prepush/gate";
+      const push = "/repo/.git/splice-prepush/tree";
+      expect(sentinelPath(gate)).not.toBe(sentinelPath(push));
+      expect(sentinelPath(gate).startsWith(join(runtime, "splice")), "still splice's own runtime dir").toBe(true);
+      expect(probeRunSentinel(push), "control: free before anything holds a sentinel").toBeNull();
+      expect(acquireRunSentinel("gate-head", gate)).toBeNull();
+      expect(probeRunSentinel(gate)?.headAtStart, "the gate's own tree reads HELD").toBe("gate-head");
+      expect(probeRunSentinel(push), "the pre-push tree stays free while the gate runs").toBeNull();
+    } finally {
+      releaseForTests();
+      if (before === undefined) delete process.env.XDG_RUNTIME_DIR;
+      else process.env.XDG_RUNTIME_DIR = before;
+    }
+  });
+
   test("FREE when nothing holds it — the control, without which every HELD below is vacuous", () => {
     scratchSentinel();
     expect(probeRunSentinel()).toBeNull();

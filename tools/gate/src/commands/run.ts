@@ -155,16 +155,6 @@ export async function run(argv: readonly string[]): Promise<number> {
   console.error(`══ splice gate ══  (JAVA_HOME=${jdk.javaHome})`);
   const { repoRoot } = layout();
   const head = headAtStart(repoRoot);
-  // THE RUN SENTINEL, taken here because this is the first line of the run that spans BOTH phases:
-  // the slot lock is released between gradle and the release rehearsal, so it can never stand for
-  // the verdict. Held by the kernel until this process ends by any means, SIGKILL included — which
-  // matters because earlyoom is built to kill exactly this process under pressure.
-  const alreadyOpen = acquireRunSentinel(head);
-  if (alreadyOpen) {
-    console.error(`gate: refusing — a gate of record is already open over this tree (${describeOpenRun(alreadyOpen)})`);
-    console.error("  two verdicts over one worktree cannot both be true; wait for it, or `bun tools/gate sentinel` to check.");
-    return RUN_ALREADY_OPEN_EXIT;
-  }
   const judged = judgeIn(repoRoot, head);
   if ("error" in judged) {
     console.error(judged.error);
@@ -172,6 +162,17 @@ export async function run(argv: readonly string[]): Promise<number> {
   }
   const { where, lockEnv } = judged;
   try {
+    // THE RUN SENTINEL of the tree this verdict runs in, taken before the run that spans BOTH phases:
+    // the slot lock is released between gradle and the release rehearsal, so it can never stand for
+    // the verdict. Held by the kernel until this process ends by any means, SIGKILL included — which
+    // matters because earlyoom is built to kill exactly this process under pressure. Keyed by the tree,
+    // so a local gate in its own tree never makes a push to the pre-push tree refuse.
+    const alreadyOpen = acquireRunSentinel(head, where.repoRoot);
+    if (alreadyOpen) {
+      console.error(`gate: refusing — a gate of record is already open over this tree (${describeOpenRun(alreadyOpen)})`);
+      console.error("  two verdicts over one worktree cannot both be true; wait for it, or `bun tools/gate sentinel` to check.");
+      return RUN_ALREADY_OPEN_EXIT;
+    }
     const verdicts: [string, number][] = [];
     const slotExit = await runUnderSlot({ layout: where, label: GATE_OF_RECORD_LABEL, args: [...GATE_OF_RECORD_TASKS], env: { JAVA_HOME: jdk.javaHome, ...lockEnv } });
     if (cancelledBySignal(slotExit)) {

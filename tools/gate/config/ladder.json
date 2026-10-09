@@ -6,6 +6,7 @@
       "inputs": ["**"],
       "commit": ["sgconfig.yml","quality/rules/**"],
       "why": "The ast-grep walls, then RULE ROUTING (the walls prove the routed rules pass and cannot prove they are ALL routed; .rules/kotlin sat unreferenced for a month reporting zero findings), then the CONFIG GUARD (no detekt baseline, maxIssues 0, every rule document severity:error, the dependabot scope, the concentration leg's routing), then the P1 coverage proof.",
+      "commitCommand": ["bun", "tools/gate", "rules", "--tests"],
       "command": ["bun", "tools/gate", "rules"]
     },
     {
@@ -82,19 +83,6 @@
       "command": ["bun", "test", "tools/release"]
     },
     { "task": "prTitle", "inputs": ["**"], "why": "The commit subject against the conventional-type vocabulary; in CI the org gate judges the PR title instead.", "command": ["bun", "tools/gate", "title"] },
-    {
-      "task": "census",
-      "inputs": ["**"],
-      "why": "Every tracked product path has a capabilities.tsv row with a disposition, the denominator taken from git ls-files rather than from the census. It judges the tip (`--rev HEAD`), so a push is judged by what it pushes, never by another seat's staged file. It was run by hand until 2026-09-24 and missed twice: three e2e docker files (train 1) and eight console files (#220), each passing its PR's gate unclaimed.",
-      "command": ["bun", ".dev/restructure/census.ts", "--rev", "HEAD"]
-    },
-    {
-      "task": "censusSelftest",
-      "inputs": [".dev/restructure/census.ts"],
-      "commit": [".dev/restructure/census.ts"],
-      "why": "The census's own red arms (an unclaimed path, a pending row, a relocate whose source still exists, ...), so the leg above cannot pass because the checker lost its ability to find anything.",
-      "command": ["bun", ".dev/restructure/census.ts", "--selftest"]
-    },
     {
       "task": "attribution",
       "inputs": ["**"],

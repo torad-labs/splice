@@ -26,6 +26,13 @@ describe("which legs a commit runs", () => {
     expect(tasks(["sgconfig.yml"], [{ ...rules, task: "onJar", dependsOn: [JAR_TASK] }])).toEqual([]);
   });
 
+  test("a rule change runs the rules' own cases at commit, and the whole-tree scan is pre-push's", () => {
+    const shipped = JSON.parse(readFileSync(join(repoRoot, "tools/gate/config/ladder.json"), "utf8")).legs as Leg[];
+    const rulesLeg = shipped.find((leg) => leg.task === "gateRules");
+    expect(rulesLeg?.commitCommand).toEqual(["bun", "tools/gate", "rules", "--tests"]);
+    expect(rulesLeg?.command).toEqual(["bun", "tools/gate", "rules"]);
+  });
+
   test("the shipped ladder runs the rules leg for the two paths a rule depends on", () => {
     const shipped = JSON.parse(readFileSync(join(repoRoot, "tools/gate/config/ladder.json"), "utf8")).legs as Leg[];
     for (const path of ["sgconfig.yml", "quality/rules/kotlin/x.yml"]) {

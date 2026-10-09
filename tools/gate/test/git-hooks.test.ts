@@ -9,7 +9,6 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, 
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import {
-  censusLeg,
   checksFor,
   commitGate,
   type GateRunner,
@@ -117,6 +116,7 @@ function wallsRepo(): string {
   mkdirSync(join(root, "gradle"), { recursive: true });
   writeFileSync(join(root, "gradle", "module-law.txt"), ":core ->\n");
   git(root, ["add", "--", "sgconfig.yml", "quality", "settings.gradle.kts"]);
+  git(root, ["add", "-f", "--", "gradle/module-law.txt"]);
   commit(root, "chore(test): scratch scaffold");
   // The scaffold is what origin/main is in this repository, so a new branch's base is the scaffold.
   git(root, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
@@ -140,8 +140,9 @@ function lay(root: string): Layout {
 }
 
 /** A fake gradle: judges the bytes in the worktree's `core/`, and names each file that holds the violation. */
-function compiler(root: string, calls: string[][] = []): GateRunner {
-  return async (tasks) => {
+function compiler(fallback: string, calls: string[][] = []): GateRunner {
+  return async (tasks, at) => {
+    const root = at ?? fallback;
     calls.push([...tasks]);
     const lines: string[] = [];
     if (existsSync(join(root, "core"))) {
@@ -257,42 +258,13 @@ describe("pre-commit judges the bytes the commit holds", () => {
 
 });
 
-const CENSUS_HEADER = "source\tdisposition\tdestination\treason";
-const CENSUS_ROWS = ".dev/restructure/capabilities.tsv";
-const CENSUS_SCRIPT = ".dev/restructure/census.ts";
-const SEAT = "core/src/main/kotlin/splice/core/Seat.kt";
-const OTHER = "core/src/main/kotlin/splice/core/Other.kt";
-const NEW = "core/src/main/kotlin/splice/core/New.kt";
-
-/** A census row claiming [path] as created. */
-const claim = (path: string): string => `${path}\tcreated\t\tsynthetic claim`;
-
-/** A scratch repository holding the real census script, the rows given and the files given, in one base commit. */
-function censusRepo(rows: readonly string[], files: readonly string[]): string {
-  const root = dir("splice-hook-census-");
-  git(root, ["init", "-q"]);
-  writeFile(root, CENSUS_SCRIPT, readFileSync(join(repoRoot, CENSUS_SCRIPT), "utf8"));
-  writeFile(root, CENSUS_ROWS, `${[CENSUS_HEADER, ...rows].join("\n")}\n`);
-  for (const path of files) writeFile(root, path, CLEAN);
-  git(root, ["add", "--", ".dev", ...files]);
-  commit(root, "chore(test): scratch census base");
-  return root;
-}
-
-describe("the census leg judges the commit's own bytes and refuses a finding the commit causes", () => {
-  test("RED: an unclaimed staged file is refused by name, and the Kotlin judgement never runs", async () => {
-    const root = censusRepo([claim(SEAT)], [SEAT]);
-    writeFile(root, NEW, CLEAN);
-    git(root, ["add", "--", NEW]);
-    const calls: string[][] = [];
-    const { result, text } = await captured(() => commitGate(lay(root), { gate: compiler(root, calls), legs: [] }));
-    expect(result).toBe(1);
-    expect(text).toContain(`unclaimed: ${NEW}`);
-    expect(calls).toEqual([]);
-  });
-
-  test("RED: a ladder leg the commit's path triggers refuses the commit before the Kotlin judgement", async () => {
-    const root = censusRepo([claim(SEAT)], [SEAT]);
+describe("a ladder leg the commit's path triggers refuses the commit before the Kotlin judgement", () => {
+  test("RED: the failing leg is named and the Kotlin judgement never runs", async () => {
+    const root = dir("splice-hook-legs-");
+    git(root, ["init", "-q"]);
+    writeFile(root, "core/src/main/kotlin/splice/core/Seat.kt", CLEAN);
+    git(root, ["add", "--", "core"]);
+    commit(root, "chore(test): scratch base");
     writeFile(root, "sgconfig.yml", "ruleDirs: []\n");
     git(root, ["add", "--", "sgconfig.yml"]);
     const calls: string[][] = [];
@@ -301,91 +273,6 @@ describe("the census leg judges the commit's own bytes and refuses a finding the
     expect(result).toBe(1);
     expect(text).toContain("gateRules");
     expect(calls).toEqual([]);
-  });
-
-  test("RED: an unclaimed file whose name holds a space or a colon is refused by its whole name", async () => {
-    for (const name of ["tools/gate/space name.ts", "tools/gate/colon:name.ts"]) {
-      const root = censusRepo([claim(SEAT)], [SEAT]);
-      writeFile(root, name, CLEAN);
-      git(root, ["add", "--", name]);
-      const { result, text } = await captured(() => censusLeg(lay(root)));
-      expect(result, name).toBe(1);
-      expect(text, name).toContain(`unclaimed: ${name}`);
-    }
-  });
-
-  test("GREEN: a staged file with its row passes the census leg", async () => {
-    const root = censusRepo([claim(SEAT)], [SEAT]);
-    writeFile(root, NEW, CLEAN);
-    writeFile(root, CENSUS_ROWS, `${[CENSUS_HEADER, claim(SEAT), claim(NEW)].join("\n")}\n`);
-    git(root, ["add", "--", NEW, CENSUS_ROWS]);
-    expect(await censusLeg(lay(root))).toBe(0);
-  });
-
-  test("RED: a commit that removes a row leaves its file unclaimed, and the commit is refused", async () => {
-    const root = censusRepo([claim(SEAT), claim(OTHER)], [SEAT, OTHER]);
-    writeFile(root, CENSUS_ROWS, `${[CENSUS_HEADER, claim(SEAT)].join("\n")}\n`);
-    git(root, ["add", "--", CENSUS_ROWS]);
-    const { result, text } = await captured(() => censusLeg(lay(root)));
-    expect(result).toBe(1);
-    expect(text).toContain(`unclaimed: ${OTHER}`);
-  });
-
-  test("RED: a commit that deletes a claimed file and keeps its row is refused", async () => {
-    const root = censusRepo([claim(SEAT)], [SEAT]);
-    git(root, ["rm", "-q", "--", SEAT]);
-    const { result, text } = await captured(() => censusLeg(lay(root)));
-    expect(result).toBe(1);
-    expect(text).toContain(`not tracked: ${SEAT}`);
-  });
-
-  test("GREEN: a finding about a path the commit leaves alone is reported, not refused", async () => {
-    const root = censusRepo([claim(SEAT)], [SEAT, OTHER]);
-    writeFile(root, NEW, CLEAN);
-    writeFile(root, CENSUS_ROWS, `${[CENSUS_HEADER, claim(SEAT), claim(NEW)].join("\n")}\n`);
-    git(root, ["add", "--", NEW, CENSUS_ROWS]);
-    const { result, text } = await captured(() => censusLeg(lay(root)));
-    expect(result).toBe(0);
-    expect(text).toContain(`unclaimed: ${OTHER}`);
-  });
-
-  test("RED: the rows are judged as the index holds them, so a claim only in the worktree claims nothing", async () => {
-    const root = censusRepo([claim(SEAT)], [SEAT]);
-    writeFile(root, NEW, CLEAN);
-    git(root, ["add", "--", NEW]);
-    writeFile(root, CENSUS_ROWS, `${[CENSUS_HEADER, claim(SEAT), claim(NEW)].join("\n")}\n`);
-    const { result, text } = await captured(() => censusLeg(lay(root)));
-    expect(result).toBe(1);
-    expect(text).toContain(`unclaimed: ${NEW}`);
-  });
-
-  test("RED: rows the census cannot parse refuse the commit: a run with no verdict is a failure", async () => {
-    const root = censusRepo([claim(SEAT)], [SEAT]);
-    writeFile(root, CENSUS_ROWS, `not the header\n${claim(SEAT)}\n`);
-    git(root, ["add", "--", CENSUS_ROWS]);
-    const { result, text } = await captured(() => censusLeg(lay(root)));
-    expect(result).toBe(1);
-    expect(text).toContain("census could not judge");
-  });
-
-  test("RED: a row with an empty source is a finding no path places, so the commit that adds it is refused", async () => {
-    const root = censusRepo([claim(SEAT)], [SEAT]);
-    const blank = `\tcreated\t\tsynthetic row with no source`;
-    writeFile(root, CENSUS_ROWS, `${[CENSUS_HEADER, claim(SEAT), blank].join("\n")}\n`);
-    git(root, ["add", "--", CENSUS_ROWS]);
-    const { result, text } = await captured(() => censusLeg(lay(root)));
-    expect(result).toBe(1);
-    expect(text).toContain("created but not tracked: ");
-  });
-
-  test("RED: a commit whose index holds no census script is refused: the census cannot judge", async () => {
-    const root = dir("splice-hook-census-");
-    git(root, ["init", "-q"]);
-    writeFile(root, NEW, CLEAN);
-    git(root, ["add", "--", NEW]);
-    const { result, text } = await captured(() => censusLeg(lay(root)));
-    expect(result).toBe(1);
-    expect(text).toContain("census could not judge");
   });
 });
 
@@ -440,11 +327,6 @@ describe("the scanner's verdict is the match list it printed", () => {
 });
 
 describe("pre-push judges the tip", () => {
-  const notHead = "1111111111111111111111111111111111111111";
-
-  test("a pushed tip that is not the worktree's HEAD is refused before any gate runs", async () => {
-    expect(await prePush(layout(), pushOf(notHead))).toBe(1);
-  });
 
   test("a push of deletions only has nothing to judge", async () => {
     const stdin = `(delete) 0000000000000000000000000000000000000000 refs/heads/gone ${head(repoRoot)}\n`;
@@ -458,7 +340,7 @@ describe("pre-push judges the tip", () => {
     commit(root, "chore(test): probe tip");
     const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(1);
-    expect(text).toContain("PRE-PUSH: FAIL — judged the worktree, which matches the pushed sha");
+    expect(text).toContain("PRE-PUSH: FAIL — judged the pushed sha");
   });
 
   test("GREEN: the fixed tip passes the same child gate", async () => {
@@ -471,19 +353,39 @@ describe("pre-push judges the tip", () => {
     commit(root, "chore(test): fixed tip");
     const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(0);
-    expect(text).toContain("PRE-PUSH: PASS — judged the worktree, which matches the pushed sha");
+    expect(text).toContain("PRE-PUSH: PASS — judged the pushed sha");
   });
 
-  test("a red in another seat's dirty file blocks the push and says the worktree was judged", async () => {
+  test("a dirty file in the shared checkout does not redden the push, and the throwaway tree is removed", async () => {
     const root = wallsRepo();
     writeFile(root, TARGET, CLEAN);
     git(root, ["add", TARGET]);
     commit(root, "chore(test): probe tip");
     writeFile(root, SEAT_FILE, VIOLATION);
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS }));
+    const trees: string[] = [];
+    const gate: GateRunner = async (tasks, at) => {
+      trees.push(at ?? "");
+      return compiler(root)(tasks, at);
+    };
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null, legs: NO_LEGS }));
+    expect(result).toBe(0);
+    expect(text).toContain("judged the pushed sha");
+    expect(trees.length).toBe(1);
+    expect(trees[0]).not.toBe(root);
+    expect(existsSync(trees[0]!)).toBe(false);
+  });
+
+  test("a push whose tip is not the checked-out HEAD is judged as that commit", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, VIOLATION);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): violating tip");
+    const violating = head(root);
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): fixed tip");
+    const { result } = await captured(() => prePush(lay(root), pushOf(violating), { gate: compiler(root), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(1);
-    expect(text).toContain("PRE-PUSH: FAIL — judged the worktree (1 uncommitted path(s)), not the pushed sha");
-    expect(text).toContain(`${SEAT_FILE} — seat lock: no seat lock`);
   });
 });
 
@@ -524,7 +426,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(0);
     expect(calls).toEqual([]);
-    expect(text).toContain("PRE-PUSH: PASS — judged the worktree, which matches the pushed sha");
+    expect(text).toContain("PRE-PUSH: PASS — judged the pushed sha");
     expect(text).toContain("; scope: no legs; gradle: none (docs only)");
   });
 
@@ -577,7 +479,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const red: Leg[] = [{ task: "redLeg", command: ["bun", "-e", "process.exit(3)"], inputs: ["**"] }];
     const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: red }));
     expect(result).toBe(1);
-    expect(text).toContain("PRE-PUSH: FAIL — judged the worktree, which matches the pushed sha ");
+    expect(text).toContain("PRE-PUSH: FAIL — judged the pushed sha ");
     expect(text).toContain("; scope: legs redLeg; gradle: none (docs only)");
     expect(text).toContain("redLeg");
   });

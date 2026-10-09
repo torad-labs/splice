@@ -19,6 +19,8 @@ export interface Leg {
   /** The path globs that make pre-commit run this leg: the paths a single commit can turn this leg red with. Only a leg that
    *  needs no gradle graph and runs in seconds declares it. */
   readonly commit?: readonly string[];
+  /** What pre-commit runs for this leg when it differs from `command`: the staged-bytes form of a leg whose full form scans the tree. */
+  readonly commitCommand?: readonly string[];
   readonly dependsOn?: readonly string[];
   readonly creates?: string;
   readonly owns?: string;

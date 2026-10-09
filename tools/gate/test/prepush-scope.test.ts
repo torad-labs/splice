@@ -12,7 +12,7 @@ const modules = found.map((m) => m.path);
 const moduleFor = (path: string) => moduleOf(found, path);
 
 const LEGS: Leg[] = [
-  { task: "census", command: ["bun", ".dev/restructure/census.ts"], inputs: ["**"] },
+  { task: "walls", command: ["bun", "tools/gate", "rules"], inputs: ["**"] },
   { task: "gateTests", command: ["bun", "test", "tools/gate"], inputs: ["tools/gate/**"] },
   { task: "e2eSelftest", command: ["bun", "tools/e2e", "heads", "--selftest"], inputs: ["tools/e2e/**"] },
   { task: "oracleReplay", command: ["bun", "tools/e2e", "oracle"], dependsOn: [JAR_TASK], inputs: ["tools/e2e/**"] },
@@ -32,10 +32,10 @@ describe("a pushed diff scopes the gate to what it touches", () => {
     expect(checks(s.gradle)).toEqual([":app:check", ":features-turns:check"]);
     expect(s.gradle).not.toContain(":core:compileKotlin");
     expect(s.gradle).not.toContain(":features-events:check");
-    expect(s.legs.map((leg) => leg.task)).toEqual(["census"]);
+    expect(s.legs.map((leg) => leg.task)).toEqual(["walls"]);
     expect(s.gradle).not.toContain(":oracleReplay");
     expect(s.gradle).not.toContain(":gateTests");
-    expect(s.direct.map((leg) => leg.task)).toEqual(["census"]);
+    expect(s.direct.map((leg) => leg.task)).toEqual(["walls"]);
   });
 
   test("a core diff checks core and every module that depends on it", () => {
@@ -55,14 +55,14 @@ describe("a pushed diff scopes the gate to what it touches", () => {
   test("a tools/e2e-only diff runs only the rows that read tools/e2e, and the public-source test", () => {
     const s = scope(["tools/e2e/src/commands/code-mode.ts"]);
     expect(s.gradle).toEqual([...EVERY_PUSH, ":oracleReplay"]);
-    expect(s.direct.map((leg) => leg.task)).toEqual(["census", "e2eSelftest"]);
+    expect(s.direct.map((leg) => leg.task)).toEqual(["walls", "e2eSelftest"]);
     expect(s.summary).toContain("PublicSourceNamesNoHostToolTest in lawSuites");
   });
 
   test("a docs-only diff starts no gradle and runs only the rows that read every path", () => {
     const s = scope(["docs/specs/telemetry.md"]);
     expect(s.gradle).toEqual([]);
-    expect(s.direct.map((leg) => leg.task)).toEqual(["census"]);
+    expect(s.direct.map((leg) => leg.task)).toEqual(["walls"]);
   });
 
   test("prose a law reads still runs the law suites", () => {

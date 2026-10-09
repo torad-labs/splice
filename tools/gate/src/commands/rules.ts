@@ -23,7 +23,7 @@ import { routingProblems } from "../lib/routing.ts";
 import { singleSourceProblems } from "../lib/single-source.ts";
 
 export const usage =
-  "rules                                ast-grep walls + rule routing + config guard\n" +
+  "rules [--tests]                      ast-grep walls + rule routing + config guard (--tests: the rules' own cases only)\n" +
   "  rules --stdin pretooluse             the same walls over a hook event on stdin (the Claude Code hook)";
 
 /** The ast-grep config the walls run against — implicit, because `ast-grep scan` with no --config
@@ -46,7 +46,10 @@ export async function rules(argv: readonly string[]): Promise<number> {
     return hook(readFileSync(0, "utf8"));
   }
 
-  if (argv.length > 0) {
+  // `--tests` is the pre-commit form: a commit that changes a rule runs the rules' own cases and nothing else. The scan over
+  // the whole tree, the routing, the single-source and the config guard judge the pushed commit, in pre-push's throwaway tree.
+  const testsOnly = argv.length === 1 && argv[0] === "--tests";
+  if (argv.length > 0 && !testsOnly) {
     console.error(`gate rules: unknown argument ${argv[0]}`);
     return 2;
   }
@@ -58,10 +61,11 @@ export async function rules(argv: readonly string[]): Promise<number> {
     return 2;
   }
 
-  for (const leg of LEGS) {
+  for (const leg of testsOnly ? LEGS.filter((leg) => leg[0] === "test") : LEGS) {
     const code = runAstGrep(repoRoot, leg);
     if (code !== 0) return code;
   }
+  if (testsOnly) return 0;
 
   const routing = routingProblems({ repoRoot, sgconfigPath: join(repoRoot, ROUTED_CONFIG) });
   if (routing.length) {

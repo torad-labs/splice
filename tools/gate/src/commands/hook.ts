@@ -20,10 +20,11 @@
 // GIT_INDEX_FILE, which git sets for `git commit -- <paths>`). It runs the walls on those staged blobs and no gradle;
 // the compile, detekt and tests a commit's modules need belong to the pre-push tier.
 //
-// PRE-PUSH judges the WORKTREE, and the verdict line says so. The worktree must be the pushed tip's HEAD, or the
-// push is refused. It lints the tip's subject, then scopes the push to its own diff (prepush-scope.ts): the ladder
-// rows whose inputs the diff touches run, and gradle runs only what the diff needs, through the slot. The full
-// ladder and every module's tests are CI's, on the pushed sha.
+// PRE-PUSH judges the PUSHED COMMIT, and the verdict line says so. It checks the commit out detached in a throwaway tree
+// under the temp dir (throwaway.ts), so a half-finished edit in the shared checkout never reddens a push, and removes the
+// tree when the judgement ends or is interrupted. It lints the tip's subject, then scopes the push to its own diff
+// (prepush-scope.ts, selector.ts): the ladder rows whose inputs the diff touches run, and gradle runs the changed modules
+// and their dependents, in parallel, through the slot. The full ladder is a push to main's.
 //
 // NOTHING HERE IS SKIPPABLE. There is no environment switch and no flag. `--no-verify` is the only bypass, and
 // it is forbidden to seats.
@@ -36,12 +37,13 @@ import { resolveJdk21 } from "../lib/jdk.ts";
 import { type Layout, layout } from "../lib/repo.ts";
 import { acquireRunSentinel, describeOpenRun } from "../lib/sentinel.ts";
 import { parseModuleGraph } from "../lib/selector.ts";
+import { createThrowawayTree, type ThrowawayTree } from "../lib/throwaway.ts";
 import { commitLegs, type Leg, legsWithoutInputs, prePushScope } from "../lib/prepush-scope.ts";
 import { cancelledBySignal, RUN_ALREADY_OPEN_EXIT } from "./run.ts";
 import { title } from "./title.ts";
 
 export const usage =
-  "hook <pre-commit|pre-push|install>  the git hooks: pre-commit runs the census and judges the commit's Kotlin, pre-push the worktree; install writes the shims";
+  "hook <pre-commit|pre-push|install>  the git hooks: pre-commit runs the walls and judges the commit's Kotlin, pre-push the worktree; install writes the shims";
 
 export const SHIM_BEGIN = "# >>> splice gate hook >>> written by `bun tools/gate hook install`; reinstall replaces it";
 export const SHIM_END = "# <<< splice gate hook <<<";
@@ -88,13 +90,16 @@ export interface GateRun {
 }
 
 /** Runs gradle tasks and returns their exit and output. The default runs them through the gate's slot. */
-export type GateRunner = (tasks: readonly string[]) => Promise<GateRun>;
+/** Runs gradle tasks. [root] is the tree they run in; a runner built for one tree may ignore it. */
+export type GateRunner = (tasks: readonly string[], root?: string) => Promise<GateRun>;
 
 export interface HookDeps {
   readonly gate?: GateRunner;
   readonly openRun?: (head: string) => ReturnType<typeof acquireRunSentinel>;
   /** The ladder rows pre-push scopes by. Read from the checkout when absent. */
   readonly legs?: readonly Leg[];
+  /** How the commit is checked out for judgement. The default is a detached worktree under the temp dir. */
+  readonly tree?: (repoRoot: string, sha: string) => ThrowawayTree;
   /** Whether another gradle process is live: the evidence a collision needs. The default reads the process list. */
   readonly rivalLive?: () => boolean;
 }
@@ -285,7 +290,7 @@ export async function judgedRun(
   tasks: readonly string[],
   rivalLive: () => boolean = liveGradleElsewhere,
 ): Promise<Judged> {
-  const first = await run(tasks);
+  const first = await run(tasks, root);
   if (first.status === 0 || cancelledBySignal(first.status) || !isCollision(first.output, root, modules, rivalLive)) {
     return { ...first, reran: false, collidedAgain: false };
   }
@@ -293,7 +298,7 @@ export async function judgedRun(
   // Every requested task printed its result, so the collision kept none of them from judging: there is nothing to rerun.
   if (again.length === 0) return { ...first, reran: false, collidedAgain: false };
   console.error(`  ! collision: another gradle run in this checkout held a shared file; rerunning ${again.length} task(s) once`);
-  const second = await run(again);
+  const second = await run(again, root);
   const collidedAgain = second.status !== 0 && !cancelledBySignal(second.status) && isCollision(second.output, root, modules, rivalLive);
   return { ...second, reran: true, collidedAgain };
 }
@@ -358,7 +363,7 @@ export function slotRunner(lay: Layout, label: string, echo: boolean): GateRunne
     const jdk = resolveJdk21();
     if ("error" in jdk) throw new Error(jdk.error);
     const proc = Bun.spawn(
-      [process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"), "slot", label, "--", ...(label === "pre-push" ? ["--parallel"] : []), ...tasks],
+      [process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"), "slot", label, "--", ...(label === "pre-push" ? ["--parallel", "--build-cache"] : []), ...tasks],
       { cwd: lay.repoRoot, env: spawnEnv({ JAVA_HOME: jdk.javaHome }), stdout: "pipe", stderr: "pipe" },
     );
     let output = "";
@@ -383,102 +388,6 @@ function tailOf(output: string): string {
   return output.split("\n").slice(-LINES_SHOWN_ON_FAILURE).join("\n");
 }
 
-// The census leg of pre-commit. Like the walls, it judges the commit's bytes: the script and the rows are read from the
-// index, and the tracked set is the index's, since git hands this hook the commit's index. The census checks the whole
-// tree, so this leg judges what the commit can change: a finding fails the commit when it names a path the commit
-// changes, or a path a changed row names. A commit adds no finding elsewhere except by changing a row. A finding about
-// a path the commit leaves alone is printed and left to the census leg of the gate (CLAUDE.md §18).
-const CENSUS_SCRIPT = ".dev/restructure/census.ts";
-const CENSUS_ROWS = ".dev/restructure/capabilities.tsv";
-
-/** The bytes the index holds for [path]. Throws when the index holds none. */
-function indexBytes(root: string, path: string): Buffer {
-  const r = git(root, ["show", `:${path}`]);
-  if (r.status !== 0) throw new Error(`the commit holds no ${path}: ${r.stderr.trim()}`);
-  return r.stdout;
-}
-
-/** The paths a finding may be about for this commit: every path it changes, and the paths its changed rows name. */
-function namedByCommit(root: string): Set<string> {
-  const named = new Set(changedPaths(root));
-  const rowChanges = git(root, ["diff", "--cached", "--no-renames", "--no-color", "-U0", "--", CENSUS_ROWS]).stdout.toString("utf8");
-  for (const line of rowChanges.split("\n")) {
-    const changed = (line.startsWith("+") && !line.startsWith("+++")) || (line.startsWith("-") && !line.startsWith("---"));
-    if (!changed) continue;
-    const [source = "", , , destination = ""] = line.slice(1).split("\t");
-    for (const path of [source, destination]) if (path !== "") named.add(path);
-  }
-  return named;
-}
-
-/** One finding as the census prints it under --json: its sentence for people, and every path it is about. */
-interface CensusFinding {
-  readonly message: string;
-  readonly paths: readonly string[];
-}
-
-function isCensusFinding(value: unknown): value is CensusFinding {
-  if (typeof value !== "object" || value === null) return false;
-  const { message, paths } = value as { message?: unknown; paths?: unknown };
-  return typeof message === "string" && Array.isArray(paths) && paths.every((path) => typeof path === "string");
-}
-
-/** The census script's verdict, read from its one JSON document: its findings, or the reason it could not judge. Exit 0 with
- *  no findings and exit 1 with the listed findings are verdicts. Any other exit, a document that does not parse or does not
- *  have this shape, or an exit that disagrees with the list, is a failure. The sentences are never parsed. */
-function censusVerdict(status: number, stdout: string, stderr: string): { findings: CensusFinding[] } | { failure: string } {
-  const failure = (why: string) => ({ failure: `${why}: ${tailOf(`${stdout}${stderr}`).trim() || "no output"}` });
-  if (status !== 0 && status !== 1) return failure(`exit ${status}`);
-  let document: unknown;
-  try {
-    document = JSON.parse(stdout);
-  } catch {
-    return failure(`exit ${status} with no verdict document`);
-  }
-  const listed = (document as { findings?: unknown } | null)?.findings;
-  if (!Array.isArray(listed) || !listed.every(isCensusFinding)) return failure(`exit ${status} with a malformed verdict`);
-  if ((status === 0) !== (listed.length === 0)) return failure(`exit ${status} with ${listed.length} finding(s)`);
-  return { findings: listed };
-}
-
-/** The census leg of pre-commit. Returns the exit code. */
-export async function censusLeg(lay: Layout): Promise<number> {
-  const started = performance.now();
-  const root = lay.repoRoot;
-  const scratch = mkdtempSync(join(tmpdir(), "splice-census-"));
-  try {
-    const script = join(scratch, "census.ts");
-    const rows = join(scratch, "capabilities.tsv");
-    writeFileSync(script, indexBytes(root, CENSUS_SCRIPT));
-    writeFileSync(rows, indexBytes(root, CENSUS_ROWS));
-    const run = spawnSync(process.execPath, [script, "--root", root, "--rows", rows, "--json"], { cwd: root, maxBuffer: 1 << 26 });
-    const verdict = censusVerdict(run.status ?? 1, run.stdout?.toString("utf8") ?? "", run.stderr?.toString("utf8") ?? "");
-    if ("failure" in verdict) {
-      console.error(`pre-commit: ✗ census could not judge: ${verdict.failure} — ${seconds(started)}`);
-      return 1;
-    }
-    const named = namedByCommit(root);
-    // A finding is this commit's when a path it carries is one the commit names. A finding that carries no path, or an empty
-    // one (a row whose source column is blank), names no file the commit could be leaving alone, so no path places it: it
-    // counts as this commit's until shown otherwise.
-    const hits = verdict.findings.filter((finding) => finding.paths.length === 0 || finding.paths.some((path) => path === "" || named.has(path)));
-    const elsewhere = verdict.findings.filter((finding) => !hits.includes(finding));
-    for (const finding of hits) console.error(`  ✗ census: ${finding.message}`);
-    for (const finding of elsewhere) console.error(`  · census, not this commit's path: ${finding.message}`);
-    if (hits.length > 0) {
-      console.error(`pre-commit: ✗ census (${hits.length} finding(s) on paths this commit changes) — ${seconds(started)}`);
-      return 1;
-    }
-    console.error(`  ✓ census${elsewhere.length > 0 ? ` (${elsewhere.length} finding(s) on other paths, reported above)` : ""}`);
-    return 0;
-  } catch (exc) {
-    console.error(`pre-commit: ✗ census could not judge: ${exc instanceof Error ? exc.message : String(exc)} — ${seconds(started)}`);
-    return 1;
-  } finally {
-    rmSync(scratch, { recursive: true, force: true });
-  }
-}
-
 /** The ladder legs a commit can turn red and that need no gradle: every row whose `commit` globs match a path this commit
  *  changes runs here, from the repository root. A touched path already equals the index (breaches, in preCommit), so the
  *  worktree these legs read holds the commit's bytes for it. An unreadable ladder fails the commit: no leg could be chosen. */
@@ -494,7 +403,7 @@ export async function commitLegsLeg(lay: Layout, deps: HookDeps = {}): Promise<n
   const due = commitLegs(legs, changedPaths(lay.repoRoot));
   if (due.length === 0) return 0;
   console.error(`── ladder legs this commit can turn red: ${due.map((leg) => leg.task).join(", ")} ──`);
-  const failed = await runDirectLegs(lay.repoRoot, due);
+  const failed = await runDirectLegs(lay.repoRoot, due.map((leg) => ({ ...leg, command: leg.commitCommand ?? leg.command })));
   if (failed.length > 0) {
     console.error(`pre-commit: ✗ ${failed.map((leg) => leg.task).join(", ")} — ${seconds(started)}`);
     return 1;
@@ -502,11 +411,9 @@ export async function commitLegsLeg(lay: Layout, deps: HookDeps = {}): Promise<n
   return 0;
 }
 
-/** The pre-commit verb: the census leg, the ladder legs the commit's paths trigger, then the commit's Kotlin judgement. A
+/** The pre-commit verb: the ladder legs the commit's paths trigger, then the commit's Kotlin judgement. A
  *  refusal stops it before gradle. */
 export async function commitGate(lay: Layout, deps: HookDeps = {}): Promise<number> {
-  const census = await censusLeg(lay);
-  if (census !== 0) return census;
   const legs = await commitLegsLeg(lay, deps);
   if (legs !== 0) return legs;
   return preCommit(lay);
@@ -561,35 +468,63 @@ export async function preCommit(lay: Layout): Promise<number> {
  *  `<local ref> <local sha> <remote ref> <remote sha>`. */
 export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): Promise<number> {
   const started = performance.now();
-  const tips = stdin
-    .split("\n")
-    .map((line) => line.trim().split(/\s+/))
-    .filter((fields) => fields.length === 4)
-    .map((fields) => fields[1] ?? "")
-    .filter((sha) => !ZERO_SHA.test(sha));
-  if (tips.length === 0) {
+  const refs = pushedRefs(stdin);
+  if (refs.length === 0) {
     console.error("pre-push: only deletions; nothing to judge");
     return 0;
   }
-  const head = gitText(lay.repoRoot, ["rev-parse", "HEAD"]);
-  const stray = tips.find((tip) => tip !== head);
-  if (stray !== undefined) {
-    console.error(`pre-push: ✗ pushed tip ${stray} is not the worktree's HEAD ${head}. The gate judges the worktree, so push from HEAD.`);
-    return 1;
+  // Each distinct tip is judged on its own, as a clean checkout of that commit.
+  for (const tip of [...new Set(refs.map((ref) => ref.tip))]) {
+    const code = await judgeTip(lay, tip, refs.filter((ref) => ref.tip === tip), deps, started);
+    if (code !== 0) return code;
   }
+  return 0;
+}
 
-  const subject = gitText(lay.repoRoot, ["log", "-1", "--format=%s", head]);
+/** Judges one pushed commit in a throwaway tree. The shared checkout is never read: its uncommitted edits belong to other
+ *  seats, and a seat's half-finished work must not redden another seat's push. */
+async function judgeTip(
+  lay: Layout,
+  tip: string,
+  refs: readonly { tip: string; remote: string }[],
+  deps: HookDeps,
+  started: number,
+): Promise<number> {
+  const subject = gitText(lay.repoRoot, ["log", "-1", "--format=%s", tip]);
   console.error(`── pr title (${subject}) ──`);
   if ((await title([subject])) !== 0) {
     console.error("pre-push: ✗ pr title");
     return 1;
   }
 
+  let tree: ThrowawayTree;
+  try {
+    tree = (deps.tree ?? createThrowawayTree)(lay.repoRoot, tip);
+  } catch (error) {
+    console.error(`pre-push: ✗ cannot check the pushed commit out: ${errorText(error)}`);
+    return 1;
+  }
+  try {
+    return await judgeIn(lay, tree.path, tip, refs, deps, started);
+  } finally {
+    tree.remove();
+  }
+}
+
+async function judgeIn(
+  lay: Layout,
+  root: string,
+  head: string,
+  refs: readonly { tip: string; remote: string }[],
+  deps: HookDeps,
+  started: number,
+): Promise<number> {
+  const judgeLay: Layout = { repoRoot: root, buildRoot: root };
   let changed: string[];
   let legs: readonly Leg[];
   try {
-    changed = pushedPaths(lay.repoRoot, pushedRefs(stdin));
-    legs = deps.legs ?? readLadder(lay.repoRoot);
+    changed = pushedPaths(lay.repoRoot, refs);
+    legs = deps.legs ?? readLadder(root);
   } catch (error) {
     console.error(`pre-push: ✗ cannot scope the push: ${errorText(error)}`);
     return 1;
@@ -599,41 +534,33 @@ export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): 
     console.error(`pre-push: ✗ ladder rows declare no inputs, so the push cannot be scoped: ${missing.join(", ")}`);
     return 1;
   }
-  const modules = gradleModules(lay.repoRoot);
+  const modules = gradleModules(root);
   const scope = prePushScope({
     legs,
     modules: modules.map((module) => module.path),
     moduleOf: (file) => moduleOf(modules, file),
     changed,
-    graph: readModuleGraph(lay.repoRoot),
+    graph: readModuleGraph(root),
   });
   const scopeClause = `; scope: ${scope.summary}`;
   console.error(`── scope: ${scope.summary} ──`);
 
-  const dirty = dirtyPaths(lay.repoRoot);
   const sha = head.slice(0, 7);
-  const judgedWhat =
-    dirty.length === 0
-      ? `the worktree, which matches the pushed sha ${sha}`
-      : `the worktree (${dirty.length} uncommitted path(s)), not the pushed sha ${sha}`;
-  if (dirty.length > 0) {
-    console.error(`  ! the worktree has ${dirty.length} uncommitted path(s); the gate tier judges them along with the tip:`);
-    for (const path of dirty) console.error(`      ${path}`);
-  }
+  const judgedWhat = `the pushed sha ${sha}, checked out clean in a throwaway tree`;
 
   const open = (deps.openRun ?? acquireRunSentinel)(head);
   if (open !== null) {
-    console.error(`pre-push: refusing — a gate of record is already open over this tree (${describeOpenRun(open)})`);
+    console.error(`pre-push: refusing — a gate of record is already open over this commit (${describeOpenRun(open)})`);
     return RUN_ALREADY_OPEN_EXIT;
   }
 
   // The direct legs run alongside gradle, so a leg never waits for the slot. The verdict reads both.
   if (scope.direct.length > 0) console.error("── direct legs (no gradle) ──");
-  const direct = runDirectLegs(lay.repoRoot, scope.direct);
+  const direct = runDirectLegs(root, scope.direct);
   let judged: Judged | undefined;
   if (scope.gradle.length > 0) {
     console.error("── gate tier (gradle, scoped to the push) ──");
-    judged = await judgedRun(deps.gate ?? slotRunner(lay, "pre-push", true), lay.repoRoot, modules, scope.gradle, deps.rivalLive);
+    judged = await judgedRun(deps.gate ?? slotRunner(judgeLay, "pre-push", true), root, modules, scope.gradle, deps.rivalLive);
   }
   const failedLegs = await direct;
   const elapsed = seconds(started);
@@ -645,7 +572,7 @@ export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): 
     return 0;
   }
   console.log(`PRE-PUSH: FAIL — judged ${judgedWhat}${scopeClause}`);
-  if (judged !== undefined && gradleRed) for (const line of failureLines(lay.repoRoot, judged.output)) console.error(line);
+  if (judged !== undefined && gradleRed) for (const line of failureLines(root, judged.output)) console.error(line);
   const red = [...failedLegs.map((leg) => leg.task), ...(gradleRed ? ["gradle"] : [])];
   console.error(`pre-push: ✗ ${red.join(", ")}${judged && gradleRed ? redNote(judged) : ""} — ${elapsed}`);
   return 1;

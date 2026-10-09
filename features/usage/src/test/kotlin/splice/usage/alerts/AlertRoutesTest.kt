@@ -25,7 +25,7 @@ private const val TIMEOUT_MS = 300L
 class AlertRoutesTest {
 
     @Test
-    fun `a webhook that never answers is named a timeout without its path - V4-295`(@TempDir tmp: Path) {
+    fun `a webhook that never answers is named a timeout without its path`(@TempDir tmp: Path) {
         ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { silent ->
             val error = testSend(tmp, "http://127.0.0.1:${silent.localPort}/hook/$SECRET")
 
@@ -35,7 +35,7 @@ class AlertRoutesTest {
     }
 
     @Test
-    fun `a webhook that refuses the connection is named without its path - V4-295`(@TempDir tmp: Path) {
+    fun `a webhook that refuses the connection is named without its path`(@TempDir tmp: Path) {
         val port = ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { it.localPort }
 
         val error = testSend(tmp, "http://127.0.0.1:$port/hook/$SECRET")

@@ -2,7 +2,7 @@
 // person clicked by that id (GET /api/heads/{head}/trace?turn=ID). A row from a head that keeps no
 // trace says so with a null, the absence every other named fact on the row reports (PerfRoutes.rowJson),
 // never an empty string that would read as an id.
-package splice.usage.perf.v4345
+package splice.usage.perf
 
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
@@ -24,12 +24,6 @@ import splice.core.perf.PerfTurnIds
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
-import splice.usage.perf.PerfRoutes
-import splice.usage.perf.PerfRow
-import splice.usage.perf.PerfRowsSource
-import splice.usage.perf.PerfRowsWindow
-import splice.usage.quota.HeadUsageSource
-import splice.usage.quota.UsageView
 
 private const val TRACED = "3f2a9c01d4e5"
 

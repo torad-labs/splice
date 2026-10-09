@@ -93,7 +93,7 @@ class AlertDeliveryTest {
 
     // V4-295: Ktor's timeout message carries the whole URL, and the alert logged it through toString().
     @Test
-    fun `a webhook that never answers is logged a timeout without its path - V4-295`(@TempDir tmp: Path) =
+    fun `a webhook that never answers is logged a timeout without its path`(@TempDir tmp: Path) =
         runBlocking {
             val logged = CompletableDeferred<String>()
             ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { silent ->

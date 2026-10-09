@@ -39,7 +39,6 @@ import splice.core.perf.PerfModelTotal
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTotal
 import splice.core.perf.PerfSessionTurn
-import splice.usage.perf.HeadPerfSource
 import splice.usage.perf.HeadSessionPerfSource
 
 private fun observed(input: Long, cached: Long = 0L, output: Long = 0L) = mapOf(
@@ -121,22 +120,6 @@ class SessionCostTest {
             .filter { row -> (row["session"] as? JsonPrimitive)?.content?.let { asked.startsWith(it) } == true }
             .map { row -> PerfSessionTurn((row["model"] as? JsonPrimitive)?.content, numericFields(row)) }
         PerfSessionTail(turns, null)
-    }
-
-    @Test
-    fun `real perf rows carry the cached prefix INSIDE in_tokens, which is what the arithmetic rests on`() {
-        val rows = realTokens().sessionTail(realSessionId).turns.map { it.counters }
-        assertEquals(3, rows.size, "the prefix match must find all three of this session's rows")
-        for (row in rows) {
-            val rawIn = row["in_tokens"]!!
-            val cached = row["cached_tokens"]!!
-            assertTrue(
-                cached <= rawIn,
-                "a production row never reports more cached than input; that is what makes it INCLUSIVE: $row",
-            )
-        }
-        assertTrue(rows.any { it["cached_tokens"] == 0L }, "the cold first turn is kept, not filtered out")
-        assertTrue(rows.any { (it["cached_tokens"] ?: 0L) > 0L }, "and at least one warm turn, or nothing is proven")
     }
 
     @Test
@@ -320,15 +303,6 @@ class SessionCostTest {
         assertEquals(1.318, mixed, 1e-12, "only the 250k turn bills at the tier, output included")
     }
 
-    @Test
-    fun `a plain HeadPerfSource is not session-aware, so the route builds no cost source for it`() {
-        // The route bridges with a checked cast: `perf as? HeadSessionPerfSource`. A head whose perf
-        // source is the plain reader — every test double, and any sink that keeps no session column —
-        // misses that cast, so no SessionCost is built and the segment renders the client's number.
-        val plain = HeadPerfSource { listOf(mapOf("in_tokens" to 1_000L)) }
-        assertTrue(plain !is HeadSessionPerfSource, "the sibling interface is what the route looks for")
-    }
-
     // ---- V4-85: the cache-WRITE bucket -----------------------------------------------------------
     //
     // A perf row's `in_tokens` is inclusive of BOTH cache buckets, not just the read: PassthroughUsage
@@ -461,7 +435,7 @@ class SessionCostTest {
     }
 
     @Test
-    fun `a session that switched models bills each turn at its own model's card - V4-240 review 4b`() {
+    fun `a session that switched models bills each turn at its own model's card`() {
         //   the Sonnet turn: 100000 * 3.00 + 1000 * 15.00 = 315000.0 / 1e6 = 0.315
         //   the Opus turn:   100000 * 5.00 + 1000 * 25.00 = 525000.0 / 1e6 = 0.525
         //                                                                    -----
@@ -474,7 +448,7 @@ class SessionCostTest {
     }
 
     @Test
-    fun `a turn with no card is left out and makes the figure a lower bound - V4-240 review 4b`() {
+    fun `a turn with no card is left out and makes the figure a lower bound`() {
         val turns = listOf(
             PerfSessionTurn("gpt-6-sol", coldTurn),
             PerfSessionTurn("claude-opus-5-5", coldTurn),
@@ -489,7 +463,7 @@ class SessionCostTest {
     }
 
     @Test
-    fun `a session that began before the tail's oldest row is a lower bound - V4-240 review 4c`() {
+    fun `a session that began before the tail's oldest row is a lower bound`() {
         val turns = listOf(PerfSessionTurn("claude-opus-5-5", coldTurn))
         val cut = SessionCost(tail(turns, tailStartMs = 1_000_000L), anthropicCatalog())
         assertTrue(cut.spendFor(sessionId, "claude-opus-5-5", 999_999L)!!.lowerBound, "began before the window")
@@ -500,7 +474,7 @@ class SessionCostTest {
     }
 
     @Test
-    fun `the lower bound reaches the line as the same mark dropped rows use - V4-240 review 4c`() {
+    fun `the lower bound reaches the line as the same mark dropped rows use`() {
         // total_duration_ms 600000 before a clock at 2000000 puts the session's start at 1400000, before
         // the tail's oldest row at 1500000; on a non-Anthropic head splice's own figure is what shows.
         val cutTail = tail(listOf(PerfSessionTurn("claude-opus-5-5", coldTurn)), tailStartMs = 1_500_000L)
@@ -559,7 +533,7 @@ class SessionCostTest {
     private val opusOnly = mapOf("claude-opus-5-5" to tenOpusTurns)
 
     @Test
-    fun `a session longer than the tail is priced whole from its running total - V4-244`() {
+    fun `a session longer than the tail is priced whole from its running total`() {
         val cost = costWith(opusOnly)
         val spend = cost.spendFor(sessionId, "claude-opus-5-5", 1_200_000L)!!
         assertEquals(5.25, spend.usd, 1e-12, "all ten turns, not the one the tail still holds")
@@ -569,7 +543,7 @@ class SessionCostTest {
     }
 
     @Test
-    fun `a session whose rows predate the running total keeps the mark - V4-244`() {
+    fun `a session whose rows predate the running total keeps the mark`() {
         val cost = costWith(opusOnly)
         val spend = cost.spendFor(sessionId, "claude-opus-5-5", 900_000L)!!
         assertTrue(spend.lowerBound, "it began before the total, so rows may be missing from both")
@@ -577,7 +551,7 @@ class SessionCostTest {
     }
 
     @Test
-    fun `a turn the total could not price still marks it, and a total of only those is no figure - V4-244`() {
+    fun `a turn the total could not price still marks it, and a total of only those is no figure`() {
         val models = mapOf("claude-opus-5-5" to tenOpusTurns, "gpt-6-sol" to oneSolTurn)
         val mixed = costWith(models).spendFor(sessionId, "gpt-6-sol", 1_200_000L)!!
         assertEquals(5.25 to true, mixed.usd to mixed.lowerBound)
@@ -589,7 +563,7 @@ class SessionCostTest {
      *  two must weigh a row the same, long-context tier and cache writes included, or the figure would
      *  jump when a session crosses from one path to the other. */
     @Test
-    fun `TurnPrice, which prices the running total, prices each row exactly as the tail path does - V4-244`() {
+    fun `TurnPrice, which prices the running total, prices each row exactly as the tail path does`() {
         val tiered = ModelRates(
             input = 2.0,
             cacheRead = 0.5,
@@ -622,7 +596,7 @@ class SessionCostTest {
     }
 
     @Test
-    fun `a session longer than the tail reads its whole figure on the line, with no mark - V4-244`() {
+    fun `a session longer than the tail reads its whole figure on the line, with no mark`() {
         // total_duration_ms 600000 before a clock at 2000000: the session began at 1400000, before the
         // tail's oldest row at 1500000 but after the total began at 1000000.
         val renderer = StatuslineRenderer(

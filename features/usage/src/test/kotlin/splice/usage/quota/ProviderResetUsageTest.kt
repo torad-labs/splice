@@ -1,4 +1,4 @@
-package splice.usage.quota.v4398
+package splice.usage.quota
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -12,9 +12,6 @@ import splice.core.config.StatePaths
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeads
-import splice.usage.quota.HeadUsageSource
-import splice.usage.quota.UsagePayloads
-import splice.usage.quota.UsageView
 import java.nio.file.Path
 import java.time.Instant
 

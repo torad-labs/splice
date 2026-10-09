@@ -45,7 +45,7 @@ private const val CODEX_BODY = """{"rate_limit":{"primary_window":{"used_percent
 class QuotaPollerTest {
 
     @Test
-    fun `a throwing probe logs once and the loop keeps ticking - RETRY DEFAULT IS TOTAL`() = runTest {
+    fun `a throwing probe logs once and the loop keeps ticking`() = runTest {
         // A probe failure is a LOG LINE, never a loop death: the bars keep the last snapshot and the
         // next tick tries again. The once-log is re-armed by any accepted snapshot, so a recovery
         // followed by a fresh failure is reported again rather than swallowed by the first line.
@@ -213,7 +213,7 @@ class QuotaPollerTest {
     // V4-296: a usage endpoint answering 401 on every poll read as "nothing to record", so the bars froze on
     // the last snapshot and no line said why, while a thrown failure logged once.
     @Test
-    fun `a usage endpoint refusing every poll logs once with its status and keeps the bars - V4-296`() = runTest {
+    fun `a usage endpoint refusing every poll logs once with its status and keeps the bars`() = runTest {
         var calls = 0
         val engine = MockEngine {
             calls++

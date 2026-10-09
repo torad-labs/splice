@@ -104,7 +104,7 @@ class CodexQuotaProbeTest {
 
     // V4-296: a non-200 read as "nothing to record", so a 401 or 429 on every poll froze the bars silently.
     @Test
-    fun `a usage endpoint that answers 401 fails the probe with its status - V4-296`() = runTest {
+    fun `a usage endpoint that answers 401 fails the probe with its status`() = runTest {
         val engine = MockEngine { respond(content = "", status = HttpStatusCode.Unauthorized) }
         val probe = CodexQuotaProbe(
             HttpClient(engine),

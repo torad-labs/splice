@@ -1,4 +1,4 @@
-package splice.usage.quota.v4396
+package splice.usage.quota
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -18,10 +18,6 @@ import splice.core.usage.QuotaWindowView
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeads
-import splice.usage.quota.HeadUsageSource
-import splice.usage.quota.RateLimitView
-import splice.usage.quota.UsagePayloads
-import splice.usage.quota.UsageView
 import splice.usage.statusline.StatuslineRenderer
 import splice.usage.statusline.StatuslineWarn
 import java.nio.file.Path

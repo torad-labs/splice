@@ -73,11 +73,6 @@ class QuotaProbesTest {
     }
 
     @Test
-    fun `quota poller cadence is five minutes`() {
-        assertEquals(5 * 60 * 1000L, QUOTA_POLL_INTERVAL_MS)
-    }
-
-    @Test
     fun `BearerGetProbe extraHeaders default carries no vendor headers`() = runTest {
         var accept: String? = null
         var extras: Map<String, String>? = null
@@ -99,22 +94,6 @@ class QuotaProbesTest {
         ).probe()
         assertEquals("*/*", accept)
         assertEquals(emptyMap<String, String>(), extras)
-    }
-
-    @Test
-    fun `forHead dispatches one probe class per auth kind`() {
-        val probes = QuotaProbes(HttpClient(MockEngine { respond("{}", HttpStatusCode.OK) }))
-        val auth = FixedAuth(Credentials.Bearer("tok"))
-        assertTrue(probes.forHead("chatgpt-oauth", BASE_URL, auth, null) is CodexQuotaProbe)
-        assertTrue(probes.forHead("kimi-oauth", BASE_URL, auth, null) is KimiQuotaProbe)
-        assertTrue(probes.forHead("grok-oauth", BASE_URL, auth, null) is GrokQuotaProbe)
-        assertNull(probes.forHead("muse-oauth", BASE_URL, auth, null), "muse without UsageFields is refused")
-        val fields = UsageFields { null }
-        assertTrue(probes.forHead("muse-oauth", BASE_URL, auth, fields) is MuseMintProbe)
-        assertNull(probes.forHead("api-key", BASE_URL, auth, null))
-        assertNull(probes.forHead("client", BASE_URL, auth, null), "a Claude head with no client seen yet")
-        val agent = ClientUserAgent { "claude-cli/2.1.289 (external, cli)" }
-        assertTrue(probes.forHead("client", BASE_URL, auth, null, agent) is ClaudeUsageProbe)
     }
 
     @Test

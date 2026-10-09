@@ -76,7 +76,7 @@ class BudgetStoreTest {
     // V4-296: a budgets.json that does not parse turned every budget off, block and warn alike, and nothing
     // said so. The store is built as ConsoleWiring builds it, so the line goes where the daemon's log does.
     @Test
-    fun `a file that does not parse is logged once per version and GET names it - V4-296`(@TempDir tmp: Path) {
+    fun `a file that does not parse is logged once per version and GET names it`(@TempDir tmp: Path) {
         val file = tmp.resolve("budgets.json")
         val seen = mutableListOf<String>()
         DaemonLog.install { seen += it }

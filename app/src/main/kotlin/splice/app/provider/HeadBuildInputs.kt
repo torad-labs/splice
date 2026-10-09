@@ -72,6 +72,27 @@ internal class HeadBuildInputs(
         }
     }
 
+    /** The runtime's served rows for [key]'s head, asked the way boot asks (one sequence, [LocalProbeInputs.check]). */
+    private fun askRuntime(
+        key: String,
+        head: HeadConfig,
+        provider: ProviderConfig,
+        headCfg: SpliceConfig,
+    ): LocalRowsCheck {
+        val base = provider.catalogFor(head, headCfg.contextWindowOverride)
+        return localProbe.check(provider, localProbe.bearer(key, provider, EnvReader(System::getenv)), base)
+    }
+
+    /** A local runtime that answers again, or serves a model it did not at boot, moves the head's window with it
+     *  (#399): the rows it serves now replace the ones held, only when they differ and only when it listed them.
+     *  A runtime that is down or lists nothing keeps the window in force. Blocking network: never on a request
+     *  thread. */
+    internal fun refreshLocalModels(key: String, head: HeadConfig, provider: ProviderConfig) {
+        if (!provider.isLocal) return
+        val found = askRuntime(key, head, provider, config.getConfig(key)) as? LocalRowsCheck.Checked ?: return
+        if (localModels[key] != found.models) localModels[key] = found.models
+    }
+
     /** Resolve one head's build inputs against ITS OWN effective config. Heads share a single
      *  ConfigService (one JVM), so every value here must come from `getConfig(key)` — reading the
      *  global view is what made a knob tuned for one upstream govern all of them.
@@ -93,12 +114,7 @@ internal class HeadBuildInputs(
         val resolvedHead = if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head
         val resolvedProvider = if (legacyKnobsGovern) resolveProviderConfig(providerCfg, headCfg) else providerCfg
         val localRows = if (resolvedProvider.isLocal) {
-            val base = resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride)
-            localProbe.check(
-                resolvedProvider,
-                localProbe.bearer(key, resolvedProvider, EnvReader(System::getenv)),
-                base,
-            ).also { found ->
+            askRuntime(key, resolvedHead, resolvedProvider, headCfg).also { found ->
                 localModels[key] = (found as? LocalRowsCheck.Checked)?.models.orEmpty()
             }
         } else {

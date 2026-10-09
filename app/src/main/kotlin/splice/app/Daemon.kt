@@ -30,6 +30,7 @@ import splice.app.head.HeadShutdown
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
 import splice.app.head.QuotaPollSeams
+import splice.app.probe.LocalWindowRefresh
 import splice.client.resume.originals.TranscriptOriginals
 import splice.codemode.WorkerArtifacts
 import splice.core.compaction.CompactionInstructions
@@ -229,7 +230,12 @@ public class Daemon(
         // running) — headProbes.startDaemonHeads binds every head's port; controlPlane.start below
         // binds the control port, so it must run after.
         headProbes.startDaemonHeads(heads, failed, controlPlane.probeScope, log)
-        headProbes.startRuntimeWatch(topology, controlPlane.probeScope, log)
+        headProbes.startRuntimeWatch(
+            topology,
+            controlPlane.probeScope,
+            log,
+            LocalWindowRefresh(controlPlane.buildInputs::refreshLocalModels),
+        )
         controlPlane.start(
             controlPort = controlPort,
             heads = heads,

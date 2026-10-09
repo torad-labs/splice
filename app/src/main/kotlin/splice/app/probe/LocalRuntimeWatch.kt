@@ -20,6 +20,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import splice.app.cli.status.LocalRuntimeReach
+import splice.core.topology.HeadConfig
+import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.util.LogSink
 import splice.upstream.Ticker
@@ -27,9 +29,15 @@ import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.codemode.ProcessTicker
 import java.util.concurrent.atomic.AtomicReference
 
+/** What the watch does for each local runtime that answers: re-read the window it serves (#399). */
+internal fun interface LocalWindowRefresh {
+    fun refresh(key: String, head: HeadConfig, provider: ProviderConfig)
+}
+
 internal class LocalRuntimeWatch(
     private val topology: Topology,
     private val log: LogSink,
+    private val windows: LocalWindowRefresh = LocalWindowRefresh { _, _, _ -> },
     private val reach: LocalRuntimeReach = LocalRuntimeReach(),
     private val intervalMs: Long = WATCH_INTERVAL_MS,
     // The blocking probe rides the injected dispatcher and the cadence the injected ticker, as in
@@ -72,11 +80,21 @@ internal class LocalRuntimeWatch(
         return job
     }
 
+    /** A runtime that answers is asked again what it serves, so a runtime that came up after the daemon, or
+     *  loaded a model since boot, moves its head's window instead of keeping the boot answer (#399). */
+    private fun refreshAnswering(silentNow: Map<String, String>) {
+        topology.heads.forEach { (key, head) ->
+            val provider = topology.providers[head.provider]?.takeIf { it.isLocal } ?: return@forEach
+            if (key !in silentNow) windows.refresh(key, head, provider)
+        }
+    }
+
     /** One probe of every local runtime, then a line for each runtime that changed. Exposed for tests,
      *  which drive ticks directly instead of waiting on the loop. */
     internal fun tick() {
         val now = reach.notAnswering(topology)
         val before = silent.getAndSet(now).orEmpty()
+        refreshAnswering(now)
         now.filterKeys { it !in before }.forEach { (head, endpoint) ->
             log("[$head] runtime not answering on $endpoint; the console reads the head as down.\n")
         }

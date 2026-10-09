@@ -12,6 +12,7 @@ import splice.app.DaemonBoundary
 import splice.app.auth.AuthProbeLoop
 import splice.app.control.ManagedHead
 import splice.app.probe.LocalRuntimeWatch
+import splice.app.probe.LocalWindowRefresh
 import splice.app.probe.TurnPathProbe
 import splice.app.probe.TurnPathProbeLoop
 import splice.core.auth.AuthProvider
@@ -89,8 +90,13 @@ internal class HeadProbes : HeadProbeReadings {
 
     /** V4-417: starts the background probe of every local head's runtime. Off the request path: nothing
      *  that reads the answer ever asks a runtime. */
-    internal fun startRuntimeWatch(topology: Topology, probeScope: CoroutineScope, log: LogSink) {
-        runtimeWatch = LocalRuntimeWatch(topology, log).also { it.start(probeScope) }
+    internal fun startRuntimeWatch(
+        topology: Topology,
+        probeScope: CoroutineScope,
+        log: LogSink,
+        windows: LocalWindowRefresh,
+    ) {
+        runtimeWatch = LocalRuntimeWatch(topology, log, windows).also { it.start(probeScope) }
     }
 
     /**

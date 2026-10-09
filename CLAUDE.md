@@ -3,6 +3,10 @@
 Contracts, invariants, and gates live in `AGENTS.md`; read that first. This file carries only the
 conduct rules the operator has had to repeat to sessions.
 
+## A build runs in the background while the seat keeps coding (2026-10-09)
+
+Operator: "as an engineer when I code and I have a long build, I'm gonna start coding other things ... I don't keep staring at the screen." Every gradle, gate, test or push command runs in the background, never in the foreground and never in a `sleep` or poll loop. While it runs, the seat edits the next item in its queue. A lock, a peer's file or a red build is never a reason to stop: take the next item and come back when the result arrives. A seat that waits is a splice defect, not a pause.
+
 ## A verified build gets installed and the daemon restarted — without asking (2026-09-16)
 
 Operator, after the third ask in one session: "i told you a million times to restart ... you dont

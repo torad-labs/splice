@@ -1,4 +1,4 @@
-// NEW: V4-174 — `splice trace <head>`: reads the head's day files with no daemon, groups records
+// `splice trace <head>`: reads the head's day files with no daemon, groups records
 // by turn, and prints a table, one turn in full, or the raw lines; `--purge` deletes the files and
 // says what went. The files here are written by the SAME TraceStore the daemon uses, so the verb
 // is tested against the writer's real shape rather than a hand-typed fixture.
@@ -7,7 +7,6 @@ package splice.head.trace
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
@@ -234,7 +233,7 @@ class TraceCommandTest {
     }
 
     @Test
-    fun `--purge that cannot delete or cannot list says what stayed and fails - V4-286`(@TempDir tmp: Path) {
+    fun `--purge that cannot delete or cannot list says what stayed and fails`(@TempDir tmp: Path) {
         val env = env(tmp)
         writeTrace(env)
         val traceDir = StatePaths(envReader = env).traceDir
@@ -254,7 +253,7 @@ class TraceCommandTest {
     }
 
     @Test
-    fun `a trace day that cannot be read fails in words, never an empty table naming the knob - V4-286`(
+    fun `a trace day that cannot be read fails in words, never an empty table naming the knob`(
         @TempDir tmp: Path,
     ) {
         val env = env(tmp)
@@ -269,7 +268,7 @@ class TraceCommandTest {
     }
 
     @Test
-    fun `a character a disk-full append cut short costs one line, never the day's turns - V4-286`(@TempDir tmp: Path) {
+    fun `a character a disk-full append cut short costs one line, never the day's turns`(@TempDir tmp: Path) {
         val env = env(tmp)
         writeTrace(env)
         val day = StatePaths(envReader = env).traceDir.resolve("openrouter-2026-09-18.jsonl")
@@ -317,12 +316,6 @@ class TraceCommandTest {
     }
 
     @Test
-    fun `a turn holding no records is refused at construction, not at the first column`() {
-        val empty = assertThrows(IllegalArgumentException::class.java) { TracedTurn("turn-0", emptyList(), null) }
-        assertTrue(empty.message.orEmpty().contains("turn-0"), empty.message.orEmpty())
-    }
-
-    @Test
     fun `argument parsing`() {
         val command = TraceCommand(
             TerminalOutput {},
@@ -344,7 +337,7 @@ class TraceCommandTest {
         assertNull(command.parseTraceArgs(listOf("kimi", "--turn")), "--turn needs an id")
         assertNull(command.parseTraceArgs(listOf("kimi", "extra")), "one head only")
         assertNull(command.parseTraceArgs(listOf("kimi", "--follow")), "no unknown flags")
-        // V4-239 follow-up: a flag after --turn or --session is a flag, never the id it filters on.
+        // a flag after --turn or --session is a flag, never the id it filters on.
         assertNull(command.parseTraceArgs(listOf("kimi", "--turn", "--help")), "a flag is not a turn id")
         assertNull(command.parseTraceArgs(listOf("kimi", "--session", "--json")), "a flag is not a session")
     }

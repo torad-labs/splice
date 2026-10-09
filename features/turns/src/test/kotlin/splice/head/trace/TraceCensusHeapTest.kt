@@ -1,10 +1,10 @@
-// NEW: V4-343 — the count of turns on disk never decodes a record's body: the console's trace list and the
+// the count of turns on disk never decodes a record's body: the console's trace list and the
 // verb's table count a store holding one record larger than the heap they run in. The count decoded every
 // line whole, into a String and then through kotlinx, and on claudex's 3.6 GB store (2026-09-26, lines of
 // 2-3 MB) that decode was 83% of GET /api/heads/claudex/trace's 21.4 s; a record past the heap was an
 // OutOfMemoryError. The big record is written here in the daemon's field order, its stamp first; the turns
 // listed are day two's, written by the daemon's own TraceStore, so the big one is counted and never held.
-package splice.head.trace.v4343
+package splice.head.trace
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
@@ -30,10 +30,6 @@ import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
-import splice.head.trace.TraceCommand
-import splice.head.trace.TraceHeads
-import splice.head.trace.TraceQuery
-import splice.head.trace.TraceRoute
 import splice.head.wire.ClientInbound
 import splice.head.wire.TurnIdMint
 import splice.upstream.sse.WireAttempt

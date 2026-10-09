@@ -1,4 +1,4 @@
-// NEW: V4-239 — GET /api/heads/{head}/trace: what `splice trace <head>` prints, as JSON for the console.
+// GET /api/heads/{head}/trace: what `splice trace <head>` prints, as JSON for the console.
 // The files are written by the SAME TraceStore the daemon uses (TraceCommandTest's fixture), so the
 // route is tested against the writer's real shape. The list carries no body; one turn's read carries
 // its records as written, headers redacted as they were stored.
@@ -216,7 +216,7 @@ class TraceRouteTest {
     }
 
     @Test
-    fun `a trace dir that cannot be read fails in words, never an empty list - V4-286`(@TempDir tmp: Path) {
+    fun `a trace dir that cannot be read fails in words, never an empty list`(@TempDir tmp: Path) {
         val notADir = Files.writeString(tmp.resolve("trace"), "a file where the directory should be")
 
         val reply = read(notADir)

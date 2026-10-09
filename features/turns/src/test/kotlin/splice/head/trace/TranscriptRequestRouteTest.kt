@@ -1,7 +1,7 @@
-// V4-354: the request-detail route reads only the one response id from Claude Code's redacted
+// the request-detail route reads only the one response id from Claude Code's redacted
 // transcript. Turning the console view off returns off without opening a file; a missing/pruned
 // transcript is named; the route's keys are enumerated so planting an auth header or key fails.
-package splice.head.trace.v4354
+package splice.head.trace
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -19,8 +19,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.util.LogSink
-import splice.head.trace.TranscriptRequestRoute
-import splice.head.trace.TranscriptRoots
 import splice.sessions.transcript.MessageConversation
 import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.sessions.transcript.TranscriptMessage

@@ -1,9 +1,9 @@
-// NEW: V4-345 — one turn's read carries what that turn cost, so the request a person opens says it beside
-// its tokens and time. The daemon prices it (the console multiplies nothing, V4-221) at the head's card
+// one turn's read carries what that turn cost, so the request a person opens says it beside
+// its tokens and time. The daemon prices it (the console multiplies nothing) at the head's card
 // for the turn's own model, from the closing record's counters, the snapshot its perf row carries. A
 // model with no card is a null, never $0; an open turn has no counters yet, so its read carries no cost;
 // and the list, which carries no body, carries no cost either.
-package splice.head.trace.v4345
+package splice.head.trace
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -32,8 +32,6 @@ import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
-import splice.head.trace.TraceQuery
-import splice.head.trace.TraceRoute
 import splice.head.wire.ClientInbound
 import splice.head.wire.TurnIdMint
 import java.nio.file.Path

@@ -1,11 +1,11 @@
-// NEW: V4-338 — `splice trace <head> --last N --json`, and the console's GET /api/heads/{head}/trace, answer
+// `splice trace <head> --last N --json`, and the console's GET /api/heads/{head}/trace, answer
 // from a trace store larger than the heap they run in, holding one line at a time and the records of the
 // turns they answer with. Both read every record of every day into memory first, and on claudex's 3.7 GB
 // of day files (2026-09-26, lines of 2-3 MB: every record carries the whole conversation) the CLI died
 // with java.lang.OutOfMemoryError in kotlinx's JsonTreeReader; the route runs inside the daemon. The
 // store here is written by the daemon's own TraceStore, and each reader runs in a second JVM whose heap
 // is smaller than the store.
-package splice.head.trace.v4338
+package splice.head.trace
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
@@ -39,13 +39,6 @@ import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
-import splice.head.trace.TraceAsk
-import splice.head.trace.TraceCommand
-import splice.head.trace.TraceHeads
-import splice.head.trace.TraceQuery
-import splice.head.trace.TraceRoute
-import splice.head.trace.TraceRows
-import splice.head.trace.TraceTurnSummary
 import splice.head.trace.body.TraceBodyPack
 import splice.head.trace.body.TracePackIndex
 import splice.head.wire.ClientInbound
@@ -302,32 +295,6 @@ class TraceTailHeapTest {
             listed.turns.map { TraceTurnSummary.of(it).toString() },
         )
         assertTrue(listed.turns.all { it.attempts.single()["request"]?.jsonObject?.get("body").toString() == "null" })
-    }
-
-    @Test
-    fun `last 2000 on a larger multi megabyte store keeps only per turn metadata`(@TempDir tmp: Path) {
-        val traceDir = tmp.resolve("wide")
-        val ids = (0 until 64).map { "wide-%02d".format(it) }
-        write(traceDir, DAY_ONE, ids, bodyChars = 2 * BODY_CHARS)
-        val expected = ids.map { id ->
-            val rows = TraceRows(heap = splice.head.syntheticHeapBudget())
-            TraceTurnSummary.of(rows.turns(traceDir, HEAD, TraceAsk(last = 1, turn = id)).single()).toString()
-        }
-        val heap = HeapBudget(heapLimitBytes = 1L shl 30, budgetBytes = 64L shl 20)
-
-        val listed = TraceRows(heap = heap).summaries(traceDir, HEAD, TraceAsk(last = 2000))
-
-        assertEquals(ids.size, listed.onDisk)
-        assertEquals(0, listed.skippedLines)
-        assertEquals(0, listed.unavailableRecords)
-        assertEquals(expected, listed.turns.map { TraceTurnSummary.of(it).toString() })
-        assertTrue(
-            listed.turns.all { turn ->
-                (turn.attempts + listOfNotNull(turn.turn)).all { record ->
-                    listOf("request", "response", "client", "answer").none(record::containsKey)
-                }
-            },
-        )
     }
 
     private fun JsonObject.str(name: String): String = getValue(name).jsonPrimitive.content

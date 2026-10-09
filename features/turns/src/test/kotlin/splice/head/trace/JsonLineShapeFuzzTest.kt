@@ -1,9 +1,9 @@
-// NEW: V4-343 — the gate on JsonLineShape, the second author of "this line is JSON": thousands of lines
+// the gate on JsonLineShape, the second author of "this line is JSON": thousands of lines
 // derived from records shaped as the daemon writes them, damaged the ways a disk, a writer or a hand damages
 // them, under a fixed seed. A line the shape counts must be one kotlinx parses whole, with the same stamp; a
 // line it declines is decoded by kotlinx as every line was, so only that direction can part the two reads.
 // Each line is also handed over a few bytes at a time, and must read the same as when it is read whole.
-package splice.head.trace.v4343
+package splice.head.trace
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.elementNames
@@ -19,7 +19,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
-import splice.head.trace.JsonLineShape
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.nio.ByteBuffer

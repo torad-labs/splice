@@ -1,7 +1,7 @@
-// NEW: V4-343 — one trace count at a time: a page that arrives while a count runs answers with that count,
+// one trace count at a time: a page that arrives while a count runs answers with that count,
 // the same answer, and starts no second one. The injected file-read boundary holds a real regular day file
 // before its read. A FIFO is not a day file; a large file races the scheduler.
-package splice.head.trace.v4343
+package splice.head.trace
 
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -12,8 +12,6 @@ import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.core.storage.DayFiles
 import splice.core.storage.FileVisit
-import splice.head.trace.TraceCensus
-import splice.head.trace.TraceCountFileRead
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch

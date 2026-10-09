@@ -1,19 +1,15 @@
-// NEW: V4-343 — the trace count kept between reads, as the console's route keeps it for the daemon's life. A day
+// the trace count kept between reads, as the console's route keeps it for the daemon's life. A day
 // file only grows (JsonlSink appends, heals a torn tail by appending, rotates by rename), so a kept read counts
 // only the bytes appended since the last one, and knows a file it counted by its first bytes and the last ones it
 // counted, under whatever name the file has now; at every step a day file takes, it answers what a fresh read does.
 // A count read on several lanes at once answers what one read on the calling thread does.
-package splice.head.trace.v4343
+package splice.head.trace
 
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.storage.DayFiles
-import splice.head.trace.TraceAsk
-import splice.head.trace.TraceCensus
-import splice.head.trace.TraceRead
-import splice.head.trace.TraceRows
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption

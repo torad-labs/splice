@@ -1,10 +1,10 @@
-// NEW: V4-343 — the trace count reads each record's stamp and never decodes its body, and counts exactly what
+// the trace count reads each record's stamp and never decodes its body, and counts exactly what
 // the full decode counted. The store holds turns the daemon's own TraceStore wrote, then every kind of line
 // the two reads could part on: records torn after their leading fields (a disk-full cut of a 2-3 MB record
 // almost always lands in its body), a torn character, foreign kinds, keys reordered, escaped or repeated,
 // malformed and lenient values, stray bytes, and a last line with no newline, whole or torn. The reference
 // is today's decode, copied here; the listings are pinned by their digest on today's tree.
-package splice.head.trace.v4343
+package splice.head.trace
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -20,9 +20,6 @@ import splice.core.turn.TurnMeta
 import splice.core.util.AsyncFileIo
 import splice.core.util.JsonScalars
 import splice.core.util.WallClock
-import splice.head.trace.TraceAsk
-import splice.head.trace.TraceRows
-import splice.head.trace.TracedTurn
 import splice.head.wire.ClientInbound
 import splice.head.wire.TraceKinds
 import splice.head.wire.TraceStore

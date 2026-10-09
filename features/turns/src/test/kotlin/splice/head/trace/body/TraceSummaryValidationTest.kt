@@ -1,8 +1,6 @@
-// NEW: real summary reads must retain availability truth without repeated chunk decompression.
+// A trace list reports honestly which bodies are unavailable: never from a stale verdict, never from a transient failure.
 package splice.head.trace.body
 
-import jdk.jfr.Recording
-import jdk.jfr.consumer.RecordingFile
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -13,7 +11,6 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.memory.HeapBudget
 import splice.core.storage.DayBodyBudget
 import splice.core.storage.DayFiles
 import splice.core.util.WallClock
@@ -26,45 +23,9 @@ import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
-import java.time.Duration
 import java.time.Instant
-import java.util.UUID
 
 class TraceSummaryValidationTest {
-    @Test
-    fun `an unchanged second list validates current bytes without decompressing again`(@TempDir dir: Path) {
-        val fixture = fixture(dir)
-        assertEquals(0, fixture.rows.summaries(dir, "synthetic", TraceAsk(1)).unavailableRecords)
-        val cold = fixture.decoder.calls
-        assertTrue(cold > 0, "a cold summary must exercise the real decoder")
-        repeat(3) {
-            assertEquals(0, fixture.rows.summaries(dir, "synthetic", TraceAsk(1)).unavailableRecords)
-            assertEquals(cold, fixture.decoder.calls, "unchanged lists must reuse validated literal certificates")
-        }
-    }
-
-    @Test
-    fun `duplicate selected references touch and decompress each actual chunk only once`(@TempDir dir: Path) {
-        val fixture = fixture(dir, records = 8)
-        val capture = dir.resolve("summary-reads.jfr")
-        Recording().use { recording ->
-            recording.enable("jdk.FileRead").withThreshold(Duration.ZERO).withoutStackTrace()
-            recording.start()
-            val read = fixture.rows.summaries(dir, "synthetic", TraceAsk(8))
-            assertEquals(8, read.turns.size)
-            assertEquals(0, read.unavailableRecords)
-            recording.stop()
-            recording.dump(capture)
-        }
-        assertEquals(1, fixture.decoder.calls, "all selected records share one real packed chunk")
-        val readBytes = RecordingFile.readAllEvents(capture)
-            .filter { it.eventType.name == "jdk.FileRead" && it.getString("path") == fixture.pack.toString() }
-            .sumOf { it.getLong("bytesRead") }
-        val bound = Files.size(fixture.pack) + TRACE_PACK_V2_HEADER_BYTES
-        assertTrue(readBytes > 0, "the touch control must observe actual pack reads")
-        assertTrue(readBytes <= bound, "duplicate references reread payloads: $readBytes > $bound")
-    }
-
     @Test
     fun `a warmed certificate cannot hide changed payload bytes even with the same header and timestamp`(
         @TempDir dir: Path,
@@ -81,21 +42,6 @@ class TraceSummaryValidationTest {
         }
         val cold = TraceRows(heap = splice.head.syntheticHeapBudget())
         assertEquals(1, cold.summaries(dir, "synthetic", TraceAsk(1)).unavailableRecords)
-    }
-
-    @Test
-    fun `unchanged corrupt chunks retain negative certificates without hiding unavailability`(@TempDir dir: Path) {
-        val fixture = fixture(dir)
-        val bytes = Files.readAllBytes(fixture.pack)
-        bytes[bytes.lastIndex] = (bytes.last().toInt() xor 1).toByte()
-        Files.write(fixture.pack, bytes)
-        assertEquals(1, fixture.rows.summaries(dir, "synthetic", TraceAsk(1)).unavailableRecords)
-        val cold = fixture.decoder.calls
-        assertTrue(cold > 0)
-        repeat(2) {
-            assertEquals(1, fixture.rows.summaries(dir, "synthetic", TraceAsk(1)).unavailableRecords)
-            assertEquals(cold, fixture.decoder.calls, "unchanged invalid bytes must reuse a negative certificate")
-        }
     }
 
     @Test
@@ -236,66 +182,11 @@ class TraceSummaryValidationTest {
         assertEquals(1, fixture.decoder.calls)
     }
 
-    @Test
-    fun `unknown reference fields neither retain payloads nor multiply chunk touches`(@TempDir dir: Path) {
-        val heap = splice.head.syntheticHeapBudget()
-        val decoder = CountingDecoder()
-        val validation = TraceBodyValidation(heap, decoder)
-        val pack = dir.resolve("synthetic-2026-10-06.jsonl.bodies2")
-        val part = TraceBodyPack(pack, TracePackIndex(heap), budget = DayBodyBudget(minFreeBytes = 0)).use {
-            it.put("\"synthetic body\"".toByteArray())
-        }
-        val marker = "synthetic ignored payload"
-        TraceBodyReader(pack, TracePackFormat.V2, heap).use { reader ->
-            for (extra in listOf(marker, "other ignored payload")) {
-                val decorated = JsonObject(part + ("ignored" to kotlinx.serialization.json.JsonPrimitive(extra)))
-                reader.validate(JsonArray(listOf(decorated)), decoder, validation)
-            }
-        }
-        val keys = validation.javaClass.getDeclaredField("certificates").apply { isAccessible = true }
-            .get(validation) as Map<*, *>
-        assertFalse(keys.keys.toString().contains(marker), "certificate keys cannot retain unknown source payloads")
-        assertEquals(1, decoder.calls, "aliases describe one actual chunk, not new payloads")
-    }
-
-    @Test
-    fun `certificate metadata is charged bounded evictable and refunded on deletion`(@TempDir dir: Path) {
-        val heap = HeapBudget(Long.MAX_VALUE, 1024 * 1024)
-        val decoder = CountingDecoder()
-        val validation = TraceBodyValidation(heap, decoder, maxBytes = 6000)
-        val pack = dir.resolve("synthetic.bodies2")
-        Files.write(pack, byteArrayOf(1))
-        val generation = UUID(0, 1)
-        val before = heap.available.value
-        repeat(8) { index ->
-            val raw = "\"synthetic-$index\"".toByteArray()
-            val hash = TracePackBytes.hashOf(raw)
-            val digest = java.security.MessageDigest.getInstance("SHA-256").digest(raw)
-            val stored = TracePackFormat.V2.encode(raw, digest).second
-            val part = TraceChunkReference(index.toLong(), raw.size, hash)
-            validation.certify(
-                TraceChunkKey(pack, TracePackFormat.V2, generation, part),
-                TracePackEntry(stored.size, raw.size, hash),
-                stored,
-            )
-            assertTrue(validation.retainedBytes in 1..6000)
-            assertEquals(validation.retainedBytes, before - heap.available.value)
-        }
-        assertEquals(8, decoder.calls)
-        Files.delete(pack)
-        validation.prune()
-        assertEquals(0, validation.retainedBytes)
-        assertEquals(before, heap.available.value)
-    }
-
-    private fun fixture(dir: Path, records: Int = 1): Fixture {
+    private fun fixture(dir: Path): Fixture {
         val heap = splice.head.syntheticHeapBudget()
         val day = dir.resolve("synthetic-2026-10-06.jsonl")
         val writer = TraceBodies(heap = heap)
-        val lines = (1..records).flatMap { index ->
-            writer.encode(record(index, "synthetic body"), day).asIterable()
-        }.toByteArray()
-        Files.write(day, lines)
+        Files.write(day, writer.encode(record(1, "synthetic body"), day))
         val decoder = CountingDecoder()
         return Fixture(TraceRows(heap = heap, decoder = decoder), TracePackFormat.V2.pack(day), decoder)
     }

@@ -1,6 +1,6 @@
-// NEW: V4-338 — the trace read from the newest line back: which turns are the newest, when a turn is whole,
+// the trace read from the newest line back: which turns are the newest, when a turn is whole,
 // and that a read which holds its turns stops. The files are written by the daemon's own TraceStore.
-package splice.head.trace.v4338
+package splice.head.trace
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -16,9 +16,6 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
-import splice.head.trace.TraceAsk
-import splice.head.trace.TraceRows
-import splice.head.trace.TracedTurn
 import splice.head.wire.ClientInbound
 import splice.head.wire.TraceStore
 import splice.head.wire.TurnIdMint

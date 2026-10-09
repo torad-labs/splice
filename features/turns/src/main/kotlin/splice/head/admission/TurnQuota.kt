@@ -31,9 +31,10 @@ internal class TurnQuota(
     private val primary: QuotaTracker?,
 ) {
     fun forSession(sessionId: String?, account: AccountSelection?): QuotaTracker? {
-        (account?.account?.quota as? TrackedAccountQuota)?.let { return it.tracker }
-        val label = account?.account?.label ?: accountPool?.view(sessionId)?.selectedLabel
-        return label?.let(accountQuotas::get) ?: primary
+        return TrackedAccountQuota.Selected {
+            val label = account?.account?.label ?: accountPool?.view(sessionId)?.selectedLabel
+            label?.let(accountQuotas::get) ?: primary
+        }.of(account)
     }
 
     /** No native login can take over. Each unavailable place names its own remedy without acquiring credentials. */

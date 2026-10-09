@@ -216,7 +216,9 @@ function spawnGradle(
   // what took every gradle leg on CI down with `buildgate: command not found` (gradle-slot.sh:37-42).
   const gradlew = `${buildRoot}/gradlew`;
   if (!existsSync(gradlew)) throw new Error(`gate: no gradle wrapper at ${gradlew}`);
-  const gradleArgs = [...offline, ...parallel, "--no-daemon", ...args];
+  // Locally the daemon stays warm inside the gate (heap, metaspace and Kotlin-daemon caps live in gradle.properties); CI is one build per runner.
+  const daemon = childEnv.CI ? ["--no-daemon"] : [];
+  const gradleArgs = [...offline, ...parallel, ...daemon, ...args];
   let argv = buildgate ? [buildgate, gradlew, ...gradleArgs] : [gradlew, ...gradleArgs];
   if (buildgate && admission) {
     childEnv.BUILDGATE_LOCK = admission.lock;

@@ -12,7 +12,7 @@
 //     of record must never measure a mixture of two source states;
 //   - through the SLOT, because two gradles in one project dir clobber build/ outputs and hand each
 //     other false reds, and a gate that a neighbour's timing can turn red is not a gate of record.
-// `--no-daemon` is supplied by the slot itself, as it is for every other caller. `--continue` is
+// the daemon choice is the slot's own, as it is for every other caller. `--continue` is
 // what gate.sh's `run` was: every leg runs and reports its own verdict, and the gate is red if any
 // leg is — a ladder that stops at the first red hides every red behind it.
 //

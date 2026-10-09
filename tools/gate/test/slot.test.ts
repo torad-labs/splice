@@ -122,7 +122,7 @@ describe("the gradle slot", () => {
   test("--offline is a local nicety and is dropped on CI", async () => {
     const local = fakeBuildRoot();
     await runUnderSlot({ layout: local.layout, label: "local", args: ["help"], env: { CI: "", PATH: local.path } });
-    expect(readFileSync(local.receipt, "utf8")).toContain("ARGS:--offline --no-daemon help");
+    expect(readFileSync(local.receipt, "utf8")).toContain("ARGS:--offline help");
     const ci = fakeBuildRoot();
     await runUnderSlot({ layout: ci.layout, label: "ci", args: ["help"], env: { CI: "true", PATH: ci.path } });
     expect(readFileSync(ci.receipt, "utf8")).not.toContain("--offline");
@@ -131,7 +131,7 @@ describe("the gradle slot", () => {
   test("--parallel is CI's alone: on this box one project builds at a time", async () => {
     const local = fakeBuildRoot();
     await runUnderSlot({ layout: local.layout, label: "local", args: ["help"], env: { CI: "", PATH: local.path } });
-    expect(readFileSync(local.receipt, "utf8")).toContain("ARGS:--offline --no-daemon help");
+    expect(readFileSync(local.receipt, "utf8")).toContain("ARGS:--offline help");
     const ci = fakeBuildRoot();
     await runUnderSlot({ layout: ci.layout, label: "ci", args: ["help"], env: { CI: "true", PATH: ci.path } });
     expect(readFileSync(ci.receipt, "utf8")).toContain("ARGS:--parallel --no-daemon help");
@@ -388,9 +388,9 @@ try {
     expect(await runUnderSlot({ layout: fake.layout, label: "admitted", args,
       env: { CI: "", PATH: gate.path, SLOT_FAKE_RUN: "admitted" } })).toBe(0);
     expect(JSON.parse(readFileSync(join(fake.dir, "argv-admitted"), "utf8")))
-      .toEqual(["--exclusive", "--joint", join(real.repoRoot, "tools/gate/bin/gradlew"), "--offline", "--no-daemon", ...args]);
+      .toEqual(["--exclusive", "--joint", join(real.repoRoot, "tools/gate/bin/gradlew"), "--offline", ...args]);
     expect(readFileSync(join(fake.dir, "real-argv"), "utf8").split("\0").slice(0, -1))
-      .toEqual(["--offline", "--no-daemon", ...args]);
+      .toEqual(["--offline", ...args]);
     expect(readFileSync(fake.receipt, "utf8")).toMatch(/^admitted pid=\d+ since=/);
   });
 

@@ -74,11 +74,19 @@ private object MustConsumeErrorMessages : BaseDiagnosticRendererFactory() {
 private val MUST_CONSUME_ID: ClassId = ClassId.topLevel(FqName("splice.core.annotation.MustConsume"))
 
 internal class MustConsumeDiscardChecker : FirFunctionCallChecker(MppCheckerKind.Common) {
+    // THE OVERRIDE DELEGATES, and that shape is load-bearing (2026-10-09). The FIR API declares
+    // check() with context parameters, which the ktlint inside detekt 1.23.8 cannot parse: it NPEs in
+    // WrappingRule.rearrangeBlock on the BLOCK that follows the clause, and reads a type named only
+    // inside the clause as an unused import. An expression body puts no block there, and [report]
+    // takes both values as ordinary parameters, so the types are used where the formatter can see
+    // them. This replaces a module overlay that switched four rules off for this file.
     context(context: CheckerContext, reporter: DiagnosticReporter)
-    override fun check(expression: FirFunctionCall) {
-        if (!hasMustConsumeResult(expression, context.session)) return
-        if (!isDiscarded(expression, context)) return
-        reporter.reportOn(expression.source, MustConsumeErrors.DISCARDED_MUST_CONSUME_VALUE, context)
+    override fun check(expression: FirFunctionCall) = report(expression, context, reporter)
+
+    private fun report(call: FirFunctionCall, context: CheckerContext, reporter: DiagnosticReporter) {
+        if (!hasMustConsumeResult(call, context.session)) return
+        if (!isDiscarded(call, context)) return
+        reporter.reportOn(call.source, MustConsumeErrors.DISCARDED_MUST_CONSUME_VALUE, context)
     }
 
     private fun hasMustConsumeResult(call: FirFunctionCall, session: FirSession): Boolean {

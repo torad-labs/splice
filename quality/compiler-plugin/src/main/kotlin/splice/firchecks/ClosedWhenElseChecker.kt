@@ -42,11 +42,16 @@ private object ClosedWhenErrorMessages : BaseDiagnosticRendererFactory() {
 }
 
 internal class ClosedWhenElseChecker : FirWhenExpressionChecker(MppCheckerKind.Common) {
+    // The override delegates for the reason MustConsumeDiscardChecker spells out: ktlint 0.50 cannot
+    // parse a context-parameter clause, so no block follows it here and [report] takes the two values
+    // as ordinary parameters.
     context(context: CheckerContext, reporter: DiagnosticReporter)
-    override fun check(expression: FirWhenExpression) {
-        val subject = expression.subjectVariable?.returnTypeRef?.coneType ?: return
+    override fun check(expression: FirWhenExpression) = report(expression, context, reporter)
+
+    private fun report(whenExpression: FirWhenExpression, context: CheckerContext, reporter: DiagnosticReporter) {
+        val subject = whenExpression.subjectVariable?.returnTypeRef?.coneType ?: return
         if (!isClosed(subject, context.session)) return
-        expression.branches
+        whenExpression.branches
             .filter { it.condition is FirElseIfTrueCondition }
             .forEach { reporter.reportOn(it.source, ClosedWhenErrors.ELSE_ON_CLOSED_WHEN, context) }
     }

@@ -1,23 +1,39 @@
-# Module-scoped detekt overlay for :quality-compiler-plugin ONLY (layered ON TOP of the shared quality/detekt/detekt.yml,
-# which stays untouched and fully enforced everywhere else). Every disable below is scoped by
-# `excludes` to the files that override a FIR checker with Kotlin context parameters (MustConsumeDiscardChecker, ClosedWhenElseChecker) — every other file in this module,
-# and every other rule, stays fully checked.
+# Module-scoped detekt overlay for :quality-compiler-plugin ONLY (layered ON TOP of the shared
+# quality/detekt/detekt.yml, which stays untouched and fully enforced everywhere else). Two ktlint
+# rules are switched off for the two files that override a FIR checker with Kotlin context
+# parameters; every other file in this module, and every other rule, stays fully checked.
 #
-# Why: the FIR checker API (FirExpressionChecker.check) is declared with Kotlin context parameters, so
-# MustConsumeDiscardChecker MUST override it with `context(...)` syntax. The ktlint bundled in
-# detekt-formatting 1.23.8 (ktlint 0.50.x) cannot parse context parameters — a KNOWN detekt bug
-# (detekt#8140 / #8499 / #8691, fixed only in the detekt 2.0 line / ktlint 1.7). It crashes
-# (WrappingRule NPE) and, once that is skipped, emits false positives on the `context(...)` line:
-# "missing spacing after ':'" and "unused import" for a type used only as a context-parameter type.
-# These are TOOL DEFECTS on valid Kotlin 2.3 syntax, not style findings. maxIssues:0 and
-# warningsAsErrors:true are inherited unchanged; tools/gate/src/lib/configguard.ts's guarantees are untouched.
-style:
-  UnusedImports:
-    excludes: ['**/MustConsumeDiscardChecker.kt', '**/ClosedWhenElseChecker.kt']
+# WHY A FILE CAN NEED THIS AT ALL. The FIR checker API (FirExpressionChecker.check) is declared with
+# context parameters, so an override MUST repeat the clause: `context(context: CheckerContext,
+# reporter: DiagnosticReporter)`. The ktlint bundled in detekt-formatting 1.23.8 is ktlint 0.50.x,
+# which cannot parse that clause (detekt#8140 / #8499 / #8691, fixed only in the detekt 2.0 line /
+# ktlint 1.7). These are TOOL DEFECTS on valid Kotlin 2.3 syntax, not style findings.
+#
+# WHAT WAS MEASURED, 2026-10-09, and why each line below is the smallest it can be:
+#   Wrapping            CRASHES: "Analyzing <file> led to an exception", NullPointerException at
+#                       com.pinterest.ktlint.ruleset.standard.rules.WrappingRule.rearrangeBlock
+#                       (WrappingRule.kt:222). Reproduced on a four-line probe class whose only
+#                       member was `context(session: FirSession) fun probe()` — so the clause alone
+#                       is enough and NO code shape in these files avoids it. A crash is not a
+#                       finding: with this rule on, detekt reports nothing at all for the module.
+#   SpacingAroundColon  2 false positives per clause: "Missing spacing after ':'" at the column
+#                       right after each `: ` that IS followed by a space. Writing the clause over
+#                       several lines keeps both and adds Indentation findings, so the single-line
+#                       clause is the cheapest spelling. No spelling drops the colon: the compiler
+#                       answers `context(FirSession)` with "Context parameters must be named. Use
+#                       '_' to declare an anonymous context parameter."
+#
+# WHAT THE CODE FIXED INSTEAD (2026-10-09). This overlay used to disable FOUR rules: UnusedImports and
+# NoUnusedImports were here because a type named ONLY inside the clause read as an unused import.
+# Both lines are gone: each checker's override is now a one-line delegation to a private `report`
+# that takes the CheckerContext and the DiagnosticReporter as ORDINARY parameters, so the imports are
+# used where the formatter can see them. The two rules below are the residue that code cannot answer.
+#
+# maxIssues:0 and warningsAsErrors:true are inherited unchanged; tools/gate/src/lib/configguard.ts's
+# guarantees are untouched. When detekt 2.0 ships stable (alpha.6 as of 2026-08-04, and it renames the
+# plugin id, the formatting artifact and three rule sets), this file goes away with the bump.
 formatting:
   Wrapping:
     excludes: ['**/MustConsumeDiscardChecker.kt', '**/ClosedWhenElseChecker.kt']
   SpacingAroundColon:
-    excludes: ['**/MustConsumeDiscardChecker.kt', '**/ClosedWhenElseChecker.kt']
-  NoUnusedImports:
     excludes: ['**/MustConsumeDiscardChecker.kt', '**/ClosedWhenElseChecker.kt']

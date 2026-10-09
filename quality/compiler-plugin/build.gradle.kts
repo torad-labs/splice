@@ -28,8 +28,10 @@ kotlin {
 }
 
 detekt {
-    // The shared law, plus a module-scoped overlay disabling the one ktlint rule that NPEs on Kotlin
-    // context parameters (detekt#8140, fixed only in detekt 2.0) — see detekt-context-parameters.yml.
+    // The shared law, plus a module-scoped overlay for the two ktlint rules that a Kotlin
+    // context-parameter clause defeats in ktlint 0.50: one crashes, one misreads a colon that is
+    // there. Both are measured in detekt-context-parameters.yml, which also records the two rules
+    // the checkers' own shape earned back.
     config.setFrom(
         rootProject.layout.projectDirectory.file("quality/detekt/detekt.yml"),
         layout.projectDirectory.file("detekt-context-parameters.yml"),

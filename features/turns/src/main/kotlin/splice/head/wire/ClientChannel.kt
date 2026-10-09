@@ -112,6 +112,7 @@ internal class ClientChannel(
 
     /** V4-456: holds a burst's deltas for [launchPacer]'s loop; inert until that loop runs. */
     private val pacer = DeltaPacer()
+    private val bursts = ArrivalBursts()
     private var lastWriteMs: Long? = null
     private var pacingJob: Job? = null
 
@@ -145,6 +146,7 @@ internal class ClientChannel(
         recording?.append(frame)
         trace?.clientFrame(frame)
         if (detached.get()) return
+        if (modelOutput && pacer.isVisibleDelta(frame)) bursts.arrived(perf, clock())
         if (pacer.hold(frame, perf, modelOutput, clock())) {
             if (modelOutput) ModelAccounting.count(frame, perf)
             return

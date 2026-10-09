@@ -143,6 +143,6 @@ internal class DeltaPacer(
         return maxOf(floorPerTick, spread)
     }
 
-    private fun isVisibleDelta(frame: String): Boolean =
+    fun isVisibleDelta(frame: String): Boolean =
         frame.startsWith(DELTA_EVENT) && (frame.contains(TEXT_DELTA_MARK) || frame.contains(THINKING_DELTA_MARK))
 }

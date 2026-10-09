@@ -100,6 +100,56 @@ class PacedBurstTest {
     }
 
     @Test
+    fun `identical bytes arriving as one batch and as a trickle leave different burst records`() = runBlocking {
+        val batch = TurnPerf()
+        val trickle = TurnPerf()
+        val batched = mutableListOf<String>()
+        val trickled = mutableListOf<String>()
+        time.nowMs = 1_000
+        for (i in 0 until 6) {
+            channel.writeMutex.withLock { channel.timedClientWrite(delta(i), batch, time.clock) }
+            batched += written.last().frame
+        }
+        val slow = freshChannel(trickled)
+        time.nowMs = 10_000
+        for (i in 0 until 6) {
+            slow.writeMutex.withLock { slow.timedClientWrite(delta(i), trickle, time.clock) }
+            time.nowMs += 100
+        }
+        assertEquals(batched, trickled, "the bytes the client gets are the same")
+        val one = batch.snapshot().counters
+        assertEquals(1L, one[PerfKeys.ARRIVAL_BURSTS])
+        assertEquals(6L, one[PerfKeys.ARRIVAL_BURST_MAX_DELTAS])
+        assertNull(one[PerfKeys.ARRIVAL_SILENCE_MAX_MS], "the first burst follows no silence")
+        val many = trickle.snapshot().counters
+        assertEquals(6L, many[PerfKeys.ARRIVAL_BURSTS])
+        assertEquals(1L, many[PerfKeys.ARRIVAL_BURST_MAX_DELTAS])
+        assertEquals(100L, many[PerfKeys.ARRIVAL_SILENCE_MAX_MS])
+    }
+
+    @Test
+    fun `a burst after a long silence records the silence, and a frame that is not a visible delta records nothing`() =
+        runBlocking {
+            time.nowMs = 0
+            write(structural("message_start"))
+            write(delta(0))
+            time.nowMs = 7_000
+            write(delta(1))
+            time.nowMs += 5
+            write(delta(2))
+            val counters = perf.snapshot().counters
+            assertEquals(2L, counters[PerfKeys.ARRIVAL_BURSTS])
+            assertEquals(2L, counters[PerfKeys.ARRIVAL_BURST_MAX_DELTAS])
+            assertEquals(7_000L, counters[PerfKeys.ARRIVAL_SILENCE_MAX_MS])
+        }
+
+    private fun freshChannel(sink: MutableList<String>) = ClientChannel(
+        ImmediateSseWriter(writeRaw = { sink += it }, flushRaw = {}),
+        Mutex(),
+        AtomicBoolean(false),
+    )
+
+    @Test
     fun `a release tick that runs late is counted on the turn whose held frames it released`() = runBlocking {
         val pacing = channel.launchPacer(this, Job(), LateTicker(time, lateByMs = 37), time.clock, LostClient("t", {}))
         write(delta(0))

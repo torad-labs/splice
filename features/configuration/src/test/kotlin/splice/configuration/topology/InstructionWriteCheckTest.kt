@@ -1,9 +1,9 @@
-// NEW: V4-400 — PUT /api/topology refuses a changed system_prompt_file the preview would refuse, with the
+// PUT /api/topology refuses a changed system_prompt_file the preview would refuse, with the
 // preview's own sentence, and splice.toml is byte-identical after it. Marlin's walk of V4-348 on bb54736ea:
 // the preview showed a refusal, Save wrote `system_prompt_file = "<missing path>"` anyway and dropped the
 // head's system_prompt. The real loader parses every candidate, so a refusal here is the route's, never a
 // stub's.
-package splice.configuration.topology.v4400
+package splice.configuration.topology
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
@@ -20,8 +20,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.configuration.topology.TopologyRoutes
-import splice.configuration.topology.TopologyStale
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
 import splice.core.topology.TopologyWriterSource

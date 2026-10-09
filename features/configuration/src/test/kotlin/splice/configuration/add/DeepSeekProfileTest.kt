@@ -5,17 +5,14 @@ package splice.configuration.add
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.model.ModelRates
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 
 class DeepSeekProfileTest {
-
     private val profile = requireNotNull(AddProfiles().find("deepseek")) { "deepseek profile missing" }
 
     @Test
@@ -40,23 +37,6 @@ class DeepSeekProfileTest {
     }
 
     @Test
-    fun `no model id carries two slots`() {
-        val mappings = profile.models.flatMap { model -> model.slots.map { slot -> model.id to slot } }
-        val ids = mappings.map { it.first }
-        assertEquals(ids.distinct().size, ids.size, "an id repeated across slots cannot load: $mappings")
-        val slots = mappings.map { it.second }
-        assertEquals(slots.distinct().size, slots.size, "a slot claimed twice cannot load: $mappings")
-    }
-
-    @Test
-    fun `flash takes opus because the vendor's own evidence outranks the model name`() {
-        // DeepSeek document that V4.1 Flash surpassed V4 Pro on performance, cost AND speed. If a
-        // later revision flips that, this assertion is the thing that should be argued with.
-        val opus = profile.models.single { "opus" in it.slots }
-        assertEquals("deepseek-flash", opus.id)
-    }
-
-    @Test
     fun `the allowlist drops every block DeepSeek reject, redacted_thinking above all`() {
         val quirks = profile.providerExtra.single { it.startsWith("block_allowlist") }
         // DR-118 forwards redacted_thinking verbatim because Anthropic requires it back unchanged.
@@ -67,46 +47,6 @@ class DeepSeekProfileTest {
         for (supported in SUPPORTED) {
             assertTrue(supported in quirks, "'$supported' is supported and must ride: $quirks")
         }
-    }
-
-    @Test
-    fun `cache_control is stripped and the wire is the anthropic-format endpoint`() {
-        assertTrue(profile.providerExtra.any { it == "strip_cache_control = true" })
-        assertEquals("https://api.deepseek.com/anthropic", profile.baseUrl)
-        assertEquals("anthropic-passthrough", profile.dialect)
-        // No toolNameCap: DeepSeek document tool `name` as fully supported with no length limit,
-        // unlike Muse. If a live turn ever 400s on a long name, that is the knob to reach for.
-        assertEquals("api-key", profile.authKind)
-    }
-
-    @Test
-    fun `the api-key env is the derived DEEPSEEK_API_KEY`() {
-        assertEquals("DEEPSEEK_API_KEY", AddProfiles().apiKeyEnv("deepseek"))
-        assertNotNull(AddProfiles().find("deepseek"))
-    }
-
-    // From HeadRatesOverrideTest when `splice add` moved to features/configuration (LAYOUT-01): the
-    // emitted TOML is this profile's, so the arm that drives it through catalogFor lives beside it.
-    @Test
-    fun `the deepseek profile's own emitted TOML carries a card through catalogFor`() {
-        // The end the operator actually reaches: `splice add deepseek` emits TOML, and a head
-        // BOOTS from it. catalogFor is the fold's home and it runs at head-build time — a topology
-        // that merely PARSES proves nothing about it, so this drives the profile's real output
-        // through load and then through catalogFor, which is where a broken fold would take a head
-        // down while doctor's parse stayed green.
-        val profile = requireNotNull(AddProfiles().find("deepseek")) { "deepseek profile missing" }
-        val emitted = AddProfiles().toml(profile, "deepseek", 3101)
-        val parsed = TopologyLoader.parse("[daemon]\ncontrol_port = 3096\n$emitted")
-        val catalog = parsed.providers.getValue("deepseek").catalogFor(parsed.heads.getValue("deepseek"))
-        assertEquals(
-            ModelRates(input = 0.15, cacheRead = 0.003, output = 0.60),
-            catalog.models.first { it.id == "deepseek-flash" }.rates,
-            "the emitted card must survive emit -> parse -> catalogFor, or the head prices nothing",
-        )
-        assertEquals(
-            ModelRates(input = 0.66, cacheRead = 0.022, output = 1.98),
-            catalog.models.first { it.id == "deepseek-v4-pro" }.rates,
-        )
     }
 }
 

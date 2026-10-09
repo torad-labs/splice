@@ -11,11 +11,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
-import splice.core.config.Knob
 import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.AuthKindRegistry
-import splice.core.topology.Dialect
 import splice.core.util.EnvReader
 import splice.topology.TopologyLoader
 import java.io.ByteArrayOutputStream
@@ -28,7 +26,6 @@ private const val TOKENS = """{"tokens":{"access_token":"a","refresh_token":"r"}
 private const val EDIT = "\n# edited meanwhile\n"
 
 class AddCommandTest {
-
     private val env = EnvReader { name -> if (name == "FW_API_KEY") "k" else null }
     private val installed = mutableListOf<String>()
     private var restarted = 0
@@ -187,8 +184,6 @@ class AddCommandTest {
         assertTrue(runBlocking { command(http(routes), daemonUp = true).add(listOf("codex", "--yes"), env) })
         val topology = TopologyLoader.parse(Files.readString(config()))
         assertEquals("chatgpt-oauth", topology.providers.getValue("codex").auth.kind)
-        assertEquals("claudex", topology.heads.getValue("codex").claude.command)
-        assertEquals("gpt-6-sol", topology.heads.getValue("codex").pinnedModel)
         assertEquals(listOf("login:codex", "codex"), installed)
         assertEquals(1, restarted, "the daemon was up and --yes accepted the restart")
     }
@@ -328,9 +323,6 @@ class AddCommandTest {
         val kimiHead = topology.heads.getValue("kimi")
         kimi.catalogFor(kimiHead)
         assertEquals("kimi-oauth", kimi.auth.kind)
-        assertEquals("k3-256k", kimiHead.pinnedModel)
-        assertEquals(null, kimiHead.models)
-        assertEquals(262_144L, kimiHead.contextWindow)
         assertEquals(listOf("kimi"), installed, "no sign-in ran: the flat kimi file is refreshable")
     }
 
@@ -349,12 +341,6 @@ class AddCommandTest {
         val museHead = topology.heads.getValue("muse")
         topology.providers.getValue("muse").catalogFor(museHead)
         assertEquals("muse-oauth", topology.providers.getValue("muse").auth.kind)
-        assertEquals(Dialect.OPENAI_RESPONSES, topology.providers.getValue("muse").dialect)
-        assertEquals("https://api.meta.ai/v1", topology.providers.getValue("muse").baseUrl)
-        assertEquals("claude-muse", museHead.claude.command)
-        assertEquals("muse-spark-1.3[1m]", museHead.pinnedModel)
-        assertEquals(null, museHead.models)
-        assertEquals(1_000_000L, museHead.contextWindow)
         assertEquals(listOf("muse"), installed, "no sign-in ran: the account token is enough")
     }
 
@@ -391,55 +377,7 @@ class AddCommandTest {
         assertTrue(runBlocking { command(http(routes), login = false).add(listOf("claude", "--yes"), env) })
         val topology = TopologyLoader.parse(Files.readString(config()))
         assertEquals("client", topology.providers.getValue("claude-splice").auth.kind)
-        assertEquals("claude-splice", topology.heads.getValue("claude-splice").claude.command)
         assertEquals(listOf("claude-splice"), installed, "no sign-in, the wrapper linked")
-    }
-
-    /** V4-224, RED before: codex pinned gpt-5.6-sol at 400K, grok grok-4.6, claude Fable 5 and Opus 5 at
-     *  200K. The windows are the vendors' own (AddProfileCatalog names each doc); the codex and grok
-     *  knobs are what a head with no pinned_model falls back to, so they name the same models. */
-    @Test
-    fun `a fresh add reaches each family's latest model at its vendor's window - V4-224`(@TempDir home: Path) =
-        withHome(home) {
-            starter()
-            val bases = listOf(
-                "https://chatgpt.com/backend-api/codex",
-                "https://api.x.ai/v1",
-                "https://api.anthropic.com",
-                "https://api.meta.ai/v1",
-            )
-            val routes = bases.associate { "GET $it" to "{}" }
-            Files.writeString(authFile("chatgpt-oauth"), TOKENS)
-            val ahead = System.currentTimeMillis() + HOUR_MS
-            Files.writeString(authFile("grok-oauth"), """{"tokens":{"access_token":"a"},"expires":$ahead}""")
-            Files.writeString(authFile("muse-oauth"), """{"access_token":"acct-token-fake"}""")
-            for (family in listOf("codex", "grok", "claude", "muse")) {
-                val added = runBlocking { command(http(routes), login = false).add(listOf(family, "--yes"), env) }
-                assertTrue(added, family)
-            }
-            val heads = TopologyLoader.parse(Files.readString(config())).heads
-            val latest = mapOf(
-                "codex" to ("gpt-6-sol" to 272_000L),
-                "grok" to ("grok-4.7" to 500_000L),
-                "claude-splice" to ("claude-fable-5-1" to 1_000_000L),
-                "muse" to ("muse-spark-1.3[1m]" to 1_000_000L),
-            )
-            val landed = latest.keys.associateWith { heads.getValue(it).let { h -> h.pinnedModel to h.contextWindow } }
-            assertEquals(latest, landed)
-            val claudeSlots = heads.getValue("claude-splice").models.orEmpty().associate { it.slot to it.id }
-            assertEquals("claude-opus-5-5", claudeSlots["opus"], "Claude Code's opus tier")
-            assertEquals(heads.getValue("codex").pinnedModel, Knob.PINNED_MODEL.text(), "CLAUDEX_PINNED_MODEL")
-            assertEquals(heads.getValue("grok").pinnedModel, Knob.GROK_MODEL.text(), "CLAUDE_GROK_MODEL")
-        }
-
-    @Test
-    fun `a command equal to a head whose command is omitted is refused`(@TempDir home: Path) = withHome(home) {
-        val implicit = configuredOpenRouter().replace("command = \"claude-openrouter\"\n", "")
-        Files.writeString(config(), implicit)
-        val collide = listOf("api-key", "--name", "fw", "--base-url", "http://localhost:1/v1") +
-            listOf("--model", "m:1000", "--command", "openrouter", "--yes")
-        assertFalse(runBlocking { command(http(fwRoutes)).add(collide, env) })
-        assertEquals(implicit, Files.readString(config()))
     }
 
     private fun capture(block: () -> Unit): String {

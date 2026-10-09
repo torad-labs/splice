@@ -1,16 +1,10 @@
-package splice.configuration.add.v4384
+package splice.configuration.add
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.configuration.add.AddArgs
-import splice.configuration.add.AddChecks
-import splice.configuration.add.AddPrepare
-import splice.configuration.add.AddPrepared
-import splice.configuration.add.AddRefusal
-import splice.configuration.add.AddRefusalText
 import splice.core.config.UserHome
 import splice.core.terminal.TerminalOutput
 import splice.core.testing.TestPorts

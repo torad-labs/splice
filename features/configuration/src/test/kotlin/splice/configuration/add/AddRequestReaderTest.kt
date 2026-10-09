@@ -19,7 +19,6 @@ class AddRequestReaderTest {
         return (rows.resolve(args, AddProfiles().find("api-key")!!) as AddRows.Resolved).models
     }
 
-    /** RED before the fix: [AddModel(id=llama3, label=llama3, contextWindow=8)]. */
     @Test
     fun `a row with no window keeps a tagged id whole and takes the default window`() {
         val parsed = models("""{"profile":"api-key","models":[{"id":"llama3:8"}]}""")

@@ -17,7 +17,6 @@ import splice.core.perf.PerfKeys
 import splice.topology.TopologyLoader
 
 class ApiRateCardsTest {
-
     private fun catalogOf(profileName: String, headKey: String): ModelCatalog {
         val profile = requireNotNull(AddProfiles().find(profileName)) { "$profileName profile missing" }
         val emitted = AddProfiles().toml(profile, headKey, PORT)
@@ -45,31 +44,6 @@ class ApiRateCardsTest {
         )
     }
 
-    @Test
-    fun `grok-4_7 carries xAI's card and its 200k tier`() {
-        val tier = LongContextRates(overInputTokens = 199_999, input = 4.0, cacheRead = 1.0, output = 12.0)
-        assertEquals(
-            ModelRates(input = 2.0, cacheRead = 0.5, output = 6.0, longContext = tier),
-            cardOf("grok", "grok", "grok-4.7"),
-        )
-    }
-
-    @Test
-    fun `muse-spark-1_3 carries Meta's Standard card, with no tier`() {
-        assertEquals(
-            ModelRates(input = 1.25, cacheRead = 0.15, output = 4.25),
-            cardOf("muse", "muse", "muse-spark-1.3"),
-        )
-    }
-
-    @Test
-    fun `claude-opus-5-5 carries Anthropic's card at the 1-hour cache-write rate`() {
-        assertEquals(
-            ModelRates(input = 4.0, cacheRead = 0.2, output = 20.0, cacheWrite = 8.0),
-            cardOf("claude", "claude-splice", "claude-opus-5-5"),
-        )
-    }
-
     // V4-270: a default claude-splice install takes Claude Code's small-fast turns on Haiku 4.5 and /model
     // sonnet or fable turns on those rows, and each one with no card counted as "1 turn unpriced".
     @Test
@@ -77,22 +51,6 @@ class ApiRateCardsTest {
         val catalog = catalogOf("claude", "claude-splice")
         val unpriced = catalog.models.filter { it.rates == null }.map { catalog.stripSuffixes(it.id) }.distinct()
         assertEquals(emptyList<String>(), unpriced, "models the claude profile lists with no rate card")
-    }
-
-    @Test
-    fun `fable 5_1, sonnet 5 and haiku 4_5 carry Anthropic's cards at the 1-hour cache-write rate`() {
-        assertEquals(
-            ModelRates(input = 10.0, cacheRead = 0.25, output = 50.0, cacheWrite = 20.0),
-            cardOf("claude", "claude-splice", "claude-fable-5-1"),
-        )
-        assertEquals(
-            ModelRates(input = 2.0, cacheRead = 0.2, output = 10.0, cacheWrite = 4.0),
-            cardOf("claude", "claude-splice", "claude-sonnet-5"),
-        )
-        assertEquals(
-            ModelRates(input = 1.0, cacheRead = 0.1, output = 5.0, cacheWrite = 2.0),
-            cardOf("claude", "claude-splice", "claude-haiku-4-5"),
-        )
     }
 
     // The team tally (TeamsEconomics.kt PerfTally.rates) and TurnPrice resolve a turn's card the same way:

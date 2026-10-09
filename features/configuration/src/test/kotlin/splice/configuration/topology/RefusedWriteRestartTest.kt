@@ -1,8 +1,8 @@
-// NEW: V4-413 — a PUT /api/topology that wrote nothing says restart_required false. Marlin's walk of V4-400 on
+// A PUT /api/topology that wrote nothing says restart_required false. Marlin's walk of V4-400 on
 // 3839fcc06: a refused write (missing instruction file) answered ok false with splice.toml untouched and
 // restart_required true, because every refusal path built its Attempt with the default. One test per way
 // a PUT is refused, and a write that moves a boot-only key still says true.
-package splice.configuration.topology.v4413
+package splice.configuration.topology
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
@@ -19,8 +19,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.configuration.topology.TopologyRoutes
-import splice.configuration.topology.TopologyStale
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
 import splice.core.topology.TopologyWriterSource

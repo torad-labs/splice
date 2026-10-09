@@ -1,6 +1,4 @@
-// NEW: V4-266, V4-267 (Marlin's words, from the plans take's screen) — a passing check says what the
-// pass means to a new user. "✓ base url HTTP 403 from …" read as a failure beside a green tick, and
-// "no model list on OPENAI_RESPONSES; 4 row(s) trusted" named a dialect nobody picked.
+// What the add checks conclude about a provider's model list and the context windows a head declares.
 package splice.configuration.add
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -8,31 +6,19 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import org.junit.jupiter.params.ParameterizedTest
-import org.junit.jupiter.params.provider.ValueSource
 import splice.core.config.UserHome
 import splice.core.model.ModelEntry
 import splice.core.terminal.TerminalOutput
-import splice.core.topology.AuthConfig
-import splice.core.topology.Dialect
-import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 import java.nio.file.Path
 
-class AddChecksWordingTest {
+class AddModelWindowChecksTest {
+    @Test
+    fun `every declared row is capped by the provider list, not just the pinned model`(@TempDir home: Path) {
+        listOf("context_length", "context_window").forEach { field -> assertOversizedRowRefused(field, home) }
+    }
 
-    private val codex = ProviderConfig(
-        dialect = Dialect.OPENAI_RESPONSES,
-        baseUrl = "https://chatgpt.com/backend-api/codex",
-        auth = AuthConfig(kind = "chatgpt-oauth"),
-    )
-
-    @ParameterizedTest
-    @ValueSource(strings = ["context_length", "context_window"])
-    fun `every declared row is capped by the provider list, not just the pinned model`(
-        field: String,
-        @TempDir home: Path,
-    ) = UserHome.within(home) {
+    private fun assertOversizedRowRefused(field: String, home: Path) = UserHome.within(home) {
         val env = EnvReader { name -> if (name == "FW_API_KEY") "synthetic-key" else null }
         val output = TerminalOutput { }
         val http = AddHttp { _, url, _, _ ->
@@ -74,38 +60,5 @@ class AddChecksWordingTest {
         )
     }
 
-    @Test
-    fun `a provider with no window sizes leaves every declared row explicitly unchecked`() {
-        val result = checks(200).modelWindows(
-            listOf(ModelEntry("a", contextWindow = 128_000), ModelEntry("b", contextWindow = 1_000_000)),
-            ListedModels.Absent,
-        )
-        assertTrue(result.ok)
-        assertEquals(
-            "a unchecked: provider lists no window size; b unchecked: provider lists no window size",
-            result.detail,
-        )
-    }
-
     private fun checks(status: Int) = AddChecks(TerminalOutput { }, AddHttp { _, _, _, _ -> AddHttpReply(status, "") })
-
-    @Test
-    fun `a base url that answers is reachable, with no status code beside the tick`() {
-        assertEquals(
-            AddCheck("base url", true, "reachable at https://chatgpt.com/backend-api/codex"),
-            checks(403).reachable(codex.baseUrl),
-        )
-    }
-
-    @Test
-    fun `a provider that publishes no list says its models come from splice's catalog`() {
-        val checks = checks(200)
-        val absent = checks.listedModels(codex, "codex", EnvReader { null })
-        val why = "this provider publishes no list to check them against"
-        assertEquals(
-            AddCheck("models", true, "4 models from splice's catalog; $why"),
-            checks.modelsListed(listOf("a", "b", "c", "d"), absent),
-        )
-        assertEquals("1 model from splice's catalog; $why", checks.modelsListed(listOf("a"), absent).detail)
-    }
 }

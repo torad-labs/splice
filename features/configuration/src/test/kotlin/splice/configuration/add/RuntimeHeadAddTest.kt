@@ -1,4 +1,4 @@
-// NEW: the runtime-described head (`splice setup`'s local-model step) through `splice add`'s own
+// The runtime-described head (`splice setup`'s local-model step) through `splice add`'s own
 // machinery, against a hermetic SPLICE_CONFIG and a fake network: the row it writes parses through
 // the real loader with the quirks and window rig described, the placeholder key is planted only when
 // absent, and a refused add leaves splice.toml and keys.toml as it found them.
@@ -95,6 +95,7 @@ class RuntimeHeadAddTest {
         assertEquals("bonsai-2-27b", model.id)
         assertEquals("Bonsai 2 27B", model.label)
         assertEquals(245_760L, model.contextWindow)
+        assertEquals("claude-sonnet-4-6", model.clientModel, "presented to the client as a Claude model it knows")
         val row = topology.heads.getValue("bonsai")
         assertEquals("bonsai", row.provider)
         assertEquals("bonsai-2-27b", row.pinnedModel)

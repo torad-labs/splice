@@ -14,7 +14,7 @@ import java.nio.file.attribute.PosixFilePermissions
 class AddWriteOwnerOnlyTest {
 
     @Test
-    fun `an add rewrites splice toml owner-only, whatever the old file's mode - V4-275`(@TempDir tmp: Path) {
+    fun `an add rewrites splice toml owner-only, whatever the old file's mode`(@TempDir tmp: Path) {
         if (!Files.getFileStore(tmp).supportsFileAttributeView("posix")) return
         val file = tmp.resolve("splice.toml")
         Files.writeString(file, "[heads.a]\nport = 8801\n")
@@ -29,7 +29,7 @@ class AddWriteOwnerOnlyTest {
 
     // V4-279: the rename landed ON a linked splice.toml and replaced the link with a regular file.
     @Test
-    fun `an add through a linked splice toml keeps the link and writes its target - V4-279`(@TempDir tmp: Path) {
+    fun `an add through a linked splice toml keeps the link and writes its target`(@TempDir tmp: Path) {
         val target = Files.createDirectories(tmp.resolve("dotfiles")).resolve("splice.toml")
         Files.writeString(target, "[heads.a]\nport = 8801\n")
         val link = Files.createDirectories(tmp.resolve("config")).resolve("splice.toml")

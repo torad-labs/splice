@@ -1,4 +1,4 @@
-// NEW: production quota stores and parser over synthetic state, with no credentials or provider traffic.
+// Production quota stores and parser over synthetic state, with no credentials or provider traffic.
 package splice.app.sources
 
 import kotlinx.coroutines.CoroutineScope

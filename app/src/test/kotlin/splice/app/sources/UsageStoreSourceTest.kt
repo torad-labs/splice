@@ -1,7 +1,4 @@
-// NEW: the observation instant reaches the usage view from the stores the head writes. The
-// rate-limit file and the quota snapshot both record WHEN they were observed (updated_at, epoch
-// millis); UsageStoreSource used to drop both, so /api/usage could not say how old a bar was. The
-// view carries them in epoch seconds, the unit the quota windows' resets_at already uses.
+// The observation instant reaches the usage view from the stores the head writes, in epoch seconds like resets_at.
 package splice.app.sources
 
 import org.junit.jupiter.api.Assertions.assertEquals

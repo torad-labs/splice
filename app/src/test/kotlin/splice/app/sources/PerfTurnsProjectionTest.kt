@@ -1,4 +1,4 @@
-// NEW: differential real-route payload and repair controls for the projected turns source.
+// Differential real-route payload and repair controls for the projected turns source.
 package splice.app.sources
 
 import kotlinx.serialization.json.JsonObject

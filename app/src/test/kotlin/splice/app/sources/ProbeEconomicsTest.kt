@@ -1,4 +1,4 @@
-// NEW: V4-454 — historical probes leave no economics work; correction never edits history.
+// Historical probes leave no economics work; correction never edits history.
 package splice.app.sources
 
 import kotlinx.serialization.json.Json

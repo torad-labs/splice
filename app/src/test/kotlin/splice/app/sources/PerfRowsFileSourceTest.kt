@@ -185,7 +185,7 @@ class PerfRowsFileSourceTest {
         assertNull(absent.readError, "absence is quiet")
     }
 
-    // The archive (V4-133, wired 2026-09-23): retired generations are read first, oldest first, and one
+    // The archive: retired generations are read first, oldest first, and one
     // that ended a full second before the cutoff is never opened (it is unreadable here, so opening it
     // would be a read error) while its rotation second still counts as retention evidence.
     @Test

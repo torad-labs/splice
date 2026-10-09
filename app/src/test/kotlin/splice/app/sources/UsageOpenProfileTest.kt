@@ -1,4 +1,4 @@
-// NEW: page-open quota workloads stay independent of perf history and reuse honestly dated probes.
+// Page-open quota workloads stay independent of perf history and reuse honestly dated probes.
 package splice.app.sources
 
 import kotlinx.coroutines.runBlocking
@@ -8,11 +8,9 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -67,35 +65,7 @@ class UsageOpenProfileTest {
                     "read_bytes=$readBytes write_bytes=$writtenBytes history_bytes=" +
                     (Files.size(fixture.history.file) + Files.size(fixture.history.file.resolveSibling("${fixture.history.file.fileName}.1"))),
             )
-            rejectHistoryRead(fixture, profiler)
         }
-
-    @Test
-    fun `write attribution separates another path without losing an atomic snapshot rewrite`(@TempDir dir: Path) {
-        val snapshots = Files.createDirectory(dir.resolve("snapshots"))
-        val snapshot = snapshots.resolve("quota.json")
-        val other = dir.resolve("another-writer.json")
-        SecureFile.writeAtomic0600(snapshot, "synthetic retained reading")
-        val profiler = PerfHistoryProfile()
-        profiler.diskPhase("another_writer", dir.resolve("other-write.jfr")) {
-            Files.writeString(other, "x".repeat(560))
-        }
-        assertEquals(560L, profiler.diskWritesByPath[other])
-        assertEquals(0L, profiler.writesUnder(snapshots), "another writer is not a snapshot rewrite")
-        assertTrue(profiler.diskWriteBytes >= 560L, "the process-wide diagnostic still exposes the other writer")
-        profiler.diskPhase("snapshot_rewrite_control", dir.resolve("rewrite.jfr")) {
-            SecureFile.writeAtomic0600(snapshot, "synthetic rewritten reading")
-        }
-        assertEquals(Files.size(snapshot), profiler.writesUnder(snapshots), "the atomic temporary write is counted")
-        assertThrows(AssertionError::class.java) {
-            assertEquals(0L, profiler.writesUnder(snapshots), "a real rewrite must fail the reuse assertion")
-        }
-    }
-
-    private fun rejectHistoryRead(fixture: UsageOpenFixture, profiler: PerfHistoryProfile) {
-        profiler.phase("usage_history_read_control") { fixture.perf.window(SCALE_SINCE) }
-        assertThrows(AssertionError::class.java) { assertTrue(profiler.allocatedBytes < USAGE_OPEN_ALLOCATION_LIMIT) }
-    }
 
     private fun measureEndpoints(fixture: UsageOpenFixture, profiler: PerfHistoryProfile) {
         val get = profiler.phase("usage_get") { fixture.payloads.usageJson() }

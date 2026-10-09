@@ -1,4 +1,4 @@
-// NEW: aggregate-only source phase samples and exact per-phase thread allocation measurements.
+// Aggregate-only source phase samples and exact per-phase thread allocation measurements.
 package splice.app.sources
 
 import com.sun.management.ThreadMXBean

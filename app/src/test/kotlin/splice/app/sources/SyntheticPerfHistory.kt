@@ -1,4 +1,4 @@
-// NEW: deterministic, operator-free seven-day usage history at the reported request and token scale.
+// Deterministic, operator-free seven-day usage history at the reported request and token scale.
 package splice.app.sources
 
 import splice.core.perf.PerfKeys

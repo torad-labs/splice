@@ -1,8 +1,6 @@
-// NEW: V4-345 — the reader carries a row's trace turn id, by name, off real JSONL bytes: the id the
-// console opens the row's request by. It is a string fact like the session tag, so it stays out of the
-// numeric bag even when every character of it is a digit, as one random 12-hex id in about 280 is:
-// the bag is the row's marks and counters, and a turn id read into it would sit among them as a count.
-package splice.app.sources.v4345
+// The reader carries a row's trace turn id by name, off real JSONL bytes: the id the console opens the row's request by.
+// It is a string fact, so it stays out of the numeric bag even when every character of it is a digit.
+package splice.app.sources
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -13,7 +11,7 @@ import splice.app.sources.PerfRowsFileSource
 import java.nio.file.Files
 import java.nio.file.Path
 
-class PerfRowTurnFactTest {
+class PerfRowTurnIdTest {
 
     @Test
     fun `a row's turn is read by name, and a row without one reads it as absent`(@TempDir dir: Path) {

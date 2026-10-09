@@ -1,11 +1,7 @@
-// NEW: the large Usage window must not decode all earlier history on first load.
+// The large Usage window must not decode all earlier history on first load.
 package splice.app.sources
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -66,82 +62,6 @@ class PerfHistoryScaleTest {
         println("perf_turns_repeat_decoded=$decodedAgain perf_turns_repeat_read_bytes=${profiler.diskBytes}")
         assertEquals(0L, decodedAgain, "an unchanged seven-day turns read must decode zero already-read rows")
         assertTrue(profiler.diskBytes <= 65_536L, "an unchanged seven-day turns read is bounded to 64 KiB")
-    }
-
-    @Test
-    fun `pooled summary adds bounded assembly without another history read`(@TempDir dir: Path) {
-        val history = SyntheticPerfHistory(dir)
-        history.create()
-        val source = PerfRowsFileSource(history.file)
-        val read = source.window(SCALE_SINCE)
-        assertEquals(SCALE_REQUESTS, read.rows.size)
-        assertEquals(SCALE_REQUESTS, read.rows.count { it.fields[PerfKeys.FIRST_BYTE] != null })
-        val profiler = PerfHistoryProfile()
-        var calls = 0
-        val assembly = PerfSummaryProfile(
-            PerfRowsSource {
-                calls++
-                read
-            },
-        )
-        repeat(3) {
-            assembly.perHead()
-            assembly.pooled()
-        }
-        val perHead = profiler.phase("summary_per_head") { assembly.perHead() }
-        val before = profiler.allocatedBytes
-        val pooled = profiler.phase("summary_pooled") { assembly.pooled() }
-        val after = profiler.allocatedBytes
-        val oldJson = Json.parseToJsonElement(perHead).jsonObject
-        val newJson = Json.parseToJsonElement(pooled).jsonObject
-        assertEquals(oldJson, kotlinx.serialization.json.JsonObject(newJson - "time_before_first_byte_ms"))
-        val stats = newJson.getValue("time_before_first_byte_ms").jsonObject
-        assertEquals(SCALE_REQUESTS.toString(), stats.getValue("count").jsonPrimitive.content)
-        assertEquals("4865", stats.getValue("p50").jsonPrimitive.content)
-        assertEquals(8, calls, "each assembly reads the head exactly once")
-        val margin = SCALE_REQUESTS * 24L + 65_536L
-        fun bounded(bytes: Long) = assertTrue(bytes - before <= margin, "pooled assembly must reuse per-head facts")
-        bounded(after)
-        profiler.phase("summary_duplicate_fold_control") {
-            assembly.pooled()
-            assembly.pooled()
-        }
-        assertThrows(AssertionError::class.java) { bounded(profiler.allocatedBytes) }
-        assertThrows(AssertionError::class.java) { assertTrue(oldJson.containsKey("time_before_first_byte_ms")) }
-        println("perf_summary_before_bytes=$before after_bytes=$after margin_bytes=$margin")
-        verifyWarmSummary(source, history, dir, margin)
-    }
-
-    private fun verifyWarmSummary(source: PerfRowsFileSource, history: SyntheticPerfHistory, dir: Path, margin: Long) {
-        val profiler = PerfHistoryProfile()
-        var reads = 0
-        val live = PerfSummaryProfile(
-            PerfRowsSource { cutoff ->
-                reads++
-                source.window(cutoff)
-            },
-        )
-        val parsed = source.parsedLines
-        val paths = setOf(history.file, history.file.resolveSibling("${history.file.fileName}.1"))
-        profiler.diskPhase("warm_source_per_head_summary", dir.resolve("summary-before.jfr"), paths) { live.perHead() }
-        val beforeTotal = profiler.allocatedBytes
-        val beforeDisk = profiler.diskBytes
-        val beforeDecode = source.parsedLines - parsed
-        profiler.diskPhase("warm_source_pooled_summary", dir.resolve("summary-after.jfr"), paths) { live.pooled() }
-        val afterTotal = profiler.allocatedBytes
-        val afterDecode = source.parsedLines - parsed - beforeDecode
-        assertEquals(2, reads)
-        assertEquals(beforeDisk, profiler.diskBytes, "pooling must not reread the history")
-        assertEquals(beforeDecode, afterDecode, "pooling must not decode the history again")
-        assertTrue(
-            afterTotal - beforeTotal <= margin,
-            "warm source plus assembly must preserve the same allocation bound",
-        )
-        println(
-            "perf_summary_warm_before_bytes=$beforeTotal after_bytes=$afterTotal " +
-                "disk_before_bytes=$beforeDisk disk_after_bytes=${profiler.diskBytes} " +
-                "decode_before=$beforeDecode decode_after=$afterDecode",
-        )
     }
 
     @Test

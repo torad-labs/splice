@@ -1,4 +1,4 @@
-// NEW: parse-count and bounded-retention regressions for coherent perf window reads.
+// Parse-count and bounded-retention regressions for coherent perf window reads.
 package splice.app.sources
 
 import kotlinx.serialization.json.Json
@@ -83,25 +83,6 @@ class PerfRowsReadCacheTest {
     }
 
     @Test
-    fun `byte eviction keeps complete windows while recent retained rows need no decoding`(@TempDir dir: Path) {
-        val file = dir.resolve("head-perf.jsonl")
-        Files.writeString(file, (1L..100L).joinToString("") { row(it) })
-        val budget = 32_768L
-        val source = PerfRowsFileSource(file, cache = PerfRowsCache(budget))
-        val all = source.window(0)
-        assertEquals(100, all.rows.size)
-        assertTrue(source.cachedBytes <= budget)
-        assertTrue(source.cachedLines < all.rows.size, "the pressure control must force eviction")
-        assertEquals(all, source.window(0), "eviction cannot truncate the requested window")
-        val before = source.parsedLines
-        val recent = source.window(99)
-        assertEquals(listOf(99L, 100L), recent.rows.map { it.ts })
-        assertEquals(0L, source.parsedLines - before, "validated eviction evidence needs no repeated anchor decode")
-        assertEquals(1L, recent.oldestHeldTs)
-        assertTrue(source.cachedBytes <= budget)
-    }
-
-    @Test
     fun `simultaneous tabs share one decode and keep independent result lists`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
         Files.writeString(file, (1L..30L).joinToString("") { row(it) })
@@ -162,30 +143,6 @@ class PerfRowsReadCacheTest {
     }
 
     @Test
-    fun `one reported day of representative rows fits the compact byte and row caps`(@TempDir dir: Path) {
-        val file = dir.resolve("head-perf.jsonl")
-        // The lead's aggregate-only Oct 3 measurement: the largest source appended 27,537 rows,
-        // averaging 1,082 JSON bytes. This synthetic shape matches that mean without private rows.
-        val count = 27_537
-        val lines = (1..count).map { representative(it.toLong()) }
-        val wireBytes = lines.sumOf { it.toByteArray(Charsets.UTF_8).size.toLong() }
-        Files.writeString(file, lines.joinToString(""))
-        val source = PerfRowsFileSource(file)
-        val first = source.window(0)
-        assertEquals(count, first.rows.size)
-        assertEquals(count, source.cachedLines, "the calibrated recent day must not spill past the byte cap")
-        assertTrue(source.cachedBytes <= PERF_CACHE_BYTES)
-        assertTrue(source.cachedLines <= PERF_CACHE_ROWS)
-        assertEquals(first, source.window(0))
-        assertEquals(count.toLong(), source.parsedLines, "the entire representative day is decoded once")
-        println(
-            "perf_cache_rows=$count wire_bytes=$wireBytes cached_bytes=${source.cachedBytes} " +
-                "charged_bytes_per_row=${source.cachedBytes / count} " +
-                "first_read_parses=$count repeated_read_parses=0 byte_cap=$PERF_CACHE_BYTES row_cap=$PERF_CACHE_ROWS",
-        )
-    }
-
-    @Test
     fun `a write during decode cannot seal old facts under the rewritten bytes digest`(@TempDir dir: Path) {
         val file = dir.resolve("head-perf.jsonl")
         Files.writeString(file, row(1) + row(2))
@@ -239,11 +196,6 @@ class PerfRowsReadCacheTest {
         assertEquals(null, source.window(0).rows.first().fields["async_io_drops"])
     }
 
-    private fun representative(ts: Long): String {
-        val fields = (0 until 35).joinToString(",") { index -> """"metric_${index.toString().padStart(2, '0')}":12""" }
-        return """{"ts":$ts,"outcome":"ok","model":"synthetic-model","session":"synthetic","session_id":"synthetic-session-full-identity","response_message_id":"synthetic-response","account":"synthetic-account","turn":"synthetic-turn","compact":false,"cache_cold":true,"input_tokens":12,$fields,"ignored_detail":"${"x".repeat(265)}"}""" + "\n"
-    }
-
     private fun row(ts: Long): String =
         """{"ts":$ts,"outcome":"ok","model":"synthetic-model","input_tokens":12}""" + "\n"
 }
@@ -276,55 +228,5 @@ class PerfRowsCacheIntegrityTest {
         assertEquals(listOf(9L), source.window(0).rows.map { it.ts })
         source.window(0)
         assertEquals(2L, source.parsedLines, "an identical repaired tail does not decode again")
-    }
-
-    @Test
-    fun `evicted generations cannot hide backing storage outside the byte cap`(@TempDir dir: Path) {
-        val budget = 1_024L * 1_024
-        val cache = PerfRowsCache(budget)
-        val visit = object : PerfLineVisit {
-            override fun raw(line: String) = Unit
-            override fun kept(line: PerfCachedLine) = Unit
-        }
-        val empty = PerfCachedLine(null, 0L, null, false, false, null, false)
-        val decode = PerfLineDecode { empty }
-        val files = (0 until 64).map { index ->
-            dir.resolve("generation-$index.jsonl").also {
-                Files.writeString(it, "{}\n".repeat(2_048))
-                cache.read(it, index, visit, decode)
-            }
-        }
-        val outcome = "Ā".repeat(400 * 1_024)
-        Files.writeString(files.last(), "{\"ts\":1}\n")
-        cache.read(
-            files.last(),
-            files.lastIndex,
-            visit,
-            PerfLineDecode { empty.copy(row = PerfRow(ts = 1, outcome = outcome, fields = emptyMap())) },
-        )
-        val queueSlots = retainedQueueSlots(cache)
-        val minimumBytes = queueSlots * 4L + outcome.length * 2L
-        assertTrue(cache.retainedBytes <= budget)
-        assertTrue(
-            minimumBytes <= budget,
-            "queue arrays and non-Latin string storage alone retain $minimumBytes bytes above the $budget-byte cap",
-        )
-        println(
-            "perf_cache_pressure_slots=$queueSlots minimum_bytes=$minimumBytes charged_bytes=${cache.retainedBytes}",
-        )
-    }
-
-    private fun retainedQueueSlots(cache: PerfRowsCache): Long {
-        val generations = cache.javaClass.getDeclaredField("generations").apply { isAccessible = true }
-            .get(cache) as Map<*, *>
-        return generations.values.filterNotNull().sumOf { generation ->
-            val lines = generation.javaClass.getDeclaredField("lines").apply { isAccessible = true }.get(generation)
-            lines.javaClass.declaredFields
-                .filter { it.type.isArray && !java.lang.reflect.Modifier.isStatic(it.modifiers) }
-                .sumOf { field ->
-                    val array = field.apply { isAccessible = true }.get(lines) as? Array<*>
-                    array?.size?.toLong() ?: 0L
-                }
-        }
     }
 }

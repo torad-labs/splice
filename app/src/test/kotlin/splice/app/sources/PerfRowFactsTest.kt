@@ -1,15 +1,5 @@
-// NEW: V4-127 — the reader's five string-and-flag facts, off real JSONL bytes.
-//
-// WHY THIS IS ITS OWN FILE AND NOT A CASE IN PerfRowsFileSourceTest: that test owns the row's
-// NUMERIC projection and the window's coverage evidence. These five facts are the second half of the
-// row — the half no control-plane consumer could see before this row, because `fields` was built by
-// asking every value whether it parses as a Long and these do not. A regression here is invisible to
-// every test that reads `fields`, which is the whole reason the facts are pinned separately.
-//
-// THE FIXTURE VALUES ARE ALL DIFFERENT ON PURPOSE. Four of the five are nullable and two of the
-// strings are adjacent, so a reader that assigned them by position rather than by name would compile,
-// pass a fixture whose values shared a shape, and report a session tag where an account label
-// belongs. Distinct values are what turn that swap into a failure rather than a coincidence.
+// The reader's string-and-flag facts (session tag, account label, flags, failure cause), read by name off real JSONL
+// bytes, distinct per field so a positional mix-up fails; a legacy row reads them as absent, never as empty.
 package splice.app.sources
 
 import org.junit.jupiter.api.Assertions.assertEquals

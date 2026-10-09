@@ -1,4 +1,4 @@
-// NEW: an evicted pre-window rejection must not change economics evidence after another selection.
+// An evicted pre-window rejection must not change economics evidence after another selection.
 package splice.app.sources
 
 import org.junit.jupiter.api.Assertions.assertEquals

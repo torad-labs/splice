@@ -1,7 +1,4 @@
-// NEW (JW-03): the per-head log tail must catch every head-scoped producer. The tail filters
-// daemon.log on the literal `[<headKey>]`; the legacy shapes ([auth-probe:key], [codex-auth],
-// [daemon] head 'key' ...) never contained it, so auth/refresh/boot diagnostics vanished from
-// the one view built to show them. The probe line here comes from the REAL producer.
+// The per-head log tail catches every head-scoped producer: the auth probe, a provider refresh line and a boot failure.
 package splice.app.sources
 
 import kotlinx.coroutines.test.runTest
@@ -27,7 +24,7 @@ class LogFileSourceTagTest {
     }
 
     @Test
-    fun `every head-scoped producer shape survives the per-head tail filter - JW-03`(@TempDir tmp: Path) = runTest {
+    fun `every head-scoped producer shape survives the per-head tail filter`(@TempDir tmp: Path) = runTest {
         val captured = mutableListOf<String>()
 
         // 1. The REAL auth-probe producer (pre-fix: "[auth-probe:claudex] ..." — invisible).

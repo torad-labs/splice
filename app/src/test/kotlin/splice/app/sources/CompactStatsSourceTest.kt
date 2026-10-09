@@ -1,6 +1,4 @@
-// NEW (2026-09-23, 19fa4d52): the compact tail CompactStatsSource serves carries a string's content.
-// The arm landed in app's FileSourcesTest on feat/v0.4.0; LAYOUT-01 moved that file's log-tail arms
-// to features/diagnostics, while CompactStatsSource stays in app, so its arm lives here.
+// The compact tail CompactStatsSource serves carries a string's content, not its quoted JSON text.
 package splice.app.sources
 
 import org.junit.jupiter.api.Assertions.assertEquals

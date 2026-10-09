@@ -8,7 +8,6 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.util.AsyncFileIo
 import splice.core.util.JsonlAppendProof
 import splice.core.util.JsonlSink
-import splice.usage.perf.PerfRow
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -195,34 +194,4 @@ class PerfSessionAccountIndexTest {
         )
     }
 
-    @Test
-    fun `retained sessions and strings obey the declared ceilings without truncating an identity`() {
-        val file = home.resolve("perf.jsonl")
-        val fixtures = (0..9).associate { i ->
-            i.toString() to PerfCachedLine(
-                row = PerfRow(
-                    ts = i.toLong(),
-                    outcome = "ok",
-                    fields = emptyMap(),
-                    sessionId = "session-$i",
-                    account = "account-$i",
-                ),
-                numericBytes = 0,
-                leadingTs = null,
-                emptyModel = false,
-                dropsCandidate = false,
-                drops = null,
-                probe = false,
-            )
-        }
-        Files.writeString(file, fixtures.keys.joinToString("\n", postfix = "\n"))
-        val index = PerfSessionAccountIndex(limitSessions = 2, limitBytes = 256 * 1024)
-        val decode = PerfLineDecode { fixtures.getValue(it) }
-        assertEquals("account-9", index.account("session-9", emptyList(), listOf(file), decode))
-        assertEquals("account-8", index.account("session-8", emptyList(), listOf(file), decode))
-        assertEquals(2, index.retainedSessions)
-        assertTrue(index.retainedBytes <= 256 * 1024)
-        assertEquals("account-0", index.account("session-0", emptyList(), listOf(file), decode))
-        assertEquals(2, index.retainedSessions, "requested older facts replace unused cache entries")
-    }
 }

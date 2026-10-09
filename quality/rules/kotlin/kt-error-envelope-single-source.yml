@@ -88,6 +88,7 @@ message: "The Anthropic error envelope {\"type\":\"error\",\"error\":{...}} is a
 note: "The envelope is a contract in both directions — Claude Code reads it to decide retryability, and splice re-parses error.message (UpstreamFailureClassifier, FailureText). Four hand copies with three different key spellings exist today; a key renamed in one is invisible in the others. Coordinates with law_pre_content_wire_type.py: that wall owns WHERE an envelope may be built relative to the emitter seam and keeps the collect path's STATUS exemption; this rule owns the BODY SHAPE and keeps none. Do NOT name the new builder `errorEnvelope(` — that wall matches that name at CALL sites too."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   # The sole builder, created by fix row V4-103. Inert until the file exists; live with no edit here.
   - core/src/main/kotlin/splice/core/wire/ErrorEnvelope.kt

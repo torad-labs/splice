@@ -1,5 +1,7 @@
 // NEW: shared Kotlin/JVM configuration for every gateway module (P1-GRADLE).
 // Kind-specific rules (dependency law, explicitApi) live in splice.module-law.
+import splice.hygiene.CatalogReader
+
 plugins {
     id("org.jetbrains.kotlin.jvm")
     id("org.jetbrains.kotlin.plugin.serialization")
@@ -43,21 +45,14 @@ detekt {
 //
 // A precompiled script plugin gets no generated `libs` accessor, which is why the literals were here
 // in the first place; VersionCatalogsExtension is the supported way to reach it from this context.
-private val catalog = extensions.getByType<org.gradle.api.artifacts.VersionCatalogsExtension>().named("libs")
-
-private fun catalogVersion(alias: String): String =
-    catalog.findVersion(alias).orElseThrow {
-        // Fail LOUD: a missing alias must not silently fall back to a literal, or the skew returns
-        // wearing the fix's clothes.
-        GradleException("version catalog has no `$alias` — libs.versions.toml and this convention plugin disagree")
-    }.requiredVersion
+private val catalog = CatalogReader(extensions.getByType<org.gradle.api.artifacts.VersionCatalogsExtension>().named("libs"))
 
 dependencies {
-    "testImplementation"(platform("org.junit:junit-bom:${catalogVersion("junit")}"))
+    "testImplementation"(platform("org.junit:junit-bom:${catalog.version("junit")}"))
     "testImplementation"("org.junit.jupiter:junit-jupiter")
     "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
     // the kit detekt.yml carries a `formatting:` section (ktlint rules) — needs this plugin
-    "detektPlugins"("io.gitlab.arturbosch.detekt:detekt-formatting:${catalogVersion("detekt")}")
+    "detektPlugins"("io.gitlab.arturbosch.detekt:detekt-formatting:${catalog.version("detekt")}")
 }
 
 tasks.withType<Test>().configureEach {
@@ -103,7 +98,7 @@ tasks.withType<Test>().configureEach {
     // OAuth sign-in fails by name instead of opening a login page on the operator's desktop and
     // blocking on a loopback callback that will never arrive. See LoginIo.kt's wall.
     systemProperty("splice.noSystemBrowser", "1")
-    systemProperty("user.home", testHome.absolutePath)
+    jvmArgs("-Duser.home=${testHome.absolutePath}")
     // HOME outranks user.home (UserHome.kt, V4-218), so the rig home is named in both: a test JVM that kept
     // the shell's HOME would resolve every ~/ path into the developer's real home again.
     environment("HOME", testHome.absolutePath)

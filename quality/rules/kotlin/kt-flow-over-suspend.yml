@@ -28,6 +28,7 @@ severity: error
 message: "A `suspend fun` returning Flow is redundant — Flow is cold and `collect` already suspends. Drop `suspend`, or return the value directly."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   kind: function_declaration
   all:

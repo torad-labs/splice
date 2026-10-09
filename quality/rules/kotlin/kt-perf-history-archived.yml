@@ -17,6 +17,7 @@ severity: error
 message: "Name the perf archive: a production PerfStats or PerfRowsFileSource without statePaths.perfArchiveDir writes history the next rotation discards, or reads history as if the archive did not exist."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   all:
     - kind: call_expression

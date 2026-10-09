@@ -26,6 +26,8 @@ severity: error
 message: "The head streams only through SseResponse — Ktor's raw writers cancel the channel when the body throws and drop the frames the engine has not read yet, the seal's error frame last."
 files:
   - features/turns/src/main/**/*.kt
+  - "build-logic/src/main/**/*.kt"
+  - "build-logic/src/main/**/*.kts"
 ignores:
   - features/turns/src/main/kotlin/splice/head/wire/SseResponse.kt
 rule:

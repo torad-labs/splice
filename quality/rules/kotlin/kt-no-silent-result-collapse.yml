@@ -1,12 +1,11 @@
 # THE SWALLOW-INTO-NULL WALL (discipline L1, 2026-07-18): every incident of the gateway
 # stabilization day shared one shape — a runCatching* Result collapsed to null/default with the
 # failure never consumed (dead auth → HTTP 200 empty stream with zero log; refresh failures
-# indistinguishable from absent files). In the provider auth/transport modules, `.getOrNull()` /
+# indistinguishable from absent files). In every production root, `.getOrNull()` /
 # `.getOrDefault(...)` on a catching chain MUST either consume the failure first (`.onFailure {…}`)
-# or carry an explicit reviewed exemption (`// ast-grep-ignore: kt-no-silent-result-collapse`
-# with the reason on the same comment). Compiler half: -Xreturn-value-checker flags bare discards;
-# Result.discard(why) is the sanctioned full-drop. Scope is provider-* + :integrations-upstream for now —
-# widening to app/core/control tracked in .dev/research/gateway-gaps-tracker.md.
+# or carry an explicit reviewed exemption at the site (`// ast-grep-ignore: kt-no-silent-result-collapse`
+# with the reason on the same comment). Compiler half: -Xreturn-value-checker
+# flags bare discards; Result.discard(why) is the sanctioned full-drop.
 #
 # WIDENED 2026-09-17 (ARCH-AUDIT, audit D cross-cutting: :daemon-control and :app sat outside most walls'
 # `files:` globs). The 2026-07-18 scar this rule was written for — "auth failures identical to
@@ -45,8 +44,9 @@
 # WIDENED 2026-09-24 (v0.4.0 release, held to the 1.0 bar): the three dialects join. Excused as "pure
 # byte builders", but :dialects-openai-responses alone is 81 files with the stream controllers that
 # decide retries; measured with the file filter removed, all three carry ZERO findings, so this
-# closes the tree at no cost today and binds whatever they grow. Only :quality-compiler-plugin
-# (no Result path) stays outside.
+# closes the tree at no cost today and binds whatever they grow.
+# WIDENED 2026-10-08: every production root is selected, `.kt` and `.kts` both. There is no exclusion row and
+# no root outside the rule; build-logic's convention plugins are inside it.
 id: kt-no-silent-result-collapse
 language: kotlin
 severity: error
@@ -86,6 +86,7 @@ note: >
 # cries wolf; closing it properly needs failure-consumption tracking the pattern layer lacks.
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   any:
     # A. direct chain. Matched by STRUCTURE since 2026-09-24, not by `$RECV.getOrNull()`: a comment

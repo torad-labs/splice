@@ -106,6 +106,7 @@ describe("the P1 coverage proof", () => {
   test("mutant (a): a glob that matches nothing", async () => {
     const copy = copyOfTheRealRules();
     edit(copy.rule("kt-no-println"), '"**/src/main/**/*.kt"', '"gateway/does-not-exist/src/main/**/*.kt"');
+    edit(copy.rule("kt-no-println"), '"**/src/main/**/*.kts"', '"gateway/does-not-exist/src/main/**/*.kts"');
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
     const [message] = messagesFor(report, "kt-no-println", "rule-matches-nothing");
@@ -138,8 +139,8 @@ describe("the P1 coverage proof", () => {
     const copy = copyOfTheRealRules();
     edit(
       copy.rule("kt-no-unsafe-cast"),
-      'files:\n  - "**/src/main/**/*.kt"',
-      'files:\n  - "**/src/main/**/*.kt"\nignores:\n  - core/src/main/kotlin/splice/core/wire/HttpStatus.kt',
+      'files:\n  - "**/src/main/**/*.kt"\n  - "**/src/main/**/*.kts"',
+      'files:\n  - "**/src/main/**/*.kt"\n  - "**/src/main/**/*.kts"\nignores:\n  - core/src/main/kotlin/splice/core/wire/HttpStatus.kt',
     );
     const report = await prove(copy.sgconfig, copy.exclusions);
     expect(report.ok).toBe(false);
@@ -322,5 +323,40 @@ describe("the P1 coverage proof", () => {
         (f) => f.kind === "source-root-lost" && f.message.includes("integrations/dialects/openai-chat/src/main/kotlin"),
       ),
     ).toBe(true);
+  });
+
+  // THE THREE-DOMAIN CONTRACT. A rule's selection is all roots, all production roots or all test roots, derived from the units;
+  // anything else is refused by name with the domains stated. build-logic is an included build whose production roots hold
+  // `.gradle.kts` convention plugins, so a selector that names only `.kt` misses real production code and must be red.
+  test("a production selector that names only .kt is refused, naming the .kts it misses and the domains", async () => {
+    const copy = copyOfTheRealRules();
+    edit(copy.rule("kt-no-unsafe-cast"), '  - "**/src/main/**/*.kts"\n', "");
+    const report = await prove(copy.sgconfig, copy.exclusions);
+    expect(report.ok).toBe(false);
+    const lost = messagesFor(report, "kt-no-unsafe-cast", "file-lost");
+    expect(lost).toHaveLength(1);
+    expect(lost[0]).toContain("build-logic/src/main/kotlin");
+    expect(lost[0]).toContain("splice.gate-ladder.gradle.kts");
+    expect(lost[0]).toContain("all roots | production roots | test roots");
+    expect(lost[0]).toContain("nearest is production roots");
+  });
+
+  test("a selector of production roots plus one stray test file is no domain and is refused", async () => {
+    const copy = copyOfTheRealRules();
+    edit(
+      copy.rule("kt-no-unsafe-cast"),
+      'files:\n  - "**/src/main/**/*.kt"',
+      'files:\n  - "**/src/main/**/*.kt"\n  - "core/src/test/**/*.kt"',
+    );
+    const report = await prove(copy.sgconfig, copy.exclusions);
+    expect(report.ok).toBe(false);
+    const named = report.findings.filter((f) => f.rule === "kt-no-unsafe-cast").map((f) => f.message);
+    expect(named.length).toBeGreaterThan(0);
+    for (const message of named) expect(message).toContain("is not one of the domains");
+  });
+
+  test("a test-only and a production-only rule each pass with no row, because each is exactly one domain", async () => {
+    const report = await prove(join(repoRoot, ROUTED_CONFIG), join(repoRoot, EXCLUSIONS));
+    expect(report.findings.filter((f) => f.rule === "kt-tests-no-wall-clock" || f.rule === "kt-no-unsafe-cast")).toEqual([]);
   });
 });

@@ -48,14 +48,14 @@ val xmlDirsByModule = provider {
     }
 }
 
-private fun scannedClasses() = testSourceDirsByModule.get().flatMap { (module, dir) -> scanModuleSources(dir, module) }
-private fun observedXml() = xmlDirsByModule.get().mapValues { (_, dirs) -> scanModuleXml(dirs) }
+private val scannedClasses = { testSourceDirsByModule.get().flatMap { (module, dir) -> scanModuleSources(dir, module) } }
+private val observedXml = { xmlDirsByModule.get().mapValues { (_, dirs) -> scanModuleXml(dirs) } }
 
 tasks.register("verifyTestDiscovery") {
     group = "gate"
     description = "V4-68: every @Test/@ParameterizedTest/@TestFactory method declared under a subproject's " +
         "src/test/kotlin must appear in that class's own JUnit XML. Depends on every Test task " +
-        "of every subproject — see this file's header for why position is load-bearing."
+        "of every subproject; see this file's header for why position is load-bearing."
     dependsOn(everyTestTask)
     // A verdict, never an artifact — the same rule the ladder legs declare (splice.gate-ladder).
     outputs.upToDateWhen { false }
@@ -68,7 +68,7 @@ tasks.register("verifyTestDiscovery") {
         val xmlByModule = observedXml()
         val problems = audit(classes, xmlByModule)
         check(problems.isEmpty()) { "tests-are-discovered RED:\n  " + problems.joinToString("\n  ") }
-        println(summaryLine(classes, xmlByModule))
+        logger.lifecycle(summaryLine(classes, xmlByModule))
     }
 }
 
@@ -81,13 +81,13 @@ tasks.register("testDiscoveryReport") {
     group = "gate"
     description = "The tests-are-discovered census: every declared class against its observed " +
         "XML count, plus stale XML rows for classes no longer in source. Reads whatever is " +
-        "currently in each module's test-results directory as-is — run verifyTestDiscovery " +
+        "currently in each module's test-results directory as-is; run verifyTestDiscovery " +
         "first for a fresh one. Never a dependency of gateOfRecord: this is the --report verb, " +
         "not the gate."
     outputs.upToDateWhen { false }
     inputs.files(testSourceDirsByModule.map { it.values }).withPropertyName("testSourceDirectories").optional()
     inputs.files(xmlDirsByModule.map { it.values.flatten() }).withPropertyName("junitXmlDirectories").optional()
     doLast {
-        println(census(scannedClasses(), observedXml()))
+        logger.lifecycle(census(scannedClasses(), observedXml()))
     }
 }

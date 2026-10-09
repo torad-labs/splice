@@ -24,8 +24,9 @@
 // release through the slot, and the slot is held by the gate for the whole of this graph — a
 // nested run would wait on its own lock. `bun tools/gate run` runs it AFTER the graph, with the
 // slot released. The Kotlin modules' `check` tasks carry detekt, the unit suites and the module laws.
-import groovy.json.JsonSlurper
 import org.gradle.api.tasks.testing.Test
+import splice.ladder.LadderLeg
+import splice.ladder.LadderTable
 import splice.ladder.OwnedFile
 
 // The gate's Gradle-native checks, registered by their own plugins and depended on below: the
@@ -37,34 +38,30 @@ plugins {
 
 val ladderPath = "tools/gate/config/ladder.json"
 
-@Suppress("UNCHECKED_CAST")
-val legs: List<Map<String, Any?>> =
-    ((JsonSlurper().parse(layout.projectDirectory.file(ladderPath).asFile) as Map<String, Any?>)["legs"] as List<Map<String, Any?>>)
-require(legs.isNotEmpty()) { "$ladderPath names no legs — a gate with no legs is not a gate" }
+val legs: List<LadderLeg> = LadderTable.readAll(layout.projectDirectory.file(ladderPath).asFile)
+require(legs.isNotEmpty()) { "$ladderPath names no legs: a gate with no legs is not a gate" }
 
 /** Every Test task of every subproject, resolved when the graph is built, after every project is configured. */
 val everyTestTask = provider { subprojects.flatMap { it.tasks.withType<Test>() } }
 
 val repository = layout.projectDirectory
 
-@Suppress("UNCHECKED_CAST")
 val legTasks = legs.map { leg ->
-    val name = leg["task"] as String
-    val command = leg["command"] as List<String>
-    val dependsOnTasks = (leg["dependsOn"] as List<String>?).orEmpty()
+    val name = leg.task
+    val dependsOnTasks = leg.dependsOn
     val readsJar = ":app:shadowJar" in dependsOnTasks
     val stamp = layout.buildDirectory.file("gate/$name.stamp")
     tasks.register<Exec>(name) {
         group = "gate"
-        description = leg["why"] as String
+        description = leg.why
         workingDir = rootDir
-        commandLine(command)
+        commandLine(leg.command)
         dependsOnTasks.forEach { dependsOn(it) }
-        if (leg["afterAllTests"] == true) dependsOn(everyTestTask)
+        if (leg.afterAllTests) dependsOn(everyTestTask)
         if (readsJar) {
             // The verdict reads the jar and the files the row's `inputs` globs name. Both are inputs, so an unchanged tree stays
             // UP-TO-DATE, and a rebuilt jar or an edited e2e file re-runs the leg. The stamp is the output gradle judges.
-            val e2eGlobs = leg["inputs"] as List<String>
+            val e2eGlobs = leg.inputs
             require(e2eGlobs.isNotEmpty()) { "$name reads the jar and names no inputs in $ladderPath" }
             // The fat jar's task is looked up when the inputs are read, after every project is configured: :app is not
             // configured yet while this root plugin is applied, so a lookup here would fail the whole configuration.
@@ -77,10 +74,10 @@ val legTasks = legs.map { leg ->
         } else {
             outputs.upToDateWhen { false }
         }
-        (leg["creates"] as String?)?.let { dir -> doFirst { rootDir.resolve(dir).mkdirs() } }
+        leg.creates?.let { dir -> doFirst { rootDir.resolve(dir).mkdirs() } }
         // The one file a leg writes and owns is removed as the leg starts: a rerun of the leg must not find its own
         // previous output. Only the file the row names is removed, never a directory, and a failed removal stops the leg.
-        (leg["owns"] as String?)?.let { file -> doFirst { OwnedFile(rootDir.resolve(file).toPath()).release() } }
+        leg.owns?.let { file -> doFirst { OwnedFile(rootDir.resolve(file).toPath()).release() } }
     }
 }
 
@@ -125,16 +122,15 @@ gradle.taskGraph.whenReady {
     if (!hasTask(root)) return@whenReady
     val direct = getDependencies(root)
     ladderProblems = legs.mapNotNull { leg ->
-        val name = leg["task"] as String
-        // Checked element by element: a ladder entry of the wrong shape fails here, by name.
-        val command = (leg["command"] as List<*>).map { it as String }
+        val name = leg.task
+        val command = leg.command
         val task = tasks.findByName(name)
         when {
             task == null -> "$name: named in $ladderPath and registered by nothing"
             task !is Exec -> "$name: is not an Exec task"
             task.commandLine != command -> "$name: runs ${task.commandLine} where $ladderPath says $command"
-            task !in direct -> "$name: gateOfRecord does not depend on it — a leg nothing runs"
-            !hasTask(task) -> "$name: excluded from this graph — a gate narrower than $ladderPath"
+            task !in direct -> "$name: gateOfRecord does not depend on it, so nothing runs this leg"
+            !hasTask(task) -> "$name: excluded from this graph, which makes the gate narrower than $ladderPath"
             else -> null
         }
     }
@@ -146,9 +142,9 @@ tasks.register("verifyLadder") {
     outputs.upToDateWhen { false }
     doLast {
         val problems = checkNotNull(ladderProblems) {
-            "verifyLadder proves the ladder under gateOfRecord, which is not in this build's graph — run `bun tools/gate run` (or gateOfRecord)"
+            "verifyLadder proves the ladder under gateOfRecord, which is not in this build's graph: run `bun tools/gate run` (or gateOfRecord)"
         }
         check(problems.isEmpty()) { "the gate ladder disagrees with $ladderPath:\n  " + problems.joinToString("\n  ") }
-        println("verifyLadder: ${legs.size} leg(s) registered from $ladderPath, every one a dependency of gateOfRecord and scheduled in this graph")
+        logger.lifecycle("verifyLadder: ${legs.size} leg(s) registered from $ladderPath, every one a dependency of gateOfRecord and scheduled in this graph")
     }
 }

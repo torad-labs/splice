@@ -27,6 +27,7 @@ message: "No Any or Any? parameter types. Use a type parameter (fun <T : Any> f(
 note: "An override whose supertype fixes Any is exempt; the supertype's own declaration is still checked."
 files:
   - "**/*.kt"
+  - "**/*.kts"
 rule:
   any:
     - kind: parameter

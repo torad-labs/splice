@@ -31,6 +31,7 @@ severity: error
 message: "System.getenv is never called in production code — read the layered ConfigService or an injected EnvReader."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   any:
     - pattern: System.getenv($$$A)

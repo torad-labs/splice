@@ -6,5 +6,6 @@ severity: error
 message: "runBlocking is never called in production code: stay suspend; the process entry is `suspend fun main`."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   pattern: runBlocking

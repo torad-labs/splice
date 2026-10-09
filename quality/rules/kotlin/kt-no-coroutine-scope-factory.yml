@@ -39,6 +39,7 @@ severity: error
 message: "Don't call CoroutineScope()/MainScope(). Inject the owner's scope, or hold a named LifecycleScope."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   any:
     # `$$$ARGS` matches zero-or-more, so this covers CoroutineScope(), CoroutineScope(ctx) and

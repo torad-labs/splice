@@ -32,5 +32,6 @@ severity: error
 message: "No `!!` — restructure so the compiler carries the guard, or fail honestly."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   pattern: $X!!

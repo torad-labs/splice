@@ -13,6 +13,7 @@ severity: error
 message: "Use SecureFile.writeAtomic0600 (core/util) — the 0600 credential-write primitive lives in one place; re-deriving it — via PosixFilePermissions.fromString(\"rw-------\") or an equivalent OWNER_READ+OWNER_WRITE permission set — is how kimi drifted into a world-readable window."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   - core/src/main/kotlin/splice/core/util/SecureFile.kt
 rule:

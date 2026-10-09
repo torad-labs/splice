@@ -66,6 +66,7 @@ message: "Name the seam with a `fun interface`, not a raw function type. Name it
 note: "Use `operator fun invoke` so call sites stay byte-identical. Two seams that share a shape but not a concept get TWO interfaces; two spellings of one concept get ONE. Parameters of an `inline` declaration are exempt (inlining + non-local return). Lambda literals at call sites are untouched."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   kind: function_type
   # A parameter of an `inline` declaration: inlining and non-local return are the contract.

@@ -27,12 +27,10 @@ message: "A dollar figure is spelled only by splice.usage.ApiCostText, which say
 note: "A figure priced from a rate card is an estimate of API cost, and on a plan head no token is billed at all, so a bare dollar figure reads as a charge that did not happen (V4-240). ApiCostText is the sole spelling site; the operator's own budget limit goes through ApiCostText.limit."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   # the sole spelling site, exempt BY PATH so no other file can claim the exemption
   - features/usage/src/main/kotlin/splice/usage/ApiCostText.kt
-  # build tooling ships in no runtime and prints no money; its one hit, "$outer\$$name" in
-  # TestDiscovery.kt, joins a JVM nested-class binary name (Outer$Inner)
-  - build-logic/**
 rule:
   any:
     - kind: string_content

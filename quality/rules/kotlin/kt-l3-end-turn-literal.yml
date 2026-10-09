@@ -14,6 +14,7 @@ severity: error
 message: "L3: `end_turn` is derived inside SseEmitter.emitTerminal — no other file may hold the literal."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   - features/turns/src/main/kotlin/**/wire/SseEmitter.kt
 rule:

@@ -29,6 +29,7 @@ severity: error
 message: "TODO()/NotImplementedError throws at runtime — implement it, or model the absence in the type."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   any:
     # `$$$A` matches zero-or-more arguments, so this single branch covers both the bare `TODO()`

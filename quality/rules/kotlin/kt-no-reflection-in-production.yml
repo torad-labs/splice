@@ -51,6 +51,7 @@ severity: error
 message: "No reflection — name the type from the branch, a closed `when`, or the class loader."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   any:
     # The class token: `Daemon::class.java.getResourceAsStream(...)`, `X::class.java.protectionDomain`.

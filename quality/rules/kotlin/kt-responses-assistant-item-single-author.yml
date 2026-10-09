@@ -35,6 +35,7 @@ message: "A Responses assistant item is written by ResponsesAssistantText.item(t
 note: "Code mode compares the items it recorded with the client's replay by value, so a second author of the assistant item (another key order, a missing phase) abandons the parked script whose baseline holds it (V4-342, record 923aa85d). Call ResponsesAssistantText.item with the phase the builder gives that text."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   # Other wires: their assistant role is not a Responses input item (see THE IGNORES above).
   - features/turns/**

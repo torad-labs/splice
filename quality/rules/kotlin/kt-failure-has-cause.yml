@@ -24,6 +24,7 @@ message: >-
   `cause = FailureCause.<X>`; choose X by reading the site, never by copying its ErrorType.
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   pattern: TurnOutcome.Failure($$$ARGS)
   not:

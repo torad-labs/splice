@@ -27,12 +27,6 @@
 # V4-457: prompt-bearing JSON allocation wall. Scope comes from runtime ownership, not receiver names.
 [[exclusion]]
 rule = "kt-no-json-tree-to-string"
-sourceSets = ["test", "testFixtures"]
-date = "2026-10-02"
-reason = "Production prompt serializers only. Tests retain legacy toString as an independent byte/allocation oracle."
-
-[[exclusion]]
-rule = "kt-no-json-tree-to-string"
 modules = [
   "integrations-claude-code", "integrations-mcp", "integrations-http", "integrations-topology",
   "integrations-codemode", "integrations-oauth", "integrations-terminal", "integrations-daemon-client",
@@ -68,84 +62,7 @@ files = [
 date = "2026-10-02"
 reason = "Named non-prompt serializers: model/quota metadata, one-integer token estimates, diagnostics/model roster, compact/turn retention counters, live-turn status, hourly economics, bounded usage ring, capture configuration/error replies, local diagnostic probe templates and quota hold state. No request history, prompt body or selected trace body is serialized at these sites."
 
-[[exclusion]]
-rule = "kt-usage-reports-observations"
-sourceSets = ["test", "testFixtures"]
-date = "2026-10-06"
-reason = "Production Usage constructors state provenance explicitly. Synthetic tests retain the known-count default by the line-613 ruling."
-
 # ─── source-set scope ────────────────────────────────────────────────────────────────────────────
-
-[[exclusion]]
-rules = [
-  "kt-cancellation-handler-total", "kt-catch-swallows-cancellation", "kt-control-route-guarded",
-  "kt-dollar-figure-single-source", "kt-embedded-server-loopback", "kt-error-envelope-single-source", "kt-failure-has-cause",
-  "kt-flow-over-suspend", "kt-force-strict-false-is-literal", "kt-form-encoding-single-source",
-  "kt-head-log-prefix", "kt-head-scoped-config-must-be-keyed", "kt-head-sse-drains-on-exit",
-  "kt-http-status-single-source",
-  "kt-json-scalars-single-source", "kt-jsonl-sink-single-source", "kt-l3-end-turn-literal",
-  "kt-l3-sole-wire-terminals", "kt-log-escapes-caller-input", "kt-no-atomic-in-data-class",
-  "kt-no-blocking-io-under-monitor", "kt-no-companion-objects", "kt-no-coroutine-scope-factory",
-  "kt-no-delay-in-production", "kt-no-exception-as-outcome", "kt-no-extension-functions",
-  "kt-no-global-scope", "kt-no-hardcoded-dispatchers", "kt-no-lambda-seam", "kt-no-lateinit",
-  "kt-no-object-command", "kt-no-println", "kt-no-raw-thread", "kt-no-reflection-in-production",
-  "kt-no-request-body-gzip", "kt-no-runblocking-in-daemon",
-  "kt-no-runcatching-in-coroutine", "kt-no-sealed-interface", "kt-no-secondary-constructor",
-  "kt-no-silent-result-collapse", "kt-no-stream-options-request", "kt-no-system-getenv",
-  "kt-no-todo-throws", "kt-no-top-level-functions", "kt-no-unsafe-bang-bang", "kt-no-unsafe-cast",
-  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-perf-history-archived",
-  "kt-quota-tracker-single-resolution", "kt-responses-assistant-item-single-author",
-  "kt-secure-file-single-source", "kt-shared-summary-parts-single-source",
-  "kt-state-paths-single-source", "kt-tool-partition-no-transcript",
-  "kt-turn-finally-flush-quietly", "kt-user-home-single-resolver", "kt-wire-catch-ioexception-alone",
-  "kt-ws-frame-without-epoch",
-]
-sourceSets = ["test", "testFixtures"]
-date = "2026-09-20"
-reason = """
-Production-only walls: each grades what the shipped daemon does, and binds src/main by design. Test
-sources are graded by the two walls that do bind them — kt-no-quality-suppress (main + test +
-testFixtures) and kt-tests-no-wall-clock (test + testFixtures) — plus the Konsist laws in
-:quality-architecture.
-"""
-
-[[exclusion]]
-rule = "kt-tests-no-wall-clock"
-sourceSets = ["main"]
-date = "2026-09-20"
-reason = """
-A test-determinism law: a test may not wait on the wall clock. Production waiting is governed by
-kt-no-delay-in-production, which binds src/main.
-"""
-
-[[exclusion]]
-rule = "kt-tests-bind-port-zero"
-sourceSets = ["main"]
-date = "2026-09-23"
-reason = """
-A test-determinism law: a test server binds port 0 instead of a port leased and bound later.
-Production binds the port its topology configures, and had 0 lease sites when the rule was written.
-"""
-
-[[exclusion]]
-rule = "kt-no-bare-temp-in-tests"
-sourceSets = ["main", "testFixtures"]
-date = "2026-09-29"
-reason = """
-A test-hygiene law: a test takes JUnit's @TempDir instead of making a directory nothing deletes, and
-the rule binds src/test by design (V4-383). Production's temp use is not what it grades, and no
-testFixtures source makes a bare temp directory or file today (git grep, Sep 29), so those roots are
-excused here rather than widened.
-"""
-
-[[exclusion]]
-rule = "kt-no-emdash-cli-text"
-sourceSets = ["test", "testFixtures"]
-date = "2026-09-25"
-reason = """
-A copy gate on the sentences splice prints. A test's assertion messages are read by whoever reads a
-red test, never by the operator in the CLI or the console, so they are not the text this wall grades.
-"""
 
 [[exclusion]]
 rule = "kt-no-emdash-cli-text"
@@ -291,7 +208,7 @@ rather than excusing core wholesale.
 """
 
 [[exclusion]]
-rules = ["kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone"]
+rules = ["kt-wire-catch-ioexception-alone"]
 modules = [
   "core", "integrations-claude-code", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
   "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
@@ -307,8 +224,7 @@ configuration adapter, not a features-turns turn or socket owner.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir",
-  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-mcp"]
 sourceSets = ["main"]
@@ -483,12 +399,6 @@ Tests give a home through UserHome.within, never by moving the property.
 """
 
 [[exclusion]]
-rule = "kt-quota-tracker-single-resolution"
-files = ["features/turns/src/main/kotlin/splice/head/admission/TurnQuota.kt"]
-date = "2026-09-20"
-reason = "The sole resolver, created by fix row V4-104."
-
-[[exclusion]]
 rule = "kt-no-vanilla-config-dir"
 files = ["app/src/main/kotlin/**/*.kt"]
 date = "2026-09-23"
@@ -554,9 +464,7 @@ name Ktor's WriterContent: it delegates to it and adds the clean close in a fina
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir",
-  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly",
-  "kt-wire-catch-ioexception-alone",
+  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-heads"]
 sourceSets = ["main"]
@@ -596,8 +504,6 @@ THE SIX BELOW PASS THAT TEST — each names a scope this code was never inside:
                                       checked by hand: LaunchResponse.kt, LaunchService.kt and
                                       LaunchTypes.kt are all still at that path and none of them was
                                       part of this extraction. The seam did not move.
-  kt-quota-tracker-single-resolution  pinned to features/turns — the turn-admission path that owns
-                                      QuotaTracker selection. Extraction source was daemon/control.
   kt-turn-finally-flush-quietly       pinned to features/turns/**/splice/head/** — the head's TURN
                                       cleanup. This is splice.heads.start in another module, with
                                       no turn lifecycle. Extraction source was daemon/control.
@@ -613,8 +519,7 @@ extraction and covers only it.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir",
-  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-http"]
 sourceSets = ["main"]
@@ -629,8 +534,7 @@ carry its rules too; this row does not authorize losing their coverage.
 
 [[exclusion]]
 rules = [
-  "kt-no-vanilla-config-dir",
-  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-usage"]
 sourceSets = ["main"]
@@ -645,8 +549,7 @@ exclusions preserve the source scope rather than reasoning from whether a violat
 
 [[exclusion]]
 rules = [
-  "kt-no-vanilla-config-dir", "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly",
-  "kt-wire-catch-ioexception-alone",
+  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-sessions"]
 sourceSets = ["main"]
@@ -660,8 +563,7 @@ DID select one of those sources was widened to features/sessions instead of bein
 
 [[exclusion]]
 rules = [
-  "kt-no-vanilla-config-dir", "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly",
-  "kt-wire-catch-ioexception-alone",
+  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-models"]
 sourceSets = ["main"]
@@ -690,8 +592,7 @@ suppress a finding in the selected ModelsRoute.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-quota-tracker-single-resolution",
-  "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+  "kt-no-exception-as-outcome", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-launch"]
 sourceSets = ["main"]
@@ -706,8 +607,7 @@ only Launch*.kt, now binds the whole module.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir",
-  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-lifecycle", "features-diagnostics", "features-configuration", "features-events"]
 sourceSets = ["main"]
@@ -723,8 +623,7 @@ to these roots instead of being excluded.
 [[exclusion]]
 rules = [
   "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
-  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
-  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-topology"]
 sourceSets = ["main"]
@@ -740,8 +639,7 @@ integrations/topology instead of being excluded, and kt-no-println now reaches t
 [[exclusion]]
 rules = [
   "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
-  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
-  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-codemode"]
 sourceSets = ["main"]
@@ -758,8 +656,7 @@ widened to integrations/codemode instead, and kt-no-println, which ignored app/c
 [[exclusion]]
 rules = [
   "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
-  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
-  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-oauth"]
 sourceSets = ["main"]
@@ -779,8 +676,7 @@ widened to integrations/oauth, and kt-no-println, which ignored app/auth and app
 [[exclusion]]
 rules = [
   "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
-  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
-  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-terminal"]
 sourceSets = ["main"]
@@ -800,8 +696,7 @@ widened to integrations/terminal, and kt-no-println, which ignored app/cli, now 
 [[exclusion]]
 rules = [
   "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
-  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source",
-  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-daemon-client"]
 sourceSets = ["main"]
@@ -821,8 +716,7 @@ reaches them.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir",
-  "kt-quota-tracker-single-resolution", "kt-turn-finally-flush-quietly", "kt-wire-catch-ioexception-alone",
+  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-accounts"]
 sourceSets = ["main"]

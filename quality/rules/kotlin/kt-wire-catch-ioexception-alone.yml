@@ -56,6 +56,8 @@ note: >
   `Cancellables.discard(Cancellables.runCatchingCleanup { … }, "<why>")`.
 files:
   - features/turns/src/main/**/wire/**/*.kt
+  - "build-logic/src/main/**/*.kt"
+  - "build-logic/src/main/**/*.kts"
 rule:
   all:
     - kind: catch_block

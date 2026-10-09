@@ -15,6 +15,7 @@ files:
   # DEFAULT-DENY (#924 Phase 0.5): request-body gzip is forbidden gateway-wide, not just where it
   # first shipped. GZIPOutputStream on the request path is the fingerprint (response GZIPInputStream ok).
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 # WIDENED (2026-07-26 audit): the original `pattern: GZIPOutputStream($$$ARGS)` matches only a
 # bare-identifier callee, a call_expression whose function is a plain simple_identifier. A
 # package-qualified construction — `java.util.zip.GZIPOutputStream($$$ARGS)` — parses to a

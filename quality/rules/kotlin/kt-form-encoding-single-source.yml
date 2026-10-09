@@ -11,6 +11,7 @@ severity: error
 message: "Use FormEncoding.percentEncode/formEncode (core/util) — the percent-encoder lives in one place; don't re-derive it."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   - core/src/main/kotlin/splice/core/util/FormEncoding.kt
 rule:

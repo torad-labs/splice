@@ -58,6 +58,8 @@ files:
   - features/launch/src/main/**/*.kt
   - features/configuration/src/main/**/*.kt
   - features/events/src/main/**/*.kt
+  - "build-logic/src/main/**/*.kt"
+  - "build-logic/src/main/**/*.kts"
 rule:
   any:
     - pattern: $X?.jsonPrimitive?.content

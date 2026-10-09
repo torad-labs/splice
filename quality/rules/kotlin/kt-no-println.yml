@@ -25,6 +25,7 @@ severity: error
 message: "No println in daemon code — use the head logger (the log-tail contract depends on it)."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   # :app is the wiring/entry/CLI layer — a terminal tool legitimately writes to stdout
   # (doctor output, usage). Daemon LOGGING still flows through the injected log lambda.

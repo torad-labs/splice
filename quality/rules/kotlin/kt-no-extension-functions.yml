@@ -44,6 +44,7 @@ message: "No extension declarations — put the receiver in the signature. A typ
 note: "Keep the function's NAME identical so the diff reads as a receiver insertion. Calling third-party extensions is fine — only declarations match. `override` of a foreign abstract extension member is exempt (no compliant spelling exists); a supertype declared here is caught at its own declaration."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   kind: function_declaration
   # the grammar's own name for "this declaration is an extension" — present iff there is a receiver.

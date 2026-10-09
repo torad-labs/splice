@@ -15,6 +15,7 @@ message: "Append-only JSONL sink lives once in core/util/JsonlSink — use Jsonl
 note: "PerfStats/CompactStats append one JSON line per record and tail-read a bounded window; both routes live in splice.core.util.JsonlSink (appendLine, readTail). Re-deriving the append/tail here re-seeds the drift the extraction removed."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   - core/src/main/kotlin/splice/core/util/JsonlSink.kt
 rule:

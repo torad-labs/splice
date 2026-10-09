@@ -19,6 +19,7 @@ severity: error
 message: "A head-scoped function must read config.getConfig(key) — the unkeyed global view leaks one head's knob onto every head (kimi's 40-min cap once governed codex)."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   all:
     - pattern: config.getConfig()

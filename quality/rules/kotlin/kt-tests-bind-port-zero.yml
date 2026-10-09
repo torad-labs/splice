@@ -43,7 +43,9 @@ note: >
   kernel's ephemeral range under a lock every JVM on the machine honours.
 files:
   - "**/src/test/**/*.kt"
+  - "**/src/test/**/*.kts"
   - "**/src/testFixtures/**/*.kt"
+  - "**/src/testFixtures/**/*.kts"
 rule:
   any:
     # the lease: the lambda's whole body is the port read, so the socket closes before the number

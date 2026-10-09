@@ -35,6 +35,7 @@ note: >
   of promoting it into the eager set — that extends history without rewriting the cached prefix.
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   any:
     - pattern: $X.messages

@@ -21,6 +21,7 @@ message: "The home is resolved in one place: call splice.core.config.UserHome.di
 note: "UserHome reads HOME first and falls back to user.home, so a sandbox, CI or a second profile gets its own config, keys and state. A test that needs its own home uses UserHome.within(home) { ... }."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   # The resolver itself.
   - core/src/main/kotlin/splice/core/config/UserHome.kt

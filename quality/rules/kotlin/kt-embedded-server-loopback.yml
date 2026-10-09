@@ -18,6 +18,7 @@ severity: error
 message: "Loopback only: embeddedServer must be called with the literal host \"127.0.0.1\"."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   pattern: embeddedServer($$$ARGS)
   not:

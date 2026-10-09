@@ -11,6 +11,8 @@ files:
   - integrations/providers/*/src/main/**/*.kt
 # These serializers contain only control metadata or bounded numeric snapshots, never prompt trees.
 # Every omission is mirrored in the dated coverage dispositions.
+  - "build-logic/src/main/**/*.kt"
+  - "build-logic/src/main/**/*.kts"
 ignores:
   - core/src/main/kotlin/splice/core/model/ClientWindows.kt
   - core/src/main/kotlin/splice/core/usage/QuotaJson.kt

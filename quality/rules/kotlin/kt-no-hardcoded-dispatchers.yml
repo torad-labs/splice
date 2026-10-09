@@ -40,6 +40,7 @@ severity: error
 message: "Inject a CoroutineDispatcher seam — don't hardcode Dispatchers.IO/Default/Main outside the runtime edge."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   # The process runtime edge — the single main-source file allowed to name the global dispatchers.
   - integrations/upstream/src/main/kotlin/splice/upstream/codemode/ProcessRuntime.kt

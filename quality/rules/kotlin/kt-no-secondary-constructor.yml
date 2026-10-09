@@ -23,5 +23,6 @@ severity: error
 message: "No secondary constructors — one initialization path. Use the primary constructor with defaults, or a top-level factory function."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   kind: secondary_constructor

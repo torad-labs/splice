@@ -24,6 +24,9 @@ message: "No bare createTempDirectory/createTempFile in a test — take a JUnit 
 note: "Add `@TempDir dir: Path` to the test method (or an `@BeforeAll` parameter for a shared one) and use `dir.resolve(\"name\")` for a file; /tmp is RAM on the dev box and a bare temp call never deletes what it makes."
 files:
   - "**/src/test/**/*.kt"
+  - "**/src/test/**/*.kts"
+  - "**/src/testFixtures/**/*.kt"
+  - "**/src/testFixtures/**/*.kts"
 rule:
   kind: call_expression
   has:

@@ -30,7 +30,7 @@
 //
 // THE METADATA IS READ WITH THE JDK'S NAMESPACE-AWARE DOM, AND IT DIES WHERE A LENIENT READER WOULD
 // BE SILENT: a document without the dependency-verification namespace, one yielding no <component>
-// at all, or a component missing one of its three attributes is an [UnreadableMetadata], never an
+// at all, or a component missing one of its three attributes is a [MetadataRead.Unreadable], never an
 // empty set. An empty set would read every entry as "not pinned" — a wall of false reds — and a
 // partly read document would hide exactly the drift this exists to find.
 package splice.hygiene
@@ -55,8 +55,13 @@ data class Catalog(
     val plugins: List<CatalogPlugin>,
 )
 
-/** A metadata document this check refuses to read as "empty" — see the header. */
-class UnreadableMetadata(message: String) : IllegalStateException(message)
+/** What reading the metadata gave: the components it pins, or the reason it could not be read. An unreadable document is
+ *  an answer the caller must handle, never an empty set — see the header. */
+sealed class MetadataRead {
+    class Pinned(val components: Set<Component>) : MetadataRead()
+
+    class Unreadable(val reason: String) : MetadataRead()
+}
 
 object CatalogMetadata {
     const val NAMESPACE = "https://schema.gradle.org/dependency-verification"
@@ -72,8 +77,8 @@ object CatalogMetadata {
         |then commit the regenerated gradle/verification-metadata.xml (precedent: PR #91).
     """.trimMargin()
 
-    /** Every component the metadata pins, or an [UnreadableMetadata] naming what could not be read. */
-    fun components(xml: String, where: String = "gradle/verification-metadata.xml"): Set<Component> {
+    /** Every component the metadata pins, or a [MetadataRead.Unreadable] naming what could not be read. */
+    fun read(xml: String, where: String = "gradle/verification-metadata.xml"): MetadataRead {
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = true
             setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true)
@@ -81,27 +86,26 @@ object CatalogMetadata {
         }
         val document = factory.newDocumentBuilder().parse(xml.byteInputStream())
         if (document.documentElement.namespaceURI != NAMESPACE) {
-            throw UnreadableMetadata("$where: no dependency-verification namespace declaration; unreadable metadata shape")
+            return MetadataRead.Unreadable("$where: no dependency-verification namespace declaration; unreadable metadata shape")
         }
         val tags = document.getElementsByTagNameNS(NAMESPACE, "component")
         if (tags.length == 0) {
-            throw UnreadableMetadata("$where: no <component> elements found; an unread metadata file must not read as empty")
+            return MetadataRead.Unreadable("$where: no <component> elements found; an unread metadata file must not read as empty")
         }
         // A NodeList hands back Node, and the narrowing is total rather than asserted: every node
         // this list holds is accounted for, and a shortfall is named instead of silently dropped.
         val elements = (0 until tags.length).mapNotNull { index -> tags.item(index) as? Element }
         if (elements.size != tags.length) {
-            throw UnreadableMetadata("$where: ${tags.length - elements.size} <component> node(s) are not elements; unreadable metadata shape")
+            return MetadataRead.Unreadable("$where: ${tags.length - elements.size} <component> node(s) are not elements; unreadable metadata shape")
         }
-        return elements.map { element -> component(element, where) }.toSet()
-    }
-
-    private fun component(element: Element, where: String): Component {
         val attributes = listOf("group", "name", "version")
-        if (attributes.any { !element.hasAttribute(it) }) {
-            throw UnreadableMetadata("$where: a <component> carries no group/name/version: <component ${describe(element)}>")
+        val bare = elements.firstOrNull { element -> attributes.any { !element.hasAttribute(it) } }
+        if (bare != null) {
+            return MetadataRead.Unreadable("$where: a <component> carries no group/name/version: <component ${describe(bare)}>")
         }
-        return Component(element.getAttribute("group"), element.getAttribute("name"), element.getAttribute("version"))
+        return MetadataRead.Pinned(
+            elements.map { Component(it.getAttribute("group"), it.getAttribute("name"), it.getAttribute("version")) }.toSet(),
+        )
     }
 
     private fun describe(element: Element): String =

@@ -71,6 +71,7 @@ note: >
   AccountPool.select holds `synchronized(sessions)` across a credential-file SHA-256 five hops down.
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   all:
     # The blocking primitives, matched on the call node ANCHORED at its start. Anchoring is

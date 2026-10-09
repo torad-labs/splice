@@ -52,8 +52,8 @@
 # TWO WEAKNESSES OF FILE GRANULARITY, stated rather than discovered later. A NEW sleep added to an
 # already-listed file is invisible; and a STALE entry — a file converted but left in the list — is
 # silently tolerated, which is the "absence wearing a label" shape the completeness law names.
-# Both need a per-file COUNT ratchet (the checks/concentration.py shape) rather than an ast-grep
-# `ignores:`, which is a python wall and outside this row's fence. Named here as the follow-up; the
+# Both need a per-file COUNT ratchet (the concentration wall's shape) rather than an ast-grep
+# `ignores:`, which is a gate wall and outside this row's fence. Named here as the follow-up; the
 # fix row's burn-down removes the need for it. Both properties were MEASURED at landing rather than
 # assumed: with `ignores:` removed the matcher reports 104 sites in 33 files, the list is exactly
 # those 33 files with no stale entry and none missing, and the per-file counts in the ALLOWLIST
@@ -181,7 +181,9 @@ note: >
   wall for it.
 files:
   - "**/src/test/**/*.kt"
+  - "**/src/test/**/*.kts"
   - "**/src/testFixtures/**/*.kt"
+  - "**/src/testFixtures/**/*.kts"
 # The dated census — see the ALLOWLIST section of this header for the reason behind every line.
 ignores:
   # a proof of absence, which has no event

@@ -35,6 +35,7 @@ note: |
   Split the clause, or use a colon, a semicolon or a comma.
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   # The docs table's empty cell, rendered only into AGENTS.md (see V4-235 above).
   - integrations/upstream/src/main/kotlin/splice/upstream/retry/RetryMatrix.kt

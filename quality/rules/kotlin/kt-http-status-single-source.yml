@@ -46,6 +46,7 @@ message: "HTTP status codes are declared once, in splice.core.wire.HttpStatus (c
 note: "429 had six spellings and 529 had three, in five files, with nothing keeping them equal (ARCH-AUDIT 2026-09-17). The sole allowed declaration site is core/src/main/kotlin/splice/core/wire/HttpStatus.kt; every other main-source declaration of a status code is red. Reference the constant, do not re-derive it."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   # the sole allowed declaration site — exempt BY PATH, so no other file can claim the exemption
   - core/src/main/kotlin/splice/core/wire/HttpStatus.kt

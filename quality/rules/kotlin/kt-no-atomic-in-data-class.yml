@@ -64,6 +64,7 @@ note: >
   all. Compliant owners already in tree: AsyncFileIo.pending, JsonlSink.unrotated, WorkerChannel.closed.
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   all:
     - kind: class_declaration

@@ -54,6 +54,7 @@ note: >
   this rule by construction.
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   all:
     - any:

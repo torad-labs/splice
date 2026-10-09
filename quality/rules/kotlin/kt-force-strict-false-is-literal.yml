@@ -29,6 +29,7 @@ note: >
   defined as an unconditional hard-set (ResponsesQuirks KDoc, ResponsesQuirks.kt).
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   pattern: put($FIELD, $VAL)
   inside:

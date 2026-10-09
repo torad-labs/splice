@@ -13,6 +13,7 @@ severity: error
 message: "SharedSummaryParts is constructed ONCE per turn (TurnMeta's default) — a second instance, or re-assigning it on a copy(), gives a round private dedup state and re-opens the 2026-07-26 mirror duplication."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   - core/src/main/kotlin/**/turn/Turn.kt
 rule:

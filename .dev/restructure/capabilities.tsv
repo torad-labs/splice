@@ -3942,3 +3942,7 @@ integrations/claude-code/src/main/kotlin/splice/client/transcript/TranscriptMess
 integrations/mcp/src/testFixtures/kotlin/splice/control/mcp/FakeMcpServer.kt	created		The scripted stdio MCP server McpHostTest and McpRoutesTest host, as a child JVM from the test classpath, replacing a python3 script
 tools/e2e/docker/topology_checks.ts	created		The count_tokens, launch-recipe and shipped-example-topology checks of inside.sh as a bun entry, replacing three inline python3 blocks
 tools/e2e/test/topology-checks.test.ts	created		Red-green proof for topology_checks.ts against the shipped example topology with a fake daemon and fake wrappers
+build-logic/src/main/kotlin/splice/hygiene/CatalogReader.kt	created		Reads the version catalog's versions and aliases for the convention plugins, so no script casts the catalog extension.
+build-logic/src/main/kotlin/splice/ladder/LadderLeg.kt	created		One leg of the gate ladder as a typed value read from the ladder table.
+build-logic/src/main/kotlin/splice/ladder/LadderTable.kt	created		Reads the gate ladder table into LadderLeg values for the gate-ladder convention plugin.
+build-logic/src/test/kotlin/splice/ladder/LadderTableTest.kt	created		Red-green proof that the ladder table parses to typed legs and refuses a malformed row.

@@ -21,6 +21,7 @@ note: >
   they are that class's methods; if they are reachable from elsewhere, they want their own type.
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   any:
     - kind: companion_object

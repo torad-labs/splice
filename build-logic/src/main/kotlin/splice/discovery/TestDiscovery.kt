@@ -253,6 +253,9 @@ object SourceScan {
     // The only counted annotation whose expansion factor is no number anyone could write down.
     private const val FACTORY_ANNOTATION = "TestFactory"
 
+    // The JVM binary name of a nested class joins outer and inner with a dollar sign (Outer$Inner).
+    private const val NESTED_CLASS_JOIN = '$'
+
     // Where a declaration ENDS without a body: a blank line, or a line at COLUMN 0 that starts another
     // declaration. Column 0 is load-bearing — an indented `val`/`var` is a constructor parameter of
     // the very class being scanned, and treating it as a boundary would hide that class and its tests
@@ -518,7 +521,7 @@ object SourceScan {
                 val (otherName, otherOpen, otherClose) = other
                 if (otherOpen < openAt && closeAt < otherClose) outer = otherName
             }
-            val qualified = if (outer != null) "$outer\$$name" else name
+            val qualified = if (outer != null) "$outer$NESTED_CLASS_JOIN$name" else name
             val members = memberItems(source.substring(openAt + 1, closeAt), masked.substring(openAt + 1, closeAt))
             if (members.isNotEmpty()) {
                 found.add(

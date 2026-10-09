@@ -117,11 +117,11 @@ afterEvaluate {
         configurations
             .filter { it.name in lawChecked }
             .forEach { cfg ->
-                cfg.dependencies.withType(ProjectDependency::class.java).forEach { dep ->
+                cfg.dependencies.withType<ProjectDependency>().forEach { dep ->
                     val depPath = dep.path
                     check(depPath == project.path || depPath in allowed) {
                         "MODULE LAW: ${project.path} may not depend on $depPath " +
-                            "(allowed: ${allowed.sorted()}). The graph is the architecture — " +
+                            "(allowed: ${allowed.sorted()}). The graph is the architecture. " +
                             "see build-logic/src/main/kotlin/splice.module-law.gradle.kts " +
                             "and the kotlin-gateway campaign ledger before touching it."
                     }
@@ -133,10 +133,11 @@ afterEvaluate {
             .filter { it.name in lawChecked }
             .forEach { cfg ->
                 cfg.dependencies
-                    .filter { it !is ProjectDependency && it.group != null }
+                    .filter { it !is ProjectDependency }
                     .forEach { dep ->
-                        check(coreExternalGroups.any { g -> dep.group == g || dep.group!!.startsWith("$g.") }) {
-                            "MODULE LAW: :core is framework-free — external dependency " +
+                        val group = dep.group ?: return@forEach
+                        check(coreExternalGroups.any { g -> group == g || group.startsWith("$g.") }) {
+                            "MODULE LAW: :core is framework-free, and external dependency " +
                                 "${dep.group}:${dep.name} is not in the kotlin/kotlinx allowlist."
                         }
                     }

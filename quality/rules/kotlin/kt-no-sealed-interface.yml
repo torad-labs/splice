@@ -15,6 +15,7 @@ severity: error
 message: "Use `sealed class`, not `sealed interface` (project convention for closed hierarchies)."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   kind: class_declaration
   all:

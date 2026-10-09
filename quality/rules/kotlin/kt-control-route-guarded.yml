@@ -81,6 +81,8 @@ files:
   - features/configuration/src/main/**/*.kt
   - app/src/main/kotlin/splice/app/control/**/*.kt
   - features/events/src/main/**/*.kt
+  - "build-logic/src/main/**/*.kt"
+  - "build-logic/src/main/**/*.kts"
 rule:
   all:
     # A route registration: an HTTP verb, a PATH string literal, and a handler lambda. The path

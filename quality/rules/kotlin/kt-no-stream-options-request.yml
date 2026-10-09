@@ -19,6 +19,7 @@ files:
   # DEFAULT-DENY (#924 Phase 0.5): every main source EXCEPT the chat dialect, where include_usage
   # is the documented usage-frame knob — a NEW dialect/provider must not reopen the incident.
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 # WIDENED (2026-07-26 audit): `regex: '^"include_usage"$'` matched the string_literal node's FULL
 # TEXT, delimiters included — a Kotlin raw string (`"""include_usage"""`) has different delimiters
 # and different full text, so it walked straight through while producing the identical banned

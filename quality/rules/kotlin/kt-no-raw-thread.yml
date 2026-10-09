@@ -30,6 +30,7 @@ severity: error
 message: "Don't construct threads. Use a coroutine, a named executor, or Executors.defaultThreadFactory()."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   any:
     # The constructor call in argument form — `Thread(task, "name")`, `Thread(runnable)`, `Thread()`.

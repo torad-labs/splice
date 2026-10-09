@@ -77,6 +77,7 @@ note: >
   dated exemption entry in this rule's header, not an inline ignore.
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   all:
     # Every unsafe cast the parser finds. `as?` does not match this pattern (measured: 43 unsafe

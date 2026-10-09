@@ -56,6 +56,8 @@ files:
   # module — the recipe, the Claude head's wrap and the resume hook all point at a head's config dir.
   - features/launch/src/main/**/*.kt
   - app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt
+  - "build-logic/src/main/**/*.kt"
+  - "build-logic/src/main/**/*.kts"
 ignores:
   # the ONE dated entry: the single source of the vanilla dir's NAME (Keys.CLAUDE / Keys.CLAUDE_DIR)
   - integrations/claude-code/src/main/kotlin/**/ClaudeConfigKeys.kt

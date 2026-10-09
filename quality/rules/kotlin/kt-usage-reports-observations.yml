@@ -4,6 +4,7 @@ severity: error
 message: Usage must state which token buckets were observed; numeric wire defaults are not observations.
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   any:
     - all:

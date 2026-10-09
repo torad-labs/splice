@@ -136,6 +136,8 @@ files:
   - core/src/main/**/*.kt
   # LAYOUT-01: preserve declaration-side enforcement on the relocated Claude Code adapter.
   - integrations/claude-code/src/main/**/*.kt
+  - "build-logic/src/main/**/*.kt"
+  - "build-logic/src/main/**/*.kts"
 rule:
   all:
     - kind: class_declaration

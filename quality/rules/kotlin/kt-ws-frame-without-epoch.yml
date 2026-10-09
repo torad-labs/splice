@@ -17,5 +17,6 @@ severity: error
 message: "frameFor() without the epoch re-opens the F7 commit race — use frameAndEpoch(), which captures both under one lock."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   pattern: $X.frameFor($$$ARGS)

@@ -98,13 +98,37 @@ export function readWorkspaces(repoRoot: string): string[] {
 }
 
 /**
+ * Included builds from `settings.gradle.kts` (`includeBuild("build-logic")`): they hold production Kotlin
+ * (`*.gradle.kts` convention plugins and their tests) that is in no `include()`, so a denominator read from
+ * the modules alone never listed it and a rule could miss it with every proof green. The id is the build's
+ * directory name, which is what an exclusion row names.
+ */
+export function readIncludedBuilds(repoRoot: string, buildRoot: string): GradleModule[] {
+  const text = readFileSync(join(buildRoot, "settings.gradle.kts"), "utf8");
+  const dirs = [...text.matchAll(/includeBuild\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]!);
+  return [...new Set(dirs)].map((dir) => ({ id: dir, dir: relative(repoRoot, join(buildRoot, dir)) }));
+}
+
+/** The three domains a rule's `files:` may select, each derived from the units: every root, every production
+ *  root, every test root. A selector that is none of them (a `.kt`-only glob over roots that hold `.kts`, one
+ *  module, a hand-picked pair of source sets) is refused by name. */
+export const DOMAINS = ["all roots", "production roots", "test roots"] as const;
+export type Domain = (typeof DOMAINS)[number];
+
+export function domainOf(unit: SourceUnit, domain: Domain): boolean {
+  if (domain === "all roots") return true;
+  const production = unit.sourceSet === "main" || unit.sourceSet === "src";
+  return domain === "production roots" ? production : !production;
+}
+
+/**
  * Every source root that exists and holds at least one tracked file. A root with no files is not
  * a root: enrolling it would make every rule fail for a directory nobody writes code in.
  */
 export function sourceUnits(repoRoot: string, buildRoot: string, tracked: readonly string[]): SourceUnit[] {
   const units: SourceUnit[] = [];
   const under = (dir: string) => tracked.filter((f) => f.startsWith(`${dir}/`));
-  for (const module of readGradleModules(repoRoot, buildRoot)) {
+  for (const module of [...readGradleModules(repoRoot, buildRoot), ...readIncludedBuilds(repoRoot, buildRoot)]) {
     for (const sourceSet of GRADLE_SOURCE_SETS) {
       const key = `${module.dir}/src/${sourceSet}/kotlin`;
       const files = under(key);

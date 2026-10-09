@@ -24,6 +24,7 @@ severity: error
 message: "L2/CX-09: mirrorInto must delegate to willMirror — a second copy of the gate cascade re-opens the band between the mirror floor and the promote floor, silently."
 files:
   - "**/src/*/kotlin/**/*.kt"
+  - "**/src/*/kotlin/**/*.kts"
 rule:
   kind: function_declaration
   all:

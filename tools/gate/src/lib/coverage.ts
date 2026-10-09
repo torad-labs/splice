@@ -15,6 +15,8 @@ import { describe, readExclusions, type Exclusion } from "./exclusions.ts";
 import { probeFileSets } from "./astgrep.ts";
 import { globMatch, readRules, readSgConfig, selects, type Rule } from "./rules.ts";
 import {
+  DOMAINS,
+  domainOf,
   LANGUAGE_EXTENSIONS,
   sourceUnits,
   unitFilesFor,
@@ -24,6 +26,7 @@ import {
 
 export type FindingKind =
   | "rule-matches-nothing"
+  | "domain-mismatch"
   | "source-root-lost"
   | "file-lost"
   | "exclusion-invalid"
@@ -115,7 +118,33 @@ export async function proveCoverage(options: ProveOptions): Promise<CoverageRepo
       continue;
     }
 
-    for (const { unit, expected } of relevant) {
+    // THE THREE-DOMAIN CONTRACT: a selector that is exactly one domain's file set needs no disposition at
+    // all, so a production-only rule carries no row for the test roots. Anything else falls to the rows
+    // below and, when it is refused there, the finding names the domain it came closest to.
+    const selected = new Set(relevant.flatMap((u) => u.expected.filter((f) => selects(rule, f))));
+    const domain = DOMAINS.find((d) => sameSet(selected, domainFiles(relevant, d)));
+    if (domain) {
+      coveredPairs += relevant.filter((u) => domainOf(u.unit, domain)).length;
+      continue;
+    }
+    const near = nearestDomain(selected, relevant);
+    const nearest = near.text;
+    // Graded against the ONE domain the selector comes closest to, never against every root: a production rule is not
+    // asked to carry a row for the test roots it was never meant to reach, and a stray file outside the domain is its own
+    // finding.
+    const strays = [...selected].filter((f) => !domainFiles(relevant, near.domain).has(f));
+    if (strays.length > 0) {
+      findings.push({
+        kind: "domain-mismatch",
+        rule: rule.id,
+        message:
+          `${rule.id} selects ${strays.length} file(s) outside ${near.domain}: ` +
+          `${strays.slice(0, MAX_NAMED).join(", ")}${strays.length > MAX_NAMED ? ` (+${strays.length - MAX_NAMED} more)` : ""} ` +
+          `(files: ${rule.files.join(", ")} is not one of the domains: ${DOMAINS.join(" | ")})`,
+      });
+    }
+
+    for (const { unit, expected } of relevant.filter((u) => domainOf(u.unit, near.domain))) {
       const matched = expected.filter((f) => selects(rule, f));
       if (matched.length === 0) {
         const row = unitRows.find((r) => coversUnit(r, unit));
@@ -132,7 +161,8 @@ export async function proveCoverage(options: ProveOptions): Promise<CoverageRepo
             rule: rule.id,
             message:
               `${rule.id} reaches 0 of ${expected.length} files in ${unit.key} ` +
-              `(module ${unit.module}, source set ${unit.sourceSet}) and no dated exclusion covers it`,
+              `(module ${unit.module}, source set ${unit.sourceSet}) and no dated exclusion covers it ` +
+              `(files: ${rule.files.join(", ")} is not one of the domains: ${nearest})`,
           });
         }
         continue;
@@ -159,7 +189,8 @@ export async function proveCoverage(options: ProveOptions): Promise<CoverageRepo
           rule: rule.id,
           message:
             `${rule.id} loses ${orphans.length} file(s) inside covered ${unit.key} with no dated exclusion: ` +
-            `${orphans.slice(0, MAX_NAMED).join(", ")}${orphans.length > MAX_NAMED ? ` (+${orphans.length - MAX_NAMED} more)` : ""}`,
+            `${orphans.slice(0, MAX_NAMED).join(", ")}${orphans.length > MAX_NAMED ? ` (+${orphans.length - MAX_NAMED} more)` : ""} ` +
+            `(files: ${rule.files.join(", ")} is not one of the domains: ${nearest})`,
         });
       }
     }
@@ -281,4 +312,33 @@ function candidates(files: readonly string[], rule: Rule): string[] {
   const extensions = LANGUAGE_EXTENSIONS[rule.language];
   if (!extensions) return [];
   return files.filter((f) => extensions.some((ext) => f.endsWith(ext)));
+}
+
+type Relevant = { unit: SourceUnit; expected: string[] }[];
+
+function domainFiles(relevant: Relevant, domain: (typeof DOMAINS)[number]): Set<string> {
+  return new Set(relevant.filter((u) => domainOf(u.unit, domain)).flatMap((u) => u.expected));
+}
+
+function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  return a.size === b.size && [...a].every((f) => b.has(f));
+}
+
+/** The domain the selection sits inside (nothing selected outside it) and misses least; when none contains it, the one it
+ *  strays outside least. Also the finding's text. */
+function nearestDomain(
+  selected: ReadonlySet<string>,
+  relevant: Relevant,
+): { domain: (typeof DOMAINS)[number]; text: string } {
+  const scored = DOMAINS.map((domain, order) => {
+    const files = domainFiles(relevant, domain);
+    const lost = [...files].filter((f) => !selected.has(f)).length;
+    const extra = [...selected].filter((f) => !files.has(f)).length;
+    return { domain, order, lost, extra };
+  }).sort((x, y) => x.extra - y.extra || x.lost - y.lost || x.order - y.order);
+  const best = scored[0]!;
+  return {
+    domain: best.domain,
+    text: `${DOMAINS.join(" | ")}; nearest is ${best.domain}, missing ${best.lost} and selecting ${best.extra} outside it`,
+  };
 }

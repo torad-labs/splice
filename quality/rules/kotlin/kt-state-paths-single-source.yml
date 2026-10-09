@@ -33,6 +33,7 @@ severity: error
 message: "State paths resolve only in StatePaths.kt — no `.splice` or `.claude-` state-root literals, concatenated or templated, elsewhere."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   - core/src/main/kotlin/**/config/StatePaths.kt
   # per-head CLAUDE_CONFIG_DIR for the wrapped Claude Code — a separate contract, see header

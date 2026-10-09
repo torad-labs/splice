@@ -11,53 +11,31 @@
 // which the plugin classpath cannot parse without a new pinned dependency, so it runs in-process in
 // `bun tools/gate`'s config guard beside the other config guards (tools/gate/src/lib/dependabot.ts).
 import org.gradle.api.artifacts.VersionCatalogsExtension
-import org.gradle.api.artifacts.VersionConstraint
-import splice.hygiene.Catalog
-import splice.hygiene.CatalogLibrary
 import splice.hygiene.CatalogMetadata
-import splice.hygiene.CatalogPlugin
+import splice.hygiene.CatalogReader
+import splice.hygiene.MetadataRead
 
-/** A rich version (strictly / prefer / reject) carries no single literal to pin — refuse, never skip. */
-fun VersionConstraint.literal(where: String): String? {
-    val rich = strictVersion.isNotEmpty() || preferredVersion.isNotEmpty() || rejectedVersions.isNotEmpty()
-    check(!rich) { "$where: rich version $this — extend splice.hygiene.CatalogMetadata, do not skip" }
-    return requiredVersion.ifEmpty { null }
-}
-
-fun readCatalog(): Catalog {
-    val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
-    val versions = libs.versionAliases.sorted().associateWith { alias ->
-        checkNotNull(libs.findVersion(alias).get().literal("[versions] $alias")) { "[versions] $alias: no version" }
-    }
-    val libraries = libs.libraryAliases.sorted().map { alias ->
-        val dependency = libs.findLibrary(alias).get().get()
-        CatalogLibrary(
-            alias,
-            dependency.module.group,
-            dependency.module.name,
-            dependency.versionConstraint.literal("libraries.$alias"),
-        )
-    }
-    val plugins = libs.pluginAliases.sorted().map { alias ->
-        val plugin = libs.findPlugin(alias).get().get()
-        CatalogPlugin(alias, plugin.pluginId, plugin.version.literal("plugins.$alias"))
-    }
-    return Catalog(versions, libraries, plugins)
-}
+// Resolved here, in the project script: inside the task block `extensions` is the TASK's container, which holds no catalogs.
+private val catalogReader = CatalogReader(extensions.getByType<VersionCatalogsExtension>().named("libs"))
 
 tasks.register("catalogMetadataSync") {
     group = "gate"
     description =
         "Every version gradle/libs.versions.toml declares is pinned in gradle/verification-metadata.xml " +
-            "(libraries as components, plugins as markers, floors by presence) — the Dependabot bump that " +
+            "(libraries as components, plugins as markers, floors by presence): the Dependabot bump that " +
             "forgot the regeneration, caught in a second instead of six minutes into the gradle leg."
     // A verdict, not an artifact: never up-to-date, the same rule as every ladder leg.
     outputs.upToDateWhen { false }
     val metadata = layout.projectDirectory.file("gradle/verification-metadata.xml")
-    val catalog = provider { readCatalog() }
+    val catalog = provider { catalogReader.read() }
     doLast {
-        val problems = CatalogMetadata.problems(catalog.get(), CatalogMetadata.components(metadata.asFile.readText()))
+        val read = CatalogMetadata.read(metadata.asFile.readText())
+        val pinned = when (read) {
+            is MetadataRead.Pinned -> read
+            is MetadataRead.Unreadable -> throw GradleException(read.reason)
+        }
+        val problems = CatalogMetadata.problems(catalog.get(), pinned.components)
         check(problems.isEmpty()) { CatalogMetadata.report(problems) }
-        println("catalogMetadataSync: every catalog version is pinned in gradle/verification-metadata.xml")
+        logger.lifecycle("catalogMetadataSync: every catalog version is pinned in gradle/verification-metadata.xml")
     }
 }

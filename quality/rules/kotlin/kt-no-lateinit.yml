@@ -28,6 +28,7 @@ severity: error
 message: "No `lateinit var` in production — use constructor injection, `by lazy`, or a nullable val."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   kind: property_declaration
   has:

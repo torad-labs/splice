@@ -20,6 +20,7 @@ severity: error
 message: "catch (Exception|Throwable) must rethrow CancellationException (`if (e is CancellationException) throw e`) before handling."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   kind: catch_block
   regex: ':\s*(kotlin\.)?(Exception|Throwable)\b'

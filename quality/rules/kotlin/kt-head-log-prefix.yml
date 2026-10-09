@@ -13,6 +13,7 @@ note: >
   head prefix at the injection point.
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   kind: string_literal
   any:

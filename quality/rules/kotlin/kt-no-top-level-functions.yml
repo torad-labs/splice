@@ -22,6 +22,7 @@ note: >
   needs collaborators, make it a class and inject them.
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 rule:
   kind: function_declaration
   all:

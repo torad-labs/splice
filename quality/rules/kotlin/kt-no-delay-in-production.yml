@@ -41,6 +41,7 @@ severity: error
 message: "No bare delay() in production — inject a Waiter (one-shot wait) or a Ticker (loop pacing)."
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
   # The process runtime edge — the single main-source file allowed to name the global clock.
   - integrations/upstream/src/main/kotlin/splice/upstream/codemode/ProcessRuntime.kt

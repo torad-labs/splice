@@ -27,9 +27,12 @@ note: >
   written rationale so the exception is reviewable — never an inline @Suppress.
 files:
   - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
   - "**/src/test/**/*.kt"
+  - "**/src/test/**/*.kts"
   # 2026-09-24: shared fixtures are test code; LAYOUT-01 moved a checked test file into one.
   - "**/src/testFixtures/**/*.kt"
+  - "**/src/testFixtures/**/*.kts"
 rule:
   kind: string_literal
   regex: "^\"(TooManyFunctions|LongMethod|LargeClass|CyclomaticComplexMethod|ComplexCondition|LongParameterList|ReturnCount|NestedBlockDepth|MagicNumber|MaxLineLength|TooGenericExceptionCaught|SwallowedException|StringLiteralDuplication|UnusedPrivateMember|UnusedPrivateProperty|UnusedParameter)\"$"

@@ -15,6 +15,7 @@ files:
   # one): a single-definition wall that stops seeing a module is a wall that cannot find a second
   # definition there, so the reach is the source-set shape, never a module directory.
   - "**/src/*/kotlin/**/*.kt"
+  - "**/src/*/kotlin/**/*.kts"
 ignores:
   - features/turns/src/main/kotlin/**/reasoning/Mirror.kt
 rule:

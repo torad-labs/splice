@@ -13,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.client.ClaudeHead
 import splice.client.ClaudeLoginTarget
+import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.upstream.codemode.ProcessDispatchers
 import java.nio.file.Path
@@ -39,7 +40,7 @@ class NativeClaudeAuthTest {
             "HTTPS_PROXY" to "http://proxy.invalid",
         )
         val auth = NativeClaudeAuth(
-            WrapStateRead { "/synthetic/real-claude" },
+            WrapStateRead { ClaudeToRun.Wrapped("/synthetic/real-claude") },
             environment,
             ProcessDispatchers().io(),
             NativeAuthStart {
@@ -47,8 +48,8 @@ class NativeClaudeAuthTest {
                 NativeLoginTestProcess()
             },
         )
-        auth.begin(location(ClaudeLoginPlaceId.NATIVE)).use { }
-        auth.begin(location(ClaudeLoginPlaceId.SPLICE)).use { }
+        (auth.begin(location(ClaudeLoginPlaceId.NATIVE)) as NativeSignIn.Running).run.use { }
+        (auth.begin(location(ClaudeLoginPlaceId.SPLICE)) as NativeSignIn.Running).run.use { }
         assertEquals(listOf("/synthetic/real-claude", "auth", "login", "--claudeai"), builders[0].command())
         assertFalse(builders[0].environment().containsKey("CLAUDE_CONFIG_DIR"))
         assertEquals(home.resolve("claude-splice").toString(), builders[1].environment()["CLAUDE_CONFIG_DIR"])
@@ -68,12 +69,12 @@ class NativeClaudeAuthTest {
         process.finish(0)
         val announced = CopyOnWriteArrayList<String>()
         val auth = NativeClaudeAuth(
-            WrapStateRead { "unused-fixture" },
+            WrapStateRead { ClaudeToRun.Wrapped("unused-fixture") },
             emptyMap(),
             ProcessDispatchers().io(),
             NativeAuthStart { process },
         )
-        auth.begin(location(ClaudeLoginPlaceId.NATIVE)).use { child ->
+        (auth.begin(location(ClaudeLoginPlaceId.NATIVE)) as NativeSignIn.Running).run.use { child ->
             assertTrue(child.await { announced += it })
         }
         assertEquals(listOf(good), announced.toList())
@@ -93,12 +94,12 @@ class NativeClaudeAuthTest {
             process.finish(0)
             val announced = CopyOnWriteArrayList<String>()
             val auth = NativeClaudeAuth(
-                WrapStateRead { "unused-fixture" },
+                WrapStateRead { ClaudeToRun.Wrapped("unused-fixture") },
                 emptyMap(),
                 ProcessDispatchers().io(),
                 NativeAuthStart { process },
             )
-            auth.begin(location(ClaudeLoginPlaceId.NATIVE)).use { child ->
+            (auth.begin(location(ClaudeLoginPlaceId.NATIVE)) as NativeSignIn.Running).run.use { child ->
                 assertTrue(child.await { announced += it })
             }
             assertEquals(listOf(good), announced.toList())
@@ -108,12 +109,12 @@ class NativeClaudeAuthTest {
     fun `open stdin accepts one fallback code and cancellation stops the child before returning`() = runBlocking {
         val process = NativeLoginTestProcess()
         val auth = NativeClaudeAuth(
-            WrapStateRead { "unused-fixture" },
+            WrapStateRead { ClaudeToRun.Wrapped("unused-fixture") },
             emptyMap(),
             ProcessDispatchers().io(),
             NativeAuthStart { process },
         )
-        auth.begin(location(ClaudeLoginPlaceId.NATIVE)).use { child ->
+        (auth.begin(location(ClaudeLoginPlaceId.NATIVE)) as NativeSignIn.Running).run.use { child ->
             assertTrue(child.submit("synthetic-code"))
             assertFalse(child.submit("two\nlines"))
             assertEquals("synthetic-code\n", process.stdin.toString(Charsets.UTF_8))

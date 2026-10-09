@@ -42,6 +42,7 @@ import splice.app.probe.UpstreamPlaygroundProbe
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
+import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.core.auth.CredentialKey
 import splice.core.config.ConfigService
@@ -147,7 +148,7 @@ class ClaudeLivePoolMembershipTest {
         ClaudeAccountSignIn(
             folders,
             NativeClaudeAuth(
-                WrapStateRead { "fixture-native" },
+                WrapStateRead { ClaudeToRun.Wrapped("fixture-native") },
                 emptyMap(),
                 ProcessDispatchers().io(),
                 NativeAuthStart { builder ->

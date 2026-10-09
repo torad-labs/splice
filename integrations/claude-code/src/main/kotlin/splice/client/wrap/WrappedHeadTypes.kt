@@ -13,17 +13,24 @@ import splice.client.Keys
 import java.nio.file.Path
 import java.nio.file.Paths
 
-/** [splice.launch.recipe.LaunchService]'s read seam: the real absolute claude binary when the default
- *  `claude` command is wrapped, else null — bare `"claude"` (today's byte-identical behaviour,
- *  resolved through PATH) is correct exactly when this returns null. */
-public fun interface WrapStateRead {
-    public fun realBinaryPath(): String?
+/** Which claude a launch execs, decided from the wrap record in ONE read. There is no nullable answer that could
+ *  mean "bare `claude`" while the shim stands in for it: every consumer branches on all three. */
+public sealed class ClaudeToRun {
+    /** Not wrapped: bare `claude` resolves through PATH to the real one, byte-identical to every launch before wrap. */
+    public data object ThroughPath : ClaudeToRun()
 
-    /** Why no launch may run now, or null. Non-null exactly when `claude` on PATH is the wrap shim and the state
-     *  file cannot say which real binary stands behind it: a null [realBinaryPath] would then plant bare
-     *  `claude`, which resolves to the shim itself. A caller that gets a message here refuses with it and
-     *  never falls back to bare `claude`. */
-    public fun refusal(): String? = null
+    /** Wrapped: the real absolute binary, because bare `claude` on PATH IS the shim and would exec itself. */
+    public data class Wrapped(val path: String) : ClaudeToRun()
+
+    /** `claude` is the shim and the record cannot name the real binary: running bare `claude` would run the shim
+     *  again. [reason] names the file and what is wrong with it. */
+    public data class Refused(val reason: String) : ClaudeToRun()
+}
+
+/** [splice.launch.recipe.LaunchService]'s read seam, read once per launch (never cached: wrap and unwrap can flip
+ *  between two requests) and acted on where argv[0] is chosen. */
+public fun interface WrapStateRead {
+    public fun claude(): ClaudeToRun
 }
 
 /** What the wrap state file holds. Absent is a wrap never made (or already undone); [Unreadable] is a file that

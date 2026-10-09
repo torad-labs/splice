@@ -21,6 +21,7 @@ import splice.accounts.signin.HeadRestart
 import splice.accounts.signin.LoginStart
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
+import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.core.auth.CredentialKey
 import splice.upstream.codemode.ProcessDispatchers
@@ -87,7 +88,7 @@ class ClaudeAccountsArmTest {
             ClaudeAccountSignIn(
                 folders(),
                 NativeClaudeAuth(
-                    WrapStateRead { "fixture-native" },
+                    WrapStateRead { ClaudeToRun.Wrapped("fixture-native") },
                     emptyMap(),
                     ProcessDispatchers().io(),
                     NativeAuthStart { NativeLoginTestProcess() },

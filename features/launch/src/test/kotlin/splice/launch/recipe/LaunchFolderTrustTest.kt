@@ -15,6 +15,7 @@ import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
+import splice.launch.launch
 import java.nio.file.Files
 import java.nio.file.Path
 

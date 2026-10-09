@@ -79,7 +79,7 @@ class McpInventoryWiringTest {
         )
         val materializer = ClaudeConfigMaterializer(home, log = LogSink { }, mcpRewrite = sharing.rewrite())
         val service = LaunchService(materializer)
-        heads.forEach { service.launch(it, emptyList(), dangerouslySkipPermissions = false) }
+        heads.forEach { service.launchOutcome(it, emptyList(), dangerouslySkipPermissions = false) }
         val copied = bonsai.resolve(".claude.json").readText()
         assertTrue(copied.contains("127.0.0.1:1/mcp/exa"), "setup: bonsai holds the materialized copy")
 

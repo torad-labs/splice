@@ -25,6 +25,7 @@ import splice.client.resume.originals.TranscriptOriginals
 import splice.core.config.StatePaths
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
+import splice.launch.launch
 import java.nio.file.Files
 import java.nio.file.Path
 

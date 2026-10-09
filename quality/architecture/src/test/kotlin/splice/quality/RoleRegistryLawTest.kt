@@ -778,7 +778,8 @@ class RoleRegistryLawTest {
         // 144 since Oct 8 CT: UpgradeRun answers Upgraded<Boolean> now, so it left the `()->Boolean` entry.
         // 145 since Oct 9 CT: AccountMembershipRefresh reconciles external credentials before selection.
         // 146 since Oct 9 CT: RouteBody is the work of one head route, run only after ClientAuth.guarded opened its door.
-        assertEquals(146, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
+        // 145 since Oct 9 CT: WrapStateRead answers a ClaudeToRun now, so it left the `()->String?` entry.
+        assertEquals(145, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
 

@@ -45,6 +45,7 @@ import splice.core.compaction.SessionProject
 import splice.core.config.StatePaths
 import splice.core.util.JsonScalars
 import splice.launch.HeadTrees
+import splice.launch.LaunchOutcome
 import splice.launch.LaunchSpec
 import splice.launch.recipe.LaunchService
 import java.nio.file.Files
@@ -108,7 +109,7 @@ class SharedTranscriptsResumeTest {
         // `-r SESSION_ID` on head B finds it in its own (shared) tree: nothing is copied, and (V4-169)
         // the assistant rows are moved onto head B's model WHERE THEY LIE, so Claude Code's restore
         // check finds a model this head serves. Same file, same inode, one row changed.
-        service.launch(
+        service.launchOutcome(
             spec(headB, "b", sharing, listOf(headA)),
             listOf("-r", sessionId),
             dangerouslySkipPermissions = false,
@@ -183,7 +184,7 @@ class SharedTranscriptsResumeTest {
         assertTrue(Files.isDirectory(headB.resolve("projects"), NOFOLLOW_LINKS), "an isolating head owns a REAL tree")
         assertFalse(headB.resolve("projects").isSymbolicLink(), "isolate wins over share: no link")
 
-        service.launch(
+        service.launchOutcome(
             spec(headB, "b", isolating, listOf(headA)),
             listOf("-r", sessionId),
             dangerouslySkipPermissions = false,
@@ -206,11 +207,13 @@ class SharedTranscriptsResumeTest {
         val service = service(home)
         val headA = launch(service, home, "a", isolating, siblings = emptyList())
 
-        val recipe = service.launch(
-            spec(headA, "a", isolating, emptyList()),
-            listOf("-r", "11111111-2222-3333-4444-555555555555"),
-            dangerouslySkipPermissions = false,
-        )
+        val recipe = (
+            service.launchOutcome(
+                spec(headA, "a", isolating, emptyList()),
+                listOf("-r", "11111111-2222-3333-4444-555555555555"),
+                dangerouslySkipPermissions = false,
+            ) as LaunchOutcome.Ready
+            ).recipe
 
         assertEquals(
             emptyList<String>(),
@@ -238,7 +241,7 @@ class SharedTranscriptsResumeTest {
         siblings: List<Path>,
     ): Path {
         val configDir = home.resolve(".claude-$head")
-        service.launch(spec(configDir, head, policy, siblings), emptyList(), dangerouslySkipPermissions = false)
+        service.launchOutcome(spec(configDir, head, policy, siblings), emptyList(), dangerouslySkipPermissions = false)
         return configDir
     }
 

@@ -486,7 +486,7 @@ These files hold settings and statistics. Custom compaction instructions and tea
 | `~/.claude-<head>/splice-*-hook.sh` | The sign-in, key-capture, resume and foreground hook scripts. They hold the daemon's local address and a path to the turn key's file, never a key | Only you (0700) | Rewritten at each launch | `HookScriptFiles.kt` |
 | `~/.claude-<head>/commands/login.md`, and links to your own commands | The head's `/login` command | Only you (0600) | Rewritten at each launch | `HeadCommandsDir.kt` |
 | `~/.claude-<head>/splice-sessions.json` | The sessions this head started: id, directory, transcript path and time | Only you (0600) | The newest 500 | `SessionOwnership.kt` |
-| `~/.splice/state/claude-head-wrap.json`, `~/.local/bin/claude`, and `splice-launch-owner.json` beside the installed launcher | While `claude` itself is wrapped: its real executable and the command pointed at splice. The owner locator records the home, state directory and path/port selectors, so another home can run Claude unwrapped even without a user-manager bus. Updates refresh the executable and restore the shim. Your vanilla settings and global state are not rewritten | Only you for the state and locator (0600); the command is a symlink | Wrap state lasts until unwrap, which restores the current executable. The locator stays with the install and is refreshed by reconciliation. Backups from older wrapping versions are restored on unwrap | `WrappedHead.kt` |
+| `~/.splice/state/claude-head-wrap.json`, `~/.local/bin/claude`, and `splice-launch-owner.json` beside the installed launcher | While `claude` itself is wrapped: its real executable and the command pointed at splice. The owner locator records the home, state directory and path/port selectors, so another home can run Claude unwrapped even without a user-manager bus. Updates refresh the executable and restore the shim. Your vanilla settings and global state are not rewritten | Only you for the state and locator (0600); the command is a symlink | Wrap state lasts until unwrap, which restores the current executable. The locator stays with the install and is refreshed by reconciliation. Backups from older wrapping versions are restored on unwrap | `WrappedHead.kt`, `WrapStateStore.kt` |
 
 ### Install, upgrade and diagnostics
 
@@ -769,8 +769,8 @@ tools/         engineering tools: gate/ (the ladder and its selftests), e2e/ (fi
                release/ (release validation and licenses), codemods/ (source migrations)
 install.sh     fetch/build the jar, install the shim, link wrapper commands, keep the release copy
 .claude/       the write-time hook wiring (settings.json); its tests live in tools/gate/test/
-.dev/          campaign ledgers and their walls (`gate:campaign`), research notes
-docs/         architecture and design docs (PROVENANCE.md, the request-byte contract), README assets
+.dev/          research notes, the restructure census, release runbooks
+docs/         architecture and design docs (PROVENANCE.md, the request-byte contract), product specs (specs/), README assets
 .github/       workflows, the community health files, issue and PR templates
 ```
 

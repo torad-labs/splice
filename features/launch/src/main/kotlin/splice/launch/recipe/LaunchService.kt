@@ -20,12 +20,13 @@ import splice.client.resume.HeadBoundedContinue
 import splice.client.resume.ResumeAcrossHeads
 import splice.client.resume.SessionAdoption
 import splice.client.resume.TranscriptModelRewrite
+import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrappedHead
 import splice.client.wrap.WrappedLaunch
 import splice.core.config.UserHome
 import splice.core.util.EnvReader
-import splice.launch.LaunchRecipe
+import splice.launch.LaunchOutcome
 import splice.launch.LaunchSpec
 
 // LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
@@ -49,14 +50,10 @@ public class LaunchService(
      *  IS the shim, so planting the bare [claudeBinary] string there would make EVERY head's launch
      *  (not only a wrapped one) recurse into itself. Defaulted to [wrap], a REAL reader (not a no-op),
      *  so this self-protection holds from day one: the state file it reads simply does not exist
-     *  until wrap is used, at which point it reads null exactly like today. Read PER LAUNCH, never
-     *  cached — wrap/unwrap can flip between two requests. */
+     *  until wrap is used, at which point it answers bare `claude` exactly like today. Read PER LAUNCH,
+     *  never cached — wrap/unwrap can flip between two requests — and its answer is acted on where argv[0] is chosen. */
     private val wrapState: WrapStateRead = wrap,
 ) {
-    /** Why no launch may run now (see [WrapStateRead.refusal]), or null. Read per launch, with the same reader
-     *  [launch] plants argv[0] from. */
-    public val wrapRefusal: String? get() = wrapState.refusal()
-
     /** Assigned by the daemon's native login owner before routes serve requests. */
     public var loginGuard: LaunchLoginGuard? = null
 
@@ -77,13 +74,18 @@ public class LaunchService(
      *  paste-your-key hook and advertiser materialize is decided here, per launch — `splice key
      *  set` promises live pickup, and a present key must disarm both (an accidental paste would
      *  silently OVERWRITE the working credential — review of #75). */
-    public fun launch(
+    public fun launchOutcome(
         spec: LaunchSpec,
         extraArgs: List<String>,
         dangerouslySkipPermissions: Boolean,
         keyPresentNow: Boolean = true,
         caller: LaunchCaller = LaunchCaller(),
-    ): LaunchRecipe {
+    ): LaunchOutcome {
+        // ONE read, acted on here: argv[0] is chosen from it below, and a record that cannot name the real binary
+        // while the shim stands in for `claude` ends the launch before anything is materialized.
+        val chosen = wrapState.claude()
+        if (chosen is ClaudeToRun.Refused) return LaunchOutcome.Refused(chosen.reason)
+        val claude = (chosen as? ClaudeToRun.Wrapped)?.path ?: claudeBinary
         val cwd = caller.cwd
         val wrapped = caller.wrapped
         val keyed = if (keyPresentNow) spec.copy(tokenCapture = null, advertiseKeySetup = false) else spec
@@ -135,7 +137,7 @@ public class LaunchService(
             // V4-129: the real absolute path when `claude` on PATH is currently the wrap shim itself
             // (see [wrapState]'s KDoc) — bare [claudeBinary] otherwise, byte-identical to every launch
             // before this row.
-            add(wrapState.realBinaryPath() ?: claudeBinary)
+            add(claude)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             wrapped?.let {
                 addAll(listOf("--settings", it.settingsOverlay(roster, held.statuslineCommand)))
@@ -145,7 +147,7 @@ public class LaunchService(
             addAll(bounded.args)
         }
         val warning = launchWarning(spec, dangerouslySkipPermissions, adoption, bounded.warning)
-        return environment.recipe(argv, warning)
+        return LaunchOutcome.Ready(environment.recipe(argv, warning))
     }
 
     private fun materializeLaunch(
@@ -161,39 +163,13 @@ public class LaunchService(
      *  when the launch named no id — which is every `-c`, every plain launch, and every `-r` with NO
      *  id: the picker is head-bounded by construction, and this is where that stays true. */
     private fun adoptResume(spec: LaunchSpec, extraArgs: List<String>): SessionAdoption? {
-        val sessionId = requestedSessionId(extraArgs) ?: return null
+        val sessionId = headBoundedContinue.requestedSessionId(extraArgs) ?: return null
         return resumeAcrossHeads.adopt(
             spec.trees.own,
             spec.trees.siblings,
             sessionId,
             CallingRoster(spec.pinnedModel, spec.availableModelIds.takeUnless { spec.forwardClientAuth }),
         )
-    }
-
-    /** The session id a launch asked to resume BY NAME, or null. Every spelling the client accepts
-     *  for a named resume is admitted — `-r <id>`, `--resume <id>`, `-r=<id>`, `--resume=<id>`, and
-     *  the glued short form `-r<id>`; a bare `-r` with a following flag is the PICKER, not a name,
-     *  and resolves to null so nothing here can widen it. */
-    private fun requestedSessionId(args: List<String>): String? {
-        val index = args.indexOfFirst { isResumeFlag(it) }
-        if (index < 0) return null
-        val value = resumeValue(args[index], args.getOrNull(index + 1))
-        return value.takeIf { it.isNotEmpty() && !it.startsWith("-") }
-    }
-
-    /** Is [arg] one of the five resume spellings the client admits — `-r`, `--resume`, `-r=`,
-     *  `--resume=`, or the glued `-r<id>`? */
-    private fun isResumeFlag(arg: String): Boolean =
-        arg == "-r" || arg == "--resume" ||
-            arg.startsWith("-r=") || arg.startsWith("--resume=") ||
-            (arg.startsWith("-r") && arg.length > 2 && arg[2] != '-')
-
-    /** The session id a resume spelling carries: the NEXT argument for the spaced forms, after `=`
-     *  for the equals forms, and `substring(2)` for the glued `-r<id>` form only. */
-    private fun resumeValue(arg: String, next: String?): String = when {
-        arg == "-r" || arg == "--resume" -> next.orEmpty()
-        "=" in arg -> arg.substringAfter('=')
-        else -> arg.substring(2) // glued -r<id>: -r followed by a non-flag character
     }
 
     /** Everything the operator must be told about this launch, in one sentence. A cross-head adoption

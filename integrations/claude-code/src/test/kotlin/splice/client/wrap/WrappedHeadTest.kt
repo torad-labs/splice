@@ -242,7 +242,7 @@ class WrappedHeadTest {
     }
 
     @Test
-    fun `a state file that cannot be used while the shim stands in refuses every launch and unwrap, and never reads as unwrapped`(
+    fun `a state file that cannot be used while the shim stands in refuses the launch and unwrap, and never reads as unwrapped`(
         @TempDir home: Path,
     ) {
         val rig = WrapRig(home)
@@ -253,8 +253,11 @@ class WrappedHeadTest {
             stateFile.writeText(body)
 
             assertEquals(null, rig.head.realBinaryPath(), "no binary can be named: $body")
-            val refusal = rig.head.refusal()
-            assertTrue(refusal.orEmpty().contains(stateFile.toString()), "the refusal names the file: $refusal")
+            val claude = rig.head.claude()
+            assertTrue(
+                claude is ClaudeToRun.Refused && claude.reason.contains(stateFile.toString()),
+                "the launch is refused, naming the file: $claude",
+            )
             val unwrap = rig.head.unwrap()
             assertTrue(unwrap is UnwrapResult.Refused && unwrap.reason.contains(stateFile.toString()), "$unwrap")
             val reconcile = rig.head.reconcile()
@@ -273,7 +276,8 @@ class WrappedHeadTest {
         assertTrue(rig.head.wrap() is WrapResult.Ok)
         Files.delete(home.resolve("state/claude-head-wrap.json"))
 
-        assertTrue(rig.head.refusal().orEmpty().contains("is missing"), "${rig.head.refusal()}")
+        val claude = rig.head.claude()
+        assertTrue(claude is ClaudeToRun.Refused && claude.reason.contains("is missing"), "$claude")
     }
 
     @Test
@@ -282,12 +286,12 @@ class WrappedHeadTest {
     ) {
         val rig = WrapRig(home)
         rig.linkCmdToReal()
-        assertEquals(null, rig.head.refusal())
+        assertEquals(ClaudeToRun.ThroughPath, rig.head.claude())
 
         val stateFile = home.resolve("state/claude-head-wrap.json")
         stateFile.parent.createDirectories()
         stateFile.writeText("[]")
-        assertEquals(null, rig.head.refusal())
+        assertEquals(ClaudeToRun.ThroughPath, rig.head.claude())
         assertEquals(null, rig.head.realBinaryPath())
     }
 }

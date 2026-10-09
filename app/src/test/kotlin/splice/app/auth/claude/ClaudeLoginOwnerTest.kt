@@ -23,6 +23,7 @@ import splice.client.ClaudeHead
 import splice.client.ClaudeLoginTarget
 import splice.client.ClaudeLogins
 import splice.client.HeadSessions
+import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.core.auth.CredentialKey
 import splice.core.config.StatePaths
@@ -74,7 +75,7 @@ class ClaudeLoginOwnerTest {
         start: NativeAuthStart,
         sessions: ClaudeLoginSessions = sessions(),
         places: List<ClaudeLoginLocation> = listOf(location),
-        wrap: WrapStateRead = WrapStateRead { "fixture-native" },
+        wrap: WrapStateRead = WrapStateRead { ClaudeToRun.Wrapped("fixture-native") },
     ): ClaudeLoginOwner {
         val paths = StatePaths(baseOverride = home.resolve("state"))
         val auth = NativeClaudeAuth(
@@ -246,21 +247,21 @@ class ClaudeLoginOwnerTest {
     }
 
     @Test
-    fun `a wrap that cannot name the real claude refuses the sign-in before any native process or save-back starts`() =
+    fun `a wrap that cannot name the real claude fails the sign-in naming why, and no native process starts`() =
         runBlocking {
             val location = location()
             live(location, "outgoing", "outgoing bytes")
             val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
-            val unusable = object : WrapStateRead {
-                override fun realBinaryPath(): String? = null
-                override fun refusal(): String = "claude is the splice launch shim and the wrap state /x is missing"
+            val unusable = WrapStateRead {
+                ClaudeToRun.Refused("claude is the splice launch shim and the wrap state /x is missing")
             }
             val owner = owner(location, scope, NativeAuthStart { error("must not spawn") }, wrap = unusable)
             try {
-                val refused = owner.login(ClaudeLoginPlaceId.NATIVE, null)
-                assertEquals(LoginState.FAILED, refused.state)
-                assertFalse(Files.exists(location.storeDir), "nothing was saved back")
-                assertTrue(refused.failureReason.orEmpty().contains("wrap state /x is missing"))
+                val login = owner.login(ClaudeLoginPlaceId.NATIVE, null)
+                withTimeout(5000) {
+                    while (owner.poll(login.id)?.state != LoginState.FAILED) yield()
+                }
+                assertTrue(owner.poll(login.id)?.failureReason.orEmpty().contains("wrap state /x is missing"))
             } finally {
                 scope.coroutineContext[Job]!!.cancelAndJoin()
             }

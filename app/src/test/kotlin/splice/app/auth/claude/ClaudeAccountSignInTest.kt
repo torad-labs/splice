@@ -19,6 +19,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeAccountIdentity
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
+import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.core.auth.CredentialKey
 import splice.core.util.WallClock
@@ -41,7 +42,7 @@ class ClaudeAccountSignInTest {
     /** The sign-in under test, with a fixture child that writes [account] into whatever folder it is pointed at. */
     private fun signIn(scope: CoroutineScope, child: NativeLoginTestProcess, account: String?): ClaudeAccountSignIn {
         val auth = NativeClaudeAuth(
-            WrapStateRead { "fixture-native" },
+            WrapStateRead { ClaudeToRun.Wrapped("fixture-native") },
             emptyMap(),
             ProcessDispatchers().io(),
             NativeAuthStart { builder ->

@@ -6,6 +6,8 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import splice.launch.recipe.LaunchCaller
+import splice.launch.recipe.LaunchService
 
 internal fun launchHeadsOf(vararg heads: LaunchHead): LaunchHeads = object : LaunchHeads {
     override fun all(): List<LaunchHead> = heads.toList()
@@ -30,4 +32,19 @@ internal fun runningHead(key: String): Head = object : Head {
 internal fun absentAuth(kind: String): AuthProvider = object : AuthProvider {
     override suspend fun credentials() = null
     override suspend fun describe() = AuthDescription(false, kind, emptyMap())
+}
+
+/** The recipe of a launch no wrap record refused. A refusal fails the test with its reason, so the tests that read
+ *  `.env` and `.argv` keep their call sites while production acts on [LaunchOutcome] at its one route. */
+internal fun LaunchService.launch(
+    spec: LaunchSpec,
+    extraArgs: List<String>,
+    dangerouslySkipPermissions: Boolean,
+    keyPresentNow: Boolean = true,
+    caller: LaunchCaller = LaunchCaller(),
+): LaunchRecipe = when (
+    val outcome = launchOutcome(spec, extraArgs, dangerouslySkipPermissions, keyPresentNow, caller)
+) {
+    is LaunchOutcome.Ready -> outcome.recipe
+    is LaunchOutcome.Refused -> error("launch refused: ${outcome.reason}")
 }

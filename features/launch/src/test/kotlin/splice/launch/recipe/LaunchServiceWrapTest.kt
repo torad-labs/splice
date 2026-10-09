@@ -17,12 +17,14 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapState
 import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
+import splice.launch.launch
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -61,7 +63,7 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
         val realBinary = "/home/op/.local/share/claude/versions/2.1.278"
         val service = LaunchService(
             ClaudeConfigMaterializer(tmp),
-            wrapState = WrapStateRead { realBinary },
+            wrapState = WrapStateRead { ClaudeToRun.Wrapped(realBinary) },
         )
         val argv = service.launch(spec("claudex"), emptyList(), dangerouslySkipPermissions = false).argv
         assertEquals(

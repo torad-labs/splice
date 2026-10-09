@@ -51,6 +51,25 @@ public class HeadBoundedContinue {
         return ContinueResolution(rest + listOf(RESUME_LONG, newest.id), null)
     }
 
+    /** The session id a launch asked to resume BY NAME, or null. Every spelling the client accepts for a named
+     *  resume is admitted: `-r <id>`, `--resume <id>`, `-r=<id>`, `--resume=<id>`, and the glued short form `-r<id>`.
+     *  A bare `-r` with a following flag is the PICKER, not a name, and resolves to null so nothing here can widen
+     *  it. */
+    public fun requestedSessionId(args: List<String>): String? {
+        val index = args.indexOfFirst(::namesResume)
+        if (index < 0) return null
+        val value = resumeValue(args[index], args.getOrNull(index + 1))
+        return value.takeIf { it.isNotEmpty() && !it.startsWith("-") }
+    }
+
+    /** The session id a resume spelling carries: the NEXT argument for the spaced forms, after `=` for the equals
+     *  forms, and `substring(2)` for the glued `-r<id>` form only. */
+    private fun resumeValue(arg: String, next: String?): String = when {
+        arg == "-r" || arg == RESUME_LONG -> next.orEmpty()
+        "=" in arg -> arg.substringAfter('=')
+        else -> arg.substring(2) // glued -r<id>: -r followed by a non-flag character
+    }
+
     /** Any resume spelling the client admits; with one present, `-c` is the client's own conflict. */
     private fun namesResume(arg: String): Boolean =
         arg == "-r" || arg == RESUME_LONG || arg.startsWith("-r=") || arg.startsWith("$RESUME_LONG=") ||

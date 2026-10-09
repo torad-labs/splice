@@ -401,6 +401,8 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/claude-code/src/main/kotlin/splice/client/wrap/WrappedHead.kt" to mapOf(
         "Files.createSymbolicLink(" to 1,
         "Files.move(" to 2,
+    ),
+    "integrations/claude-code/src/main/kotlin/splice/client/wrap/WrapStateStore.kt" to mapOf(
         "writeAtomic0600(" to 2,
     ),
     // Daemon-owned archive hardlink, or a verified copy from its already-open source on link failure/race.

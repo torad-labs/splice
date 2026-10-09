@@ -199,3 +199,11 @@ public data class LaunchRecipe(
     // control log and the /launch response so the danger is never silent.
     val warning: String? = null,
 )
+
+/** What a launch came to: a recipe to run, or a refusal to say. */
+public sealed class LaunchOutcome {
+    public data class Ready(val recipe: LaunchRecipe) : LaunchOutcome()
+
+    /** The launch must not run: [reason] says why, in words the operator can act on. */
+    public data class Refused(val reason: String) : LaunchOutcome()
+}

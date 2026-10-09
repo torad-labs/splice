@@ -16,6 +16,7 @@ import splice.client.ClaudePolicy
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
+import splice.launch.launch
 import java.nio.file.Files
 import java.nio.file.Path
 

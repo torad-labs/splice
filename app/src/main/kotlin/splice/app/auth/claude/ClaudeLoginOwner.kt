@@ -120,7 +120,7 @@ internal class ClaudeLoginOwner(
             failed(cell, "native login place is not configured")
             return null
         }
-        val busy = refusal(location.target.head.configDir) ?: auth.refusal()
+        val busy = refusal(location.target.head.configDir)
         if (busy != null) {
             failed(cell, busy)
             return null
@@ -185,7 +185,13 @@ internal class ClaudeLoginOwner(
     }
 
     private suspend fun authenticate(attempt: NativeAttempt) {
-        val child: NativeClaudeAuthRun = auth.begin(attempt.location)
+        val child: NativeClaudeAuthRun = when (val begun = auth.begin(attempt.location)) {
+            is NativeSignIn.Refused -> {
+                attempt.fail(begun.reason)
+                return
+            }
+            is NativeSignIn.Running -> begun.run
+        }
         attempt.child = child
         try {
             val completed = child.await { url ->

@@ -15,7 +15,7 @@ import splice.http.JsonBody
 import splice.launch.LaunchAudit
 import splice.launch.LaunchHead
 import splice.launch.LaunchHeads
-import splice.launch.LaunchRecipe
+import splice.launch.LaunchOutcome
 import splice.launch.LaunchReplies
 import splice.launch.LaunchSpec
 import splice.launch.wrap.CLAUDE_HEAD_KEY
@@ -42,7 +42,14 @@ public class LaunchRoutes(
     public suspend fun launch(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
         val targets = heads.targets(key)
-        if (turnedAway(call, key, targets)) return
+        if (targets.size > 1) {
+            call.respondText(
+                LaunchReplies.errorJson(TopologyMessages.ambiguousHeadMessage(key, targets.map { it.head.key })),
+                ContentType.Application.Json,
+                HttpStatusCode.Conflict,
+            )
+            return
+        }
         val resolved = resolve(key, targets)
         val target = resolved?.head
         val spec = target?.spec
@@ -67,16 +74,6 @@ public class LaunchRoutes(
         reply(call, key, resolved, request)
     }
 
-    /** Answers a launch that must not run, and says so. A wrap record that cannot name the real claude comes
-     *  first: while the shim stands in for `claude`, every launch's argv[0] would be the shim itself. */
-    private suspend fun turnedAway(call: ApplicationCall, key: String, targets: List<LaunchHead>): Boolean {
-        val message = launchService?.wrapRefusal
-            ?: TopologyMessages.ambiguousHeadMessage(key, targets.map { it.head.key }).takeIf { targets.size > 1 }
-            ?: return false
-        call.respondText(LaunchReplies.errorJson(message), ContentType.Application.Json, HttpStatusCode.Conflict)
-        return true
-    }
-
     private suspend fun reply(call: ApplicationCall, key: String, resolved: Resolved, request: LaunchRequest) {
         val service = requireNotNull(launchService)
         val target = resolved.head
@@ -89,29 +86,34 @@ public class LaunchRoutes(
         }
         // Read both live windows and the native destination hold after body reception has finished.
         val launched = target.catalog?.let(spec::withWindows) ?: spec
-        val recipe = recipeFor(target, launched, request, resolved.wrapped, service)
-        audit.launched(key, recipe.argv)
-        recipe.warning?.let(audit::warned)
-        call.respondText(launchResponse.launchRecipeJson(recipe), ContentType.Application.Json)
+        when (val outcome = launchFor(target, launched, request, resolved.wrapped, service)) {
+            is LaunchOutcome.Refused -> call.respondText(
+                LaunchReplies.errorJson(outcome.reason),
+                ContentType.Application.Json,
+                HttpStatusCode.Conflict,
+            )
+            is LaunchOutcome.Ready -> {
+                val recipe = launchResponse.withAuthWarning(target, launched, outcome.recipe)
+                audit.launched(key, recipe.argv)
+                recipe.warning?.let(audit::warned)
+                call.respondText(launchResponse.launchRecipeJson(recipe), ContentType.Application.Json)
+            }
+        }
     }
 
-    private suspend fun recipeFor(
+    private fun launchFor(
         target: LaunchHead,
         spec: LaunchSpec,
         request: LaunchRequest,
         wrapped: WrappedLaunch?,
         service: LaunchService,
-    ): LaunchRecipe = launchResponse.withAuthWarning(
-        target,
+    ): LaunchOutcome = service.launchOutcome(
         spec,
-        service.launch(
-            spec,
-            request.extraArgs,
-            request.dangerouslySkipPermissions,
-            // DR-81: key presence is read per launch, not from the boot-frozen spec.
-            keyPresentNow = target.keyPresence.keyPresentNow(),
-            caller = LaunchCaller(request.cwd, wrapped, request.inheritedConfigDir),
-        ),
+        request.extraArgs,
+        request.dangerouslySkipPermissions,
+        // DR-81: key presence is read per launch, not from the boot-frozen spec.
+        keyPresentNow = target.keyPresence.keyPresentNow(),
+        caller = LaunchCaller(request.cwd, wrapped, request.inheritedConfigDir),
     )
 
     /** The head [key] launches, given its key/label [targets] (at most one — several were refused).

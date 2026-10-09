@@ -6,6 +6,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import splice.accounts.claude.ClaudeLoginPlaceId
+import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.core.util.Cancellables
 import java.io.Closeable
@@ -43,24 +44,34 @@ internal fun interface NativeAuthStart {
     fun start(builder: ProcessBuilder): Process
 }
 
+/** What starting a native sign-in came to: a child running, or a refusal to say before anything started. */
+internal sealed class NativeSignIn {
+    class Running(val run: NativeClaudeAuthRun) : NativeSignIn()
+
+    class Refused(val reason: String) : NativeSignIn()
+}
+
 internal class NativeClaudeAuth(
     private val wrap: WrapStateRead,
     private val environment: Map<String, String>,
     private val dispatcher: CoroutineDispatcher,
     private val start: NativeAuthStart = NativeAuthStart(ProcessBuilder::start),
 ) {
-    /** Why no sign-in may start now: the shim stands in for `claude` and the wrap record is unusable, so
-     *  [begin] would run bare `claude`, which is the shim again. Callers ask first and fail with this text. */
-    fun refusal(): String? = wrap.refusal()
-
     /** The sign-in that REPLACES one command's own login, in that command's own config dir. */
-    fun begin(location: ClaudeLoginLocation): NativeClaudeAuthRun =
+    fun begin(location: ClaudeLoginLocation): NativeSignIn =
         begin(location.target.head.configDir.takeIf { location.id == ClaudeLoginPlaceId.SPLICE })
 
     /** One native sign-in, writing [configDir], or the caller's own `~/.claude` when it is null. An added account
      *  always names its PENDING folder here, so a sign-in in flight can never write a login already filed. */
-    fun begin(configDir: Path?): NativeClaudeAuthRun {
-        val builder = ProcessBuilder(wrap.realBinaryPath() ?: "claude", "auth", "login", "--claudeai")
+    fun begin(configDir: Path?): NativeSignIn {
+        // ONE read, acted on here: a wrap record that cannot name the real claude while the shim stands in for it
+        // ends the sign-in, since bare `claude` would run the shim again.
+        val claude = when (val chosen = wrap.claude()) {
+            is ClaudeToRun.Refused -> return NativeSignIn.Refused(chosen.reason)
+            is ClaudeToRun.Wrapped -> chosen.path
+            ClaudeToRun.ThroughPath -> "claude"
+        }
+        val builder = ProcessBuilder(claude, "auth", "login", "--claudeai")
             .redirectErrorStream(true)
         val env = builder.environment()
         env.putAll(environment)
@@ -69,7 +80,7 @@ internal class NativeClaudeAuth(
                 name == "CLAUDE_CODE_OAUTH_TOKEN" || name == "CLAUDE_CONFIG_DIR"
         }
         if (configDir != null) env["CLAUDE_CONFIG_DIR"] = configDir.toString()
-        return NativeClaudeAuthRun(start.start(builder), dispatcher)
+        return NativeSignIn.Running(NativeClaudeAuthRun(start.start(builder), dispatcher))
     }
 }
 

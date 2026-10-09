@@ -24,26 +24,14 @@
 // package, same FQCNs.
 package splice.client.wrap
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.client.Keys
 import splice.client.SymlinkOp
 import splice.core.config.InstallPaths
-import splice.core.config.StatePaths
 import splice.core.util.Cancellables
-import splice.core.util.FileTightening
-import splice.core.util.JsonScalars
 import splice.core.util.PathProbe
-import splice.core.util.SecureFile
 import splice.core.util.WallClock
-import java.io.IOException
-import java.nio.charset.CharacterCodingException
-import java.nio.file.AccessDeniedException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
-import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
@@ -52,102 +40,9 @@ import kotlin.io.path.isSymbolicLink
 
 private const val CLAUDE_COMMAND = "claude"
 private const val SHIM_NAME = "splice-launch"
-private const val WRAP_STATE_FILE = "claude-head-wrap.json"
 
 /** One lock for every state-changing wrap operation in this JVM (the daemon's): see the file header. */
 private val WRAP_LOCK = Any()
-
-/** The one fact [splice.launch.recipe.LaunchService] must read on every launch (see file header). A file,
- *  not in-memory state: the daemon's LaunchService is constructed once at boot while wrap/unwrap are
- *  per-request actions, possibly from a different process (`splice` CLI) — only a file both can
- *  reach keeps them from disagreeing. */
-public class WrapStateStore(
-    private val file: Path = StatePaths().stateDir.resolve(WRAP_STATE_FILE),
-) {
-    private val json = Json {
-        ignoreUnknownKeys = true
-        prettyPrint = true
-    }
-
-    /** Absent only when the file is not there; a file that is there and cannot be used is [StoredWrap.Unreadable]. */
-    public fun read(): StoredWrap = try {
-        parse(Files.readString(file))
-    } catch (_: NoSuchFileException) {
-        StoredWrap.Absent(file)
-    } catch (_: AccessDeniedException) {
-        StoredWrap.Unreadable(file, "is not readable by this user")
-    } catch (_: CharacterCodingException) {
-        StoredWrap.Unreadable(file, "is not valid text")
-    } catch (_: IOException) {
-        StoredWrap.Unreadable(file, "could not be read")
-    }
-
-    private fun parse(text: String): StoredWrap {
-        val obj = JsonScalars.objectOrNull(json, text)
-            ?: return StoredWrap.Unreadable(file, "is not a JSON object")
-        val realBinaryPath = JsonScalars.str(obj, "real_binary_path")
-            ?: return StoredWrap.Unreadable(file, "names no real_binary_path")
-        return StoredWrap.Present(
-            WrapState(
-                realBinaryPath = realBinaryPath,
-                shadowedSymlinkTarget = JsonScalars.strOrEmpty(obj["shadowed_symlink_target"]),
-                shimPath = JsonScalars.strOrEmpty(obj["shim_path"]),
-                settingsBackupPath = JsonScalars.strOrEmpty(obj["settings_backup_path"]),
-                claudeJsonBackupPath = JsonScalars.strOrEmpty(obj["claude_json_backup_path"]),
-                wrappedAtEpochMillis = JsonScalars.long(obj, "wrapped_at_epoch_millis") ?: 0L,
-            ),
-        )
-    }
-
-    public fun write(state: WrapState) {
-        val body = buildJsonObject {
-            put("real_binary_path", state.realBinaryPath)
-            put("shadowed_symlink_target", state.shadowedSymlinkTarget)
-            put("shim_path", state.shimPath)
-            if (state.settingsBackupPath.isNotBlank()) put("settings_backup_path", state.settingsBackupPath)
-            if (state.claudeJsonBackupPath.isNotBlank()) put("claude_json_backup_path", state.claudeJsonBackupPath)
-            put("wrapped_at_epoch_millis", state.wrappedAtEpochMillis)
-        }
-        SecureFile.writeAtomic0600(file, json.encodeToString(JsonObject.serializer(), body) + "\n")
-    }
-
-    /** Locate this wrap independently of the caller's HOME and user-manager bus. */
-    public fun recordLauncherOwner(home: Path, shim: Path, profile: Map<String, String>) {
-        val owner = shim.toRealPath().resolveSibling("splice-launch-owner.json")
-        val body = buildJsonObject {
-            put("home", home.toAbsolutePath().normalize().toString())
-            put("state_dir", file.toAbsolutePath().normalize().parent.toString())
-            if (profile.isNotEmpty()) put("selectors", ownerSelectors(home, profile))
-        }.toString() + "\n"
-        if (!Files.exists(owner, NOFOLLOW_LINKS) || Files.readString(owner) != body) {
-            SecureFile.writeAtomic0600(owner, body)
-        }
-        when (val access = SecureFile.ownerOnlyFile(owner)) {
-            is FileTightening.Open -> error("launcher owner record is not owner-only: ${access.why}")
-            else -> Unit
-        }
-    }
-
-    private fun ownerSelectors(home: Path, profile: Map<String, String>): JsonObject = buildJsonObject {
-        profile.forEach { (name, value) ->
-            val selected = if (name == "SPLICE_CONFIG" || name == "XDG_CONFIG_HOME") {
-                (if (value.startsWith("~/")) home.resolve(value.substring(2)) else Paths.get(value))
-                    .toAbsolutePath().normalize().toString()
-            } else {
-                value
-            }
-            put(name, selected)
-        }
-    }
-
-    /** Best-effort: a failed delete only leaves a stale file a later wrap's write() will overwrite anyway. */
-    public fun clear() {
-        Cancellables.discard(
-            Cancellables.runCatchingCancellable { Files.deleteIfExists(file) },
-            "wrap-state clear is best-effort: a file left behind is overwritten by the next wrap",
-        )
-    }
-}
 
 // WrapState, WrapStateRead, ClaudeHeadStatus, WrapResult and UnwrapResult live in
 // WrappedHeadTypes.kt (concentration split, 2026-09-20) — same package, same FQCNs.
@@ -173,6 +68,22 @@ private sealed class WrapPreflight {
     data class Refused(val reason: String) : WrapPreflight()
 }
 
+/** What wrapping `claude` would preserve, read from the symlink at the command path. */
+private object SymlinkPreflight {
+    fun ready(cmd: Path): WrapPreflight {
+        val shadowedTarget = Files.readSymbolicLink(cmd).toString()
+        // The null becomes the dangling-link Refused below.
+        val realBinaryPath = PathProbe.resolved(cmd)?.toString()
+        return if (realBinaryPath != null) {
+            WrapPreflight.Ready(shadowedTarget, realBinaryPath)
+        } else {
+            WrapPreflight.Refused(
+                "$cmd -> $shadowedTarget does not resolve to a real file; refusing to wrap a dangling link",
+            )
+        }
+    }
+}
+
 /** V4-129: wrap/unwrap orchestration — see file header for the two hazards this closes.
  *
  *  It is also the [WrapStateRead] every launch plants argv[0] from, so the fact wrap WRITES and the
@@ -190,8 +101,9 @@ public class WrappedHead(
 
     /** The real claude binary while wrap is in place (its state file is the proof), else null. A recorded binary
      *  the updater has since deleted, or one a newer installed version has passed, is put right first
-     *  ([reconcile]), so a launch never execs a dead path or an old release. */
-    override fun realBinaryPath(): String? {
+     *  ([reconcile]), so a launch never execs a dead path or an old release. A status answer only: what a launch
+     *  execs is [claude], which tells a wrap that is not there from a record that cannot be used. */
+    public fun realBinaryPath(): String? {
         val state = stateStore.read().state ?: return null
         val recorded = Paths.get(state.realBinaryPath)
         val current = Files.isExecutable(recorded) && WrapBinaryVersions.newerBeside(recorded) == null
@@ -200,26 +112,33 @@ public class WrappedHead(
         return stateStore.read().state?.realBinaryPath
     }
 
-    /** A launch must not run while `claude` is the shim and the record of the real binary is missing or unusable:
-     *  [realBinaryPath] would answer null and the launch would plant bare `claude`, which is the shim again. */
-    override fun refusal(): String? {
-        val problem = stateStore.read().problem() ?: return null
-        return if (isWrapShim(commandPath, shimPath)) {
-            "claude is the splice launch shim and the $problem, so a launch cannot tell which claude to run " +
-                "(bare claude would run the shim again); restore the file, or point $commandPath at your real " +
-                "claude install by hand"
-        } else {
-            null
+    /** What a launch execs: the real binary while wrapped, bare `claude` through PATH while not, and a refusal when
+     *  `claude` is the shim and the record of the real binary is missing or unusable. */
+    override fun claude(): ClaudeToRun {
+        val binary = realBinaryPath()
+        return when {
+            binary != null -> ClaudeToRun.Wrapped(binary)
+            !isWrapShim(commandPath, shimPath) -> ClaudeToRun.ThroughPath
+            else -> {
+                val why = stateStore.read().problem() ?: "recorded claude binary is gone and none sits beside it"
+                ClaudeToRun.Refused(
+                    "claude is the splice launch shim and the $why, so a launch cannot tell which claude to run " +
+                        "(bare claude would run the shim again); restore the state, or point $commandPath at your " +
+                        "real claude install by hand",
+                )
+            }
         }
     }
 
     /** V4-129 review: the launch a `/launch/<[command]>` makes THROUGH the wrapped default command,
      *  or null. The shim takes its head from its own basename, so a wrapped `claude` posts
      *  `/launch/claude` — a name no head carries, which 404'd every wrapped `claude` until unwrap.
-     *  Non-null exactly when [command] is `claude` AND the wrap state is present; the caller then
-     *  launches the splice-owned Claude head over [WrappedLaunch.configDir], the vanilla ~/.claude. */
+     *  Non-null exactly when [command] is `claude` AND `claude` is wrapped: the state is present, or the shim
+     *  stands in for it and the state cannot be used (that launch is refused where argv[0] is chosen, with the
+     *  reason, rather than answered as an unknown head). The caller then launches the splice-owned Claude head over
+     *  [WrappedLaunch.configDir], the vanilla ~/.claude. */
     public fun launchThrough(command: String): WrappedLaunch? =
-        if (command == CLAUDE_COMMAND && realBinaryPath() != null) WrappedLaunch(vanillaDir) else null
+        if (command == CLAUDE_COMMAND && claude() != ClaudeToRun.ThroughPath) WrappedLaunch(vanillaDir) else null
 
     public fun status(): ClaudeHeadStatus {
         val cmd = commandPath
@@ -305,20 +224,7 @@ public class WrappedHead(
             )
         !cmd.isSymbolicLink() ->
             WrapPreflight.Refused("$cmd exists and is not a symlink; refusing to overwrite a real file")
-        else -> readyFromSymlink(cmd)
-    }
-
-    private fun readyFromSymlink(cmd: Path): WrapPreflight {
-        val shadowedTarget = Files.readSymbolicLink(cmd).toString()
-        // The null becomes the dangling-link Refused below.
-        val realBinaryPath = PathProbe.resolved(cmd)?.toString()
-        return if (realBinaryPath != null) {
-            WrapPreflight.Ready(shadowedTarget, realBinaryPath)
-        } else {
-            WrapPreflight.Refused(
-                "$cmd -> $shadowedTarget does not resolve to a real file; refusing to wrap a dangling link",
-            )
-        }
+        else -> SymlinkPreflight.ready(cmd)
     }
 
     private fun performWrap(cmd: Path, shim: Path, ready: WrapPreflight.Ready): WrapResult {

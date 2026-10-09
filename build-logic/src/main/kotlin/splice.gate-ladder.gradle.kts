@@ -44,18 +44,24 @@ require(legs.isNotEmpty()) { "$ladderPath names no legs: a gate with no legs is 
 val everyTestTask = provider { subprojects.flatMap { it.tasks.withType<Test>() } }
 
 val repository = layout.projectDirectory
+val repositoryRoot = rootDir
+val appProject = provider { project(":app") }
 
 val legTasks = legs.map { leg ->
+    // Locals, not the script's own fields: a lambda that names a script field holds the script, and the configuration cache refuses it.
+    val root = repositoryRoot
+    val app = appProject
+    val tests = everyTestTask
     val name = leg.task
     val dependsOnTasks = leg.dependsOn
     val stamp = layout.buildDirectory.file("gate/$name.stamp")
     tasks.register<Exec>(name) {
         group = "gate"
         description = leg.why
-        workingDir = rootDir
+        workingDir = root
         commandLine(leg.command)
         dependsOnTasks.forEach { dependsOn(it) }
-        if (leg.afterAllTests) dependsOn(everyTestTask)
+        if (leg.afterAllTests) dependsOn(tests)
         if (leg.fresh) {
             outputs.upToDateWhen { false }
         } else {
@@ -66,13 +72,13 @@ val legTasks = legs.map { leg ->
             if (leg.readsJar()) {
                 // The fat jar's task is looked up when the inputs are read, after every project is configured: :app is not
                 // configured yet while this root plugin is applied, so a lookup here would fail the whole configuration.
-                inputs.files(provider { project(":app").tasks.named("shadowJar").get() }).withPropertyName("fatJar")
+                inputs.files(app.map { it.tasks.named("shadowJar").get().outputs.files }).withPropertyName("fatJar")
             }
             // The row's globs are expanded by git (tracked, plus untracked and not ignored), never by walking the tree: a walk reads
             // ignored directories and throws on a dangling link under them.
             val matched = splice.lawsuite.ReadSet.globbedProvider(project, inputGlobs)
             inputs.files(
-                matched.map { files -> files.map { rootDir.resolve(it) } },
+                matched.map { files -> files.map { root.resolve(it) } },
             ).withPropertyName("ladderInputs")
             outputs.file(stamp)
             doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("$name\n") }
@@ -80,7 +86,7 @@ val legTasks = legs.map { leg ->
         // The one file a leg writes and owns is removed as the leg starts: a rerun of the leg must not find its own
         // previous output. Only the file the row names is removed, never a directory, and a failed removal stops the leg.
         val files = leg.files
-        doFirst { files.prepare(rootDir) }
+        doFirst { files.prepare(root) }
     }
 }
 

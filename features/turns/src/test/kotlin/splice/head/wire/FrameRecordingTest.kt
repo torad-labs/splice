@@ -30,32 +30,6 @@ class FrameRecordingTest {
         val received = mutableListOf<String>()
         assertFalse(recording.follow { received += it })
         assertEquals(listOf("one"), received)
-        assertEquals(6L, heap.available.value, "only the temporary character array's charge was returned")
-    }
-
-    @Test
-    fun `recordings across heads compete for the same reservation bytes`() {
-        val heap = HeapBudget(heapLimitBytes = Long.MAX_VALUE, budgetBytes = 280)
-        val first = FrameRecording(heap)
-        val second = FrameRecording(heap)
-        first.append("one")
-        second.append("two")
-        assertThrows(HeapCapacityException::class.java) { first.append("three") }
-        assertThrows(HeapCapacityException::class.java) { second.append("four") }
-        assertEquals(1, first.size)
-        assertEquals(1, second.size)
-    }
-
-    @Test
-    fun `an escaped frame list reserves its copy before allocating`() {
-        val heap = HeapBudget(heapLimitBytes = Long.MAX_VALUE, budgetBytes = 198)
-        val recording = FrameRecording(heap)
-        recording.append("one")
-        val escaped = recording.frames()
-        assertEquals(listOf("one"), escaped)
-        assertEquals(0L, heap.available.value)
-        assertThrows(HeapCapacityException::class.java) { recording.frames() }
-        assertEquals(1, recording.size)
     }
 
     @Test

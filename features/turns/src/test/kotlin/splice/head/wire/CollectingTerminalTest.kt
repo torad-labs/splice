@@ -113,17 +113,17 @@ class CollectingTerminalTest {
         assertTrue(message.contains("exceeded max buffered size"), message)
     }
 
-    // V4-81: THE COLLECT PATH IS OUT OF THE PRE-CONTENT WIRE-TYPE RULE BY CONSTRUCTION, and these
+    // THE COLLECT PATH IS OUT OF THE PRE-CONTENT WIRE-TYPE RULE BY CONSTRUCTION, and these
     // two pins are what say so out loud. The rule exists for the committed-200 STREAMING path, where
     // the only lever left after the status is committed is the event type inside the body. On
     // `stream:false` there is no committed 200 and no in-band event: the HTTP status IS the
     // information, and relabelling it would be a lie about a condition that did not happen — a
     // genuine 429 shipped as a 529 with rate-limit headers attached, or a buffered api_error
-    // claiming an overload. The rule was relocated to SseEmitter.emitError (V4-81) precisely so
+    // claiming an overload. The rule was relocated to SseEmitter.emitError precisely so
     // that this terminal cannot inherit it: the two are separate implementations of TurnTerminal,
     // so there is no shared code path to forget about.
     @Test
-    fun `a buffered rate limit keeps its real 429 instead of the streaming relabel - V4-81`() = runTest {
+    fun `a buffered rate limit keeps its real 429 instead of the streaming relabel`() = runTest {
         val t = terminal()
         t.emitError(ErrorType.RATE_LIMIT, "upstream: quota exhausted")
         assertEquals(429, t.httpStatus())
@@ -134,7 +134,7 @@ class CollectingTerminalTest {
     }
 
     @Test
-    fun `a buffered api error keeps its real 502, permanent or not - V4-81`() = runTest {
+    fun `a buffered api error keeps its real 502, permanent or not`() = runTest {
         val remappable = terminal()
         remappable.emitError(ErrorType.API_ERROR, "upstream: broke")
         assertEquals(ERROR_STATUS, remappable.httpStatus())

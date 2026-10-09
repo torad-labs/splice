@@ -331,7 +331,7 @@ class SseEmitterTest {
     // content_block payload rides verbatim, a raw delta reaches the wire verbatim, closeBlock ends
     // it, and the L3 open-guard still refuses a delta to a block that is not open.
     @Test
-    fun `raw block verbs forward verbatim through the production emitter - DR-119`() = runTest {
+    fun `raw block verbs forward verbatim through the production emitter`() = runTest {
         val deltaEvent = "event: content_block_delta"
         val (frames, e) = collector()
         val raw = e.openRawBlock(
@@ -370,7 +370,7 @@ class SseEmitterTest {
         assertEquals(1, frames.count { it.startsWith(deltaEvent) }, "a rawDelta to a non-open block is a no-op")
     }
 
-    // V4-81: THE PRE-CONTENT WIRE-TYPE RULE, PINNED WHERE IT NOW RUNS.
+    // THE PRE-CONTENT WIRE-TYPE RULE, PINNED WHERE IT NOW RUNS.
     //
     // The rule used to be restated at four failure surfaces (TurnKnownEnd, TurnEnding, TurnConnEnd,
     // TurnPipeline); a fifth ending could be added without it, and TurnFinish had to snapshot perf

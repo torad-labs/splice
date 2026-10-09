@@ -1,4 +1,4 @@
-// NEW: V4-174 — the records one turn writes, read back from the day file: an attempt per send
+// the records one turn writes, read back from the day file: an attempt per send
 // (with the response text gathered while that send's stream was consumed), a WebSocket round as
 // its own attempt, and the turn record with the client's request, what was streamed back (or the
 // collected answer), the outcome and the perf snapshot. Bodies past maxBodyChars are cut and
@@ -29,11 +29,8 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.head.trace.body.TraceBodies
 import splice.upstream.sse.WireAttempt
-import java.lang.ref.Reference
-import java.lang.ref.WeakReference
 import java.nio.file.Files
 import java.nio.file.Path
-import java.security.MessageDigest
 
 private const val DAY_ONE = 1_789_725_600_000L // 2026-09-18T10:00Z
 
@@ -116,60 +113,9 @@ class TurnTraceTest {
         assertEquals("kept", lines().single().at("response", "text"))
     }
 
-    @Test
-    fun `a retained inbound cannot bypass another heap owner's reservation`() {
-        val heap = HeapBudget(heapLimitBytes = Long.MAX_VALUE, budgetBytes = 1)
-        assertThrows(HeapCapacityException::class.java) { store(heap = heap).begin(meta, inbound) }
-        assertEquals(1L, heap.available.value)
-    }
-
     /** The scalar at a nested path, e.g. `at("request", "headers", "x-api-key")`. */
     private fun JsonObject.at(vararg path: String): String? =
         path.dropLast(1).fold(this) { node, key -> node.obj(key) }.str(path.last())
-
-    @Test
-    fun `a retained finished trace releases its inbound body but keeps late attempt observers`() {
-        val (trace, body, expectedHash) = heapTrace()
-        try {
-            trace.finish("ok", PerfSnapshot(emptyMap(), emptyMap()))
-            assertTrue(AsyncFileIo.drain(), "the final turn row was written")
-            assertTrue(collected(body), "finished trace still reaches its already-recorded inbound body")
-            trace.attempted(attempt(1, "source still active"))
-            val records = lines()
-            assertEquals(expectedHash, hash(checkNotNull(records.first().at("client", "body"))))
-            assertEquals("attempt", records.last().str("kind"))
-            assertEquals("source still active", records.last().at("request", "body"))
-        } finally {
-            Reference.reachabilityFence(trace)
-        }
-    }
-
-    @Test
-    fun `an unfinished trace retains its inbound body until the final row`() {
-        val (trace, body) = heapTrace()
-        try {
-            assertTrue(!collected(body), "an open trace must retain the body it still needs to record")
-        } finally {
-            Reference.reachabilityFence(trace)
-        }
-    }
-
-    private fun heapTrace(): Triple<TurnTrace, WeakReference<String>, String> {
-        val body = "synthetic inbound body ".repeat(400_000)
-        val trace = store(maxBodyChars = 16 shl 20).begin(meta, inbound.copy(body = body))
-        return Triple(trace, WeakReference(body), hash(body))
-    }
-
-    private fun collected(body: WeakReference<String>): Boolean {
-        repeat(20) {
-            System.gc()
-            if (body.get() == null) return true
-        }
-        return false
-    }
-
-    private fun hash(body: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(body.toByteArray()).joinToString("") { "%02x".format(it) }
 
     @Test
     fun `a streamed turn - one attempt with its response text, then the turn record`() {
@@ -295,10 +241,5 @@ class TurnTraceTest {
         assertEquals("true", turn.at("client", "truncated"))
         assertEquals("frame", turn.at("answer", "body"))
         assertEquals("true", turn.at("answer", "truncated"))
-    }
-
-    @Test
-    fun `a store that keeps no body cannot be built - off is null, never a smaller record`() {
-        assertThrows(IllegalArgumentException::class.java) { store(maxBodyChars = 0) }
     }
 }

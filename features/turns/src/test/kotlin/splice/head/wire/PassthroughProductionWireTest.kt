@@ -1,4 +1,4 @@
-// NEW: DR-142 — the passthrough translator driven into the REAL SseEmitter, asserting the BYTES a
+// the passthrough translator driven into the REAL SseEmitter, asserting the BYTES a
 // client receives. The passthrough module's own suite cannot express this defect: its Rec sink
 // records `text:<value>` with no index, so a delta landing in the wrong block is indistinguishable
 // from a correct one, and passthrough cannot depend on :daemon-head without a module cycle. That is the
@@ -58,7 +58,7 @@ class PassthroughProductionWireTest {
     // tool_use block — protocol-corrupt — while PassthroughProseChannels latched emittedText, making
     // TurnOutcome claim text was delivered when the bytes went into a tool block.
     @Test
-    fun `a text delta aimed at a tool block never reaches the production wire - DR-142`() = runTest {
+    fun `a text delta aimed at a tool block never reaches the production wire`() = runTest {
         val (frames, e) = collector()
         val outcome = drive(
             e,
@@ -87,7 +87,7 @@ class PassthroughProductionWireTest {
     // block open at different indices. Exactly one text_delta may reach the wire, and it must carry
     // the TEXT block's index — proving the drop is kind-aware rather than a blanket text_delta ban.
     @Test
-    fun `a text delta lands only on the text block index - DR-142`() = runTest {
+    fun `a text delta lands only on the text block index`() = runTest {
         val (frames, e) = collector()
         drive(
             e,

@@ -1,4 +1,4 @@
-// NEW: V4-451 — splice's wait notice ends before the model's next block boundary, so Claude Code,
+// splice's wait notice ends before the model's next block boundary, so Claude Code,
 // which commits blocks in content_block_stop order, draws it above the answer it waited for.
 package splice.head.wire
 

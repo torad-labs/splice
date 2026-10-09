@@ -1,7 +1,7 @@
-// V4-354: the perf row joins Claude Code's transcript by the id the client actually received.
+// the perf row joins Claude Code's transcript by the id the client actually received.
 // Both terminal shapes mint that id before writing any content; a pass-through translator uses
 // the gateway emitter as well, so the upstream's own id is not the one to record.
-package splice.head.wire.v4354
+package splice.head.wire
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -11,8 +11,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.turn.Usage
-import splice.head.wire.CollectingTerminal
-import splice.head.wire.SseEmitterFactory
 
 class TerminalResponseIdTest {
     @Test

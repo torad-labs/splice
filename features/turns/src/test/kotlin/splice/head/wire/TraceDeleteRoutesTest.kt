@@ -1,4 +1,4 @@
-package splice.head.wire.v4368
+package splice.head.wire
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.Dispatchers
@@ -33,10 +33,6 @@ import splice.head.trace.TraceHeadSource
 import splice.head.trace.TraceHeads
 import splice.head.trace.TraceQuery
 import splice.head.trace.TraceRoute
-import splice.head.wire.ClientInbound
-import splice.head.wire.TraceDeleteRoutes
-import splice.head.wire.TraceStore
-import splice.head.wire.TurnIdMint
 import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.LinkOption

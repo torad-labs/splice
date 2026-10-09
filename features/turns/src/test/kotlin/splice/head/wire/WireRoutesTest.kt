@@ -1,4 +1,4 @@
-// NEW: V4-239 — GET /api/heads/{head}/wire: what `splice wire <head>` prints, read from the registry the
+// GET /api/heads/{head}/wire: what `splice wire <head>` prints, read from the registry the
 // heads are built into. The payload is the tap's own (the head's GET /wire serves the same); a head with
 // no tap answers the head's own "tap is off" sentence and never an empty list; a rebuild that turns the
 // tap off takes the old ring out of the registry.

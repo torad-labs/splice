@@ -1,4 +1,4 @@
-package splice.head.wire.v4385
+package splice.head.wire
 
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.SpliceNotice
 import splice.core.turn.Usage
-import splice.head.wire.SseEmitterFactory
 
 class NoticeSignatureTest {
     @Test

@@ -1,4 +1,4 @@
-// DR-93 (redo): the turn finally must stay QUIET when the dead-socket flush itself throws — a
+// the turn finally must stay QUIET when the dead-socket flush itself throws — a
 // throwing finally replaces the primary outcome (the turn's real failure) or the in-flight
 // CancellationException. These arms pin ClientChannel.flushQuietly, the only sanctioned
 // turn-cleanup flush (the kt-turn-finally-flush-quietly wall keeps head/ off the raw

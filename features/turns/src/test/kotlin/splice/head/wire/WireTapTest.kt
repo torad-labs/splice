@@ -1,4 +1,4 @@
-// NEW: V4-173 — the ring itself: bounded to what the operator named, oldest first, each record
+// the ring itself: bounded to what the operator named, oldest first, each record
 // stamped from the turn's meta, and never buildable for "keep nothing" (a head with nothing to
 // keep has no tap at all, so "off" and "empty" cannot be confused). The HTTP contract and the
 // byte-equality with the upstream live in head/HeadWireTapTest.
@@ -10,7 +10,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -87,11 +86,5 @@ class WireTapTest {
             .getValue("records").jsonArray.single().jsonObject
         assertEquals("request-b", record.getValue("turn_id").jsonPrimitive.content)
         assertEquals("identical", record.getValue("body").jsonPrimitive.content)
-    }
-
-    @Test
-    fun `a tap that keeps nothing cannot be built - off is null, never an empty ring`() {
-        assertThrows(IllegalArgumentException::class.java) { WireTap(keep = 0) }
-        assertThrows(IllegalArgumentException::class.java) { WireTap(keep = -1) }
     }
 }

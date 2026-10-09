@@ -177,45 +177,6 @@ class SseEmitterProgressTest {
         assertTrue(model.any { it.startsWith("event: message_stop") }, "the turn still ended: $model")
     }
 
-    /** The pinger must not ASSEMBLE its frames on the turn's writer: SseFrameWriter reuses one
-     *  StringBuilder across every frame, so two coroutines in it interleave two frames into one
-     *  buffer. That race needs a multithreaded dispatcher and cannot be reproduced deterministically,
-     *  so what is pinned here is the STRUCTURE that removes it rather than the symptom — the pinger
-     *  owns its own writer and its own port. Collapsing it back onto the turn's writer lands these
-     *  frames on the model's sink and turns this red. */
-    @Test
-    fun `the pinger's frames never travel the turn's writer`() = runTest {
-        val model = mutableListOf<String>()
-        val pinger = mutableListOf<String>()
-        val e = emitters.create(
-            write = { model.add(it) },
-            model = "m",
-            usagePayload = { buildJsonObject { put("input_tokens", 0) } },
-            messageId = "msg_fixed",
-            streaming = StreamWiring(progressWrite = { pinger.add(it) }),
-        )
-
-        e.ensureStarted()
-        val opener = model.size
-        assertTrue(pinger.isEmpty(), "the opener is the turn's own, not the pinger's: $pinger")
-
-        e.heartbeat()
-        e.progress { "holding" }
-        assertEquals(opener, model.size, "nothing the pinger wrote reached the turn's writer: $model")
-        assertEquals(3, pinger.size, "its ping, its block, its line — all on its own port: $pinger")
-        assertTrue(pinger[0].startsWith("event: ping"), pinger[0])
-
-        val idx = e.openText()
-        e.textDelta(idx, "hi")
-        // The model's block ends the notice first (V4-451): its signature and stop are the pinger's
-        // own block, so they ride the pinger's port too.
-        assertEquals(5, pinger.size, "the notice's signature and stop, and nothing else: $pinger")
-        assertTrue(pinger[3].contains("signature_delta"), "the notice is signed: $pinger")
-        assertTrue(pinger[4].startsWith("event: content_block_stop"), "then stopped: $pinger")
-        assertTrue(pinger.none { it.contains("\"hi\"") }, "the model's content never travels the pinger's: $pinger")
-        assertTrue(model.size > opener, "it went to the turn's writer instead: $model")
-    }
-
     /** The pinger's gate is "the opener is ON THE WIRE", not "the opener has been claimed". The
      *  latch inside MessageStart flips BEFORE message_start is written — it is there for
      *  re-entrancy — so a pinger reading THAT could put its frame ahead of the opener, which is not

@@ -1,4 +1,4 @@
-// NEW (V4-78): the PRE-CONTENT WIRE-TYPE RULE, pinned as a table.
+// The PRE-CONTENT WIRE-TYPE RULE, pinned as a table.
 //
 // The rule lives in PreContentWireType — SseEmitter.kt since V4-81, which moved it from the head's
 // failure surfaces to the one place an error frame is written — and this pins every row of it,
@@ -19,7 +19,7 @@ import splice.core.turn.ErrorType
 class TurnKnownEndTest {
 
     @Test
-    fun `a pre-content rate limit or api error is wired as overloaded - V4-78`() {
+    fun `a pre-content rate limit or api error is wired as overloaded`() {
         // Claude Code 2.1.257 retries an IN-BAND error only when the body carries overloaded_error
         // (a 429/529 is retried by STATUS), so these two would otherwise end the session where a
         // retry heals it. Before content, nothing the client has read is at stake.
@@ -34,7 +34,7 @@ class TurnKnownEndTest {
     }
 
     @Test
-    fun `the types only the operator can fix are never remapped - V4-78 bounds`() {
+    fun `the types only the operator can fix are never remapped`() {
         // A retry of identical bytes cannot change either of these, so relabelling would be a lie
         // that spends the client's retry budget on a wall.
         assertEquals(
@@ -54,7 +54,7 @@ class TurnKnownEndTest {
     }
 
     @Test
-    fun `a PERMANENT pre-content failure keeps its real type - V4-81`() {
+    fun `a PERMANENT pre-content failure keeps its real type`() {
         // The operator law "always a retry armed" is about failures a retry can HEAL. A permanent
         // failure is not one of those: the identical bytes produce the identical verdict, and
         // RetryPolicy arms a cooldown only for RATE_LIMITED, so with CLAUDE_CODE_RETRY_WATCHDOG=1

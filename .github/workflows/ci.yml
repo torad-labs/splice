@@ -38,7 +38,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
+      # Gradle's caches (dependencies, build cache, wrapper): a pull request reads them and a push to main writes them, so a
+      # fork or branch run can never poison what main serves. The configuration cache is on in gradle.properties.
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -101,7 +105,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
+      # Gradle's caches (dependencies, build cache, wrapper): a pull request reads them and a push to main writes them, so a
+      # fork or branch run can never poison what main serves. The configuration cache is on in gradle.properties.
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24

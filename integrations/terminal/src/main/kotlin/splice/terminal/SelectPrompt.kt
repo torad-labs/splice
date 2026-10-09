@@ -63,7 +63,7 @@ public class SelectPrompt(
     private fun wrapCursor(cursor: Int, last: Int, key: Key): Int = when (key) {
         Key.Up -> if (cursor == 0) last else cursor - 1
         Key.Down -> if (cursor == last) 0 else cursor + 1
-        else -> cursor
+        Key.Space, Key.Enter, Key.Escape, Key.CtrlC, Key.Left, Key.Right, Key.Backspace, is Key.Char -> cursor
     }
 
     private fun <T> chosenOrCancel(
@@ -73,7 +73,7 @@ public class SelectPrompt(
     ): SelectOutcome<T>? = when (key) {
         Key.Enter -> SelectOutcome.Chosen(options[cursor].value)
         Key.Escape, Key.CtrlC -> SelectOutcome.Cancelled
-        else -> null
+        Key.Up, Key.Down, Key.Left, Key.Right, Key.Space, Key.Backspace, is Key.Char -> null
     }
 
     private fun <T> paint(

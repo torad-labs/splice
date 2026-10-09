@@ -29,18 +29,21 @@ internal object CodeModeJournalEncoding {
         }
         checkNotNull(record.retainedBytes)
     }
+}
 
+/** Journal text for one conversation, encoded with [json]: a patch of changed cells or a full checkpoint. Each call
+ *  admits its own encoding peak unless the caller holds one as [CodeModeSaveHeap.Encoding]. */
+internal class CodeModeJournalText(private val json: Json) {
     fun cellText(
         key: String,
         cells: List<CodeModeRecordSnapshot>,
         prior: CodeModeKeptState,
-        json: Json,
         path: Path,
         capacity: CodeModeSaveHeap.Encoding? = null,
     ): String {
         if (capacity == null) {
             return CodeModeSaveHeap(JvmHeap.budget).encoding(cells, prior.expired).use { peak ->
-                cellText(key, cells, prior, json, path, peak).also(peak::retain)
+                cellText(key, cells, prior, path, peak).also(peak::retain)
             }
         }
         val encoded = cells.map { CodeModeCellEncoding(it, prior.records[it.id], json) }
@@ -58,29 +61,30 @@ internal object CodeModeJournalEncoding {
         key: String,
         prior: CodeModePersistedState?,
         next: CodeModePersistedState,
-        json: Json,
-        path: Path?,
+        path: Path? = null,
         capacity: CodeModeSaveHeap.Encoding? = null,
     ): String {
         if (capacity == null) {
             return CodeModeSaveHeap(JvmHeap.budget).full(next).use { peak ->
-                encode(key, prior, next, json, path, peak).also(peak::retain)
+                encode(key, prior, next, path, peak).also(peak::retain)
             }
         }
-        return admitted(key, prior, next, json, path)
+        return admitted(key, prior, next, path)
     }
 
     private fun admitted(
         key: String,
         prior: CodeModePersistedState?,
         next: CodeModePersistedState,
-        json: Json,
         path: Path?,
     ): String {
         val before = prior?.records.orEmpty().associateBy(CodeModeRecordSnapshot::id)
-        val changed = next.records.filterNot { same(it, before[it.id]) && before[it.id]?.encodedFieldBytes != null }
+        val unchanged = { record: CodeModeRecordSnapshot ->
+            CodeModeJournalEncoding.same(record, before[record.id]) && before[record.id]?.encodedFieldBytes != null
+        }
+        val changed = next.records.filterNot(unchanged)
         val encoded = changed.map { CodeModeCellEncoding(it, before[it.id], json) }
-        next.records.filter { same(it, before[it.id]) && before[it.id]?.encodedFieldBytes != null }.forEach {
+        next.records.filter(unchanged).forEach {
             it.retainedBytes = before[it.id]?.retainedBytes
             it.encodedFieldBytes = before[it.id]?.encodedFieldBytes
         }

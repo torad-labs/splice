@@ -32,10 +32,11 @@ internal class CodeModeLiveRound(
     wire: CodexCodeModeWire,
     admission: CodeModeStreamAdmission,
     sink: WireSink,
-    private val beforeSettle: Runnable? = null,
     private val headStop: HeadStopSignal? = null,
     recovery: CodeModeRecoveryHistory? = null,
 ) {
+    /** Runs just before a parsed terminal settles. No caller passes one: billing tests set it to hold that window. */
+    private val beforeSettle: Runnable? = null
     private val capture = CodeModeSourceCapture(config, registry, wire, admission, recovery)
     val source = capture.source
     val ready = capture.ready

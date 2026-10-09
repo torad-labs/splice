@@ -227,7 +227,7 @@ internal class CodeModeNativeReplay(
     }
 
     private fun claim(record: CodeModeRecord, source: CodeModeRecord, segment: CodeModeNativeSegment): NativeClaim? {
-        val placement = index.nativeOffset(record, source, segment, replay, origins, nativeReplay)
+        val placement = index.nativeOffset(CodeModeNativeOrigin(record, segment), source, replay, origins, nativeReplay)
         val at = placement.offset
         if (at == null) {
             bad.putIfAbsent(

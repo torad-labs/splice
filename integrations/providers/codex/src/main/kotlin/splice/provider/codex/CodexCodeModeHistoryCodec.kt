@@ -97,8 +97,7 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         conversation: CodeModeConversation,
         body: ResponsesCodeModeInput,
         original: CodeModeBody? = null,
-        emitted: List<CodeModeRecord> = emptyList(),
-        omitted: List<CodeModeOmission> = emptyList(),
+        emitted: CodeModeEmitted = CodeModeEmitted(),
     ): CodeModeRewrite {
         val offset = conversation.preamble.size
         val joined = ResponsesCodeModeInput(
@@ -112,10 +111,7 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
             rebuilt.indices.all { rebuilt[it] === received[it] }
         if (unchanged) return CodeModeRewrite(original)
         val request = JsonObject(root + (FIELD_INPUT to rebuilt))
-        val emission = emitted.takeIf(List<CodeModeRecord>::isNotEmpty)?.let {
-            CodeModeEmission(request, omitted.toList(), it)
-        }
-        return CodeModeRewrite(CodeModeBody(RoundBody.Tree(request), json, emission))
+        return CodeModeRewrite(CodeModeBody(RoundBody.Tree(request), json, emitted.at(request)))
     }
 
     fun root(bodyJson: String): Pair<JsonObject, JsonArray>? = CodeModeBody(RoundBody.Text(bodyJson), json).request
@@ -176,6 +172,15 @@ internal class CodeModeBody(val round: RoundBody, json: Json, val emission: Code
         val input = root?.get(FIELD_INPUT) as? JsonArray
         if (root != null && input != null) root to input else null
     }
+}
+
+/** The records a rewrite placed and the ones it omitted: what its rebuilt request emits, when it placed any. */
+internal data class CodeModeEmitted(
+    val records: List<CodeModeRecord> = emptyList(),
+    val omitted: List<CodeModeOmission> = emptyList(),
+) {
+    fun at(request: JsonObject): CodeModeEmission? =
+        records.takeIf(List<CodeModeRecord>::isNotEmpty)?.let { CodeModeEmission(request, omitted.toList(), it) }
 }
 
 /** The exact emitted tree preserves earlier placements and omissions; only new records can append a tail. */

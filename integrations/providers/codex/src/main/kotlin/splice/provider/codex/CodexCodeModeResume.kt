@@ -141,12 +141,14 @@ internal class CodexCodeModeResume(
             val batch = runtimeResults(record)
             registry.changes.edit(record) { it.pending.clear() }
             machine.advance(
-                record,
-                context.turn,
-                context.disableParallel,
-                batch,
-                context.sink,
-                driver.streams.find(record),
+                CodeModeAdvanceRequest(
+                    record,
+                    context.turn,
+                    context.disableParallel,
+                    batch,
+                    context.sink,
+                    driver.streams.find(record),
+                ),
             )
         }
     }

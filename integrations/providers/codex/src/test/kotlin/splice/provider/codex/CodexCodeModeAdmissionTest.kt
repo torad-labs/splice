@@ -39,7 +39,7 @@ class CodexCodeModeAdmissionTest : CodeModeBridgeTestSupport() {
                 ),
             ),
         )
-        val manager = bridge(runtime, maxRecords = 1)
+        val manager = bridge(runtime, retention = CodeModeRetention(records = 1))
         var posts = 0
         manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
             if (posts++ == 0) outerOutcome() else completedOutcome()

@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonElement
 import splice.dialect.responses.request.ResponsesCodeModeInput
 import splice.provider.codex.CODE_MODE_METADATA_VERSION
 import splice.provider.codex.CodeModeBody
+import splice.provider.codex.CodeModeEmitted
 import splice.provider.codex.CodeModeOmission
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRewrite
@@ -49,7 +50,7 @@ internal class CodeModeCanonicalRequests(private val codec: CodexCodeModeHistory
             capture,
         )
         omitted += anchored.omitted
-        return codec.rebuilt(root.first, conversation, anchored.input, body, eligible, omitted)
+        return codec.rebuilt(root.first, conversation, anchored.input, body, CodeModeEmitted(eligible, omitted))
             .copy(omitted = omitted)
     }
 }

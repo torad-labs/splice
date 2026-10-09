@@ -296,7 +296,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         try {
             val driver = pool.submit {
                 driverThread.complete(Thread.currentThread())
-                runBlocking { machine.advance(record, turn(), false, emptyList(), RecordingSink()) }
+                runBlocking { machine.advance(firstStep(record)) }
             }
             assertTrue(advancing.await(WAIT_SECONDS, TimeUnit.SECONDS), "the worker never reached its advance")
             hold.set(true)
@@ -318,6 +318,10 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
             pool.shutdownNow()
         }
     }
+
+    /** The step a fresh worker takes: no results yet, parallel calls allowed. */
+    private fun firstStep(record: CodeModeRecord) =
+        CodeModeAdvanceRequest(record, turn(), false, emptyList(), RecordingSink())
 
     private fun commitSourceBoundary(registry: CodexCodeModeRegistry, record: CodeModeRecord) {
         registry.source.append(record, record.source + "; await tools.Read({});")

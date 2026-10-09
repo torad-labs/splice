@@ -10,7 +10,6 @@ import splice.core.util.JsonlSink
 import splice.core.util.SecureFile
 import splice.provider.codex.CodeModePersistedState
 import splice.provider.codex.CodeModeRecordSnapshot
-import splice.provider.codex.state.save.CodeModeSaveHeap
 import splice.upstream.memory.JvmHeap
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -141,21 +140,11 @@ internal object CodeModeStateJournal {
     fun liveBytes(state: CodeModePersistedState, json: Json, heap: HeapReservations = JvmHeap.budget): Long =
         CodeModeJournalEncoding.liveBytes(state, json, heap)
 
-    fun cellText(
-        key: String,
-        cells: List<CodeModeRecordSnapshot>,
-        prior: CodeModeKeptState,
-        json: Json,
-        path: Path,
-        capacity: CodeModeSaveHeap.Encoding? = null,
-    ): String = CodeModeJournalEncoding.cellText(key, cells, prior, json, path, capacity)
-
     fun encode(
         key: String,
         prior: CodeModePersistedState?,
         next: CodeModePersistedState,
         json: Json,
         path: Path? = null,
-        capacity: CodeModeSaveHeap.Encoding? = null,
-    ): String = CodeModeJournalEncoding.encode(key, prior, next, json, path, capacity)
+    ): String = CodeModeJournalText(json).encode(key, prior, next, path)
 }

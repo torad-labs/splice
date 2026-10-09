@@ -12,8 +12,10 @@ import splice.core.memory.HeapText
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
+import splice.provider.codex.state.CodeModeJournalText
 import splice.provider.codex.state.CodeModeKeptState
 import splice.provider.codex.state.CodeModeKeyLocks
+import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeStateDirectory
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.state.CodeModeStateText
@@ -31,7 +33,6 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.locks.ReentrantLock
 import splice.provider.codex.state.save.CodeModeSaveSnapshots.Cell as PreparedCell
 
 /** One conversation's atomic owner-only write, injectable for a blocked-key concurrency proof. */
@@ -71,10 +72,13 @@ internal class CodexCodeModeStore(
     private val writer: CodeModeStateWrite = CodeModeStateWrite { path, text ->
         CodeModeStateJournal.write(path, text)
     },
-    private val registryLock: ReentrantLock? = null,
-    private val keyLocks: CodeModeKeyLocks = CodeModeKeyLocks(),
+    /** The owning registry's monitor and key locks. A store no registry owns locks only its own keys. */
+    access: CodeModeRegistryAccess? = null,
     private val heap: HeapReservations = JvmHeap.budget,
 ) {
+    private val registryLock = access?.monitor
+    private val keyLocks = access?.keys ?: CodeModeKeyLocks()
+    private val journal = CodeModeJournalText(json)
     private val dir = location.dir
     private val files = CodeModeStateDirectory(dir, json, log, heap)
 
@@ -181,14 +185,7 @@ internal class CodexCodeModeStore(
             }
             stage.use { peak ->
                 if (cells.isNotEmpty()) {
-                    val text = CodeModeStateJournal.cellText(
-                        item.key,
-                        cells,
-                        checkNotNull(kept[item.key]),
-                        json,
-                        fileOf(item.key),
-                        peak,
-                    )
+                    val text = journal.cellText(item.key, cells, checkNotNull(kept[item.key]), fileOf(item.key), peak)
                     peak.retain(text)
                     bytes = CodeModeStateText(text).bytes
                     val indexed = checkNotNull(kept[item.key])
@@ -201,7 +198,7 @@ internal class CodexCodeModeStore(
                     remove(item.key)
                 } else {
                     val prior = kept[item.key]?.snapshot().takeUnless { item.key in uncertainKeys }
-                    val text = CodeModeStateJournal.encode(item.key, prior, conversation, json, fileOf(item.key), peak)
+                    val text = journal.encode(item.key, prior, conversation, fileOf(item.key), peak)
                     peak.retain(text)
                     bytes = CodeModeStateText(text).bytes
                     val indexed = CodeModeKeptState(conversation.version, conversation, heap)
@@ -248,7 +245,7 @@ internal class CodexCodeModeStore(
      *  conversation's next save writes it. */
     private fun checkpoint(key: String, conversation: CodeModePersistedState, stays: String): Boolean = try {
         capacity.full(conversation).use { peak ->
-            val text = CodeModeStateJournal.encode(key, null, conversation, json, capacity = peak)
+            val text = journal.encode(key, null, conversation, capacity = peak)
             peak.retain(text)
             val indexed = CodeModeKeptState(conversation.version, conversation, heap)
             secureDirectory()

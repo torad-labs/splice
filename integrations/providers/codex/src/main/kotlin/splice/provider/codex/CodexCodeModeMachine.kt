@@ -26,14 +26,16 @@ import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-private data class CodeModeAdvanceRequest(
+/** One step of a running script: the results its calls returned, where the step writes, and the live round and
+ *  recovery it came from, when it came from one. */
+internal data class CodeModeAdvanceRequest(
     val record: CodeModeRecord,
     val turn: CodexCodeModeBridge.Turn,
     val disableParallel: Boolean,
     val results: List<CodeModeResult>,
     val sink: WireSink,
-    val source: CodeModeLiveRound?,
-    val recovery: CodeModeRecoveryHistory.Delivery?,
+    val source: CodeModeLiveRound? = null,
+    val recovery: CodeModeRecoveryHistory.Delivery? = null,
 )
 
 internal class CodexCodeModeMachine(
@@ -46,17 +48,10 @@ internal class CodexCodeModeMachine(
     private val started: MutableMap<String, Long> = ConcurrentHashMap()
     private val workerRecovery = CodeModeWorkerRecovery(registry)
 
-    suspend fun advance(
-        record: CodeModeRecord,
-        turn: CodexCodeModeBridge.Turn,
-        disableParallel: Boolean,
-        results: List<CodeModeResult>,
-        sink: WireSink,
-        source: CodeModeLiveRound? = null,
-        recovery: CodeModeRecoveryHistory.Delivery? = null,
-    ): TurnOutcome {
+    suspend fun advance(request: CodeModeAdvanceRequest): TurnOutcome {
+        val record = request.record
+        val source = request.source
         started.putIfAbsent(record.id, config.clock.millis())
-        val request = CodeModeAdvanceRequest(record, turn, disableParallel, results, sink, source, recovery)
         return when {
             config.maxRounds?.let { record.rounds >= it } == true -> poison(record, "code-mode round limit exceeded")
             else -> registry.retainedCells.acquire(record)?.let { cell ->

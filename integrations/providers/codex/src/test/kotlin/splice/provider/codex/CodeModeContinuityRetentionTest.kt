@@ -128,7 +128,7 @@ internal class CodeModeContinuityRetentionTest {
     fun `a rejected capture leaves an ordinary record outside its native span canonical`() {
         val fixture = fixture(true)
         val next = item("""{"role":"user","content":"synthetic independent request"}""")
-        val ordinary = record(listOf(next), emptyList(), "ordinary", emptyList(), 1)
+        val ordinary = record(listOf(next), emptyList(), "ordinary").answered(1)
         val forged = JsonObject((repeated as JsonObject) + ("encrypted_content" to JsonPrimitive("synthetic edited")))
         val client = fixture.client.map { if (it == repeated) forged else it } + next + callbacks(ordinary)
         val rewrite = history.canonicalize(body(client), fixture.completed + ordinary, emptyMap(), fixture.target)
@@ -156,14 +156,15 @@ internal class CodeModeContinuityRetentionTest {
         } else {
             emptyList()
         }
-        val first = record(listOf(user), emptyList(), "first", emptyList(), 1)
+        val first = record(listOf(user), emptyList(), "first").answered(1)
         val prefix = listOf(user) + emitted(first)
-        val second = record(prefix, listOf(first), "second", emptyList(), 1)
+        val second = record(prefix, listOf(first), "second").answered(1)
         val captured = listOf(user, repeated) + emitted(first) + listOf(between, repeated) + emitted(second)
-        val carrier = record(captured, listOf(first, second), "carrier", listOf(response), carrierCallbacks, commentary)
+        val carrier = record(captured, listOf(first, second), "carrier", listOf(response), commentary)
+            .answered(carrierCallbacks)
         val completed = listOf(first, second, carrier)
         val source = captured + response + commentary + emitted(carrier)
-        val linked = record(source, completed, "target", emptyList(), 1).apply { phase = CodeModePhase.ACTIVE }
+        val linked = record(source, completed, "target").answered(1).apply { phase = CodeModePhase.ACTIVE }
         val target = CodeModeNativeChain.snapshot(linked, setOf(linked.id)).restore()
         val client = listOf(user, repeated) + callbacks(first) + between + callbacks(second) +
             callbacks(carrier) + callbacks(target)
@@ -174,8 +175,7 @@ internal class CodeModeContinuityRetentionTest {
         input: List<JsonElement>,
         completed: List<CodeModeRecord>,
         id: String,
-        native: List<JsonElement>,
-        callbacks: Int,
+        native: List<JsonElement> = emptyList(),
         continuity: List<JsonElement> = emptyList(),
     ): CodeModeRecord {
         val boundary = checkNotNull(history.anchoredBoundary(body(input), completed))
@@ -206,11 +206,15 @@ internal class CodeModeContinuityRetentionTest {
             record.nativeParent = capture.parent
             record.nativeBaseId = capture.parent?.id
             record.output = "synthetic result"
-            repeat(callbacks) { at ->
-                val clientId = "callback-$id-$at"
-                record.pending += CodeModePending("runtime-$id-$at", clientId, "Read", JsonObject(emptyMap()), true)
-                record.accepted.accept(mapOf(clientId to CodeModeResult(clientId, "synthetic result")), emptyMap())
-            }
+        }
+    }
+
+    /** [callbacks] client calls this script made, each answered. */
+    private fun CodeModeRecord.answered(callbacks: Int): CodeModeRecord = apply {
+        repeat(callbacks) { at ->
+            val clientId = "callback-$id-$at"
+            pending += CodeModePending("runtime-$id-$at", clientId, "Read", JsonObject(emptyMap()), true)
+            accepted.accept(mapOf(clientId to CodeModeResult(clientId, "synthetic result")), emptyMap())
         }
     }
 

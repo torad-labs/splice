@@ -66,15 +66,14 @@ abstract class CodeModeBridgeTestSupport {
     /** [stateFiles]'s directory, and the single file an older daemon kept it in. */
     protected fun stateLocation() = CodeModeStateLocation(stateFiles.dir, tempDir.resolve("bridge.json"))
 
-    /** [maxRecords] is the head's record count (V4-337's [CodeModeRetention.records]).
+    /** [retention] holds the head's record count (V4-337's [CodeModeRetention.records]), eight unless a test sets it.
      *  [clock] stays fixed unless a time-sensitive test explicitly supplies [MutableClock]. */
     protected fun bridge(
         runtime: CodeModeRuntime,
-        maxRecords: Int = 8,
         maxRounds: Int = 32,
         ttl: Duration = 24.hours,
         clock: Clock = Clock.fixed(Instant.ofEpochMilli(1_000), ZoneId.of("UTC")),
-        retention: CodeModeRetention = CodeModeRetention(records = maxRecords),
+        retention: CodeModeRetention = CodeModeRetention(records = 8),
     ) = CodexCodeModeBridge(
         CodeModeBridgeConfig(
             { runtime },

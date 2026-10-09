@@ -107,7 +107,7 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
                 ),
             ),
         )
-        val manager = bridge(runtime, maxRecords = 1)
+        val manager = bridge(runtime, retention = CodeModeRetention(records = 1))
         val firstSink = RecordingSink()
         manager.interceptor(turn(sessionId = "session-a"), outer("outer-a"), disableParallel = false)
             .intercept(BASE_REQUEST, firstSink) { outerOutcome("outer-a") }

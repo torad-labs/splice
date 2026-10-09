@@ -250,13 +250,15 @@ internal class CodexCodeModeDriver(
             record to attachmentFailure(record, stream)
         } else {
             record to machine.advance(
-                record,
-                context.turn,
-                context.disableParallel,
-                emptyList(),
-                streams.attach(record, context.sink),
-                stream,
-                context.recovery?.delivery(record),
+                CodeModeAdvanceRequest(
+                    record,
+                    context.turn,
+                    context.disableParallel,
+                    emptyList(),
+                    streams.attach(record, context.sink),
+                    stream,
+                    context.recovery?.delivery(record),
+                ),
             )
         }
     } catch (error: CancellationException) {

@@ -425,7 +425,7 @@ class NativeAncestorPlacementTest : CodeModeBridgeTestSupport() {
     @Test
     fun `restoring an old callback repositions native history without abandoning a later script`() = runTest {
         val runtime = ancestorRuntime()
-        val manager = bridge(runtime, maxRecords = 32)
+        val manager = bridge(runtime, retention = CodeModeRetention(records = 32))
         val history = mutableListOf(DEVELOPER, user("start"))
         val earlier = (0..9).map { n -> completeAncestor(manager, history, n) }
         val missing = history.filterNot { earlier.first() in it }

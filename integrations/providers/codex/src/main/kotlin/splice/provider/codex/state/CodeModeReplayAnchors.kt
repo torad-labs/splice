@@ -68,13 +68,13 @@ internal class CodeModeHistoryIndex(
 
     /** A canonical tail is an emission proposal; an observed native needs its own raw-history witness. */
     fun nativeOffset(
-        record: CodeModeRecord,
+        placed: CodeModeNativeOrigin,
         source: CodeModeRecord,
-        segment: CodeModeNativeSegment,
         replay: Map<Int, List<JsonElement>>,
         origins: List<CodeModeNativeOrigin>,
         nativeReplay: Map<Int, List<JsonElement>> = replay,
     ): CodeModeNativePosition {
+        val (record, segment) = placed
         val witness = source.replayAnchors?.nativeFollowing?.get(segment.logicalOffset)
             ?: record.replayAnchors?.nativeFollowing?.get(segment.logicalOffset)
         val following = witness != null
@@ -92,14 +92,7 @@ internal class CodeModeHistoryIndex(
         if (!matching.ordered(expectedItems, actualItems, known)) {
             return CodeModeNativePosition(null, following, scope.orderFailure, evidence)
         }
-        val adjacent = adjacentNativeOffset(
-            record,
-            source,
-            segment,
-            scope.expected,
-            historical,
-            scope.orderFailure,
-        )
+        val adjacent = adjacentNativeOffset(placed, source, scope, historical)
         if (adjacent != null) return adjacent
         val actual = historical.filter { (offset, items) ->
             offset in bounds && matching.contains(items, segment.items)
@@ -123,20 +116,20 @@ internal class CodeModeHistoryIndex(
         }.distinct().singleOrNull()
 
     private fun adjacentNativeOffset(
-        record: CodeModeRecord,
+        placed: CodeModeNativeOrigin,
         source: CodeModeRecord,
-        segment: CodeModeNativeSegment,
-        expected: List<CodeModeNativeSegment>,
+        scope: CodeModeNativeScope,
         replay: Map<Int, List<JsonElement>>,
-        orderFailure: CodeModeNativeBranch = CodeModeNativeBranch.NATIVE_ORDER,
     ): CodeModeNativePosition? {
+        val (record, segment) = placed
         val offset = segment.logicalOffset
         val before = nativeAnchor(record, source, offset)
         val after = source.replayAnchors?.nativeFollowing?.get(offset)
             ?: record.replayAnchors?.nativeFollowing?.get(offset)
         val at = before?.takeIf { it.logicalTail == 0 }?.let { resolve(it) }
             ?: after?.let { resolve(it)?.minus(1) } ?: return null
-        val items = (expected.firstOrNull { it.logicalOffset == offset }?.items ?: segment.items).map(payloads::token)
+        val items = (scope.expected.firstOrNull { it.logicalOffset == offset }?.items ?: segment.items)
+            .map(payloads::token)
         val actual = replay[at].orEmpty().map(payloads::token)
         val known = items.toSet()
         val evidence = CodeModeNativeEvidenceCapture.capture(
@@ -150,7 +143,7 @@ internal class CodeModeHistoryIndex(
         return CodeModeNativePosition(
             at.takeIf { valid },
             after != null,
-            orderFailure.takeUnless { valid },
+            scope.orderFailure.takeUnless { valid },
             evidence,
         )
     }

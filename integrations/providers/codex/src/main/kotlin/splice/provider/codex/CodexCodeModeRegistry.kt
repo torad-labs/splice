@@ -53,17 +53,9 @@ internal class CodexCodeModeRegistry(
     private val keyLocks = CodeModeKeyLocks()
     private val access = CodeModeRegistryAccess(monitor, keyLocks)
     private val store = if (writer == null) {
-        CodexCodeModeStore(config.state, json, config.log, registryLock = monitor, keyLocks = keyLocks, heap = heap)
+        CodexCodeModeStore(config.state, json, config.log, access = access, heap = heap)
     } else {
-        CodexCodeModeStore(
-            config.state,
-            json,
-            config.log,
-            writer = writer,
-            registryLock = monitor,
-            keyLocks = keyLocks,
-            heap = heap,
-        )
+        CodexCodeModeStore(config.state, json, config.log, writer = writer, access = access, heap = heap)
     }
     private val records: MutableList<CodeModeRecord>
     private val history: CodeModeExpiredHistory

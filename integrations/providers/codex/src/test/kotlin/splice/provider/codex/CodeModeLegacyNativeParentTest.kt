@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.provider.codex.state.CodeModeHistoryIndex
 import splice.provider.codex.state.CodeModeNativeChain
+import splice.provider.codex.state.CodeModeNativeOrigin
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.state.diagnostics.CodeModeNativeBranch
 import splice.upstream.RoundBody
@@ -75,9 +76,8 @@ internal class CodeModeLegacyNativeParentTest {
         val replay = projection.replayItems.groupBy { it.logicalOffset }
             .mapValues { (_, parts) -> parts.flatMap { it.items } }
         val parent = index.nativeOffset(
-            fixture.root,
+            CodeModeNativeOrigin(fixture.root, fixture.root.nativeSegments.first()),
             fresh.record,
-            fixture.root.nativeSegments.first(),
             replay,
             emptyList(),
         )

@@ -116,7 +116,7 @@ class CodeModeCountPolicyTest : CodeModeBridgeTestSupport() {
         assertTrue(registry.add(record))
         assertTrue(registry.attach(record, cell))
         val outcome = CodexCodeModeMachine(config, registry, CodexCodeModeValidation(config))
-            .advance(record, turn(), false, emptyList(), RecordingSink())
+            .advance(CodeModeAdvanceRequest(record, turn(), false, emptyList(), RecordingSink()))
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
         assertEquals(1, cell.advances)
     }

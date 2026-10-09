@@ -176,9 +176,9 @@ object CodeModeRetainedHeapProbe {
         registry.complete(record, "done")
     }
 
-    private fun record(index: Int): CodeModeRecord = CodeModeRecords.of("retained-$index", index).copy(
-        continuity = listOf(JsonPrimitive("x".repeat(RETAINED_PAYLOAD_BYTES))),
-    )
+    private fun record(index: Int): CodeModeRecord = CodeModeRecords.of("retained-$index", index).also {
+        it.carry.continuity = listOf(JsonPrimitive("x".repeat(RETAINED_PAYLOAD_BYTES)))
+    }
 
     /** The ledger's charge and the JVM's live heap once every unreachable owner is collected and refunded. */
     private fun settled(): RetainedHeapReading = runBlocking {

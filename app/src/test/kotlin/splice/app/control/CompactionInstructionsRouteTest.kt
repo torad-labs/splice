@@ -123,7 +123,8 @@ class CompactionInstructionsRouteTest {
     @Test
     fun `a wired daemon reports the scope, the source label and a live length, never the text`() = runBlocking {
         awaitPort()
-        control.ports.compaction = CompactionInstructions(config = CompactionConfig(instructions = "global text"), log = { })
+        control.ports.compaction =
+            CompactionInstructions(config = CompactionConfig(instructions = "global text"), log = { })
         val response = get(HEAD_KEY)
         assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
         val scopes = json.parseToJsonElement(response.bodyAsText()).jsonObject["scopes"]!!.jsonArray
@@ -154,16 +155,17 @@ class CompactionInstructionsRouteTest {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(false, "test", emptyMap())
         },
-        usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int): String = ""
+                override fun path(): String = ""
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
     )
 
     private suspend fun awaitPort() {

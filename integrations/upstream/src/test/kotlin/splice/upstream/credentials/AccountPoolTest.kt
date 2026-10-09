@@ -308,10 +308,10 @@ class AccountPoolTest {
         val view = pool.view("session").accounts.single()
 
         assertEquals("business", view.plan)
-        assertEquals(42.5, view.fiveHourUsedPercent)
-        assertEquals(1_234L, view.fiveHourResetEpochSeconds)
-        assertEquals(71.25, view.sevenDayUsedPercent)
-        assertEquals(5_678L, view.sevenDayResetEpochSeconds)
+        assertEquals(42.5, view.quota.fiveHour.usedPercent)
+        assertEquals(1_234L, view.quota.fiveHour.resetEpochSeconds)
+        assertEquals(71.25, view.quota.sevenDay.usedPercent)
+        assertEquals(5_678L, view.quota.sevenDay.resetEpochSeconds)
         assertFalse(view.toString().contains("private-account-id"))
     }
 
@@ -430,7 +430,7 @@ class AccountPoolTest {
         val account = fixture.account("primary", primary = true)
         val pool = fixture.pool(account)
         pool.chosen("session").markCredentialUnavailable()
-        val excluded = requireNotNull(pool.view(null).accounts.single().authExcludedUntilEpochMillis)
+        val excluded = requireNotNull(pool.view(null).accounts.single().credential.excludedUntilEpochMillis)
         val authSeconds = excluded / 1000 + if (excluded % 1000 == 0L) 0 else 1
         assertEquals(authSeconds, pool.view(null).blockedUntilEpochSecondsByLabel["primary"])
         fixture.setQuota(account, fixture.quota(five = 100.0, reset = 2000L))
@@ -479,7 +479,7 @@ class AccountPoolTest {
             val chosen = pool.chosen("backup-turn")
             assertEquals("backup", chosen.account.label)
             reject(chosen)
-            assertTrue(pool.view(null).accounts.single { it.label == "backup" }.credentialPresent)
+            assertTrue(pool.view(null).accounts.single { it.label == "backup" }.credential.present)
             assertEquals(1300L, pool.exhausted(null).earliestResetEpochSeconds)
             assertEquals(300000L, pool.providerResetForMs)
         }
@@ -640,7 +640,7 @@ class AccountPoolTestAuthOnly {
             heldUntil = 8200L,
         )
         val pool = fixture.pool(primary, backup)
-        assertFalse(pool.view(null).accounts.single { it.label == "backup" }.credentialPresent)
+        assertFalse(pool.view(null).accounts.single { it.label == "backup" }.credential.present)
         assertEquals(mapOf("primary" to 433000L), pool.view(null).blockedUntilEpochSecondsByLabel)
         assertEquals(433000L, (pool.select(null) as Selection.Exhausted).earliestResetEpochSeconds)
         fixture.rotateCredential(backup)
@@ -695,7 +695,7 @@ class AccountPoolTestAuthOnly {
             val accounts = List(count) { fixture.account("account-$it", primary = it == 0) }
             val pool = fixture.pool(*accounts.toTypedArray())
             repeat(count) { (pool.select("rejected-$it") as Selection.Chosen).account.markCredentialUnavailable() }
-            assertTrue(pool.view(null).accounts.all { it.credentialPresent })
+            assertTrue(pool.view(null).accounts.all { it.credential.present })
             val exhausted = pool.select("held") as Selection.Exhausted
             assertEquals(1300L, exhausted.earliestResetEpochSeconds)
             assertEquals(0L, pool.providerResetForMs)

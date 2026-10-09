@@ -25,6 +25,8 @@ import splice.upstream.RoundBody
 import splice.upstream.StreamRead
 import splice.upstream.Waiter
 import splice.upstream.transport.PostContext
+import splice.upstream.transport.PostLimits
+import splice.upstream.transport.PostObservers
 import splice.upstream.transport.RecordingWaiter
 import splice.upstream.transport.RemainingTurnWait
 import splice.upstream.transport.RetryPacing
@@ -476,7 +478,7 @@ class RateLimitCooldownBudgetTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
-            remainingTurnWait = RemainingTurnWait { 0L },
+            limits = PostLimits(remainingTurnWait = RemainingTurnWait { 0L }),
             onRetry = RetryNotice(notices::add),
         )
 
@@ -513,9 +515,9 @@ class RateLimitCooldownBudgetTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
-            perf = perf,
+            observers = PostObservers(perf = perf),
             onRetry = RetryNotice(notices::add),
-            remainingTurnWait = RemainingTurnWait { 100L },
+            limits = PostLimits(remainingTurnWait = RemainingTurnWait { 100L }),
         )
 
         assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
@@ -548,7 +550,7 @@ class RateLimitCooldownBudgetTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
-            remainingTurnWait = RemainingTurnWait { 60_000L },
+            limits = PostLimits(remainingTurnWait = RemainingTurnWait { 60_000L }),
         )
 
         assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
@@ -587,8 +589,10 @@ class RateLimitCooldownBudgetTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
-            rateLimitCooldown = cooldown,
-            remainingTurnWait = RemainingTurnWait { 20_000L },
+            limits = PostLimits(
+                rateLimitCooldown = cooldown,
+                remainingTurnWait = RemainingTurnWait { 20_000L },
+            ),
         )
 
         assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
@@ -619,8 +623,10 @@ class RateLimitCooldownBudgetTest {
                 url = "https://api.example.test/v1",
                 auth = fakeAuth,
                 extraHeaders = { emptyMap() },
-                rateLimitCooldown = cooldown,
-                remainingTurnWait = RemainingTurnWait { 5_000L },
+                limits = PostLimits(
+                    rateLimitCooldown = cooldown,
+                    remainingTurnWait = RemainingTurnWait { 5_000L },
+                ),
             )
 
             assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
@@ -653,8 +659,10 @@ class RateLimitCooldownBudgetTest {
                 url = "https://api.example.test/v1",
                 auth = fakeAuth,
                 extraHeaders = { emptyMap() },
-                rateLimitCooldown = cooldown,
-                remainingTurnWait = RemainingTurnWait { 100L },
+                limits = PostLimits(
+                    rateLimitCooldown = cooldown,
+                    remainingTurnWait = RemainingTurnWait { 100L },
+                ),
             )
 
             assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
@@ -758,7 +766,7 @@ class RateLimitCooldownOuterTurnTest {
             url = "https://api.example.test/v1",
             auth = auth,
             extraHeaders = { emptyMap() },
-            rateLimitCooldown = cooldown,
+            limits = PostLimits(rateLimitCooldown = cooldown),
         ).also { it.relayRateLimitReplies = true }
         try {
             val refusal = client.post(context, RoundBody.Text("{}")) {
@@ -798,7 +806,7 @@ class RateLimitCooldownOuterTurnTest {
             url = "https://api.example.test/v1",
             auth = auth,
             extraHeaders = { emptyMap() },
-            remainingTurnWait = RemainingTurnWait { remaining },
+            limits = PostLimits(remainingTurnWait = RemainingTurnWait { remaining }),
             onRetry = RetryNotice(notices::add),
         )
 
@@ -833,7 +841,7 @@ class RateLimitCooldownOuterTurnTest {
                 url = "https://api.example.test/v1",
                 auth = auth,
                 extraHeaders = { emptyMap() },
-                remainingTurnWait = RemainingTurnWait { 5_000L - elapsed },
+                limits = PostLimits(remainingTurnWait = RemainingTurnWait { 5_000L - elapsed }),
             )
 
             assertEquals("ok", client.posted(context, "{}") { "ok" })

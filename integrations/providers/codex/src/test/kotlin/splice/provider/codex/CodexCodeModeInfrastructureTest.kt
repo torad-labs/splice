@@ -51,7 +51,7 @@ class CodexCodeModeInfrastructureTest : CodeModeBridgeTestSupport() {
         assertTrue(result is TurnOutcome.Failure)
         if (atStartup) {
             assertEquals(FailureCause.INTERNAL, (result as TurnOutcome.Failure).cause)
-            assertFalse(result.deterministic)
+            assertFalse(result.traits.deterministic)
             assertTrue(logLines.any { "PROTOCOL/IO" in it })
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
                 error("startup retry must reuse the persisted source")

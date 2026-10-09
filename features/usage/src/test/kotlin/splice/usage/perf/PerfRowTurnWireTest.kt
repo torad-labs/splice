@@ -24,6 +24,9 @@ import splice.core.perf.PerfTurnIds
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
+import splice.usage.UsageHeadSinks
+import splice.usage.UsageHeadStatusline
+import splice.usage.UsageHeadWarn
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 
@@ -41,34 +44,34 @@ class PerfRowTurnWireTest {
                 "cached_tokens" to 0L,
                 "cache_write_tokens" to 0L,
             ),
-            model = "m",
+            facts = PerfTurnFacts(model = "m"),
             turns = PerfTurnIds(trace = TRACED),
-            sessionId = "sess-v4345",
-            responseMessageId = "msg_42",
+            transcript = PerfTranscriptLink(sessionId = "sess-v4345", responseMessageId = "msg_42"),
             cause = "CONTENT_FILTERED",
         ),
-        PerfRow(ts = 2_000, outcome = "ok", fields = mapOf("total" to 7L), model = "m"),
+        PerfRow(ts = 2_000, outcome = "ok", fields = mapOf("total" to 7L), facts = PerfTurnFacts(model = "m")),
     )
 
     private val head = UsageHead(
         key = "kimi",
         label = "claude-kimi",
         usage = HeadUsageSource { UsageView(0, 0, null) },
-        warnPct = 80,
-        warnTokens5h = 0,
-        perfRows = PerfRowsSource { PerfRowsWindow(rows) },
-        // why: 1,000 input and 100 output cost (1,000 + 400) / 1,000,000 USD.
-        catalog = ModelCatalog(
-            discoveryPrefix = "claude-kimi--",
-            models = listOf(
-                ModelEntry(
-                    "m",
-                    "M",
-                    contextWindow = 256_000,
-                    rates = ModelRates(input = 1.0, cacheRead = 0.1, output = 4.0),
+        warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
+        sinks = UsageHeadSinks(perfRows = PerfRowsSource { PerfRowsWindow(rows) }),
+        statusline = UsageHeadStatusline(
+            // why: 1,000 input and 100 output cost (1,000 + 400) / 1,000,000 USD.
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-kimi--",
+                models = listOf(
+                    ModelEntry(
+                        "m",
+                        "M",
+                        contextWindow = 256_000,
+                        rates = ModelRates(input = 1.0, cacheRead = 0.1, output = 4.0),
+                    ),
                 ),
+                defaultContextWindow = 256_000,
             ),
-            defaultContextWindow = 256_000,
         ),
     )
 

@@ -9,6 +9,9 @@ import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesTurnOptions
 import splice.dialect.responses.ResponsesTurnSeams
 import splice.dialect.responses.ResponsesTurnSeamsDeps
+import splice.dialect.responses.RoundCarry
+import splice.dialect.responses.TranslatorServices
+import splice.dialect.responses.WatchdogCaps
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCacheFiles
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
@@ -37,15 +40,16 @@ internal class ResponsesParts(
     // runs the cache; a head that turned it off drops what an earlier start kept (V4-260: kept files go
     // when their use ends).
     private val reasoningFiles =
-        tuning.stateDir?.let { ReasoningCacheFiles(it.resolve(REASONING_DIR), log) }
+        tuning.locations.stateDir?.let { ReasoningCacheFiles(it.resolve(REASONING_DIR), log) }
     private val reasoningCache = ReasoningCache(
         log = log,
-        files = reasoningFiles.takeIf { quirks.reasoningCache },
+        files = reasoningFiles.takeIf { quirks.roundTrip.reasoningCache },
     )
 
     init {
-        if (!quirks.reasoningCache) reasoningFiles?.purge()
+        if (!quirks.roundTrip.reasoningCache) reasoningFiles?.purge()
     }
+    private val continuity = ReasoningContinuity(reasoningCache, cachePolicy, ids)
     private val summaryParts = ConversationSummaryParts()
     private val toolSurfaceLatch = ToolSurfaceLatch()
     val turnOptions = ResponsesTurnOptions(
@@ -53,23 +57,21 @@ internal class ResponsesParts(
         quirks,
         tuning.catalog,
         log,
-        ReasoningContinuity(reasoningCache, cachePolicy, ids),
+        continuity,
         toolSurfaceLatch,
     )
     val turnSeams = ResponsesTurnSeams(
         ResponsesTurnSeamsDeps(
             quirks = quirks,
-            cachePolicy = cachePolicy,
-            ids = ids,
-            reasoningCache = reasoningCache,
+            continuity = continuity,
             summaryParts = summaryParts,
             turnOptions = turnOptions,
-            foldConfig = foldConfig,
-            replayReasoning = reasoning.replay,
-            streamIdleMs = tuning.watchdog.streamIdle.inWholeMilliseconds,
-            upstreamTimeoutMs = tuning.watchdog.totalCap.inWholeMilliseconds,
-            toolNames = toolNames,
-            log = log,
+            carry = RoundCarry(foldConfig = foldConfig, replayReasoning = reasoning.replay),
+            caps = WatchdogCaps(
+                streamIdleMs = tuning.watchdog.streamIdle.inWholeMilliseconds,
+                upstreamTimeoutMs = tuning.watchdog.totalCap.inWholeMilliseconds,
+            ),
+            services = TranslatorServices(toolNames = toolNames, log = log),
         ),
     )
     val failureAmend = ResponsesFailureAmend(

@@ -25,6 +25,8 @@ import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
 import splice.head.admission.AdmissionWindow
 import splice.head.admission.RequestMaterializationGate
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.memory.JvmHeap
 import java.nio.file.Path
@@ -81,14 +83,13 @@ class CountTokensLeaseTest {
             }
         }
         assertEquals(List(3) { bodies.map { it.second } }.flatten(), publicationProbes, "no immediate retry gets 529")
-        assertEquals(0L, deps.gate.snapshot().acquired, "count_tokens never takes a turn permit")
+        assertEquals(0L, deps.traffic.gate.snapshot().traffic.acquired, "count_tokens never takes a turn permit")
     }
 
     private fun handler(deps: HeadDeps): CountTokens {
         val provider = TestResponsesProvider(
             ProviderTuning(
-                key = "synthetic",
-                label = "Synthetic",
+                name = ProviderName(key = "synthetic", label = "Synthetic"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "synthetic--",
                     models = listOf(ModelEntry("synthetic-model", "Synthetic", contextWindow = 1000)),
@@ -100,7 +101,7 @@ class CountTokensLeaseTest {
                     override suspend fun refresh(): Credentials = credentials()
                     override suspend fun describe(): AuthDescription = AuthDescription(true, "synthetic")
                 },
-                baseUrl = "http://127.0.0.1:9",
+                locations = ProviderLocations(baseUrl = "http://127.0.0.1:9"),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 20.seconds),
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.OFF, false, null, null),

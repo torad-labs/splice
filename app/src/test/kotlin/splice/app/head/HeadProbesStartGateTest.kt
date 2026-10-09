@@ -10,7 +10,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
+import splice.app.control.UsageWarning
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.head.Head
@@ -71,16 +73,17 @@ class HeadProbesStartGateTest {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(false, "synthetic", emptyMap())
         },
-        usage = HeadUsageSource { UsageView(0, 0, null) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int) = ""
-            override fun path() = "/synthetic/daemon.log"
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0, 0, null) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int) = ""
+                override fun path() = "/synthetic/daemon.log"
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
     )
 
     @Test

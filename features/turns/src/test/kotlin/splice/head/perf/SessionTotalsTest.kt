@@ -86,7 +86,7 @@ class SessionTotalsTest {
             opus.cachedTokens,
             opus.cacheWriteTokens,
             opus.outTokens,
-            opus.unpricedTurns,
+            opus.gaps.unpricedTurns,
         )
         assertEquals(listOf(2L, 200_000L, 50_000L, 0L, 2_000L, 0L), counted)
         val byTurn = PRICE.usd(OPUS, COLD)!! + PRICE.usd(OPUS, COLD + (PerfKeys.CACHED_TOKENS to 50_000L))!!
@@ -102,7 +102,7 @@ class SessionTotalsTest {
 
         val total = totals.totalFor(SESSION)!!
         val sol = total.models.getValue("gpt-6-sol")
-        assertEquals(1L, sol.unpricedTurns, "no card: unpriced, never zero dollars")
+        assertEquals(1L, sol.gaps.unpricedTurns, "no card: unpriced, never zero dollars")
         assertEquals(0.0, sol.usd)
         assertEquals(100_000L, sol.inTokens, "its tokens are still kept")
         assertEquals(setOf("gpt-6-sol"), total.models.keys, "a local refusal spent nothing and is not a turn to price")
@@ -117,7 +117,7 @@ class SessionTotalsTest {
         first.flushNow()
         val kept = store(file).totalFor(SESSION)!!.models.getValue(OPUS)
         assertEquals(2L, kept.turns)
-        assertEquals(1L, kept.unpricedTurns)
+        assertEquals(1L, kept.gaps.unpricedTurns)
         assertEquals(100_000L, kept.inTokens)
         assertEquals(0.525, kept.usd, 1e-12, "known dollars remain a labelled lower bound")
     }

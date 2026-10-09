@@ -9,6 +9,8 @@ import splice.dialect.anthropic.IdentityHeaders
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 
 /** The headers a passthrough head presents: the provider's defaults [base] (overridden by an operator's TOML) and,
@@ -40,14 +42,13 @@ internal class PassthroughAssembly {
         headers: PassthroughHeaders = PassthroughHeaders(),
     ): Provider = PassthroughProvider(
         tuning = ProviderTuning(
-            key = ctx.key,
-            label = label,
+            name = ProviderName(key = ctx.key, label = label),
             catalog = ctx.catalog,
             pinnedModel = ctx.head.pinnedModel,
             auth = auth,
-            baseUrl = ctx.providerCfg.baseUrl,
-            watchdog = ctx.watchdog,
-            loginCommand = ctx.loginCommand,
+            locations = ProviderLocations(baseUrl = ctx.providerCfg.baseUrl),
+            watchdog = ctx.faultPlan.watchdog,
+            loginCommand = ctx.faultPlan.loginCommand,
         ),
         quirks = quirksOverlay.passthroughQuirks(ctx.providerCfg, base),
         staticHeaders = headers.staticFor(ctx.providerCfg),

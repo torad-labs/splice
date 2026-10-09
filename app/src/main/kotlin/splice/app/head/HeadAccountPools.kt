@@ -4,11 +4,14 @@ package splice.app.head
 import splice.accounts.order.AccountOrderStore
 import splice.accounts.order.HeadAccountOrderSource
 import splice.accounts.pool.HeadAccountAuthSource
+import splice.accounts.pool.HeadAccountCredential
 import splice.accounts.pool.HeadAccountPinSource
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
+import splice.accounts.pool.HeadAccountWindow
 import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
 import splice.core.auth.AuthDescription
@@ -58,9 +61,9 @@ internal class HeadAccountPools {
                 label = account.label,
                 primary = account.primary,
                 auth = account.auth,
-                quota = TrackedAccountQuota(tracker, account.quotaRead),
+                quota = TrackedAccountQuota(tracker, account.quota.read),
                 cooldown = RateLimitCooldown(elapsedNow, store = holds[account.label]),
-                credentialPresent = account.credentialPresent,
+                credentialPresent = account.credential.present,
                 extraHeaders = account.extraHeaders,
             )
         }
@@ -94,7 +97,8 @@ internal class HeadAccountPools {
      *  /api/auth show the sentence. Its reader already points at a name splice never creates, so this opens nothing. */
     private suspend fun described(account: WiredAccount): AuthDescription {
         val description = account.auth.describe()
-        return account.refusal?.let { description.copy(fields = description.fields + (REFUSAL_FIELD to it)) }
+        return account.credential.refusal
+            ?.let { description.copy(fields = description.fields + (REFUSAL_FIELD to it)) }
             ?: description
     }
 
@@ -110,16 +114,24 @@ internal class HeadAccountPools {
                 selected = account.selected,
                 available = account.available,
                 plan = account.plan,
-                fiveHourUsedPercent = account.fiveHourUsedPercent,
-                fiveHourResetEpochSeconds = account.fiveHourResetEpochSeconds,
-                sevenDayUsedPercent = account.sevenDayUsedPercent,
-                sevenDayResetEpochSeconds = account.sevenDayResetEpochSeconds,
-                credentialPresent = account.credentialPresent,
-                authExcludedUntilEpochMillis = account.authExcludedUntilEpochMillis,
-                authExclusionReason = account.authExclusionReason,
-                fiveHourWindowSeconds = account.fiveHourWindowSeconds,
-                sevenDayWindowSeconds = account.sevenDayWindowSeconds,
-                quotaObservedAtEpochSeconds = account.quotaObservedAtEpochSeconds,
+                quota = HeadAccountQuota(
+                    fiveHour = HeadAccountWindow(
+                        usedPercent = account.quota.fiveHour.usedPercent,
+                        resetEpochSeconds = account.quota.fiveHour.resetEpochSeconds,
+                        windowSeconds = account.quota.fiveHour.windowSeconds,
+                    ),
+                    sevenDay = HeadAccountWindow(
+                        usedPercent = account.quota.sevenDay.usedPercent,
+                        resetEpochSeconds = account.quota.sevenDay.resetEpochSeconds,
+                        windowSeconds = account.quota.sevenDay.windowSeconds,
+                    ),
+                    observedAtEpochSeconds = account.quota.observedAtEpochSeconds,
+                ),
+                credential = HeadAccountCredential(
+                    present = account.credential.present,
+                    excludedUntilEpochMillis = account.credential.excludedUntilEpochMillis,
+                    exclusionReason = account.credential.exclusionReason,
+                ),
             )
         },
         lastSwitch = view.lastSwitch?.let { switch ->

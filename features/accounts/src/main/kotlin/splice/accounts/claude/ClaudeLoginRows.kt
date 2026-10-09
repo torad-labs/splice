@@ -48,13 +48,13 @@ internal object ClaudeLoginRows {
         val answer = head?.answers?.answer(place)
         put("provider", provider)
         AccountAnswerJson.write(this, answer)
-        put("credential_path", view.credentialPath)
-        put("credential_present", view.credentialPresent)
+        put("credential_path", view.credential.path)
+        put("credential_present", view.credential.present)
         put("kind", "client")
         put("label", view.id.wire)
         put("display_name", view.management?.displayName ?: view.id.command)
-        put("identity_verified", view.account != null)
-        put("profile_state", view.profileState.wire)
+        put("identity_verified", view.identity.account != null)
+        put("profile_state", view.identity.profileState.wire)
         put("can_remove", view.management?.canRemove == true)
         put("can_rename", view.management?.canRename == true)
         putJsonObject("edit_target") {
@@ -67,7 +67,7 @@ internal object ClaudeLoginRows {
             put("id", view.id.wire)
             put("command", view.id.command)
         }
-        val account = view.account?.let {
+        val account = view.identity.account?.let {
             buildJsonObject {
                 put("uuid", it.uuid)
                 put("email", it.email)
@@ -98,9 +98,9 @@ internal object ClaudeLoginRows {
         put("selected", selected?.selected)
         put("pinned", pool?.let { it.pinnedLabel == key })
         put("next_target", pool?.let { it.nextTargetLabel == key })
-        put("auth_excluded_until_epoch_millis", selected?.authExcludedUntilEpochMillis)
-        put("auth_exclusion_reason", selected?.authExclusionReason)
-        val reason = description?.fields?.get(REFUSAL_FIELD) ?: view.refusal
+        put("auth_excluded_until_epoch_millis", selected?.credential?.excludedUntilEpochMillis)
+        put("auth_exclusion_reason", selected?.credential?.exclusionReason)
+        val reason = description?.fields?.get(REFUSAL_FIELD) ?: view.credential.refusal
         put("refusal", refusal(view, selected, reason))
     }
 
@@ -109,8 +109,8 @@ internal object ClaudeLoginRows {
         return when {
             selected?.available == true -> null
             reason != null -> reason
-            selected?.credentialPresent != true -> "No usable native access token; $signIn"
-            selected.authExclusionReason != null -> "This login was refused; $signIn"
+            selected?.credential?.present != true -> "No usable native access token; $signIn"
+            selected.credential.exclusionReason != null -> "This login was refused; $signIn"
             else -> "This login reached its subscription limit; wait for its reported reset before it can take over."
         }
     }

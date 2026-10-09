@@ -11,7 +11,7 @@ public class UpstreamWindows(private val catalog: ModelCatalog) {
     /** Suffixes stripped (the wire sees the bare id); two rows over one id keep the wider window. */
     public fun byId(): Map<String, Long> {
         val rows = catalog.models.map { catalog.stripSuffixes(it.id) to it.contextWindow } +
-            catalog.extraWindows.map { catalog.stripSuffixes(it.id) to it.contextWindow }
+            catalog.windows.extraWindows.map { catalog.stripSuffixes(it.id) to it.contextWindow }
         return rows.groupBy({ it.first }, { it.second }).mapValues { (_, windows) -> windows.max() }
     }
 }

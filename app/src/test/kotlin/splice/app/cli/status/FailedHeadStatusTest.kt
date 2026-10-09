@@ -86,7 +86,7 @@ class FailedHeadStatusTest {
         assertEquals("1", health.getValue("failedHeads").jsonPrimitive.content)
         val named = health.getValue("failedHeadReasons").jsonObject.getValue("claude-muse")
         assertEquals(reason, named.jsonPrimitive.content)
-        assertEquals(mapOf("claude-muse" to reason), DaemonProbe.parseHealth(body).failedHeadReasons)
+        assertEquals(mapOf("claude-muse" to reason), DaemonProbe.parseHealth(body).heads.failedReasons)
     }
 
     @Test
@@ -94,6 +94,6 @@ class FailedHeadStatusTest {
         val body = healthFor(emptyMap(), readinessFor(emptyMap(), configuredHeads = 0)).json()
 
         assertNull(Json.parseToJsonElement(body).jsonObject["failedHeadReasons"], body)
-        assertEquals(emptyMap<String, String>(), DaemonProbe.parseHealth(body).failedHeadReasons)
+        assertEquals(emptyMap<String, String>(), DaemonProbe.parseHealth(body).heads.failedReasons)
     }
 }

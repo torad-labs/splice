@@ -36,19 +36,20 @@ class ControlHealthTest {
             override suspend fun credentials() = null
             override suspend fun describe() = splice.core.auth.AuthDescription(false, "x", emptyMap())
         },
-        usage = object : HeadUsageSource {
-            override fun snapshot() = UsageView(0L, 0, RateLimitView(0, 0, "0s"))
-        },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int) = ""
-            override fun path() = "/tmp/x.log"
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
-        authKind = "x",
+        sources = HeadSources(
+            usage = object : HeadUsageSource {
+                override fun snapshot() = UsageView(0L, 0, RateLimitView(0, 0, "0s"))
+            },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int) = ""
+                override fun path() = "/tmp/x.log"
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        authSurface = HeadAuthSurface(authKind = "x"),
     )
 
     private fun health(

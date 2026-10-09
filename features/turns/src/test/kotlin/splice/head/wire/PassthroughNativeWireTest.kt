@@ -20,6 +20,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.dialect.anthropic.PassthroughStreamTranslator
+import splice.dialect.anthropic.PassthroughThinkingQuirks
 import splice.dialect.anthropic.PassthroughTurnContext
 import splice.upstream.sse.WireSink
 
@@ -127,7 +128,7 @@ class PassthroughNativeWireTest {
             """{"type":"message_stop"}""",
         )
         assertTrue(outcome is TurnOutcome.Success, "initial prose is real content: $outcome")
-        assertEquals("initial answer", (outcome as TurnOutcome.Success).bodyText)
+        assertEquals("initial answer", (outcome as TurnOutcome.Success).text.bodyText)
         val starts = decoded(writes).filter { kind(it) == "content_block_start" }
         assertEquals("initial thought", starts[0]["content_block"]!!.jsonObject["thinking"]!!.jsonPrimitive.content)
         assertEquals("native-signature", starts[0]["content_block"]!!.jsonObject["signature"]!!.jsonPrimitive.content)
@@ -138,7 +139,12 @@ class PassthroughNativeWireTest {
     fun `dropped deltas and synthesized signatures do not inherit another frame scope`() = runTest {
         val writes = mutableListOf<String>()
         val sink = emitter(writes)
-        val translator = translator(PassthroughQuirks(providerTag = "kimi", synthesizeSignatures = true))
+        val translator = translator(PassthroughQuirks(
+            providerTag = "kimi",
+            thinking = PassthroughThinkingQuirks(
+                synthesizeSignatures = true,
+            ),
+        ))
         val events = listOf(
             event("""{"type":"message_start"}"""),
             event("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),

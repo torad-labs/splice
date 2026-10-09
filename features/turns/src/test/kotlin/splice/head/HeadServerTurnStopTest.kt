@@ -49,6 +49,8 @@ import splice.head.turn.LiveTurnsByHead
 import splice.head.turn.LiveTurnsRoutes
 import splice.head.turn.LiveTurnsSource
 import splice.head.wire.WireTap
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -90,8 +92,7 @@ class HeadServerTurnStopTest {
         val head = HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(
-                    key = "codex",
-                    label = "claudex",
+                    name = ProviderName(key = "codex", label = "claudex"),
                     catalog = ModelCatalog(
                         discoveryPrefix = "claude-codex--",
                         models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -99,7 +100,7 @@ class HeadServerTurnStopTest {
                     ),
                     pinnedModel = "gpt-5.6-sol",
                     auth = StopFakeAuth(),
-                    baseUrl = mock.baseUrl,
+                    locations = ProviderLocations(baseUrl = mock.baseUrl),
                     watchdog = WatchdogBudget(30.seconds, 30.seconds, 60.seconds),
                     loginCommand = "claudex login",
                 ),
@@ -111,20 +112,22 @@ class HeadServerTurnStopTest {
                 upstream = UpstreamClient(totalTimeoutMs = 60_000, maxRetries = 1),
                 gate = gate,
                 log = { journal.add(it) },
-            ).copy(
-                liveTurns = turns,
-                stores = headStores(
-                    tmp,
-                    wireTap = tap,
-                    trace = tap?.let {
-                        syntheticTraceStore(
-                            ActivityDays(tmp.resolve("trace"), "codex", 7, ownerOnly = true),
-                            "codex",
-                            1 shl 20,
-                        )
-                    },
-                ),
-            ),
+            ).let { base ->
+                base.copy(
+                    traffic = base.traffic.copy(liveTurns = turns),
+                    stores = headStores(
+                        tmp,
+                        wireTap = tap,
+                        trace = tap?.let {
+                            syntheticTraceStore(
+                                ActivityDays(tmp.resolve("trace"), "codex", 7, ownerOnly = true),
+                                "codex",
+                                1 shl 20,
+                            )
+                        },
+                    ),
+                )
+            },
         )
 
         suspend fun start() {

@@ -49,7 +49,7 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
     /** Every check an add runs before it writes, in the order they print; [live] adds the one turn.
      *  V4-220: one list for the CLI and the console, so neither can save past a check the other runs. */
     fun all(c: AddCandidate, live: Boolean, env: EnvReader): List<AddCheck> {
-        val local = c.resolved.authKind == API_KEY && !c.resolved.requiresKey
+        val local = c.resolved.provider.authKind == API_KEY && !c.resolved.provider.requiresKey
         val keyEnv = c.provider.auth.effectiveApiKeyEnv(c.key)
         // Local runtimes need no operator key. Checks present only the non-secret placeholder,
         // never a real key the operator may have stored under the same env name.
@@ -62,7 +62,7 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
         return listOf(
             credential(c, env),
             reachable(c.provider.baseUrl),
-            modelsListed(c.models, listed, c.resolved.listAuthoritative),
+            modelsListed(c.models, listed, c.resolved.policy.listAuthoritative),
             modelWindows(c.provider.models, listed),
         ) + listOfNotNull(if (live) liveTurn(c.provider, c.key, c.models.first(), checkEnv) else null)
     }
@@ -72,7 +72,7 @@ internal class AddChecks(output: TerminalOutput, private val http: AddHttp = Jdk
 
     /** A local runtime does not ask the operator for a key; save stores its non-secret placeholder. */
     fun credential(c: AddCandidate, env: EnvReader): AddCheck =
-        if (c.resolved.authKind == API_KEY && !c.resolved.requiresKey) {
+        if (c.resolved.provider.authKind == API_KEY && !c.resolved.provider.requiresKey) {
             AddCheck("credential", true, "local runtime needs no operator key")
         } else {
             credential(c.key, c.provider, env)

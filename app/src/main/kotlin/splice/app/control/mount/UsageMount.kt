@@ -41,7 +41,7 @@ internal class UsageMount(
     private val guard: ControlGuard,
 ) {
     private val liveTotals = heads.mapNotNull { (key, managed) ->
-        (managed.perf as? PerfStatsSource)?.sessionTotals?.let { key to it }
+        (managed.sources.perf as? PerfStatsSource)?.sessionTotals?.let { key to it }
     }.toMap()
     private val usageHeads = UsageHeadAdapter.heads(heads, ClaudeLoginPlacesSource { ports.claudeLogins })
     private val usageLookup = UsageHeadAdapter.lookup(

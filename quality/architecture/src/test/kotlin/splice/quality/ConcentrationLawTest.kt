@@ -234,9 +234,8 @@ internal object Concentration {
     /** Every exemption starts with a date — an undated one is how the next exemption hides. */
     val EXCEPTION_JUSTIFICATION = Regex("^\\p{Nd}{4}-\\p{Nd}{2}-\\p{Nd}{2}: [^$PY_WS]")
 
-    data class Row(
-        val file: String,
-        val pkg: String,
+    /** What a file measures as: its logic lines, its exports, its types and the subsystems it imports. */
+    data class Shape(
         val logic: Int,
         val exports: Int,
         val exportsNonType: Int,
@@ -244,13 +243,24 @@ internal object Concentration {
         val nestedTypes: Int,
         val subsystems: List<String>,
         val concerns: Int,
-        val c: Double,
+    )
+
+    /** What the gradient pass says of a row: its neighbourhood, the divisor used, the ratio and the band. */
+    data class Grade(
         val neighbourPackages: List<String> = emptyList(),
         val neighbourMedianC: Double = 0.0,
         val denominator: Double = 0.0,
         val denominatorFloored: Boolean = false,
         val ratio: Double = 0.0,
         val band: String = "",
+    )
+
+    data class Row(
+        val file: String,
+        val pkg: String,
+        val shape: Shape,
+        val c: Double,
+        val grade: Grade = Grade(),
     )
 
     data class PackageRow(val pkg: String, val files: Int, val c: Double, val medianC: Double)
@@ -311,13 +321,15 @@ internal object Concentration {
         return Row(
             file = rel,
             pkg = rel.split("/kotlin/").last().split("/").dropLast(1).joinToString("."),
-            logic = logic.size,
-            exports = exports.size,
-            exportsNonType = nonTypeExports.size,
-            types = types.size,
-            nestedTypes = nested.size,
-            subsystems = subsystems.sorted(),
-            concerns = concerns,
+            shape = Shape(
+                logic = logic.size,
+                exports = exports.size,
+                exportsNonType = nonTypeExports.size,
+                types = types.size,
+                nestedTypes = nested.size,
+                subsystems = subsystems.sorted(),
+                concerns = concerns,
+            ),
             c = pyRound(FLOOR_SHARE * logic.size + 3 * nonTypeExports.size + 8 * concerns, 1),
         )
     }
@@ -332,12 +344,12 @@ internal object Concentration {
         val packageMedian = byPackage.mapValues { (_, files) -> median(files.map { it.c }) }
         val importers = linkedMapOf<String, MutableSet<String>>()
         for (row in rows) {
-            for (pkg in row.subsystems) importers.getOrPut(pkg) { linkedSetOf() } += row.pkg
+            for (pkg in row.shape.subsystems) importers.getOrPut(pkg) { linkedSetOf() } += row.pkg
         }
         val globalMedian = if (packageMedian.isEmpty()) 0.0 else median(packageMedian.values.toList())
         val floor = globalMedian * FLOOR_SHARE
         return rows.map { row -> grade(row, packageMedian, importers[row.pkg].orEmpty(), Scale(globalMedian, floor)) }
-            .sortedByDescending { it.ratio }
+            .sortedByDescending { it.grade.ratio }
     }
 
     /** The two tree-wide numbers every row is graded against. */
@@ -345,7 +357,7 @@ internal object Concentration {
 
     private fun grade(row: Row, packageMedian: Map<String, Double>, importers: Set<String>, scale: Scale): Row {
         val neighbours = linkedSetOf<String>()
-        neighbours += row.subsystems.filter { packageMedian.containsKey(it) }
+        neighbours += row.shape.subsystems.filter { packageMedian.containsKey(it) }
         neighbours += importers
         neighbours -= row.pkg
         val med = if (neighbours.isEmpty()) {
@@ -359,12 +371,14 @@ internal object Concentration {
         val denominator = pyRound(max(med, scale.floor), 1)
         val ratio = if (denominator == 0.0) 0.0 else pyRound(row.c / denominator, 2)
         return row.copy(
-            neighbourPackages = neighbours.sorted(),
-            neighbourMedianC = pyRound(med, 1),
-            denominator = denominator,
-            denominatorFloored = med < scale.floor,
-            ratio = ratio,
-            band = bandOf(row.c, ratio, scale.globalMedian),
+            grade = Grade(
+                neighbourPackages = neighbours.sorted(),
+                neighbourMedianC = pyRound(med, 1),
+                denominator = denominator,
+                denominatorFloored = med < scale.floor,
+                ratio = ratio,
+                band = bandOf(row.c, ratio, scale.globalMedian),
+            ),
         )
     }
 
@@ -393,19 +407,19 @@ internal object Concentration {
      *  against their own recorded ceilings by the same leg rather than counted twice. */
     fun gradedHigh(rows: List<Row>, baseline: Baseline): List<Row> {
         val capped = baseline.ceilings.map { it.file }.toSet()
-        return rows.filter { it.file !in capped && it.band == HIGH }
+        return rows.filter { it.file !in capped && it.grade.band == HIGH }
     }
 
     /** The standing debt: files above the gate ratio. REPORTED, never gated — it moves on splits
      *  that touch nothing, so gating it penalises the decomposition this oracle exists to drive. */
     fun debt(rows: List<Row>, baseline: Baseline, maxRatio: Double): List<Row> {
         val capped = baseline.ceilings.map { it.file }.toSet()
-        return rows.filter { it.file !in capped && it.ratio > maxRatio }
+        return rows.filter { it.file !in capped && it.grade.ratio > maxRatio }
     }
 
     private fun baseName(file: String) = file.substring(file.lastIndexOf('/') + 1)
 
-    fun named(rows: List<Row>) = rows.joinToString(" | ") { "${baseName(it.file)} ${floatStr(it.ratio)}" }
+    fun named(rows: List<Row>) = rows.joinToString(" | ") { "${baseName(it.file)} ${floatStr(it.grade.ratio)}" }
 
     /** Structural faults in the ceiling list, which fail whatever question the caller asked: a
      *  malformed list is a broken instrument, not a failing measurement. */
@@ -453,7 +467,7 @@ internal object Concentration {
             "raising RATCHET_MAX_HIGH in $THIS_LAW is a dated edit recording that the tree got worse."
 
     private fun breached(ceiling: Ceiling, row: Row) =
-        "CEILING BREACHED: ${ceiling.file} ratio ${floatStr(row.ratio)} is above its recorded ceiling " +
+        "CEILING BREACHED: ${ceiling.file} ratio ${floatStr(row.grade.ratio)} is above its recorded ceiling " +
             "${floatStr(ceiling.ratio)} (C=${floatStr(row.c)}). A ceiling freezes a known state; it does not stop " +
             "watching."
 
@@ -465,7 +479,7 @@ internal object Concentration {
         val byFile = rows.associateBy { it.file }
         for (ceiling in baseline.ceilings) {
             val row = byFile[ceiling.file] ?: continue
-            if (row.ratio > ceiling.ratio) problems += breached(ceiling, row)
+            if (row.grade.ratio > ceiling.ratio) problems += breached(ceiling, row)
         }
         problems += packageProblems(packageCensus(rows), baseline)
         return problems
@@ -507,7 +521,8 @@ class ConcentrationLawTest {
     fun `every emitted ratio reproduces from its own row's C and denominator`() {
         val rows = Concentration.scan(Concentration.collect(map))
         val unreproducible = rows.filter {
-            it.denominator != 0.0 && it.ratio != Concentration.pyRound(it.c / it.denominator, 2)
+            it.grade.denominator != 0.0 &&
+                it.grade.ratio != Concentration.pyRound(it.c / it.grade.denominator, 2)
         }
         assertEquals(emptyList<String>(), unreproducible.map { it.file }) {
             "a row's ratio does not equal round(C / denominator, 2): the gate's arithmetic cannot " +
@@ -518,9 +533,9 @@ class ConcentrationLawTest {
     @Test
     fun `the census counts every spelling of a type and reports nested ones unbilled`() {
         val row = Concentration.measure("app/src/main/kotlin/splice/zzconc/Census.kt", CENSUS_FIXTURE)
-        assertEquals(3, row.types, "fun interface and annotation class are TYPEs, or the census is a dodge list")
-        assertEquals(2, row.nestedTypes, "a nested class and a nested annotation class must be REPORTED")
-        assertEquals(0, row.exportsNonType, "ONE DECLARATION, ONE BILL — a top-level type is not also an export")
+        assertEquals(3, row.shape.types, "fun interface and annotation class are TYPEs, or the census is a dodge list")
+        assertEquals(2, row.shape.nestedTypes, "a nested class and a nested annotation class must be REPORTED")
+        assertEquals(0, row.shape.exportsNonType, "ONE DECLARATION, ONE BILL — a top-level type is not also an export")
         assertEquals(27.0, row.c, "C bills all three top-level types at 8 and the nested ones at 0")
         assertEquals("splice.zzconc", row.pkg)
     }
@@ -574,7 +589,7 @@ class ConcentrationLawTest {
             }
             assertEquals(
                 HIGH,
-                rows().first { it.file.endsWith("God.kt") }.band,
+                rows().first { it.file.endsWith("God.kt") }.grade.band,
                 "the fixture must BE a god object first",
             )
 
@@ -594,8 +609,8 @@ class ConcentrationLawTest {
             // fallback was the file's OWN C, which pinned the ratio to 1.0 and band low forever.
             god("lone/Lone.kt", GOD_CLASSES, neighbour = null)
             val lone = rows().first { it.file.endsWith("Lone.kt") }
-            assertEquals(emptyList<String>(), lone.neighbourPackages, "the fixture must have NO neighbourhood")
-            assertEquals(HIGH, lone.band, "a self-contained god file must not be graded against itself")
+            assertEquals(emptyList<String>(), lone.grade.neighbourPackages, "the fixture must have NO neighbourhood")
+            assertEquals(HIGH, lone.grade.band, "a self-contained god file must not be graded against itself")
             assertHit(Concentration.problems(rows(), GATE, Concentration.Baseline(0, 1, emptyList())), "REGRESSION") {
                 "the zero-neighbour god object must move the gated band"
             }

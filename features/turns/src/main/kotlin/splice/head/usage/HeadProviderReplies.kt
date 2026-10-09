@@ -58,7 +58,7 @@ internal class HeadProviderReplies(
             }?.cooldown
         }
         return sender.account?.let { deps.quotaBundle.activePool?.responseCooldowns?.get(it) }
-            ?: deps.upstream.credentialCooldown(sender.requestHeaders, sender.declaredCarrier)
+            ?: deps.traffic.upstream.credentialCooldown(sender.requestHeaders, sender.declaredCarrier)
     }
 
     private fun plan(reply: ProviderReply, auth: RefreshableAuthProvider?): PlanLimit? {

@@ -63,8 +63,10 @@ private class ChatUpstream {
         ex.responseBody.write("""data: {"choices":[{"delta":{"content":"hi from chat"}}]}""".toByteArray())
         ex.responseBody.write("\n\n".toByteArray())
         ex.responseBody.write(
-            """data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2}}"""
-                .toByteArray(),
+            (
+                """data: {"choices":[{"delta":{},"finish_reason":"stop"}],""" +
+                    """"usage":{"prompt_tokens":3,"completion_tokens":2}}"""
+                ).toByteArray(),
         )
         ex.responseBody.write("\n\n".toByteArray())
         Cancellables.discard(runCatching { ex.responseBody.close() }, "test-server teardown")
@@ -343,7 +345,7 @@ class MultiProviderDaemonTest {
     }
 
     @Test
-    fun `the openrouter head was wired as openai-chat - its turn hits the chat upstream with its api key`() = runBlocking {
+    fun `the openrouter head is wired as openai-chat, its turn hits the chat upstream with its key`() = runBlocking {
         val sse = client.post("http://127.0.0.1:$chatPort/v1/messages") {
             header("Content-Type", "application/json")
             header("Authorization", "Bearer $key")

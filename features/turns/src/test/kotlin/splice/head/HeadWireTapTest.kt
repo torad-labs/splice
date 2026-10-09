@@ -46,6 +46,8 @@ import splice.core.util.AsyncFileIo
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.wire.WireTap
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -116,12 +118,11 @@ class HeadWireTapTest {
     private fun startHead(wireTap: WireTap?, forwardClientAuth: Boolean = false, traced: Boolean = false): Int {
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
-                key = "anthropic",
-                label = "claude-splice",
+                name = ProviderName(key = "anthropic", label = "claude-splice"),
                 catalog = catalog,
                 pinnedModel = "claude-fable-5",
                 auth = if (forwardClientAuth) ClientAuthProvider("claude-splice") else WireTestApiKeyAuth(),
-                baseUrl = upstream.baseUrl,
+                locations = ProviderLocations(baseUrl = upstream.baseUrl),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
             quirks = PassthroughQuirks(providerTag = "claude-splice"),
@@ -139,8 +140,7 @@ class HeadWireTapTest {
             ).copy(
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = forwardClientAuth),
             ).copy(
-                inferenceToken = TURN_KEY,
-                operatorToken = MGMT_KEY,
+                tokens = HeadDeps.HeadTokens(inferenceToken = TURN_KEY, operatorToken = MGMT_KEY),
                 stores = headStores(
                     tmp,
                     suffix = "-${heads.size}",

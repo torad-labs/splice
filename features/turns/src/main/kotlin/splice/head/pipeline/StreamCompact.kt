@@ -18,7 +18,7 @@ internal class StreamCompact(private val compactStats: CompactStats) {
                 put("ms", elapsedMs)
                 chars?.let { put("chars", it) }
                 error?.let { put("error", it) }
-                meta.compactionInstructionsSource?.let { put("instructions_source", it) }
+                meta.compaction.source?.let { put("instructions_source", it) }
             },
         )
     }

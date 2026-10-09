@@ -10,14 +10,17 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.UsageOrigin
 import splice.provider.codex.stream.CodeModeClientContexts
 
 internal class CodeModeClientContextsTest {
-    private val step = TurnOutcome.Success(hasToolUse = true, incomplete = false, usage = Usage(localStep = true))
+    private val step = TurnOutcome.Success(hasToolUse = true, incomplete = false, usage = Usage(
+        origin = UsageOrigin(localStep = true),
+    ))
 
     private val contextFields = UsageField.entries.toSet() - UsageField.OUTPUT
 
-    private fun contextOf(outcome: TurnOutcome): Usage? = (outcome as TurnOutcome.Success).usage.clientContext
+    private fun contextOf(outcome: TurnOutcome): Usage? = (outcome as TurnOutcome.Success).usage.origin.clientContext
 
     @Test
     fun `a step that measured nothing carries the newest measured context, and its own usage stays zero`() {
@@ -27,8 +30,10 @@ internal class CodeModeClientContextsTest {
 
         val reported = contexts.report("a", step) as TurnOutcome.Success
         val expected = Usage(inputTokens = 1_200, cachedTokens = 700, reported = contextFields)
-        assertEquals(expected, reported.usage.clientContext)
-        assertEquals(Usage(localStep = true), reported.usage.copy(clientContext = null), "accounting stays raw")
+        assertEquals(expected, reported.usage.origin.clientContext)
+        assertEquals(Usage(
+            origin = UsageOrigin(localStep = true),
+        ), reported.usage.run { copy(origin = origin.copy(clientContext = null)) }, "accounting stays raw")
     }
 
     @Test

@@ -18,18 +18,24 @@ class ForegroundOwnerLaunchTest {
         val service = LaunchService(ClaudeConfigMaterializer(home))
         val spec = LaunchSpec(
             trees = HeadTrees(home.resolve(".claude-synthetic")),
-            pinnedModel = "synthetic-model",
-            availableModelIds = listOf("synthetic-model"),
-            modelLabels = mapOf("synthetic-model" to "Synthetic"),
-            contextWindow = 272_000,
-            modelOptionsCache = buildJsonObject { },
-            statuslineCommand = "",
-            loginCommand = "",
-            signInLabel = "",
+            models = LaunchModels(
+                pinnedModel = "synthetic-model",
+                availableModelIds = listOf("synthetic-model"),
+                modelLabels = mapOf("synthetic-model" to "Synthetic"),
+                contextWindow = 272_000,
+                modelOptionsCache = buildJsonObject { },
+            ),
+            signIn = LaunchSignIn(
+                loginCommand = "",
+                signInLabel = "",
+            ),
+            gateway = LaunchGateway(
+                statuslineCommand = "",
+                port = 0,
+                inferenceToken = "synthetic",
+                apiTimeoutMs = 1_000,
+            ),
             policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-            port = 0,
-            inferenceToken = "synthetic",
-            apiTimeoutMs = 1_000,
         )
         val one = service.launch(spec, emptyList(), dangerouslySkipPermissions = false)
         val two = service.launch(spec, emptyList(), dangerouslySkipPermissions = false)

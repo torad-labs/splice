@@ -51,12 +51,12 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         assertEquals(1, imageMessages(items).size, items.toString())
         val customOutput = items.indexOfFirst { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") }
         assertTrue(customOutput >= 0)
-        assertEquals(turn.toolMedia.getValue(id).single(), items[customOutput + 1])
+        assertEquals(turn.rendering.media.getValue(id).single(), items[customOutput + 1])
         assertFalse(items[customOutput].jsonObject.getValue("output").jsonPrimitive.content.contains(IMAGE_A))
         // Persisted beside the output, not inside it.
         val result = savedResult(id)
         assertFalse(result.getValue("output").jsonPrimitive.content.contains(IMAGE_A))
-        assertEquals(turn.toolMedia.getValue(id), result.getValue("media").jsonArray.toList())
+        assertEquals(turn.rendering.media.getValue(id), result.getValue("media").jsonArray.toList())
     }
 
     @Test
@@ -116,8 +116,8 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
             }
         val images = imageMessages(input(replay))
         assertEquals(2, images.size)
-        assertEquals(turn.toolMedia.getValue(first).single(), images[0])
-        assertEquals(turn.toolMedia.getValue(second).single(), images[1])
+        assertEquals(turn.rendering.media.getValue(first).single(), images[0])
+        assertEquals(turn.rendering.media.getValue(second).single(), images[1])
         assertEquals(listOf(first, second), savedRecord().getValue("results").jsonObject.keys.toList())
     }
 
@@ -142,9 +142,9 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
                 RoundResult.Outcome(completedOutcome())
             }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
-        assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
+        assertTrue((outcome as TurnOutcome.Success).usage.origin.codeModeDiverged)
         assertEquals(input(clientHistory), input(posted), "B's result and pixels stay exactly B's")
-        assertEquals(listOf(replayed.toolMedia.getValue(first).single()), imageMessages(input(posted)))
+        assertEquals(listOf(replayed.rendering.media.getValue(first).single()), imageMessages(input(posted)))
         assertEquals(0, input(posted).count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
         assertEquals(2, runtime.cell.advances, "the cell was not advanced on a divergent batch")
     }
@@ -228,7 +228,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
             it.jsonObject["call_id"] == JsonPrimitive("outer-call") &&
                 it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output")
         }
-        assertEquals(turn.toolMedia.getValue(id).single(), second[aOutput + 1])
+        assertEquals(turn.rendering.media.getValue(id).single(), second[aOutput + 1])
         assertEquals(2, second.count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
         assertEquals(first, second.take(first.size), "A's canonical prefix is unchanged under B")
     }
@@ -275,7 +275,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
                 RoundResult.Outcome(completedOutcome())
             }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
-        assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
+        assertTrue((outcome as TurnOutcome.Success).usage.origin.codeModeDiverged)
         assertEquals(input(clientHistory), input(posted), "changed legacy text and its media stay client-owned")
         assertEquals(0, input(posted).count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
         assertEquals(saved, savedRecord(), "a lost legacy worker must not accept the changed result")
@@ -294,13 +294,13 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
                 RoundResult.Outcome(completedOutcome())
             }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
-        assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
+        assertTrue((outcome as TurnOutcome.Success).usage.origin.codeModeDiverged)
         val items = input(posted)
         assertEquals(input(history(replay, id to "shot", tail = ANSWER_AND_NEXT)), items)
         // Coherent fallback: the record is omitted (no canonical pair, no captured A), and the client's
         // ordinary callback with B rides exactly as the client sent it.
         assertEquals(0, items.count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
-        assertEquals(listOf(replay.toolMedia.getValue(id).single()), imageMessages(items))
+        assertEquals(listOf(replay.rendering.media.getValue(id).single()), imageMessages(items))
         assertEquals(1, items.count { it.jsonObject["type"] == JsonPrimitive("function_call_output") })
         assertTrue(logLines.any { it.contains("observable-divergence") }, logLines.toString())
     }
@@ -317,7 +317,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
             }
         val items = input(posted)
         assertEquals(0, items.count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
-        assertEquals(listOf(replay.toolMedia.getValue(id).single()), imageMessages(items))
+        assertEquals(listOf(replay.rendering.media.getValue(id).single()), imageMessages(items))
     }
 
     // ---- harness ----
@@ -369,7 +369,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         )
         val builder = CodexCodeModeTurnBuilder(manager, media(), codeModeOnly = backendCodeModeOnly)
         return turn(results = builder.toolResults(body))
-            .copy(toolMedia = builder.toolMedia(body), legacyResults = builder.legacyResults(body))
+            .copy(rendering = CodeModeResultRendering(builder.toolMedia(body), builder.legacyResults(body)))
     }
 
     /** A script parked by the daemon BEFORE V4-179: its first result (the turn [accept] builds for
@@ -388,7 +388,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
             .intercept(history(accepted, first to "one"), sink) { error("script still running") }
         val second = sink.tools.single().id
         // What that daemon wrote: the V4-178 marker as the result's text, and no media key.
-        val legacyText = JsonPrimitive(accepted.legacyResults.single().output)
+        val legacyText = JsonPrimitive(accepted.rendering.legacy.single().output)
         rewriteSavedResults { result -> JsonObject(result.filterKeys { it != "media" } + ("output" to legacyText)) }
         return Triple(bridge(ScriptedRuntime(ArrayDeque())), first, second)
     }
@@ -429,7 +429,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
                         put("output", output)
                     },
                 )
-                addAll(turn.toolMedia[id].orEmpty())
+                addAll(turn.rendering.media[id].orEmpty())
             }
             addAll(tail)
         }

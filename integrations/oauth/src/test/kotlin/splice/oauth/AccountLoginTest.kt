@@ -295,7 +295,7 @@ class AccountLoginTest {
 
         val pool = store.poolDir(AuthKind.KimiOAuth, primary)
         val persistedIdentity = KimiDeviceIdentity(deviceIdPath = pool.resolve("kimi-5-device_id"))
-        assertEquals(persistedIdentity.headers(), spec.identityHeaders)
+        assertEquals(persistedIdentity.headers(), spec.client.headers)
         assertTrue(Files.exists(pool.resolve("kimi-5.json")))
         assertFalse(Files.exists(pool.resolve("kimi-2-quota.json"), LinkOption.NOFOLLOW_LINKS))
         assertTrue(Files.isSymbolicLink(pool.resolve("kimi-3.json")))

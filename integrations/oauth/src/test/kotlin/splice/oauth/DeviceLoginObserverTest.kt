@@ -61,28 +61,34 @@ class DeviceLoginObserverTest {
         val oauth = KimiOAuth()
         return DeviceLoginSpec(
             head = "probe",
-            clientId = "cid",
-            deviceAuthUrl = "http://127.0.0.1:${server.address.port}/device",
-            tokenUrl = "http://127.0.0.1:${server.address.port}/token",
+            client = DeviceClient(
+                id = "cid",
+                headers = emptyMap(),
+            ),
+            deviceAuth = DeviceAuthEndpoint(
+                url = "http://127.0.0.1:${server.address.port}/device",
+                form = DeviceAuthForm { oauth.kimiDeviceAuthorizationForm(it) },
+                parse = DeviceAuthParse { body ->
+                    val parsed = oauth.parseKimiDeviceAuthorization(body)
+                    DeviceAuthorization(
+                        userCode = parsed.userCode,
+                        deviceCode = parsed.deviceCode,
+                        verificationUri = parsed.verificationUri,
+                        verificationUriComplete = parsed.verificationUriComplete,
+                        expiresInS = parsed.expiresInS,
+                        intervalS = parsed.intervalS,
+                    )
+                },
+            ),
+            tokenEndpoint = DeviceTokenEndpoint(
+                url = "http://127.0.0.1:${server.address.port}/token",
+                pollForm = TokenPollForm { code, id -> oauth.kimiTokenPollForm(code, id) },
+                toAuthJson = { body ->
+                    val token = Regex(""""access_token"\s*:\s*"([^"]*)"""").find(body)?.groupValues?.get(1).orEmpty()
+                    """{"access_token":"$token"}"""
+                },
+            ),
             authPath = authPath,
-            identityHeaders = emptyMap(),
-            toAuthJson = { body ->
-                val token = Regex(""""access_token"\s*:\s*"([^"]*)"""").find(body)?.groupValues?.get(1).orEmpty()
-                """{"access_token":"$token"}"""
-            },
-            deviceAuthForm = DeviceAuthForm { oauth.kimiDeviceAuthorizationForm(it) },
-            parseDeviceAuth = DeviceAuthParse { body ->
-                val parsed = oauth.parseKimiDeviceAuthorization(body)
-                DeviceAuthorization(
-                    userCode = parsed.userCode,
-                    deviceCode = parsed.deviceCode,
-                    verificationUri = parsed.verificationUri,
-                    verificationUriComplete = parsed.verificationUriComplete,
-                    expiresInS = parsed.expiresInS,
-                    intervalS = parsed.intervalS,
-                )
-            },
-            tokenPollForm = TokenPollForm { code, id -> oauth.kimiTokenPollForm(code, id) },
         )
     }
 

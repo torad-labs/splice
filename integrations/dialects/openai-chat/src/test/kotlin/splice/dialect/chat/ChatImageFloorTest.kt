@@ -91,7 +91,13 @@ class ChatImageFloorTest {
             """{"model":"m","messages":[{"role":"user","content":[
                 {"type":"image","source":{"type":"base64","media_type":"image/png","data":"${png(1, 1)}"}}
             ]}]}""",
-            ChatQuirks(providerTag = "claude-grok", supportsVision = false, minImageEdgePx = XAI_FLOOR),
+            ChatQuirks(
+                providerTag = "claude-grok",
+                capabilities = ChatCapabilityQuirks(
+                    supportsVision = false,
+                    minImageEdgePx = XAI_FLOOR,
+                ),
+            ),
         ).messages().single().textContent()
         assertTrue(content.contains("backend has no vision"), content)
         assertFalse(content.contains(FLOOR_REASON), "one image, one story: $content")
@@ -154,7 +160,12 @@ class ChatImageFloorTest {
     }
 }
 
-private val FLOORED = ChatQuirks(providerTag = "claude-grok", minImageEdgePx = XAI_FLOOR)
+private val FLOORED = ChatQuirks(
+    providerTag = "claude-grok",
+    capabilities = ChatCapabilityQuirks(
+        minImageEdgePx = XAI_FLOOR,
+    ),
+)
 
 private fun build(json: String, quirks: ChatQuirks): JsonObject =
     ChatRequestBuilder(quirks)

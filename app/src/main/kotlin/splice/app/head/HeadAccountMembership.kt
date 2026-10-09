@@ -95,14 +95,14 @@ internal class HeadAccountMembership(
                     auth = account.auth,
                     quota = TrackedAccountQuota(
                         trackers.computeIfAbsent(account.label) {
-                            QuotaTracker(account.quotaFile, extraFamily = CodexQuotaHeaderFamily())
+                            QuotaTracker(account.quota.file, extraFamily = CodexQuotaHeaderFamily())
                         }.also {
-                            it.credentialListener = account.quotaRead as? splice.head.usage.CredentialQuotaListener
+                            it.credentialListener = account.quota.read as? splice.head.usage.CredentialQuotaListener
                         },
-                        account.quotaRead,
+                        account.quota.read,
                     ),
                     cooldown = RateLimitCooldown(elapsed, store = held[account.label]),
-                    credentialPresent = account.credentialPresent,
+                    credentialPresent = account.credential.present,
                     extraHeaders = account.extraHeaders,
                 )
             }

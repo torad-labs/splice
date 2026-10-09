@@ -33,7 +33,7 @@ internal class CodeModeNativeReplay(
     val payloads = index.payloads
     private val bad = mutableMapOf<String, CodeModeNativeRejection>()
     private val origins = ancestors(records).flatMap { record ->
-        record.continuityReplay.map { CodeModeNativeOrigin(record, it) }
+        record.carry.replay.map { CodeModeNativeOrigin(record, it) }
     }
     private val replay = input.replayItems.groupBy { it.logicalOffset }.mapValues { (_, segments) ->
         segments.flatMap { it.items }
@@ -102,7 +102,7 @@ internal class CodeModeNativeReplay(
         records.forEach { record ->
             val boundary = index.boundary(record)
             if (boundary != null) {
-                record.continuityReplay.forEach {
+                record.carry.replay.forEach {
                     allowed.getOrPut(boundary + it.logicalOffset) { mutableSetOf() } += it.items.map(payloads::token)
                 }
             }
@@ -121,13 +121,13 @@ internal class CodeModeNativeReplay(
     /** A response-only rewrite cannot become evidence for resurrecting its missing captured input. */
     fun retainedResponse(record: CodeModeRecord): Boolean {
         if (
-            record.continuityReplay.isEmpty() ||
-            index.owned(record).any { codec.callId(index.items[it]) == record.outerCallId }
+            record.carry.replay.isEmpty() ||
+            index.owned(record).any { codec.callId(index.items[it]) == record.origin.outerCallId }
         ) {
             return false
         }
         val boundary = index.boundary(record) ?: return false
-        val echoed = record.continuityReplay.all { segment ->
+        val echoed = record.carry.replay.all { segment ->
             val items = replay[boundary + segment.logicalOffset].orEmpty()
             (0..items.size - segment.items.size).any { at ->
                 segment.items.indices.all { payloads.token(items[at + it]) == payloads.token(segment.items[it]) }
@@ -167,7 +167,7 @@ internal class CodeModeNativeReplay(
         placements.forEach { placement ->
             // Copy quotas refer to the observed history, not the plan's relocated emission buckets.
             val observed = checkNotNull(index.boundary(placement.record))
-            placement.record.continuityReplay.forEach {
+            placement.record.carry.replay.forEach {
                 count(counted, observed + it.logicalOffset, it.items)
             }
         }
@@ -222,7 +222,7 @@ internal class CodeModeNativeReplay(
         return ancestors(records).flatMap { record ->
             val source = sources.getValue(record.id)
             val inherited = if (record.id in placed) emptyList() else CodeModeNativeChain.continuity(record)
-            (record.nativeSegments + inherited).mapNotNull { segment -> claim(record, source, segment) }
+            (record.carry.segments + inherited).mapNotNull { segment -> claim(record, source, segment) }
         }
     }
 

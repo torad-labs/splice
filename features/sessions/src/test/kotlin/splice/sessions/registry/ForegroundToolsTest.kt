@@ -131,8 +131,8 @@ class ForegroundToolsTest {
         )
         record(SESSION, "tool-a", ForegroundToolPhase.START)
         now += 45 * MINUTE_MS
-        assertEquals(SessionAvailability.LIVE, resumed.read().single { it.pid == 11L }.availability)
-        assertEquals(SessionAvailability.LIVE, registry.read().single { it.pid == 11L }.availability)
+        assertEquals(SessionAvailability.LIVE, resumed.read().single { it.process.pid == 11L }.availability)
+        assertEquals(SessionAvailability.LIVE, registry.read().single { it.process.pid == 11L }.availability)
     }
 
     @Test

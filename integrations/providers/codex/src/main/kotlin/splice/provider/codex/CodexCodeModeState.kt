@@ -86,25 +86,11 @@ internal data class CodeModeRecordSnapshot(
 internal data class CodeModeRecord(
     val id: String,
     val key: String,
-    var outer: JsonObject,
-    val outerCallId: String,
-    var source: String,
     var phase: CodeModePhase,
-    val pending: MutableList<CodeModePending> = mutableListOf(),
-    var output: String? = null,
     var error: String? = null,
-    var totalCalls: Int = 0,
-    var rounds: Int = 0,
-    var updatedAt: Long,
-    var lastDigest: String,
-    val baselineInputCount: Int,
-    val baselineInputDigest: String,
-    val metadataVersion: Int,
-    val baselineLogicalCount: Int,
-    val baselineLogicalDigest: String,
-    var nativeSegments: List<CodeModeNativeSegment>,
-    var continuity: List<JsonElement>,
-    var continuityReplay: List<CodeModeNativeSegment>,
+    val origin: CodeModeOrigin,
+    val progress: CodeModeProgress,
+    val carry: CodeModeNativeContinuity,
 ) {
     val accepted: CodeModeAccepted = CodeModeAccepted()
     val results: Map<String, CodeModeResult> get() = accepted.results
@@ -136,9 +122,9 @@ internal data class CodeModeRecord(
     var heapBudget: HeapReservations? = null
     val heapSnapshots: MutableList<WeakReference<CodeModeRecordSnapshot>> = mutableListOf()
 
-    fun visiblePending(): List<CodeModePending> = pending.filter(CodeModePending::exposed)
+    fun visiblePending(): List<CodeModePending> = progress.pending.filter(CodeModePending::exposed)
 
-    fun clientIds(): Set<String> = (results.keys + pending.map(CodeModePending::clientId)).toSet()
+    fun clientIds(): Set<String> = (results.keys + progress.pending.map(CodeModePending::clientId)).toSet()
 
     fun terminal(): Boolean = phase == CodeModePhase.COMPLETED || error != null
 

@@ -1,7 +1,7 @@
 // NEW: (HD-24) OpenAI-chat message and media mapping, lifted out of ChatRequestBuilder.kt.
 // Adjacency stays here: tool messages immediately follow assistant.tool_calls; tool_result
 // images follow the whole tool block. ChatToolInput owns tool definitions and encoded arguments,
-// using the shared wire vocabulary below. imagePart/omissionMarkers share quirks.supportsVision
+// using the shared wire vocabulary below. imagePart/omissionMarkers share quirks.capabilities.supportsVision
 // so the v25 omission markers cannot drift.
 //
 // DR-155 adds a SECOND drop gate beside supportsVision: the vendor minimum-edge floor. It is
@@ -28,7 +28,7 @@ import splice.core.wire.ToolUseBlock
 
 internal class ChatWireMapper(private val quirks: ChatQuirks) {
 
-    private val floor = ImageFloor(quirks.minImageEdgePx)
+    private val floor = ImageFloor(quirks.capabilities.minImageEdgePx)
     private val toolInput = ChatToolInput()
 
     fun messagesArray(system: String?, body: AnthropicRequest): JsonArray = buildJsonArray {
@@ -152,7 +152,7 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
     fun markerFold(out: String, imageCount: Int, undersized: List<ImageBlock>): String {
         // DR-94: with vision ON the drop was an unreadable SOURCE, not a capability gap — the
         // marker must not blame vision the backend has.
-        val reason = if (quirks.supportsVision) "unreadable image source" else "backend has no vision"
+        val reason = if (quirks.capabilities.supportsVision) "unreadable image source" else "backend has no vision"
         val unreadable = if (imageCount > 0) {
             listOf("[$imageCount image(s) omitted by ${quirks.providerTag} proxy: $reason]")
         } else {
@@ -166,7 +166,7 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
     // DR-94: the vision-ON drop marker (empty base64, unknown source type). Distinct from
     // omissionMarkers so the no-vision path never emits two markers for the same images.
     private fun unreadableSourceMarkers(dropped: Int): List<String> =
-        if (dropped > 0 && quirks.supportsVision) {
+        if (dropped > 0 && quirks.capabilities.supportsVision) {
             listOf("[$dropped image(s) omitted by ${quirks.providerTag} proxy: unreadable image source]")
         } else {
             emptyList()
@@ -191,7 +191,7 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
      * second marker for the same image — the double-marker class DR-94's split exists to prevent.
      */
     private fun belowFloor(source: MediaSource?): Int? {
-        if (source == null || !quirks.supportsVision) return null
+        if (source == null || !quirks.capabilities.supportsVision) return null
         return floor.violatedMinimum(source)
     }
 
@@ -204,7 +204,7 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         // that, and only that, is why this used to end in `!!`. Same guard, same value, now proven.
         val data = source?.data
         return when {
-            source == null || !quirks.supportsVision -> null
+            source == null || !quirks.capabilities.supportsVision -> null
             source.type == "base64" && !data.isNullOrEmpty() -> {
                 val mime = source.mediaType ?: "image/png"
                 val size = DATA_URL_PREFIX.length + mime.length + BASE64_SEPARATOR.length + data.length

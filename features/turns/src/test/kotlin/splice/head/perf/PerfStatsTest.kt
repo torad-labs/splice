@@ -140,7 +140,12 @@ class PerfStatsTest {
         val perf = TurnPerf { 0L }
         perf.setCount(PerfKeys.IN_TOKENS, 200)
         stats.record(
-            PerfRowMeta("m", "ok", compact = false, sessionId = "session", conversationKey = "first"),
+            PerfRowMeta(
+                "m",
+                "ok",
+                compact = false,
+                transcript = PerfTranscriptIds(sessionId = "session", conversationKey = "first"),
+            ),
             perf.snapshot(),
             previous,
         )
@@ -295,7 +300,7 @@ class PerfStatsTest {
     fun `a switched turn records its account and cold cache`(@TempDir tempDir: Path) {
         val file = tempDir.resolve("perf.jsonl")
         val stats = PerfStats(file, clock = { 7L })
-        val meta = PerfRowMeta("m", "ok", compact = false, account = "backup", cacheCold = true)
+        val meta = PerfRowMeta("m", "ok", compact = false, account = PerfAccount("backup", cacheCold = true))
 
         stats.record(meta, TurnPerf { 0L }.snapshot())
         assertTrue(AsyncFileIo.drain())

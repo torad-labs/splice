@@ -76,7 +76,7 @@ internal class HeadBoot {
      *  listed by the endpoint at this start (retired, filtered out, or not answered in time). The
      *  topology drops that row rather than the head; this line is where the operator learns of it. */
     private fun logUnlisted(key: String, head: HeadConfig, built: ManagedHead, log: LogSink) {
-        val catalog = built.catalog ?: return
+        val catalog = built.statusline.catalog ?: return
         val unlisted = head.models.orEmpty().map { it.id }.filterNot(catalog::contains)
         if (unlisted.isNotEmpty()) {
             log(

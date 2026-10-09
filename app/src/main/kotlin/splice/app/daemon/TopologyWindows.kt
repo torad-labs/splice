@@ -119,7 +119,7 @@ internal class TopologyWindows(
     fun attach(ctx: ProviderBuild, legacyKnobsGovern: Boolean): ProviderBuild {
         heads[ctx.key] = Head(ctx.catalog, legacyKnobsGovern, ctx.providerCfg.isLocal)
         val live = LiveRosterCatalog(ctx, LiveWindows { current(ctx.key) })
-        return ctx.copy(catalog = ctx.catalog.copy(liveWindows = live))
+        return ctx.copy(catalog = ctx.catalog.copy(windows = ctx.catalog.windows.copy(liveWindows = live)))
     }
 
     override fun digest(): String {
@@ -283,8 +283,8 @@ internal class TopologyWindows(
             .filter { (was, now) -> was.contextWindow != now.contextWindow }
             .map { (was, now) -> "${now.id} ${was.contextWindow} -> ${now.contextWindow}" }
         val rest = listOfNotNull(
-            "extra_windows".takeIf { before.extraWindows != after.extraWindows },
-            "window_rules".takeIf { before.windowRules != after.windowRules },
+            "extra_windows".takeIf { before.windows.extraWindows != after.windows.extraWindows },
+            "window_rules".takeIf { before.windows.windowRules != after.windows.windowRules },
             "default ${before.defaultContextWindow} -> ${after.defaultContextWindow}"
                 .takeIf { before.defaultContextWindow != after.defaultContextWindow },
         )

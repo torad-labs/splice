@@ -27,6 +27,8 @@ import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
+import splice.usage.UsageHeadSinks
+import splice.usage.UsageHeadWarn
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 
@@ -49,9 +51,7 @@ class PerfTurnsFilterTest {
         ts = 12_500L,
         outcome = OutcomeTag.EMPTY_MESSAGE.wire,
         fields = emptyMap(),
-        model = "sonnet",
-        account = "work",
-        session = "empty",
+        facts = PerfTurnFacts(model = "sonnet", session = "empty", account = "work"),
     )
     private val rows = listOf(failure, unknown, bare, local) + stops + listOf(cancelled, emptyAnswer) + oks
 
@@ -59,9 +59,8 @@ class PerfTurnsFilterTest {
         key = "kimi",
         label = "claude-kimi",
         usage = HeadUsageSource { UsageView(0, 0, null) },
-        warnPct = 80,
-        warnTokens5h = 0,
-        perfRows = PerfRowsSource { since -> PerfRowsWindow(rows.filter { it.ts >= since }) },
+        warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
+        sinks = UsageHeadSinks(perfRows = PerfRowsSource { since -> PerfRowsWindow(rows.filter { it.ts >= since }) }),
     )
     private val routes = PerfRoutes(
         UsageHeadLookup { name -> if (name == "kimi") listOf(head) else emptyList() },
@@ -79,10 +78,7 @@ class PerfTurnsFilterTest {
             ts = ts,
             outcome = outcome,
             fields = fields,
-            model = "opus",
-            account = "work",
-            session = session,
-            compact = compact,
+            facts = PerfTurnFacts(model = "opus", session = session, account = "work", compact = compact),
         )
 
     private fun ApplicationTestBuilder.mount() {
@@ -109,11 +105,12 @@ class PerfTurnsFilterTest {
                 key = "kimi",
                 label = "claude-kimi",
                 usage = HeadUsageSource { UsageView(0, 0, null) },
-                warnPct = 80,
-                warnTokens5h = 0,
-                perfRows = PerfRowsSource {
-                    PerfRowsWindow(emptyList(), skipped = 3, windowSkipped = windowSkipped)
-                },
+                warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
+                sinks = UsageHeadSinks(
+                    perfRows = PerfRowsSource {
+                        PerfRowsWindow(emptyList(), skipped = 3, windowSkipped = windowSkipped)
+                    },
+                ),
             )
             val measuredRoutes = PerfRoutes(UsageHeadLookup { listOf(measured) }, WallClock { 20_000 })
             application { routing { get("/api/perf/turns") { measuredRoutes.turns(call) } } }

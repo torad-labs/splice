@@ -133,7 +133,7 @@ internal class TranscriptReplyMerger {
         val merged = mutableListOf<TranscriptMessage>()
         for (part in parts) {
             val prior = merged.lastOrNull()
-            val bothText = prior?.tool == null && part.tool == null
+            val bothText = prior?.toolUse?.name == null && part.toolUse.name == null
             val join = prior != null && bothText && prior.messageId == part.messageId
             if (join) {
                 val previous = checkNotNull(prior)

@@ -43,6 +43,8 @@ import splice.dialect.responses.websocket.WsUpstream
 import splice.head.admission.RequestMaterializationGate
 import splice.upstream.NEVER_PINGED_MS
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.WsPathPulse
 import splice.upstream.WsRound
@@ -181,8 +183,7 @@ class WsPeerCloseFallbackTest(@param:TempDir private val tmp: Path) {
 
     private fun provider(): Provider = TestResponsesProvider(
         tuning = ProviderTuning(
-            key = "codex",
-            label = "claudex",
+            name = ProviderName(key = "codex", label = "claudex"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-codex--",
                 models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -190,7 +191,7 @@ class WsPeerCloseFallbackTest(@param:TempDir private val tmp: Path) {
             ),
             pinnedModel = "gpt-5.6-sol",
             auth = FixedAuth(),
-            baseUrl = mock.baseUrl,
+            locations = ProviderLocations(baseUrl = mock.baseUrl),
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),

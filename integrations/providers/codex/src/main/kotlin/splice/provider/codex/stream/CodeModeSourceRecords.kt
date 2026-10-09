@@ -24,14 +24,14 @@ internal class CodeModeSourceRecords(
     fun append(record: CodeModeRecord, text: String): Boolean = access.withKey(record.key) {
         if (record !in records || record.error != null) return@withKey false
         // Completion may already have staged a longer prefix while this cursor was waking.
-        if (record.source.startsWith(text)) return@withKey true
-        check(text.startsWith(record.source)) { "dispatched source changed" }
+        if (record.origin.source.startsWith(text)) return@withKey true
+        check(text.startsWith(record.origin.source)) { "dispatched source changed" }
         // One appended character outside Latin-1 re-widens the whole source, so the growth is the stored difference.
-        val replaced = record.source
+        val replaced = record.origin.source
         CodeModeHeap.grow(record, (STORED.text(text) - STORED.text(replaced)).coerceAtLeast(0L)) { kept ->
             if (kept.source === replaced) STORED.text(replaced) else 0L
         }
-        record.source = text
+        record.origin.source = text
         true
     }
 
@@ -41,13 +41,13 @@ internal class CodeModeSourceRecords(
             if (record !in records || record.error != null) return@withKey false
             val next = STORED.json(call.raw) + STORED.text(call.input) +
                 continuity.logicalItems.sumOf(STORED::json) + continuity.replayItems.sumOf(STORED::segment)
-            val before = STORED.json(record.outer) + STORED.text(record.source) +
-                record.continuity.sumOf(STORED::json) + record.continuityReplay.sumOf(STORED::segment)
+            val before = STORED.json(record.origin.outer) + STORED.text(record.origin.source) +
+                record.carry.continuity.sumOf(STORED::json) + record.carry.replay.sumOf(STORED::segment)
             CodeModeHeap.grow(record, (next - before).coerceAtLeast(0L)) { kept -> replaced(kept, record) }
-            record.outer = call.raw
-            record.source = call.input
-            record.continuity = continuity.logicalItems
-            record.continuityReplay = continuity.replayItems
+            record.origin.outer = call.raw
+            record.origin.source = call.input
+            record.carry.continuity = continuity.logicalItems
+            record.carry.replay = continuity.replayItems
             record.sourceState = CodeModeSourceState(
                 complete = true,
                 usage = CodeModeSourceUsage(
@@ -56,7 +56,7 @@ internal class CodeModeSourceRecords(
                     usage.cachedTokens,
                     usage.reasoningTokens,
                     usage.cacheWriteTokens,
-                    usage.recordedOutputTokens,
+                    usage.origin.recordedOutputTokens,
                     reported = usage.reported,
                 ),
             )
@@ -84,10 +84,11 @@ internal class CodeModeSourceRecords(
 
     /** What [kept] still holds of the payloads a finished round replaces on [record]. */
     private fun replaced(kept: CodeModeRecordSnapshot, record: CodeModeRecord): Long {
-        val outer = if (kept.outer === record.outer) STORED.json(record.outer) else 0L
-        val source = if (kept.source === record.source) STORED.text(record.source) else 0L
-        val logical = if (kept.continuity === record.continuity) record.continuity.sumOf(STORED::json) else 0L
-        val replay = record.continuityReplay.takeIf { it === kept.continuityReplay }?.sumOf(STORED::segment) ?: 0L
+        val outer = if (kept.outer === record.origin.outer) STORED.json(record.origin.outer) else 0L
+        val source = if (kept.source === record.origin.source) STORED.text(record.origin.source) else 0L
+        val logical =
+            if (kept.continuity === record.carry.continuity) record.carry.continuity.sumOf(STORED::json) else 0L
+        val replay = record.carry.replay.takeIf { it === kept.continuityReplay }?.sumOf(STORED::segment) ?: 0L
         return outer + source + logical + replay
     }
 }

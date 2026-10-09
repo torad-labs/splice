@@ -14,6 +14,9 @@ import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.launch
 import java.nio.file.Files
@@ -25,18 +28,24 @@ class LaunchFolderTrustTest {
 
     private fun claudex(siblings: List<Path>) = LaunchSpec(
         trees = HeadTrees(home.resolve(".claude-claudex"), siblings),
-        pinnedModel = "gpt-6-sol",
-        availableModelIds = listOf("gpt-6-sol"),
-        modelLabels = mapOf("gpt-6-sol" to "Codex 6 Sol"),
-        contextWindow = 272000,
-        modelOptionsCache = buildJsonObject { },
-        statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
-        loginCommand = "claudex login",
-        signInLabel = "Codex (ChatGPT)",
+        models = LaunchModels(
+            pinnedModel = "gpt-6-sol",
+            availableModelIds = listOf("gpt-6-sol"),
+            modelLabels = mapOf("gpt-6-sol" to "Codex 6 Sol"),
+            contextWindow = 272000,
+            modelOptionsCache = buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "claudex login",
+            signInLabel = "Codex (ChatGPT)",
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
+            port = 3099,
+            inferenceToken = "test-inference-token",
+            apiTimeoutMs = 960_000,
+        ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 3099,
-        inferenceToken = "test-inference-token",
-        apiTimeoutMs = 960_000,
     )
 
     @Test

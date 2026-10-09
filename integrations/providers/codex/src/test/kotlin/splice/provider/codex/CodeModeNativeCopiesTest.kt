@@ -44,7 +44,7 @@ internal class CodeModeNativeCopiesTest : CodeModeBridgeTestSupport() {
         val store = store().also { it.load() }
         store.save(listOf(copied), emptyList())
         if (patched) {
-            copied.output = "again"
+            copied.progress.output = "again"
             store.save(listOf(copied), emptyList(), dirtyKeys = setOf(copied.key), changedRecord = copied)
         }
         val file = journal()
@@ -54,7 +54,7 @@ internal class CodeModeNativeCopiesTest : CodeModeBridgeTestSupport() {
 
         assertEquals(listOf(1 to 2, 3 to 1), loaded.nativeSegments.map { it.logicalOffset to it.items.size })
         val kept = listOf(CodeModeNativeSegment(1, listOf(big, small)), CodeModeNativeSegment(3, listOf(big)))
-        val expected = record(kept).apply { output = copied.output }
+        val expected = record(kept).apply { progress.output = copied.progress.output }
         assertTrue(CodeModeJournalEncoding.same(expected.snapshot(), loaded), "every other field is the stored one")
         assertEquals(1, lines(file), "the journal is rewritten as one checkpoint")
         assertTrue(Files.size(file) < MAX_REWRITTEN_BYTES, "the journal stayed ${Files.size(file)} bytes")
@@ -62,8 +62,8 @@ internal class CodeModeNativeCopiesTest : CodeModeBridgeTestSupport() {
 
     private fun record(natives: List<CodeModeNativeSegment>) = CodeModeRecords.of("alpha", 3).apply {
         phase = CodeModePhase.COMPLETED
-        output = "done"
-        nativeSegments = natives
+        progress.output = "done"
+        carry.segments = natives
         sessionId = "session"
         conversationId = "conversation"
         nativeBaseId = "alpha-s2"

@@ -63,13 +63,14 @@ public data class HeadAccountPoolView(
      *  instead of rendering empty bars. */
     public fun selectedQuota(): QuotaView? {
         val account = selectedAccount() ?: return null
-        val observed = account.quotaObservedAtEpochSeconds
-        val fiveHour = account.fiveHourUsedPercent?.let { used ->
-            QuotaWindowView(used.toInt(), account.fiveHourResetEpochSeconds, observed, account.fiveHourWindowSeconds)
+        val observed = account.quota.observedAtEpochSeconds
+        val windowView = { window: HeadAccountWindow ->
+            window.usedPercent?.let { used ->
+                QuotaWindowView(used.toInt(), window.resetEpochSeconds, observed, window.windowSeconds)
+            }
         }
-        val sevenDay = account.sevenDayUsedPercent?.let { used ->
-            QuotaWindowView(used.toInt(), account.sevenDayResetEpochSeconds, observed, account.sevenDayWindowSeconds)
-        }
+        val fiveHour = windowView(account.quota.fiveHour)
+        val sevenDay = windowView(account.quota.sevenDay)
         return if (fiveHour == null && sevenDay == null) null else QuotaView(fiveHour, sevenDay, account.plan)
     }
 }
@@ -80,18 +81,9 @@ public data class HeadAccountView(
     val selected: Boolean,
     val available: Boolean,
     val plan: String?,
-    val fiveHourUsedPercent: Double?,
-    val fiveHourResetEpochSeconds: Long?,
-    val sevenDayUsedPercent: Double?,
-    val sevenDayResetEpochSeconds: Long?,
-    val credentialPresent: Boolean = true,
-    val authExcludedUntilEpochMillis: Long? = null,
-    val authExclusionReason: String? = null,
-    /** V4-132: the window's own reported length in seconds (see [splice.upstream.credentials.AccountView]). */
-    val fiveHourWindowSeconds: Long? = null,
-    val sevenDayWindowSeconds: Long? = null,
-    /** When this account's windows were observed, epoch SECONDS (the reset fields' unit), or null. */
-    val quotaObservedAtEpochSeconds: Long? = null,
+    /** V4-132: each window carries its own reported length (see [splice.upstream.credentials.AccountView]). */
+    val quota: HeadAccountQuota = HeadAccountQuota(),
+    val credential: HeadAccountCredential = HeadAccountCredential(),
 )
 
 public data class HeadAccountSwitchView(

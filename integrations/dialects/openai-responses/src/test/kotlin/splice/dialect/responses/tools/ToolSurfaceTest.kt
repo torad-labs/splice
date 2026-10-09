@@ -21,10 +21,15 @@ import splice.core.wire.AnthropicRequest
 import splice.core.wire.ToolChoice
 import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolUseBlock
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.request.BuildOptions
+import splice.dialect.responses.request.ModelIds
+import splice.dialect.responses.request.ReasoningHandoff
+import splice.dialect.responses.request.RequestedReasoning
 
 private val recovery = ToolSurfaceRecovery()
 
@@ -34,15 +39,21 @@ private fun opts(
     toolSurfaceOpen: Boolean = true,
 ): BuildOptions = BuildOptions(
     compact = compact,
-    originalModel = "claude-codex--$model",
-    upstreamModel = model,
-    configEffort = null,
-    configSummary = null,
-    showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = InjectPriorReasoning(false),
-    includeEncryptedReasoning = RequestEncryptedReasoning(true),
+    models = ModelIds(
+        original = "claude-codex--$model",
+        upstream = model,
+    ),
+    reasoning = RequestedReasoning(
+        effort = null,
+        summary = null,
+        display = ReasoningDisplay.TEXT,
+    ),
+    handoff = ReasoningHandoff(
+        replay = InjectPriorReasoning(false),
+        includeEncrypted = RequestEncryptedReasoning(true),
+        decode = { null },
+    ),
     sessionId = null,
-    decodeReasoningEnvelope = { null },
     toolSurfaceOpen = toolSurfaceOpen,
 )
 
@@ -57,11 +68,20 @@ private fun requestOf(
 
 private val POLICY = ToolDeferralPolicy()
 private val LITE_MODELS = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE)
-private val QUIRKS_OFF = ResponsesQuirks(providerTag = "t", responsesLiteModelRegex = LITE_MODELS)
+private val QUIRKS_OFF = ResponsesQuirks(
+    providerTag = "t",
+    lite = ResponsesLiteQuirks(
+        responsesLiteModelRegex = LITE_MODELS,
+    ),
+)
 private val QUIRKS_ON = ResponsesQuirks(
     providerTag = "t",
-    toolSurface = POLICY,
-    responsesLiteModelRegex = LITE_MODELS,
+    tools = ResponsesToolQuirks(
+        toolSurface = POLICY,
+    ),
+    lite = ResponsesLiteQuirks(
+        responsesLiteModelRegex = LITE_MODELS,
+    ),
 )
 
 class ToolSurfaceTest {
@@ -141,8 +161,12 @@ class ToolSurfaceTest {
         val policy = ToolDeferralPolicy(defer = setOf("Task"))
         val quirks = ResponsesQuirks(
             providerTag = "t",
-            toolSurface = policy,
-            responsesLiteModelRegex = LITE_MODELS,
+            tools = ResponsesToolQuirks(
+                toolSurface = policy,
+            ),
+            lite = ResponsesLiteQuirks(
+                responsesLiteModelRegex = LITE_MODELS,
+            ),
         )
         val partition = ToolPartitioner(quirks).partitionTools(body, opts())
         assertTrue(partition.deferred.any { it.name == "Task" })
@@ -155,8 +179,12 @@ class ToolSurfaceTest {
         val policy = ToolDeferralPolicy(eager = setOf("mcp__exa__web_search_exa"))
         val quirks = ResponsesQuirks(
             providerTag = "t",
-            toolSurface = policy,
-            responsesLiteModelRegex = LITE_MODELS,
+            tools = ResponsesToolQuirks(
+                toolSurface = policy,
+            ),
+            lite = ResponsesLiteQuirks(
+                responsesLiteModelRegex = LITE_MODELS,
+            ),
         )
         val partition = ToolPartitioner(quirks).partitionTools(body, opts())
         assertTrue(partition.eager.any { it.name == "mcp__exa__web_search_exa" })
@@ -190,8 +218,12 @@ class ToolSurfaceTest {
         val policy = ToolDeferralPolicy(deferPrefixes = listOf(""))
         val quirks = ResponsesQuirks(
             providerTag = "t",
-            toolSurface = policy,
-            responsesLiteModelRegex = LITE_MODELS,
+            tools = ResponsesToolQuirks(
+                toolSurface = policy,
+            ),
+            lite = ResponsesLiteQuirks(
+                responsesLiteModelRegex = LITE_MODELS,
+            ),
         )
         val partition = ToolPartitioner(quirks).partitionTools(body, opts())
         assertTrue(partition.eager.isNotEmpty())

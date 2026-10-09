@@ -44,6 +44,8 @@ import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Files
@@ -85,8 +87,7 @@ class HeadServerCompactCapTest(@param:TempDir private val root: Path) {
         return HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(
-                    key = "codex",
-                    label = "claudex",
+                    name = ProviderName(key = "codex", label = "claudex"),
                     catalog = ModelCatalog(
                         discoveryPrefix = "claude-codex--",
                         models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -94,7 +95,7 @@ class HeadServerCompactCapTest(@param:TempDir private val root: Path) {
                     ),
                     pinnedModel = "gpt-5.6-sol",
                     auth = CapFakeAuth(),
-                    baseUrl = mock.baseUrl,
+                    locations = ProviderLocations(baseUrl = mock.baseUrl),
                     watchdog = watchdog,
                     loginCommand = "claudex login",
                 ),

@@ -19,8 +19,7 @@ internal data class PerfCachedLine(
     val numericBytes: Long,
     val leadingTs: Long?,
     val emptyModel: Boolean,
-    val dropsCandidate: Boolean,
-    val drops: Long?,
+    val drops: PerfDropsHint,
     val probe: Boolean,
     /** Projected descriptions are charged once in the source's bounded sharing pool. */
     val retainedTextBytes: Long? = null,
@@ -32,11 +31,11 @@ internal data class PerfCachedLine(
             val text = listOf(
                 value.outcome,
                 value.cause,
-                value.model,
-                value.session,
-                value.sessionId,
-                value.responseMessageId,
-                value.account,
+                value.facts.model,
+                value.facts.session,
+                value.transcript.sessionId,
+                value.transcript.responseMessageId,
+                value.facts.account,
                 value.turn,
                 value.turnId,
             ).sumOf { if (it == null) 0L else PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES }

@@ -26,10 +26,16 @@ import splice.head.HeadEvents
 import splice.head.NoHeadEvents
 import splice.head.admission.LocalRefusal
 import splice.head.perf.HeldRows
+import splice.head.perf.PerfAccount
+import splice.head.perf.PerfFailure
 import splice.head.perf.PerfRowMeta
 import splice.head.perf.PerfStats
+import splice.head.perf.PerfTranscriptIds
 import splice.head.usage.EconomicsStore
+import splice.head.usage.TurnBytes
 import splice.head.usage.TurnEconomics
+import splice.head.usage.TurnTokens
+import splice.head.usage.TurnTools
 import splice.head.wire.TurnTrace
 
 // V4-122: ERR_SNIPPET lives in splice.core.util now, at the same 200 this declaration carried.
@@ -141,18 +147,21 @@ internal class TurnTelemetry(
                 outcomeTag,
                 drive.meta.compact,
                 session,
-                drive.observedAccountLabel ?: account?.account?.label ?: drive.fallbackAccountLabel,
-                account?.cacheCold == true,
+                PerfAccount(
+                    drive.observedAccountLabel ?: account?.account?.label ?: drive.fallbackAccountLabel,
+                    account?.cacheCold == true,
+                ),
                 // V4-117: the cause and the loop's own attempt count ride the row beside the tag. The
                 // outcome TAG is not replaced — it is what the operator already greps — so this is an
                 // addition to the row, never a change to the string that identifies it.
-                cause = ending.cause,
-                layers = ending.layers,
-                // V4-345: the trace turn that recorded the request and answer; absent when capture is off.
-                turns = PerfTurnIds(trace = drive.trace?.turnId, request = drive.turnId),
-                sessionId = drive.meta.sessionId,
-                responseMessageId = drive.emitter.responseMessageId,
-                conversationKey = drive.meta.conversationKey,
+                PerfFailure(cause = ending.cause, layers = ending.layers),
+                PerfTranscriptIds(
+                    // V4-345: the trace turn that recorded the request and answer; absent when capture is off.
+                    turns = PerfTurnIds(trace = drive.trace?.turnId, request = drive.turnId),
+                    sessionId = drive.meta.scope.sessionId,
+                    responseMessageId = drive.emitter.responseMessageId,
+                    conversationKey = drive.meta.scope.conversationKey,
+                ),
             ),
             snap,
             drive.requestBody,
@@ -164,7 +173,7 @@ internal class TurnTelemetry(
         }
         // V4-134: the turn's end goes to the console only once its row exists, carrying that row's
         // key, so the stream never names a row /api/perf/turns has not been handed.
-        events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.sessionId)
+        events.turnEnded(rowTs.toString(), outcomeTag, drive.meta.scope.sessionId)
         log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
         recordEconomics(snap, drive.upstreamModel, ending.rateLimited)
         recordSpend(rowTs, drive.upstreamModel, snap.counters)
@@ -174,7 +183,7 @@ internal class TurnTelemetry(
         val snap = drive.perf.snapshot()
         val raw = drive.rawRoundUsage()
         val started = (snap.counters[PerfKeys.TRANSPORT_ATTEMPT_STARTS] ?: 0L) > 0L
-        val posted = raw?.history?.request?.let { it == UsageRequest.POSTED } ?: started
+        val posted = raw?.origin?.history?.request?.let { it == UsageRequest.POSTED } ?: started
         if (drive.roundInterceptor == null || !posted) return snap
         val counters = snap.counters - PerfKeys.LOCAL_STEP - PerfKeys.NO_REQUEST
         val observed = raw?.reported.orEmpty().isNotEmpty()
@@ -217,17 +226,23 @@ internal class TurnTelemetry(
                         // V4-221: priced at THIS turn's card, the model the perf row names.
                         model = model,
                         localStep = snap.counters[PerfKeys.LOCAL_STEP] == 1L,
-                        inTokens = snap.counters[PerfKeys.IN_TOKENS],
-                        cachedTokens = snap.counters[PerfKeys.CACHED_TOKENS],
-                        cacheWriteTokens = snap.counters[PerfKeys.CACHE_WRITE_TOKENS],
-                        outTokens = snap.counters[PerfKeys.OUT_TOKENS],
-                        reqBytes = snap.counters[PerfKeys.REQ_BYTES],
-                        upstreamBytes = snap.counters[PerfKeys.UPSTREAM_REQ_BYTES],
+                        tokens = TurnTokens(
+                            inTokens = snap.counters[PerfKeys.IN_TOKENS],
+                            cachedTokens = snap.counters[PerfKeys.CACHED_TOKENS],
+                            cacheWriteTokens = snap.counters[PerfKeys.CACHE_WRITE_TOKENS],
+                            outTokens = snap.counters[PerfKeys.OUT_TOKENS],
+                        ),
+                        bytes = TurnBytes(
+                            reqBytes = snap.counters[PerfKeys.REQ_BYTES],
+                            upstreamBytes = snap.counters[PerfKeys.UPSTREAM_REQ_BYTES],
+                        ),
                         // Absent (not zero) on a head whose dialect cannot defer — the chat dialect
                         // has no tool_search at all, and the ledger must render that as "n/a",
                         // never as a deferral rate of zero.
-                        toolsEager = snap.counters[PerfKeys.TOOLS_EAGER],
-                        toolsDeferred = snap.counters[PerfKeys.TOOLS_DEFERRED],
+                        tools = TurnTools(
+                            toolsEager = snap.counters[PerfKeys.TOOLS_EAGER],
+                            toolsDeferred = snap.counters[PerfKeys.TOOLS_DEFERRED],
+                        ),
                         rateLimited = rateLimited,
                         history = TurnBill.history(snap.counters),
                     ),
@@ -253,24 +268,26 @@ internal class TurnTelemetry(
      *  against an 88-minute reset. */
     fun recordLocalRefusal(meta: TurnMeta, perf: TurnPerf, t0: Long, refusal: LocalRefusal) {
         val (tag, detail, trace) = refusal
-        val session = meta.sessionId?.take(SESSION_TAG_CHARS)
+        val session = meta.scope.sessionId?.take(SESSION_TAG_CHARS)
         perf.mark(PerfKeys.TOTAL)
         perf.setCount(PerfKeys.ATTEMPTS, 0)
         TurnBill.counters(noRequestUsage).forEach { (key, value) -> perf.setCount(key, value) }
         val snap = perf.snapshot()
         closeTrace(trace, tag, snap)
         val rowMeta = PerfRowMeta(
-            meta.upstreamModel,
+            meta.route.upstreamModel,
             tag,
             meta.compact,
             session,
-            account = refusal.account,
-            turns = PerfTurnIds(trace = trace?.turnId),
-            sessionId = meta.sessionId,
+            account = PerfAccount(refusal.account),
+            transcript = PerfTranscriptIds(
+                turns = PerfTurnIds(trace = trace?.turnId),
+                sessionId = meta.scope.sessionId,
+            ),
         )
         val rowTs = perfStats.record(rowMeta, snap)
         // V4-134: a local refusal is a turn that ended too — it has a perf row, so it has a turn.end.
-        events.turnEnded(rowTs.toString(), tag, meta.sessionId)
+        events.turnEnded(rowTs.toString(), tag, meta.scope.sessionId)
         // The tag is printed VERBATIM, the same spelling the perf row on the next line carries
         // (kt-outcome-tag-single-source, V4-99). It used to be `substringAfter("error:")`, which
         // meant this line and the perf row spelled one field two ways — and that the rendering
@@ -282,7 +299,7 @@ internal class TurnTelemetry(
             "[$headKey] turn ERROR $tag compact=${meta.compact} " +
                 "latency=${clock() - t0}ms $detail\n",
         )
-        log(snap.perfLine(headKey, tag, meta.compact, meta.upstreamModel, session))
+        log(snap.perfLine(headKey, tag, meta.compact, meta.route.upstreamModel, session))
     }
 
     fun errTurn(kind: String, drive: TurnDrive, detail: String): String =

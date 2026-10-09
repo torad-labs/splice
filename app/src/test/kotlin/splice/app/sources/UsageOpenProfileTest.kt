@@ -60,10 +60,12 @@ class UsageOpenProfileTest {
                 "a quota open remains a small fixed workload, not history-sized",
             )
             assertTrue(profiler.allocatedBytes < USAGE_OPEN_ALLOCATION_LIMIT)
+            val history = fixture.history.file
+            val historyBytes =
+                Files.size(history) + Files.size(history.resolveSibling("${history.fileName}.1"))
             println(
                 "usage_successful_open_bytes=$openBytes reused_open_bytes=${profiler.allocatedBytes} " +
-                    "read_bytes=$readBytes write_bytes=$writtenBytes history_bytes=" +
-                    (Files.size(fixture.history.file) + Files.size(fixture.history.file.resolveSibling("${fixture.history.file.fileName}.1"))),
+                    "read_bytes=$readBytes write_bytes=$writtenBytes history_bytes=$historyBytes",
             )
         }
 

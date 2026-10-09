@@ -27,6 +27,9 @@ import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.request.BuildOptions
+import splice.dialect.responses.request.ModelIds
+import splice.dialect.responses.request.ReasoningHandoff
+import splice.dialect.responses.request.RequestedReasoning
 import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.dialect.responses.request.responsesRequestJson
 import splice.dialect.responses.websocket.ResponsesWsIdentity.PendingCommit
@@ -46,21 +49,27 @@ private val CALL_2_EVIDENCE = WsServerEvidence(
 
 private fun opts(effort: String? = null) = BuildOptions(
     compact = false,
-    originalModel = "claude-codex--gpt-5.6-sol",
-    upstreamModel = "gpt-5.6-sol",
-    configEffort = effort,
-    configSummary = null,
-    showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = InjectPriorReasoning(false),
-    includeEncryptedReasoning = RequestEncryptedReasoning(true),
-    decodeReasoningEnvelope = { data ->
-        buildJsonObject {
-            put("type", JsonPrimitive("reasoning"))
-            put("id", JsonPrimitive("rs_$data"))
-            put("encrypted_content", JsonPrimitive(data))
-        }
-    },
-    reasoningLookup = { id -> listOf("env-$id") },
+    models = ModelIds(
+        original = "claude-codex--gpt-5.6-sol",
+        upstream = "gpt-5.6-sol",
+    ),
+    reasoning = RequestedReasoning(
+        effort = effort,
+        summary = null,
+        display = ReasoningDisplay.TEXT,
+    ),
+    handoff = ReasoningHandoff(
+        replay = InjectPriorReasoning(false),
+        includeEncrypted = RequestEncryptedReasoning(true),
+        decode = { data ->
+            buildJsonObject {
+                put("type", JsonPrimitive("reasoning"))
+                put("id", JsonPrimitive("rs_$data"))
+                put("encrypted_content", JsonPrimitive(data))
+            }
+        },
+        lookup = { id -> listOf("env-$id") },
+    ),
 )
 
 private fun build(json: String, effort: String? = null): JsonObject =

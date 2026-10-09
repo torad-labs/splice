@@ -14,20 +14,25 @@ import io.ktor.server.testing.testApplication
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.accounts.signin.LoginPrompt
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 
 private class TestNativePlaces : ClaudeLoginPlaces {
     val requested = mutableListOf<Pair<ClaudeLoginPlaceId, String?>>()
-    val status = LoginStatus("native-id", "claude-splice", LoginState.WAITING, browserUrl = "https://claude.ai/fixture")
+    val status = LoginStatus(
+        "native-id",
+        "claude-splice",
+        LoginState.WAITING,
+        prompt = LoginPrompt(browserUrl = "https://claude.ai/fixture"),
+    )
 
     override fun places(): List<ClaudeLoginPlaceView> = ClaudeLoginPlaceId.entries.map {
         ClaudeLoginPlaceView(
             it,
             "claude-splice",
-            "/synthetic/${it.wire}",
-            false,
-            null,
+            ClaudeLoginCredential("/synthetic/${it.wire}", false),
+            ClaudeLoginIdentity(null),
             null,
             ClaudeLoginStanding(null, null),
         )

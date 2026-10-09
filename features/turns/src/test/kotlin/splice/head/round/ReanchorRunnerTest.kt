@@ -18,6 +18,9 @@ import org.junit.jupiter.api.Test
 import splice.core.perf.TurnPerf
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
+import splice.core.turn.RoundHandoffs
+import splice.core.turn.RoundText
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
@@ -45,10 +48,10 @@ private fun searchSuccess(
     hasToolUse = hasToolUse,
     incomplete = false,
     usage = Usage(outputTokens = outputTokens),
-    thinkingText = thinkingText,
-    bodyText = bodyText,
-    emittedText = emittedText,
-    toolSearches = listOf(ToolSearchCall(ToolSearchCallId("ts_1"), "q", null, buildJsonObject { })),
+    text = RoundText(thinkingText = thinkingText, bodyText = bodyText, emittedText = emittedText),
+    handoffs = RoundHandoffs(
+        toolSearches = listOf(ToolSearchCall(ToolSearchCallId("ts_1"), "q", null, buildJsonObject { })),
+    ),
 )
 
 private class Harness {
@@ -95,11 +98,9 @@ private fun retryableFailure(
     "mid-stream death",
     cause = FailureCause.UPSTREAM_STALLED,
     phase = FailurePhase.MID_OUTPUT,
-    providerReported = true,
+    traits = FailureTraits(providerReported = true),
     partial = TurnOutcome.PartialRound(
-        thinkingText = thinkingText,
-        bodyText = bodyText,
-        emittedText = bodyText.isNotEmpty(),
+        text = RoundText(thinkingText = thinkingText, bodyText = bodyText, emittedText = bodyText.isNotEmpty()),
         hasToolUse = hasToolUse,
         toolTearOpen = toolTearOpen,
         usage = Usage(outputTokens = outputTokens),
@@ -161,9 +162,9 @@ class ReanchorRunnerTest {
         ).run(continuationBody(), ReanchorPolicy { continuationBody() })
 
         val success = h.finished as TurnOutcome.Success
-        assertTrue(success.emittedText, "round-1's forwarded text must count for the honesty gate")
-        assertEquals("the reasoning", success.thinkingText, "round-1 reasoning must reach the mirror")
-        assertEquals("the full answer", success.bodyText)
+        assertTrue(success.text.emittedText, "round-1's forwarded text must count for the honesty gate")
+        assertEquals("the reasoning", success.text.thinkingText, "round-1 reasoning must reach the mirror")
+        assertEquals("the full answer", success.text.bodyText)
         assertEquals(10, success.usage.outputTokens)
     }
 
@@ -338,8 +339,7 @@ class FoldRunnerReanchorTest {
                 hasToolUse = false,
                 incomplete = false,
                 usage = Usage(outputTokens = 5),
-                bodyText = "clean full answer",
-                emittedText = true,
+                text = RoundText(bodyText = "clean full answer", emittedText = true),
             )
         }
         FoldRunner(
@@ -349,7 +349,7 @@ class FoldRunnerReanchorTest {
                 key = "t",
                 log = { },
                 reanchor = ReanchorPolicy { round ->
-                    seenPartialBodies.add(round.failure.partial?.bodyText)
+                    seenPartialBodies.add(round.failure.partial?.text?.bodyText)
                     continuationBody()
                 },
                 signals = h.signals(),
@@ -364,7 +364,7 @@ class FoldRunnerReanchorTest {
         assertEquals(listOf(""), seenPartialBodies, "buffered prose must be stripped before the policy sees it")
         assertEquals(listOf(0), waits, "fold trigger-B must pause before the re-POST")
         val success = h.finished as TurnOutcome.Success
-        assertEquals("clean full answer", success.bodyText, "the merge-side strip must hold too")
+        assertEquals("clean full answer", success.text.bodyText, "the merge-side strip must hold too")
         assertEquals(8, success.usage.outputTokens, "failed round's salvaged usage accrues")
         assertEquals(1, h.count("message_stop"))
         assertEquals(1, h.absorbed.size)
@@ -384,7 +384,7 @@ class FoldRunnerReanchorTest {
                 hasToolUse = false,
                 incomplete = false,
                 usage = Usage(),
-                emittedText = false,
+                text = RoundText(emittedText = false),
             )
         }
         FoldRunner(
@@ -399,8 +399,8 @@ class FoldRunnerReanchorTest {
             ),
         ).run(continuationBody()) { null }
         val success = h.finished as TurnOutcome.Success
-        assertEquals(false, success.emittedText, "a discarded buffer must not vouch for emitted text")
-        assertEquals("", success.bodyText)
+        assertEquals(false, success.text.emittedText, "a discarded buffer must not vouch for emitted text")
+        assertEquals("", success.text.bodyText)
     }
 
     @Test
@@ -530,8 +530,7 @@ class ReanchorRunnerSearchTest {
                 hasToolUse = false,
                 incomplete = false,
                 usage = Usage(outputTokens = 5),
-                bodyText = "answer",
-                emittedText = true,
+                text = RoundText(bodyText = "answer", emittedText = true),
             )
         }
         var searchAsks = 0
@@ -540,7 +539,7 @@ class ReanchorRunnerSearchTest {
             // type/liveness-guards); the "nothing to answer" decision lives inside the real
             // controller (ResponsesToolSearchPolicy.kt). Count only genuine answers, matching this
             // test's intent ("a search round continues ONCE") — review 2026-07-24 round 1.
-            if (round.outcome.toolSearches.isEmpty()) {
+            if (round.outcome.handoffs.toolSearches.isEmpty()) {
                 null
             } else {
                 searchAsks++
@@ -560,7 +559,7 @@ class ReanchorRunnerSearchTest {
         assertEquals(1, h.count("message_stop"), "exactly one clean terminal")
         assertEquals(0, h.count("error"))
         val success = h.finished as TurnOutcome.Success
-        assertEquals("answer", success.bodyText)
+        assertEquals("answer", success.text.bodyText)
     }
 
     @Test
@@ -577,7 +576,7 @@ class ReanchorRunnerSearchTest {
         }
         rounds.add { TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 2)) }
         val search = ToolSearchPolicy { round ->
-            if (round.outcome.toolSearches.isEmpty()) null else continuationBody()
+            if (round.outcome.handoffs.toolSearches.isEmpty()) null else continuationBody()
         }
         ReanchorRunner(
             key = "t",
@@ -589,9 +588,9 @@ class ReanchorRunnerSearchTest {
         ).run(continuationBody(), reanchor = null)
 
         val success = h.finished as TurnOutcome.Success
-        assertTrue(success.emittedText, "round-1's real emitted text must count for the honesty gate")
-        assertEquals("reasoning so far", success.thinkingText)
-        assertEquals("partial answer", success.bodyText)
+        assertTrue(success.text.emittedText, "round-1's real emitted text must count for the honesty gate")
+        assertEquals("reasoning so far", success.text.thinkingText)
+        assertEquals("partial answer", success.text.bodyText)
         assertEquals(5, success.usage.outputTokens)
     }
 
@@ -668,7 +667,7 @@ class ReanchorRunnerSearchTest {
         rounds.add { searchSuccess(outputTokens = 1) }
         rounds.add { TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }
         val search = ToolSearchPolicy { round ->
-            if (round.outcome.toolSearches.isEmpty()) null else continuationBody()
+            if (round.outcome.handoffs.toolSearches.isEmpty()) null else continuationBody()
         }
         var reanchorAsks = 0
         ReanchorRunner(
@@ -697,7 +696,7 @@ class ReanchorRunnerSearchTest {
         rounds.add { searchSuccess() }
         rounds.add { TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }
         val search = ToolSearchPolicy { round ->
-            if (round.outcome.toolSearches.isEmpty()) null else continuationBody()
+            if (round.outcome.handoffs.toolSearches.isEmpty()) null else continuationBody()
         }
         ReanchorRunner(
             key = "t",
@@ -763,12 +762,11 @@ class FoldRunnerSearchTest {
                 hasToolUse = false,
                 incomplete = false,
                 usage = Usage(outputTokens = 1),
-                bodyText = "final",
-                emittedText = true,
+                text = RoundText(bodyText = "final", emittedText = true),
             )
         }
         val search = ToolSearchPolicy { round ->
-            if (round.outcome.toolSearches.isEmpty()) null else continuationBody()
+            if (round.outcome.handoffs.toolSearches.isEmpty()) null else continuationBody()
         }
         FoldRunner(
             emitter = h.emitter,
@@ -783,8 +781,8 @@ class FoldRunnerSearchTest {
         ).run(continuationBody()) { null }
 
         val success = h.finished as TurnOutcome.Success
-        assertEquals("final", success.bodyText, "the buffered never-sent prose must not leak into the merge")
-        assertEquals("live reasoning", success.thinkingText, "live-streamed thinking belongs in the mirror merge")
+        assertEquals("final", success.text.bodyText, "the buffered never-sent prose must not leak into the merge")
+        assertEquals("live reasoning", success.text.thinkingText, "live-streamed thinking belongs in the mirror merge")
         assertEquals(1, h.count("message_stop"))
     }
 
@@ -795,7 +793,7 @@ class FoldRunnerSearchTest {
         // about the round that carries a search (round 1); round 2 legitimately has none.
         var consultedForSearchingRound = false
         val search = ToolSearchPolicy { round ->
-            if (round.outcome.toolSearches.isNotEmpty()) consultedForSearchingRound = true
+            if (round.outcome.handoffs.toolSearches.isNotEmpty()) consultedForSearchingRound = true
             null
         }
         val fold = FoldPolicy { round -> if (round.roundIndex == 0) continuationBody() else null }
@@ -805,7 +803,9 @@ class FoldRunnerSearchTest {
                 hasToolUse = false,
                 incomplete = false,
                 usage = Usage(reasoningTokens = 516),
-                toolSearches = listOf(ToolSearchCall(ToolSearchCallId("ts_1"), "q", null, buildJsonObject { })),
+                handoffs = RoundHandoffs(
+                    toolSearches = listOf(ToolSearchCall(ToolSearchCallId("ts_1"), "q", null, buildJsonObject { })),
+                ),
             )
         }
         rounds.add { _ -> TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }

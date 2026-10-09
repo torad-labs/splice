@@ -47,12 +47,18 @@ internal class AddProfileCatalog {
     val rows: List<AddProfile> = listOf(
         AddProfile(
             name = "codex",
-            summary = "ChatGPT subscription over the Responses API (browser sign-in)",
-            dialect = "openai-responses",
-            authKind = "chatgpt-oauth",
             baseUrl = "https://chatgpt.com/backend-api/codex",
-            headKey = "codex",
-            command = "claudex",
+            provider = AddProviderSpec(
+                dialect = "openai-responses",
+                authKind = "chatgpt-oauth",
+            ),
+            head = AddHeadSpec(
+                key = "codex",
+                command = "claudex",
+            ),
+            labels = AddLabels(
+                summary = "ChatGPT subscription over the Responses API (browser sign-in)",
+            ),
             // V4-224: what the ChatGPT backend serves, windowed by its own model listing
             // (chatgpt.com/backend-api/codex/models, read 2026-09-25): context_window 272000 on every row,
             // and gpt-6-astra's max_context_window 872000, the vendor's sanctioned opt-in (measured served at
@@ -93,12 +99,18 @@ internal class AddProfileCatalog {
         ),
         AddProfile(
             name = "grok",
-            summary = "xAI SuperGrok subscription over the Responses API (browser sign-in)",
-            dialect = "openai-responses",
-            authKind = "grok-oauth",
             baseUrl = "https://api.x.ai/v1",
-            headKey = "grok",
-            command = "claude-grok",
+            provider = AddProviderSpec(
+                dialect = "openai-responses",
+                authKind = "grok-oauth",
+            ),
+            head = AddHeadSpec(
+                key = "grok",
+                command = "claude-grok",
+            ),
+            labels = AddLabels(
+                summary = "xAI SuperGrok subscription over the Responses API (browser sign-in)",
+            ),
             // V4-224: windows from docs.x.ai/developers/models (maxPromptLength, read 2026-09-25). The build
             // row is the concrete grok-build-0.1: the endpoint's own listing resolves grok-build-latest to
             // grok-4.5 now, so an alias row would have its window move underneath it.
@@ -131,12 +143,18 @@ internal class AddProfileCatalog {
         ),
         AddProfile(
             name = "kimi",
-            summary = "Moonshot Kimi subscription over the Anthropic wire (device sign-in)",
-            dialect = ANTHROPIC_PASSTHROUGH,
-            authKind = "kimi-oauth",
             baseUrl = "https://api.kimi.com/coding",
-            headKey = "kimi",
-            command = "claude-kimi",
+            provider = AddProviderSpec(
+                dialect = ANTHROPIC_PASSTHROUGH,
+                authKind = "kimi-oauth",
+            ),
+            head = AddHeadSpec(
+                key = "kimi",
+                command = "claude-kimi",
+            ),
+            labels = AddLabels(
+                summary = "Moonshot Kimi subscription over the Anthropic wire (device sign-in)",
+            ),
             models = listOf(
                 AddModel("k3-256k", "Kimi K3 256k", WINDOW_262K),
                 AddModel("k3[1m]", "Kimi K3 (1M)", WINDOW_1M),
@@ -146,12 +164,18 @@ internal class AddProfileCatalog {
         ),
         AddProfile(
             name = "muse",
-            summary = "Meta Muse subscription over the Responses wire (device sign-in)",
-            dialect = OPENAI_RESPONSES,
-            authKind = "muse-oauth",
             baseUrl = "https://api.meta.ai/v1",
-            headKey = "muse",
-            command = "claude-muse",
+            provider = AddProviderSpec(
+                dialect = OPENAI_RESPONSES,
+                authKind = "muse-oauth",
+            ),
+            head = AddHeadSpec(
+                key = "muse",
+                command = "claude-muse",
+            ),
+            labels = AddLabels(
+                summary = "Meta Muse subscription over the Responses wire (device sign-in)",
+            ),
             // V4-229: Meta publishes no window, so 1.3's is measured. api.meta.ai served a prompt of
             // 1,010,789 tokens by its own count (2026-09-25 14:36 CDT, through claude-muse), past the
             // 1,000,000 declared here, so the row stays at the window Claude Code's `[1m]` implies. The
@@ -187,12 +211,32 @@ internal class AddProfileCatalog {
             // total time". The name says pro is the strong one; the vendor's own evidence says the
             // opposite, and the evidence wins.
             name = "deepseek",
-            summary = "DeepSeek over its Anthropic-format endpoint (API key)",
-            dialect = ANTHROPIC_PASSTHROUGH,
-            authKind = API_KEY,
             baseUrl = "https://api.deepseek.com/anthropic",
-            headKey = "deepseek",
-            command = "claude-deepseek",
+            provider = AddProviderSpec(
+                dialect = ANTHROPIC_PASSTHROUGH,
+                authKind = API_KEY,
+                extra = listOf(
+                    "[providers.deepseek.quirks]",
+                    "# Only the blocks DeepSeek's compatibility table marks Supported. redacted_thinking",
+                    "# is the one that matters: DR-118 forwards it VERBATIM because Anthropic demands it",
+                    "# back unchanged, so without this allowlist every replayed signed-thinking turn",
+                    "# carries a block DeepSeek refuse.",
+                    "block_allowlist = [" + DEEPSEEK_BLOCKS + "]",
+                    "# cache_control is ignored upstream, so sending it is pure wire weight.",
+                    "strip_cache_control = true",
+                    "# A truncated stream is resumed by re-POSTing with the partial answer appended as a",
+                    "# trailing assistant message; MEASURED 2026-09-16, this endpoint continues from that",
+                    "# instead of restarting. Off by default because muse 400s on the same shape.",
+                    "reanchor_prefill = true",
+                ),
+            ),
+            head = AddHeadSpec(
+                key = "deepseek",
+                command = "claude-deepseek",
+            ),
+            labels = AddLabels(
+                summary = "DeepSeek over its Anthropic-format endpoint (API key)",
+            ),
             // V4-37 RATES: DeepSeek publishes peak and OFF-PEAK cards; we declare OFF-PEAK, because
             // averaging the two would invent a price DeepSeek does not charge (see TokenCost.kt).
             // Peak is exactly 2x these, kept here so the choice is visible, not buried:
@@ -213,20 +257,6 @@ internal class AddProfileCatalog {
                     slots = listOf("sonnet"),
                     rates = ModelRates(input = 0.66, cacheRead = 0.022, output = 1.98),
                 ),
-            ),
-            providerExtra = listOf(
-                "[providers.deepseek.quirks]",
-                "# Only the blocks DeepSeek's compatibility table marks Supported. redacted_thinking",
-                "# is the one that matters: DR-118 forwards it VERBATIM because Anthropic demands it",
-                "# back unchanged, so without this allowlist every replayed signed-thinking turn",
-                "# carries a block DeepSeek refuse.",
-                "block_allowlist = [" + DEEPSEEK_BLOCKS + "]",
-                "# cache_control is ignored upstream, so sending it is pure wire weight.",
-                "strip_cache_control = true",
-                "# A truncated stream is resumed by re-POSTing with the partial answer appended as a",
-                "# trailing assistant message; MEASURED 2026-09-16, this endpoint continues from that",
-                "# instead of restarting. Off by default because muse 400s on the same shape.",
-                "reanchor_prefill = true",
             ),
         ),
         AddProfile(
@@ -261,13 +291,21 @@ internal class AddProfileCatalog {
             // direct off-peak card $0.15 / $0.60. Web search ($0.01 a call on the Claude and GPT rows) and
             // Gemini's internal_reasoning are not per-token buckets and are not in a card.
             name = "openrouter",
-            summary = "OpenRouter API-key route (many vendors, one key)",
-            dialect = OPENAI_CHAT,
-            authKind = API_KEY,
             baseUrl = "https://openrouter.ai/api/v1",
-            headKey = "openrouter",
-            command = "claude-openrouter",
-            discoverRoster = true,
+            provider = AddProviderSpec(
+                dialect = OPENAI_CHAT,
+                authKind = API_KEY,
+            ),
+            head = AddHeadSpec(
+                key = "openrouter",
+                command = "claude-openrouter",
+            ),
+            labels = AddLabels(
+                summary = "OpenRouter API-key route (many vendors, one key)",
+            ),
+            policy = AddModelPolicy(
+                discoverRoster = true,
+            ),
             models = listOf(
                 AddModel(
                     "anthropic/claude-sonnet-5",
@@ -361,12 +399,19 @@ internal class AddProfileCatalog {
         ),
         AddProfile(
             name = "claude",
-            summary = "Anthropic with your own Claude login, forwarded untouched",
-            dialect = ANTHROPIC_PASSTHROUGH,
-            authKind = "client",
             baseUrl = "https://api.anthropic.com",
-            headKey = "claude-splice",
-            command = "claude-splice",
+            provider = AddProviderSpec(
+                dialect = ANTHROPIC_PASSTHROUGH,
+                authKind = "client",
+                extra = listOf("""extra_headers = { anthropic-version = "2023-06-01" }"""),
+            ),
+            head = AddHeadSpec(
+                key = "claude-splice",
+                command = "claude-splice",
+            ),
+            labels = AddLabels(
+                summary = "Anthropic with your own Claude login, forwarded untouched",
+            ),
             // V4-224: platform.claude.com/docs/en/models/overview (read 2026-09-25): Fable 5.1, Opus 5.5 and
             // Sonnet 5 have a 1M context window, Haiku 4.5 200K. A forwarded subscription login reaches 1M too:
             // "On the Anthropic API, Fable 5.1, Fable 5, Sonnet 5, and Opus 4.7 and later run with the 1M
@@ -415,28 +460,41 @@ internal class AddProfileCatalog {
                     rates = ModelRates(input = 1.0, cacheRead = 0.1, output = 5.0, cacheWrite = 2.0),
                 ),
             ),
-            providerExtra = listOf("""extra_headers = { anthropic-version = "2023-06-01" }"""),
         ),
         AddProfile(
             name = "local",
-            summary = "a local OpenAI-compatible model endpoint (no API key)",
-            dialect = OPENAI_CHAT,
-            authKind = API_KEY,
             baseUrl = null,
-            headKey = "",
-            command = "",
+            provider = AddProviderSpec(
+                dialect = OPENAI_CHAT,
+                authKind = API_KEY,
+                requiresKey = false,
+            ),
+            head = AddHeadSpec(
+                key = "",
+                command = "",
+            ),
+            labels = AddLabels(
+                summary = "a local OpenAI-compatible model endpoint (no API key)",
+            ),
+            policy = AddModelPolicy(
+                listAuthoritative = false,
+            ),
             models = emptyList(),
-            listAuthoritative = false,
-            requiresKey = false,
         ),
         AddProfile(
             name = "api-key",
-            summary = "any OpenAI-compatible chat endpoint with an API key (OpenRouter, Fireworks)",
-            dialect = "openai-chat",
-            authKind = API_KEY,
             baseUrl = null,
-            headKey = "",
-            command = "",
+            provider = AddProviderSpec(
+                dialect = "openai-chat",
+                authKind = API_KEY,
+            ),
+            head = AddHeadSpec(
+                key = "",
+                command = "",
+            ),
+            labels = AddLabels(
+                summary = "any OpenAI-compatible chat endpoint with an API key (OpenRouter, Fireworks)",
+            ),
             models = emptyList(),
         ),
     )

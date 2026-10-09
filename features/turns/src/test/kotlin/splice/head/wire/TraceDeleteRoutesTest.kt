@@ -20,6 +20,9 @@ import splice.core.storage.DayFiles
 import splice.core.terminal.TerminalOutput
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.util.AsyncFileIo
 import splice.core.util.EnvReader
 import splice.core.util.WallClock
@@ -62,15 +65,19 @@ class TraceDeleteRoutesTest {
     private fun record(store: TraceStore, head: String) {
         val meta = TurnMeta(
             compact = false,
-            showReasoning = ReasoningDisplay.TEXT,
-            stream = true,
-            originalModel = "claude-$head--m",
-            upstreamModel = "m",
-            clientMaxTokens = 64,
-            effort = "medium",
-            summary = null,
-            budgetTokens = null,
-            sessionId = "synthetic-session",
+            reasoning = TurnReasoning(
+                showReasoning = ReasoningDisplay.TEXT,
+                effort = "medium",
+                summary = null,
+                budgetTokens = null,
+            ),
+            route = TurnRoute(
+                stream = true,
+                originalModel = "claude-$head--m",
+                upstreamModel = "m",
+                clientMaxTokens = 64,
+            ),
+            scope = TurnScope(sessionId = "synthetic-session"),
         )
         store.begin(meta, ClientInbound("POST", "/v1/messages", emptyMap(), "synthetic request"))
             .finish("ok", PerfSnapshot(mapOf("total" to 1L), mapOf("in_tokens" to 1L)))

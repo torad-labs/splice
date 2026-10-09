@@ -33,7 +33,7 @@ public object TurnBill {
 
     /** The counters a turn's [usage] writes on its perf row. */
     public fun counters(usage: Usage): Map<String, Long> = buildMap {
-        if (usage.history.request == UsageRequest.NONE) put(PerfKeys.NO_REQUEST, 1L)
+        if (usage.origin.history.request == UsageRequest.NONE) put(PerfKeys.NO_REQUEST, 1L)
         if (UsageField.INPUT in usage.reported) put(PerfKeys.IN_TOKENS, usage.inputTokens)
         if (UsageField.OUTPUT in usage.reported) put(PerfKeys.OUT_TOKENS, usage.outputTokens)
         if (UsageField.CACHED in usage.reported) put(PerfKeys.CACHED_TOKENS, usage.cachedTokens)

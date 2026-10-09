@@ -22,6 +22,7 @@ import splice.upstream.Ticker
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
+import splice.usage.perf.PerfTurnFacts
 import java.nio.file.Path
 
 private const val PARTIAL_BOOT = 20_000L * 86_400_000L + 3_600_000L
@@ -67,7 +68,12 @@ class BudgetPartialUsageTest {
 
     @Test
     fun `historical no-request refusals do not make budget spend a lower bound`(@TempDir tmp: Path) {
-        val row = PerfRow(PARTIAL_BOOT - 1, "error:local-refusal", TurnBill.counters(noRequestUsage), model = model)
+        val row = PerfRow(
+            PARTIAL_BOOT - 1,
+            "error:local-refusal",
+            TurnBill.counters(noRequestUsage),
+            facts = PerfTurnFacts(model = model),
+        )
         val owner = owner(tmp, listOf(row))
         assertNull(owner.forHead("synthetic", catalog).admit())
         val spend = owner.spending("synthetic")!!
@@ -94,7 +100,7 @@ class BudgetPartialUsageTest {
             PARTIAL_BOOT - 1,
             "error:local-refusal",
             TurnBill.counters(noRequestUsage),
-            model = "synthetic-no-card",
+            facts = PerfTurnFacts(model = "synthetic-no-card"),
         )
         val owner = owner(tmp, listOf(row))
         assertNull(owner.forHead("synthetic", catalog).admit())
@@ -128,7 +134,7 @@ class BudgetPartialUsageTest {
 
     @Test
     fun `historical torn streams enforce the same reported-input lower bound`(@TempDir tmp: Path) {
-        val row = PerfRow(PARTIAL_BOOT - 1, "error:upstream-failed", inputOnly, model = model)
+        val row = PerfRow(PARTIAL_BOOT - 1, "error:upstream-failed", inputOnly, facts = PerfTurnFacts(model = model))
         val owner = owner(tmp, listOf(row))
         val head = owner.forHead("synthetic", catalog)
         assertNotNull(head.admit(), "seeded input cannot disappear because output was not reported")

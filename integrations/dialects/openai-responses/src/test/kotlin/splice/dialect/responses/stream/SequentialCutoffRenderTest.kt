@@ -19,9 +19,12 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.StreamTurnContext
+import splice.dialect.responses.SummaryHandling
+import splice.dialect.responses.WatchdogCaps
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
 import splice.dialect.responses.reasoning.ResponsesReanchorPolicy
 import splice.upstream.ReanchorRound
+import splice.upstream.TurnSignals
 import splice.upstream.sse.WireSink
 
 private class CutoffSink : WireSink {
@@ -46,12 +49,18 @@ private fun cutoffCtx(shared: SharedSummaryParts = SharedSummaryParts()) = Strea
     compact = false,
     emitEncryptedReasoning = EmitEncryptedReasoning(false),
     encodeReasoningEnvelope = { "" },
-    clientGone = { false },
-    watchdogFired = { null },
-    streamIdleMsForMessage = 180_000,
-    upstreamTimeoutMsForMessage = 900_000,
-    dedupeRepeatedSummaryParts = true,
-    summaryPartsShared = shared,
+    signals = TurnSignals(
+        clientGone = { false },
+        watchdogFired = { null },
+    ),
+    caps = WatchdogCaps(
+        streamIdleMs = 180_000,
+        upstreamTimeoutMs = 900_000,
+    ),
+    summary = SummaryHandling(
+        dedupeRepeatedParts = true,
+        partsShared = shared,
+    ),
 )
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
@@ -125,8 +134,8 @@ class SequentialCutoffRenderTest {
 
         val failure = outcome as TurnOutcome.Failure
         assertTrue(sink.out.isEmpty(), "cutoff delta leaked before its done event: ${sink.out}")
-        assertEquals("", failure.partial?.thinkingText)
-        assertFalse(failure.partial?.emittedThinking == true)
+        assertEquals("", failure.partial?.text?.thinkingText)
+        assertFalse(failure.partial?.text?.emittedThinking == true)
 
         val original = ev("""{"model":"gpt-5.6-sol","input":[],"stream":true}""")
         val retry = ResponsesReanchorPolicy(

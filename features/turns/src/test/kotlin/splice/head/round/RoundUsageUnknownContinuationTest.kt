@@ -7,6 +7,7 @@ import splice.core.model.ModelRates
 import splice.core.model.TurnBill
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.UsageOrigin
 import splice.core.turn.noRequestUsage
 
 class RoundUsageUnknownContinuationTest {
@@ -23,13 +24,13 @@ class RoundUsageUnknownContinuationTest {
 
     @Test
     fun `a genuinely local round keeps its explicit known zero bill`() {
-        val row = TurnBill.counters(RoundUsage().plusRound(Usage(localStep = true)).toUsage())
+        val row = TurnBill.counters(RoundUsage().plusRound(Usage(origin = UsageOrigin(localStep = true))).toUsage())
         assertEquals(0.0, TurnBill.usd(row, rates))
     }
 
     @Test
     fun `a local zero cannot invent an output observation for a later real request`() {
-        val usage = RoundUsage().plusRound(Usage(localStep = true))
+        val usage = RoundUsage().plusRound(Usage(origin = UsageOrigin(localStep = true)))
             .plusRound(Usage(inputTokens = 100, reported = UsageField.entries.toSet() - UsageField.OUTPUT)).toUsage()
         assertNull(TurnBill.counters(usage)[splice.core.perf.PerfKeys.OUT_TOKENS])
         assertNull(TurnBill.usd(TurnBill.counters(usage), rates))

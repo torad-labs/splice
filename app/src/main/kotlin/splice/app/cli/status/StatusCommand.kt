@@ -62,7 +62,7 @@ internal class StatusCommand(
         println("  " + palette.paint(palette.strong, "splice $GATEWAY_VERSION") + "     " + daemonLine)
         clientVersionWarning(health)?.let { println("  " + palette.paint(palette.strain, "! $it")) }
         println()
-        val failedHeads = health?.takeIf { up }?.failedHeadReasons.orEmpty()
+        val failedHeads = health?.takeIf { up }?.heads?.failedReasons.orEmpty()
         val quota = health?.takeIf { up }?.quota ?: HealthQuota()
         // V4-415: probed whether or not the daemon is up, since the runtime is the operator's own
         // process and a stopped daemon says nothing about it.

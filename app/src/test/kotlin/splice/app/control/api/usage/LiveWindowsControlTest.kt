@@ -30,6 +30,7 @@ import splice.app.control.topologyHealthFor
 import splice.client.ClaudePolicy
 import splice.configuration.topology.TopologyRoutes
 import splice.configuration.topology.TopologyStale
+import splice.core.model.CatalogWindows
 import splice.core.model.LiveWindows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
@@ -42,6 +43,9 @@ import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
 import splice.core.topology.TopologyWriterSource
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import java.nio.file.Files
 import java.nio.file.Path
@@ -75,7 +79,7 @@ class LiveWindowsControlTest {
         models = listOf(ModelEntry("m1", contextWindow = m1), ModelEntry("m2", contextWindow = m2)),
         defaultContextWindow = 0,
         pinnedModel = "m1",
-        liveWindows = live?.let { LiveWindows { it } },
+        windows = CatalogWindows(liveWindows = live?.let { LiveWindows { it } }),
     )
 
     /** Shaped as HeadBuildInputs.modelOptionsCache builds it at boot, plus a row that is no row. */
@@ -93,26 +97,32 @@ class LiveWindowsControlTest {
 
     private fun spec() = LaunchSpec(
         trees = HeadTrees(tmp.resolve(".claude-ex")),
-        pinnedModel = "m1",
-        availableModelIds = listOf("m1", "m2"),
-        modelLabels = mapOf("m1" to "M1", "m2" to "M2"),
-        contextWindow = 128_000,
-        modelOptionsCache = cache,
-        statuslineCommand = "",
-        loginCommand = "",
-        signInLabel = "Ex",
+        models = LaunchModels(
+            pinnedModel = "m1",
+            availableModelIds = listOf("m1", "m2"),
+            modelLabels = mapOf("m1" to "M1", "m2" to "M2"),
+            contextWindow = 128_000,
+            modelOptionsCache = cache,
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "",
+            signInLabel = "Ex",
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "",
+            port = 8801,
+            inferenceToken = "t",
+            apiTimeoutMs = 960_000,
+        ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 8801,
-        inferenceToken = "t",
-        apiTimeoutMs = 960_000,
     )
 
     @Test
     fun `a launch plants the window in force and each picker row takes its own`() {
         val launched = spec().withWindows(catalog(128_000, live = catalog(245_760, m2 = 98_304)))
 
-        assertEquals(245_760, launched.contextWindow)
-        val rows = launched.modelOptionsCache as JsonArray
+        assertEquals(245_760, launched.models.contextWindow)
+        val rows = launched.models.modelOptionsCache as JsonArray
         assertEquals(245_760, rows[0].jsonObject.getValue("context_window").jsonPrimitive.content.toLong())
         assertEquals(98_304, rows[1].jsonObject.getValue("context_window").jsonPrimitive.content.toLong())
         assertEquals("M2", rows[1].jsonObject.getValue("label").jsonPrimitive.content)

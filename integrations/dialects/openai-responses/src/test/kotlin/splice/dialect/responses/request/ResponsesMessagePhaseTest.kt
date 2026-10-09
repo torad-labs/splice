@@ -15,10 +15,16 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 
-private val LITE = ResponsesQuirks(providerTag = "claudex", responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6"))
+private val LITE = ResponsesQuirks(
+    providerTag = "claudex",
+    lite = ResponsesLiteQuirks(
+        responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6"),
+    ),
+)
 
 /** A tool round and its answer: the preamble before the Read, the result, then the answer. */
 private const val HISTORY = """{"model":"claude-codex--gpt-6-sol","stream":true,"max_tokens":1024,
@@ -36,13 +42,19 @@ private fun input(body: String, upstreamModel: String): List<JsonObject> {
     val parsed = AnthropicParse.parseAnthropicBody(body)
     val opts = BuildOptions(
         compact = false,
-        originalModel = "claude-codex--$upstreamModel",
-        upstreamModel = upstreamModel,
-        configEffort = "high",
-        configSummary = "detailed",
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = InjectPriorReasoning(false),
-        decodeReasoningEnvelope = { null },
+        models = ModelIds(
+            original = "claude-codex--$upstreamModel",
+            upstream = upstreamModel,
+        ),
+        reasoning = RequestedReasoning(
+            effort = "high",
+            summary = "detailed",
+            display = ReasoningDisplay.TEXT,
+        ),
+        handoff = ReasoningHandoff(
+            replay = InjectPriorReasoning(false),
+            decode = { null },
+        ),
     )
     val req = ResponsesRequestBuilder(LITE).build(parsed.typed, parsed.raw, opts).req
     return req["input"]!!.jsonArray.map { it.jsonObject }

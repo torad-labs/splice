@@ -133,9 +133,9 @@ public class LiveTurns(
         val turn = bySlot.computeIfAbsent(counted) {
             val created = Live(
                 ids.next(),
-                meta.sessionId,
+                meta.scope.sessionId,
                 messagesHash,
-                meta.upstreamModel,
+                meta.route.upstreamModel,
                 meta.compact,
                 clock(),
                 clock,

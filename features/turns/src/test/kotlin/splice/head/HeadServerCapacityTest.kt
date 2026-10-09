@@ -37,6 +37,8 @@ import splice.core.util.LogSink
 import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
 import splice.head.usage.QuotaTracker
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.credentials.AccountPool
@@ -89,12 +91,11 @@ class HeadServerCapacityTest {
     // provider rather than a hand-copied one that could drift from it.
     private fun capacityProvider() = TestResponsesProvider(
         tuning = ProviderTuning(
-            key = "codex",
-            label = "claudex",
+            name = ProviderName(key = "codex", label = "claudex"),
             catalog = catalog,
             pinnedModel = "gpt-5.6-sol",
             auth = CapacityFakeAuth(),
-            baseUrl = mock.baseUrl,
+            locations = ProviderLocations(baseUrl = mock.baseUrl),
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),

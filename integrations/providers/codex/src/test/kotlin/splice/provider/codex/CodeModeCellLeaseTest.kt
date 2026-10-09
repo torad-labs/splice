@@ -237,8 +237,10 @@ class CodeModeResumeLeaseTest : CodeModeBridgeTestSupport() {
                 false,
                 record.key,
                 "callback",
-                RecordingSink(),
-                upstreamPost(InterceptedRoundPost { RoundResult.Outcome(completedOutcome()) }),
+                CodeModeRoundLink(
+                    RecordingSink(),
+                    upstreamPost(InterceptedRoundPost { RoundResult.Outcome(completedOutcome()) }),
+                ),
             )
             val outcome = resume(manager).active(record, context, codeModeBody(requestWithResult(id, "A")))
             assertTrue(outcome is TurnOutcome.Success && !outcome.hasToolUse, outcome.toString())
@@ -280,8 +282,7 @@ class CodeModeResumeLeaseTest : CodeModeBridgeTestSupport() {
                 false,
                 record.key,
                 "callback",
-                RecordingSink(),
-                post,
+                CodeModeRoundLink(RecordingSink(), post),
             )
             val request = async(Dispatchers.Default) {
                 resume(manager).active(record, context, codeModeBody(requestWithResult(id, "A")))
@@ -325,8 +326,10 @@ private class LeaseFixture(dir: Path) {
         { error("a lease fixture runs no runtime") },
         CodeModeStateLocation(dir.resolve("state"), dir.resolve("legacy")),
         clock = wall,
-        cellClock = ElapsedClock { elapsed },
-        sessionAlive = CodeModeSessionAlive { alive[it] },
+        cellLease = CodeModeCellLease(
+            sessionAlive = CodeModeSessionAlive { alive[it] },
+            clock = ElapsedClock { elapsed },
+        ),
     )
     val registry = CodexCodeModeRegistry(config, Json, 1.hours)
 

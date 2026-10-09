@@ -124,9 +124,10 @@ internal class RetryRules(private val maxRetries: Int) {
             failureRules.isAuthRefreshableFailure(failed.status, failed.text) &&
                 ctx.auth.allowRefreshAfterFailure(failed.status, failed.text) &&
                 !refreshedOnce
-        if (refreshable) ctx.perf?.add(PerfKeys.REFRESHES, 1)
-        if (refreshable && TurnPerfTiming.timedOr(ctx.perf, PerfKeys.REFRESH_MS) { ctx.auth.refresh() } != null) {
-            ctx.authRefreshObserver()
+        val perf = ctx.observers.perf
+        if (refreshable) perf?.add(PerfKeys.REFRESHES, 1)
+        if (refreshable && TurnPerfTiming.timedOr(perf, PerfKeys.REFRESH_MS) { ctx.auth.refresh() } != null) {
+            ctx.observers.authRefreshObserver()
             return RetryPlan(RetryDecision.RETRY, refreshedOnce = true)
         }
         ctx.onRetry(

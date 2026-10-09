@@ -104,7 +104,7 @@ public class ResumeRecipeRoute(
             put("from", from.toString())
             put("to_tree", into.parent.toString())
             put("copies", from != into)
-            put("model", head.spec.pinnedModel)
+            put("model", head.spec.models.pinnedModel)
             put("live", live.live(sessionId))
         }.toString(),
     )

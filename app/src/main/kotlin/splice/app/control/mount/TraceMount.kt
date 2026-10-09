@@ -44,7 +44,7 @@ internal class TraceMount(
         TraceDirPort { ports.traceDir },
         fileIo,
         TraceFailureCause { key, turn, since ->
-            val row = heads[key]?.perfRows?.window(since)?.rows?.lastOrNull { it.turn == turn }
+            val row = heads[key]?.sources?.perfRows?.window(since)?.rows?.lastOrNull { it.turn == turn }
             row?.cause?.let { recorded -> FailureCause.entries.firstOrNull { it.name == recorded } }
         },
     )

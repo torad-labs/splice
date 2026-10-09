@@ -23,6 +23,9 @@ import splice.core.storage.ActivityDays
 import splice.core.terminal.TerminalOutput
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.util.AsyncFileIo
 import splice.core.util.EnvReader
 import splice.core.util.WallClock
@@ -33,6 +36,8 @@ import splice.head.compact.HeadCompactSource
 import splice.head.wire.ClientInbound
 import splice.head.wire.TurnIdMint
 import splice.upstream.sse.WireAttempt
+import splice.upstream.sse.WireRequest
+import splice.upstream.sse.WireResponse
 import java.io.BufferedOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -60,15 +65,19 @@ class TraceCensusHeapTest {
 
     private fun meta() = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = "gpt-6-sol",
-        upstreamModel = "gpt-6-sol",
-        clientMaxTokens = 8000,
-        effort = "medium",
-        summary = null,
-        budgetTokens = null,
-        sessionId = "0f0eef86-f7d8-4170-a758-8b5ec461e250",
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "medium",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = "gpt-6-sol",
+            upstreamModel = "gpt-6-sol",
+            clientMaxTokens = 8000,
+        ),
+        scope = TurnScope(sessionId = "0f0eef86-f7d8-4170-a758-8b5ec461e250"),
     )
 
     /** Day one: the big turn, its attempt record [BIG_BODY_BYTES] of body behind its stamp, then its turn record. */
@@ -106,7 +115,9 @@ class TraceCensusHeapTest {
         ids.forEach { id ->
             val trace = store.begin(meta(), ClientInbound("POST", "/v1/messages", emptyMap(), id))
             val url = "https://chatgpt.com/backend-api/codex/responses"
-            trace.attempted(WireAttempt(1, url, emptyMap(), id, null, 200, emptyMap(), null, null, 40))
+            trace.attempted(
+                WireAttempt(1, WireRequest(url, emptyMap(), id, null), WireResponse(200, emptyMap(), null), null, 40),
+            )
             trace.finish("ok", PerfSnapshot(mapOf("total" to 120L), emptyMap()))
             assertTrue(AsyncFileIo.drain(), "the file lane drained")
         }

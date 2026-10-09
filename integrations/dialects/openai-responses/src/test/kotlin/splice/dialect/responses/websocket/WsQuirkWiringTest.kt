@@ -15,13 +15,14 @@ import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
 private class ProbeProvider(quirks: ResponsesQuirks, private val supports: Boolean = true) : ResponsesProvider(
     tuning = ProviderTuning(
-        key = "probe",
-        label = "probe",
+        name = ProviderName(key = "probe", label = "probe"),
         catalog = ModelCatalog(
             discoveryPrefix = "claude-codex",
             models = listOf(ModelEntry(id = "gpt-5.6-sol", label = "sol", contextWindow = 400_000)),
@@ -29,7 +30,7 @@ private class ProbeProvider(quirks: ResponsesQuirks, private val supports: Boole
         ),
         pinnedModel = "gpt-5.6-sol",
         auth = StubAuth,
-        baseUrl = "https://chatgpt.com/backend-api/codex",
+        locations = ProviderLocations(baseUrl = "https://chatgpt.com/backend-api/codex"),
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),

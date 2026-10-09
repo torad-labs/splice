@@ -35,6 +35,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
 import splice.core.model.TurnPrice
+import splice.core.perf.PerfModelGaps
 import splice.core.perf.PerfModelTotal
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTotal
@@ -508,11 +509,11 @@ class SessionCostTest {
         cacheWriteTokens = 0,
         outTokens = 10_000,
         usd = 5.25,
-        unpricedTurns = 0,
+        gaps = PerfModelGaps(),
     )
 
     /** One uncarded turn: its tokens kept, its dollars unknown. */
-    private val oneSolTurn = PerfModelTotal(1, 100_000, 0, 0, 1_000, usd = 0.0, unpricedTurns = 1)
+    private val oneSolTurn = PerfModelTotal(1, 100_000, 0, 0, 1_000, usd = 0.0, gaps = PerfModelGaps(unpricedTurns = 1))
 
     /** The session's tail is cut (one Opus turn read, the tail starting at 1500000); beside it, [total]. */
     private fun withTotal(total: PerfSessionTotal?) = object : HeadSessionPerfSource {

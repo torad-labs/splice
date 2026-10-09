@@ -42,26 +42,37 @@ public data class SessionStatus(
     val waitingFor: String? = null,
 )
 
-public data class SessionRecord(
+/** The process behind a registration: its pid, working directory, start and last update, and the socket it takes
+ *  cross-session messages on. */
+public data class SessionProcess(
     val pid: Long?,
-    val sessionId: String?,
     val cwd: String?,
-    val name: String?,
-    val kind: String?,
-    val version: String?,
-    val status: SessionStatus,
     val startedAt: Long?,
     val updatedAt: Long?,
     val messagingSocketPath: String?,
+)
+
+/** Which Claude Code client the session runs: its kind and version, and how it was started. */
+public data class SessionClient(
+    val kind: String?,
+    val version: String?,
+    /** How the session was started (`cli` is a terminal), which is where a person answers it. */
+    val entrypoint: String? = null,
+)
+
+public data class SessionRecord(
+    val sessionId: String?,
+    val name: String?,
+    val status: SessionStatus,
     /** How the session reaches its provider, as its process environment was read (a GONE pid is
      *  never read, so it is [SessionRoute.Unknown]). */
     val route: SessionRoute,
     val availability: SessionAvailability,
-    /** How the session was started (`cli` is a terminal), which is where a person answers it. */
-    val entrypoint: String? = null,
+    val process: SessionProcess,
+    val client: SessionClient,
 ) {
     /** The cross-session address a SendMessage can use when the session carries no name. */
-    public val address: String? get() = messagingSocketPath?.let { "uds:$it" }
+    public val address: String? get() = process.messagingSocketPath?.let { "uds:$it" }
 
     /** The splice head this session talks to, or null when [route] names none (direct or unknown). */
     public val head: String? get() = (route as? SessionRoute.Head)?.key
@@ -133,7 +144,7 @@ public class SessionRegistry(
         val (files, error) = registrations()
         val heardAt = heard()
         val records = files.mapNotNull { record(it, heardAt) }
-            .sortedByDescending { it.updatedAt ?: 0L }
+            .sortedByDescending { it.process.updatedAt ?: 0L }
         val liveIds = records.filter { it.availability != SessionAvailability.GONE }.mapNotNull { it.sessionId }.toSet()
         records.filter { it.availability == SessionAvailability.GONE }
             .mapNotNull { it.sessionId }.filterNot(liveIds::contains).forEach { foreground?.forget(it) }
@@ -178,24 +189,28 @@ public class SessionRegistry(
             JsonScalars.str(obj, "procStart"),
         )
         return SessionRecord(
-            pid = pid,
             sessionId = sessionId,
-            cwd = JsonScalars.str(obj, "cwd"),
             name = JsonScalars.str(obj, "name"),
-            kind = JsonScalars.str(obj, "kind"),
-            version = JsonScalars.str(obj, "version"),
             status = SessionStatus(
                 JsonScalars.str(obj, "status"),
                 JsonScalars.long(obj, "statusUpdatedAt"),
                 JsonScalars.str(obj, "waitingFor"),
             ),
-            startedAt = JsonScalars.long(obj, "startedAt"),
-            updatedAt = updatedAt,
-            messagingSocketPath = JsonScalars.str(obj, "messagingSocketPath"),
             route = pid?.takeIf { availability != SessionAvailability.GONE }?.let(routeOf::invoke)
                 ?: SessionRoute.Unknown,
             availability = availability,
-            entrypoint = JsonScalars.str(obj, "entrypoint"),
+            process = SessionProcess(
+                pid = pid,
+                cwd = JsonScalars.str(obj, "cwd"),
+                startedAt = JsonScalars.long(obj, "startedAt"),
+                updatedAt = updatedAt,
+                messagingSocketPath = JsonScalars.str(obj, "messagingSocketPath"),
+            ),
+            client = SessionClient(
+                kind = JsonScalars.str(obj, "kind"),
+                version = JsonScalars.str(obj, "version"),
+                entrypoint = JsonScalars.str(obj, "entrypoint"),
+            ),
         )
     }
 

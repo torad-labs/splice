@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
@@ -21,7 +22,7 @@ internal object TracePolicyRefusal {
                 message = if (cause == FailureCause.CONTENT_FILTERED) providerMessage(turn).orEmpty() else "",
                 cause = cause,
                 phase = FailurePhase.TERMINAL,
-                providerReported = true,
+                traits = FailureTraits(providerReported = true),
             ),
         )
     }

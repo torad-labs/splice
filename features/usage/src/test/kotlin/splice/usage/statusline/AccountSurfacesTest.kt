@@ -11,10 +11,13 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.accounts.pool.AccountPoolJson
+import splice.accounts.pool.HeadAccountCredential
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
+import splice.accounts.pool.HeadAccountWindow
 import splice.core.auth.AuthDescription
 import splice.core.util.WallClock
 
@@ -56,7 +59,7 @@ class AccountSurfacesTest {
     @Test
     fun `auth projection reports missing primary credentials separately from quota availability`() {
         val view = poolView().let { pool ->
-            pool.copy(accounts = pool.accounts.map { it.copy(credentialPresent = !it.primary) })
+            pool.copy(accounts = pool.accounts.map { it.copy(credential = it.credential.copy(present = !it.primary)) })
         }
         val payload = buildJsonObject { AccountPoolJson().write(this, view) }
         val accounts = payload["account_pool"]!!.jsonObject["accounts"]!!.jsonArray
@@ -73,8 +76,10 @@ class AccountSurfacesTest {
                     if (account.primary) {
                         account.copy(
                             available = false,
-                            authExcludedUntilEpochMillis = 1_700_000_300_000L,
-                            authExclusionReason = "terminal_401",
+                            credential = HeadAccountCredential(
+                                excludedUntilEpochMillis = 1_700_000_300_000L,
+                                exclusionReason = "terminal_401",
+                            ),
                         )
                     } else {
                         account.copy(available = false)
@@ -104,9 +109,11 @@ class AccountSurfacesTest {
             pool.copy(
                 accounts = pool.accounts.map {
                     it.copy(
-                        fiveHourResetEpochSeconds = NOW_S + 3_600L,
-                        sevenDayResetEpochSeconds = NOW_S + 86_400L,
-                        quotaObservedAtEpochSeconds = NOW_S - 60L,
+                        quota = HeadAccountQuota(
+                            fiveHour = it.quota.fiveHour.copy(resetEpochSeconds = NOW_S + 3_600L),
+                            sevenDay = it.quota.sevenDay.copy(resetEpochSeconds = NOW_S + 86_400L),
+                            observedAtEpochSeconds = NOW_S - 60L,
+                        ),
                     )
                 },
             )
@@ -136,8 +143,15 @@ class AccountSurfacesTest {
         val fresh = HeadAccountPoolView(
             selectedLabel = "backup",
             accounts = listOf(
-                HeadAccountView("primary", true, false, false, "plus", 100.0, 100L, 20.0, 200L),
-                HeadAccountView("backup", false, true, true, null, null, null, null, null),
+                HeadAccountView(
+                    "primary",
+                    true,
+                    false,
+                    false,
+                    "plus",
+                    HeadAccountQuota(HeadAccountWindow(100.0, 100L), HeadAccountWindow(20.0, 200L)),
+                ),
+                HeadAccountView("backup", false, true, true, null),
             ),
             lastSwitch = null,
         )
@@ -164,8 +178,22 @@ class AccountSurfacesTest {
     private fun poolView(): HeadAccountPoolView = HeadAccountPoolView(
         selectedLabel = "backup",
         accounts = listOf(
-            HeadAccountView("primary", true, false, false, "plus", 100.0, 100L, 20.0, 200L),
-            HeadAccountView("backup", false, true, true, "plus", 87.0, 300L, 42.0, 400L),
+            HeadAccountView(
+                "primary",
+                true,
+                false,
+                false,
+                "plus",
+                HeadAccountQuota(HeadAccountWindow(100.0, 100L), HeadAccountWindow(20.0, 200L)),
+            ),
+            HeadAccountView(
+                "backup",
+                false,
+                true,
+                true,
+                "plus",
+                HeadAccountQuota(HeadAccountWindow(87.0, 300L), HeadAccountWindow(42.0, 400L)),
+            ),
         ),
         lastSwitch = HeadAccountSwitchView(
             from = "primary",

@@ -105,21 +105,21 @@ class CodeModeJournalRecoveryTest {
     @Test
     fun `a source-only save neither rewrites nor reencodes a large root history`(reporter: TestReporter) {
         val root = CodeModeRecords.of("alpha", 1).apply {
-            nativeSegments = listOf(CodeModeNativeSegment(0, listOf(JsonPrimitive("x".repeat(1024 * 1024)))))
+            carry.segments = listOf(CodeModeNativeSegment(0, listOf(JsonPrimitive("x".repeat(1024 * 1024)))))
         }
         val store = store().also { it.load() }
         store.save(listOf(root), emptyList())
         val file = Files.list(location().dir).use { it.toList().single { path -> path.toString().endsWith(".jsonl") } }
         // Warm the append implementation and coverage instrumentation, not the measured source change.
-        root.output = "warm append"
+        root.progress.output = "warm append"
         store.save(listOf(root), emptyList(), dirtyKeys = setOf(root.key), changedRecord = root)
-        root.output = null
+        root.progress.output = null
         store.save(listOf(root), emptyList(), dirtyKeys = setOf(root.key), changedRecord = root)
         val beforeBytes = Files.size(file)
         val bean = checkNotNull(ManagementFactory.getThreadMXBean() as? ThreadMXBean)
         bean.isThreadAllocatedMemoryEnabled = true
         val thread = Thread.currentThread().threadId()
-        root.source += "; next source fragment"
+        root.origin.source += "; next source fragment"
         val beforeAllocated = bean.getThreadAllocatedBytes(thread)
         store.save(listOf(root), emptyList(), dirtyKeys = setOf(root.key), changedRecord = root)
         val allocated = bean.getThreadAllocatedBytes(thread) - beforeAllocated
@@ -132,8 +132,8 @@ class CodeModeJournalRecoveryTest {
         assertTrue(written < 32 * 1024, "source-only save wrote $written bytes and allocated $allocated bytes")
         assertTrue(allocated < 512 * 1024, "source-only save allocated $allocated bytes for a 1 MiB unchanged history")
         val restored = CodeModeStateJournal.read(file, Json).records.single()
-        assertEquals(root.source, restored.source)
-        assertEquals(root.nativeSegments, restored.nativeSegments)
+        assertEquals(root.origin.source, restored.source)
+        assertEquals(root.carry.segments, restored.nativeSegments)
     }
 
     @Test
@@ -231,7 +231,7 @@ class CodeModeJournalRecoveryTest {
     @Test
     fun `a cell write compacts a journal that outgrew its cells while the head ran`() {
         val (store, file) = bloatedConversation()
-        first.output = "again"
+        first.progress.output = "again"
         store.save(listOf(first, second), listOf(marker), dirtyKeys = setOf("alpha"), changedRecord = first)
         assertCompacted(file, listOf("again", "kept"))
     }
@@ -239,7 +239,7 @@ class CodeModeJournalRecoveryTest {
     @Test
     fun `a whole conversation save compacts a journal that outgrew its cells while the head ran`() {
         val (store, file) = bloatedConversation()
-        first.output = "whole"
+        first.progress.output = "whole"
         store.save(listOf(first, second), listOf(marker))
         assertCompacted(file, listOf("whole", "kept"))
     }
@@ -249,7 +249,7 @@ class CodeModeJournalRecoveryTest {
     @Test
     fun `an outgrown journal holding an unpaired surrogate compacts as an append writes it`() {
         val (store, file) = bloatedConversation()
-        first.output = "ok" + Char(0xD83D)
+        first.progress.output = "ok" + Char(0xD83D)
         store.save(listOf(first, second), listOf(marker), dirtyKeys = setOf("alpha"), changedRecord = first)
         assertCompacted(file, listOf("ok?", "kept"))
     }
@@ -456,7 +456,7 @@ class CodeModeJournalRecoveryTest {
         store.save(listOf(first, second), listOf(marker))
         val file = Files.list(location().dir).use { it.toList().single() }
         Files.delete(file)
-        first.source = "recovered source"
+        first.origin.source = "recovered source"
         store.save(listOf(first, second), listOf(marker), dirtyKeys = setOf("alpha"), changedRecord = first)
         assertEquals(listOf(first.id, second.id), CodeModeStateJournal.read(file, codec).records.map { it.id })
         assertEquals(listOf(marker), CodeModeStateJournal.read(file, codec).expired)
@@ -474,7 +474,7 @@ class CodeModeJournalRecoveryTest {
     }
 
     private val first = CodeModeRecords.of("alpha", 1, UPDATED_AT)
-    private val second = CodeModeRecords.of("alpha", 2, UPDATED_AT + 1).apply { output = "kept" }
+    private val second = CodeModeRecords.of("alpha", 2, UPDATED_AT + 1).apply { progress.output = "kept" }
     private val marker = CodeModeExpiredSnapshot("alpha", "digest-gone", setOf("gone-result"), UPDATED_AT - 1)
 
     /** A store holding [first], [second] and [marker], whose journal then re-appends [first]'s cell until
@@ -552,7 +552,7 @@ class CodeModeJournalIsolationTest {
             val fixture = corruptConversation(index, cell)
             Files.writeString(fixture.file, """{"key":""", StandardOpenOption.APPEND)
             val before = Files.readString(fixture.file)
-            val first = fixture.records.first().apply { output = "new alpha output" }
+            val first = fixture.records.first().apply { progress.output = "new alpha output" }
             val failure = assertThrows<CodeModePersistenceException> {
                 fixture.store.save(fixture.records, emptyList(), dirtyKeys = setOf(first.key), changedRecord = first)
             }
@@ -561,14 +561,18 @@ class CodeModeJournalIsolationTest {
             assertEquals("code-mode journal has corrupt committed state", failure.cause?.message)
             assertEquals(before, Files.readString(fixture.file), "corrupt committed bytes must not be appended")
             assertEquals(setOf(first.key), fixture.store.pendingKeys)
-            val second = fixture.records.last().apply { output = "healthy beta output" }
+            val second = fixture.records.last().apply { progress.output = "healthy beta output" }
             fixture.store.save(fixture.records, emptyList(), dirtyKeys = setOf(second.key), changedRecord = second)
-            assertEquals(second.output, CodeModeStateJournal.read(fixture.healthy, codec).records.single().output)
+            val stored = CodeModeStateJournal.read(fixture.healthy, codec).records.single()
+            assertEquals(second.progress.output, stored.output)
             // The failed append marks only alpha uncertain; its explicit retry replaces the complete state.
             fixture.store.save(fixture.records, emptyList(), dirtyKeys = setOf(first.key), changedRecord = first)
             assertTrue(fixture.store.pendingKeys.isEmpty())
             val recovered = CodexCodeModeStore(fixture.location, codec, {}).load()
-            assertEquals(fixture.records.map { it.output }.toSet(), recovered.records.map { it.output }.toSet())
+            assertEquals(
+                fixture.records.map { it.progress.output }.toSet(),
+                recovered.records.map { it.output }.toSet(),
+            )
         }
     }
 
@@ -592,7 +596,7 @@ class CodeModeJournalIsolationTest {
             val fixture = corruptConversation(index, complete)
             Files.writeString(fixture.file, entry + "\n" + """{"key":""", StandardOpenOption.APPEND)
             val before = Files.readString(fixture.file)
-            val first = fixture.records.first().apply { output = "new alpha output" }
+            val first = fixture.records.first().apply { progress.output = "new alpha output" }
             val failure = assertThrows<CodeModePersistenceException> {
                 fixture.store.save(fixture.records, emptyList(), dirtyKeys = setOf(first.key), changedRecord = first)
             }

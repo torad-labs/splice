@@ -10,6 +10,7 @@ import kotlinx.coroutines.Job
 import splice.core.perf.PerfKeys
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
 import splice.head.turn.TurnDrive
 import splice.upstream.ClientFrameEmitted
@@ -129,15 +130,17 @@ internal class SseRoundDriver(
         val detail = TransportFailureReason.of(e, upstreamUrl)
         return TurnOutcome.Failure(
             "upstream connection failed ($detail); retry",
-            // Locally synthesized: the upstream reported nothing, the socket did (G20 health split).
-            providerReported = false,
             // Deliberately EMPTY, and the whole reason the gates above are what they are: nothing
             // was shown to the client, so the continuation is a restart and not a replay.
             partial = TurnOutcome.PartialRound(),
-            // The ending keeps the tag this failure would have carried had it escaped: an
-            // unrecovered tear stays greppable as conn-reset in the perf row, which is the only
-            // string in the journal that names this failure class.
-            connReset = true,
+            traits = FailureTraits(
+                // Locally synthesized: the upstream reported nothing, the socket did (G20 health split).
+                providerReported = false,
+                // The ending keeps the tag this failure would have carried had it escaped: an
+                // unrecovered tear stays greppable as conn-reset in the perf row, which is the only
+                // string in the journal that names this failure class.
+                connReset = true,
+            ),
             // V4-117: UPSTREAM_CONN_RESET. The comment two lines up already says it — the
             // upstream reported nothing and the socket did — which is a failed connection, not a
             // stall and not a truncation, and the layers that can repair it are the L1 retry ones.

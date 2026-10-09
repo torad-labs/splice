@@ -25,13 +25,19 @@ class ResponsesNoticeReplayTest {
         )
         val options = BuildOptions(
             compact = false,
-            originalModel = "claudex--m",
-            upstreamModel = "m",
-            configEffort = null,
-            configSummary = null,
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = InjectPriorReasoning(false),
-            decodeReasoningEnvelope = { null },
+            models = ModelIds(
+                original = "claudex--m",
+                upstream = "m",
+            ),
+            reasoning = RequestedReasoning(
+                effort = null,
+                summary = null,
+                display = ReasoningDisplay.TEXT,
+            ),
+            handoff = ReasoningHandoff(
+                replay = InjectPriorReasoning(false),
+                decode = { null },
+            ),
         )
         val request = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex"))
             .build(parsed.typed, parsed.raw, options).req

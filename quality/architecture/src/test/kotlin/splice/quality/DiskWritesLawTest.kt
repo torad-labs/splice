@@ -97,7 +97,8 @@ internal object DiskWrites {
                 "quality/compiler-plugin/src/main/kotlin/splice/firchecks/PublicSurfaceReport.kt",
                 ".writeText(",
                 "build time only: the compiler plugin writes one public-surface report per compiled source into the " +
-                    "build's output directory; it never runs in the shipped daemon and writes nothing under splice's state",
+                    "build's output directory; it never runs in the shipped daemon and writes nothing under splice's " +
+                    "state",
             ),
             NotAFile(
                 "integrations/mcp/src/main/kotlin/splice/control/mcp/HostedServer.kt",
@@ -302,7 +303,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     ),
     "features/launch/src/main/kotlin/splice/launch/install/InstallLinker.kt" to mapOf("Files.createSymbolicLink(" to 1),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/start/DaemonLaunch.kt" to mapOf("a shell redirect" to 2),
-    "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonSuccessor.kt" to mapOf("Redirect.appendTo(" to 1),
+    "features/lifecycle/src/main/kotlin/splice/lifecycle/restart/DaemonSuccessor.kt" to mapOf(
+        "Redirect.appendTo(" to 1,
+    ),
     "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/SystemdUpgradeLauncher.kt" to mapOf(
         "Redirect.appendTo(" to 1,
         "a shell redirect" to 3,
@@ -449,7 +452,9 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "integrations/upstream/src/main/kotlin/splice/upstream/credentials/CredentialLock.kt" to mapOf(
         "FileChannel.open(" to 1,
     ),
-    "integrations/upstream/src/main/kotlin/splice/upstream/retry/ProviderHoldStore.kt" to mapOf("writeAtomic0600(" to 1),
+    "integrations/upstream/src/main/kotlin/splice/upstream/retry/ProviderHoldStore.kt" to mapOf(
+        "writeAtomic0600(" to 1,
+    ),
 )
 
 class DiskWritesLawTest {
@@ -539,7 +544,8 @@ class DiskWritesLawTest {
 
     @Test
     fun `two in memory recovery joins are not files and a third append still is`(@TempDir root: File) {
-        val path = "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeRecoveryHistory.kt"
+        val path =
+            "integrations/providers/codex/src/main/kotlin/splice/provider/codex/stream/CodeModeRecoveryHistory.kt"
         val source = File(root, path)
         source.parentFile.mkdirs()
         source.writeText(

@@ -35,8 +35,12 @@ import splice.core.head.HeadHealth
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
+import splice.usage.economics.EconomicsBytes
+import splice.usage.economics.EconomicsCost
 import splice.usage.economics.EconomicsRead
 import splice.usage.economics.EconomicsRow
+import splice.usage.economics.EconomicsTokens
+import splice.usage.economics.EconomicsTools
 import splice.usage.economics.EconomicsTurnCounts
 import splice.usage.economics.HeadEconomicsSource
 import splice.usage.quota.HeadUsageSource
@@ -78,34 +82,40 @@ class WebuiContractTest {
                 override suspend fun describe() =
                     AuthDescription(true, "chatgpt-oauth", mapOf("account_id_masked" to "acct…5678"))
             },
-            usage = object : HeadUsageSource {
-                override fun snapshot() = UsageView(0L, 1, RateLimitView(1000, 100, "6m0s"))
-            },
-            compact = object : HeadCompactSource {
-                override fun summary(tailN: Int) =
-                    CompactView(
-                        1,
-                        mapOf("model_text" to 1),
-                        listOf(mapOf("ts" to "1000", "outcome" to "model_text", "chars" to "42", "ms" to "12")),
-                    )
-            },
-            logs = object : HeadLogSource {
-                override fun tail(lines: Int) = "[codex] line one\n[codex] line two\n"
-                override fun path() = "/tmp/codex.log"
-            },
-            economics = HeadEconomicsSource {
-                EconomicsRead.Rows(
-                    listOf(
-                        EconomicsRow(
-                            1_000, EconomicsTurnCounts(2, 1), 300, 270, 24, 5, 400, 440, 28, 48, 2, 1,
-                            costUsd = 0.42, unpricedTurns = 1,
+            sources = HeadSources(
+                usage = object : HeadUsageSource {
+                    override fun snapshot() = UsageView(0L, 1, RateLimitView(1000, 100, "6m0s"))
+                },
+                compact = object : HeadCompactSource {
+                    override fun summary(tailN: Int) =
+                        CompactView(
+                            1,
+                            mapOf("model_text" to 1),
+                            listOf(mapOf("ts" to "1000", "outcome" to "model_text", "chars" to "42", "ms" to "12")),
+                        )
+                },
+                logs = object : HeadLogSource {
+                    override fun tail(lines: Int) = "[codex] line one\n[codex] line two\n"
+                    override fun path() = "/tmp/codex.log"
+                },
+                economics = HeadEconomicsSource {
+                    EconomicsRead.Rows(
+                        listOf(
+                            EconomicsRow(
+                                1_000,
+                                EconomicsTurnCounts(2, 1),
+                                EconomicsTokens(300, 270, 24, 5),
+                                EconomicsBytes(400, 440),
+                                EconomicsTools(28, 48, 2),
+                                1,
+                                EconomicsCost(costUsd = 0.42, unpricedTurns = 1),
+                            ),
                         ),
-                    ),
-                )
-            },
-            warnPct = 80,
-            warnTokens5h = 0,
-            authKind = "chatgpt-oauth",
+                    )
+                },
+            ),
+            usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+            authSurface = HeadAuthSurface(authKind = "chatgpt-oauth"),
         )
         control = controlServerFor(
             port = 0,
@@ -342,11 +352,14 @@ private val ECONOMICS_WIRE_RENAMES = mapOf(
     "upstreamBytes" to "upstream_req_bytes",
 )
 
-/** A data class's constructor properties, expanding the shared turn-count value into its sums. */
+/** The EconomicsRow fields that group sums; the wire carries each sum flat. */
+private val EXPANDED_ECONOMICS_GROUPS = setOf("counts", "tokens", "bytes", "tools", "cost")
+
+/** A data class's constructor properties, expanding the grouped values into their sums. */
 private fun declaredProperties(type: Class<*>): Set<String> =
     type.declaredFields.filterNot { it.isSynthetic || java.lang.reflect.Modifier.isStatic(it.modifiers) }
         .flatMap { field ->
-            if (field.name == "counts") {
+            if (field.name in EXPANDED_ECONOMICS_GROUPS) {
                 declaredProperties(field.type).toList()
             } else {
                 listOf(field.name)

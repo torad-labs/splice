@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.turn.GatewayCustomCall
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
@@ -120,7 +121,12 @@ private class BufferedPost(
                 }
             }
         }
-        return RoundResult.Outcome(TurnOutcome.Success(false, stopper == null, Usage(), customCalls = calls))
+        return RoundResult.Outcome(TurnOutcome.Success(
+            false,
+            stopper == null,
+            Usage(),
+            handoffs = RoundHandoffs(customCalls = calls),
+        ))
     }
 }
 

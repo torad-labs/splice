@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.buildResponsesTestRequest
 
@@ -66,8 +67,10 @@ class CodeModeExecSurfaceTest : CodeModeBridgeTestSupport() {
         val request = buildResponsesTestRequest(
             ResponsesQuirks(
                 providerTag = "test",
-                emitEmptyLiteInstructions = false,
-                responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+                lite = ResponsesLiteQuirks(
+                    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+                    emitEmptyLiteInstructions = false,
+                ),
             ),
             body,
             model = "gpt-6-sol",

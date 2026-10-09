@@ -73,12 +73,12 @@ internal class ResponsesStreamTranslator(
     private var tear: IOException? = null
 
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome =
-        if (ctx.dedupeRepeatedSummaryParts) {
+        if (ctx.summary.dedupeRepeatedParts) {
             // One lease + lock for the COMPLETE translator round, never the delta hot loop. A
             // conversation entry cannot expire while this round waits or runs.
-            ctx.summaryRoundScope.withRound { summaryParts -> driveRound(upstream, sink, summaryParts) }
+            ctx.summary.roundScope.withRound { summaryParts -> driveRound(upstream, sink, summaryParts) }
         } else {
-            driveRound(upstream, sink, ctx.summaryPartsShared)
+            driveRound(upstream, sink, ctx.summary.partsShared)
         }
 
     private suspend fun driveRound(
@@ -169,7 +169,7 @@ internal class ResponsesStreamTranslator(
         state.finalResponse != null || state.upstreamFailure != null
 
     private fun cancellationMustEscape(state: ResponsesTurnState): Boolean =
-        ctx.watchdogFired() == null && !terminalSeen(state)
+        ctx.signals.watchdogFired() == null && !terminalSeen(state)
 
     private fun cleanupFailure(state: ResponsesTurnState, error: Throwable): TurnOutcome {
         if (!terminalSeen(state)) throw error
@@ -216,7 +216,7 @@ internal class ResponsesStreamTranslator(
      *  only the words the client reads are repaired.
      *
      *  "truncated" is a DIAGNOSIS, and reporting an undiagnosed failure under one is exactly the
-     *  mislabelling the generic arm exists to avoid. The gate is [ctx.watchdogFired] being null: a
+     *  mislabelling the generic arm exists to avoid. The gate is [ctx.signals.watchdogFired] being null: a
      *  fired watchdog owns its own verdict and its own sentence (see the idle/total-cap split in
      *  ResponsesTerminalDecision.watchdogOutcome), and rewriting that one would hide why the turn
      *  really ended. `Throwable.toString()` is the repo's own diagnostic rendering (TurnEnding uses
@@ -233,7 +233,7 @@ internal class ResponsesStreamTranslator(
     private fun relabelUnrecognised(outcome: TurnOutcome): TurnOutcome {
         val failure = outcome as? TurnOutcome.Failure ?: return outcome
         val e = unexpected ?: return outcome
-        return if (ctx.watchdogFired() == null) {
+        return if (ctx.signals.watchdogFired() == null) {
             failure.copy(message = "splice: upstream stream failed ($e); retry")
         } else {
             outcome
@@ -267,10 +267,10 @@ internal class ResponsesStreamTranslator(
     private fun captureTurnReasoning(state: ResponsesTurnState, outcome: TurnOutcome) {
         if (outcome !is TurnOutcome.Success) return
         when {
-            ctx.compact -> ctx.onTurnReasoning.compacted()
+            ctx.compact -> ctx.reasoningCapture.onTurn.compacted()
             !outcome.hasToolUse -> Unit
             state.turnToolIds.isNotEmpty() && state.reasoningEnvelopes.isNotEmpty() ->
-                ctx.onTurnReasoning(state.turnToolIds.toList(), state.reasoningEnvelopes.toList())
+                ctx.reasoningCapture.onTurn(state.turnToolIds.toList(), state.reasoningEnvelopes.toList())
         }
     }
 }

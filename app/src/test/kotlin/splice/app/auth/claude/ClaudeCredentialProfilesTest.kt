@@ -251,7 +251,8 @@ class ClaudeCredentialProfilesTest {
         val folder = Files.createDirectories(state.resolve("stored-login"))
         Files.writeString(
             folder.resolve(".credentials.json"),
-            """{"claudeAiOauth":{"accessToken":"synthetic-refused","refreshToken":"synthetic","expiresAt":4102444800000}}""",
+            """{"claudeAiOauth":{"accessToken":"synthetic-refused","refreshToken":"synthetic",""" +
+                """"expiresAt":4102444800000}}""",
         )
         val auth = ClaudeFolderAuth(
             folder,

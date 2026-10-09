@@ -77,7 +77,7 @@ internal class CodeModeSourceCapture(
 
     private fun delta(event: CustomToolSource.Delta) {
         val current = checkNotNull(record) { "exec source has no admitted item" }
-        check(event.callId == current.outerCallId) { "streamed exec identity changed" }
+        check(event.callId == current.origin.outerCallId) { "streamed exec identity changed" }
         check(completedCall == null) { "exec source continued after item completion" }
         val appended = source.text + event.text
         checkSource(appended)
@@ -92,7 +92,7 @@ internal class CodeModeSourceCapture(
     }
 
     private fun checkSource(text: String) {
-        require(text.length <= config.maxSourceChars && CodeModeLimits.fitsText(text)) {
+        require(text.length <= config.bounds.maxSourceChars && CodeModeLimits.fitsText(text)) {
             "exec source exceeds the size limit"
         }
     }
@@ -104,11 +104,11 @@ internal class CodeModeSourceCapture(
     } else {
         when (outcome) {
             is TurnOutcome.Failure ->
-                "failure cause=${outcome.cause} permanent=${outcome.permanent} provider=${outcome.providerReported}"
+                "failure cause=${outcome.cause} permanent=${outcome.traits.permanent} provider=${outcome.traits.providerReported}"
             is TurnOutcome.ClientAbandoned -> "client abandoned"
             is TurnOutcome.Success -> when {
-                outcome.incomplete -> "incomplete ${outcome.outputShape}"
-                outcome.customCalls.size != 1 -> "calls=${outcome.customCalls.size} ${outcome.outputShape}"
+                outcome.incomplete -> "incomplete ${outcome.shape.outputShape}"
+                outcome.handoffs.customCalls.size != 1 -> "calls=${outcome.handoffs.customCalls.size} ${outcome.shape.outputShape}"
                 else -> null
             }
         }
@@ -125,7 +125,7 @@ internal class CodeModeSourceCapture(
             registry.lose(current, SOURCE_INCOMPLETE)
             return
         }
-        val call = success.customCalls.single()
+        val call = success.handoffs.customCalls.single()
         val started = checkNotNull(startedCall)
         checkIdentity(call, started)
         completedCall?.let { captured ->

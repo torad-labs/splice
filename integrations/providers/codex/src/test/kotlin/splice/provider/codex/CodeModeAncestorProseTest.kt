@@ -33,10 +33,10 @@ internal class CodeModeAncestorProseTest {
         assertEquals(
             listOf(
                 fixture.user,
-                fixture.a.outer,
+                fixture.a.origin.outer,
                 fixture.codec.customOutput(fixture.a),
                 fixture.preface,
-                fixture.b.outer,
+                fixture.b.origin.outer,
                 fixture.codec.customOutput(fixture.b),
             ) + fixture.callbacks("c1"),
             logical,
@@ -49,7 +49,7 @@ internal class CodeModeAncestorProseTest {
     @Test
     fun `an answered active script does not classify the surviving ancestor echo as steering`() {
         val fixture = Fixture()
-        assertTrue(fixture.c.pending.all { it.clientId in fixture.c.results })
+        assertTrue(fixture.c.progress.pending.all { it.clientId in fixture.c.results })
         assertEquals(6, fixture.codec.baselineBoundary(fixture.logical(), fixture.c))
         assertEquals(
             CodeModeExtra.NONE,
@@ -79,18 +79,18 @@ internal class CodeModeAncestorProseTest {
             """{"type":"reasoning","id":"fixture-reasoning","encrypted_content":"fixture-opaque"}""",
         )
         val a = record("a", listOf(user), listOf("a1", "a2"))
-        val b = record("b", listOf(user, a.outer, codec.customOutput(a)), listOf("b1"), listOf(a)).also {
-            it.continuity = listOf(preface)
-            it.continuityReplay = listOf(CodeModeNativeSegment(0, listOf(reasoning)))
+        val b = record("b", listOf(user, a.origin.outer, codec.customOutput(a)), listOf("b1"), listOf(a)).also {
+            it.carry.continuity = listOf(preface)
+            it.carry.replay = listOf(CodeModeNativeSegment(0, listOf(reasoning)))
         }
         val c = record(
             "c",
-            listOf(user, a.outer, codec.customOutput(a), preface, b.outer, codec.customOutput(b)),
+            listOf(user, a.origin.outer, codec.customOutput(a), preface, b.origin.outer, codec.customOutput(b)),
             listOf("c1"),
             listOf(a, b),
         ).also {
             it.phase = CodeModePhase.ACTIVE
-            it.pending += CodeModePending("runtime-c1", "c1", "FixtureCallback", JsonObject(emptyMap()), true)
+            it.progress.pending += CodeModePending("runtime-c1", "c1", "FixtureCallback", JsonObject(emptyMap()), true)
         }
         val raw = listOf(user) + callbacks("a1") + callbacks("a2") + preface + callbacks("b1") + callbacks("c1")
 
@@ -126,21 +126,21 @@ internal class CodeModeAncestorProseTest {
             return CodeModeRecord(
                 id = "record-$id",
                 key = "synthetic-key",
-                outer = outer,
-                outerCallId = "outer-$id",
-                source = "fixture source",
                 phase = CodeModePhase.COMPLETED,
-                output = "fixture output",
-                updatedAt = 0,
-                lastDigest = "synthetic-request",
-                baselineInputCount = input.fullCount,
-                baselineInputDigest = "",
-                metadataVersion = CODE_MODE_METADATA_VERSION,
-                baselineLogicalCount = input.logicalCount,
-                baselineLogicalDigest = "",
-                nativeSegments = input.nativeSegments,
-                continuity = emptyList(),
-                continuityReplay = emptyList(),
+                origin = CodeModeOrigin(
+                    outer = outer,
+                    outerCallId = "outer-$id",
+                    source = "fixture source",
+                    baseline = CodeModeBaseline(
+                        inputCount = input.fullCount,
+                        inputDigest = "",
+                        logicalCount = input.logicalCount,
+                        logicalDigest = "",
+                        metadataVersion = CODE_MODE_METADATA_VERSION,
+                    ),
+                ),
+                progress = CodeModeProgress(output = "fixture output", updatedAt = 0, lastDigest = "synthetic-request"),
+                carry = CodeModeNativeContinuity(input.nativeSegments, emptyList(), emptyList()),
             ).also { record ->
                 record.replayAnchors = input.replayAnchors
                 record.accepted.accept(calls.associateWith { CodeModeResult(it, "result") }, emptyMap())

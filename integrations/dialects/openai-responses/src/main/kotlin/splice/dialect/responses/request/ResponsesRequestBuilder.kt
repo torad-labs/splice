@@ -43,6 +43,10 @@ package splice.dialect.responses.request
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
+import splice.core.turn.TurnToolSurface
 import splice.core.wire.AnthropicRequest
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.ResponsesReasoningKnobs
@@ -74,7 +78,7 @@ internal class ResponsesRequestBuilder(
         val declareByName = toolPlan.declarationCandidates(body, partition)
         // The loop guard walks the same conversation (stateless) and marks identical-failed-call
         // streaks for a directive in that result's output.
-        val loopGuardDirectives = if (quirks.loopGuard) LoopGuard.analyze(body.messages) else emptyMap()
+        val loopGuardDirectives = if (quirks.roundTrip.loopGuard) LoopGuard.analyze(body.messages) else emptyMap()
         // Constructed per build (the field version predates per-build state) — cheap, race-free.
         val inputBuilder = ResponsesInputBuilder(quirks, loopGuardDirectives, toolNames)
         val input = buildJsonArray {
@@ -96,23 +100,28 @@ internal class ResponsesRequestBuilder(
 
         val meta = TurnMeta(
             compact = opts.compact,
-            showReasoning = opts.showReasoning,
-            stream = body.stream,
-            originalModel = opts.originalModel,
-            upstreamModel = opts.upstreamModel,
-            clientMaxTokens = body.maxTokens?.takeIf { it > 0 },
-            effort = effort ?: "disabled",
-            summary = sentSummary,
-            budgetTokens = body.thinking?.budgetTokens,
-            // The reasoning cache's conversation scope — the SAME derivation the provider's
-            // lookup closure uses, so capture (which only sees TurnMeta) and injection agree.
-            conversationKey = conversationKey,
-            sessionId = opts.sessionId,
-            // summaryParts is NOT passed: TurnMeta's default constructs the turn's one instance.
-            // Every continuation round reuses this meta object (continuationRequest bypasses
-            // build()), so the dedup state it carries is genuinely turn-scoped.
-            toolsEager = built.toolsEager,
-            toolsDeferred = built.toolsDeferred,
+            reasoning = TurnReasoning(
+                showReasoning = opts.reasoning.display,
+                effort = effort ?: "disabled",
+                summary = sentSummary,
+                budgetTokens = body.thinking?.budgetTokens,
+            ),
+            route = TurnRoute(
+                stream = body.stream,
+                originalModel = opts.models.original,
+                upstreamModel = opts.models.upstream,
+                clientMaxTokens = body.maxTokens?.takeIf { it > 0 },
+            ),
+            scope = TurnScope(
+                // The reasoning cache's conversation scope — the SAME derivation the provider's
+                // lookup closure uses, so capture (which only sees TurnMeta) and injection agree.
+                conversationKey = conversationKey,
+                sessionId = opts.sessionId,
+                // summaryParts is NOT passed: TurnScope's default constructs the turn's one instance.
+                // Every continuation round reuses this meta object (continuationRequest bypasses
+                // build()), so the dedup state it carries is genuinely turn-scoped.
+            ),
+            tools = TurnToolSurface(eager = built.toolsEager, deferred = built.toolsDeferred),
         )
         return BuiltRequest(built.req, meta, built.toolSearch)
     }

@@ -47,6 +47,8 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
@@ -69,6 +71,8 @@ import splice.head.wire.FrameRecording
 import splice.upstream.BuiltTurn
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.RoundInterceptor
 import splice.upstream.RoundResult
@@ -95,11 +99,12 @@ private class AdmissionTestAuth : RefreshableAuthProvider {
 // share the name `headDeps` and the import would collide with this declaration. It composes the same
 // bundles instead, which is all the fixture does anyway.
 private fun headDeps(tmp: Path, mirrorReasoning: Boolean = false) = HeadDeps(
-    upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
-    inferenceToken = "test-inference-token",
-    operatorToken = "test-operator-token",
-    gate = InflightGate({ 1 }),
-    liveTurns = LiveTurns(),
+    traffic = HeadDeps.HeadTraffic(
+        upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
+        gate = InflightGate({ 1 }),
+        liveTurns = LiveTurns(),
+    ),
+    tokens = HeadDeps.HeadTokens(inferenceToken = "test-inference-token", operatorToken = "test-operator-token"),
     log = {},
     stores = headStores(tmp),
     quotaBundle = noQuota(),
@@ -168,10 +173,10 @@ class SourceContinuationAdmissionTest {
         @TempDir tmp: Path,
     ) = testApplication {
         val deps = headDeps(tmp)
-        val original = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
+        val original = (deps.traffic.gate.acquire() as InflightGate.Admission.Acquired).slot
         val source = original.retainSource("synthetic-session")
         original.release()
-        val previous = checkNotNull(deps.gate.resumeSource("synthetic-session"))
+        val previous = checkNotNull(deps.traffic.gate.resumeSource("synthetic-session"))
         val admission = AdmissionGate(testProvider, deps, AdmissionWindow().apply { open() }, AdmissionResponses())
         application {
             routing {
@@ -191,12 +196,12 @@ class SourceContinuationAdmissionTest {
                 client.post("/probe") { header(SESSION_HEADER, "synthetic-session") }
             }
             try {
-                withTimeout(3.seconds) { while (deps.gate.snapshot().queued != 1) kotlinx.coroutines.yield() }
+                withTimeout(3.seconds) { while (deps.traffic.gate.snapshot().queued != 1) kotlinx.coroutines.yield() }
                 assertFalse(result.isCompleted)
                 previous.release()
                 assertEquals(HttpStatusCode.OK, withTimeout(3.seconds) { result.await() }.status)
-                assertEquals(1L, deps.gate.snapshot().acquired, "no fresh upstream permit was acquired")
-                assertEquals(1, deps.gate.snapshot().inflight, "the independent source still owns its permit")
+                assertEquals(1L, deps.traffic.gate.snapshot().traffic.acquired, "no fresh upstream permit was acquired")
+                assertEquals(1, deps.traffic.gate.snapshot().inflight, "the independent source still owns its permit")
             } finally {
                 result.cancelAndJoin()
                 previous.release()
@@ -355,7 +360,7 @@ class AdmissionGateTest {
             }
             routing {
                 post("/probe") {
-                    val slot = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
+                    val slot = (deps.traffic.gate.acquire() as InflightGate.Admission.Acquired).slot
                     val admitted = AdmittedTurn(slot, 0L, TurnPerf())
                     try {
                         val prepared = checkNotNull(
@@ -378,7 +383,7 @@ class AdmissionGateTest {
             releasedAtReply,
             "every local reply must release before publication",
         )
-        assertEquals(0, deps.gate.snapshot().inflight)
+        assertEquals(0, deps.traffic.gate.snapshot().inflight)
     }
 
     @Test
@@ -387,7 +392,7 @@ class AdmissionGateTest {
     ) = testApplication {
         val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 7))
         val gate = InflightGate({ 1 }, maxQueued = { 1 })
-        val deps = headDeps(tmp).copy(gate = gate)
+        val deps = headDeps(tmp).let { it.copy(traffic = it.traffic.copy(gate = gate)) }
         val window = AdmissionWindow()
         val admission = AdmissionGate(testProvider, deps, window, AdmissionResponses())
         val releasedAtReply = mutableListOf<Boolean>()
@@ -481,7 +486,7 @@ class AdmissionGateTest {
             policy = HeadDeps.HeadPolicy(maxRequestBytes = 4),
             seams = HeadDeps.HeadSeams(requestMaterializationGate = heap),
         )
-        val initial = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
+        val initial = (deps.traffic.gate.acquire() as InflightGate.Admission.Acquired).slot
         val source = initial.retainSource("synthetic-session")
         initial.release()
         var next = 0
@@ -516,7 +521,7 @@ class AdmissionGateTest {
                 next++
             }
             assertEquals(List(4) { true to true }, releasedAtReply, "refusal must settle both local claims")
-            assertEquals(1, deps.gate.snapshot().inflight, "the independent source remains alive")
+            assertEquals(1, deps.traffic.gate.snapshot().inflight, "the independent source remains alive")
         } finally {
             source.release()
         }
@@ -540,7 +545,7 @@ class AdmissionGateTest {
             quotaBundle = noQuota().copy(budget = budget),
             seams = HeadDeps.HeadSeams(requestMaterializationGate = heap),
         )
-        val initial = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
+        val initial = (deps.traffic.gate.acquire() as InflightGate.Admission.Acquired).slot
         val source = initial.retainSource("synthetic-session")
         initial.release()
         val handler = handler(continuationProvider(), deps)
@@ -559,7 +564,7 @@ class AdmissionGateTest {
             }
             assertEquals(HttpStatusCode.Forbidden, response.status, response.bodyAsText())
             assertEquals(listOf(true to true), releasedAtReply, "a local quota refusal must not retain a source loan")
-            assertEquals(1, deps.gate.snapshot().inflight, "quota refusal must not end the independent source")
+            assertEquals(1, deps.traffic.gate.snapshot().inflight, "quota refusal must not end the independent source")
         } finally {
             source.release()
         }
@@ -570,7 +575,7 @@ class AdmissionGateTest {
         @TempDir tmp: Path,
     ) = testApplication {
         val deps = headDeps(tmp)
-        val initial = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
+        val initial = (deps.traffic.gate.acquire() as InflightGate.Admission.Acquired).slot
         initial.describe("synthetic-source-model", compact = true, "source-tag")
         val source = initial.retainSource("synthetic-session")
         initial.release()
@@ -587,10 +592,10 @@ class AdmissionGateTest {
                 )
             }
             assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
-            val row = deps.gate.snapshot().live.single()
+            val row = deps.traffic.gate.snapshot().live.single()
             assertEquals("source-tag synthetic-source-model", row.label, "local replies never own the source row")
             assertTrue(row.compact, "a local query must not change the source's compact flag")
-            assertEquals(1, deps.gate.snapshot().inflight)
+            assertEquals(1, deps.traffic.gate.snapshot().inflight)
         } finally {
             source.release()
         }
@@ -598,7 +603,7 @@ class AdmissionGateTest {
 
     private suspend fun availableAtReply(deps: HeadDeps, heap: RequestMaterializationGate): Pair<Boolean, Boolean> {
         val loanFree = heap.tryWithLease(1) { true } == true
-        val candidate = deps.gate.resumeSource("synthetic-session")
+        val candidate = deps.traffic.gate.resumeSource("synthetic-session")
         val candidateFree = candidate != null
         candidate?.release()
         return loanFree to candidateFree
@@ -644,7 +649,21 @@ class AdmissionGateTest {
 private fun ready(): Preparation.Ready = Preparation.Ready(
     built = BuiltTurn(
         JsonObject(emptyMap()),
-        TurnMeta(false, ReasoningDisplay.OFF, false, "synthetic-model", "synthetic-model", 100, "high", null, null),
+        TurnMeta(
+            false,
+            reasoning = TurnReasoning(
+                showReasoning = ReasoningDisplay.OFF,
+                effort = "high",
+                summary = null,
+                budgetTokens = null,
+            ),
+            route = TurnRoute(
+                stream = false,
+                originalModel = "synthetic-model",
+                upstreamModel = "synthetic-model",
+                clientMaxTokens = 100,
+            ),
+        ),
     ),
     stream = false,
     inbound = null,
@@ -665,7 +684,7 @@ private fun handler(
     return HeadAdmission(
         deps,
         AdmissionGate(provider, deps, window, responses),
-        AdmissionTelemetry(deps.gate, deps.seams.clock),
+        AdmissionTelemetry(deps.traffic.gate, deps.seams.clock),
         TurnPreparation(provider, deps, reader, AnthropicBodyParse(), clientAuth),
         responses,
         TurnDriver(provider, deps, CompactionReplay()),
@@ -674,8 +693,7 @@ private fun handler(
 
 private val testProvider: TestResponsesProvider = TestResponsesProvider(
     tuning = ProviderTuning(
-        key = "codex",
-        label = "claudex",
+        name = ProviderName(key = "codex", label = "claudex"),
         catalog = ModelCatalog(
             discoveryPrefix = "claude-codex--",
             models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -683,7 +701,7 @@ private val testProvider: TestResponsesProvider = TestResponsesProvider(
         ),
         pinnedModel = "gpt-5.6-sol",
         auth = AdmissionTestAuth(),
-        baseUrl = "http://127.0.0.1",
+        locations = ProviderLocations(baseUrl = "http://127.0.0.1"),
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
@@ -698,15 +716,15 @@ class AdmissionTimingTest {
         val deps = headDeps(tmp)
         val window = AdmissionWindow().apply { open() }
         val admission = AdmissionGate(testProvider, deps, window, AdmissionResponses())
-        val telemetry = AdmissionTelemetry(deps.gate) { now }
+        val telemetry = AdmissionTelemetry(deps.traffic.gate) { now }
         val perf = telemetry.begin(0L)
         application {
             routing {
                 post("/probe") {
-                    val initial = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
+                    val initial = (deps.traffic.gate.acquire() as InflightGate.Admission.Acquired).slot
                     val source = initial.retainSource("synthetic-session")
                     initial.release()
-                    val candidate = checkNotNull(deps.gate.resumeSource("synthetic-session"))
+                    val candidate = checkNotNull(deps.traffic.gate.resumeSource("synthetic-session"))
                     telemetry.markAdmitted(perf, 3L)
                     val admitted = AdmittedTurn(candidate, 3L, perf)
                     try {
@@ -718,7 +736,7 @@ class AdmissionTimingTest {
                             val settling = async(start = CoroutineStart.UNDISPATCHED) {
                                 admitted.settle(call, prepared, admission)
                             }
-                            assertEquals(1, deps.gate.snapshot().queued, "a fresh permit must really queue")
+                            assertEquals(1, deps.traffic.gate.snapshot().queued, "a fresh permit must really queue")
                             now = 400L
                             source.release()
                             assertTrue(settling.await())
@@ -737,7 +755,7 @@ class AdmissionTimingTest {
         assertEquals(0L, perf.snapshot().marks[PerfKeys.GATE], "the legacy gate origin stays fixed")
         perf.firstClientByte()
         assertEquals(400L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS])
-        assertEquals(0, deps.gate.snapshot().inflight)
+        assertEquals(0, deps.traffic.gate.snapshot().inflight)
     }
 }
 

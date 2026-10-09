@@ -19,18 +19,19 @@ public data class UsageHistory(
 
 /** No upstream request belongs to this immutable value. It is the identity of the round merge. */
 public val noRequestUsage: Usage = Usage(
-    history = UsageHistory(request = UsageRequest.NONE),
+    origin = UsageOrigin(history = UsageHistory(request = UsageRequest.NONE)),
     reported = emptySet(),
 )
 
 /** One distinct-request fold shared by the gateway and code-mode runners. */
 internal object UsageRounds {
     fun followedBy(prior: Usage, latest: Usage): Usage {
-        if (latest.history.request == UsageRequest.NONE) {
+        if (latest.origin.history.request == UsageRequest.NONE) {
             val total = prior + latest
-            return if (prior.history.request == UsageRequest.POSTED) total.copy(reported = prior.reported) else total
+            val posted = prior.origin.history.request == UsageRequest.POSTED
+            return if (posted) total.copy(reported = prior.reported) else total
         }
-        if (prior.history.request == UsageRequest.NONE) return (prior + latest).copy(reported = latest.reported)
+        if (prior.origin.history.request == UsageRequest.NONE) return (prior + latest).copy(reported = latest.reported)
         val observations = latest.reported + prior.reported.intersect(setOf(UsageField.OUTPUT))
         return Usage(
             inputTokens = latest.inputTokens,
@@ -38,13 +39,15 @@ internal object UsageRounds {
             cachedTokens = latest.cachedTokens,
             reasoningTokens = prior.reasoningTokens + latest.reasoningTokens,
             cacheWriteTokens = latest.cacheWriteTokens,
-            localStep = prior.localStep || latest.localStep,
-            codeModeDiverged = prior.codeModeDiverged || latest.codeModeDiverged,
-            recordedOutputTokens = prior.recordedOutputTokens + latest.recordedOutputTokens,
-            clientContext = contextAfter(prior, latest),
-            history = UsageHistory(
-                absorbed = prior.absorbed + prior.finalRound + latest.absorbed,
-                cutRounds = prior.cutRounds + latest.cutRounds + missingBills(prior, latest, observations),
+            origin = UsageOrigin(
+                localStep = prior.origin.localStep || latest.origin.localStep,
+                codeModeDiverged = prior.origin.codeModeDiverged || latest.origin.codeModeDiverged,
+                recordedOutputTokens = prior.origin.recordedOutputTokens + latest.origin.recordedOutputTokens,
+                clientContext = contextAfter(prior, latest),
+                history = UsageHistory(
+                    absorbed = prior.absorbed + prior.finalRound + latest.absorbed,
+                    cutRounds = prior.cutRounds + latest.cutRounds + missingBills(prior, latest, observations),
+                ),
             ),
             reported = observations,
         )
@@ -58,8 +61,8 @@ internal object UsageRounds {
     }
 
     private fun contextAfter(prior: Usage, latest: Usage): Usage? {
-        if (latest.clientContext != null) return latest.clientContext
+        latest.origin.clientContext?.let { return it }
         if (UsageField.INPUT in latest.reported) return null
-        return prior.takeIf { UsageField.INPUT in it.reported } ?: prior.clientContext
+        return prior.takeIf { UsageField.INPUT in it.reported } ?: prior.origin.clientContext
     }
 }

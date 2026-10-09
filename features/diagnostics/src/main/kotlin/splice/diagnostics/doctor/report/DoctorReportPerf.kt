@@ -17,7 +17,6 @@ import splice.core.config.StatePaths
 import splice.core.perf.LivenessProbe
 import splice.core.perf.PerfKeys
 import splice.core.topology.Topology
-import splice.core.util.Cancellables
 
 private const val PERF_TAIL_ROWS = 200
 
@@ -106,9 +105,13 @@ internal class DoctorReportPerf(
         }
     }
 
-    private fun parsed(line: String): JsonObject? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): same tolerant perf-tail reader as DoctorProbeWrite.perfRow: a malformed line is skipped, and read.error (set by the file source) is what carries a real read failure into the report.
-        Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
+    /** Same tolerant perf-tail reader as DoctorProbeWrite.perfRow: a malformed line is skipped, and read.error
+     *  (set by the file source) is what carries a failed read. */
+    private fun parsed(line: String): JsonObject? = try {
+        json.parseToJsonElement(line).jsonObject
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 
     /** Numeric keys keep only JSON numbers; model and outcome keep only safe TOKENS. Anything else a
      *  row carries — another key, a string where a number belongs, an array — is dropped. */

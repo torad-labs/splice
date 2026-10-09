@@ -3,6 +3,7 @@ package splice.provider.codex.branch
 
 import splice.core.turn.CodeModeDivergenceMarker
 import splice.core.turn.TurnOutcome
+import splice.core.turn.Usage
 import splice.core.util.LogSink
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeRunContext
@@ -28,7 +29,7 @@ internal class CodexCodeModeBranch(
         val calls = registry.recordsFor(context.key).firstNotNullOfOrNull { record ->
             record.issued.firstOrNull { it.requestDigest == context.digest && !record.abandoned() }?.calls
         }
-        return calls?.let { machine.replay(it, context.sink) }
+        return calls?.let { machine.replay(it, context.link.sink) }
     }
 
     /** Exclude an incompatible A record from rewriting and ownership, but keep B's own records. */
@@ -44,7 +45,7 @@ internal class CodexCodeModeBranch(
     suspend fun sendOwnHistory(context: CodeModeRunContext, ownHistory: CodeModeBody): TurnOutcome {
         log("[code-mode] observable-divergence: accepted callback changed; sending this history upstream")
         return try {
-            mark(driver.drive(context, null, ownHistory, context.post(ownHistory))).also {
+            mark(driver.drive(context, null, ownHistory, context.link.post(ownHistory))).also {
                 // A tear the upstream ended this history on is the divergence's too (TurnConnEnd counts it).
                 CodeModeEndings.tornCause()?.addSuppressed(CodeModeDivergenceMarker())
             }
@@ -55,11 +56,13 @@ internal class CodexCodeModeBranch(
     }
 
     /** Outcome usage reaches both the perf row and the trace, including a failed upstream post. */
+    private fun diverged(usage: Usage): Usage = usage.copy(origin = usage.origin.copy(codeModeDiverged = true))
+
     private fun mark(outcome: TurnOutcome): TurnOutcome = when (outcome) {
-        is TurnOutcome.Success -> outcome.copy(usage = outcome.usage.copy(codeModeDiverged = true))
-        is TurnOutcome.Failure -> outcome.copy(salvagedUsage = outcome.salvagedUsage.copy(codeModeDiverged = true))
+        is TurnOutcome.Success -> outcome.copy(usage = diverged(outcome.usage))
+        is TurnOutcome.Failure -> outcome.copy(salvagedUsage = diverged(outcome.salvagedUsage))
         is TurnOutcome.ClientAbandoned -> outcome.copy(
-            salvagedUsage = outcome.salvagedUsage.copy(codeModeDiverged = true),
+            salvagedUsage = diverged(outcome.salvagedUsage),
         )
     }
 }

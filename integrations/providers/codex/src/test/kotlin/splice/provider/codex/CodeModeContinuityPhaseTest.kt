@@ -24,6 +24,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundHandoffs
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.LogSink
@@ -148,18 +151,16 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
         hasToolUse = false,
         incomplete = false,
         usage = Usage(),
-        bodyText = PREFACE,
-        emittedText = true,
-        customCalls = listOf(outer()),
+        text = RoundText(bodyText = PREFACE, emittedText = true),
+        handoffs = RoundHandoffs(customCalls = listOf(outer())),
     )
 
     private fun answer() = TurnOutcome.Success(
         hasToolUse = false,
         incomplete = false,
         usage = Usage(),
-        bodyText = ANSWER,
-        emittedText = true,
-        messageClosed = true,
+        text = RoundText(bodyText = ANSWER, emittedText = true),
+        shape = ResponseShape(messageClosed = true),
     )
 
     /** What the client sends once it has the Read's result: [preface] (the builder's replay of it by

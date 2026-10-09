@@ -27,6 +27,8 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
 import splice.dialect.responses.ReasoningSettings
@@ -49,7 +51,10 @@ import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.UsagePayloadBuilder
+import splice.upstream.BuiltTurn
 import splice.upstream.ClientFrameEmitted
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
@@ -105,7 +110,7 @@ class AccountTurnTimeoutTest {
             assertEquals(callsBeforeContinuation, rig.calls, "the expired continuation must make zero upstream calls")
             assertEquals(1, rig.calls, "only the completed prior POST reached upstream")
             assertEquals(expected, actual, "use the translator's total-cap explanation and salvage policy")
-            assertFalse(actual.providerReported)
+            assertFalse(actual.traits.providerReported)
             assertNull(actual.partial, "whole-turn expiry must not offer another continuation")
             assertEquals(attemptsBeforeContinuation, drive.perf.snapshot().counters[PerfKeys.ATTEMPTS])
             assertEquals(30_000L, drive.perf.snapshot().marks[PerfKeys.STREAM_END])
@@ -215,8 +220,7 @@ class AccountTurnTimeoutTest {
         )
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-codex--",
                     models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -224,7 +228,7 @@ class AccountTurnTimeoutTest {
                 ),
                 pinnedModel = "gpt-5.6-sol",
                 auth = auth,
-                baseUrl = mock.baseUrl,
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
@@ -271,33 +275,42 @@ class AccountTurnTimeoutTest {
         }
 
         suspend fun drive(): TurnDrive = TurnDrive(
-            requestBody = buildJsonObject {},
-            meta = TurnMeta(
-                compact = false,
-                showReasoning = ReasoningDisplay.TEXT,
-                stream = false,
-                originalModel = "claude-codex--gpt-5.6-sol",
-                upstreamModel = "gpt-5.6-sol",
-                clientMaxTokens = 100,
-                effort = "high",
-                summary = "detailed",
-                budgetTokens = null,
+            inputs = TurnInputs(
+                built = BuiltTurn(
+                    requestBody = buildJsonObject {},
+                    meta = TurnMeta(
+                        compact = false,
+                        reasoning = TurnReasoning(
+                            showReasoning = ReasoningDisplay.TEXT,
+                            effort = "high",
+                            summary = "detailed",
+                            budgetTokens = null,
+                        ),
+                        route = TurnRoute(
+                            stream = false,
+                            originalModel = "claude-codex--gpt-5.6-sol",
+                            upstreamModel = "gpt-5.6-sol",
+                            clientMaxTokens = 100,
+                        ),
+                    ),
+                    extraHeaders = emptyMap(),
+                    toolSearch = null,
+                ),
+                slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+                t0 = 0L,
+                perf = TurnPerf { elapsedMs },
+                trace = null,
+                markHandedOff = {},
             ),
             emitter = terminal,
             watchdog = TurnWatchdog(provider.watchdog, ElapsedClock { 0L }),
-            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
             pipeline = pipeline,
-            t0 = 0L,
-            trace = null,
-            perf = TurnPerf { elapsedMs },
-            turnHeaders = emptyMap(),
             signals = RunnerSignals(),
             channel = ClientChannel(
                 ImmediateSseWriter(writeRaw = {}, flushRaw = {}),
                 Mutex(),
                 AtomicBoolean(false),
             ),
-            toolSearch = null,
             remainingTurnWait = RemainingTurnWait { remainingMs },
         )
     }

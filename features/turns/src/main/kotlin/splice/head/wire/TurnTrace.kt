@@ -147,26 +147,26 @@ public class TurnTrace internal constructor(
     }
 
     private fun attemptRecord(attempt: WireAttempt, responseText: String, responseTruncated: Boolean): JsonObject {
-        val (requestBody, requestTruncated) = store.bounded(attempt.requestBody)
+        val (requestBody, requestTruncated) = store.bounded(attempt.request.body)
         return buildJsonObject {
             stamp(this, TraceKinds.ATTEMPT)
             put("round", rounds)
             put("attempt", attempts)
             put("transport", "http")
             put("send", attempt.attempt)
-            put("url", attempt.url)
+            put("url", attempt.request.url)
             putJsonObject(REQUEST) {
-                headersOf(this, attempt.requestHeaders)
-                attempt.requestEncoding?.let { put("encoding", it) }
+                headersOf(this, attempt.request.headers)
+                attempt.request.encoding?.let { put("encoding", it) }
                 put(BODY, requestBody)
                 put(TRUNCATED, requestTruncated)
             }
-            attempt.status?.let { status ->
+            attempt.response.status?.let { status ->
                 putJsonObject(RESPONSE) {
                     put("status", status)
-                    headersOf(this, attempt.responseHeaders)
-                    put(RAW_TEXT, attempt.errorText ?: responseText)
-                    put(TRUNCATED, attempt.errorText == null && responseTruncated)
+                    headersOf(this, attempt.response.headers)
+                    put(RAW_TEXT, attempt.response.errorText ?: responseText)
+                    put(TRUNCATED, attempt.response.errorText == null && responseTruncated)
                 }
             }
             attempt.failure?.let { put("failure", it) }

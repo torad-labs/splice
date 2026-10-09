@@ -122,16 +122,16 @@ public class DeviceLoginFlow(
         spec: DeviceLoginSpec,
         loginIo: LoginIo,
     ): DeviceAuthorization? {
-        val resp = client.post(spec.deviceAuthUrl) {
-            loginIo.formHeaders(this, spec.identityHeaders)
-            setBody(spec.deviceAuthForm(spec.clientId))
+        val resp = client.post(spec.deviceAuth.url) {
+            loginIo.formHeaders(this, spec.client.headers)
+            setBody(spec.deviceAuth.form(spec.client.id))
         }
         val body = resp.bodyAsText()
         if (!resp.status.isSuccess()) {
             output.line("splice: could not start device login (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
             return null
         }
-        return spec.parseDeviceAuth(body)
+        return spec.deviceAuth.parse(body)
     }
 
     private fun announce(spec: DeviceLoginSpec, auth: DeviceAuthorization, loginIo: LoginIo, observer: LoginObserver?) {
@@ -196,7 +196,7 @@ public class DeviceLoginFlow(
     private suspend fun persistPollSuccess(spec: DeviceLoginSpec, body: String, loginIo: LoginIo): PollStep {
         // DR-172: the identical shape OAuthLoginFlow carried — a 200 was the whole test, so a
         // body with no access token ended the poll as a SUCCESS over an empty credential.
-        val signedIn = loginIo.persistIfSignedIn(spec.authPath, spec.toAuthJson(body), spec.account)
+        val signedIn = loginIo.persistIfSignedIn(spec.authPath, spec.tokenEndpoint.toAuthJson(body), spec.account)
         if (signedIn) runAfterPersist(spec)
         return PollStep.Stop(if (signedIn) Outcome.SUCCESS else Outcome.ABORT)
     }
@@ -229,8 +229,8 @@ public class DeviceLoginFlow(
         deviceCode: String,
         loginIo: LoginIo,
     ): HttpResponse =
-        client.post(spec.tokenUrl) {
-            loginIo.formHeaders(this, spec.identityHeaders)
-            setBody(spec.tokenPollForm(deviceCode, spec.clientId))
+        client.post(spec.tokenEndpoint.url) {
+            loginIo.formHeaders(this, spec.client.headers)
+            setBody(spec.tokenEndpoint.pollForm(deviceCode, spec.client.id))
         }
 }

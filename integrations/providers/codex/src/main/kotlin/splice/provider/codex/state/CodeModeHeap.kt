@@ -110,12 +110,12 @@ internal enum class CodeModeWeight {
     abstract fun json(value: JsonElement): Long
 
     fun record(record: CodeModeRecord): Long = RECORD_METADATA_BYTES +
-        json(record.outer) + text(record.source) + record.pending.sumOf(::call) +
+        json(record.origin.outer) + text(record.origin.source) + record.progress.pending.sumOf(::call) +
         record.results.entries.sumOf { (id, result) ->
             text(id) + text(result.output) + record.accepted.media(id).orEmpty().sumOf(::json)
-        } + text(record.output.orEmpty()) + text(record.error.orEmpty()) +
-        record.nativeSegments.sumOf(::segment) + record.continuity.sumOf(::json) +
-        record.continuityReplay.sumOf(::segment) + record.issued.sumOf(::issued) + anchors(record.replayAnchors)
+        } + text(record.progress.output.orEmpty()) + text(record.error.orEmpty()) +
+        record.carry.segments.sumOf(::segment) + record.carry.continuity.sumOf(::json) +
+        record.carry.replay.sumOf(::segment) + record.issued.sumOf(::issued) + anchors(record.replayAnchors)
 
     fun snapshot(record: CodeModeRecordSnapshot): Long = RECORD_METADATA_BYTES +
         json(record.outer) + text(record.source) + record.pending.sumOf(::call) +

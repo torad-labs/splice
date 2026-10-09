@@ -21,7 +21,7 @@ import splice.dialect.responses.request.BuildOptions
 internal class ResponsesClientHints {
 
     fun liteTextBlock(quirks: ResponsesQuirks, lite: Boolean): JsonObject? {
-        val verbosity = quirks.liteTextVerbosity ?: return null
+        val verbosity = quirks.lite.liteTextVerbosity ?: return null
         return if (lite) buildJsonObject { put("verbosity", verbosity) } else null
     }
 
@@ -37,7 +37,7 @@ internal class ResponsesClientHints {
         // LITE-ONLY, for the same two reasons as text.verbosity: lite is where codex-cli was
         // measured sending it, and the 11 migration-oracle fixtures are all non-lite gpt-5-codex.
         // Leaving this ungated dropped the oracle to 3/11 — it is the instrument that caught it.
-        if (!lite || !quirks.sendClientMetadata) return null
+        if (!lite || !quirks.backend.sendClientMetadata) return null
         if (opts.sessionId == null && threadKey == null) return null
         return buildJsonObject {
             put("client", "splice")

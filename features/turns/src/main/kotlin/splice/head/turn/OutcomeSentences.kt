@@ -113,7 +113,7 @@ internal object OutcomeSentences {
 
     /** Origin is carried by the outcome, never inferred from the client's retry type. */
     fun of(failure: TurnOutcome.Failure): String = when {
-        !failure.providerReported -> local(failure.cause)
+        !failure.traits.providerReported -> local(failure.cause)
         failure.cause == FailureCause.CONTENT_FILTERED -> contentRefusal(failure.message)
         failure.cause == FailureCause.MODEL_REFUSED ->
             "the model declined to answer; ask for a different task"

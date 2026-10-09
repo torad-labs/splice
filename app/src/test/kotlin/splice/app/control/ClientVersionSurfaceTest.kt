@@ -105,15 +105,16 @@ class ClientVersionSurfaceTest {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(false, "test")
         },
-        usage = HeadUsageSource { UsageView(0L, 0, null) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int) = ""
-            override fun path() = "/tmp/client-version-surface.log"
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0L, 0, null) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int) = ""
+                override fun path() = "/tmp/client-version-surface.log"
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
     )
 }

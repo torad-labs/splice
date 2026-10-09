@@ -71,8 +71,8 @@ internal class SessionCost(
      *  card then makes the figure a lower bound, and no priced turn at all is no figure. */
     private fun spendOf(total: PerfSessionTotal): SessionSpend? {
         val models = total.models.values
-        if (models.none { it.turns > it.unpricedTurns }) return null
-        val incomplete = models.any { it.unpricedTurns > 0 || it.unreportedUsageTurns > 0 }
+        if (models.none { it.turns > it.gaps.unpricedTurns }) return null
+        val incomplete = models.any { it.gaps.unpricedTurns > 0 || it.gaps.unreportedUsageTurns > 0 }
         return SessionSpend(models.sumOf { it.usd }, lowerBound = incomplete)
     }
 

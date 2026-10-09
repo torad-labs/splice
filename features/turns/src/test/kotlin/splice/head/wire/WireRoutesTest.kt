@@ -14,6 +14,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.util.WallClock
 import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
@@ -35,15 +38,19 @@ class WireRoutesTest {
 
     private fun meta(session: String) = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = "claude-openrouter--m1",
-        upstreamModel = "m1",
-        clientMaxTokens = 8000,
-        effort = "medium",
-        summary = null,
-        budgetTokens = null,
-        sessionId = session,
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "medium",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = "claude-openrouter--m1",
+            upstreamModel = "m1",
+            clientMaxTokens = 8000,
+        ),
+        scope = TurnScope(sessionId = session),
     )
 
     /** A tap that kept three bodies, oldest first. */

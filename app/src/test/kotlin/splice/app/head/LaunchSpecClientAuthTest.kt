@@ -19,6 +19,7 @@ import splice.app.control.ControlAuth
 import splice.app.control.controlServerFor
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild
+import splice.app.provider.UpstreamFaultPlan
 import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -82,9 +83,11 @@ class LaunchSpecClientAuthTest {
             models = listOf(ModelEntry(id = "m", contextWindow = 200_000)),
             defaultContextWindow = 200_000,
         ),
-        watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+        faultPlan = UpstreamFaultPlan(
+            watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+            loginCommand = "claude-splice login",
+        ),
         cfg = ConfigService(StatePaths(baseOverride = tmp)).getConfig(),
-        loginCommand = "claude-splice login",
     )
 
     // The client's request timeout is derived from the head's whole-turn cap, not a second number
@@ -92,7 +95,7 @@ class LaunchSpecClientAuthTest {
     @Test
     fun `the client's request timeout outlives the head's whole-turn cap`(@TempDir tmp: Path) {
         val spec = factory(tmp).launchSpecFor(build(tmp, Dialect.OPENAI_RESPONSES), 3099, forwardClientAuth = false)
-        assertEquals(600_000L + 60_000L, spec.apiTimeoutMs)
+        assertEquals(600_000L + 60_000L, spec.gateway.apiTimeoutMs)
     }
 
     @Test
@@ -105,7 +108,7 @@ class LaunchSpecClientAuthTest {
         )
         val ctx = base.copy(head = head, providerCfg = provider, catalog = provider.catalogFor(head))
         val spec = factory(tmp).launchSpecFor(ctx, 3099, forwardClientAuth = false)
-        assertEquals(tiers.entries.associate { (slot, id) -> id to slot }, spec.tiers.slots)
+        assertEquals(tiers.entries.associate { (slot, id) -> id to slot }, spec.models.tiers.slots)
         assertEquals(listOf("m", "m2", "m3", "m4"), ctx.catalog.models.map { it.id })
     }
 
@@ -124,7 +127,7 @@ class LaunchSpecClientAuthTest {
         )
 
         val spec = factory(tmp).launchSpecFor(ctx, 3099, forwardClientAuth = true)
-        val cachedWindow = spec.modelOptionsCache.jsonArray.single().jsonObject
+        val cachedWindow = spec.models.modelOptionsCache.jsonArray.single().jsonObject
             .getValue("context_window").jsonPrimitive.long
 
         assertEquals(333_000, cachedWindow)
@@ -152,8 +155,12 @@ class LaunchSpecClientAuthTest {
 
         val spec = factory(tmp).launchSpecFor(ctx, 3099, forwardClientAuth = true)
 
-        assertEquals(ctx.catalog.clientLaunchWindow, spec.contextWindow, "the launch env is the catalog's number")
-        assertEquals(window, spec.contextWindow, "the pinned row's own window, as a Long")
+        assertEquals(
+            ctx.catalog.clientLaunchWindow,
+            spec.models.contextWindow,
+            "the launch env is the catalog's number",
+        )
+        assertEquals(window, spec.models.contextWindow, "the pinned row's own window, as a Long")
     }
 
     @Test
@@ -177,12 +184,12 @@ class LaunchSpecClientAuthTest {
 
         val spec = factory(tmp).launchSpecFor(ctx, 3099, forwardClientAuth = true)
 
-        assertEquals(listOf(shown.id), spec.availableModelIds)
-        assertEquals(mapOf(shown.id to shown.label), spec.modelLabels)
-        assertEquals(mapOf(shown.id to "opus"), spec.tiers.slots)
+        assertEquals(listOf(shown.id), spec.models.availableModelIds)
+        assertEquals(mapOf(shown.id to shown.label), spec.models.modelLabels)
+        assertEquals(mapOf(shown.id to "opus"), spec.models.tiers.slots)
         assertEquals(
             listOf(shown.id),
-            spec.modelOptionsCache.jsonArray.map { it.jsonObject.getValue("value").jsonPrimitive.content },
+            spec.models.modelOptionsCache.jsonArray.map { it.jsonObject.getValue("value").jsonPrimitive.content },
         )
     }
 
@@ -233,7 +240,7 @@ class LaunchSpecClientAuthTest {
     // while the suite stayed green. v0.4.0: it then carried the MANAGEMENT key inline, which sat in
     // settings.json and in curl's argv (/proc/<pid>/cmdline, readable by every local user). The
     // command now names a 0600 header file holding the TURN key and carries no key of either kind;
-    // the pin ties that file's bearer to the factory's ACTUAL planted token (spec.inferenceToken).
+    // the pin ties that file's bearer to the factory's ACTUAL planted token (spec.gateway.inferenceToken).
     @Test
     fun `the statusline command names the turn-key header file and carries no key itself`(@TempDir tmp: Path) {
         val mgmt = MgmtKey(StatePaths(baseOverride = tmp)).get()
@@ -242,11 +249,11 @@ class LaunchSpecClientAuthTest {
             controlPort = 3099,
             forwardClientAuth = false,
         )
-        assertFalse(spec.statuslineCommand.contains(mgmt), "no management key in settings.json or argv")
-        assertFalse(spec.statuslineCommand.contains(spec.inferenceToken), "no turn key inline either")
-        val header = Regex("-H '@([^']+)'").find(spec.statuslineCommand)?.groupValues?.get(1)
-        assertTrue(header != null, "the bearer rides a header file: ${spec.statuslineCommand}")
-        assertEquals("Authorization: Bearer ${spec.inferenceToken}\n", Files.readString(Path.of(header!!)))
+        assertFalse(spec.gateway.statuslineCommand.contains(mgmt), "no management key in settings.json or argv")
+        assertFalse(spec.gateway.statuslineCommand.contains(spec.gateway.inferenceToken), "no turn key inline either")
+        val header = Regex("-H '@([^']+)'").find(spec.gateway.statuslineCommand)?.groupValues?.get(1)
+        assertTrue(header != null, "the bearer rides a header file: ${spec.gateway.statuslineCommand}")
+        assertEquals("Authorization: Bearer ${spec.gateway.inferenceToken}\n", Files.readString(Path.of(header!!)))
     }
 
     // v0.4.0: ANTHROPIC_AUTH_TOKEN is inherited by every tool the model runs in the session, so the
@@ -259,8 +266,8 @@ class LaunchSpecClientAuthTest {
             controlPort = 3099,
             forwardClientAuth = false,
         )
-        assertNotEquals(mgmt.get(), spec.inferenceToken)
-        assertEquals(TurnKey(mgmt).get(), spec.inferenceToken)
+        assertNotEquals(mgmt.get(), spec.gateway.inferenceToken)
+        assertEquals(TurnKey(mgmt).get(), spec.gateway.inferenceToken)
     }
 
     // The pin that matters: drive the MATERIALIZED command against a real ControlServer statusline
@@ -289,8 +296,8 @@ class LaunchSpecClientAuthTest {
             )
             assertEquals(
                 200,
-                statuslineStatus(spec.statuslineCommand),
-                "materialized command: ${spec.statuslineCommand}",
+                statuslineStatus(spec.gateway.statuslineCommand),
+                "materialized command: ${spec.gateway.statuslineCommand}",
             )
         } finally {
             server.stop()

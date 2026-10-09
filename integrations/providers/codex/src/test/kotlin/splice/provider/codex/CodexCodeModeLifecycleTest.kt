@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.upstream.RoundResult
@@ -146,7 +147,7 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
                         false,
                         false,
                         Usage(),
-                        customCalls = listOf(outer("outer-$posts", "source-$posts")),
+                        handoffs = RoundHandoffs(customCalls = listOf(outer("outer-$posts", "source-$posts"))),
                     ),
                 )
             }.turn()
@@ -277,7 +278,7 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
                 RoundResult.Outcome(completedOutcome())
             }.turn()
         assertTrue(served is TurnOutcome.Success)
-        assertTrue((served as TurnOutcome.Success).usage.codeModeDiverged)
+        assertTrue((served as TurnOutcome.Success).usage.origin.codeModeDiverged)
         assertEquals(Json.parseToJsonElement(divergentHistory), Json.parseToJsonElement(posted))
         val spuriousExecOutputs = Json.parseToJsonElement(posted).jsonObject.getValue("input").jsonArray.count {
             it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output")

@@ -102,9 +102,9 @@ public class TraceStore(
         put("turn", turnId)
         put("ts", now())
         put("head", head)
-        meta.sessionId?.let { put("session", it) }
-        put("model", meta.upstreamModel)
-        put("clientModel", meta.originalModel)
+        meta.scope.sessionId?.let { put("session", it) }
+        put("model", meta.route.upstreamModel)
+        put("clientModel", meta.route.originalModel)
         put("compact", meta.compact)
     }
 }

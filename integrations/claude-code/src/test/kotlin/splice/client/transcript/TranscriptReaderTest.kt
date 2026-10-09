@@ -18,6 +18,7 @@ import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
 import splice.sessions.transcript.TranscriptRole
+import splice.sessions.transcript.TranscriptToolUse
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -73,19 +74,15 @@ class TranscriptReaderTest {
                     TranscriptRole.ASSISTANT,
                     TS_MS,
                     """{"file_path":"/w/splice.toml"}""",
-                    "Read",
-                    false,
+                    TranscriptToolUse("Read", false, "toolu_1"),
                     messageId = "msg_1",
-                    toolUseId = "toolu_1",
                 ),
                 TranscriptMessage(
                     3,
                     TranscriptRole.TOOL,
                     TS_MS,
                     "api_key = [redacted]",
-                    "Read",
-                    true,
-                    toolUseId = "toolu_1",
+                    TranscriptToolUse("Read", true, "toolu_1"),
                 ),
                 TranscriptMessage(4, TranscriptRole.SYSTEM, null, "<command-name>/model</command-name>"),
                 TranscriptMessage(5, TranscriptRole.SYSTEM, null, "API error: overloaded_error"),
@@ -127,20 +124,20 @@ class TranscriptReaderTest {
         val reader = TranscriptReader()
         val roots = listOf(root)
         val first = found(reader.page(ID, roots, null, 1))
-        assertEquals(listOf("first", "second"), first.messages.map { it.toolUseId })
+        assertEquals(listOf("first", "second"), first.messages.map { it.toolUse.id })
         val results = found(reader.page(ID, roots, first.next, 100)).messages
-        assertEquals(listOf("first", "second"), results.filter { it.result == true }.map { it.toolUseId })
+        assertEquals(listOf("first", "second"), results.filter { it.toolUse.result == true }.map { it.toolUse.id })
         assertTrue(
-            results.filter { it.result == true }.all { it.tool == null },
+            results.filter { it.toolUse.result == true }.all { it.toolUse.name == null },
             "ids survive without a call on this page",
         )
         val whole = found(reader.page(ID, roots, null, 100)).messages
         val newest = found(reader.pageBefore(ID, roots, null, 100)).messages
-        assertEquals(whole.map { it.toolUseId }, newest.map { it.toolUseId })
+        assertEquals(whole.map { it.toolUse.id }, newest.map { it.toolUse.id })
         val selected = reader.response(ID, roots, "answer", 100) { true }
         assertTrue(selected is splice.sessions.transcript.MessageConversation.Found)
         selected as splice.sessions.transcript.MessageConversation.Found
-        assertEquals(whole.map { it.toolUseId }, selected.messages.map { it.toolUseId })
+        assertEquals(whole.map { it.toolUse.id }, selected.messages.map { it.toolUse.id })
         assertEquals(0L, selected.earlier)
     }
 

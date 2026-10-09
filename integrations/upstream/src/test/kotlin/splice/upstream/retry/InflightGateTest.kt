@@ -70,7 +70,7 @@ class InflightGateTest {
         assertFalse(ordinary.isCompleted, "a source loan cannot invent fresh capacity")
         val borrowed = (result.await() as InflightGate.Admission.Acquired).slot
         assertTrue(borrowed.resumedSource)
-        assertEquals(1L, gate.snapshot().acquired)
+        assertEquals(1L, gate.snapshot().traffic.acquired)
         borrowed.release()
         source.release()
         (ordinary.await() as InflightGate.Admission.Acquired).slot.release()
@@ -111,7 +111,7 @@ class InflightGateTest {
         previous.release()
         (result.await() as InflightGate.Admission.Acquired).slot.release()
         source.release()
-        assertEquals(1L, gate.snapshot().released)
+        assertEquals(1L, gate.snapshot().traffic.released)
     }
 
     @Test
@@ -126,11 +126,11 @@ class InflightGateTest {
         previous.release()
         cancelled.cancelAndJoin()
         assertEquals(1, gate.snapshot().inflight, "cancellation cannot refund the independent reader")
-        assertEquals(0L, gate.snapshot().released)
+        assertEquals(0L, gate.snapshot().traffic.released)
         val next = checkNotNull(gate.resumeSource("source"))
         next.release()
         source.release()
-        assertEquals(1L, gate.snapshot().released)
+        assertEquals(1L, gate.snapshot().traffic.released)
     }
 
     @Test
@@ -147,7 +147,7 @@ class InflightGateTest {
         previous.release()
         val fresh = (result.await() as InflightGate.Admission.Acquired).slot
         assertFalse(fresh.resumedSource, "a completed source cannot lend a stale handle")
-        assertEquals(2L, gate.snapshot().acquired)
+        assertEquals(2L, gate.snapshot().traffic.acquired)
         fresh.release()
         assertEquals(0, gate.snapshot().inflight)
     }
@@ -161,7 +161,7 @@ class InflightGateTest {
         originals.forEach { it.release() }
         val continuations = originals.indices.map { checkNotNull(gate.resumeSource("source-$it")) }
         assertEquals(count, gate.snapshot().inflight)
-        assertEquals(count.toLong(), gate.snapshot().acquired)
+        assertEquals(count.toLong(), gate.snapshot().traffic.acquired)
         assertTrue(continuations.all { it.resumedSource })
         assertTrue(gate.resumeSource("source-0") == null, "only one continuation may share a source at a time")
         assertTrue(gate.resumeSource("other-session") == null)
@@ -172,7 +172,7 @@ class InflightGateTest {
             it.release()
         }
         assertEquals(0, gate.snapshot().inflight)
-        assertEquals(count.toLong(), gate.snapshot().released)
+        assertEquals(count.toLong(), gate.snapshot().traffic.released)
     }
 
     @Test
@@ -189,8 +189,8 @@ class InflightGateTest {
         next.release()
         last.release()
         assertEquals(0, gate.snapshot().inflight)
-        assertEquals(1L, gate.snapshot().acquired)
-        assertEquals(1L, gate.snapshot().released)
+        assertEquals(1L, gate.snapshot().traffic.acquired)
+        assertEquals(1L, gate.snapshot().traffic.released)
     }
 
     @Test
@@ -371,7 +371,7 @@ class InflightGateTest {
                 // V4-213: an undelivered permit was never a slot — nothing lingers on the live list,
                 // and every slot counted as acquired was counted as released
                 assertEquals(emptyList<Any>(), after.live, "a lost hand-off left a live row at iteration $it")
-                assertEquals(after.acquired, after.released, "counts disagree at iteration $it: $after")
+                assertEquals(after.traffic.acquired, after.traffic.released, "counts disagree at iteration $it: $after")
             }
         }
     }
@@ -407,12 +407,12 @@ class InflightGateTest {
         slot.describe("gpt-5.6-sol", compact = false, session = null)
         val held = gate.snapshot()
         assertEquals(listOf("gpt-5.6-sol"), held.live.map { it.label })
-        assertEquals(1L to 0L, held.acquired to held.released)
+        assertEquals(1L to 0L, held.traffic.acquired to held.traffic.released)
         slot.release()
         slot.release() // idempotent: counted once
         val after = gate.snapshot()
         assertEquals(emptyList<Any>(), after.live)
-        assertEquals(1L to 1L, after.acquired to after.released)
+        assertEquals(1L to 1L, after.traffic.acquired to after.traffic.released)
     }
 
     @Test
@@ -426,9 +426,9 @@ class InflightGateTest {
         val after = gate.snapshot()
         assertEquals(1, after.live.size, "only the holder is live: $after")
         // the cancelled waiter was neither acquired nor counted as waited
-        assertEquals(1L to 0L, after.acquired to after.waited, "$after")
+        assertEquals(1L to 0L, after.traffic.acquired to after.traffic.waited, "$after")
         holder.release()
-        assertEquals(1L to 1L, gate.snapshot().let { it.acquired to it.released })
+        assertEquals(1L to 1L, gate.snapshot().let { it.traffic.acquired to it.traffic.released })
     }
 
     @Test
@@ -441,14 +441,14 @@ class InflightGateTest {
         now = 1_400L
         holder.release()
         val first = quick.await()
-        assertEquals(1L to 400L, gate.snapshot().let { it.waited to it.avgWaitMs })
+        assertEquals(1L to 400L, gate.snapshot().let { it.traffic.waited to it.traffic.avgWaitMs })
         val slow = async { gate.admittedSlot() }
         yield()
         now = 2_000L // queued at 1400, admitted at 2000: 600, so the mean is 500
         first.release()
         slow.await().release()
-        assertEquals(2L to 500L, gate.snapshot().let { it.waited to it.avgWaitMs })
-        assertEquals(3L, gate.snapshot().acquired, "the holder never waited, and still counts as acquired")
+        assertEquals(2L to 500L, gate.snapshot().let { it.traffic.waited to it.traffic.avgWaitMs })
+        assertEquals(3L, gate.snapshot().traffic.acquired, "the holder never waited, and still counts as acquired")
     }
 
     @Test

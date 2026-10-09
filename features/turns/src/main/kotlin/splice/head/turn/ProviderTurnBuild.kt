@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.compaction.EffectiveCompactionInstructions
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.TurnPerf
+import splice.core.turn.TurnCompaction
 import splice.head.HeadDeps
 import splice.head.compaction.CompactionReplay
 import splice.upstream.BuiltTurn
@@ -22,7 +23,7 @@ internal class ProviderTurnBuild(
     private val prompts = TurnPrompts(provider, deps)
 
     fun build(parsed: AnthropicTurnBody, compact: Boolean, sessionId: String?, perf: TurnPerf): BuiltTurn {
-        val effective = deps.compactionTail.resolve(
+        val effective = deps.seams.session.compactionTail.resolve(
             compact,
             provider.catalog.stripSuffixes(parsed.typed.model),
             sessionId,
@@ -62,12 +63,14 @@ internal class ProviderTurnBuild(
         val withTail = effective?.let { eff ->
             tailed.copy(
                 meta = tailed.meta.copy(
-                    compactionInstructions = if (applied) eff.text else null,
-                    compactionInstructionsSource = if (applied) eff.source else "${eff.source} (not applied)",
-                    compactionRequestHash = hash,
+                    compaction = TurnCompaction(
+                        instructions = if (applied) eff.text else null,
+                        source = if (applied) eff.source else "${eff.source} (not applied)",
+                        requestHash = hash,
+                    ),
                 ),
             )
-        } ?: tailed.copy(meta = tailed.meta.copy(compactionRequestHash = hash))
+        } ?: tailed.copy(meta = tailed.meta.copy(compaction = tailed.meta.compaction.copy(requestHash = hash)))
         // AFTER the tail, so the compaction request hash and its applied check keep reading the
         // provider body BEFORE any tail — a retry must still match its recording byte for byte.
         return prompts.applySlotPrompt(prompts.applySystemPrompt(withTail, sessionId, perf), sessionId, perf)

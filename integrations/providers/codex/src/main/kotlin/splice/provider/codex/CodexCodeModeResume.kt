@@ -5,6 +5,7 @@ package splice.provider.codex
 import kotlinx.serialization.json.JsonElement
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.provider.codex.stream.CodeModeLiveRound
@@ -58,12 +59,12 @@ internal class CodexCodeModeResume(
                 else -> failure(it)
             }
         }
-        val attached = context.copy(sink = driver.streams.attach(record, context.sink))
+        val attached = context.copy(link = context.link.copy(sink = driver.streams.attach(record, context.link.sink)))
         attached.completed += context.completed
         return try {
-            if (record.lastDigest == context.digest && record.pending.isNotEmpty()) {
+            if (record.progress.lastDigest == context.digest && record.progress.pending.isNotEmpty()) {
                 val pending = record.visiblePending().filter { it.clientId !in record.results }
-                if (pending.isNotEmpty()) return machine.emit(record, pending, attached.sink)
+                if (pending.isNotEmpty()) return machine.emit(record, pending, attached.link.sink)
             }
             fresh(record, attached, body)
         } finally {
@@ -82,7 +83,7 @@ internal class CodexCodeModeResume(
         val detail = record.error ?: "code-mode process state was lost; source was not rerun"
         val supplied = suppliedResults(record, context.turn, mode = CodeModeResultMode.INTERRUPT)
         supplied.error?.let { return failure(it) }
-        registry.acceptResults(record, context.digest, supplied.results, context.turn.toolMedia)
+        registry.acceptResults(record, context.digest, supplied.results, context.turn.rendering.media)
         val interrupted = machine.interrupt(record, detail)
         return if (interrupted is TurnOutcome.Failure) {
             interrupted
@@ -101,8 +102,8 @@ internal class CodexCodeModeResume(
         val mode = if (hasExtraContent) CodeModeResultMode.INTERRUPT else CodeModeResultMode.RESUME
         val supplied = suppliedResults(record, context.turn, mode)
         supplied.error?.let { return failure(it) }
-        registry.acceptResults(record, context.digest, supplied.results, context.turn.toolMedia)
-        record.pending.firstOrNull { it.name !in context.turn.tools }?.let { pending ->
+        registry.acceptResults(record, context.digest, supplied.results, context.turn.rendering.media)
+        record.progress.pending.firstOrNull { it.name !in context.turn.tools }?.let { pending ->
             val message = "code-mode tool '${pending.name}' is no longer in the current tool catalog"
             return reject(record, context, body, hasExtraContent, message)
         }
@@ -134,19 +135,19 @@ internal class CodexCodeModeResume(
             wire.extraContent(body, record, candidateMedia(record, context.turn), report = extra)
             machine.interrupt(record)
         }
-        context.disableParallel && record.pending.any { !it.exposed } -> {
-            exposeNext(record, supplied, context.sink)
+        context.disableParallel && record.progress.pending.any { !it.exposed } -> {
+            exposeNext(record, supplied, context.link.sink)
         }
         else -> {
             val batch = runtimeResults(record)
-            registry.changes.edit(record) { it.pending.clear() }
+            registry.changes.edit(record) { it.progress.pending.clear() }
             machine.advance(
                 CodeModeAdvanceRequest(
                     record,
                     context.turn,
                     context.disableParallel,
                     batch,
-                    context.sink,
+                    context.link.sink,
                     driver.streams.find(record),
                 ),
             )
@@ -175,7 +176,7 @@ internal class CodexCodeModeResume(
         supplied: Map<String, CodeModeResult>,
         sink: WireSink,
     ): TurnOutcome {
-        registry.changes.save(record) { live -> live.pending.first { !it.exposed }.exposed = true }
+        registry.changes.save(record) { live -> live.progress.pending.first { !it.exposed }.exposed = true }
         val pending = record.visiblePending().filter {
             it.clientId !in record.results && it.clientId !in supplied
         }
@@ -201,7 +202,7 @@ internal class CodexCodeModeResume(
     private fun candidateMedia(
         record: CodeModeRecord,
         turn: CodexCodeModeBridge.Turn,
-    ): Map<String, List<JsonElement>> = turn.toolMedia.filterKeys { it !in record.results }
+    ): Map<String, List<JsonElement>> = turn.rendering.media.filterKeys { it !in record.results }
 
     /**
      * V4-336: whether what the client added stops the script. Role=system content (a peer's message,
@@ -218,9 +219,9 @@ internal class CodexCodeModeResume(
     }
 
     private fun answered(record: CodeModeRecord): Boolean =
-        record.pending.all { it.clientId in record.results }
+        record.progress.pending.all { it.clientId in record.results }
 
-    private fun runtimeResults(record: CodeModeRecord): List<CodeModeResult> = record.pending.map { pending ->
+    private fun runtimeResults(record: CodeModeRecord): List<CodeModeResult> = record.progress.pending.map { pending ->
         val result = record.results.getValue(pending.clientId)
         CodeModeResult(pending.runtimeId, result.output, result.isError)
     }
@@ -228,7 +229,7 @@ internal class CodexCodeModeResume(
     private fun failure(message: String): TurnOutcome.Failure =
         TurnOutcome.Failure(
             message,
-            deterministic = true,
+            traits = FailureTraits(deterministic = true),
             cause = FailureCause.CODE_MODE_PROTOCOL,
             phase = FailurePhase.MID_OUTPUT,
             salvagedUsage = noRequestUsage,

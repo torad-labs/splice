@@ -118,7 +118,11 @@ class ConsoleEventProducersTest {
                 "session.change" to mapOf("session" to "session-1", "head" to "claude"),
                 "account.switch" to mapOf("head" to "claude", "from" to "primary", "to" to "backup"),
                 "turn.end" to mapOf("head" to "claude", "perfRowId" to "1789612775000", "outcome" to "ok"),
-                "message.edge" to mapOf("from" to "session-1", "to" to "uds:/run/peer.sock", "at" to EDGE_AT.toString()),
+                "message.edge" to mapOf(
+                    "from" to "session-1",
+                    "to" to "uds:/run/peer.sock",
+                    "at" to EDGE_AT.toString(),
+                ),
             ),
             produced.mapValues { (_, frame) ->
                 (frame.data - "seq").mapValues { (_, value) -> value.jsonPrimitive.content }

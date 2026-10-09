@@ -33,7 +33,9 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlAuth
 import splice.app.control.ControlServer
+import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
+import splice.app.control.UsageWarning
 import splice.app.control.controlServerFor
 import splice.app.sources.PerfRowsFileSource
 import splice.core.auth.AuthDescription
@@ -48,6 +50,9 @@ import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
@@ -229,15 +234,14 @@ class ConsoleVerbReadsRoutesTest {
 
     private fun meta() = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = "claude-sonnet",
-        upstreamModel = "m1",
-        clientMaxTokens = 8000,
-        effort = "medium",
-        summary = null,
-        budgetTokens = null,
-        sessionId = "s-1",
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "medium",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(stream = true, originalModel = "claude-sonnet", upstreamModel = "m1", clientMaxTokens = 8000),
+        scope = TurnScope(sessionId = "s-1"),
     )
 
     private suspend fun req(request: suspend HttpClient.() -> HttpResponse): HttpResponse =
@@ -260,17 +264,18 @@ class ConsoleVerbReadsRoutesTest {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(false, "test", emptyMap())
         },
-        usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
-        perfRows = PerfRowsFileSource(perfFile),
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int): String = ""
+                override fun path(): String = ""
+            },
+            perfRows = PerfRowsFileSource(perfFile),
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
     )
 
     private suspend fun awaitPort() {

@@ -105,7 +105,7 @@ class UpstreamRosterTest {
             """.trimIndent(),
         )
         assertEquals(listOf("grok-4.7", "grok-4.5"), models.map { it.id })
-        assertEquals(500_000L, models[0].contextWindow)
+        assertEquals(500_000L, models[0].window.context)
         assertEquals(listOf("grok-4.5", "grok-4.5-latest", "grok-build-latest"), models[1].spellings)
     }
 
@@ -115,11 +115,11 @@ class UpstreamRosterTest {
             """{"data":[{"id":"kimi-for-coding","display_name":"K2.8 Preview","context_length":1048576}]}""",
         )
         assertEquals("K2.8 Preview", moonshot.single().label)
-        assertEquals(1_048_576L, moonshot.single().contextWindow)
+        assertEquals(1_048_576L, moonshot.single().window.context)
         // llama-server answers under `models`, and a row without a window is "not published", not zero.
         val local = published("""{"models":[{"id":"/packs/bonsai.gguf"}]}""")
         assertEquals("/packs/bonsai.gguf", local.single().id)
-        assertEquals(null, local.single().contextWindow)
+        assertEquals(null, local.single().window.context)
     }
 
     @Test
@@ -202,7 +202,7 @@ class UpstreamRosterTest {
             """{"models":[{"slug":"gpt-6-astra","context_window":272000,"max_context_window":872000},""" +
                 """{"slug":"gpt-5.5","context_window":272000,"max_context_window":272000}]}""",
         )
-        assertEquals(872_000L, upstream.first { it.id == "gpt-6-astra" }.maxContextWindow)
+        assertEquals(872_000L, upstream.first { it.id == "gpt-6-astra" }.window.maxContext)
         val rows = diff.of(listOf(entry("gpt-6-astra", 872_000), entry("gpt-5.5", 400_000)), upstream)
         assertEquals(RosterVerdict.SERVED, verdict(rows, "gpt-6-astra"))
         assertTrue(rows.first { it.id == "gpt-6-astra" }.note.contains("opts in"))

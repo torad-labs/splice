@@ -362,8 +362,8 @@ class DoctorReportTest {
     private fun prosePool() = HeadAccountPoolView(
         selectedLabel = "ops team PLANTEXT",
         accounts = listOf(
-            HeadAccountView("primary", true, false, true, "plus", null, null, null, null),
-            HeadAccountView("ops team PLANTEXT", false, true, true, "plus", null, null, null, null),
+            HeadAccountView("primary", true, false, true, "plus"),
+            HeadAccountView("ops team PLANTEXT", false, true, true, "plus"),
         ),
         lastSwitch = null,
     )

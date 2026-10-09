@@ -18,6 +18,8 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.head.HeadHealthCounters
@@ -32,6 +34,8 @@ import splice.head.wire.UsagePayloadBuilder
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.RoundResult
 import splice.upstream.StreamTranslator
@@ -60,14 +64,18 @@ private class SerializationRig(tmp: Path) {
     private val terminal = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
     private val meta = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.OFF,
-        stream = true,
-        originalModel = "synthetic",
-        upstreamModel = "synthetic",
-        clientMaxTokens = 100,
-        effort = "high",
-        summary = null,
-        budgetTokens = null,
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.OFF,
+            effort = "high",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = "synthetic",
+            upstreamModel = "synthetic",
+            clientMaxTokens = 100,
+        ),
     )
 
     suspend fun assemble(body: JsonObject): TurnDrive = factory.assembleDrive(
@@ -113,8 +121,7 @@ private class SerializationRig(tmp: Path) {
 private class SerializationProvider :
     Provider,
     ProviderIdentity by ProviderTuning(
-        key = "synthetic",
-        label = "synthetic",
+        name = ProviderName(key = "synthetic", label = "synthetic"),
         catalog = ModelCatalog(
             discoveryPrefix = "synthetic-",
             models = listOf(ModelEntry("synthetic", contextWindow = 2_000_000)),
@@ -122,7 +129,7 @@ private class SerializationProvider :
         ),
         pinnedModel = "synthetic",
         auth = ClientAuthProvider("synthetic"),
-        baseUrl = "http://synthetic.invalid",
+        locations = ProviderLocations(baseUrl = "http://synthetic.invalid"),
         watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
     ) {
     override val upstreamUrl = "http://synthetic.invalid"

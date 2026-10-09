@@ -45,6 +45,8 @@ import splice.head.perf.PerfStats
 import splice.head.quotaFor
 import splice.head.usage.QuotaTracker
 import splice.provider.codex.CodexProvider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.credentials.AccountPool
@@ -166,8 +168,8 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
             rig.messages(sessionId = "terminal", scenario = "authfail").also { it.bodyAsText() }
 
             val primary = rig.poolView().accounts.single { it.primary }
-            assertEquals("terminal_401", primary.authExclusionReason)
-            assertEquals(600_000L, checkNotNull(primary.authExcludedUntilEpochMillis) - rig.accountNowMs())
+            assertEquals("terminal_401", primary.credential.exclusionReason)
+            assertEquals(600_000L, checkNotNull(primary.credential.excludedUntilEpochMillis) - rig.accountNowMs())
         } finally {
             rig.close()
         }
@@ -537,12 +539,11 @@ private class AccountTurnRig(root: Path, private val credentialPresent: Boolean 
         )
         return CodexProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = catalog,
                 pinnedModel = "gpt-5.6-sol",
                 auth = primaryAuth,
-                baseUrl = mock.baseUrl,
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),

@@ -34,9 +34,9 @@ internal class ResponsesFailureAmend(
         surfaceRecovery.isToolSurfaceRejection(
             status,
             responseText,
-            quirks.toolSurface?.mode ?: ToolSearchMode.CLIENT,
+            quirks.tools.toolSurface?.mode ?: ToolSearchMode.CLIENT,
         ) ->
-            surfaceRecovery.dropToolSearchTool(bodyJson, quirks.toolSurface?.mode ?: ToolSearchMode.CLIENT)?.also {
+            surfaceRecovery.dropToolSearchTool(bodyJson, quirks.tools.toolSurface?.mode ?: ToolSearchMode.CLIENT)?.also {
                 if (toolSurfaceLatch.close()) logToolSurfaceLatchClosed()
             }
         else -> null
@@ -48,7 +48,7 @@ internal class ResponsesFailureAmend(
      *  fires EXACTLY ONCE per provider instance — never once per turn, since every turn after the
      *  close reads the latch already-closed and never re-enters this branch. */
     private fun logToolSurfaceLatchClosed() {
-        val thisTurn = if (quirks.toolSurface?.mode == ToolSearchMode.HOSTED) {
+        val thisTurn = if (quirks.tools.toolSurface?.mode == ToolSearchMode.HOSTED) {
             "this turn retried with all tools eager"
         } else {
             "this turn recovered eager-only (one turn below status quo)"

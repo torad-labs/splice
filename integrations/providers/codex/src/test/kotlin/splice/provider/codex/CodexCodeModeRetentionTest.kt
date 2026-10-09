@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
@@ -50,12 +51,12 @@ class CodexCodeModeRetentionTest : CodeModeBridgeTestSupport() {
                 { error("startup expiry never starts a worker") },
                 CodeModeStateLocation(tempDir.resolve("expired-startup"), legacy),
                 clock = clock,
-                ttl = 1_000.milliseconds,
+                retention = CodeModeRetention(ttl = 1_000.milliseconds),
             ),
             Json { encodeDefaults = true },
             50.milliseconds,
         )
-        val payload = WeakReference(registry.recordsFor("conversation-1").single().outer)
+        val payload = WeakReference(registry.recordsFor("conversation-1").single().origin.outer)
         clock.now = START + 1_001
         awaitUntil("the restored conversation expires without a new turn") {
             registry.recordsFor("conversation-1").isEmpty()
@@ -115,7 +116,7 @@ class CodexCodeModeRetentionTest : CodeModeBridgeTestSupport() {
                 { error("no worker runs in a persistence budget test") },
                 CodeModeStateLocation(state.dir, tempDir.resolve("legacy.json")),
                 clock = clock,
-                sessionAlive = CodeModeSessionAlive { true },
+                cellLease = CodeModeCellLease(sessionAlive = CodeModeSessionAlive { true }),
             ),
             Json { encodeDefaults = true },
             5.minutes,
@@ -125,7 +126,7 @@ class CodexCodeModeRetentionTest : CodeModeBridgeTestSupport() {
         try {
             val starts = (1..50).map { n ->
                 threads.submit {
-                    val record = CodeModeRecords.of("live-$n", 1, START).copy(continuity = history)
+                    val record = CodeModeRecords.of("live-$n", 1, START).also { it.carry.continuity = history }
                         .also { it.sessionId = "live-$n" }
                     assertTrue(registry.add(record))
                     registry.complete(record, "done")
@@ -148,7 +149,7 @@ class CodexCodeModeRetentionTest : CodeModeBridgeTestSupport() {
                 { runtime },
                 CodeModeStateLocation(state.dir, tempDir.resolve("working-session.json")),
                 clock = clock,
-                sessionAlive = CodeModeSessionAlive { true },
+                cellLease = CodeModeCellLease(sessionAlive = CodeModeSessionAlive { true }),
             ),
         )
         startScript(manager)
@@ -188,9 +189,11 @@ class CodexCodeModeRetentionTest : CodeModeBridgeTestSupport() {
             { runtime },
             CodeModeStateLocation(state.dir, tempDir.resolve("$name.json")),
             clock = clock,
-            cellClock = splice.core.util.ElapsedClock(clock::millis),
             log = LogSink { logLines += it },
-            sessionAlive = CodeModeSessionAlive { id -> if (id in deadSessions) false else null },
+            cellLease = CodeModeCellLease(
+                sessionAlive = CodeModeSessionAlive { id -> if (id in deadSessions) false else null },
+                clock = ElapsedClock(clock::millis),
+            ),
         )
         return CodexCodeModeBridge(config, sweepInterval) to state
     }

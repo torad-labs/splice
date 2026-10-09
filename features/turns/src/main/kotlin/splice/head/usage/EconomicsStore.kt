@@ -84,32 +84,27 @@ public data class EconomicsTurnCounts(
 public data class EconomicsBucket(
     val hour: Long,
     val counts: EconomicsTurnCounts = EconomicsTurnCounts(),
-    /** Every request's input the hour billed, cache buckets included: each turn's final round and the
-     *  rounds it absorbed, the same three sums for [cachedTokens] and [cacheWriteTokens]. */
-    val inTokens: Long = 0,
-    val cachedTokens: Long = 0,
-    /** V4-86: the cache-WRITE half of [inTokens], disjoint from [cachedTokens] (the read half).
-     *  Recorded BESIDE input, never out of it, for the same reason [cachedTokens] is: the plan
-     *  meters total input and a written block bills in full. It is a separate sum because it
-     *  bills at the vendor's cache_write rate, not the input rate. */
-    val cacheWriteTokens: Long = 0,
-    val outTokens: Long = 0,
-    val reqBytes: Long = 0,
-    val upstreamBytes: Long = 0,
-    val toolsEager: Long = 0,
-    val toolsDeferred: Long = 0,
-    val deferralTurns: Long = 0,
+    val tokens: BucketTokens = BucketTokens(),
+    val bytes: BucketBytes = BucketBytes(),
+    val tools: BucketTools = BucketTools(),
     val rateLimited: Long = 0,
-    /** V4-221: the hour's dollars, each turn priced at its own model's card. NULL for an hour read
-     *  from a file written before the field existed — "not priced then", never $0 — and it stays null
-     *  if this daemon adds turns to that same hour, because a sum missing the earlier turns would
-     *  read as the hour's whole cost. */
-    val costUsd: Double? = 0.0,
-    /** V4-221: turns whose model had no rate card; their dollars are not in [costUsd]. */
-    val unpricedTurns: Long = 0,
+    val cost: BucketCost = BucketCost(),
 ) {
     val turns: Long get() = counts.turns
     val localSteps: Long get() = counts.localSteps
+
+    /** The flat read surface over the grouped sums: readers keep one name per figure. */
+    val inTokens: Long get() = tokens.inTokens
+    val cachedTokens: Long get() = tokens.cachedTokens
+    val cacheWriteTokens: Long get() = tokens.cacheWriteTokens
+    val outTokens: Long get() = tokens.outTokens
+    val reqBytes: Long get() = bytes.reqBytes
+    val upstreamBytes: Long get() = bytes.upstreamBytes
+    val toolsEager: Long get() = tools.toolsEager
+    val toolsDeferred: Long get() = tools.toolsDeferred
+    val deferralTurns: Long get() = tools.deferralTurns
+    val costUsd: Double? get() = cost.costUsd
+    val unpricedTurns: Long get() = cost.unpricedTurns
 }
 
 public class EconomicsStore(
@@ -129,18 +124,24 @@ public class EconomicsStore(
         synchronized(lock) {
             loadUnderLock()
             val b = buckets[hour] ?: EconomicsBucket(hour)
-            buckets[hour] = tokens(b, turn).copy(
+            buckets[hour] = b.copy(
                 counts = b.counts.record(turn),
-                reqBytes = b.reqBytes + (turn.reqBytes ?: 0),
-                upstreamBytes = b.upstreamBytes + (turn.upstreamBytes ?: 0),
-                toolsEager = b.toolsEager + (turn.toolsEager ?: 0),
-                toolsDeferred = b.toolsDeferred + (turn.toolsDeferred ?: 0),
-                // Only turns that actually REPORTED a partition count toward the deferral average,
-                // so a head that cannot defer averages over zero turns and reads as "—" rather than
-                // being diluted to a misleading 0.0 by turns that never had the choice.
-                deferralTurns = b.deferralTurns + deferralTurn(turn),
+                tokens = tokens(b.tokens, turn),
+                bytes = BucketBytes(
+                    reqBytes = b.reqBytes + (turn.bytes.reqBytes ?: 0),
+                    upstreamBytes = b.upstreamBytes + (turn.bytes.upstreamBytes ?: 0),
+                ),
+                tools = BucketTools(
+                    toolsEager = b.toolsEager + (turn.tools.toolsEager ?: 0),
+                    toolsDeferred = b.toolsDeferred + (turn.tools.toolsDeferred ?: 0),
+                    // Only turns that actually REPORTED a partition count toward the deferral average,
+                    // so a head that cannot defer averages over zero turns and reads as "—" rather than
+                    // being diluted to a misleading 0.0 by turns that never had the choice.
+                    deferralTurns = b.deferralTurns + deferralTurn(turn),
+                ),
                 rateLimited = b.rateLimited + if (turn.rateLimited) 1 else 0,
-            ).let { priced(it, usd, localStep) }
+                cost = priced(b.cost, usd, localStep),
+            )
             trimUnderLock()
             version += 1
         }
@@ -148,21 +149,22 @@ public class EconomicsStore(
     }
 
     /** Numeric sums are observed values only; the count beside them records unknown turns. */
-    private fun tokens(b: EconomicsBucket, turn: TurnEconomics): EconomicsBucket = b.copy(
-        inTokens = b.inTokens + (turn.inTokens ?: 0) + turn.absorbed.inputTokens,
-        cachedTokens = b.cachedTokens + (turn.cachedTokens ?: 0) + turn.absorbed.cachedTokens,
-        cacheWriteTokens = b.cacheWriteTokens + (turn.cacheWriteTokens ?: 0) + turn.absorbed.cacheWriteTokens,
-        outTokens = b.outTokens + (turn.outTokens ?: 0),
+    private fun tokens(sums: BucketTokens, turn: TurnEconomics): BucketTokens = BucketTokens(
+        inTokens = sums.inTokens + (turn.tokens.inTokens ?: 0) + turn.absorbed.inputTokens,
+        cachedTokens = sums.cachedTokens + (turn.tokens.cachedTokens ?: 0) + turn.absorbed.cachedTokens,
+        cacheWriteTokens = sums.cacheWriteTokens + (turn.tokens.cacheWriteTokens ?: 0) +
+            turn.absorbed.cacheWriteTokens,
+        outTokens = sums.outTokens + (turn.tokens.outTokens ?: 0),
     )
 
     private fun deferralTurn(turn: TurnEconomics): Int =
-        if (turn.localStep || turn.toolsEager == null) 0 else 1
+        if (turn.localStep || turn.tools.toolsEager == null) 0 else 1
 
     /** V4-221: the turn's dollars into its hour; null [usd] is a turn with no card or incomplete usage. A null hour (one
      *  written before the field) stays null: a partial sum must not read as the hour's cost. */
-    private fun priced(b: EconomicsBucket, usd: Double?, localStep: Boolean): EconomicsBucket = b.copy(
-        costUsd = b.costUsd?.plus(usd ?: 0.0),
-        unpricedTurns = b.unpricedTurns + if (usd == null && !localStep) 1 else 0,
+    private fun priced(cost: BucketCost, usd: Double?, localStep: Boolean): BucketCost = BucketCost(
+        costUsd = cost.costUsd?.plus(usd ?: 0.0),
+        unpricedTurns = cost.unpricedTurns + if (usd == null && !localStep) 1 else 0,
     )
 
     /** Buckets inside the retention window, oldest first. */
@@ -291,27 +293,35 @@ public class EconomicsStore(
                 longOr(o, "local_steps"),
                 longOr(o, "unreported_usage_turns"),
             ),
-            inTokens = longOr(o, "in_tokens"),
-            cachedTokens = longOr(o, "cached_tokens"),
-            // THE MIGRATION, and it is deliberately the absent-field default rather than a version
-            // stamp: every economics.json written before V4-86 carries no `cache_write_tokens` key,
-            // and [longOr] reads an absent key as 0 — which is the TRUE historical value, because
-            // no cache-write counter existed to sum. A file-format version would have to map the
-            // old shape to exactly this, so the version field would carry no information. Pinned by
-            // EconomicsStoreTest's old-shape arm, which loads a hand-written 11-key row.
-            cacheWriteTokens = longOr(o, "cache_write_tokens"),
-            outTokens = longOr(o, "out_tokens"),
-            reqBytes = longOr(o, "req_bytes"),
-            upstreamBytes = longOr(o, "upstream_req_bytes"),
-            toolsEager = longOr(o, "tools_eager"),
-            toolsDeferred = longOr(o, "tools_deferred"),
-            deferralTurns = longOr(o, "deferral_turns"),
+            tokens = BucketTokens(
+                inTokens = longOr(o, "in_tokens"),
+                cachedTokens = longOr(o, "cached_tokens"),
+                // THE MIGRATION, and it is deliberately the absent-field default rather than a version
+                // stamp: every economics.json written before V4-86 carries no `cache_write_tokens` key,
+                // and [longOr] reads an absent key as 0 — which is the TRUE historical value, because
+                // no cache-write counter existed to sum. A file-format version would have to map the
+                // old shape to exactly this, so the version field would carry no information. Pinned by
+                // EconomicsStoreTest's old-shape arm, which loads a hand-written 11-key row.
+                cacheWriteTokens = longOr(o, "cache_write_tokens"),
+                outTokens = longOr(o, "out_tokens"),
+            ),
+            bytes = BucketBytes(
+                reqBytes = longOr(o, "req_bytes"),
+                upstreamBytes = longOr(o, "upstream_req_bytes"),
+            ),
+            tools = BucketTools(
+                toolsEager = longOr(o, "tools_eager"),
+                toolsDeferred = longOr(o, "tools_deferred"),
+                deferralTurns = longOr(o, "deferral_turns"),
+            ),
             rateLimited = longOr(o, "rate_limited"),
-            // V4-221: an hour written before the field has no `cost_usd` key and reads NULL — not
-            // priced then — which is the true historical value; JSON null (an hour that stayed
-            // unpriceable) reads null too.
-            costUsd = (o["cost_usd"] as? JsonPrimitive)?.content?.toDoubleOrNull(),
-            unpricedTurns = longOr(o, "unpriced_turns"),
+            cost = BucketCost(
+                // V4-221: an hour written before the field has no `cost_usd` key and reads NULL — not
+                // priced then — which is the true historical value; JSON null (an hour that stayed
+                // unpriceable) reads null too.
+                costUsd = (o["cost_usd"] as? JsonPrimitive)?.content?.toDoubleOrNull(),
+                unpricedTurns = longOr(o, "unpriced_turns"),
+            ),
         )
     }
 }

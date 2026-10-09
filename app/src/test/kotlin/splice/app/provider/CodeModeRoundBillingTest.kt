@@ -73,12 +73,15 @@ import splice.head.HeadServer
 import splice.head.NoHeadEvents
 import splice.head.headDeps
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeCellLease
 import splice.provider.codex.CodeModeSessionAlive
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeWiring
 import splice.provider.codex.CodexProvider
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.RowRelease
 import splice.upstream.WsRound
@@ -259,7 +262,7 @@ class CodeModeRoundBillingTest {
             CodeModeBridgeConfig(
                 runtimes = { runtime },
                 state = CodeModeStateLocation(tmp.resolve("records"), tmp.resolve("legacy.json")),
-                sessionAlive = CodeModeSessionAlive { liveness.takeUnless { it == "unknown" }?.let { it == "alive" } },
+                cellLease = CodeModeCellLease(sessionAlive = CodeModeSessionAlive { aliveOf(liveness) }),
             ),
         )
         val head = HeadServer(withWs(upstream.url, bridge, ws.takeIf { webSocket }), 0, headDeps(tmp))
@@ -733,7 +736,7 @@ class CodeModeNativeSourceTest {
             assertArrayEquals(
                 nativeSource(tmp.resolve("baseline"), completed = true, reminder),
                 actual,
-                "the next upstream request must be byte-identical whether the source terminal was held or already known",
+                "the next upstream request must be byte-identical whether the source terminal was held or known",
             )
         }
     }
@@ -1714,14 +1717,15 @@ private fun assertWsReuse(ws: BillingWsRunner, upstream: BillingUpstream) {
     assertEquals(0, upstream.posts.get(), "the WS source is not reissued over SSE")
 }
 
+private fun aliveOf(liveness: String): Boolean? = liveness.takeUnless { it == "unknown" }?.let { it == "alive" }
+
 private fun provider(
     url: String,
     bridge: CodexCodeModeBridge,
     replayReasoning: Boolean = false,
 ): CodexProvider = CodexProvider(
     tuning = ProviderTuning(
-        key = "codex",
-        label = "billing-test",
+        name = ProviderName(key = "codex", label = "billing-test"),
         catalog = ModelCatalog(
             discoveryPrefix = "claude-codex--",
             models = listOf(ModelEntry("gpt-5.6-sol", "Stream", contextWindow = 272_000)),
@@ -1733,7 +1737,7 @@ private fun provider(
             override suspend fun refresh(): Credentials = credentials()
             override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
         },
-        baseUrl = url,
+        locations = ProviderLocations(baseUrl = url),
         watchdog = WatchdogBudget(10.seconds, 10.seconds, 20.seconds),
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.TEXT, replayReasoning, null, null),

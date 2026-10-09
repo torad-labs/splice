@@ -43,7 +43,7 @@ internal class CompactionReplay(
      *  a project resolved late or an instructions file edited between attempts changes the tail,
      *  never the client's bytes, and the client is retrying THIS compaction (review 2026-09-14). */
     fun key(meta: TurnMeta, upstreamBody: String): String? =
-        key(meta.sessionId, upstreamBody, meta.compactionRequestHash)
+        key(meta.scope.sessionId, upstreamBody, meta.compaction.requestHash)
 
     fun key(sessionId: String?, upstreamBody: String, bodyHash: String? = null): String? {
         val session = sessionId?.takeIf { it.isNotBlank() } ?: return null
@@ -52,7 +52,7 @@ internal class CompactionReplay(
 
     /** A cached pre-tail identity needs neither a wire string nor a second tree traversal. */
     fun key(meta: TurnMeta, upstreamBody: JsonObject): String? =
-        key(meta.sessionId, upstreamBody, meta.compactionRequestHash)
+        key(meta.scope.sessionId, upstreamBody, meta.compaction.requestHash)
 
     fun key(sessionId: String?, upstreamBody: JsonObject, bodyHash: String? = null): String? {
         val session = sessionId?.takeIf { it.isNotBlank() } ?: return null

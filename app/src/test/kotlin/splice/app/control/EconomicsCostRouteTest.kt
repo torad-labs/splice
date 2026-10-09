@@ -48,7 +48,10 @@ import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.head.usage.EconomicsStore
+import splice.head.usage.TurnBytes
 import splice.head.usage.TurnEconomics
+import splice.head.usage.TurnTokens
+import splice.head.usage.TurnTools
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
@@ -117,7 +120,12 @@ class EconomicsCostRouteTest {
         store.record(turn(FABLE, inTokens = 1_000, cached = 0, cacheWrite = 0, out = 100))
         store.record(turn("gpt-5.6-sol", inTokens = 1_000, cached = 0, cacheWrite = 0, out = 100))
         val local = TurnEconomics(
-            FABLE, 0, 0, 0, 0, null, null, null, null, localStep = true, history = UsageHistory(absorbed = NONE),
+            FABLE,
+            TurnTokens(0, 0, 0, 0),
+            TurnBytes(null, null),
+            TurnTools(null, null),
+            localStep = true,
+            history = UsageHistory(absorbed = NONE),
         )
         store.record(local)
         return store
@@ -127,7 +135,11 @@ class EconomicsCostRouteTest {
         val store = EconomicsStore(tmp.resolve("unknown.json"), TurnPrice(catalog), WallClock { 10 * HOUR_MS })
         store.record(
             TurnEconomics(
-                HAIKU, null, null, null, null, null, null, null, null, history = UsageHistory(absorbed = NONE),
+                HAIKU,
+                TurnTokens(null, null, null, null),
+                TurnBytes(null, null),
+                TurnTools(null, null),
+                history = UsageHistory(absorbed = NONE),
             ),
         )
         store.record(turn(HAIKU, inTokens = 100, cached = 0, cacheWrite = 0, out = 7))
@@ -148,7 +160,7 @@ class EconomicsCostRouteTest {
 
     /** RED before V4-221: the bucket carried token sums only, and the console priced them at fable's card. */
     @Test
-    fun `each turn is priced at its own model's card, and a card-less turn is counted, not zeroed`() = runBlocking<Unit> {
+    fun `each turn is priced at its own model's card, a card-less turn is counted, not zeroed`() = runBlocking<Unit> {
         awaitPort()
         val bucket = bucketOf("priced")
 
@@ -191,7 +203,11 @@ class EconomicsCostRouteTest {
 
     private fun turn(model: String, inTokens: Long, cached: Long, cacheWrite: Long, out: Long) =
         TurnEconomics(
-            model, inTokens, cached, cacheWrite, out, null, null, null, null, history = UsageHistory(absorbed = NONE),
+            model,
+            TurnTokens(inTokens, cached, cacheWrite, out),
+            TurnBytes(null, null),
+            TurnTools(null, null),
+            history = UsageHistory(absorbed = NONE),
         )
 
     private fun managedHead(name: String, store: EconomicsStore): ManagedHead = ManagedHead(
@@ -207,17 +223,18 @@ class EconomicsCostRouteTest {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(true, "test", emptyMap())
         },
-        usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
-        economics = EconomicsStoreSource(store),
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int): String = ""
+                override fun path(): String = ""
+            },
+            economics = EconomicsStoreSource(store),
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
     )
 
     private suspend fun awaitPort() {

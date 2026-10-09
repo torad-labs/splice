@@ -24,11 +24,9 @@ internal data class DoctorCheck(
     val detail: String,
     val fix: String? = null,
     val fixId: DoctorFix? = null,
-    /** Declared restart-required value differs from the running daemon's value. */
-    val pendingRestart: Boolean = false,
     val fixKind: FixKind? = fix?.let { FixKind.ADVICE },
-    /** Supporting counts shown separately from the finding. */
-    val details: String? = null,
+    /** Restart drift and supporting counts, shown beside the finding. */
+    val notes: DoctorCheckNotes = DoctorCheckNotes(),
 )
 
 /** What a check's `fix` is: `fix_kind` on the wire (absent with no fix). */

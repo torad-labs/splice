@@ -70,10 +70,10 @@ class ClaudeAccountPoolArmTest {
 
         val wired = assemble(paths)
 
-        val files = wired.accounts.map { it.quotaFile }
+        val files = wired.accounts.map { it.quota.file }
         assertEquals(files.distinct(), files, "no two logins share a quota snapshot")
-        assertEquals(paths.quotaFile(HEAD), wired.accounts.first().quotaFile, "the caller's stays where it was")
-        assertTrue(wired.accounts.all { it.credentialPresent })
+        assertEquals(paths.quotaFile(HEAD), wired.accounts.first().quota.file, "the caller's stays where it was")
+        assertTrue(wired.accounts.all { it.credential.present })
     }
 
     @Test
@@ -90,9 +90,13 @@ class ClaudeAccountPoolArmTest {
 
         assertEquals(listOf("claude-code", "work", "broken"), wired.accounts.map { it.label }, "its own row, last")
         val broken = wired.accounts.last()
-        assertEquals("this sign-in is unreadable; sign in again", broken.refusal, "on its own card, never another's")
-        assertFalse(broken.credentialPresent, "and splice offers no credential for it")
-        assertNull(wired.accounts.first { it.label == "work" }.refusal, "the working login is not blamed")
+        assertEquals(
+            "this sign-in is unreadable; sign in again",
+            broken.credential.refusal,
+            "on its own card, never another's",
+        )
+        assertFalse(broken.credential.present, "and splice offers no credential for it")
+        assertNull(wired.accounts.first { it.label == "work" }.credential.refusal, "the working login is not blamed")
     }
 
     private fun add(paths: StatePaths, label: String, uuid: String, token: String, head: String = HEAD) {
@@ -134,9 +138,11 @@ class ClaudeAccountPoolArmTest {
                 models = listOf(model),
                 defaultContextWindow = model.contextWindow,
             ),
-            watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
+                loginCommand = "$head login",
+            ),
             cfg = ConfigService(paths, headOverrides = mapOf("quotaPoll" to "off")).getConfig(),
-            loginCommand = "$head login",
         )
     }
 }

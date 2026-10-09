@@ -65,14 +65,14 @@ internal class ResponsesReanchorPolicy(
      *  missing prefix. thinkingText alone likewise cannot seed a resume (code-review 2026-07-24),
      *  so those partials take the verbatim whole-request restart instead. */
     private fun hasClientVisibleSalvage(partial: TurnOutcome.PartialRound): Boolean {
-        if (partial.bodyText.isNotEmpty()) return true
+        if (partial.text.bodyText.isNotEmpty()) return true
         return partial.reasoningEnvelopes.isNotEmpty()
     }
 
     private fun markerContinuation(round: ReanchorRound, partial: TurnOutcome.PartialRound): JsonObject {
         val items = buildList {
             partial.reasoningEnvelopes.mapNotNullTo(this) { decodeReasoningEnvelope(it) }
-            if (partial.bodyText.isNotEmpty()) add(assistantText(partial.bodyText))
+            if (partial.text.bodyText.isNotEmpty()) add(assistantText(partial.text.bodyText))
             add(reanchorMarker())
         }
         return continuation.continuationRequest(round.requestBody, items)

@@ -27,7 +27,7 @@ internal object SessionActivity {
     /** A call is shown as what it was for, read from its whole input before any clip, so a long command in front of its
      *  description cannot push the description out; what was said is shown as it was said. */
     private fun shown(message: TranscriptMessage): String {
-        val tool = message.tool
+        val tool = message.toolUse.name
         if (message.role != TranscriptRole.ASSISTANT || tool == null) return message.text
         return CallSummary.of(tool, message.text)
     }
@@ -37,11 +37,11 @@ internal object SessionActivity {
         if (message == null) return JsonNull
         return buildJsonObject {
             put("role", message.role.name.lowercase())
-            put("tool", message.tool)
+            put("tool", message.toolUse.name)
             put("text", shown(message).replace(whitespace, " ").trim().take(ACTIVITY_TEXT_CHARS))
             put("ts", message.ts)
             val asked = message.role == TranscriptRole.ASSISTANT
-            val asks = if (asked) AskedQuestions.of(message.tool, message.text) else null
+            val asks = if (asked) AskedQuestions.of(message.toolUse.name, message.text) else null
             if (asks != null) put("asks", asks)
         }
     }

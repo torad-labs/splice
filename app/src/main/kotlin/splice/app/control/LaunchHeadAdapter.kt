@@ -14,8 +14,8 @@ internal object LaunchHeadAdapter {
         head = head.head,
         auth = head.auth,
         spec = head.launchSpec,
-        catalog = head.catalog,
-        keyPresence = head.keyPresence,
+        catalog = head.statusline.catalog,
+        keyPresence = head.authSurface.keyPresence,
     )
 
     /** Every lookup reads [heads] and [resolver] per call; `targets` is the resolver's own launchable-

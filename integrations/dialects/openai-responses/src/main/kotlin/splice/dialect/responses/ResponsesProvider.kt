@@ -50,7 +50,7 @@ public abstract class ResponsesProvider(
     final override val showReasoning: ReasoningDisplay = reasoning.display
     final override val replayReasoning: Boolean = reasoning.replay
 
-    final override val upstreamUrl: String = "${tuning.baseUrl}/responses"
+    final override val upstreamUrl: String = "${tuning.locations.baseUrl}/responses"
 
     // Collaborator wiring lives in ResponsesParts.kt (concentration, 2026-08-19).
     private val compactionTail = ResponsesCompactionTail()
@@ -77,8 +77,8 @@ public abstract class ResponsesProvider(
      *  property of the model, so a compaction built without the header would share no prefix with
      *  the session's lite turns. */
     private fun liteHeader(meta: TurnMeta): Map<String, String> {
-        val name = quirks.responsesLiteHeader ?: return emptyMap()
-        return if (quirks.responsesLiteModelRegex?.containsMatchIn(meta.upstreamModel) == true) {
+        val name = quirks.lite.responsesLiteHeader ?: return emptyMap()
+        return if (quirks.lite.responsesLiteModelRegex?.containsMatchIn(meta.route.upstreamModel) == true) {
             mapOf(name to "true")
         } else {
             emptyMap()
@@ -114,7 +114,7 @@ public abstract class ResponsesProvider(
      *  caught by WsQuirkWiringTest, and it would have silently disabled the feature in production. */
     final override val wsRunner: WsRoundRunner? by lazy {
         ResponsesWsSupport(log, extraHeaders = WsExtraHeaders { extraHeaders(it) })
-            .runner(quirks.webSocket, supportsWebSocket, upstreamUrl)
+            .runner(quirks.backend.webSocket, supportsWebSocket, upstreamUrl)
     }
 
     final override fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? =

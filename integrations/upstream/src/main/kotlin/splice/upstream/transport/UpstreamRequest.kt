@@ -61,7 +61,7 @@ internal data class RequestBody(val body: RoundBody, val zstd: Boolean = false) 
     val bytes: ByteArray = body.bytes().let { if (zstd) com.github.luben.zstd.Zstd.compress(it) else it }
 
     /** The RC-4 amender's and the trace's view. Materialised on the first read, which on an ordinary
-     *  round never comes: UpstreamClient reads it only inside `ctx.wire?.let` and on a failure. */
+     *  round never comes: UpstreamClient reads it only inside `ctx.observers.wire?.let` and on a failure. */
     val json: String get() = body.text
 
     /** The content-encoding the bytes ride under, for the trace; null when they are the JSON itself. */
@@ -166,7 +166,7 @@ internal class UpstreamRequest(
         block: UpstreamHandler<T>,
     ): RetryOutcome<T> {
         val postedAtMs = auth.postedAtMs
-        val timing = ctx.perf?.let(::UpstreamAttemptTiming)
+        val timing = ctx.observers.perf?.let(::UpstreamAttemptTiming)
         val bridge = client.attributes.getOrNull(upstreamTimingBridgeKey)
         val token = timing?.let { bridge?.register(it) }
         try {

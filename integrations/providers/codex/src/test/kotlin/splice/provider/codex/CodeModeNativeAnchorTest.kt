@@ -46,8 +46,8 @@ internal class CodeModeNativeAnchorTest {
     fun `duplicated canonical prose does not shift a later unchanged native out of its claim`() {
         val old = record(listOf(first), emptyList(), "old").apply {
             phase = CodeModePhase.COMPLETED
-            continuity = listOf(preface)
-            output = "done"
+            carry.continuity = listOf(preface)
+            progress.output = "done"
         }
         val baseline = listOf(first, preface, outer("old"), output("old"), preface, native, latest)
         val active = record(baseline, listOf(old), "active")
@@ -129,7 +129,7 @@ internal class CodeModeNativeAnchorTest {
         val middle = item("""{"role":"user","content":"middle synthetic request"}""")
         val old = record(listOf(first, native, middle), emptyList(), "old").apply {
             phase = CodeModePhase.COMPLETED
-            output = "done"
+            progress.output = "done"
         }
         val baseline = listOf(first, native, middle, outer("old"), output("old"), native, latest)
         val active = record(baseline, listOf(old), "active")
@@ -147,7 +147,7 @@ internal class CodeModeNativeAnchorTest {
         val parentBaseline = listOf(first, outer("retired"), output("retired"), native, middle)
         val parent = record(parentBaseline, emptyList(), "parent").apply {
             phase = CodeModePhase.COMPLETED
-            output = "done"
+            progress.output = "done"
         }
         val baseline = parentBaseline + listOf(outer("parent"), output("parent"), native, latest)
         val active = record(baseline, listOf(parent), "active")
@@ -158,10 +158,10 @@ internal class CodeModeNativeAnchorTest {
         val request = body(client)
         assertNull(history.restoreBaseline(request, active).error, "the flat capture is the same history")
 
-        val capture = CodeModeNativeChain.capture(active.nativeSegments, parent)
+        val capture = CodeModeNativeChain.capture(active.carry.segments, parent)
         assertEquals(parent, capture.parent)
         assertEquals(listOf(6), capture.segments.map { it.logicalOffset })
-        active.nativeSegments = capture.segments
+        active.carry.segments = capture.segments
         active.nativeBaseId = parent.id
         active.nativeParent = parent
 
@@ -230,12 +230,12 @@ internal class CodeModeNativeAnchorTest {
     fun `an owned opaque successor witnesses an absent native across an older callback expansion`(@TempDir dir: Path) {
         val retired = record(listOf(first), emptyList(), "retired").apply {
             phase = CodeModePhase.COMPLETED
-            output = "done"
+            progress.output = "done"
         }
         val baseline = listOf(first, outer("retired"), output("retired"), native, outer("old"), output("old"), latest)
         val old = record(baseline.take(4), listOf(retired), "old").apply {
             phase = CodeModePhase.COMPLETED
-            output = "done"
+            progress.output = "done"
         }
         val active = record(baseline, listOf(retired, old), "active")
         val prefix = listOf(first) + callbacks("retired", 2)
@@ -275,7 +275,7 @@ internal class CodeModeNativeAnchorTest {
     fun `an owned successor places native history after the real next turn rewrite`() {
         val retired = record(listOf(first), emptyList(), "retired").apply {
             phase = CodeModePhase.COMPLETED
-            output = "done"
+            progress.output = "done"
         }
         retired.accepted.accept(
             (0 until 2).associate { at -> "callback-retired-$at" to CodeModeResult("callback-retired-$at", "synthetic result") },
@@ -284,8 +284,8 @@ internal class CodeModeNativeAnchorTest {
         val oldBaseline = history.canonicalize(body(listOf(first) + callbacks("retired", 2)), listOf(retired))
         val old = record(input(checkNotNull(oldBaseline.bodyJson)), listOf(retired), "old").apply {
             phase = CodeModePhase.COMPLETED
-            output = "done"
-            continuityReplay = listOf(CodeModeNativeSegment(0, listOf(native)))
+            progress.output = "done"
+            carry.replay = listOf(CodeModeNativeSegment(0, listOf(native)))
         }
         old.accepted.accept(mapOf("callback-old-0" to CodeModeResult("callback-old-0", "synthetic result")), emptyMap())
         val completed = listOf(retired, old)
@@ -293,8 +293,8 @@ internal class CodeModeNativeAnchorTest {
         val capture = history.canonicalize(body(raw), completed)
         assertTrue(capture.omitted.isEmpty())
         val active = record(input(checkNotNull(capture.bodyJson)), completed, "active")
-        old.source = "return 'changed synthetic source';"
-        old.outer = JsonObject(old.outer + ("input" to item("\"changed synthetic source\"")))
+        old.origin.source = "return 'changed synthetic source';"
+        old.origin.outer = JsonObject(old.origin.outer + ("input" to item("\"changed synthetic source\"")))
         val next = history.canonicalize(body(raw + native + callbacks("active", 1)), completed)
         assertTrue(next.omitted.isEmpty())
 
@@ -427,23 +427,25 @@ internal class CodeModeNativeAnchorTest {
         return CodeModeRecord(
             id = id,
             key = "synthetic-conversation",
-            outer = outer(id),
-            outerCallId = id,
-            source = "return 'synthetic';",
             phase = CodeModePhase.ACTIVE,
-            updatedAt = 0,
-            lastDigest = "synthetic-request",
-            baselineInputCount = baseline.fullCount,
-            baselineInputDigest = baseline.fullDigest,
-            metadataVersion = CODE_MODE_METADATA_VERSION,
-            baselineLogicalCount = baseline.logicalCount,
-            baselineLogicalDigest = baseline.logicalDigest,
-            nativeSegments = baseline.nativeSegments,
-            continuity = emptyList(),
-            continuityReplay = emptyList(),
+            origin = CodeModeOrigin(
+                outer = outer(id),
+                outerCallId = id,
+                source = "return 'synthetic';",
+                baseline = CodeModeBaseline(
+                    inputCount = baseline.fullCount,
+                    inputDigest = baseline.fullDigest,
+                    logicalCount = baseline.logicalCount,
+                    logicalDigest = baseline.logicalDigest,
+                    metadataVersion = CODE_MODE_METADATA_VERSION,
+                ),
+            ),
+            progress = CodeModeProgress(updatedAt = 0, lastDigest = "synthetic-request"),
+            carry = CodeModeNativeContinuity(baseline.nativeSegments, emptyList(), emptyList()),
         ).also {
             it.replayAnchors = baseline.replayAnchors
-            it.pending += CodeModePending("runtime-$id", "callback-$id-0", "Read", JsonObject(emptyMap()), true)
+            it.progress.pending +=
+                CodeModePending("runtime-$id", "callback-$id-0", "Read", JsonObject(emptyMap()), true)
         }
     }
 

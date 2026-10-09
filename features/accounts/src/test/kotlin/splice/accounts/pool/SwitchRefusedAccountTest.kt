@@ -51,12 +51,7 @@ class SwitchRefusedAccountTest {
         selected = label == "primary",
         available = credentialPresent && excludedUntil == null,
         plan = null,
-        fiveHourUsedPercent = null,
-        fiveHourResetEpochSeconds = null,
-        sevenDayUsedPercent = null,
-        sevenDayResetEpochSeconds = null,
-        credentialPresent = credentialPresent,
-        authExcludedUntilEpochMillis = excludedUntil,
+        credential = HeadAccountCredential(present = credentialPresent, excludedUntilEpochMillis = excludedUntil),
     )
 
     private val pool = RecordingPool(

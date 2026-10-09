@@ -14,8 +14,8 @@ internal fun declaredRead(file: File, repoRoot: File, roots: List<String>): File
     val target = file.canonicalFile
     val declared = roots.map { repoRoot.resolve(it).canonicalFile }
     check(declared.any { target.startsWith(it) }) {
-        "a law read ${target.path}, which is outside the roots the build declares as inputs ($roots). Declare the root in " +
-            "quality/architecture/build.gradle.kts, or the next edit to that file will not re-run the law."
+        "a law read ${target.path}, which is outside the roots the build declares as inputs ($roots). Declare the " +
+            "root in quality/architecture/build.gradle.kts, or the next edit to that file will not re-run the law."
     }
     return file
 }

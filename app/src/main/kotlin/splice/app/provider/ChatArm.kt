@@ -16,6 +16,8 @@ import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
 import splice.topology.TopologyLoader
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import java.nio.file.Paths
 
@@ -54,14 +56,13 @@ internal class ChatArm(
         if (providerCfg.isLocal) refuseContradictedRows(ctx)
         val provider = OpenAiChatProvider(
             tuning = ProviderTuning(
-                key = key,
-                label = label,
+                name = ProviderName(key = key, label = label),
                 catalog = ctx.catalog,
                 pinnedModel = ctx.head.pinnedModel,
                 auth = auth,
-                baseUrl = providerCfg.baseUrl,
-                watchdog = ctx.watchdog,
-                loginCommand = ctx.loginCommand,
+                locations = ProviderLocations(baseUrl = providerCfg.baseUrl),
+                watchdog = ctx.faultPlan.watchdog,
+                loginCommand = ctx.faultPlan.loginCommand,
             ),
             // The profile and its TOML overlay live in QuirksOverlay with the other two dialects
             // (DR-155) — this arm's job is auth selection and provider construction.
@@ -90,7 +91,7 @@ internal class ChatArm(
     private fun refuseContradictedRows(ctx: ProviderBuild) {
         val key = ctx.key
         val providerCfg = ctx.providerCfg
-        when (val found = ctx.localRows ?: LocalRowsCheck.Down) {
+        when (val found = ctx.roster.localRows ?: LocalRowsCheck.Down) {
             LocalRowsCheck.Down -> log(
                 "[$key] local runtime at ${providerCfg.baseUrl} is not answering; " +
                     "the head boots, turns fail until it is up\n",

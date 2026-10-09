@@ -29,28 +29,16 @@ public data class EconomicsTurnCounts(
 )
 
 /** One hour of a head's economics on the control-plane side. Sums only; every ratio the dashboard
- *  shows is derived at render time from these. [deferralTurns] is the denominator for the tool
+ *  shows is derived at render time from these. [EconomicsTools.deferralTurns] is the denominator for the tool
  *  averages and is 0 on a head whose dialect cannot defer — which the UI renders as "n/a". */
 public data class EconomicsRow(
     val hour: Long,
     val counts: EconomicsTurnCounts,
-    val inTokens: Long,
-    val cachedTokens: Long,
-    /** V4-86: the cache-WRITE half of [inTokens], disjoint from [cachedTokens]. Its own sum
-     *  because it bills at the vendor's cache_write rate and not at the input rate. */
-    val cacheWriteTokens: Long,
-    val outTokens: Long,
-    val reqBytes: Long,
-    val upstreamBytes: Long,
-    val toolsEager: Long,
-    val toolsDeferred: Long,
-    val deferralTurns: Long,
+    val tokens: EconomicsTokens,
+    val bytes: EconomicsBytes,
+    val tools: EconomicsTools,
     val rateLimited: Long,
-    /** V4-221: the hour's dollars, each turn at its own model's card; null for an hour recorded before
-     *  the daemon priced turns ("not priced then", never $0). */
-    val costUsd: Double?,
-    /** V4-221: turns whose model had no rate card, so their dollars are not in [costUsd]. */
-    val unpricedTurns: Long,
+    val cost: EconomicsCost,
 ) {
     val turns: Long get() = counts.turns
     val localSteps: Long get() = counts.localSteps

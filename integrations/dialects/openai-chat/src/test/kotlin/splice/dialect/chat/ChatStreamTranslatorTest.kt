@@ -34,9 +34,9 @@ class ChatStreamTranslatorTest {
             sink,
         )
         val s = outcome as TurnOutcome.Success
-        assertTrue(s.emittedThinking, "chat latches on non-EMPTY, so whitespace counts as delivered")
-        assertEquals(" ", s.thinkingText, "and the buffer carries exactly what the vendor sent")
-        assertFalse(s.emittedText, "no content delta arrived")
+        assertTrue(s.text.emittedThinking, "chat latches on non-EMPTY, so whitespace counts as delivered")
+        assertEquals(" ", s.text.thinkingText, "and the buffer carries exactly what the vendor sent")
+        assertFalse(s.text.emittedText, "no content delta arrived")
         assertEquals(listOf("openThinking", "think: ", "closeAll"), sink.calls)
     }
 
@@ -55,8 +55,8 @@ class ChatStreamTranslatorTest {
             sink,
         )
         val s = outcome as TurnOutcome.Success
-        assertEquals("Hi there", s.bodyText)
-        assertEquals("why", s.thinkingText)
+        assertEquals("Hi there", s.text.bodyText)
+        assertEquals("why", s.text.thinkingText)
         assertEquals(5, s.usage.inputTokens)
         // DR-143: the EXACT wire, not membership. `contains` could not distinguish a compliant
         // one-block-at-a-time stream from the overlapping one chat actually emitted — openThinking
@@ -83,10 +83,10 @@ class ChatStreamTranslatorTest {
             sink,
         )
         val s = outcome as TurnOutcome.Success
-        assertEquals("ok", s.bodyText)
-        assertTrue(s.thinkingText.contains("step1"))
-        assertTrue(s.thinkingText.contains("step2"))
-        assertTrue(s.thinkingText.contains("final-only"))
+        assertEquals("ok", s.text.bodyText)
+        assertTrue(s.text.thinkingText.contains("step1"))
+        assertTrue(s.text.thinkingText.contains("step2"))
+        assertTrue(s.text.thinkingText.contains("final-only"))
     }
 
     @Test
@@ -162,8 +162,8 @@ class ChatStreamTranslatorTest {
             sink,
         )
         val s = outcome as TurnOutcome.Success
-        assertEquals("Hello world", s.thinkingText)
-        assertFalse(s.thinkingText.contains("HelloHello"))
+        assertEquals("Hello world", s.text.thinkingText)
+        assertFalse(s.text.thinkingText.contains("HelloHello"))
         // Wire-level: the streamed prefix went out, the final fold emits ONLY the unseen suffix,
         // and the full "Hello world" is never re-sent (the buffer alone can't prove this).
         assertTrue(sink.calls.contains("think:Hello"))
@@ -207,8 +207,8 @@ class ChatStreamTranslatorTest {
             sink,
         )
         val s = outcome as TurnOutcome.Success
-        assertEquals("Hello world", s.bodyText)
-        assertFalse(s.bodyText.contains("null"))
+        assertEquals("Hello world", s.text.bodyText)
+        assertFalse(s.text.bodyText.contains("null"))
         assertFalse(s.hasToolUse)
         assertFalse(s.incomplete)
         // the first-chunk content:null must NOT append literal "null" nor open a text block early
@@ -246,8 +246,8 @@ class ChatStreamTranslatorTest {
             sink,
         )
         val s = outcome as TurnOutcome.Success
-        assertEquals("because", s.thinkingText)
-        assertEquals("Answer", s.bodyText)
+        assertEquals("because", s.text.thinkingText)
+        assertEquals("Answer", s.text.bodyText)
         // exactly one thinking block (the null didn't open one) and it precedes the text block
         assertEquals(1, sink.calls.count { it == "openThinking" })
         assertTrue(sink.calls.indexOf("openThinking") < sink.calls.indexOf("openText"))
@@ -428,10 +428,10 @@ class ChatStreamTranslatorTest {
             sink,
         )
         val s = outcome as TurnOutcome.Success
-        assertEquals("Hello world", s.bodyText)
+        assertEquals("Hello world", s.text.bodyText)
         assertTrue(sink.calls.contains("text:Hello"))
         assertTrue(sink.calls.contains("text: world"))
-        assertFalse(s.bodyText.contains("HelloHello"))
+        assertFalse(s.text.bodyText.contains("HelloHello"))
     }
 
     @Test
@@ -553,7 +553,7 @@ class ChatRefusalHonestyTest {
         )
         val f = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.providerReported, "the BACKEND populated `refusal` — G20 provenance is upstream")
+        assertTrue(f.traits.providerReported, "the BACKEND populated `refusal` — G20 provenance is upstream")
         assertTrue(f.message.contains("I can't help with that request."), f.message)
         // the refusal is the VERDICT, not content: nothing was written to the wire as text
         assertFalse(sink.calls.any { it.startsWith("text:") }, sink.calls.toString())
@@ -569,7 +569,7 @@ class ChatRefusalHonestyTest {
         )
         val f = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.providerReported)
+        assertTrue(f.traits.providerReported)
         assertTrue(f.message.contains("Sorry, I cannot do that."), f.message)
     }
 
@@ -598,7 +598,7 @@ class ChatRefusalHonestyTest {
             sink,
         )
         val s = outcome as TurnOutcome.Success
-        assertEquals("Hi there", s.bodyText)
+        assertEquals("Hi there", s.text.bodyText)
         assertTrue(sink.calls.contains("text:Hi "))
         assertTrue(sink.calls.contains("text:there"))
     }
@@ -611,7 +611,7 @@ class ChatRefusalHonestyTest {
     // by the model"), so a vendor shipping it as a did-the-model-refuse FLAG is off-contract — the
     // same compat-vendor class already invoked to justify the open-safe stop_reason remainder.
     // strOrEmpty returns the .content of ANY primitive, so `false` was the non-blank string "false"
-    // and 100% of that vendor's WORKING turns became Failure(providerReported=true) — a G20
+    // and 100% of that vendor's WORKING turns became Failure(traits = FailureTraits(providerReported = true)) — a G20
     // inversion blaming the backend for a refusal it explicitly denied, with the complete answer
     // already on the wire. Every non-string primitive shape, on both carriers.
     @Test
@@ -626,7 +626,7 @@ class ChatRefusalHonestyTest {
             sink,
         )
         val s = outcome as TurnOutcome.Success
-        assertEquals("Hi there", s.bodyText)
+        assertEquals("Hi there", s.text.bodyText)
         assertTrue(sink.calls.contains("text:Hi "), sink.calls.toString())
         assertTrue(sink.calls.contains("text:there"), sink.calls.toString())
     }
@@ -637,7 +637,7 @@ class ChatRefusalHonestyTest {
             ev("""{"choices":[{"delta":{"content":"ok","refusal":0}}]}"""),
             ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),
         )
-        assertEquals("ok", (outcome as TurnOutcome.Success).bodyText)
+        assertEquals("ok", (outcome as TurnOutcome.Success).text.bodyText)
     }
 
     @Test
@@ -645,7 +645,7 @@ class ChatRefusalHonestyTest {
         val outcome = driveEvents(
             ev("""{"choices":[{"message":{"content":"All done.","refusal":false},"finish_reason":"stop"}]}"""),
         )
-        assertEquals("All done.", (outcome as TurnOutcome.Success).bodyText)
+        assertEquals("All done.", (outcome as TurnOutcome.Success).text.bodyText)
     }
 
     // ACCUMULATION AXIS. The dedup rule was a WHOLE-MESSAGE compare applied to the INCREMENTAL
@@ -682,9 +682,9 @@ class ChatRefusalHonestyTest {
     }
 
     // The refusal branch was deliberately ranked ABOVE the pre-existing contentFiltered branch.
-    // Both are Failure(API_ERROR, providerReported=true) — only the wording changes, from a generic
-    // content-filter phrase to the model's own words — so there is no honesty regression, but the
-    // moved precedence was unpinned. Pin it in both directions.
+    // Both are Failure(API_ERROR, traits = FailureTraits(providerReported = true)) — only the wording
+    // changes, from a generic content-filter phrase to the model's own words — so there is no honesty
+    // regression, but the moved precedence was unpinned. Pin it in both directions.
     @Test
     fun `a refusal on the content_filter frame carries the model's words, not the generic phrase`() = runTest {
         val outcome = driveEvents(
@@ -692,7 +692,7 @@ class ChatRefusalHonestyTest {
         )
         val f = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.providerReported)
+        assertTrue(f.traits.providerReported)
         assertTrue(f.message.contains("I refuse."), f.message)
     }
 
@@ -712,7 +712,7 @@ class ChatRefusalHonestyTest {
         )
         val f = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.providerReported)
+        assertTrue(f.traits.providerReported)
         assertTrue(f.message.contains("but I stop here"), f.message)
         assertTrue(sink.calls.contains("text:Sure, here goes. "), sink.calls.toString())
     }
@@ -773,7 +773,7 @@ class ChatRunawayGuardTest {
         val outcome = ChatStreamTranslator(ctx()).driveTurn(events, Rec())
         val failure = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.API_ERROR, failure.type)
-        assertFalse(failure.providerReported)
+        assertFalse(failure.traits.providerReported)
         assertTrue(emitted < 25, "the guard must unwind the upstream, not drain it; emitted=$emitted")
     }
 }

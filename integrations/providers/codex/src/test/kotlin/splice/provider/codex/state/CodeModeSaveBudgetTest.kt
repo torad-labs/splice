@@ -80,7 +80,7 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
     @Test
     fun `an oversized first snapshot is refused before any durable write`() {
         store.load()
-        val record = CodeModeRecords.of("synthetic", 1).apply { source = "x".repeat(256 * 1024) }
+        val record = CodeModeRecords.of("synthetic", 1).apply { origin.source = "x".repeat(256 * 1024) }
         capacityRefused { store.save(listOf(record), emptyList()) }
         assertEquals(0, writes, "admission precedes snapshot encoding and its durable write")
         assertFalse(Files.exists(location.dir), "refusal creates no misleading durable admission")
@@ -94,7 +94,7 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
         val file = Files.list(location.dir).use { it.filter(Files::isRegularFile).findFirst().orElseThrow() }
         val before = Files.readAllBytes(file)
         val priorWrites = writes
-        record.source = "\u0000".repeat(64 * 1024)
+        record.origin.source = "\u0000".repeat(64 * 1024)
         capacityRefused {
             store.save(listOf(record), emptyList(), changedRecord = record)
         }
@@ -107,14 +107,14 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
         store.load()
         val record = CodeModeRecords.of("synthetic", 1)
         store.save(listOf(record), emptyList())
-        record.output = "completion waiting for force"
+        record.progress.output = "completion waiting for force"
         refuseWrite = true
         assertThrows<CodeModePersistenceException> {
             store.save(listOf(record), emptyList(), changedRecord = record)
         }
         refuseWrite = false
         val priorWrites = writes
-        record.source = "x".repeat(256 * 1024)
+        record.origin.source = "x".repeat(256 * 1024)
         capacityRefused { store.save(listOf(record), emptyList(), retryOnly = true) }
         assertEquals(priorWrites, writes)
         assertTrue("synthetic" in store.pendingKeys, "capacity refusal must not erase the retry owner")
@@ -133,9 +133,9 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
             },
             heap = heap,
         )
-        val record = CodeModeRecords.of("synthetic", 1).apply { source = "x".repeat(2_000) }
+        val record = CodeModeRecords.of("synthetic", 1).apply { origin.source = "x".repeat(2_000) }
         retaining.save(listOf(record), emptyList())
-        assertTrue(escaped.contains(record.source))
+        assertTrue(escaped.contains(record.origin.source))
         assertTrue(heap.available.value <= heap.limitBytes - HeapJson.text(escaped))
         assertTrue(
             heap.available.value > heap.limitBytes * 3 / 4,
@@ -159,7 +159,7 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
             heap = roomy,
         )
         val records = List(8) { index ->
-            CodeModeRecords.of("synthetic", index).apply { source = "x".repeat(8_192) }
+            CodeModeRecords.of("synthetic", index).apply { origin.source = "x".repeat(8_192) }
         }
         saving.save(records, emptyList())
         val file = Files.list(location.dir).use { it.filter(Files::isRegularFile).findFirst().orElseThrow() }
@@ -170,7 +170,7 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
         }
         val before = Files.size(file)
         val hold = checkNotNull(roomy.reserve(roomy.available.value - 512 * 1024))
-        records.last().output = "completion"
+        records.last().progress.output = "completion"
         try {
             capacityRefused { saving.save(records, emptyList(), changedRecord = records.last()) }
             assertEquals(1, forcedWrites, "the full envelope must fit before its checkpoint replaces the file")
@@ -225,10 +225,10 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
     @Test
     fun `a source streamed larger after its save stays charged while the saved snapshot holds the old one`() {
         val roomy = HeapBudget(Long.MAX_VALUE, 64 * 1024 * 1024)
-        val record = CodeModeRecords.of("synthetic", 1).apply { source = "x".repeat(200_000) }
+        val record = CodeModeRecords.of("synthetic", 1).apply { origin.source = "x".repeat(200_000) }
         val registry = registry(record, roomy)
         try {
-            val saved = record.source
+            val saved = record.origin.source
             val streamed = saved + "y".repeat(100_000)
             registry.source.append(record, streamed)
             // The kept snapshot still holds the saved source and the record holds the streamed one: both are live.
@@ -245,10 +245,10 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
     @Test
     fun `one appended character that re-widens a Latin-1 source is charged at the new width`() {
         val roomy = HeapBudget(Long.MAX_VALUE, 64 * 1024 * 1024)
-        val record = CodeModeRecords.of("synthetic", 1).apply { source = "x".repeat(200_000) }
+        val record = CodeModeRecords.of("synthetic", 1).apply { origin.source = "x".repeat(200_000) }
         val registry = registry(record, roomy)
         try {
-            val saved = record.source
+            val saved = record.origin.source
             val widened = saved + "\u0101"
             registry.source.append(record, widened)
             // The whole streamed source now stores two bytes a character, beside the saved one the snapshot holds.
@@ -314,7 +314,7 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
         assertTrue(registry.attach(record, cell))
         try {
             val before = checkNotNull(record.heapLease).bytes
-            val lastUse = record.updatedAt
+            val lastUse = record.progress.updatedAt
             val message = "completed client call ids=[]; source was not rerun"
             val growth = CodeModeWeight.STORED.text(message) - CodeModeWeight.STORED.text("")
             val hold = checkNotNull(heap.reserve(heap.available.value - growth))
@@ -323,7 +323,7 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
                 assertEquals(message, record.error)
                 assertEquals(CodeModePhase.LOST, record.phase)
                 assertTrue(cell.closed)
-                assertEquals(lastUse, record.updatedAt)
+                assertEquals(lastUse, record.progress.updatedAt)
                 assertEquals(before + growth, checkNotNull(record.heapLease).bytes)
             } finally {
                 hold.close()
@@ -343,7 +343,7 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
         try {
             val first = record.heapSnapshots.mapNotNull { it.get() }
             assertTrue(first.isNotEmpty(), "the control must retain a real saved snapshot")
-            record.updatedAt++
+            record.progress.updatedAt++
             registry.save()
             val snapshots = record.heapSnapshots.mapNotNull { it.get() }.filter { it.error === saved }
             assertTrue(snapshots.size >= 2, "each separately retained snapshot must be admitted")
@@ -400,7 +400,7 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
         assertTrue(registry.attach(record, cell))
         try {
             val before = checkNotNull(record.heapLease).bytes
-            val lastUse = record.updatedAt
+            val lastUse = record.progress.updatedAt
             val hold = checkNotNull(heap.reserve(heap.available.value))
             try {
                 capacityRefused { registry.onHeadStop() }
@@ -409,7 +409,7 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
                 assertTrue(record.terminal())
                 assertTrue(cell.closed)
                 assertEquals(null, registry.cell(record))
-                assertEquals(lastUse, record.updatedAt)
+                assertEquals(lastUse, record.progress.updatedAt)
                 assertEquals(before, checkNotNull(record.heapLease).bytes)
             } finally {
                 hold.close()
@@ -595,7 +595,7 @@ class CodeModeSaveBudgetTest(@param:TempDir private val dir: Path) {
         val config = CodeModeBridgeConfig(
             runtimes = { error("this reservation control must not start a worker") },
             state = location,
-            clock = Clock.fixed(Instant.ofEpochMilli(record.updatedAt), ZoneOffset.UTC),
+            clock = Clock.fixed(Instant.ofEpochMilli(record.progress.updatedAt), ZoneOffset.UTC),
         )
         return CodexCodeModeRegistry(config, Json, 1.days, writer = writer, heap = budget).also {
             assertTrue(it.add(record))

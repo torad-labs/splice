@@ -15,6 +15,9 @@ import splice.core.config.TurnKey
 import splice.core.config.UserHome
 import splice.core.topology.Topology
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
 import java.nio.file.Path
@@ -65,56 +68,62 @@ internal class LaunchSpecFactory(
             .filter { it != configDir }
         return LaunchSpec(
             trees = HeadTrees(configDir, siblingTrees),
-            // A client-auth head serves ANTHROPIC on the client's own login, so the recipe must not
-            // strip its credentials, plant the gateway bearer, or disable /login (campaign claude-head).
-            // Derived from the CREDENTIAL, never from the declared `auth.kind` string.
-            // ProviderAssembly rejects registered client auth on non-passthrough dialects before
-            // launch-spec assembly; direct synthetic calls still consume this resolved flag without
-            // reinterpreting the declaration. See ManagedHeadFactory.forwardClientAuth.
-            forwardClientAuth = forwardClientAuth,
-            pinnedModel = head.pinnedModel,
-            discoveryPrefix = head.discoveryPrefix,
-            availableModelIds = ctx.catalog.availableModelIds(),
-            modelLabels = ctx.catalog.models.associate { it.id to it.label.ifEmpty { it.id } },
-            tiers = ModelTiers(
-                slots = head.tierSlots(),
-                candidates = ctx.catalog.tierModelIds(),
-                // V4-232: the rows the client resolves as a Claude model it knows (their `client_model`).
-                modelOverrides = ctx.catalog.presented.overrides,
+            models = LaunchModels(
+                pinnedModel = head.pinnedModel,
+                discoveryPrefix = head.discoveryPrefix,
+                availableModelIds = ctx.catalog.availableModelIds(),
+                modelLabels = ctx.catalog.models.associate { it.id to it.label.ifEmpty { it.id } },
+                tiers = ModelTiers(
+                    slots = head.tierSlots(),
+                    candidates = ctx.catalog.tierModelIds(),
+                    // V4-232: the rows the client resolves as a Claude model it knows (their `client_model`).
+                    modelOverrides = ctx.catalog.presented.overrides,
+                ),
+                // The pinned row's declared window (ModelCatalog.clientLaunchWindow): exact numbers on
+                // the row a session starts on; every other row, and a window edited later in the TOML,
+                // is applied by usage scaling on the wire against the window the session really runs
+                // with (learned from its status-line posts).
+                contextWindow = ctx.catalog.clientLaunchWindow,
+                modelOptionsCache = buildInputs.modelOptionsCache(ctx.catalog),
             ),
-            // The pinned row's declared window (ModelCatalog.clientLaunchWindow): exact numbers on
-            // the row a session starts on; every other row, and a window edited later in the TOML,
-            // is applied by usage scaling on the wire against the window the session really runs
-            // with (learned from its status-line posts).
-            contextWindow = ctx.catalog.clientLaunchWindow,
-            // The client's request timeout is DERIVED from the head's whole-turn cap (never a
-            // second hand-maintained number): the proxy's wall is the one that names the verdict.
-            apiTimeoutMs = ctx.watchdog.totalCap.inWholeMilliseconds + CLIENT_TIMEOUT_GRACE_MS,
-            modelOptionsCache = buildInputs.modelOptionsCache(ctx.catalog),
-            // The bearer rides in a 0600 header FILE curl reads (`-H @file`), never inline: an inline
-            // header sat in settings.json and in curl's argv, which /proc shows every local user.
-            statuslineCommand = "curl -sS -H ${shellSingleQuote("@${turnKey.headerFile()}")} " +
-                "--data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
-            // The installed wrapper (`<command> login`) runs this head's provider sign-in; the
-            // materialized /login command + UserPromptSubmit hook route the user here. api-key
-            // heads additionally capture a bare pasted token, and advertise the flow at session
-            // start ONLY while the key is unconfigured (re-materialized each launch).
-            loginCommand = signIn.command,
-            signInLabel = signIn.label,
-            signInViaBrowser = signIn.viaBrowser,
-            // The CAPABILITY rides ungated; whether it materializes is decided per LAUNCH by
-            // LaunchService against ManagedHead.keyPresence (DR-81 — this used to bake the
-            // boot-time key check in, so `splice key set` never disarmed the paste-capture hook:
-            // the review-of-#75 overwrite risk, frozen instead of fixed).
-            tokenCapture = signIn.tokenCapture,
-            // The receipt path MUST match what LoginCommand writes (same StatePaths, same head
-            // key), or a detached sign-in reports into a file nothing reads.
-            loginOutcomeFile = LoginOutcomeFile.pathFor(StatePaths().stateDir, key).toString(),
-            headKey = key,
-            advertiseKeySetup = signIn.tokenCapture != null,
+            signIn = LaunchSignIn(
+                // The installed wrapper (`<command> login`) runs this head's provider sign-in; the
+                // materialized /login command + UserPromptSubmit hook route the user here. api-key
+                // heads additionally capture a bare pasted token, and advertise the flow at session
+                // start ONLY while the key is unconfigured (re-materialized each launch).
+                loginCommand = signIn.command,
+                signInLabel = signIn.label,
+                signInViaBrowser = signIn.viaBrowser,
+                // The CAPABILITY rides ungated; whether it materializes is decided per LAUNCH by
+                // LaunchService against ManagedHead.keyPresence (DR-81 — this used to bake the
+                // boot-time key check in, so `splice key set` never disarmed the paste-capture hook:
+                // the review-of-#75 overwrite risk, frozen instead of fixed).
+                tokenCapture = signIn.tokenCapture,
+                // The receipt path MUST match what LoginCommand writes (same StatePaths, same head
+                // key), or a detached sign-in reports into a file nothing reads.
+                loginOutcomeFile = LoginOutcomeFile.pathFor(StatePaths().stateDir, key).toString(),
+                headKey = key,
+                advertiseKeySetup = signIn.tokenCapture != null,
+            ),
+            gateway = LaunchGateway(
+                // A client-auth head serves ANTHROPIC on the client's own login, so the recipe must not
+                // strip its credentials, plant the gateway bearer, or disable /login (campaign claude-head).
+                // Derived from the CREDENTIAL, never from the declared `auth.kind` string.
+                // ProviderAssembly rejects registered client auth on non-passthrough dialects before
+                // launch-spec assembly; direct synthetic calls still consume this resolved flag without
+                // reinterpreting the declaration. See ManagedHeadFactory.forwardClientAuth.
+                forwardClientAuth = forwardClientAuth,
+                // The client's request timeout is DERIVED from the head's whole-turn cap (never a
+                // second hand-maintained number): the proxy's wall is the one that names the verdict.
+                apiTimeoutMs = ctx.faultPlan.watchdog.totalCap.inWholeMilliseconds + CLIENT_TIMEOUT_GRACE_MS,
+                // The bearer rides in a 0600 header FILE curl reads (`-H @file`), never inline: an inline
+                // header sat in settings.json and in curl's argv, which /proc shows every local user.
+                statuslineCommand = "curl -sS -H ${shellSingleQuote("@${turnKey.headerFile()}")} " +
+                    "--data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
+                port = head.port,
+                inferenceToken = turnKey.get(),
+            ),
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
-            port = head.port,
-            inferenceToken = turnKey.get(),
         )
     }
 

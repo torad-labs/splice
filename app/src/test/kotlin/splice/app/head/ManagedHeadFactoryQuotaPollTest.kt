@@ -16,6 +16,7 @@ import splice.app.auth.SignInPlanner
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
+import splice.app.provider.UpstreamFaultPlan
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -102,9 +103,11 @@ class ManagedHeadFactoryQuotaPollTest {
                 models = listOf(model),
                 defaultContextWindow = model.contextWindow,
             ),
-            watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
+                loginCommand = "claudex login",
+            ),
             cfg = ConfigService(statePaths, headOverrides = mapOf("quotaPoll" to quotaPoll)).getConfig(),
-            loginCommand = "claudex login",
         )
     }
 
@@ -142,9 +145,9 @@ class ManagedHeadFactoryQuotaPollTest {
                 )
             },
         ).assembleHead(ctx, controlPort = 3098)
-        managed.usage.probeNow()
+        managed.sources.usage.probeNow()
         assertEquals(2, calls, "both primary and added account must refresh without a model turn")
-        managed.usage.probeNow()
+        managed.sources.usage.probeNow()
         assertEquals(2, calls, "every returned poller keeps its own admission floor")
         assertTrue(trackers.all { it.snapshot()?.updatedAt == 1_788_000_000_000L })
     }
@@ -238,9 +241,11 @@ class ManagedHeadFactoryQuotaPollTest {
                 models = listOf(model),
                 defaultContextWindow = model.contextWindow,
             ),
-            watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
+                loginCommand = "openai login",
+            ),
             cfg = ConfigService(statePaths, headOverrides = mapOf("quotaPoll" to "auto")).getConfig(),
-            loginCommand = "openai login",
         )
     }
 }

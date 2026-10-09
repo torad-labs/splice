@@ -15,20 +15,22 @@ class ModelCatalogTest {
             ModelEntry(id = "gpt-5.6-sol", label = "Codex 5.6 Sol", contextWindow = 272_000),
             ModelEntry(id = "gpt-5.3-codex-spark", label = "Codex Spark", contextWindow = 128_000),
         ),
-        extraWindows = listOf(
-            ExtraWindow(id = "gpt-5.5-1m", contextWindow = 1_000_000),
-        ),
-        windowRules = listOf(
-            WindowRule(prefix = "gpt-5.3-codex-spark", contextWindow = 128_000),
-            WindowRule(prefix = "gpt-5.6", contextWindow = 272_000),
-            WindowRule(prefix = "gpt-5.3", contextWindow = 272_000),
+        windows = CatalogWindows(
+            extraWindows = listOf(
+                ExtraWindow(id = "gpt-5.5-1m", contextWindow = 1_000_000),
+            ),
+            windowRules = listOf(
+                WindowRule(prefix = "gpt-5.3-codex-spark", contextWindow = 128_000),
+                WindowRule(prefix = "gpt-5.6", contextWindow = 272_000),
+                WindowRule(prefix = "gpt-5.3", contextWindow = 272_000),
+            ),
         ),
         defaultContextWindow = 272_000,
     )
 
     @Test
     fun `tier availability uses the exact offered row even when turn admission strips a suffix`() {
-        val mapped = catalog.copy(tierSlots = mapOf("gpt-5.6-sol[1m]" to "opus"))
+        val mapped = catalog.copy(client = ClientModelPolicy(tierSlots = mapOf("gpt-5.6-sol[1m]" to "opus")))
         assertTrue(mapped.contains("gpt-5.6-sol[1m]"))
         assertEquals(mapOf("opus" to "gpt-5.6-sol[1m]"), mapped.unmappedTiers)
         val offered = mapped.copy(models = mapped.models + ModelEntry("gpt-5.6-sol[1m]", contextWindow = 272_000))
@@ -141,7 +143,7 @@ class ModelCatalogTest {
                 ModelEntry(id = "k3[1m]", label = "Kimi K3 (1M)", contextWindow = 1_000_000),
                 ModelEntry(id = "kimi-for-coding", contextWindow = 262_144),
             ),
-            extraWindows = listOf(ExtraWindow(id = "k3", contextWindow = 1_000_000)),
+            windows = CatalogWindows(extraWindows = listOf(ExtraWindow(id = "k3", contextWindow = 1_000_000))),
             defaultContextWindow = 262_144,
         )
         assertTrue(kimi.contains("k3"), "bare upstream id")
@@ -386,7 +388,7 @@ class ModelCatalogTest {
             defaultContextWindow = 200_000,
             pinnedModel = "claude-opus-5-5",
         )
-        val live = current.copy(liveWindows = LiveWindows { current })
+        val live = current.copy(windows = current.windows.copy(liveWindows = LiveWindows { current }))
         assertEquals(1.0, live.usageScale("claude-opus-5-5"))
         current = current.copy(
             models = listOf(ModelEntry(id = "claude-opus-5-5", contextWindow = 1_000_000)),
@@ -404,7 +406,7 @@ class ModelCatalogTest {
             discoveryPrefix = "claude-splice--",
             models = emptyList(),
             defaultContextWindow = 1_000_000,
-            open = true,
+            client = ClientModelPolicy(open = true),
         )
         assertEquals(1.0, open.usageScale("claude-opus-5-5"))
         assertEquals(200_000L, open.clientContextWindowFor("claude-opus-5-5", sessionWindow = 200_000))
@@ -443,7 +445,7 @@ class ModelCatalogTest {
             models = listOf(ModelEntry("gpt-5.6-luna", contextWindow = 272_000, compactionReserveTokens = 50_000)),
             defaultContextWindow = 272_000,
             pinnedModel = "gpt-5.6-luna",
-            compactionReserveDefaults = CodexCompactionReserves,
+            windows = CatalogWindows(compactionReserveDefaults = CodexCompactionReserves),
         )
         assertEquals(CompactionBudget(50_000, 31_791, 272_000), CompactionBudgets.forRow(codex, "gpt-5.6-luna"))
         assertEquals(153_000.0 / 222_000, codex.usageScale("gpt-5.6-luna", 200_000), 1e-12)

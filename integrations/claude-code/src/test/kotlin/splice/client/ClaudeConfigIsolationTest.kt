@@ -75,7 +75,9 @@ class ClaudeConfigIsolationTest {
                 defaultModel = "head-model",
                 modelOptionsCache = buildJsonObject { put("cache", "x") },
                 statuslineCommand = "curl :3096/statusline",
-                headKey = "codex",
+                signIn = MaterializeSignIn(
+                    headKey = "codex",
+                ),
             ),
         )
     }

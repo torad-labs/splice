@@ -21,40 +21,48 @@ import splice.upstream.sse.WireSink
  *    NEW — never streamed, present ONLY in the final consolidated message (including when NO
  *      deltas streamed any tool call) — emit it, even when it carries no name (opened under the
  *      "tool" fallback, finding 5a), or it is silently lost while the turn reports tool_use.
- *  KNOWN LIMITATIONS (non-standard vendors only — not codex/grok/kimi; a name+args suppressor
- *  would risk dropping a legitimate distinct call, so both are left as documented gaps):
- *    • a call STREAMED without an id (synth "toolu_<n>" slot) but echoed WITH an id can't be
- *      matched back, so the echo mints a duplicate tool_use (finding 4);
- *    • an id-matched echo is suppressed wholesale, so if the stream UNDER-delivered a call's
- *      arguments the final's complete copy is discarded (finding 5b). */
+ *  Two vendor shapes the match covers:
+ *    • a call STREAMED without an id (synth "toolu_<n>" slot) but echoed WITH an id is matched back by its
+ *      position in the final array and its name, so the echo is not minted a second time (finding 4);
+ *    • an echo whose arguments are longer than what was streamed, and extend it, sends the rest, so the
+ *      client gets the complete input and not the truncated deltas (finding 5b). Arguments that are not an
+ *      extension of the streamed ones cannot be corrected on the wire and are left to terminal validation. */
 internal class ChatFinalToolFold(private val toolCalls: ChatToolCalls) {
 
     internal suspend fun foldFinalToolCalls(msg: JsonObject, sink: WireSink) {
         val calls = msg["tool_calls"] as? JsonArray ?: return
-        calls.forEach { tc -> (tc as? JsonObject)?.let { applyFinalToolCall(it, sink) } }
+        val streamed = toolCalls.streamedIndices() // the calls the stream carried, before this fold adds any
+        calls.forEachIndexed { position, tc ->
+            (tc as? JsonObject)?.let { applyFinalToolCall(it, position, streamed, sink) }
+        }
     }
 
-    private suspend fun applyFinalToolCall(obj: JsonObject, sink: WireSink) {
+    private suspend fun applyFinalToolCall(obj: JsonObject, position: Int, streamed: List<Int>, sink: WireSink) {
         val id = JsonScalars.strOrEmpty(obj["id"])
-        if (id.isNotEmpty() && id in toolCalls.openedToolIds) return // echo of an already-open block
         val fn = obj["function"] as? JsonObject
-        val slot = if (id.isEmpty()) null else toolCalls.pendingTools.entries.firstOrNull { it.value.id == id }
-        if (slot == null) {
-            // A call present ONLY in the final array (never an open block — those returned at the
-            // top) — emit it, even when it carries no name (openPendingTool falls back to "tool",
-            // finding 5a), else it is silently lost while the turn reports tool_use.
+        val name = JsonScalars.strOrEmpty(fn?.get("name"))
+        val args = JsonScalars.strOrEmpty(fn?.get("arguments"))
+        val echoed = toolCalls.echoedIndex(id, name, position, streamed)
+        if (echoed == null) {
+            // A call present ONLY in the final array — emit it, even when it carries no name
+            // (openPendingTool falls back to "tool", finding 5a), else it is silently lost while the
+            // turn reports tool_use.
             toolCalls.applyToolCall(obj, sink)
-        } else {
-            // Pending slot from deltas that never carried a name — adopt the echo's name by id, and
-            // take its arguments too only when the deltas buffered none (name AND args both final-
-            // only, finding 3); a non-empty buffer is never double-appended (append("") is a no-op).
-            val pending = slot.value
-            val name = JsonScalars.strOrEmpty(fn?.get("name"))
-            if (name.isNotEmpty() && pending.name.isEmpty()) {
-                pending.name = name
-                if (pending.args.isEmpty()) pending.args.append(JsonScalars.strOrEmpty(fn?.get("arguments")))
-                toolCalls.openPendingTool(slot.key, pending, sink)
-            }
+            return
+        }
+        val pending = toolCalls.pendingTools[echoed]
+        if (pending == null) {
+            // ECHO of an already-open block: never opened twice, and its arguments are completed when the stream
+            // delivered only a prefix of them.
+            toolCalls.completeOpenedArgs(echoed, args, sink)
+            return
+        }
+        // Pending slot from deltas that never carried a name — adopt the echo's name, and the rest of its
+        // arguments (all of them when the deltas buffered none: name AND args both final-only, finding 3).
+        if (name.isNotEmpty() && pending.name.isEmpty()) {
+            pending.name = name
+            toolCalls.completePendingArgs(pending, args)
+            toolCalls.openPendingTool(echoed, pending, sink)
         }
     }
 }

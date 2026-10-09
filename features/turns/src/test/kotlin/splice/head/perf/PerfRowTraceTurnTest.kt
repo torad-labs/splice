@@ -44,6 +44,8 @@ import splice.head.HeadServer
 import splice.head.headDeps
 import splice.head.headStores
 import splice.head.quotaFor
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -122,12 +124,11 @@ class PerfRowTraceTurnTest {
         val traceDir = tmp.resolve("trace-$id")
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
-                key = "anthropic",
-                label = "claude-splice",
+                name = ProviderName(key = "anthropic", label = "claude-splice"),
                 catalog = catalog,
                 pinnedModel = "claude-fable-5",
                 auth = ApiKeyAuth(),
-                baseUrl = "http://127.0.0.1:${upstream.address.port}",
+                locations = ProviderLocations(baseUrl = "http://127.0.0.1:${upstream.address.port}"),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
             quirks = PassthroughQuirks(providerTag = "claude-splice"),

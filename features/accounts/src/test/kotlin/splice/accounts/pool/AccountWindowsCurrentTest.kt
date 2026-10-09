@@ -73,13 +73,11 @@ class AccountWindowsCurrentTest {
             true,
             true,
             "pro",
-            40.0,
-            fiveHourReset,
-            100.0,
-            sevenDayReset,
-            fiveHourWindowSeconds = 18_000L,
-            sevenDayWindowSeconds = 604_800L,
-            quotaObservedAtEpochSeconds = observedAt,
+            HeadAccountQuota(
+                fiveHour = HeadAccountWindow(40.0, fiveHourReset, 18_000L),
+                sevenDay = HeadAccountWindow(100.0, sevenDayReset, 604_800L),
+                observedAtEpochSeconds = observedAt,
+            ),
         )
         val pool = HeadAccountPoolView(selectedLabel = "work", accounts = listOf(account), lastSwitch = null)
         val head = base("claudex").copy(

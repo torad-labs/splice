@@ -44,10 +44,7 @@ public data class RuntimeHead(
     /** The runtime call the facts came from, named in the row's comment (`rig describe bonsai-2-27b`). */
     public val describedBy: String,
     public val baseUrl: String,
-    public val modelId: String,
-    public val modelLabel: String,
-    /** The window the runtime ADVERTISES, never the model's raw ceiling. */
-    public val contextWindow: Long,
+    public val model: RuntimeModel,
     /** QuirksConfig.reasoningEffort, which means "EMIT reasoning_effort": false for a server that
      *  rejects the field. */
     public val emitReasoningEffort: Boolean,
@@ -98,22 +95,22 @@ internal class RuntimeHeadAdd(
 
     private fun profile(head: RuntimeHead, envVar: String): AddProfile = AddProfile(
         name = head.key,
-        summary = head.describedBy,
-        dialect = DialectWires.name(Dialect.OPENAI_CHAT),
-        authKind = API_KEY,
         baseUrl = head.baseUrl,
-        headKey = head.key,
-        command = "claude-${head.key}",
+        provider = AddProviderSpec(
+            dialect = DialectWires.name(Dialect.OPENAI_CHAT),
+            authKind = API_KEY,
+            requiresKey = false,
+            extra = listOf(
+                "# Served on this machine; the facts are `${head.describedBy}`'s. The endpoint takes no key:",
+                "# $envVar in keys.toml is a placeholder, because the api-key kind needs one that resolves.",
+                "quirks = { reasoning_effort = ${head.emitReasoningEffort}, slot_affinity = ${head.slotAffinity} }",
+            ),
+        ),
+        head = AddHeadSpec(key = head.key, command = "claude-${head.key}"),
+        labels = AddLabels(summary = head.describedBy, origin = "splice setup"),
+        policy = AddModelPolicy(listAuthoritative = !head.anyModelId),
         models = listOf(
-            AddModel(head.modelId, head.modelLabel, head.contextWindow, clientModel = RUNTIME_CLIENT_MODEL),
+            AddModel(head.model.id, head.model.label, head.model.contextWindow, clientModel = RUNTIME_CLIENT_MODEL),
         ),
-        providerExtra = listOf(
-            "# Served on this machine; the facts are `${head.describedBy}`'s. The endpoint takes no key:",
-            "# $envVar in keys.toml is a placeholder, because the api-key kind needs one that resolves.",
-            "quirks = { reasoning_effort = ${head.emitReasoningEffort}, slot_affinity = ${head.slotAffinity} }",
-        ),
-        origin = "splice setup",
-        listAuthoritative = !head.anyModelId,
-        requiresKey = false,
     )
 }

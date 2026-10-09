@@ -45,10 +45,10 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
     }
 
     fun baselineBoundary(items: List<JsonElement>, record: CodeModeRecord): Int? =
-        if (record.metadataVersion == CODE_MODE_METADATA_VERSION && record.replayAnchors != null) {
+        if (record.origin.baseline.metadataVersion == CODE_MODE_METADATA_VERSION && record.replayAnchors != null) {
             CodeModeHistoryIndex(items, this).boundary(record)
         } else {
-            record.baselineLogicalCount.takeIf { validPrefix(items, record) }
+            record.origin.baseline.logicalCount.takeIf { validPrefix(items, record) }
         }
 
     /** Splits the projected input into its lite preamble and the conversation the records measure. */
@@ -64,18 +64,19 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
         record: CodeModeRecord,
         index: CodeModeHistoryIndex? = null,
     ): Boolean {
-        if (record.metadataVersion == CODE_MODE_METADATA_VERSION && record.replayAnchors != null) {
+        if (record.origin.baseline.metadataVersion == CODE_MODE_METADATA_VERSION && record.replayAnchors != null) {
             return (index ?: CodeModeHistoryIndex(items, this)).boundary(record) != null
         }
-        if (items.size < record.baselineLogicalCount) return false
-        return digest(JsonArray(items.take(record.baselineLogicalCount))) == record.baselineLogicalDigest
+        val baseline = record.origin.baseline
+        if (items.size < baseline.logicalCount) return false
+        return digest(JsonArray(items.take(baseline.logicalCount))) == baseline.logicalDigest
     }
 
     fun validFullPrefix(input: JsonArray, record: CodeModeRecord): Boolean {
-        if (record.metadataVersion == CODE_MODE_METADATA_VERSION) return false
+        if (record.origin.baseline.metadataVersion == CODE_MODE_METADATA_VERSION) return false
         val rawBody = input.dropWhile(::isPreamble)
-        if (rawBody.size < record.baselineInputCount) return false
-        return digest(JsonArray(rawBody.take(record.baselineInputCount))) == record.baselineInputDigest
+        if (rawBody.size < record.origin.baseline.inputCount) return false
+        return digest(JsonArray(rawBody.take(record.origin.baseline.inputCount))) == record.origin.baseline.inputDigest
     }
 
     /**
@@ -118,8 +119,8 @@ internal class CodexCodeModeHistoryCodec(private val json: Json) {
 
     fun customOutput(record: CodeModeRecord): JsonObject = buildJsonObject {
         put(FIELD_TYPE, TYPE_CUSTOM_OUTPUT)
-        put(FIELD_CALL_ID, record.outerCallId)
-        put(FIELD_OUTPUT, record.output.orEmpty())
+        put(FIELD_CALL_ID, record.origin.outerCallId)
+        put(FIELD_OUTPUT, record.progress.output.orEmpty())
     }
 
     fun callId(element: JsonElement): String? =
@@ -145,11 +146,11 @@ internal object CodeModeCallReplay {
     fun item(record: CodeModeRecord): JsonObject =
         if (
             record.sourceState?.complete == true ||
-            JsonScalars.strOrEmpty(record.outer[FIELD_INPUT]) == record.source
+            JsonScalars.strOrEmpty(record.origin.outer[FIELD_INPUT]) == record.origin.source
         ) {
-            record.outer
+            record.origin.outer
         } else {
-            JsonObject(record.outer + (FIELD_INPUT to JsonPrimitive(record.source)))
+            JsonObject(record.origin.outer + (FIELD_INPUT to JsonPrimitive(record.origin.source)))
         }
 }
 

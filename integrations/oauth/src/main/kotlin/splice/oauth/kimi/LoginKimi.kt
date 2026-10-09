@@ -8,10 +8,13 @@ import splice.core.topology.AuthKind
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.oauth.AUTO
+import splice.oauth.DeviceAuthEndpoint
 import splice.oauth.DeviceAuthForm
 import splice.oauth.DeviceAuthParse
 import splice.oauth.DeviceAuthorization
+import splice.oauth.DeviceClient
 import splice.oauth.DeviceLoginSpec
+import splice.oauth.DeviceTokenEndpoint
 import splice.oauth.OAuthAccountFiles
 import splice.oauth.OAuthLoginAccount
 import splice.oauth.OAuthLoginReservation
@@ -47,17 +50,23 @@ public class LoginKimi {
             val identity = KimiDeviceIdentity(deviceIdPath = deviceIdPath(authPath, account))
             val spec = DeviceLoginSpec(
                 head = head,
-                clientId = KimiOAuthEndpoints.CLIENT_ID,
-                deviceAuthUrl = KimiOAuthEndpoints.deviceAuthorizationUrl(env),
-                tokenUrl = KimiOAuthEndpoints.tokenUrl(env),
+                client = DeviceClient(
+                    id = KimiOAuthEndpoints.CLIENT_ID,
+                    headers = identity.headers(),
+                ),
+                deviceAuth = DeviceAuthEndpoint(
+                    url = KimiOAuthEndpoints.deviceAuthorizationUrl(env),
+                    form = DeviceAuthForm { oauth.kimiDeviceAuthorizationForm(it) },
+                    parse = DeviceAuthParse(::deviceAuth),
+                ),
+                tokenEndpoint = DeviceTokenEndpoint(
+                    url = KimiOAuthEndpoints.tokenUrl(env),
+                    pollForm = TokenPollForm { code, id -> oauth.kimiTokenPollForm(code, id) },
+                    toAuthJson = { body ->
+                        oauth.kimiAuthJsonFromTokenResponse(body, System.currentTimeMillis()).toString()
+                    },
+                ),
                 authPath = authPath,
-                identityHeaders = identity.headers(),
-                toAuthJson = { body ->
-                    oauth.kimiAuthJsonFromTokenResponse(body, System.currentTimeMillis()).toString()
-                },
-                deviceAuthForm = DeviceAuthForm { oauth.kimiDeviceAuthorizationForm(it) },
-                parseDeviceAuth = DeviceAuthParse(::deviceAuth),
-                tokenPollForm = TokenPollForm { code, id -> oauth.kimiTokenPollForm(code, id) },
                 account = account,
             )
             handedOff = true

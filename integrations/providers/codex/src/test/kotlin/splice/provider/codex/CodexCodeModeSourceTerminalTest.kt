@@ -393,24 +393,25 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
 
     @Test
     @Timeout(20)
-    fun `poisoning a live source at its explicit round bound cancels the reader and cannot dispatch twice`() = runBlocking {
-        val runtime = IncrementalRuntime()
-        val manager = bridge(runtime, maxRounds = 1)
-        val sink = StepSink()
-        val post = GatedPost(sink)
-        try {
-            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
-            val first = sink.callback.await()
-            val outcome = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                .intercept(history(listOf(first)), StepSink(), post).turn()
-            assertTrue(outcome is TurnOutcome.Failure)
-            withTimeout(1_500) { post.stopped.await() }
-            assertFalse(post.sent[1].isCompleted, "poisoning generates no unread source")
-            assertFalse(manager.interceptor(turn(first.id, "result-0"), disableParallel = false).resumesSource())
-            assertEquals(1, runtime.starts)
-            assertEquals(1, post.posts)
-        } finally {
-            manager.onHeadStop()
+    fun `poisoning a live source at its explicit round bound cancels the reader and cannot dispatch twice`() =
+        runBlocking {
+            val runtime = IncrementalRuntime()
+            val manager = bridge(runtime, maxRounds = 1)
+            val sink = StepSink()
+            val post = GatedPost(sink)
+            try {
+                manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
+                val first = sink.callback.await()
+                val outcome = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
+                    .intercept(history(listOf(first)), StepSink(), post).turn()
+                assertTrue(outcome is TurnOutcome.Failure)
+                withTimeout(1_500) { post.stopped.await() }
+                assertFalse(post.sent[1].isCompleted, "poisoning generates no unread source")
+                assertFalse(manager.interceptor(turn(first.id, "result-0"), disableParallel = false).resumesSource())
+                assertEquals(1, runtime.starts)
+                assertEquals(1, post.posts)
+            } finally {
+                manager.onHeadStop()
+            }
         }
-    }
 }

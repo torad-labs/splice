@@ -133,14 +133,14 @@ internal class CodexCodeModeSweeper(
 
     /** Without an explicit count bound, old expiry evidence is bounded by the same configured lifetime. */
     private fun expireMarkers(key: String?): Boolean {
-        val cutoff = config.clock.millis() - config.ttl.inWholeMilliseconds
+        val cutoff = config.clock.millis() - config.retention.ttl.inWholeMilliseconds
         return history.entries.removeAll { (key == null || it.key == key) && it.expiredAt < cutoff }
     }
 
     private fun expireRecords(key: String?): Boolean {
-        val cutoff = config.clock.millis() - config.ttl.inWholeMilliseconds
+        val cutoff = config.clock.millis() - config.retention.ttl.inWholeMilliseconds
         val lastUse = records.groupBy(CodeModeRecord::key)
-            .mapValues { (_, kept) -> kept.maxOf(CodeModeRecord::updatedAt) }
+            .mapValues { (_, kept) -> kept.maxOf { it.progress.updatedAt } }
         val protected = records.filter(retainedCells::running).map(CodeModeRecord::key).toSet()
         val stale = records.filter {
             (key == null || it.key == key) && it.key !in protected && lastUse.getValue(it.key) < cutoff
@@ -191,8 +191,8 @@ internal class CodeModeRecordRetention(
      *  the turn: its newest finished record takes the turn's time. The turn writes nothing for it, because a
      *  large conversation's full save can refuse the turn; the head's stop saves it with every conversation. */
     private fun used(records: List<CodeModeRecord>, key: String, now: Long) {
-        records.filter { it.key == key && it.terminal() }.maxByOrNull(CodeModeRecord::updatedAt)?.let { newest ->
-            newest.updatedAt = maxOf(newest.updatedAt, now)
+        records.filter { it.key == key && it.terminal() }.maxByOrNull { it.progress.updatedAt }?.let { newest ->
+            newest.progress.updatedAt = maxOf(newest.progress.updatedAt, now)
         }
     }
 
@@ -275,7 +275,7 @@ internal class CodeModeRecordRetention(
                 .minWithOrNull(
                     compareBy<Map.Entry<String, List<CodeModeRecord>>>(
                         { (_, kept) -> kept.any { it.sessionId?.let(sessionAlive::invoke) != false } },
-                        { (_, kept) -> kept.maxOf(CodeModeRecord::updatedAt) },
+                        { (_, kept) -> kept.maxOf { it.progress.updatedAt } },
                     ),
                 )
                 ?: return null

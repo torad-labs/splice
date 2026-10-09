@@ -17,6 +17,7 @@ import splice.core.model.TurnBill
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.GatewayCustomCall
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -43,7 +44,7 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
         assertTrue(post.continuation.contains("response-stream"))
         assertTrue(post.continuation.contains("custom_tool_call_output"))
         assertTrue(post.continuation.contains("reason-terminal"), "terminal reasoning must survive canonical replay")
-        assertEquals(1, outcome.reasoningEnvelopes.size)
+        assertEquals(1, outcome.handoffs.reasoningEnvelopes.size)
     }
 
     protected fun assertSourcePending() {
@@ -172,8 +173,10 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
                 false,
                 terminalProblem == "incomplete",
                 Usage(inputTokens = 100, outputTokens = 7, reasoningTokens = 3),
-                customCalls = listOf(completed),
-                reasoningEnvelopes = listOf(checkNotNull(ReasoningReplay.encodeReasoningEnvelope(reasoning))),
+                handoffs = RoundHandoffs(
+                    reasoningEnvelopes = listOf(checkNotNull(ReasoningReplay.encodeReasoningEnvelope(reasoning))),
+                    customCalls = listOf(completed),
+                ),
             )
         }
 

@@ -23,8 +23,8 @@ public class AccountOrderRoute(private val resolver: AccountHeadResolver) {
             respond(call, Target(head.key, source))
             return
         }
-        val signedIn = native.filter { it.head == head.key && it.credentialPresent }
-        val identities = signedIn.map { it.account?.uuid?.takeIf(String::isNotBlank) }
+        val signedIn = native.filter { it.head == head.key && it.credential.present }
+        val identities = signedIn.map { it.identity.account?.uuid?.takeIf(String::isNotBlank) }
         if (identities.distinct().singleOrNull() != null) {
             AccountReplies.respond(
                 call,

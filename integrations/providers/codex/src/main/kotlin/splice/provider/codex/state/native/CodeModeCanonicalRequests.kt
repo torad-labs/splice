@@ -38,14 +38,14 @@ internal class CodeModeCanonicalRequests(private val codec: CodexCodeModeHistory
         val omitted = previous?.omitted.orEmpty().toMutableList()
         val eligible = records.filter(CodeModeNativeChain::rewritable)
         val pending = eligible.filterNot { previous?.processed(it) == true }
-        pending.filter { it.metadataVersion != CODE_MODE_METADATA_VERSION }.forEach { record ->
+        pending.filter { it.origin.baseline.metadataVersion != CODE_MODE_METADATA_VERSION }.forEach { record ->
             val rewritten = legacy(input, record, replayMedia)
             val error = rewritten.error
             if (error == null) input = checkNotNull(rewritten.input) else omitted += CodeModeOmission(record, error)
         }
         val anchored = CodeModeCanonicalHistory(codec).rewrite(
             input,
-            pending.filter { it.metadataVersion == CODE_MODE_METADATA_VERSION },
+            pending.filter { it.origin.baseline.metadataVersion == CODE_MODE_METADATA_VERSION },
             replayMedia,
             capture,
         )

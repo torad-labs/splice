@@ -16,6 +16,9 @@ import splice.client.mcp.McpSharing
 import splice.client.mcp.McpSourceKind
 import splice.core.util.LogSink
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.recipe.LaunchService
 import java.nio.file.Path
@@ -106,18 +109,24 @@ class McpInventoryWiringTest {
 
     private fun spec(configDir: Path, head: String, policy: ClaudePolicy) = LaunchSpec(
         trees = HeadTrees(configDir),
-        pinnedModel = "m",
-        availableModelIds = listOf("m"),
-        modelLabels = mapOf("m" to "m"),
-        contextWindow = 272_000,
-        apiTimeoutMs = 960_000,
-        modelOptionsCache = buildJsonObject { },
-        statuslineCommand = "true",
-        loginCommand = "claude-$head login",
-        signInLabel = "Head $head",
-        headKey = head,
+        models = LaunchModels(
+            pinnedModel = "m",
+            availableModelIds = listOf("m"),
+            modelLabels = mapOf("m" to "m"),
+            contextWindow = 272_000,
+            modelOptionsCache = buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "claude-$head login",
+            signInLabel = "Head $head",
+            headKey = head,
+        ),
+        gateway = LaunchGateway(
+            apiTimeoutMs = 960_000,
+            statuslineCommand = "true",
+            port = 3099,
+            inferenceToken = "test-inference-token",
+        ),
         policy = policy,
-        port = 3099,
-        inferenceToken = "test-inference-token",
     )
 }

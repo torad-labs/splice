@@ -159,21 +159,10 @@ public data class AccountView(
     val primary: Boolean,
     val selected: Boolean,
     val plan: String?,
-    val fiveHourUsedPercent: Double?,
-    val fiveHourResetEpochSeconds: Long?,
-    val sevenDayUsedPercent: Double?,
-    val sevenDayResetEpochSeconds: Long?,
     val available: Boolean,
-    val credentialPresent: Boolean = true,
-    val authExcludedUntilEpochMillis: Long? = null,
-    val authExclusionReason: String? = null,
-    /** V4-132: the window's own reported length in seconds — see [AccountPool]'s [AccountView]
-     *  construction for why the projection carries it now. */
-    val fiveHourWindowSeconds: Long? = null,
-    val sevenDayWindowSeconds: Long? = null,
-    /** When this account's quota windows were observed, epoch SECONDS (the reset fields' unit), or
-     *  null when its tracker names no observation. */
-    val quotaObservedAtEpochSeconds: Long? = null,
+    /** Both quota windows and their observation time; V4-132 added each window's own reported length. */
+    val quota: AccountQuotaReading = AccountQuotaReading(),
+    val credential: AccountCredentialReading = AccountCredentialReading(),
 )
 
 /** One session's safe pool projection. */

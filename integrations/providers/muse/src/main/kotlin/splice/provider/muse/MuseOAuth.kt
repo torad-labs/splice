@@ -5,7 +5,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
-import splice.core.util.Cancellables
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
 import splice.upstream.failure.FailureRules
@@ -98,11 +97,13 @@ public class MuseOAuth {
         }
     }
 
-    private fun parseObject(responseBody: String): JsonObject? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: every caller names a non-JSON body (a thrown error, Denied, or a token persistIfSignedIn refuses)
-        Cancellables.runCatchingCancellable {
-            museJson.parseToJsonElement(responseBody) as? JsonObject
-        }.getOrNull()
+    /** The body as a JSON object; null for a non-JSON one, which every caller names (a thrown error, Denied, or a
+     *  token persistIfSignedIn refuses). */
+    private fun parseObject(responseBody: String): JsonObject? = try {
+        museJson.parseToJsonElement(responseBody) as? JsonObject
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 
     private fun subscriptionState(obj: JsonObject): Pair<Boolean, Boolean>? =
         strictBoolean(obj, "is_subs_active")?.let { active ->
@@ -123,9 +124,15 @@ public class MuseOAuth {
 
     public fun isAuthFailureBody(body: String): Boolean = FailureRules().isAuthFailureBody(body)
 
+    private fun uriOrNull(text: String): URI? = try {
+        URI.create(text)
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
     internal fun safeActionOrigin(raw: String?): String? {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-24: an origin that does not parse is untrusted, which is the safe answer
-        val uri = raw?.let { Cancellables.runCatchingCancellable { URI.create(it) }.getOrNull() } ?: return null
+        // An origin that does not parse is untrusted, which is the safe answer.
+        val uri = raw?.let(::uriOrNull) ?: return null
         val host = uri.host?.lowercase() ?: return null
         val trustedHttps = uri.scheme.equals("https", ignoreCase = true) && host in trustedActionHosts
         val standardAuthority = uri.rawUserInfo == null && uri.port == -1

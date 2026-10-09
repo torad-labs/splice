@@ -15,8 +15,12 @@ import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
+import splice.dialect.responses.ReasoningCapture
 import splice.dialect.responses.StreamTurnContext
+import splice.dialect.responses.SummaryHandling
+import splice.dialect.responses.WatchdogCaps
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
+import splice.upstream.TurnSignals
 import splice.upstream.sse.WireSink
 
 private class RecordingWireSink : WireSink {
@@ -65,14 +69,22 @@ private fun ctx(emit: Boolean) = StreamTurnContext(
     compact = false,
     emitEncryptedReasoning = EmitEncryptedReasoning(emit),
     encodeReasoningEnvelope = { "env:" + it["id"]?.toString().orEmpty() },
-    clientGone = { false },
-    watchdogFired = { null },
-    streamIdleMsForMessage = 180_000,
-    upstreamTimeoutMsForMessage = 900_000,
-    collectReasoningEnvelopes = false,
-    dedupeRepeatedSummaryParts = false,
-    summaryPartsShared = SharedSummaryParts(),
-    onTurnReasoning = { _, _ -> },
+    signals = TurnSignals(
+        clientGone = { false },
+        watchdogFired = { null },
+    ),
+    caps = WatchdogCaps(
+        streamIdleMs = 180_000,
+        upstreamTimeoutMs = 900_000,
+    ),
+    reasoningCapture = ReasoningCapture(
+        collectEnvelopes = false,
+        onTurn = { _, _ -> },
+    ),
+    summary = SummaryHandling(
+        dedupeRepeatedParts = false,
+        partsShared = SharedSummaryParts(),
+    ),
 )
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
@@ -101,7 +113,7 @@ class ResponsesRedactedEmissionTest {
             RecordingWireSink(),
         )
         assertTrue(
-            (outcome as TurnOutcome.Success).emittedThinking,
+            (outcome as TurnOutcome.Success).text.emittedThinking,
             "a redacted block reached the sink — the turn is not empty",
         )
     }
@@ -128,7 +140,7 @@ class ResponsesRedactedEmissionTest {
             sink,
         )
         assertTrue(
-            (outcome as TurnOutcome.Success).emittedThinking,
+            (outcome as TurnOutcome.Success).text.emittedThinking,
             "a thinking block opened by ensureThinkingBlock reached the sink: calls=${sink.calls}",
         )
         assertTrue(
@@ -152,7 +164,7 @@ class ResponsesRedactedEmissionTest {
             sink,
         )
         assertTrue(
-            (outcome as TurnOutcome.Success).emittedThinking,
+            (outcome as TurnOutcome.Success).text.emittedThinking,
             "reasoning that only arrives with the item terminal still reached the client: calls=${sink.calls}",
         )
         assertTrue(

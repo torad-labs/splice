@@ -16,7 +16,6 @@ import java.net.ServerSocket
 import java.net.URI
 import java.net.URISyntaxException
 import java.nio.file.Files
-import java.nio.file.Path
 
 private const val FIRST_HEAD_PORT = 3099
 
@@ -40,19 +39,19 @@ internal val jdkPortBindable = HeadPortBindable { port ->
 
 /** Everything decided before the first side effect. */
 internal data class AddCandidate(
-    val path: Path,
-    val existing: String,
-    val appended: String,
+    val file: AddFileEdit,
     val topology: Topology,
     val key: String,
-    val command: String,
     val provider: ProviderConfig,
     val models: List<String>,
     val args: AddArgs,
     /** The resolved profile the tables were rendered from: its origin titles the run and its
      *  listAuthoritative decides the models check. */
     val resolved: AddProfile,
-)
+) {
+    /** The wrapper command the head is launched by, as the resolved profile names it. */
+    val command: String get() = resolved.head.command
+}
 
 /** What preparing an add decided, before any side effect: a candidate, or why there is none. */
 internal sealed class AddPrepared {
@@ -87,7 +86,7 @@ internal class AddPrepare(
     /** V4-220: the same decisions as a value, for a caller that answers them rather than prints them. */
     fun prepare(args: AddArgs, env: EnvReader): AddPrepared {
         val profile = args.profile?.let(profiles::find) ?: return AddPrepared.UnknownProfile
-        val key = args.name ?: profile.headKey
+        val key = args.name ?: profile.head.key
         return when (val rows = modelRows.resolve(args, profile)) {
             is AddRows.Resolved -> assembled(args, applied(args, profile, key, rows.models), key, env)
             is AddRows.Refused -> AddPrepared.Refused(AddRefusal.Models(rows.problem), conflict = false)
@@ -97,7 +96,7 @@ internal class AddPrepare(
     /** A profile a local runtime DESCRIBED (RuntimeHeadAdd), already resolved: no flags to apply and
      *  nothing to prompt for, then the same refusals, render and parse as a catalogue profile. */
     fun described(profile: AddProfile, env: EnvReader): AddCandidate? {
-        val prepared = assembled(AddArgs(profile = profile.name, yes = true), profile, profile.headKey, env)
+        val prepared = assembled(AddArgs(profile = profile.name, yes = true), profile, profile.head.key, env)
         if (prepared is AddPrepared.Refused) output.line("splice add: ${texts.cli(prepared.refusal)}")
         return (prepared as? AddPrepared.Ready)?.candidate
     }
@@ -117,12 +116,9 @@ internal class AddPrepare(
             onSuccess = { topology ->
                 AddPrepared.Ready(
                     AddCandidate(
-                        path = path,
-                        existing = existing,
-                        appended = appended,
+                        file = AddFileEdit(path, existing, appended),
                         topology = topology,
                         key = key,
-                        command = resolved.command,
                         provider = topology.providers.getValue(key),
                         models = resolved.models.map { it.id },
                         args = args,
@@ -140,7 +136,7 @@ internal class AddPrepare(
     private fun applied(args: AddArgs, profile: AddProfile, key: String, models: List<AddModel>): AddProfile =
         profile.copy(
             baseUrl = args.baseUrl ?: profile.baseUrl.orEmpty(),
-            command = args.command ?: profile.command.ifEmpty { "claude-$key" },
+            head = profile.head.copy(command = args.command ?: profile.head.command.ifEmpty { "claude-$key" }),
             models = models,
         )
 
@@ -165,8 +161,8 @@ internal class AddPrepare(
         key in current.providers || key in current.heads -> AddRefusal.KeyTaken(key)
         // A head with no explicit command launches as its own key (Topology.resolveHeadKeys), so that is
         // the name a new command must not take either.
-        current.heads.any { (headKey, head) -> (head.claude.command ?: headKey) == profile.command } ->
-            AddRefusal.CommandTaken(profile.command)
+        current.heads.any { (headKey, head) -> (head.claude.command ?: headKey) == profile.head.command } ->
+            AddRefusal.CommandTaken(profile.head.command)
         else -> null
     }
 
@@ -176,7 +172,7 @@ internal class AddPrepare(
         return when {
             profile.baseUrl.isNullOrEmpty() -> AddRefusal.BaseUrlRequired(profile.name)
             rows != null -> AddRefusal.Models(rows)
-            !addValuePattern.matches(profile.baseUrl) || !addValuePattern.matches(profile.command) ->
+            !addValuePattern.matches(profile.baseUrl) || !addValuePattern.matches(profile.head.command) ->
                 AddRefusal.QuotedValue
             else -> null
         }

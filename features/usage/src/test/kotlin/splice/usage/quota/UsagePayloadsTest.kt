@@ -17,13 +17,17 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountView
+import splice.accounts.pool.HeadAccountWindow
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 import splice.core.util.WallClock
 import splice.usage.UsageHead
+import splice.usage.UsageHeadSinks
+import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
 import java.nio.file.Path
 
@@ -40,9 +44,8 @@ class UsagePayloadsTest {
             key = "codex",
             label = "codex",
             usage = HeadUsageSource { view },
-            warnPct = 80,
-            warnTokens5h = 0,
-            accountPool = pool,
+            warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
+            sinks = UsageHeadSinks(accountPool = pool),
         )
         // V4-396: a window shows only while current, so the payload reads a minute after OBSERVED.
         val payloads = UsagePayloads(
@@ -104,10 +107,10 @@ class UsagePayloadsTest {
         selected = selected,
         available = true,
         plan = "pro",
-        fiveHourUsedPercent = 40.0,
-        fiveHourResetEpochSeconds = FIVE_RESET,
-        sevenDayUsedPercent = 9.0,
-        sevenDayResetEpochSeconds = SEVEN_RESET,
-        quotaObservedAtEpochSeconds = observed,
+        quota = HeadAccountQuota(
+            fiveHour = HeadAccountWindow(usedPercent = 40.0, resetEpochSeconds = FIVE_RESET),
+            sevenDay = HeadAccountWindow(usedPercent = 9.0, resetEpochSeconds = SEVEN_RESET),
+            observedAtEpochSeconds = observed,
+        ),
     )
 }

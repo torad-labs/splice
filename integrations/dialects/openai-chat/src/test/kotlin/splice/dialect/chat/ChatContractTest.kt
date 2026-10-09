@@ -49,6 +49,7 @@ internal fun assertGoldenContract(name: String, actual: JsonObject, owner: () ->
         res.readText().trim(),
         pretty.trim(),
         "request-byte contract drift for '$name' — a builder change altered the upstream request. " +
-            "If intended, regenerate the golden and (Phase 1 live half) re-bind it to an `e2e heads` receipt. See .docs/architecture/request-byte-contracts.md.",
+            "If intended, regenerate the golden and (Phase 1 live half) re-bind it to an `e2e heads` " +
+            "receipt. See .docs/architecture/request-byte-contracts.md.",
     )
 }

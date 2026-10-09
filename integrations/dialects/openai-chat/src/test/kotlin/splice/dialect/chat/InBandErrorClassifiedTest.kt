@@ -30,7 +30,7 @@ class InBandErrorClassifiedTest {
         assertEquals(FailureCause.UPSTREAM_STATUS_5XX, f.cause)
         assertEquals(ErrorType.OVERLOADED, f.type)
         assertTrue(f.message.contains("KV cache is full"), f.message)
-        assertFalse(f.permanent, "a 5xx heals: advertised as retryable")
+        assertFalse(f.traits.permanent, "a 5xx heals: advertised as retryable")
     }
 
     // V4-167. Mutant: never carry the verdict (V4-164). A typed vendor error that identical bytes
@@ -39,7 +39,7 @@ class InBandErrorClassifiedTest {
     fun `a typed in-band error the same bytes reproduce is not advertised as retryable`() = runTest {
         val f = failureOf("""{"error":{"message":"Invalid prompt: the prompt was flagged","type":"invalid_prompt"}}""")
 
-        assertTrue(f.permanent)
+        assertTrue(f.traits.permanent)
     }
 
     // V4-167. Mutant: any integer code is a status (V4-164). A vendor's own code "1301" read as
@@ -83,6 +83,6 @@ class InBandErrorClassifiedTest {
         assertEquals("chat backend: something the classifier has no rule for", f.message)
         // V4-167. Mutant: carry the verdict for every event. One with no type and no status keeps the
         // retryable wire V4-164 promised it.
-        assertFalse(f.permanent)
+        assertFalse(f.traits.permanent)
     }
 }

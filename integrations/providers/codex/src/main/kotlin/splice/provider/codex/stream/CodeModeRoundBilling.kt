@@ -81,7 +81,9 @@ internal class CodeModeRoundBilling(
             }
             if (usage == null && !readerEnd) return
             owed = null
-            val missing = noRequestUsage.copy(history = noRequestUsage.history.copy(cutRounds = 1))
+            val missing = noRequestUsage.copy(
+                origin = noRequestUsage.origin.copy(history = noRequestUsage.origin.history.copy(cutRounds = 1)),
+            )
                 .takeIf { unreported && !clientCut }
             due to (usage ?: missing)
         }

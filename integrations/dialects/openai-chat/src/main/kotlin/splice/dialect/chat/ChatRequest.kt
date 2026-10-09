@@ -21,6 +21,8 @@ internal data class ChatRequest(
     val tools: JsonArray? = null,
     /** OpenAI chat tool_choice: "auto" | "none" | "required" | {"type":"function","function":{name}}. */
     @SerialName("tool_choice") val toolChoice: kotlinx.serialization.json.JsonElement? = null,
+    /** false only when the client sent disable_parallel_tool_use: true; null = omitted, the backend's default. */
+    @SerialName("parallel_tool_calls") val parallelToolCalls: Boolean? = null,
     @SerialName("reasoning_effort") val reasoningEffort: String? = null,
     val reasoning: JsonObject? = null,
     /** Session-pinned server-side prompt cache (xAI honors it on /chat/completions: 135k tokens

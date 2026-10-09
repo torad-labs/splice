@@ -147,7 +147,7 @@ public class AddConsole(
         when {
             s.isSaved() -> AddSignInOutcome.AlreadySaved
             kind == AuthKind.Client.wire -> AddSignInOutcome.NoSignIn
-            kind == API_KEY && !s.candidate.resolved.requiresKey -> AddSignInOutcome.NoKeyRequired
+            kind == API_KEY && !s.candidate.resolved.provider.requiresKey -> AddSignInOutcome.NoKeyRequired
             !AuthKindRegistry.isOAuth(kind) -> AddSignInOutcome.ByKey(keyEnv(s))
             else -> AddSignInOutcome.Started(running(s) ?: started(s))
         }
@@ -164,7 +164,7 @@ public class AddConsole(
         if (s.isSaved()) return AddSaveOutcome.AlreadySaved
         val results = verify(s, live = false)
         if (results.any { !it.ok }) return AddSaveOutcome.ChecksFailed(results)
-        val local = s.candidate.resolved.authKind == API_KEY && !s.candidate.resolved.requiresKey
+        val local = s.candidate.resolved.provider.authKind == API_KEY && !s.candidate.resolved.provider.requiresKey
         if (local) saver.withLocalPlaceholder(s, results, restart) else saver.finishSave(s, restart)
     }
 
@@ -216,7 +216,7 @@ public class AddConsole(
 
         /** An unreadable file may already hold the new head, so keep its placeholder. */
         private fun landed(s: AddSession): Boolean = Cancellables.runCatchingCancellable {
-            s.candidate.key in TopologyLoader.parse(Files.readString(s.candidate.path)).providers
+            s.candidate.key in TopologyLoader.parse(Files.readString(s.candidate.file.path)).providers
         }.fold(onSuccess = { it }, onFailure = { true })
     }
 

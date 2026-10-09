@@ -9,11 +9,14 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.upstream.ToolSearchRound
@@ -78,8 +81,12 @@ class ResponsesCodeModeProjectionTest {
         val builder = ResponsesRequestBuilder(
             ResponsesQuirks(
                 providerTag = "test",
-                toolSurface = ToolDeferralPolicy(minDeferred = 1),
-                responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+                tools = ResponsesToolQuirks(
+                    toolSurface = ToolDeferralPolicy(minDeferred = 1),
+                ),
+                lite = ResponsesLiteQuirks(
+                    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+                ),
             ),
         )
         val cold = build(builder, request(history = false))
@@ -93,7 +100,7 @@ class ResponsesCodeModeProjectionTest {
             cold.toolSearch?.continuationForSearch(
                 ToolSearchRound(
                     cold.req,
-                    TurnOutcome.Success(false, false, Usage(), toolSearches = listOf(search)),
+                    TurnOutcome.Success(false, false, Usage(), handoffs = RoundHandoffs(toolSearches = listOf(search))),
                     0,
                 ),
             ),
@@ -114,13 +121,19 @@ class ResponsesCodeModeProjectionTest {
                 parsed.raw,
                 BuildOptions(
                     compact = false,
-                    originalModel = "gpt-6-astra",
-                    upstreamModel = "gpt-6-astra",
-                    configEffort = null,
-                    configSummary = null,
-                    showReasoning = ReasoningDisplay.OFF,
-                    replayReasoning = InjectPriorReasoning(false),
-                    decodeReasoningEnvelope = { null },
+                    models = ModelIds(
+                        original = "gpt-6-astra",
+                        upstream = "gpt-6-astra",
+                    ),
+                    reasoning = RequestedReasoning(
+                        effort = null,
+                        summary = null,
+                        display = ReasoningDisplay.OFF,
+                    ),
+                    handoff = ReasoningHandoff(
+                        replay = InjectPriorReasoning(false),
+                        decode = { null },
+                    ),
                 ),
             )
         }

@@ -71,14 +71,17 @@ class ClaudeLoginReadTest {
     @Test
     fun `native roster propagates the current credential's profile state without refusal text`() {
         val native = place(ClaudeLoginPlaceId.NATIVE, "synthetic-pending", verified = false)
-        assertEquals(ClaudeProfileState.PENDING, read(native).getValue(ClaudeLoginPlaceId.NATIVE).profileState)
+        assertEquals(ClaudeProfileState.PENDING, read(native).getValue(ClaudeLoginPlaceId.NATIVE).identity.profileState)
         val profiles = ClaudeCredentialProfiles(paths().stateDir, {})
         profiles.failed(key("synthetic-pending"))
         val refused = read(native).getValue(ClaudeLoginPlaceId.NATIVE)
-        assertEquals(ClaudeProfileState.REFUSED, refused.profileState)
-        assertNull(refused.account)
+        assertEquals(ClaudeProfileState.REFUSED, refused.identity.profileState)
+        assertNull(refused.identity.account)
         profiles.observed(key("synthetic-pending"), ClaudeAccountIdentity("synthetic-account", null))
-        assertEquals(ClaudeProfileState.VERIFIED, read(native).getValue(ClaudeLoginPlaceId.NATIVE).profileState)
+        assertEquals(
+            ClaudeProfileState.VERIFIED,
+            read(native).getValue(ClaudeLoginPlaceId.NATIVE).identity.profileState,
+        )
     }
 
     @Test
@@ -118,10 +121,10 @@ class ClaudeLoginReadTest {
         observations(paths).observed(key("second-synthetic"), window(77.0, 100_000))
         assertEquals(11.0, used(read(first, second), ClaudeLoginPlaceId.NATIVE))
         assertEquals(77.0, used(read(first, second), ClaudeLoginPlaceId.SPLICE))
-        assertEquals("first-account", read(first, second).getValue(ClaudeLoginPlaceId.NATIVE).account?.uuid)
+        assertEquals("first-account", read(first, second).getValue(ClaudeLoginPlaceId.NATIVE).identity.account?.uuid)
         Files.writeString(first.credentials, """{"claudeAiOauth":{"accessToken":"rotated-synthetic"}}""")
         assertNull(used(read(first, second), ClaudeLoginPlaceId.NATIVE), "a rotated token inherits no window")
-        assertTrue(read(first, second).getValue(ClaudeLoginPlaceId.NATIVE).credentialPresent)
+        assertTrue(read(first, second).getValue(ClaudeLoginPlaceId.NATIVE).credential.present)
         assertEquals(77.0, used(read(first, second), ClaudeLoginPlaceId.SPLICE))
     }
 
@@ -185,8 +188,8 @@ class ClaudeLoginReadTest {
 
         val places = read(native, separate)
 
-        assertEquals("first-account", places.getValue(ClaudeLoginPlaceId.NATIVE).account?.uuid)
-        assertEquals("second-account", places.getValue(ClaudeLoginPlaceId.SPLICE).account?.uuid)
+        assertEquals("first-account", places.getValue(ClaudeLoginPlaceId.NATIVE).identity.account?.uuid)
+        assertEquals("second-account", places.getValue(ClaudeLoginPlaceId.SPLICE).identity.account?.uuid)
         assertEquals(11.0, used(places, ClaudeLoginPlaceId.NATIVE))
         assertEquals(77.0, used(places, ClaudeLoginPlaceId.SPLICE))
     }

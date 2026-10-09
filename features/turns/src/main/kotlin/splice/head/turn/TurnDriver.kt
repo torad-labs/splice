@@ -81,7 +81,7 @@ internal class TurnDriver(
         ),
         SseRoundPost(
             provider,
-            deps.upstream,
+            deps.traffic.upstream,
             deps.stores.usageStore,
             deps.turnQuota,
             SseRoundConsume(provider, zeroEvent, telemetry, TearAwareEvents(provider, deps.log)),
@@ -108,7 +108,7 @@ internal class TurnDriver(
     private val oneDrive = TurnOneDrive(
         provider,
         deps,
-        TurnRoundRun(provider, log, sseRoundDriver, turnFinish, deps.stores.wireTap, usageStamp),
+        TurnRoundRun(provider, log, sseRoundDriver, turnFinish, deps.stores.captures.wireTap, usageStamp),
     )
 
     /** V4-99 item 5: the seal contract the two drive entries actually need, held here so they

@@ -100,7 +100,7 @@ class DoctorRuntimeSectionTest {
                 splice.core.config.StatePaths(baseOverride = tmp),
             ).first()
             assertEquals("synthetic: $words since the restart", row.detail)
-            assertNull(row.details)
+            assertNull(row.notes.details)
         }
     }
 
@@ -117,7 +117,7 @@ class DoctorRuntimeSectionTest {
             "Anthropic",
         ).first()
         assertEquals("synthetic: 1 turn hit Anthropic's rate limit after the restart.", row.detail)
-        assertEquals("Provider errors: 9. Errors inside splice: 0.", row.details)
+        assertEquals("Provider errors: 9. Errors inside splice: 0.", row.notes.details)
     }
 
     @Test
@@ -144,7 +144,7 @@ class DoctorRuntimeSectionTest {
         val check = report.getValue("checks").jsonArray.single().jsonObject
         assertEquals("Provider errors: 57. Errors inside splice: 91.", check["details"]?.jsonPrimitive?.content)
         assertEquals(row.detail, check.getValue("detail").jsonPrimitive.content)
-        val sensitive = row.copy(details = "Bearer SYNTHETIC-SECRET-DOCTOR-DETAILS")
+        val sensitive = row.copy(notes = row.notes.copy(details = "Bearer SYNTHETIC-SECRET-DOCTOR-DETAILS"))
         val scrubbed = writer.build(
             splice.diagnostics.doctor.report.DoctorRun(null, listOf("runtime" to listOf(sensitive))),
             false,

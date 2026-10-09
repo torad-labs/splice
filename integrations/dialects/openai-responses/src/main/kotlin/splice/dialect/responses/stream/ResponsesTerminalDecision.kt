@@ -6,6 +6,7 @@ package splice.dialect.responses.stream
 
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
 import splice.core.util.ERR_SNIPPET
 import splice.dialect.responses.ResponsesTurnState
@@ -36,7 +37,7 @@ internal class ResponsesTerminalDecision(
         providerFailure = runawayGuard?.let {
             TurnOutcome.Failure(
                 it,
-                providerReported = false,
+                traits = FailureTraits(providerReported = false),
                 cause = FailureCause.TOOL_TEAR,
                 phase = FailurePhase.MID_OUTPUT,
             )
@@ -46,7 +47,7 @@ internal class ResponsesTerminalDecision(
             // Success that dispatches garbage.
             TurnOutcome.Failure(
                 "upstream: $it in tool call; retry",
-                providerReported = true,
+                traits = FailureTraits(providerReported = true),
                 cause = FailureCause.TOOL_TEAR,
                 phase = FailurePhase.MID_OUTPUT,
             )
@@ -56,12 +57,14 @@ internal class ResponsesTerminalDecision(
             // must not re-POST the identical full context merely because API_ERROR is a wide bucket.
             TurnOutcome.Failure(
                 "upstream: ${it.message}",
-                providerReported = true,
+                traits = FailureTraits(
+                    providerReported = true,
+                    // V4-81: the classifier's own verdict, reaching the outcome at last. It gated
+                    // `partial` before this and nothing else, so a non-transient API_ERROR still went
+                    // out labelled retryable and the client re-sent it — see PreContentWireType.
+                    permanent = !it.transient,
+                ),
                 partial = if (it.transient) payload.partialOrNull(state) else null,
-                // V4-81: the classifier's own verdict, reaching the outcome at last. It gated
-                // `partial` before this and nothing else, so a non-transient API_ERROR still went
-                // out labelled retryable and the client re-sent it — see PreContentWireType.
-                permanent = !it.transient,
                 // V4-117: the classifier's OWN cause, since it is the one holding the status, the
                 // vendor code and the body text. An earlier draft of this line re-derived the cause
                 // here from `it.status` alone — and that was WRONG in a way two tests caught: on the
@@ -74,7 +77,7 @@ internal class ResponsesTerminalDecision(
             )
         } ?: refusalFailure(state) ?: contentFilterFailure(state),
         finished = state.finalResponse != null,
-        watchdogFired = ctx.watchdogFired(),
+        watchdogFired = ctx.signals.watchdogFired(),
     ).terminalPrecedence(
         onFinished = { payload.successOutcome(state) },
         onWatchdog = { watchdogOutcome(it, state) },
@@ -97,15 +100,18 @@ internal class ResponsesTerminalDecision(
                 // bearing. Without it the pre-content rule relabelled the refusal overloaded_error
                 // and the client re-sent the identical bytes up to 300 times for the same refusal.
                 "upstream: model refused. $it",
-                providerReported = true, // the `refusal` the backend sent, not a local verdict (G20)
-                // V4-122 item 11: the sentence above was load-bearing and the ARGUMENT HAD BEEN
-                // LOST — the comment survived while the call passed only providerReported, so
-                // `permanent` defaulted false and the pre-content rule relabelled the refusal
-                // overloaded_error. That is the documented 300-identical-resend defect, live again.
-                // Decided from the BEHAVIOUR, not the comment: a refusal is deterministic, so a
-                // retry re-sends the identical bytes for the identical verdict and the client
-                // cannot fix it by retrying. Its siblings at :49 and :95 pass it; this one did not.
-                permanent = true,
+                traits = FailureTraits(
+                    providerReported = true,
+                    // the `refusal` the backend sent, not a local verdict (G20)
+                    // V4-122 item 11: the sentence above was load-bearing and the ARGUMENT HAD BEEN
+                    // LOST — the comment survived while the call passed only providerReported, so
+                    // `permanent` defaulted false and the pre-content rule relabelled the refusal
+                    // overloaded_error. That is the documented 300-identical-resend defect, live again.
+                    // Decided from the BEHAVIOUR, not the comment: a refusal is deterministic, so a
+                    // retry re-sends the identical bytes for the identical verdict and the client
+                    // cannot fix it by retrying. Its siblings at :49 and :95 pass it; this one did not.
+                    permanent = true,
+                ),
                 cause = FailureCause.MODEL_REFUSED,
                 phase = FailurePhase.TERMINAL,
             )
@@ -120,11 +126,13 @@ internal class ResponsesTerminalDecision(
         if (state.contentFiltered) {
             TurnOutcome.Failure(
                 "upstream: generation stopped by content filter",
-                providerReported = true,
-                // V4-81: permanent, for the reason the comment above already gives — the identical
-                // prompt is filtered identically, so a retry buys the same censored turn at full
-                // price.
-                permanent = true,
+                traits = FailureTraits(
+                    providerReported = true,
+                    // V4-81: permanent, for the reason the comment above already gives — the identical
+                    // prompt is filtered identically, so a retry buys the same censored turn at full
+                    // price.
+                    permanent = true,
+                ),
                 cause = FailureCause.CONTENT_FILTERED,
                 phase = FailurePhase.TERMINAL,
             )
@@ -136,7 +144,7 @@ internal class ResponsesTerminalDecision(
     // which is the upstream's own close ("socket closed by the peer (status=1011, …) after …") when a
     // websocket peer ended it (TearWords). A stream that simply stopped has nothing to add and reads as it did.
     private fun noCompletionOutcome(state: ResponsesTurnState, tear: IOException?): TurnOutcome =
-        if (ctx.clientGone()) {
+        if (ctx.signals.clientGone()) {
             TurnOutcome.ClientAbandoned()
         } else {
             val how = tear?.let(TearWords::of)?.let { "truncated: ${it.take(ERR_SNIPPET)}" } ?: "truncated"
@@ -160,7 +168,7 @@ internal class ResponsesTerminalDecision(
             // judged on the first-output cap (firstByteTimeoutMs), after it on streamIdle. An
             // operator reading "180s idle cap" on a 300s pre-output stall was reading a lie.
             is WatchdogFired.Idle -> if (fired.sawClientFrame) {
-                "no completion within the ${ctx.streamIdleMsForMessage / MS_PER_S}s idle cap"
+                "no completion within the ${ctx.caps.streamIdleMs / MS_PER_S}s idle cap"
             } else {
                 "no first output within the ${fired.limitMs / MS_PER_S}s first-output cap"
             }

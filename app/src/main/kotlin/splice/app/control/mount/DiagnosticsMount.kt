@@ -36,7 +36,7 @@ internal class DaemonSelfAnswers(
         fleet.headsJson(),
         accounts.authJson(),
         heads.mapValues { (key, _) -> DaemonProbe.HeadTrace(config.getConfig(key).trace) },
-        unmappedTiers = heads.mapValues { (_, head) -> head.catalog?.unmappedTiers.orEmpty() },
+        unmappedTiers = heads.mapValues { (_, head) -> head.statusline.catalog?.unmappedTiers.orEmpty() },
         accounts = accounts.accountsJson(),
     )
 }

@@ -17,6 +17,7 @@ import splice.core.parse.AnthropicParse
 import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.ResponsesFunctionNamespace
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.buildResponsesTestRequest
 import splice.dialect.responses.request.ResponsesCodeModeProjection
@@ -85,7 +86,7 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
             assertTrue(excluded.roundInterceptor == null)
         }
         listOf("gpt-5.5", "gpt-6-astra-preview", "other").forEach { model ->
-            val excluded = original.copy(meta = original.meta.copy(upstreamModel = model))
+            val excluded = original.copy(meta = original.meta.run { copy(route = route.copy(upstreamModel = model)) })
             assertSame(excluded, builder.prepare(body, "session", excluded))
         }
         val nonLite = built("gpt-6-astra", lite = false)
@@ -112,11 +113,13 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
             "gpt-5.6-luna",
             "GPT-5.6-Sol[1m]",
         ).forEach { model ->
-            val eligible = original.copy(meta = original.meta.copy(upstreamModel = model))
+            val eligible = original.copy(meta = original.meta.run { copy(route = route.copy(upstreamModel = model)) })
             val prepared = marked.prepare(body, "session", eligible)
             assertTrue(instructions(prepared.requestBody).contains("functions.exec"), model)
         }
-        val hidden = original.copy(meta = original.meta.copy(upstreamModel = "codex-auto-review"))
+        val hidden = original.copy(
+            meta = original.meta.run { copy(route = route.copy(upstreamModel = "codex-auto-review")) },
+        )
         assertSame(hidden, marked.prepare(body, "session", hidden), "the backend hides it: no mark to read")
         val listed = CodexCodeModeTurnBuilder(
             bridge(ScriptedRuntime(ArrayDeque())),
@@ -124,11 +127,13 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
             models = listOf(" gpt-5.6-terra ", "codex-auto-review"),
         )
         listOf("gpt-5.6-terra", "codex-auto-review").forEach { model ->
-            val named = original.copy(meta = original.meta.copy(upstreamModel = model))
+            val named = original.copy(meta = original.meta.run { copy(route = route.copy(upstreamModel = model)) })
             val prepared = listed.prepare(body, "session", named)
             assertTrue(instructions(prepared.requestBody).contains("functions.exec"), model)
         }
-        val astra = original.copy(meta = original.meta.copy(upstreamModel = "gpt-6-astra"))
+        val astra = original.copy(
+            meta = original.meta.run { copy(route = route.copy(upstreamModel = "gpt-6-astra")) },
+        )
         assertSame(astra, listed.prepare(body, "session", astra), "no mark and not named: direct tools")
     }
 
@@ -235,8 +240,10 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         val request = buildResponsesTestRequest(
             ResponsesQuirks(
                 providerTag = "test",
-                emitEmptyLiteInstructions = false,
-                responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+                lite = ResponsesLiteQuirks(
+                    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+                    emitEmptyLiteInstructions = false,
+                ),
             ),
             body,
             model = "gpt-6-astra",

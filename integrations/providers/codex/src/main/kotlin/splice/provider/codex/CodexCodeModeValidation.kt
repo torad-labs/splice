@@ -11,18 +11,19 @@ import splice.upstream.codemode.CodeModeResult
 internal enum class CodeModeResultMode { RESUME, INTERRUPT }
 
 internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig) {
-    fun fitsOutput(value: String): Boolean = value.length <= config.maxOutputChars && CodeModeLimits.fitsText(value)
+    fun fitsOutput(value: String): Boolean =
+        value.length <= config.bounds.maxOutputChars && CodeModeLimits.fitsText(value)
 
     /** A client result enters bounded: an oversized output is truncated with the marker, never rejected. */
     fun admit(result: CodeModeResult): CodeModeResult =
-        result.copy(output = CodeModeLimits.boundedText(result.output, config.maxOutputChars))
+        result.copy(output = CodeModeLimits.boundedText(result.output, config.bounds.maxOutputChars))
 
     fun outer(call: GatewayCustomCall): String? = when {
         call.name != CODE_MODE_TOOL_NAME && call.name != LEGACY_CODE_MODE_TOOL_NAME ->
             "unsupported custom tool call '${call.name.ifEmpty { "<unnamed>" }}'"
         call.callId.isBlank() -> "exec call is missing call_id"
         call.input.isBlank() -> "exec call is missing JavaScript input"
-        call.input.length > config.maxSourceChars || !CodeModeLimits.fitsText(call.input) ->
+        call.input.length > config.bounds.maxSourceChars || !CodeModeLimits.fitsText(call.input) ->
             "exec source exceeds the size limit"
         else -> null
     }
@@ -33,7 +34,7 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
         val oversized = calls.firstOrNull { !fitsOutput(JsonWire.string(it.arguments)) }
         return when {
             calls.isEmpty() -> "code-mode runtime yielded an empty call batch"
-            config.maxCalls?.let { record.totalCalls.toLong() + calls.size > it } == true ->
+            config.bounds.maxCalls?.let { record.progress.totalCalls.toLong() + calls.size > it } == true ->
                 "code-mode call limit exceeded"
             duplicateIds.isNotEmpty() -> "code-mode runtime repeated call ids: $duplicateIds"
             unknown != null -> "code-mode tool '${unknown.name}' is not in the current tool catalog"
@@ -55,7 +56,8 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
         val missing = (exposed - record.results.keys - current.keys)
             .takeIf { mode == CodeModeResultMode.RESUME }.orEmpty()
         val oversized = current.values.firstOrNull { !fitsOutput(it.output) }
-        val unexposedIds = record.pending.filterNot(CodeModePending::exposed).map(CodeModePending::clientId).toSet()
+        val unexposedIds = record.progress.pending.filterNot(CodeModePending::exposed)
+            .map(CodeModePending::clientId).toSet()
         val unexposed = relevant.firstOrNull { it.id in unexposedIds }
         return when {
             duplicateIds.isNotEmpty() -> "duplicate code-mode tool results: $duplicateIds"
@@ -72,7 +74,7 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
      *  carrying different pixels under an accepted id with the same text is a different result. A
      *  LEGACY id (accepted before media was captured, no entry) is compared on text alone, as it
      *  always was, and its text was rendered by the previous daemon with the previous markers: the
-     *  same client blocks rendered that way ([CodexCodeModeBridge.Turn.legacyResults]) are the same
+     *  same client blocks rendered that way ([CodeModeResultRendering.legacy]) are the same
      *  result, so an upgrade under a parked script does not turn every replay into a conflict. */
     /** A fork altered an already accepted callback; it is not the running cell's next result. */
     fun conflicts(record: CodeModeRecord, turn: CodexCodeModeBridge.Turn): Boolean =
@@ -81,14 +83,14 @@ internal class CodexCodeModeValidation(private val config: CodeModeBridgeConfig)
     private fun conflicts(record: CodeModeRecord, turn: CodexCodeModeBridge.Turn, prior: CodeModeResult): Boolean {
         val accepted = record.results[prior.id] ?: return false
         val media = record.accepted.media(prior.id)
-            ?: return accepted != prior && accepted != turn.legacyResults.firstOrNull { it.id == prior.id }
-        return accepted != prior || media != turn.toolMedia[prior.id].orEmpty()
+            ?: return accepted != prior && accepted != turn.rendering.legacy.firstOrNull { it.id == prior.id }
+        return accepted != prior || media != turn.rendering.media[prior.id].orEmpty()
     }
 
     private fun pendingFrameProblem(record: CodeModeRecord, current: Map<String, CodeModeResult>): String? {
         // Lost continuations preserve partial evidence; they never send a frame to a worker.
         if (record.phase != CodeModePhase.ACTIVE) return null
-        val results = record.pending.map { pending ->
+        val results = record.progress.pending.map { pending ->
             val result = current[pending.clientId] ?: record.results[pending.clientId]
             // Reserve empty future-result fields while accumulating a sequential batch. No placeholders are sent.
             CodeModeResult(pending.runtimeId, result?.output.orEmpty(), result?.isError ?: false)

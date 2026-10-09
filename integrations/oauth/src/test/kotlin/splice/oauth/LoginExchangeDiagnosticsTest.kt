@@ -35,13 +35,13 @@ class LoginExchangeDiagnosticsTest {
         val spec = LoginSpec(
             head = "probe",
             authorizeUrl = "http://127.0.0.1/unused",
-            redirectPort = 0,
-            redirectPath = "/cb",
-            expectedState = "s",
-            tokenUrl = "http://127.0.0.1:${server.address.port}/token",
-            exchangeForm = { code -> "code=$code" },
+            callback = LoopbackCallback(port = 0, path = "/cb", expectedState = "s"),
+            exchange = TokenExchange(
+                url = "http://127.0.0.1:${server.address.port}/token",
+                form = { code -> "code=$code" },
+                toAuthJson = { body -> Json.parseToJsonElement(body).toString() },
+            ),
             authPath = tmp.resolve("auth.json"),
-            toAuthJson = { body -> Json.parseToJsonElement(body).toString() },
         )
         val out = StringBuilder()
         val flow = OAuthLoginFlow(TerminalOutput { out.appendLine(it) })
@@ -81,17 +81,17 @@ class LoginTokenlessSuccessTest {
     private fun specFor(server: HttpServer, authPath: Path) = LoginSpec(
         head = "probe",
         authorizeUrl = "http://127.0.0.1/unused",
-        redirectPort = 0,
-        redirectPath = "/cb",
-        expectedState = "s",
-        tokenUrl = "http://127.0.0.1:${server.address.port}/token",
-        exchangeForm = { code -> "code=$code" },
+        callback = LoopbackCallback(port = 0, path = "/cb", expectedState = "s"),
+        exchange = TokenExchange(
+            url = "http://127.0.0.1:${server.address.port}/token",
+            form = { code -> "code=$code" },
+            toAuthJson = { body ->
+                val token = (Json.parseToJsonElement(body).jsonObject["access_token"] as? JsonPrimitive)
+                    ?.content.orEmpty()
+                """{"access_token":"$token"}"""
+            },
+        ),
         authPath = authPath,
-        toAuthJson = { body ->
-            val token = (Json.parseToJsonElement(body).jsonObject["access_token"] as? JsonPrimitive)
-                ?.content.orEmpty()
-            """{"access_token":"$token"}"""
-        },
     )
 
     private fun exchange(server: HttpServer, authPath: Path): Pair<Boolean, String> {

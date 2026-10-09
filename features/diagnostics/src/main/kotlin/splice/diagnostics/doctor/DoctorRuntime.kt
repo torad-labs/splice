@@ -64,11 +64,13 @@ internal class DoctorRuntime {
                 },
                 "splice logs --head ${h.key} --tail 50",
                 fixKind = FixKind.COMMAND,
-                details = if (limited) {
-                    "Provider errors: ${h.providerErrors}. Errors inside splice: ${h.localOriginErrors}."
-                } else {
-                    null
-                },
+                notes = DoctorCheckNotes(
+                    details = if (limited) {
+                        "Provider errors: ${h.providerErrors}. Errors inside splice: ${h.localOriginErrors}."
+                    } else {
+                        null
+                    },
+                ),
             )
         } else {
             DoctorCheck("head ${h.key} errors", CheckStatus.OK, "none since last restart")

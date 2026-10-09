@@ -13,6 +13,7 @@
 package splice.launch.recipe
 
 import splice.client.ClaudeConfigMaterializer
+import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import splice.client.TrustedLaunch
 import splice.client.resume.CallingRoster
@@ -88,27 +89,29 @@ public class LaunchService(
         val claude = (chosen as? ClaudeToRun.Wrapped)?.path ?: claudeBinary
         val cwd = caller.cwd
         val wrapped = caller.wrapped
-        val keyed = if (keyPresentNow) spec.copy(tokenCapture = null, advertiseKeySetup = false) else spec
+        val keyed = if (keyPresentNow) withoutTokenCapture(spec) else spec
         val effective = wrapped?.let { keyed.copy(trees = keyed.trees.copy(own = it.configDir)) } ?: keyed
         val slots = aliasSlots(effective)
         // V4-358: every choice above is made on the rows' own ids; what the client is HANDED is spelled here.
         val held = effective.heldByClient()
         // V4-449: client-login heads author no roster or picker cache; an explicit pin is a launch default only.
-        val roster = held.availableModelIds.takeUnless { held.forwardClientAuth }
+        val roster = held.models.availableModelIds.takeUnless { held.gateway.forwardClientAuth }
         val materialize = MaterializeSpec(
             configDir = effective.trees.own,
             policy = effective.policy,
             availableModelIds = roster,
-            defaultModel = held.pinnedModel,
-            modelOptionsCache = held.modelOptionsCache,
-            statuslineCommand = effective.statuslineCommand,
-            loginCommand = effective.loginCommand,
-            signInLabel = effective.signInLabel,
-            signInViaBrowser = effective.signInViaBrowser,
-            tokenCapture = effective.tokenCapture,
-            advertiseKeySetup = effective.advertiseKeySetup,
-            loginOutcomeFile = effective.loginOutcomeFile,
-            headKey = effective.headKey,
+            defaultModel = held.models.pinnedModel,
+            modelOptionsCache = held.models.modelOptionsCache,
+            statuslineCommand = effective.gateway.statuslineCommand,
+            signIn = MaterializeSignIn(
+                loginCommand = effective.signIn.loginCommand,
+                signInLabel = effective.signIn.signInLabel,
+                signInViaBrowser = effective.signIn.signInViaBrowser,
+                tokenCapture = effective.signIn.tokenCapture,
+                advertiseKeySetup = effective.signIn.advertiseKeySetup,
+                loginOutcomeFile = effective.signIn.loginOutcomeFile,
+                headKey = effective.signIn.headKey,
+            ),
         )
         // V4-283: the folder-trust records the operator granted for this cwd, in any head, are carried in.
         val trust = caller.absoluteCwd()
@@ -116,7 +119,8 @@ public class LaunchService(
         // V4-232: a head's presented rows enter its OWN settings.json only. V4-445: a wrapped launch materializes
         // NOTHING: it runs over the operator's own ~/.claude and ~/.claude.json, which stay as they are, and
         // carries the head's settings as a --settings overlay below.
-        val modelOverrides = effective.tiers.modelOverrides.takeUnless { effective.forwardClientAuth }.orEmpty()
+        val modelOverrides = effective.models.tiers.modelOverrides
+            .takeUnless { effective.gateway.forwardClientAuth }.orEmpty()
         materializeLaunch(materialize, trust, modelOverrides, wrapped)
         // V4-276: a launch never writes a head's .credentials.json. V4-129 copied the selected stored
         // login over it here, and Claude Code's refresh tokens rotate, so every launch put back a
@@ -140,7 +144,7 @@ public class LaunchService(
             add(claude)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             wrapped?.let {
-                addAll(listOf("--settings", it.settingsOverlay(roster, held.statuslineCommand)))
+                addAll(listOf("--settings", it.settingsOverlay(roster, held.gateway.statuslineCommand)))
             }
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
@@ -168,7 +172,10 @@ public class LaunchService(
             spec.trees.own,
             spec.trees.siblings,
             sessionId,
-            CallingRoster(spec.pinnedModel, spec.availableModelIds.takeUnless { spec.forwardClientAuth }),
+            CallingRoster(
+                spec.models.pinnedModel,
+                spec.models.availableModelIds.takeUnless { spec.gateway.forwardClientAuth },
+            ),
         )
     }
 
@@ -235,7 +242,7 @@ public class LaunchService(
         wrapped: WrappedLaunch?,
         inheritedConfigDir: String?,
     ): LaunchEnvironment {
-        val auth = if (spec.forwardClientAuth) {
+        val auth = if (spec.gateway.forwardClientAuth) {
             emptyList()
         } else {
             listOf(
@@ -258,7 +265,7 @@ public class LaunchService(
         val config = wrapped?.configRootUnsets(inheritedConfigDir, dirs).orEmpty()
         // V4-449: what this head no longer plants must not leak in from an outer head's session either.
         val planted = buildEnv(held, slots)
-        val clientModels = if (spec.forwardClientAuth) {
+        val clientModels = if (spec.gateway.forwardClientAuth) {
             LaunchModelEnvironment.inherited(planted)
         } else {
             emptyList()
@@ -272,12 +279,12 @@ public class LaunchService(
 
     private fun buildEnv(spec: LaunchSpec, slots: List<Pair<String, String>>): Map<String, String> {
         return buildMap {
-            put("ANTHROPIC_BASE_URL", "http://127.0.0.1:${spec.port}")
+            put("ANTHROPIC_BASE_URL", "http://127.0.0.1:${spec.gateway.port}")
             // AUTH_TOKEN (bearer), NOT API_KEY — a bearer avoids Claude Code's custom-api-key
             // approval flow. The head validates this per-install credential before any quota-
             // consuming work. A native-auth head plants NOTHING: the client's own credential must
             // reach the head untouched, and this would override it.
-            if (!spec.forwardClientAuth) put("ANTHROPIC_AUTH_TOKEN", spec.inferenceToken)
+            if (!spec.gateway.forwardClientAuth) put("ANTHROPIC_AUTH_TOKEN", spec.gateway.inferenceToken)
             put(CONFIG_DIR_ENV, spec.trees.own.toString())
             // NO gateway model discovery: the picker reads the materialized roster (settings.json
             // availableModels + .claude.json additionalModelOptionsCache) — see the header for why
@@ -288,7 +295,7 @@ public class LaunchService(
             put("MAX_THINKING_TOKENS", "128000")
             // Claude Code's default request timeout is 600s and it also bounds the first-byte
             // deadline; the head's whole-turn cap is the wall that decides a turn, so the client
-            // must outlive it (spec.apiTimeoutMs = cap + grace). Without this every compaction
+            // must outlive it (spec.gateway.apiTimeoutMs = cap + grace). Without this every compaction
             // longer than ten minutes died as client_abort while the daemon was still serving it.
             // Planted unconditionally: the head's own wall owns this deadline, so an ambient
             // API_TIMEOUT_MS is replaced rather than merged (unlike NO_PROXY below); a larger value
@@ -298,7 +305,7 @@ public class LaunchService(
             // path answers it silently until the terminal body, and with the deadline past totalCap
             // the head's wall speaks first. CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK would only
             // delete a recovery path.
-            put("API_TIMEOUT_MS", spec.apiTimeoutMs.toString())
+            put("API_TIMEOUT_MS", spec.gateway.apiTimeoutMs.toString())
             // V4-72: PERSISTENT RETRY. Without this the client gives up after its default 10 retries
             // (~2-3 min of backoff), so a rate-limit hold longer than that ENDS THE SESSION instead
             // of resuming when the window reopens. Verified in the Claude Code 2.1.257 binary: QI()
@@ -321,7 +328,7 @@ public class LaunchService(
             // A native-auth head keeps BOTH: its upstream really is Anthropic, so /login is a live
             // door and the only one that can heal a rejected credential — splice runs no sign-in
             // flow of its own for this head precisely because the client's still works.
-            if (!spec.forwardClientAuth) {
+            if (!spec.gateway.forwardClientAuth) {
                 put("DISABLE_LOGIN_COMMAND", "1")
                 put("DISABLE_LOGOUT_COMMAND", "1")
             }
@@ -338,6 +345,9 @@ public class LaunchService(
             .distinct()
             .joinToString(",")
 
+    private fun withoutTokenCapture(spec: LaunchSpec) =
+        spec.copy(signIn = spec.signIn.copy(tokenCapture = null, advertiseKeySetup = false))
+
     // opus/sonnet/haiku/fable → Claude Code's tier env slots.
     //
     // A head that DECLARES slots gets EXACTLY its declared tiers and nothing else (2026-08-30):
@@ -350,15 +360,16 @@ public class LaunchService(
     // not emitted, never pointed at an already-claimed model.
     private fun aliasSlots(spec: LaunchSpec): List<Pair<String, String>> {
         // V4-449: the client picks its own models on a head that forwards its login, so no tier is planted.
-        if (spec.forwardClientAuth) return emptyList()
-        val ids = (listOf(spec.pinnedModel) + (spec.tiers.candidates ?: spec.availableModelIds)).distinct()
+        if (spec.gateway.forwardClientAuth) return emptyList()
+        val offered = spec.models.availableModelIds
+        val ids = (listOf(spec.models.pinnedModel) + (spec.models.tiers.candidates ?: offered)).distinct()
         val declared = declaredSlots(spec)
-        if (spec.tiers.slots.isNotEmpty()) {
+        if (spec.models.tiers.slots.isNotEmpty()) {
             return listOf("OPUS", "SONNET", "HAIKU", "FABLE").mapNotNull { slot ->
                 declared[slot.lowercase()]?.let { model -> slot to model }
             }
         }
-        val fallback = positionalTiers(ids, offered = spec.availableModelIds)
+        val fallback = positionalTiers(ids, offered = offered)
         return listOf(
             "OPUS" to fallback.frontier,
             "SONNET" to fallback.mid,
@@ -410,8 +421,8 @@ public class LaunchService(
      *  naming a model the head does not serve is ignored rather than planted, so a stale row in
      *  splice.toml cannot point a tier at a model every turn would 400 on. */
     private fun declaredSlots(spec: LaunchSpec): Map<String, String> =
-        spec.tiers.slots
-            .filterKeys { it == spec.pinnedModel || it in spec.availableModelIds }
+        spec.models.tiers.slots
+            .filterKeys { it == spec.models.pinnedModel || it in spec.models.availableModelIds }
             .entries
             .associate { (model, slot) -> slot.lowercase() to model }
 }

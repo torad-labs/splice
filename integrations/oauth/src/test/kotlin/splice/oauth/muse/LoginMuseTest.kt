@@ -41,10 +41,10 @@ class LoginMuseTest {
             granted
         }
         val spec = muse.spec("claude-muse", primary)
-        assertEquals("1031625952748946", spec.clientId)
-        assertTrue(spec.identityHeaders.isEmpty())
-        assertEquals("{}", spec.toAuthJson("{}"))
-        val written = spec.toAuthJson(
+        assertEquals("1031625952748946", spec.client.id)
+        assertTrue(spec.client.headers.isEmpty())
+        assertEquals("{}", spec.tokenEndpoint.toAuthJson("{}"))
+        val written = spec.tokenEndpoint.toAuthJson(
             """{"access_token":"acct-token-fake","token_type":"Bearer","schema":"v1"}""",
         )
         assertTrue(written.contains("acct-token-fake"))
@@ -97,15 +97,15 @@ class LoginMuseTest {
             val placeholder = "CLIENT"
             fun canon(form: String, id: String) = form.replace(id, placeholder)
             assertEquals(
-                canon(kimi.deviceAuthForm(kimi.clientId), kimi.clientId),
-                canon(muse.deviceAuthForm(muse.clientId), muse.clientId),
+                canon(kimi.deviceAuth.form(kimi.client.id), kimi.client.id),
+                canon(muse.deviceAuth.form(muse.client.id), muse.client.id),
             )
             assertEquals(
-                canon(kimi.tokenPollForm("DEV123", kimi.clientId), kimi.clientId),
-                canon(muse.tokenPollForm("DEV123", muse.clientId), muse.clientId),
+                canon(kimi.tokenEndpoint.pollForm("DEV123", kimi.client.id), kimi.client.id),
+                canon(muse.tokenEndpoint.pollForm("DEV123", muse.client.id), muse.client.id),
             )
-            assertEquals(1800L, kimi.parseDeviceAuth("""{"user_code":"A","device_code":"B"}""").expiresInS)
-            assertEquals(600L, muse.parseDeviceAuth("""{"user_code":"A","device_code":"B"}""").expiresInS)
+            assertEquals(1800L, kimi.deviceAuth.parse("""{"user_code":"A","device_code":"B"}""").expiresInS)
+            assertEquals(600L, muse.deviceAuth.parse("""{"user_code":"A","device_code":"B"}""").expiresInS)
         } finally {
             kimi.account?.releaseReservation()
             muse.account?.releaseReservation()
@@ -188,7 +188,7 @@ class LoginMuseTest {
     fun `muse spec parse of a body without expires_in uses 600s`(@TempDir tmp: Path) {
         val spec = LoginMuse(TerminalOutput {}).spec("claude-muse", tmp.resolve("muse.json"))
         try {
-            val auth = spec.parseDeviceAuth("""{"user_code":"A","device_code":"B"}""")
+            val auth = spec.deviceAuth.parse("""{"user_code":"A","device_code":"B"}""")
             assertEquals(600L, auth.expiresInS)
         } finally {
             spec.account?.releaseReservation()

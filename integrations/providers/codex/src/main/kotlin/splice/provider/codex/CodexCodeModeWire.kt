@@ -144,11 +144,11 @@ internal class CodexCodeModeWire(
 
     fun continuity(outcome: TurnOutcome.Success): CodeModeContinuity {
         val items = buildList {
-            addAll(outcome.reasoningEnvelopes.mapNotNull(ReasoningReplay::decodeReasoningEnvelope))
+            addAll(outcome.handoffs.reasoningEnvelopes.mapNotNull(ReasoningReplay::decodeReasoningEnvelope))
             // V4-335: the text said before the script, as the client replays it: it precedes the
             // client calls in the same message, which the builder calls commentary.
-            if (outcome.emittedText && outcome.bodyText.isNotEmpty()) {
-                add(ResponsesAssistantText.item(outcome.bodyText, AssistantPhase.COMMENTARY))
+            if (outcome.text.emittedText && outcome.text.bodyText.isNotEmpty()) {
+                add(ResponsesAssistantText.item(outcome.text.bodyText, AssistantPhase.COMMENTARY))
             }
         }
         val projected = ResponsesCodeModeProjection().project(JsonArray(items))

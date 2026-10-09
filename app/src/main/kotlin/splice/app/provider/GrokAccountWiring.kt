@@ -8,7 +8,9 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.topology.AuthKind
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
+import splice.dialect.chat.ChatCapabilityQuirks
 import splice.dialect.chat.ChatQuirks
+import splice.dialect.chat.ChatReasoningQuirks
 import splice.oauth.OAuthAccountFiles
 import splice.oauth.grok.GrokRefresh
 import splice.provider.grok.GrokAuthProvider
@@ -34,9 +36,8 @@ internal class GrokAccountWiring(
                 label = file.label,
                 primary = file.primary,
                 auth = auth(ctx, file.credentialFile, tokenUrl),
-                quotaFile = file.quotaFile,
-                credentialPresent = file.credentialPresent,
-                refusal = file.refusal,
+                quota = WiredAccountQuota(file = file.quotaFile),
+                credential = WiredAccountCredential(present = file.credentialPresent, refusal = file.refusal),
             )
         }
     }
@@ -58,7 +59,11 @@ internal class GrokChatQuirks {
         providerTag = key,
         sessionCacheKeyPrefix = label,
         emitUsageInStream = true,
-        minImageEdgePx = GrokQuirks().defaultQuirks().minImageEdgePx,
-        xhighModels = GrokQuirks().xhighModels(),
+        capabilities = ChatCapabilityQuirks(
+            minImageEdgePx = GrokQuirks().defaultQuirks().minImageEdgePx,
+        ),
+        reasoning = ChatReasoningQuirks(
+            xhighModels = GrokQuirks().xhighModels(),
+        ),
     )
 }

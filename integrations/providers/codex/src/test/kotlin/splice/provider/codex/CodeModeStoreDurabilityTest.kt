@@ -44,14 +44,14 @@ class CodeModeStoreDurabilityTest {
         val store = store()
         store.load()
         store.save(listOf(record), emptyList())
-        record.source = "new source"
+        record.origin.source = "new source"
         store.save(listOf(record), emptyList(), changedRecord = record)
         val file = CodeModeStateFiles(location.dir).files().single()
         val before = Files.readAllBytes(file)
         runOlderDirectoryReader()
         assertTrue(Files.exists(file), "downgrade deleted the new journal")
         assertTrue(before.contentEquals(Files.readAllBytes(file)))
-        assertEquals(record.source, store().load().records.single().source)
+        assertEquals(record.origin.source, store().load().records.single().source)
     }
 
     @Test
@@ -144,7 +144,7 @@ class CodeModeStoreDurabilityTest {
         val records = listOf("alpha", "beta").map { key ->
             CodeModeRecords.of(key, 1, now).apply {
                 phase = CodeModePhase.COMPLETED
-                output = "completed $key"
+                progress.output = "completed $key"
             }
         }
         store().also { it.load() }.save(records, emptyList())
@@ -196,7 +196,7 @@ class CodeModeStoreDurabilityTest {
         val store = store(retryWriter(blocked))
         store.load()
         store.save(listOf(record), emptyList())
-        record.output = "final completion not yet forced"
+        record.progress.output = "final completion not yet forced"
         record.phase = CodeModePhase.COMPLETED
         blocked.set(true)
         assertThrows<CodeModePersistenceException> { store.save(listOf(record), emptyList(), changedRecord = record) }
@@ -208,7 +208,7 @@ class CodeModeStoreDurabilityTest {
         blocked.set(false)
         awaitCancelled(sweep)
         assertTrue(records.isEmpty(), "hot ownership ends only after persistence settles")
-        assertEquals(record.output, store().load().records.single().output)
+        assertEquals(record.progress.output, store().load().records.single().output)
         assertTrue(store.settled)
     }
 
@@ -219,7 +219,7 @@ class CodeModeStoreDurabilityTest {
         val store = store(retryWriter(blocked))
         store.load()
         store.save(listOf(record), emptyList())
-        val marker = CodeModeExpiredSnapshot("alpha", "expired-first", setOf(record.id), record.updatedAt)
+        val marker = CodeModeExpiredSnapshot("alpha", "expired-first", setOf(record.id), record.progress.updatedAt)
         val markers = mutableListOf(marker)
         blocked.set(true)
         assertThrows<CodeModePersistenceException> { store.save(emptyList(), markers) }
@@ -301,14 +301,14 @@ class CodeModeStoreDurabilityTest {
             }
             CodeModeStateJournal.write(path, text)
         }
-        val record = CodeModeRecords.of("alpha", 1).apply { source = "a;" }
+        val record = CodeModeRecords.of("alpha", 1).apply { origin.source = "a;" }
         val store = store(writer)
         store.load()
         store.save(listOf(record), emptyList())
-        record.source = "a;b;"
+        record.origin.source = "a;b;"
         refuse = true
         assertThrows<CodeModePersistenceException> { store.save(listOf(record), emptyList(), changedRecord = record) }
-        record.source = "a;"
+        record.origin.source = "a;"
         record.error = "lost"
         refuse = false
         store.save(listOf(record), emptyList(), changedRecord = record)
@@ -320,7 +320,7 @@ class CodeModeStoreDurabilityTest {
     @Test
     fun `a retry repairs uncertain disk even when every live field equals the last successful state`() {
         var refuse = false
-        val record = CodeModeRecords.of("alpha", 1).apply { source = "a;" }
+        val record = CodeModeRecords.of("alpha", 1).apply { origin.source = "a;" }
         val store = store(
             CodeModeStateWrite { path, text ->
                 if (refuse) {
@@ -332,10 +332,10 @@ class CodeModeStoreDurabilityTest {
         )
         store.load()
         store.save(listOf(record), emptyList())
-        record.source = "a;b;"
+        record.origin.source = "a;b;"
         refuse = true
         assertThrows<CodeModePersistenceException> { store.save(listOf(record), emptyList(), changedRecord = record) }
-        record.source = "a;"
+        record.origin.source = "a;"
         refuse = false
         store.save(listOf(record), emptyList(), retryOnly = true)
         assertEquals("a;", store().load().records.single().source)
@@ -350,7 +350,7 @@ class CodeModeStoreDurabilityTest {
         store.load()
         store.save(listOf(first, second), emptyList())
         store.save(listOf(second), emptyList())
-        first.output = "late callback"
+        first.progress.output = "late callback"
         store.save(listOf(second), emptyList(), dirtyKeys = setOf("alpha"), changedRecord = first)
         assertEquals(listOf(second.id), store().load().records.map { it.id })
     }
@@ -368,7 +368,7 @@ class CodeModeStoreDurabilityTest {
         )
         store.load()
         store.save(listOf(first), emptyList())
-        val marker = CodeModeExpiredSnapshot("alpha", "expired-first", setOf(first.id), first.updatedAt)
+        val marker = CodeModeExpiredSnapshot("alpha", "expired-first", setOf(first.id), first.progress.updatedAt)
         refuse = true
         assertThrows<CodeModePersistenceException> { store.save(emptyList(), listOf(marker)) }
         refuse = false

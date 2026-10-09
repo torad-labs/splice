@@ -26,7 +26,10 @@ import splice.client.resume.TranscriptModelRewrite
 import splice.client.resume.originals.TranscriptOriginals
 import splice.core.config.StatePaths
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
 import splice.launch.LaunchRecipe
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
 import splice.launch.launch
@@ -49,18 +52,24 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
         labels: Map<String, String> = available.associateWith { it },
     ) = LaunchSpec(
         trees = HeadTrees(tmp.resolve(".claude-$head")),
-        pinnedModel = pinned,
-        availableModelIds = available,
-        modelLabels = labels,
-        contextWindow = 272000,
-        modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
-        statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
-        loginCommand = "claudex login",
-        signInLabel = "Codex (ChatGPT)",
+        models = LaunchModels(
+            pinnedModel = pinned,
+            availableModelIds = available,
+            modelLabels = labels,
+            contextWindow = 272000,
+            modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "claudex login",
+            signInLabel = "Codex (ChatGPT)",
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
+            port = 3099,
+            inferenceToken = "test-inference-token",
+            apiTimeoutMs = 960_000,
+        ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 3099,
-        inferenceToken = "test-inference-token",
-        apiTimeoutMs = 960_000,
     )
 
     // 2026-09-01: every claudex compaction ran 500-580s against Claude Code's 600s default request
@@ -102,20 +111,36 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
     // LAUNCH-time input now; the spec carries the ungated capability.
     @Test
     fun `a present key disarms token capture and the advertiser at launch time`() {
-        val armed = spec("cap").copy(
-            tokenCapture = splice.client.login.TokenCaptureSpec("K_ENV", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
-            advertiseKeySetup = true,
-        )
+        val armed = spec("cap").let { base ->
+            base.copy(
+                signIn = base.signIn.copy(
+                    tokenCapture = splice.client.login.TokenCaptureSpec(
+                        "K_ENV",
+                        "sk-or-[A-Za-z0-9_-]{20,}",
+                        "OpenRouter",
+                    ),
+                    advertiseKeySetup = true,
+                ),
+            )
+        }
         service.launch(armed, emptyList(), dangerouslySkipPermissions = false, keyPresentNow = true)
         assertFalse(treeContains(tmp.resolve(".claude-cap"), "sk-or-"), "capture hook must be disarmed")
     }
 
     @Test
     fun `an absent key arms token capture at launch time`() {
-        val armed = spec("cap2").copy(
-            tokenCapture = splice.client.login.TokenCaptureSpec("K_ENV", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
-            advertiseKeySetup = true,
-        )
+        val armed = spec("cap2").let { base ->
+            base.copy(
+                signIn = base.signIn.copy(
+                    tokenCapture = splice.client.login.TokenCaptureSpec(
+                        "K_ENV",
+                        "sk-or-[A-Za-z0-9_-]{20,}",
+                        "OpenRouter",
+                    ),
+                    advertiseKeySetup = true,
+                ),
+            )
+        }
         service.launch(armed, emptyList(), dangerouslySkipPermissions = false, keyPresentNow = false)
         assertTrue(treeContains(tmp.resolve(".claude-cap2"), "sk-or-"), "capture hook must materialize")
     }
@@ -136,16 +161,20 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
     fun `declared slots map each tier to its own model, whatever the catalog order`() {
         val available = listOf("grok-4.6", "grok-build-latest", "grok-4.3", "grok-build-0.1")
         val env = service.launch(
-            spec("grok", pinned = "grok-4.6", available = available).copy(
-                tiers = ModelTiers(
-                    mapOf(
-                        "grok-4.6" to "opus",
-                        "grok-4.3" to "sonnet",
-                        "grok-build-0.1" to "haiku",
-                        "grok-build-latest" to "fable",
+            spec("grok", pinned = "grok-4.6", available = available).let { base ->
+                base.copy(
+                    models = base.models.copy(
+                        tiers = ModelTiers(
+                            mapOf(
+                                "grok-4.6" to "opus",
+                                "grok-4.3" to "sonnet",
+                                "grok-build-0.1" to "haiku",
+                                "grok-build-latest" to "fable",
+                            ),
+                        ),
                     ),
-                ),
-            ),
+                )
+            },
             extraArgs = emptyList(),
             dangerouslySkipPermissions = false,
         ).env
@@ -164,8 +193,13 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
     @Test
     fun `a two-model roster declaring opus and sonnet emits no haiku or fable slot`() {
         val recipe = service.launch(
-            spec("grok", pinned = "grok-4.6", available = listOf("grok-4.6", "grok-4.5"))
-                .copy(tiers = ModelTiers(mapOf("grok-4.6" to "opus", "grok-4.5" to "sonnet"))),
+            spec("grok", pinned = "grok-4.6", available = listOf("grok-4.6", "grok-4.5")).let { base ->
+                base.copy(
+                    models = base.models.copy(
+                        tiers = ModelTiers(mapOf("grok-4.6" to "opus", "grok-4.5" to "sonnet")),
+                    ),
+                )
+            },
             extraArgs = emptyList(),
             dangerouslySkipPermissions = false,
         )
@@ -195,16 +229,19 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
     @Test
     fun `stale-model and unknown-slot declarations are ignored, not planted`() {
         val recipe = service.launch(
-            spec("grok", pinned = "grok-4.6", available = listOf("grok-4.6", "grok-4.5"))
-                .copy(
-                    tiers = ModelTiers(
-                        mapOf(
-                            "grok-4.6" to "opus",
-                            "grok-retired" to "sonnet",
-                            "grok-4.5" to "turbo",
+            spec("grok", pinned = "grok-4.6", available = listOf("grok-4.6", "grok-4.5")).let { base ->
+                base.copy(
+                    models = base.models.copy(
+                        tiers = ModelTiers(
+                            mapOf(
+                                "grok-4.6" to "opus",
+                                "grok-retired" to "sonnet",
+                                "grok-4.5" to "turbo",
+                            ),
                         ),
                     ),
-                ),
+                )
+            },
             extraArgs = emptyList(),
             dangerouslySkipPermissions = false,
         )
@@ -239,7 +276,9 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
             pinned = "kimi-k3",
             available = listOf("kimi-k3", "kimi-k2.7-code"),
             labels = mapOf("kimi-k3" to "Kimi K3 (256k)", "kimi-k2.7-code" to "Kimi K2.7 Code"),
-        ).copy(discoveryPrefix = prefix, modelOptionsCache = kimiRosterCache()),
+        ).let { base ->
+            base.copy(models = base.models.copy(discoveryPrefix = prefix, modelOptionsCache = kimiRosterCache()))
+        },
         extraArgs = emptyList(),
         dangerouslySkipPermissions = false,
     )
@@ -380,7 +419,9 @@ class LaunchServiceTest(@param:TempDir private val tmp: Path) {
     // stripping removes what gets forwarded, planting the bearer overrides it, and disabling /login
     // shuts the only door that can heal a rejected credential.
 
-    private fun nativeSpec() = spec("claude-splice").copy(forwardClientAuth = true)
+    private fun nativeSpec() = spec("claude-splice").let { base ->
+        base.copy(gateway = base.gateway.copy(forwardClientAuth = true))
+    }
 
     @Test
     fun `a native-auth head keeps the client's own credentials`() {

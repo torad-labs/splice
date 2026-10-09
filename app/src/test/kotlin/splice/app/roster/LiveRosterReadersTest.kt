@@ -18,6 +18,8 @@ import splice.app.provider.HeadBuildInputs
 import splice.app.provider.HeadModelsSource
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderBuild
+import splice.app.provider.PublishedRoster
+import splice.app.provider.UpstreamFaultPlan
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -64,10 +66,9 @@ class LiveRosterReadersTest {
             head = head,
             providerCfg = provider,
             catalog = provider.catalogFor(head, discovered = rosters.forHead("synthetic")),
-            watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+            faultPlan = UpstreamFaultPlan(WatchdogBudget(10.seconds, 10.seconds, 30.seconds), loginCommand = ""),
             cfg = config.getConfig("synthetic"),
-            loginCommand = "",
-            discovered = rosters,
+            roster = PublishedRoster(discovered = rosters),
         )
         val windows = windowsFor(topology, inputs)
         try {
@@ -116,13 +117,13 @@ class LiveRosterReadersTest {
     }
 
     private fun assertPicker(spec: splice.launch.LaunchSpec, catalog: ModelCatalog, label: String = "New synthetic") {
-        assertEquals(catalog.availableModelIds(), spec.availableModelIds)
-        assertEquals(label, spec.modelLabels[NEW_MODEL])
-        val option = (spec.modelOptionsCache as JsonArray).single {
+        assertEquals(catalog.availableModelIds(), spec.models.availableModelIds)
+        assertEquals(label, spec.models.modelLabels[NEW_MODEL])
+        val option = (spec.models.modelOptionsCache as JsonArray).single {
             it.jsonObject.getValue("value").jsonPrimitive.content == NEW_MODEL
         }.jsonObject
         assertEquals(label, option.getValue("label").jsonPrimitive.content)
         assertEquals("256000", option.getValue("context_window").jsonPrimitive.content)
-        assertFalse(NEW_MODEL in spec.tiers.candidates.orEmpty(), "discovery never adds a tier slot")
+        assertFalse(NEW_MODEL in spec.models.tiers.candidates.orEmpty(), "discovery never adds a tier slot")
     }
 }

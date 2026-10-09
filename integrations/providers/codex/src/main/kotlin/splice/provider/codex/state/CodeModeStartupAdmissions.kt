@@ -62,7 +62,7 @@ internal class CodeModeStartupAdmissions(
                     record,
                     record.error ?: "code-mode runtime stopped during startup; source was not rerun",
                 )
-                record.updatedAt = clock.millis()
+                record.progress.updatedAt = clock.millis()
                 store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
             }
             false
@@ -78,7 +78,7 @@ internal class CodeModeStartupAdmissions(
         entries.remove(record.id)
         record.phase = CodeModePhase.STARTING
         record.error = null
-        record.updatedAt = clock.millis()
+        record.progress.updatedAt = clock.millis()
         store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
     }
 }

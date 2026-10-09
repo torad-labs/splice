@@ -28,7 +28,7 @@ class ClaudeNativeHeadVerdictTest {
     lateinit var home: Path
 
     @Test
-    fun `a successful native-only request verifies the client head without failover or credential writes`() = runBlocking {
+    fun `a successful native-only request verifies the client head, no failover or credential writes`() = runBlocking {
         val fixture = ClaudeNativePoolFixture(home)
         fixture.seed("splice")
         val file = home.resolve(".claude-splice/.credentials.json")
@@ -39,7 +39,7 @@ class ClaudeNativeHeadVerdictTest {
         val rig = fixture.rig(upstreamUrl = "http://127.0.0.1:$port")
         try {
             assertInstanceOf(ClientAuthProvider::class.java, rig.head.auth)
-            val accounts = requireNotNull(rig.head.accountPool).view(null).accounts
+            val accounts = requireNotNull(rig.head.authSurface.accountPool).view(null).accounts
             assertTrue(accounts.all { it.label.startsWith("native:") }, "no added Claude account")
             assertEquals(listOf(SPLICE_SELECTOR), accounts.filter { it.available }.map { it.label })
             HttpClient(Java).use { client ->
@@ -47,7 +47,8 @@ class ClaudeNativeHeadVerdictTest {
                     bearerAuth("synthetic-caller")
                     contentType(ContentType.Application.Json)
                     setBody(
-                        """{"model":"synthetic-model","stream":false,"max_tokens":32,"messages":[{"role":"user","content":"synthetic native turn"}]}""",
+                        """{"model":"synthetic-model","stream":false,"max_tokens":32,""" +
+                            """"messages":[{"role":"user","content":"synthetic native turn"}]}""",
                     )
                 }
                 assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())

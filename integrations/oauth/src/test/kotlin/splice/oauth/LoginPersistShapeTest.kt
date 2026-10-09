@@ -282,7 +282,7 @@ class LoginCollisionTest {
         val out = StringBuilder()
         val flow = OAuthLoginFlow(TerminalOutput { out.appendLine(it) })
         return try {
-            val local = spec.copy(tokenUrl = "http://127.0.0.1:${server.address.port}/token")
+            val local = spec.copy(exchange = spec.exchange.copy(url = "http://127.0.0.1:${server.address.port}/token"))
             runBlocking { flow.exchangeAndPersist(local, "test-code") } to out.toString()
         } finally {
             server.stop(0)

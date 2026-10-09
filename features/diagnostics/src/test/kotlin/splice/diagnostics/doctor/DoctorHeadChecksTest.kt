@@ -30,7 +30,7 @@ class DoctorHeadChecksTest {
     private val checks = DoctorHeadChecks(DoctorRuntime())
 
     private fun health(heads: Int?, ready: Int?, failed: Int?) =
-        HealthView(version = "0.4.0", heads = heads, readyHeads = ready, failedHeads = failed)
+        HealthView(version = "0.4.0", heads = DaemonProbe.HealthHeads(total = heads, ready = ready, failed = failed))
 
     private fun up(heads: Int?, ready: Int?, failed: Int?) = DaemonProbe.HealthProbe.Up(health(heads, ready, failed))
 

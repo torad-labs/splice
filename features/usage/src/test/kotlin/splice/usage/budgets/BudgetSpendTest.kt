@@ -22,6 +22,7 @@ import splice.upstream.Ticker
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
+import splice.usage.perf.PerfTurnFacts
 import java.nio.file.Path
 
 private const val SPEND_DAY_MS = 86_400_000L
@@ -55,7 +56,7 @@ class BudgetSpendTest {
         val store = BudgetStore(directory.resolve("budgets.json"))
         store.replace(listOf(Budget("native", 5.0, BudgetActions.BLOCK)))
         var now = SPEND_BOOT_MS
-        val before = PerfRow(SPEND_BOOT_MS - 1, "ok", tokens(1), model = "priced")
+        val before = PerfRow(SPEND_BOOT_MS - 1, "ok", tokens(1), facts = PerfTurnFacts(model = "priced"))
         val history = HeadPerfHistory { PerfRowsSource { PerfRowsWindow(listOf(before)) } }
         val owner = BudgetEnforcement(store, BudgetAlert { _, _ -> }, history, {}, WallClock { now }, immediateSeed())
         val head = owner.forHead("native", catalog)
@@ -105,7 +106,7 @@ class BudgetSpendTest {
                         ts = SPEND_BOOT_MS - 1,
                         outcome = "failure:api_error",
                         fields = mapOf(PerfKeys.UPSTREAM_REQ_BYTES to 32L),
-                        model = "priced",
+                        facts = PerfTurnFacts(model = "priced"),
                     ),
                 ),
             ),

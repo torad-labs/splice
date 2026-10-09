@@ -24,6 +24,9 @@ import splice.client.resume.TranscriptModelRewrite
 import splice.client.resume.originals.TranscriptOriginals
 import splice.core.config.StatePaths
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.launch
 import java.nio.file.Files
@@ -45,18 +48,24 @@ class LaunchResumeSpellingsTest(@param:TempDir private val tmp: Path) {
         labels: Map<String, String> = available.associateWith { it },
     ) = LaunchSpec(
         trees = HeadTrees(tmp.resolve(".claude-$head")),
-        pinnedModel = pinned,
-        availableModelIds = available,
-        modelLabels = labels,
-        contextWindow = 272000,
-        modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
-        statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
-        loginCommand = "claudex login",
-        signInLabel = "Codex (ChatGPT)",
+        models = LaunchModels(
+            pinnedModel = pinned,
+            availableModelIds = available,
+            modelLabels = labels,
+            contextWindow = 272000,
+            modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "claudex login",
+            signInLabel = "Codex (ChatGPT)",
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
+            port = 3099,
+            inferenceToken = "test-inference-token",
+            apiTimeoutMs = 960_000,
+        ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 3099,
-        inferenceToken = "test-inference-token",
-        apiTimeoutMs = 960_000,
     )
 
     @Test

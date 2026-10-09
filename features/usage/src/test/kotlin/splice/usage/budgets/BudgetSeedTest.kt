@@ -23,6 +23,7 @@ import splice.core.util.WallClock
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
+import splice.usage.perf.PerfTurnFacts
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
@@ -49,7 +50,9 @@ class BudgetSeedTest {
         val history = HeadPerfHistory {
             PerfRowsSource {
                 reads++
-                PerfRowsWindow(listOf(PerfRow(SEED_BOOT_MS - 1, "ok", tokens(1), model = "priced")))
+                PerfRowsWindow(
+                    listOf(PerfRow(SEED_BOOT_MS - 1, "ok", tokens(1), facts = PerfTurnFacts(model = "priced"))),
+                )
             }
         }
         val owner = BudgetEnforcement(
@@ -181,7 +184,11 @@ class BudgetSeedTest {
         store.replace(listOf(Budget("head", 1.0, BudgetActions.WARN)))
         val alerts = mutableListOf<String>()
         val history = HeadPerfHistory {
-            PerfRowsSource { PerfRowsWindow(listOf(PerfRow(SEED_BOOT_MS - 1, "ok", tokens(2), model = "priced"))) }
+            PerfRowsSource {
+                PerfRowsWindow(
+                    listOf(PerfRow(SEED_BOOT_MS - 1, "ok", tokens(2), facts = PerfTurnFacts(model = "priced"))),
+                )
+            }
         }
         val owner = BudgetEnforcement(
             store,
@@ -208,7 +215,11 @@ class BudgetSeedTest {
         store.replace(listOf(Budget("head", 5.0, BudgetActions.BLOCK)))
         var now = SEED_BOOT_MS
         val history = HeadPerfHistory {
-            PerfRowsSource { PerfRowsWindow(listOf(PerfRow(SEED_BOOT_MS - 1, "ok", tokens(9), model = "priced"))) }
+            PerfRowsSource {
+                PerfRowsWindow(
+                    listOf(PerfRow(SEED_BOOT_MS - 1, "ok", tokens(9), facts = PerfTurnFacts(model = "priced"))),
+                )
+            }
         }
         val owner = BudgetEnforcement(
             store,

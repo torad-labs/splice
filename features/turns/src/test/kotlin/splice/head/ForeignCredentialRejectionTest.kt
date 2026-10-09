@@ -35,6 +35,8 @@ import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
 import splice.head.usage.QuotaTracker
 import splice.provider.codex.CodexProvider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.credentials.AccountPool
@@ -149,8 +151,7 @@ private class PoolRig(root: Path, val upstream: RejectingUpstream) {
 
     private fun provider(): CodexProvider = CodexProvider(
         tuning = ProviderTuning(
-            key = "codex",
-            label = "claudex",
+            name = ProviderName(key = "codex", label = "claudex"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-codex--",
                 models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -158,7 +159,7 @@ private class PoolRig(root: Path, val upstream: RejectingUpstream) {
             ),
             pinnedModel = "gpt-5.6-sol",
             auth = primaryAuth,
-            baseUrl = upstream.baseUrl,
+            locations = ProviderLocations(baseUrl = upstream.baseUrl),
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),

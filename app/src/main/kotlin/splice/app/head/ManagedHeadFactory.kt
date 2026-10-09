@@ -7,7 +7,11 @@ package splice.app.head
 import kotlinx.coroutines.CoroutineScope
 import splice.accounts.order.ACCOUNT_ORDER_FILE
 import splice.accounts.order.AccountOrderStore
+import splice.app.control.HeadAuthSurface
+import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
+import splice.app.control.StatuslineContext
+import splice.app.control.UsageWarning
 import splice.app.probe.PlaygroundProviders
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
@@ -98,7 +102,7 @@ internal class HeadServing(
         forwardClientAuth: Boolean,
         recordings: FileCompactionRecordings,
     ) = headServerFactory.headServerFor(ctx, wired.provider, stores, forwardClientAuth, recordings)
-        .also { playgroundProviders.bind(ctx.key, wired, stores.accountPool, it.providerReplies) }
+        .also { playgroundProviders.bind(ctx.key, wired, stores.accounts.pool, it.providerReplies) }
 }
 
 internal class ManagedHeadFactory(
@@ -136,7 +140,6 @@ internal class ManagedHeadFactory(
         val stores = headStores(ctx, wired, primaryQuota, accountQuotas)
         val quotaPollers = quotaSeams.pollingFor(ctx, quotaProbes, accountOrders)
             .start(wired, stores, accountQuotas, providerAssembly, providerHolds)
-        val logFile = statePaths.logsDir.resolve("daemon.log")
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
         // because splice holds nothing for this head, so it reads the artifact that IS that fact:
         // `wired.auth`. ProviderAssembly rejects registered client auth on non-passthrough dialects
@@ -150,29 +153,35 @@ internal class ManagedHeadFactory(
         // wired credential, so `splice key set`/unset changes the very next launch. Non-api-key
         // auth reads true: capture/advertiser stay disarmed, which is the safe side.
         val keyPresence = keyPresence(wired)
-        val perfRows = perfSources.rowsFor(key)
         return ManagedHead(
             head = server,
             auth = wired.auth,
-            usage = UsageStoreSource(stores.usageStore, stores.quota, quotaPollers),
-            compact = CompactStatsSource(stores.compactStats),
-            logs = LogFileSource(logFile, "[$key]"),
-            warnPct = cfg.usageWarnPct,
-            warnTokens5h = cfg.usageWarnTokens5h,
-            authKind = ctx.providerCfg.auth.kind,
+            sources = sourcesFor(key, stores, quotaPollers),
+            usageWarning = UsageWarning(warnPct = cfg.usageWarnPct, warnTokens5h = cfg.usageWarnTokens5h),
+            authSurface = HeadAuthSurface(
+                authKind = ctx.providerCfg.auth.kind,
+                keyPresence = keyPresence,
+                accountPool = accountPools.source(stores.accounts.pool, key, accountOrders),
+                accountAuth = accountPools.authSource(wired),
+            ),
             launchSpec = launchSpecFactory.launchSpecFor(
                 ctx,
                 controlPort,
                 forwardClientAuth = forwardClientAuth,
             ),
-            perf = PerfStatsSource(stores.perfStats),
+            statusline = StatuslineContext(catalog = ctx.catalog, clientWindows = stores.clientWindows),
+        )
+    }
+
+    private fun sourcesFor(key: String, stores: HeadStores, quotaPollers: List<QuotaPoller>): HeadSources {
+        val perfRows = perfSources.rowsFor(key)
+        return HeadSources(
+            usage = UsageStoreSource(stores.usageStore, stores.quota, quotaPollers),
+            compact = CompactStatsSource(stores.telemetry.compactStats),
+            logs = LogFileSource(statePaths.logsDir.resolve("daemon.log"), "[$key]"),
+            perf = PerfStatsSource(stores.telemetry.perfStats),
             perfRows = perfRows,
-            economics = EconomicsStoreSource(stores.economics, perfRows),
-            keyPresence = keyPresence,
-            catalog = ctx.catalog,
-            clientWindows = stores.clientWindows,
-            accountPool = accountPools.source(stores.accountPool, key, accountOrders),
-            accountAuth = accountPools.authSource(wired),
+            economics = EconomicsStoreSource(stores.telemetry.economics, perfRows),
         )
     }
 
@@ -192,22 +201,26 @@ internal class ManagedHeadFactory(
         accountQuotas: Map<String, QuotaTracker>,
     ): HeadStores = HeadStores(
         usageStore = UsageStore(statePaths.usageFile(ctx.key), statePaths.ratelimitFile(ctx.key)),
-        compactStats = CompactStats(statePaths.compactStatsFile(ctx.key)),
-        // V4-133's archive, wired: a generation the 64 MB rotate retires is kept for
-        // perfArchiveRetentionDays instead of discarded; 0 days is the one-generation rotate of old.
-        perfStats = PerfStats(
-            statePaths.perfStatsFile(ctx.key),
-            archiveDir = statePaths.perfArchiveDir.takeIf { ctx.cfg.perfArchiveRetentionDays > 0 },
-            archiveRetentionDays = ctx.cfg.perfArchiveRetentionDays,
-            // V4-244: each session's running total, fed by the rows this store appends and priced at
-            // each row's own model's card, against the same catalog the economics store uses.
-            totals = SessionTotals(statePaths.sessionTotalsFile(ctx.key), TurnPrice(ctx.catalog)),
+        telemetry = HeadTelemetryStores(
+            compactStats = CompactStats(statePaths.compactStatsFile(ctx.key)),
+            // V4-133's archive, wired: a generation the 64 MB rotate retires is kept for
+            // perfArchiveRetentionDays instead of discarded; 0 days is the one-generation rotate of old.
+            perfStats = PerfStats(
+                statePaths.perfStatsFile(ctx.key),
+                archiveDir = statePaths.perfArchiveDir.takeIf { ctx.cfg.perfArchiveRetentionDays > 0 },
+                archiveRetentionDays = ctx.cfg.perfArchiveRetentionDays,
+                // V4-244: each session's running total, fed by the rows this store appends and priced at
+                // each row's own model's card, against the same catalog the economics store uses.
+                totals = SessionTotals(statePaths.sessionTotalsFile(ctx.key), TurnPrice(ctx.catalog)),
+            ),
+            // V4-221: each turn priced at its own model's card, against the same catalog the budget uses.
+            economics = EconomicsStore(statePaths.economicsFile(ctx.key), TurnPrice(ctx.catalog)),
         ),
-        // V4-221: each turn priced at its own model's card, against the same catalog the budget uses.
-        economics = EconomicsStore(statePaths.economicsFile(ctx.key), TurnPrice(ctx.catalog)),
         quota = primaryQuota,
-        accountPool = accountPools.build(wired, accountQuotas, providerHolds.forAccounts(ctx.key, wired), primaryQuota),
-        accountQuotas = accountQuotas,
+        accounts = HeadAccountStores(
+            pool = accountPools.build(wired, accountQuotas, providerHolds.forAccounts(ctx.key, wired), primaryQuota),
+            quotas = accountQuotas,
+        ),
         clientWindows = ClientWindows(store = statePaths.clientWindowsFile(ctx.key), log = log),
         trace = traceStores.forHead(ctx.key, ctx.cfg),
         providerHold = providerHolds.forHead(ctx.key),
@@ -224,9 +237,9 @@ internal class ManagedHeadFactory(
     private fun accountQuotas(key: String, wired: Wired): MutableMap<String, QuotaTracker> =
         wired.accounts.associateTo(java.util.concurrent.ConcurrentHashMap()) { account ->
             val file =
-                if (account.primary && account.nativePlace == null) statePaths.quotaFile(key) else account.quotaFile
+                if (account.primary && account.nativePlace == null) statePaths.quotaFile(key) else account.quota.file
             account.label to QuotaTracker(file, extraFamily = CodexQuotaHeaderFamily()).also {
-                it.credentialListener = account.quotaRead as? splice.head.usage.CredentialQuotaListener
+                it.credentialListener = account.quota.read as? splice.head.usage.CredentialQuotaListener
             }
         }
 }

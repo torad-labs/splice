@@ -148,18 +148,19 @@ internal class DoctorProbeWrite(
     }
 
     /** One perf JSONL row -> (outcome, ts, refused runtime port); null on a malformed line (tail readers stay tolerant). */
-    internal fun perfRow(line: String): Triple<String, Long, Long?>? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): a torn or malformed JSONL tail line is normal — the daemon appends while doctor reads — so the row is skipped and the count of readable rows is what the check reports.
-        Cancellables.runCatchingCancellable {
-            val obj = kotlinx.serialization.json.Json.parseToJsonElement(line).jsonObject
-            val outcome = JsonScalars.str(obj, "outcome")
-            if (outcome == null || LivenessProbe.legacyRow(obj)) {
-                null
-            } else {
-                val port = JsonScalars.long(obj, PerfKeys.REFUSED_RUNTIME_PORT)?.takeIf { it in 1..MAX_RUNTIME_PORT }
-                Triple(outcome, JsonScalars.long(obj, "ts") ?: 0L, port)
-            }
-        }.getOrNull()
+    // A torn or malformed JSONL tail line is normal (the daemon appends while doctor reads): the row is skipped.
+    internal fun perfRow(line: String): Triple<String, Long, Long?>? = try {
+        val obj = kotlinx.serialization.json.Json.parseToJsonElement(line).jsonObject
+        val outcome = JsonScalars.str(obj, "outcome")
+        if (outcome == null || LivenessProbe.legacyRow(obj)) {
+            null
+        } else {
+            val port = JsonScalars.long(obj, PerfKeys.REFUSED_RUNTIME_PORT)?.takeIf { it in 1..MAX_RUNTIME_PORT }
+            Triple(outcome, JsonScalars.long(obj, "ts") ?: 0L, port)
+        }
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 
     /** An outcome is a tag from the daemon's vocabulary; a perf row is a plain file, so anything
      *  else shaped is shown as ?, never quoted. */

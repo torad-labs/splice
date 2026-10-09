@@ -34,7 +34,7 @@ internal class CodeModeCanonicalOrderTest {
     @Test
     fun `late parent callbacks cannot move an anchored callback-free record behind its descendants`() {
         val fixture = fixture(emptyList(), 4)
-        assertEquals(listOf(48, 50, 52, 54), fixture.completed.map(CodeModeRecord::baselineLogicalCount))
+        assertEquals(listOf(48, 50, 52, 54), fixture.completed.map { it.origin.baseline.logicalCount })
         val rewritten = history.canonicalize(body(fixture.client), fixture.completed, emptyMap(), fixture.owner)
         assertTrue(rewritten.omitted.isEmpty())
         val restored = history.restoreBaseline(checkNotNull(rewritten.body), fixture.owner)
@@ -166,7 +166,7 @@ internal class CodeModeCanonicalOrderTest {
     fun `retained duplicate-owner history has identical bytes and omissions on every pass`() {
         val fixture = fixture(emptyList(), 0)
         val later = fixture.completed[2]
-        val raw = body(fixture.client + later.outer + later.outer)
+        val raw = body(fixture.client + later.origin.outer + later.origin.outer)
         val first = history.canonicalize(raw, fixture.completed)
         assertEquals(listOf(2), first.omitted.map { fixture.completed.indexOf(it.record) })
         val emitted = checkNotNull(first.body)
@@ -185,11 +185,14 @@ internal class CodeModeCanonicalOrderTest {
         for (callbacks in listOf(0, 4)) {
             val fixture = fixture(emptyList(), callbacks)
             val later = fixture.completed[2]
-            val first = history.canonicalize(body(fixture.client + later.outer + later.outer), fixture.completed)
+            val first = history.canonicalize(
+                body(fixture.client + later.origin.outer + later.origin.outer),
+                fixture.completed,
+            )
             val posted = checkNotNull(first.body)
             val prefix = input(posted)
             val completed = record(prefix, fixture.completed, "continuation", reasoning("continuation"), 0).apply {
-                continuity = listOf(item("""{"role":"assistant","content":"synthetic continuation tail"}"""))
+                carry.continuity = listOf(item("""{"role":"assistant","content":"synthetic continuation tail"}"""))
             }
             val records = fixture.completed + completed
             val isolated = history.canonicalize(
@@ -290,41 +293,47 @@ internal class CodeModeCanonicalOrderTest {
         return CodeModeRecord(
             id = id,
             key = "synthetic-conversation",
-            outer = item(
-                """{"type":"custom_tool_call","call_id":"$id","name":"exec","input":"return 'synthetic';"}""",
-            ) as JsonObject,
-            outerCallId = id,
-            source = "return 'synthetic';",
             phase = CodeModePhase.COMPLETED,
-            updatedAt = 0,
-            lastDigest = "synthetic-request",
-            baselineInputCount = boundary.fullCount,
-            baselineInputDigest = boundary.fullDigest,
-            metadataVersion = CODE_MODE_METADATA_VERSION,
-            baselineLogicalCount = boundary.logicalCount,
-            baselineLogicalDigest = boundary.logicalDigest,
-            nativeSegments = capture.segments,
-            continuity = emptyList(),
-            continuityReplay = if (native.isEmpty()) emptyList() else listOf(CodeModeNativeSegment(0, native)),
+            origin = CodeModeOrigin(
+                outer = item(
+                    """{"type":"custom_tool_call","call_id":"$id","name":"exec","input":"return 'synthetic';"}""",
+                ) as JsonObject,
+                outerCallId = id,
+                source = "return 'synthetic';",
+                baseline = CodeModeBaseline(
+                    inputCount = boundary.fullCount,
+                    inputDigest = boundary.fullDigest,
+                    logicalCount = boundary.logicalCount,
+                    logicalDigest = boundary.logicalDigest,
+                    metadataVersion = CODE_MODE_METADATA_VERSION,
+                ),
+            ),
+            progress = CodeModeProgress(updatedAt = 0, lastDigest = "synthetic-request"),
+            carry = CodeModeNativeContinuity(
+                segments = capture.segments,
+                continuity = emptyList(),
+                replay = if (native.isEmpty()) emptyList() else listOf(CodeModeNativeSegment(0, native)),
+            ),
         ).also { record ->
             record.replayAnchors = boundary.replayAnchors
             record.nativeParent = capture.parent
             record.nativeBaseId = capture.parent?.id
-            record.output = "synthetic result"
+            record.progress.output = "synthetic result"
             repeat(callbacks) { at ->
                 val clientId = "callback-$id-$at"
-                record.pending += CodeModePending("runtime-$id-$at", clientId, "Read", JsonObject(emptyMap()), true)
+                record.progress.pending +=
+                    CodeModePending("runtime-$id-$at", clientId, "Read", JsonObject(emptyMap()), true)
                 record.accepted.accept(mapOf(clientId to CodeModeResult(clientId, "synthetic result")), emptyMap())
             }
         }
     }
 
     private fun emitted(record: CodeModeRecord, native: List<JsonElement>): List<JsonElement> =
-        native + record.outer + item(
+        native + record.origin.outer + item(
             """{"type":"custom_tool_call_output","call_id":"${record.id}","output":"synthetic result"}""",
         )
 
-    private fun callbacks(record: CodeModeRecord): List<JsonElement> = record.pending.flatMap { call ->
+    private fun callbacks(record: CodeModeRecord): List<JsonElement> = record.progress.pending.flatMap { call ->
         listOf(
             item("""{"type":"function_call","call_id":"${call.clientId}","name":"Read","arguments":"{}"}"""),
             item("""{"type":"function_call_output","call_id":"${call.clientId}","output":"synthetic result"}"""),

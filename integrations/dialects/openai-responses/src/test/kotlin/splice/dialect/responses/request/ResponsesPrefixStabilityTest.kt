@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.ReasoningCache
@@ -31,25 +32,33 @@ private val stableIds = ResponsesStableIds()
 
 private val CODEX = ResponsesQuirks(
     providerTag = "claudex",
-    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+    lite = ResponsesLiteQuirks(
+        responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+    ),
 )
 
 private fun opts(lookup: (String) -> List<String>?) = BuildOptions(
     compact = false,
-    originalModel = "claude-codex--gpt-5.6-sol",
-    upstreamModel = "gpt-5.6-sol",
-    configEffort = null,
-    configSummary = null,
-    showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = InjectPriorReasoning(false),
-    includeEncryptedReasoning = RequestEncryptedReasoning(true),
-    decodeReasoningEnvelope = { data ->
-        buildJsonObject {
-            put("type", JsonPrimitive("reasoning"))
-            put("encrypted_content", JsonPrimitive(data))
-        }
-    },
-    reasoningLookup = lookup,
+    models = ModelIds(
+        original = "claude-codex--gpt-5.6-sol",
+        upstream = "gpt-5.6-sol",
+    ),
+    reasoning = RequestedReasoning(
+        effort = null,
+        summary = null,
+        display = ReasoningDisplay.TEXT,
+    ),
+    handoff = ReasoningHandoff(
+        replay = InjectPriorReasoning(false),
+        includeEncrypted = RequestEncryptedReasoning(true),
+        decode = { data ->
+            buildJsonObject {
+                put("type", JsonPrimitive("reasoning"))
+                put("encrypted_content", JsonPrimitive(data))
+            }
+        },
+        lookup = lookup,
+    ),
 )
 
 /** A conversation of [rounds] completed tool round-trips, Anthropic-shaped. */

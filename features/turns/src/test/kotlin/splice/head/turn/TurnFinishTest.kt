@@ -43,9 +43,14 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundText
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
+import splice.core.turn.UsageOrigin
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
@@ -67,6 +72,7 @@ import splice.head.wire.CollectingTerminal
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnTerminal
 import splice.head.wire.UsagePayloadBuilder
+import splice.upstream.BuiltTurn
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryBackoff
@@ -106,37 +112,46 @@ private class Rig(tmp: Path, tag: String, clock: ElapsedClock = ElapsedClock { 5
         emitter: TurnTerminal,
         watchdog: TurnWatchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
     ): TurnDrive = TurnDrive(
-        requestBody = buildJsonObject { },
-        meta = TurnMeta(
-            compact = false,
-            showReasoning = ReasoningDisplay.TEXT,
-            stream = false,
-            originalModel = "claude-codex--gpt-5.6-sol",
-            upstreamModel = "gpt-5.6-sol",
-            clientMaxTokens = 100,
-            effort = "high",
-            summary = "detailed",
-            budgetTokens = null,
+        inputs = TurnInputs(
+            built = BuiltTurn(
+                requestBody = buildJsonObject { },
+                meta = TurnMeta(
+                    compact = false,
+                    reasoning = TurnReasoning(
+                        showReasoning = ReasoningDisplay.TEXT,
+                        effort = "high",
+                        summary = "detailed",
+                        budgetTokens = null,
+                    ),
+                    route = TurnRoute(
+                        stream = false,
+                        originalModel = "claude-codex--gpt-5.6-sol",
+                        upstreamModel = "gpt-5.6-sol",
+                        clientMaxTokens = 100,
+                    ),
+                ),
+                extraHeaders = emptyMap(),
+                toolSearch = null,
+            ),
+            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+            t0 = 0,
+            perf = TurnPerf(),
+            trace = null,
+            markHandedOff = {},
         ),
         emitter = emitter,
         watchdog = watchdog,
-        slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
         pipeline = TurnPipeline(
             CompactStats(perfFile.resolveSibling("compact-dr8x.jsonl")),
             log = log,
             clampOutput = OutputClamp { it },
         ),
-        t0 = 0,
-        trace = null,
-        perf = TurnPerf(),
-        turnHeaders = emptyMap(),
         signals = RunnerSignals(),
         channel = ClientChannel(
             ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
             Mutex(),
             AtomicBoolean(false),
         ),
-        toolSearch = null,
     )
 }
 
@@ -157,7 +172,7 @@ class TurnPerfRowTest {
         val clock = ElapsedClock { testScheduler.currentTime }
         val rig = Rig(tmp, "paced-row-$cancelBeforeRecording", clock)
         val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
-        val drive = rig.drive(emitter).copy(perf = TurnPerf(clock = clock))
+        val drive = rig.drive(emitter).let { it.copy(inputs = it.inputs.copy(perf = TurnPerf(clock = clock))) }
         val pacing = drive.channel.launchPacer(
             this,
             kotlinx.coroutines.Job(),
@@ -206,7 +221,7 @@ class TurnPerfRowTest {
         val clock = ElapsedClock { now }
         val rig = Rig(tmp, "collected-row", clock)
         val terminal = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
-        val drive = rig.drive(terminal).copy(perf = TurnPerf(clock = clock))
+        val drive = rig.drive(terminal).let { it.copy(inputs = it.inputs.copy(perf = TurnPerf(clock = clock))) }
         try {
             drive.collectPerf.defer()
             rig.telemetry.recordPerf(drive, "overloaded", true, "synthetic-cause", 3)
@@ -324,7 +339,7 @@ class TurnPerfRowTest {
                 TurnOutcome.Failure(
                     "synthetic reset",
                     cause = FailureCause.UPSTREAM_STALLED,
-                    partial = TurnOutcome.PartialRound(bodyText = "synthetic", emittedText = true),
+                    partial = TurnOutcome.PartialRound(text = RoundText(bodyText = "synthetic", emittedText = true)),
                     phase = FailurePhase.MID_OUTPUT,
                 )
             }
@@ -338,7 +353,7 @@ class TurnPerfRowTest {
         val clock = ElapsedClock { testScheduler.currentTime }
         val rig = Rig(tmp, "torn-tail-reanchor", clock)
         val emitter = CollectingTerminal("synthetic", UsagePayloadBuilder { buildJsonObject { } })
-        val drive = rig.drive(emitter).copy(perf = TurnPerf(clock = clock))
+        val drive = rig.drive(emitter).let { it.copy(inputs = it.inputs.copy(perf = TurnPerf(clock = clock))) }
         val runner = ReanchorRunner(
             key = "synthetic",
             log = {},
@@ -493,9 +508,9 @@ class TurnFinishTest {
                     TurnOutcome.Success(
                         hasToolUse = false,
                         incomplete = false,
-                        usage = Usage(localStep = true),
-                        bodyText = "done",
-                        messageClosed = true,
+                        usage = Usage(origin = UsageOrigin(localStep = true)),
+                        text = RoundText(bodyText = "done"),
+                        shape = ResponseShape(messageClosed = true),
                     ),
                 )
                 assertEquals(attempts == 0L, drive.perf.snapshot().counters[PerfKeys.LOCAL_STEP] == 1L)
@@ -516,9 +531,9 @@ class TurnFinishTest {
                 TurnOutcome.Success(
                     hasToolUse = false,
                     incomplete = false,
-                    usage = Usage(codeModeDiverged = true),
-                    bodyText = "served upstream",
-                    messageClosed = true,
+                    usage = Usage(origin = UsageOrigin(codeModeDiverged = true)),
+                    text = RoundText(bodyText = "served upstream"),
+                    shape = ResponseShape(messageClosed = true),
                 ),
             )
             assertEquals(1L, drive.perf.snapshot().counters[PerfKeys.CODE_MODE_DIVERGENCE])
@@ -547,9 +562,9 @@ class TurnFinishTest {
                 TurnOutcome.Success(
                     hasToolUse = false,
                     incomplete = false,
-                    usage = Usage(codeModeDiverged = true),
-                    bodyText = "served upstream",
-                    messageClosed = true,
+                    usage = Usage(origin = UsageOrigin(codeModeDiverged = true)),
+                    text = RoundText(bodyText = "served upstream"),
+                    shape = ResponseShape(messageClosed = true),
                 ),
             )
         } catch (_: IOException) {
@@ -681,7 +696,12 @@ class TurnFinishTest {
             val rig = Rig(tmp, "ending-${tag.wire}")
             val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
             val original = rig.drive(emitter)
-            val drive = original.copy(meta = original.meta.copy(compact = tag == OutcomeTag.EMPTY_COMPACT))
+            val built = original.inputs.built
+            val drive = original.copy(
+                inputs = original.inputs.copy(
+                    built = built.copy(meta = built.meta.copy(compact = tag == OutcomeTag.EMPTY_COMPACT)),
+                ),
+            )
             val degraded = tag != OutcomeTag.EMPTY_MESSAGE
             try {
                 rig.finish.finishTurn(
@@ -690,7 +710,7 @@ class TurnFinishTest {
                         hasToolUse = false,
                         incomplete = false,
                         usage = Usage(),
-                        messageClosed = tag == OutcomeTag.EMPTY_MESSAGE,
+                        shape = ResponseShape(messageClosed = tag == OutcomeTag.EMPTY_MESSAGE),
                     ),
                 )
                 assertEquals(if (degraded) 529 else 200, emitter.httpStatus(), tag.wire)

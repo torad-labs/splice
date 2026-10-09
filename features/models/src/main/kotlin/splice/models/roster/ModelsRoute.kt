@@ -168,9 +168,9 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
         catalog == null -> WINDOW_UNKNOWN
         catalog.models.any { it.id == id } -> WINDOW_FROM_MODEL
         // the head's window replaced every extra window, rule and the default alike
-        catalog.headWindow != null -> WINDOW_FROM_HEAD
-        catalog.extraWindows.any { it.id == id } -> WINDOW_FROM_EXTRA
-        catalog.windowRules.any { id.startsWith(it.prefix) } -> WINDOW_FROM_RULE
+        catalog.windows.headWindow != null -> WINDOW_FROM_HEAD
+        catalog.windows.extraWindows.any { it.id == id } -> WINDOW_FROM_EXTRA
+        catalog.windows.windowRules.any { id.startsWith(it.prefix) } -> WINDOW_FROM_RULE
         else -> WINDOW_FROM_DEFAULT
     }
 
@@ -178,7 +178,7 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
      *  a discovered model whose published ceiling sits under the head's window keeps that ceiling
      *  (ProviderConfig.headWindow clamps to it), and that number is the model's. */
     private fun resolvedWindowSource(entry: ModelEntry, catalog: ModelCatalog?): String =
-        if (catalog?.headWindow != null && entry.contextWindow == catalog.headWindow) {
+        if (catalog?.windows?.headWindow != null && entry.contextWindow == catalog.windows.headWindow) {
             WINDOW_FROM_HEAD
         } else {
             WINDOW_FROM_MODEL
@@ -187,8 +187,9 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
     private fun windowFor(id: String, catalog: ModelCatalog?): Long? = when {
         catalog == null -> null
         else -> catalog.models.firstOrNull { it.id == id }?.contextWindow
-            ?: catalog.extraWindows.firstOrNull { it.id == id }?.contextWindow
-            ?: catalog.windowRules.filter { id.startsWith(it.prefix) }.maxByOrNull { it.prefix.length }?.contextWindow
+            ?: catalog.windows.extraWindows.firstOrNull { it.id == id }?.contextWindow
+            ?: catalog.windows.windowRules.filter { id.startsWith(it.prefix) }
+                .maxByOrNull { it.prefix.length }?.contextWindow
             ?: catalog.defaultContextWindow
     }
 
@@ -197,7 +198,7 @@ public class ModelsRoute(private val heads: List<RosterHead>) {
      *  fixes, and the console shows this sentence verbatim. */
     private fun unresolvedReason(id: String, catalog: ModelCatalog?): String = when {
         catalog == null -> "this head declares no catalog, so nothing could be resolved for it"
-        catalog.windowRules.any { id.startsWith(it.prefix) } ->
+        catalog.windows.windowRules.any { id.startsWith(it.prefix) } ->
             "declared as a slot and matched a window rule, but the catalog lists no such model"
         else -> "declared as a slot, but the catalog lists no model with this id"
     }

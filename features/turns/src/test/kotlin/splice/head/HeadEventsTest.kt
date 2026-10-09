@@ -50,6 +50,8 @@ import splice.dialect.responses.ReasoningSettings
 import splice.head.perf.PerfStats
 import splice.head.usage.QuotaTracker
 import splice.provider.codex.CodexProvider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.credentials.AccountPool
@@ -336,8 +338,7 @@ private class Rig(root: Path) {
 
     private fun provider(): CodexProvider = CodexProvider(
         tuning = ProviderTuning(
-            key = "codex",
-            label = "claudex",
+            name = ProviderName(key = "codex", label = "claudex"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-codex--",
                 models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -345,7 +346,7 @@ private class Rig(root: Path) {
             ),
             pinnedModel = "gpt-5.6-sol",
             auth = primaryAuth,
-            baseUrl = mock.baseUrl,
+            locations = ProviderLocations(baseUrl = mock.baseUrl),
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),

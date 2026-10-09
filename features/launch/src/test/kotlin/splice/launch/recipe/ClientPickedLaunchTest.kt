@@ -14,6 +14,9 @@ import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
 import splice.launch.launch
@@ -26,19 +29,25 @@ class ClientPickedLaunchTest(@param:TempDir private val tmp: Path) {
 
     private fun spec(pinned: String = "") = LaunchSpec(
         trees = HeadTrees(configDir),
-        pinnedModel = pinned,
-        availableModelIds = listOf("synthetic-metadata-row"),
-        modelLabels = mapOf("synthetic-metadata-row" to "Synthetic metadata"),
-        contextWindow = 272_000,
-        modelOptionsCache = buildJsonObject { },
-        statuslineCommand = "synthetic-status",
-        loginCommand = "",
-        signInLabel = "Synthetic",
+        models = LaunchModels(
+            pinnedModel = pinned,
+            availableModelIds = listOf("synthetic-metadata-row"),
+            modelLabels = mapOf("synthetic-metadata-row" to "Synthetic metadata"),
+            contextWindow = 272_000,
+            modelOptionsCache = buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "",
+            signInLabel = "Synthetic",
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "synthetic-status",
+            port = 0,
+            inferenceToken = "synthetic-token",
+            apiTimeoutMs = 1_000,
+            forwardClientAuth = true,
+        ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 0,
-        inferenceToken = "synthetic-token",
-        apiTimeoutMs = 1_000,
-        forwardClientAuth = true,
     )
 
     @Test
@@ -47,9 +56,15 @@ class ClientPickedLaunchTest(@param:TempDir private val tmp: Path) {
         Files.writeString(configDir.resolve("settings.json"), """{"model":"claude-synthetic-chosen"}""")
         Files.writeString(configDir.resolve(".claude.json"), """{"additionalModelOptionsCache":["stale"]}""")
         val recipe = service.launch(
-            spec().copy(
-                tiers = ModelTiers(modelOverrides = mapOf("claude-synthetic-chosen" to "synthetic-metadata-row")),
-            ),
+            spec().let { base ->
+                base.copy(
+                    models = base.models.copy(
+                        tiers = ModelTiers(
+                            modelOverrides = mapOf("claude-synthetic-chosen" to "synthetic-metadata-row"),
+                        ),
+                    ),
+                )
+            },
             listOf("--model", "claude-synthetic-next"),
             dangerouslySkipPermissions = false,
         )
@@ -94,7 +109,9 @@ class ClientPickedLaunchTest(@param:TempDir private val tmp: Path) {
         )
         Files.writeString(transcript, nativeRow + "\n" + foreignRow + "\n")
         service.launch(
-            spec().copy(availableModelIds = emptyList()),
+            spec().let { base ->
+                base.copy(models = base.models.copy(availableModelIds = emptyList()))
+            },
             listOf("-r", "synthetic-session"),
             dangerouslySkipPermissions = false,
         )

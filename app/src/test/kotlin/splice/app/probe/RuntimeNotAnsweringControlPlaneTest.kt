@@ -22,7 +22,9 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.ControlPlane
 import splice.app.DaemonEnvironment
 import splice.app.control.FailedHeads
+import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
+import splice.app.control.UsageWarning
 import splice.app.head.HeadProbeReadings
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
@@ -112,15 +114,16 @@ class RuntimeNotAnsweringControlPlaneTest {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(false, "test")
         },
-        usage = HeadUsageSource { UsageView(0L, 0, null) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int) = ""
-            override fun path() = "/tmp/runtime-watch-wiring.log"
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0L, 0, null) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int) = ""
+                override fun path() = "/tmp/runtime-watch-wiring.log"
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
     )
 }

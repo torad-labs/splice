@@ -28,12 +28,12 @@ internal class AddWrite {
     /** A sibling temp file, then ONE rename — the previous file is intact until then — owner-only
      *  (0600) from the temp file's creation (V4-275), since splice.toml can hold header secrets, and at a
      *  linked splice.toml's target, so the link stays the operator's (V4-279). The candidate
-     *  was built from [AddCandidate.existing]; a sign-in and the checks ran since, so the file is read
+     *  was built from [AddFileEdit.existing]; a sign-in and the checks ran since, so the file is read
      *  again first and a change in between (an editor, a second add) refuses the write instead of being
      *  overwritten by a rename. A file that cannot be read again (deleted, replaced by something
      *  unreadable) is refused the same way: the candidate was built from a file that existed, so a
      *  rename that recreated it would write stale content (review 2026-09-14). */
-    fun write(c: AddCandidate): AddWritten = replace(c.path, c.existing, c.existing + c.appended)
+    fun write(c: AddCandidate): AddWritten = replace(c.file.path, c.file.existing, c.file.existing + c.file.appended)
 
     /** [composed] renamed over [path] only while the file still holds [existing]: the same re-read and
      *  rename as [write], for add-model's roster edit, which changes the middle of the file rather than

@@ -19,8 +19,10 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.model.TurnBill
 import splice.core.perf.PerfKeys
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.UsageOrigin
 import splice.provider.codex.stream.CodeModeLiveRound
 import splice.provider.codex.stream.CodeModeRedirectablePost
 import splice.provider.codex.stream.CodeModeRuntimeStarter
@@ -56,7 +58,7 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
         assertTrue(
             state.registry.source.finish(
                 state.record,
-                state.outcome.customCalls.single(),
+                state.outcome.handoffs.customCalls.single(),
                 state.wire.continuity(state.outcome),
                 state.outcome.usage,
             ),
@@ -95,7 +97,7 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
         val post = object : RedirectableRoundPost {
             override suspend fun invoke(bodyJson: String): RoundResult = error("redirected post required")
             override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
-                sink.customToolSource(CustomToolSource.Started(outer(state.record.outerCallId, source = "")))
+                sink.customToolSource(CustomToolSource.Started(outer(state.record.origin.outerCallId, source = "")))
                 return RoundResult.Outcome(terminal.await().also { reader.set(Thread.currentThread()) })
             }
         }
@@ -129,7 +131,7 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
             state.wire,
             CodeModeStreamAdmission { state.record },
         )
-        capture.observe(CustomToolSource.Started(outer(state.record.outerCallId, source = "")))
+        capture.observe(CustomToolSource.Started(outer(state.record.origin.outerCallId, source = "")))
         val failure = AtomicReference<Throwable?>()
         val terminal = Thread {
             try {
@@ -147,7 +149,7 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
         assertFalse(terminal.isAlive, "the terminal must finish without waiting for deferred cancellation")
         assertNull(failure.get(), "revoked ownership is disposal, not an internal response failure")
         assertTrue(runBlocking { capture.source.view().read() } is CodeModeSourcePart.Failed)
-        assertEquals("", state.record.source, "the terminal cannot restore the revoked source")
+        assertEquals("", state.record.origin.source, "the terminal cannot restore the revoked source")
         assertNull(state.record.sourceState?.usage, "rejected staging must not pretend to certify the source")
         if (disposition == "expired") assertTrue(stateFiles.records().isEmpty())
     }
@@ -178,14 +180,16 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
             }
             override suspend fun invoke(bodyJson: String): RoundResult = error("redirected post required")
             override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
-                sink.customToolSource(CustomToolSource.Started(outer(state.record.outerCallId, source = "")))
+                sink.customToolSource(CustomToolSource.Started(outer(state.record.origin.outerCallId, source = "")))
                 return RoundResult.Outcome(terminal.await())
             }
         }
         val scope = LifecycleScope(StandardTestDispatcher(testScheduler))
         try {
             round.start(scope, CodeModeRedirectablePost(post, state.wire), state.wire.body(RoundBody.Text("{}"))) {}
-            assertNull(round.billing.claim(state.record, TurnOutcome.Success(true, false, Usage(localStep = true))))
+            assertNull(round.billing.claim(state.record, TurnOutcome.Success(true, false, Usage(
+                origin = UsageOrigin(localStep = true),
+            ))))
             assertEquals(1, holds.get())
             state.dispose(disposition)
             terminal.complete(state.outcome)
@@ -196,7 +200,9 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
             assertEquals(12L, usage.outputTokens)
             assertEquals(1_100L, usage.cachedTokens)
             assertEquals(0L, usage.cutRounds, "a parsed terminal is not an unreported cut")
-            assertNull(round.billing.claim(state.record, TurnOutcome.Success(true, false, Usage(localStep = true))))
+            assertNull(round.billing.claim(state.record, TurnOutcome.Success(true, false, Usage(
+                origin = UsageOrigin(localStep = true),
+            ))))
             assertEquals(1, holds.get(), "a later step must not acquire another claim")
             assertEquals(1, releases.get(), "the original row settles exactly once")
             assertNull(state.registry.source.consume(state.record), "continuations cannot rebill the parsed terminal")
@@ -218,13 +224,21 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
             state.wire,
             CodeModeStreamAdmission { state.record },
         )
-        capture.observe(CustomToolSource.Started(outer(state.record.outerCallId, source = "prefix")))
+        capture.observe(CustomToolSource.Started(outer(state.record.origin.outerCallId, source = "prefix")))
         state.dispose("expired")
-        val wrongIdentity = state.outcome.copy(customCalls = listOf(outer("synthetic-other", source = "prefix")))
+        val wrongIdentity = state.outcome.run {
+            copy(handoffs = handoffs.copy(customCalls = listOf(outer("synthetic-other", source = "prefix"))))
+        }
         assertThrows(IllegalStateException::class.java) { capture.finish(wrongIdentity) }
         assertThrows(IllegalStateException::class.java) { capture.finish(state.outcome) }
-        val tooLarge = "prefix" + "x".repeat(state.config.maxSourceChars)
-        val oversized = state.outcome.copy(customCalls = listOf(outer(state.record.outerCallId, source = tooLarge)))
+        val tooLarge = "prefix" + "x".repeat(state.config.bounds.maxSourceChars)
+        val oversized = state.outcome.run {
+            copy(
+                handoffs = handoffs.copy(
+                    customCalls = listOf(outer(state.record.origin.outerCallId, source = tooLarge)),
+                ),
+            )
+        }
         assertThrows(IllegalArgumentException::class.java) { capture.finish(oversized) }
         assertTrue(stateFiles.records().isEmpty())
     }
@@ -240,7 +254,7 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
         )
         assertTrue(state.registry.source.append(state.record, "prefix"))
         assertThrows(IllegalStateException::class.java) { state.registry.source.append(state.record, "changed") }
-        val call = outer(state.record.outerCallId, source = "prefix suffix")
+        val call = outer(state.record.origin.outerCallId, source = "prefix suffix")
         assertTrue(
             state.registry.source.finish(state.record, call, state.wire.continuity(state.outcome), state.outcome.usage),
         )
@@ -257,7 +271,7 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
         val registry = CodexCodeModeRegistry(config, Json, 1.hours, writer)
         val wire = CodexCodeModeWire(Json, {})
         val record = CodeModeRecords.of("synthetic-disposal-key", 0, config.clock.millis()).also {
-            it.source = ""
+            it.origin.source = ""
             assertTrue(registry.add(it))
             it.phase = CodeModePhase.ACTIVE
         }
@@ -265,14 +279,14 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
             false,
             false,
             Usage(1_400, 12, 1_100),
-            customCalls = listOf(outer(record.outerCallId, source = "return 1;")),
+            handoffs = RoundHandoffs(customCalls = listOf(outer(record.origin.outerCallId, source = "return 1;"))),
         )
 
         fun dispose(disposition: String) {
             when (disposition) {
                 "lost" -> registry.lose(record, "synthetic disposal")
                 "expired" -> {
-                    registry.changes.edit(record) { it.updatedAt -= 25.hours.inWholeMilliseconds }
+                    registry.changes.edit(record) { it.progress.updatedAt -= 25.hours.inWholeMilliseconds }
                     registry.recordsFor(record.key)
                     assertTrue(stateFiles.records().isEmpty())
                 }

@@ -5,21 +5,25 @@ package splice.dialect.anthropic
 public class KimiProfileFixture {
     public fun kimi(providerTag: String): PassthroughQuirks = PassthroughQuirks(
         providerTag = providerTag,
-        mapThinkingToAdaptive = true,
-        mfjsSanitize = true,
-        blockAllowlist = setOf(
-            "text",
-            "image",
-            "thinking",
-            "tool_use",
-            "tool_result",
-            "server_tool_use",
-            "web_search_tool_result",
+        thinking = PassthroughThinkingQuirks(
+            mapThinkingToAdaptive = true,
+            effortRungs = listOf("low", "high", "max"),
+            synthesizeSignatures = true,
         ),
-        stripCacheControl = true,
-        synthesizeSignatures = true,
+        request = PassthroughRequestQuirks(
+            mfjsSanitize = true,
+            blockAllowlist = setOf(
+                "text",
+                "image",
+                "thinking",
+                "tool_use",
+                "tool_result",
+                "server_tool_use",
+                "web_search_tool_result",
+            ),
+            stripCacheControl = true,
+        ),
         dropServerToolBlocks = true,
-        effortRungs = listOf("low", "high", "max"),
         // V4-41: measured — kimi continues from a trailing assistant prefill in every thinking mode.
         reanchorPrefill = true,
     )

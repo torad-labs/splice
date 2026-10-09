@@ -4,26 +4,16 @@
 package splice.app.head
 
 import splice.core.model.ClientWindows
-import splice.head.compact.CompactStats
-import splice.head.perf.PerfStats
-import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
 import splice.head.wire.TraceStore
-import splice.upstream.credentials.AccountPool
 import splice.upstream.retry.ProviderHoldStore
 
 internal data class HeadStores(
     val usageStore: UsageStore,
-    val compactStats: CompactStats,
-    val perfStats: PerfStats,
-    /** The hourly token-economics rollup (quota instrument): the head folds each finished turn into
-     *  it and the control plane reads the SAME instance, so /api/economics never serves a second
-     *  store's stale in-memory copy of the same file. */
-    val economics: EconomicsStore,
+    val telemetry: HeadTelemetryStores,
     val quota: QuotaTracker,
-    val accountPool: AccountPool? = null,
-    val accountQuotas: Map<String, QuotaTracker> = emptyMap(),
+    val accounts: HeadAccountStores = HeadAccountStores(),
     /** Per-session client windows (ClientWindows): written by the control plane's statusline
      *  route, read by the head's usage payload — one instance so both see the same sessions. */
     val clientWindows: ClientWindows = ClientWindows(),

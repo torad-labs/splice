@@ -17,13 +17,21 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.util.LogSink
 import splice.dialect.responses.ReasoningContinuity
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesReasoningQuirks
+import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.ResponsesTurnOptions
 import splice.dialect.responses.ResponsesTurnSeams
 import splice.dialect.responses.ResponsesTurnSeamsDeps
+import splice.dialect.responses.RoundCarry
+import splice.dialect.responses.TranslatorServices
+import splice.dialect.responses.WatchdogCaps
 import splice.dialect.responses.reasoning.ReasoningCache
 import splice.dialect.responses.reasoning.ReasoningCachePolicy
 import splice.dialect.responses.request.ResponsesStableIds
@@ -73,18 +81,21 @@ private fun round(id: String, vararg parts: String): List<JsonObject> = buildLis
 private fun codexSeams(log: LogSink = LogSink {}): ResponsesTurnSeams {
     val quirks = ResponsesQuirks(
         providerTag = "claudex",
-        summaryDelivery = "sequential_cutoff",
-        forceStrictFalse = true,
+        reasoning = ResponsesReasoningQuirks(
+            summaryDelivery = "sequential_cutoff",
+        ),
+        tools = ResponsesToolQuirks(
+            forceStrictFalse = true,
+        ),
     )
     val cachePolicy = ReasoningCachePolicy()
     val ids = ResponsesStableIds()
     val reasoningCache = ReasoningCache()
+    val continuity = ReasoningContinuity(reasoningCache, cachePolicy, ids)
     return ResponsesTurnSeams(
         ResponsesTurnSeamsDeps(
             quirks = quirks,
-            cachePolicy = cachePolicy,
-            ids = ids,
-            reasoningCache = reasoningCache,
+            continuity = continuity,
             summaryParts = ConversationSummaryParts(),
             turnOptions = ResponsesTurnOptions(
                 ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
@@ -95,29 +106,31 @@ private fun codexSeams(log: LogSink = LogSink {}): ResponsesTurnSeams {
                     defaultContextWindow = 272_000,
                 ),
                 LogSink {},
-                ReasoningContinuity(reasoningCache, cachePolicy, ids),
+                continuity,
                 ToolSurfaceLatch(),
             ),
-            foldConfig = null,
-            replayReasoning = false,
-            streamIdleMs = 180_000,
-            upstreamTimeoutMs = 900_000,
-            log = log,
+            carry = RoundCarry(foldConfig = null, replayReasoning = false),
+            caps = WatchdogCaps(streamIdleMs = 180_000, upstreamTimeoutMs = 900_000),
+            services = TranslatorServices(log = log),
         ),
     )
 }
 
 private fun testMeta(): TurnMeta = TurnMeta(
     compact = false,
-    showReasoning = ReasoningDisplay.TEXT,
-    stream = true,
-    originalModel = "claude-codex--gpt-5.6-luna",
-    upstreamModel = "gpt-5.6-luna",
-    clientMaxTokens = 8000,
-    effort = "high",
-    summary = "detailed",
-    budgetTokens = 31999,
-    conversationKey = "splice-testconvokey",
+    reasoning = TurnReasoning(
+        showReasoning = ReasoningDisplay.TEXT,
+        effort = "high",
+        summary = "detailed",
+        budgetTokens = 31999,
+    ),
+    route = TurnRoute(
+        stream = true,
+        originalModel = "claude-codex--gpt-5.6-luna",
+        upstreamModel = "gpt-5.6-luna",
+        clientMaxTokens = 8000,
+    ),
+    scope = TurnScope(conversationKey = "splice-testconvokey"),
 )
 
 class SeamsCrossRoundDedupTest {

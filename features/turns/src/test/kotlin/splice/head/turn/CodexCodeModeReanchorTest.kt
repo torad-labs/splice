@@ -21,7 +21,11 @@ import org.junit.jupiter.params.provider.ValueSource
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
 import splice.core.turn.GatewayCustomCall
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundHandoffs
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
@@ -62,12 +66,16 @@ class CodexCodeModeReanchorTest {
         var finished: TurnOutcome? = null
         val strategy = strategy(runtime, { finished = it }) {
             posts++
-            outer("call-$posts").copy(
-                bodyText = if (prose) "visible prose" else "",
-                emittedText = prose,
-                thinkingText = "visible reasoning",
-                emittedThinking = true,
-            )
+            outer("call-$posts").run {
+                copy(
+                    text = RoundText(
+                        thinkingText = "visible reasoning",
+                        bodyText = if (prose) "visible prose" else "",
+                        emittedText = prose,
+                        emittedThinking = true,
+                    ),
+                )
+            }
         }
         strategy.run(body, null, responsesTestReanchor(maxContinuations = 1))
         val failure = finished as TurnOutcome.Failure
@@ -89,10 +97,10 @@ class CodexCodeModeReanchorTest {
                     "upstream interrupted",
                     cause = FailureCause.UPSTREAM_REPORTED,
                     phase = FailurePhase.MID_OUTPUT,
-                    providerReported = true,
-                    partial = TurnOutcome.PartialRound(bodyText = "visible", emittedText = true),
+                    traits = FailureTraits(providerReported = true),
+                    partial = TurnOutcome.PartialRound(text = RoundText(bodyText = "visible", emittedText = true)),
                 )
-                else -> TurnOutcome.Success(false, false, Usage(23, 2), messageClosed = true)
+                else -> TurnOutcome.Success(false, false, Usage(23, 2), shape = ResponseShape(messageClosed = true))
             }
         }
         strategy.run(body, null, responsesTestReanchor(maxContinuations = 1))
@@ -115,12 +123,14 @@ class CodexCodeModeReanchorTest {
                     cause = if (mode == "first-byte") FailureCause.UPSTREAM_CONN_RESET else FailureCause.UPSTREAM_TRUNCATED,
                     phase = if (mode == "first-byte") FailurePhase.FIRST_BYTE else FailurePhase.MID_OUTPUT,
                     partial = TurnOutcome.PartialRound(
-                        bodyText = if (mode == "prose") "visible synthetic prose" else "",
-                        emittedText = mode == "prose",
+                        text = RoundText(
+                            bodyText = if (mode == "prose") "visible synthetic prose" else "",
+                            emittedText = mode == "prose",
+                        ),
                     ),
                 )
             } else {
-                TurnOutcome.Success(false, false, Usage(23, 2), messageClosed = true)
+                TurnOutcome.Success(false, false, Usage(23, 2), shape = ResponseShape(messageClosed = true))
             }
         }
         strategy.run(body, null, responsesTestReanchor(maxContinuations = 1))
@@ -174,7 +184,12 @@ class CodexCodeModeReanchorTest {
             bridge.interceptor(answering, disableParallel = false)
                 .intercept(next.toString(), sink) {
                     nextPosted = event(it)
-                    RoundResult.Outcome(TurnOutcome.Success(false, false, Usage(), messageClosed = true))
+                    RoundResult.Outcome(TurnOutcome.Success(
+                        false,
+                        false,
+                        Usage(),
+                        shape = ResponseShape(messageClosed = true),
+                    ))
                 }
             val abandons = lines.filter { "logical history does not match its persisted baseline" in it }
             if (changedBaseline) {
@@ -239,7 +254,12 @@ class CodexCodeModeReanchorTest {
             bridge.interceptor(answering, disableParallel = false)
                 .intercept(recovery.nextRequest(received, false).toString(), sink) {
                     posted = event(it)
-                    RoundResult.Outcome(TurnOutcome.Success(false, false, Usage(), messageClosed = true))
+                    RoundResult.Outcome(TurnOutcome.Success(
+                        false,
+                        false,
+                        Usage(),
+                        shape = ResponseShape(messageClosed = true),
+                    ))
                 }
             assertTrue(lines.none { "abandoned record" in it || "interrupted extra=STEERING" in it }, lines.toString())
             assertEquals(3, runtime.advances)
@@ -302,13 +322,15 @@ class CodexCodeModeReanchorTest {
                     "the recovery input prefix stays byte-identical",
                 )
                 assertEquals(ResponsesAssistantText.item("suffix ", AssistantPhase.COMMENTARY), continued[input.size])
-                assertEquals(outer("reanchored").customCalls.single().raw, continued[input.size + 1])
+                assertEquals(outer("reanchored").handoffs.customCalls.single().raw, continued[input.size + 1])
                 posted += request.text
                 if (secondScript) {
                     target.addTextBlock("second suffix ")
-                    return outer("second").copy(bodyText = "second suffix ", emittedText = true)
+                    return outer("second").run {
+                        copy(text = text.copy(bodyText = "second suffix ", emittedText = true))
+                    }
                 }
-                return TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                return TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
             }
             if (posted.isNotEmpty()) {
                 val expected = controller.continuationForFailure(
@@ -361,10 +383,10 @@ class CodexCodeModeReanchorTest {
     }
 
     private suspend fun recoveredRound(streamed: Boolean, sink: WireSink): TurnOutcome {
-        val call = outer("reanchored").customCalls.single()
+        val call = outer("reanchored").handoffs.customCalls.single()
         if (!streamed) {
             sink.addTextBlock("suffix ")
-            return outer("reanchored").copy(bodyText = "suffix ", emittedText = true)
+            return outer("reanchored").run { copy(text = text.copy(bodyText = "suffix ", emittedText = true)) }
         }
         val frames = listOf(
             event("""{"type":"response.output_text.delta","output_index":0,"delta":"suffix "}"""),
@@ -466,9 +488,8 @@ class CodexCodeModeReanchorTest {
             false,
             false,
             Usage(19, 7, 5, 3),
-            bodyText = "visible prose",
-            emittedText = true,
-            customCalls = listOf(GatewayCustomCall(id, "splice_exec", "source", raw)),
+            text = RoundText(bodyText = "visible prose", emittedText = true),
+            handoffs = RoundHandoffs(customCalls = listOf(GatewayCustomCall(id, "splice_exec", "source", raw))),
         )
     }
 

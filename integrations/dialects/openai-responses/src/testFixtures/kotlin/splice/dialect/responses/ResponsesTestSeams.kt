@@ -15,10 +15,14 @@ import splice.dialect.responses.reasoning.ReasoningEnvelopeDecoder
 import splice.dialect.responses.reasoning.ReasoningEnvelopeEncoder
 import splice.dialect.responses.reasoning.ResponsesReanchorPolicy
 import splice.dialect.responses.request.BuildOptions
+import splice.dialect.responses.request.ModelIds
+import splice.dialect.responses.request.ReasoningHandoff
+import splice.dialect.responses.request.RequestedReasoning
 import splice.dialect.responses.request.ResponsesRequestBuilder
 import splice.dialect.responses.stream.ResponsesStreamTranslator
 import splice.upstream.ReanchorPolicy
 import splice.upstream.StreamTranslator
+import splice.upstream.TurnSignals
 
 /** The request body the builder produces for [body] on [model]. Prior reasoning is decoded as a turn decodes it. */
 fun buildResponsesTestRequest(
@@ -32,13 +36,19 @@ fun buildResponsesTestRequest(
     body.raw,
     BuildOptions(
         compact = false,
-        originalModel = "claude-codex--$model",
-        upstreamModel = model,
-        configEffort = null,
-        configSummary = null,
-        showReasoning = showReasoning,
-        replayReasoning = InjectPriorReasoning(replayReasoning),
-        decodeReasoningEnvelope = ReasoningEnvelopeDecoder { ReasoningReplay.decodeReasoningEnvelope(it) },
+        models = ModelIds(
+            original = "claude-codex--$model",
+            upstream = model,
+        ),
+        reasoning = RequestedReasoning(
+            effort = null,
+            summary = null,
+            display = showReasoning,
+        ),
+        handoff = ReasoningHandoff(
+            replay = InjectPriorReasoning(replayReasoning),
+            decode = ReasoningEnvelopeDecoder { ReasoningReplay.decodeReasoningEnvelope(it) },
+        ),
     ),
 ).req
 
@@ -52,12 +62,20 @@ fun responsesTestTranslator(
         compact = false,
         emitEncryptedReasoning = EmitEncryptedReasoning(emitEncryptedReasoning),
         encodeReasoningEnvelope = ReasoningEnvelopeEncoder { encode(it) },
-        clientGone = { false },
-        watchdogFired = { null },
-        streamIdleMsForMessage = 180_000,
-        upstreamTimeoutMsForMessage = 900_000,
-        summaryPartsShared = SharedSummaryParts(),
-        collectReasoningEnvelopes = collectReasoningEnvelopes,
+        signals = TurnSignals(
+            clientGone = { false },
+            watchdogFired = { null },
+        ),
+        caps = WatchdogCaps(
+            streamIdleMs = 180_000,
+            upstreamTimeoutMs = 900_000,
+        ),
+        summary = SummaryHandling(
+            partsShared = SharedSummaryParts(),
+        ),
+        reasoningCapture = ReasoningCapture(
+            collectEnvelopes = collectReasoningEnvelopes,
+        ),
     ),
 )
 

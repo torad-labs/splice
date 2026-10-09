@@ -14,6 +14,7 @@ import splice.core.util.WallClock
 import splice.head.HeadDeps
 import splice.head.turn.Preparation
 import splice.head.turn.SESSION_TAG_CHARS
+import splice.head.turn.TurnAccountQuota
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnInputs
 import splice.head.turn.TurnPreparation
@@ -80,14 +81,14 @@ internal class HeadAdmission(
             }
             is Preparation.Ready -> {
                 val meta = prepared.built.meta
-                admitted.slot.describe(meta.upstreamModel, meta.compact, meta.sessionId?.take(SESSION_TAG_CHARS))
+                admitted.slot.describe(meta.route.upstreamModel, meta.compact, meta.scope.sessionId?.take(SESSION_TAG_CHARS))
                 // V4-165: the turn ends when its admission slot is released — here on a refusal or
                 // an attached drive, inside TurnStreamer for a detached one. One registration
                 // covers every exit, because the slot already has to be released on each of them.
                 prepared.built.onEnd?.let(admitted.slot::onRelease)
                 // V4-319: a streaming turn is listed, and the operator can stop it, from here until
                 // the same release ends it. A collect has no open stream a stop could end with a frame.
-                if (prepared.stream) deps.liveTurns.admitted(admitted.slot, meta, prepared.messagesHash)
+                if (prepared.stream) deps.traffic.liveTurns.admitted(admitted.slot, meta, prepared.messagesHash)
                 serveReady(call, prepared, admitted)
             }
         }
@@ -154,16 +155,16 @@ internal class HeadAdmission(
         // exit writes a perf row — the two local refusals below and the drive all go through
         // TurnTelemetry's emitters, which fire turn.end. Rejected, Local and Replay write no row, so
         // announcing them would leave the console a start with no end.
-        deps.seams.events.turnStarted(prepared.built.meta.sessionId)
+        deps.seams.events.turnStarted(prepared.built.meta.scope.sessionId)
         // V4-174: the trace begins HERE, before the two local refusals, because a refused turn is a
         // request the head received and answered — a trace that skipped it would show a client
         // retrying for no visible reason. Null for every head whose trace is off.
-        val trace = prepared.takeInbound()?.let { deps.stores.trace?.begin(prepared.built.meta, it) }
+        val trace = prepared.takeInbound()?.let { deps.stores.captures.trace?.begin(prepared.built.meta, it) }
         if (refuseIfOverBudget(call, prepared, admitted, trace)) return
         val callerKey = prepared.built.extraHeaders.takeIf { deps.policy.forwardClientAuth }
             ?.let(CredentialKey::fromHeaders)
         val selection = deps.quotaBundle.activePool?.select(
-            prepared.built.meta.sessionId,
+            prepared.built.meta.scope.sessionId,
             excluded = emptySet(),
             callerCredentialKey = callerKey,
         )
@@ -204,8 +205,10 @@ internal class HeadAdmission(
             admitted.perf,
             markHandedOff = { admitted.markHandedOff() },
             trace = trace,
-            account = account,
-            quota = deps.turnQuota.forSession(prepared.built.meta.sessionId, account),
+            accountQuota = TurnAccountQuota(
+                account = account,
+                quota = deps.turnQuota.forSession(prepared.built.meta.scope.sessionId, account),
+            ),
         )
         if (prepared.stream) driver.stream(call, inputs) else driver.collect(call, inputs)
     }

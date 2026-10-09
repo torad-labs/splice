@@ -15,9 +15,17 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.request.BuildOptions
+import splice.dialect.responses.request.ModelIds
+import splice.dialect.responses.request.ReasoningHandoff
+import splice.dialect.responses.request.RequestedReasoning
 import splice.dialect.responses.request.ResponsesRequestBuilder
 
-private val LITE_QUIRKS = ResponsesQuirks(providerTag = "claudex", responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6"))
+private val LITE_QUIRKS = ResponsesQuirks(
+    providerTag = "claudex",
+    lite = ResponsesLiteQuirks(
+        responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6"),
+    ),
+)
 
 private const val TOOLS_BODY = """{"model":"claude-codex--gpt-6-sol","stream":true,"max_tokens":1024,
     "system":"You are Splice.",
@@ -107,13 +115,19 @@ class ResponsesFunctionNamespaceTest {
         val parsed = AnthropicParse.parseAnthropicBody(TOOLS_BODY)
         val opts = BuildOptions(
             compact = false,
-            originalModel = "claude-codex--$upstreamModel",
-            upstreamModel = upstreamModel,
-            configEffort = "high",
-            configSummary = "detailed",
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = InjectPriorReasoning(false),
-            decodeReasoningEnvelope = { null },
+            models = ModelIds(
+                original = "claude-codex--$upstreamModel",
+                upstream = upstreamModel,
+            ),
+            reasoning = RequestedReasoning(
+                effort = "high",
+                summary = "detailed",
+                display = ReasoningDisplay.TEXT,
+            ),
+            handoff = ReasoningHandoff(
+                replay = InjectPriorReasoning(false),
+                decode = { null },
+            ),
         )
         return ResponsesRequestBuilder(LITE_QUIRKS).build(parsed.typed, parsed.raw, opts).req
     }

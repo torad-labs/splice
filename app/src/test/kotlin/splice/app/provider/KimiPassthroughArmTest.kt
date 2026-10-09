@@ -34,7 +34,8 @@ class KimiPassthroughArmTest {
         val authFile = tmp.resolve("kimi.json")
         Files.writeString(
             authFile,
-            """{"access_token":"kimi-access","refresh_token":"kimi-refresh","expires_at":9999999999,"expires_in":3600}""",
+            """{"access_token":"kimi-access","refresh_token":"kimi-refresh",""" +
+                """"expires_at":9999999999,"expires_in":3600}""",
         )
         val arm = KimiPassthroughArm(state, backgroundScope, log = {})
         val oauth = arm.kimiOauthProvider(context(tmp, authFile, "kimi-oauth"), "claude-kimi")
@@ -89,12 +90,15 @@ class KimiPassthroughArmTest {
                 models = listOf(ModelEntry(id = "k3[1m]", contextWindow = 1_000_000)),
                 defaultContextWindow = 1_000_000,
             ),
-            watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+                loginCommand = "claude-kimi login",
+            ),
             cfg = config.getConfig(key),
-            loginCommand = "claude-kimi login",
         )
     }
 }
 
 private const val CACHE_BODY =
-    """{"model":"k3","messages":[{"role":"user","content":[{"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]}]}"""
+    """{"model":"k3","messages":[{"role":"user","content":[{"type":"text",""" +
+        """"text":"hi","cache_control":{"type":"ephemeral"}}]}]}"""

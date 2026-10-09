@@ -16,7 +16,10 @@ import splice.client.ClaudePolicy
 import splice.core.head.Head
 import splice.http.JsonReply
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
 import splice.launch.LaunchHead
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.absentAuth
 import splice.launch.launchHeadsOf
@@ -172,18 +175,24 @@ class ResumeRecipeRouteTest {
         auth = absentAuth("test"),
         spec = LaunchSpec(
             trees = HeadTrees(own, siblings = listOf(sibling)),
-            pinnedModel = PINNED,
-            availableModelIds = listOf(PINNED),
-            modelLabels = mapOf(PINNED to "Sol"),
-            contextWindow = 1_000,
-            modelOptionsCache = buildJsonObject { },
-            statuslineCommand = "",
-            loginCommand = "",
-            signInLabel = "",
+            models = LaunchModels(
+                pinnedModel = PINNED,
+                availableModelIds = listOf(PINNED),
+                modelLabels = mapOf(PINNED to "Sol"),
+                contextWindow = 1_000,
+                modelOptionsCache = buildJsonObject { },
+            ),
+            signIn = LaunchSignIn(
+                loginCommand = "",
+                signInLabel = "",
+            ),
+            gateway = LaunchGateway(
+                statuslineCommand = "",
+                port = 0,
+                inferenceToken = "t",
+                apiTimeoutMs = 1_000,
+            ),
             policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-            port = 0,
-            inferenceToken = "t",
-            apiTimeoutMs = 1_000,
         ),
     )
 }

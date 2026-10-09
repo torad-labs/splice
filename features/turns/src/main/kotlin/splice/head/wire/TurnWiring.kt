@@ -23,7 +23,7 @@ internal class TurnWiring(
     /** The Anthropic usage payload builder — shared by the stream emitter and the non-stream
      *  collector so both report tokens identically. */
     fun usagePayloadBuilder(catalog: ModelCatalog, meta: TurnMeta, sessionWindow: Long? = null): UsagePayloadBuilder =
-        usagePayloadBuilderFor(catalog, meta.originalModel, sessionWindow)
+        usagePayloadBuilderFor(catalog, meta.route.originalModel, sessionWindow)
 
     /** The same builder for a response the proxy composes without a provider build (LocalResponses):
      *  the row id is all it ever read of the meta. */
@@ -37,7 +37,7 @@ internal class TurnWiring(
             // Claude Code reads every assistant message's usage as the context total, zeros included,
             // so a usage that measured no input reports the context it carries for the client: a
             // code-mode step's conversation's last measured round. Output is still this usage's own.
-            val context = usage?.clientContext?.takeIf { usage.inputTokens == 0L } ?: usage
+            val context = usage?.origin?.clientContext?.takeIf { usage.inputTokens == 0L } ?: usage
             // Anthropic convention (Claude Code HUD/autocompact): input_tokens and cache_read_input_tokens
             // are DISJOINT. OpenAI's input_tokens INCLUDES the cached portion, so subtract it — else
             // input+cache_read double-counts and the context bar/autocompact fire ~2x early (the

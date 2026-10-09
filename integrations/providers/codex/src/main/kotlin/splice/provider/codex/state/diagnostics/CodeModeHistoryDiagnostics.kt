@@ -55,16 +55,14 @@ internal data class CodeModeNativeEvidence(
     val ownerDepth: Int,
     val lower: Int,
     val upper: Int,
-    val witnessSource: String,
-    val witnessKind: String,
-    val witnessResolved: Boolean,
+    val witness: CodeModeNativeWitness,
     val expectedOccurrences: Int = 0,
     val actualOccurrences: Int = 0,
 ) {
     fun logFields(): String =
         "native_owner_depth=$ownerDepth native_bounds_lo=$lower native_bounds_hi=$upper " +
-            "native_witness_source=$witnessSource native_witness_kind=$witnessKind " +
-            "native_witness_resolved=$witnessResolved " +
+            "native_witness_source=${witness.source} native_witness_kind=${witness.kind} " +
+            "native_witness_resolved=${witness.resolved} " +
             "native_expected_occurrences=$expectedOccurrences native_actual_occurrences=$actualOccurrences"
 }
 
@@ -88,7 +86,12 @@ internal object CodeModeNativeEvidenceCapture {
             else -> "none"
         }
         val item = resolved?.let { index.items.getOrNull(it - 1) } as? JsonObject
-        return CodeModeNativeEvidence(depth, bounds.first, bounds.last, origin, kind(item), resolved != null)
+        return CodeModeNativeEvidence(
+            depth,
+            bounds.first,
+            bounds.last,
+            CodeModeNativeWitness(origin, kind(item), resolved != null),
+        )
     }
 
     private fun kind(item: JsonObject?): String = when (JsonScalars.str(item?.get("type"))) {

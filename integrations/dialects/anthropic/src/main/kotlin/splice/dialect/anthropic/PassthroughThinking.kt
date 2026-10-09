@@ -50,7 +50,7 @@ internal class PassthroughThinking(
         effort: String,
     ) {
         val thinking = typed.thinking ?: return // absent -> omit both keys
-        if (!quirks.mapThinkingToAdaptive) {
+        if (!quirks.thinking.mapThinkingToAdaptive) {
             // Neutral surface: forward the raw thinking config verbatim (cache_control scrubbed) —
             // INCLUDING an explicit type:"disabled" (DR-120). Dropping the disable used to run
             // first, so a vendor whose models default thinking ON silently ran thinking anyway
@@ -77,7 +77,7 @@ internal class PassthroughThinking(
      *  PT-002: a turn with NO thinking config AT ALL — the common shape of a Claude Code compaction
      *  call — falls back through [PassthroughEffortLadder.fallbackEffort]. That value can only ever
      *  inform TurnMeta.effort: [putThinking] omits BOTH thinking and output_config when thinking is
-     *  absent, so it never reaches the wire. When quirks.effortRungs is null there is no vendor
+     *  absent, so it never reaches the wire. When quirks.thinking.effortRungs is null there is no vendor
      *  ladder: the trimmed config token rides (or MAX if absent). When rungs are set, an unrecognized
      *  configEffort falls to the cheapest rung (SCH-006), never silently to MAX.
      *
@@ -92,7 +92,7 @@ internal class PassthroughThinking(
                 quirks.providerTag,
                 configEffortFallbackWarned,
                 log,
-                quirks.effortRungs,
+                quirks.thinking.effortRungs,
             )
         return effortRules.budgetEffort(thinking.budgetTokens)
     }

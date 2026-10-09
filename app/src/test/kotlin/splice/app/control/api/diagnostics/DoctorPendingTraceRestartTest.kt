@@ -17,7 +17,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.DoctorWiring
 import splice.app.control.ControlAuth
+import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
+import splice.app.control.UsageWarning
 import splice.app.control.controlServerFor
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
@@ -124,15 +126,16 @@ class DoctorPendingTraceRestartTest {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(false, "test", emptyMap())
         },
-        usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int): String = ""
+                override fun path(): String = ""
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
     )
 }

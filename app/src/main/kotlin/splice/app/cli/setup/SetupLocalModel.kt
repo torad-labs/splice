@@ -16,6 +16,7 @@ package splice.app.cli.setup
 import splice.app.AddWiring
 import splice.configuration.add.DaemonRestart
 import splice.configuration.add.RuntimeHead
+import splice.configuration.add.RuntimeModel
 import splice.core.terminal.TerminalOutput
 import splice.core.topology.Dialect
 import splice.core.topology.DialectWires
@@ -164,9 +165,7 @@ internal class SetupLocalModel(
             key = LOCAL_KEY,
             describedBy = "rig describe $RIG_HEAD",
             baseUrl = described.baseUrl,
-            modelId = described.name,
-            modelLabel = described.title,
-            contextWindow = described.advertiseCtx,
+            model = RuntimeModel(described.name, described.title, described.advertiseCtx),
             emitReasoningEffort = !described.serverFacts.rejectsReasoningEffort,
             slotAffinity = described.serverFacts.slotPinning,
             anyModelId = described.serverFacts.anyModelId,

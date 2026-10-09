@@ -53,6 +53,8 @@ import splice.head.MockChatGptUpstream
 import splice.head.TestResponsesProvider
 import splice.head.awaitListening
 import splice.head.headDeps
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
@@ -90,8 +92,7 @@ class UpstreamKeepaliveTest {
     private fun head(tmp: Path, watchdog: WatchdogBudget): HeadServer = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-codex--",
                     models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -99,7 +100,7 @@ class UpstreamKeepaliveTest {
                 ),
                 pinnedModel = "gpt-5.6-sol",
                 auth = KeepaliveFakeAuth(),
-                baseUrl = mock.baseUrl,
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
                 watchdog = watchdog,
                 loginCommand = "claudex login",
             ),

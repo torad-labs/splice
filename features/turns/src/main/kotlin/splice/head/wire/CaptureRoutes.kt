@@ -9,7 +9,7 @@
 // `[heads.<key>.overrides] trace = false`. This route is the console's read/write surface onto those three keys
 // for ONE head — it neither reads nor writes a trace file itself.
 //
-// RESTART REQUIRED, REPORTED HONESTLY. `HeadDeps.HeadStores.trace` (the TraceStore a head actually
+// RESTART REQUIRED, REPORTED HONESTLY. `HeadDeps.HeadStores.captures.trace` (the TraceStore a head actually
 // writes through) is built once, at head assembly (ManagedHeadFactory.assembleHead ->
 // HeadTraceStores.forHead), from the config the daemon booted with — every trace knob is
 // `restartRequired = true` (Knob.kt). Making it hot would mean constructing the store lazily

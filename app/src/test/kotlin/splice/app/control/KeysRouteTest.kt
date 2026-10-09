@@ -111,7 +111,7 @@ class KeysRouteTest {
     }
 
     @Test
-    fun `a stored key is the one its head reads, and the value never comes back or reaches a log`() = runBlocking<Unit> {
+    fun `a stored key is the one its head reads, the value never comes back or reaches a log`() = runBlocking<Unit> {
         awaitPort()
         val secret = "sk-test-" + UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID()
 
@@ -241,16 +241,17 @@ class KeysRouteTest {
             override fun healthSnapshot(): HeadHealth = HeadHealth(true, true, port, "test")
         },
         auth = auth,
-        usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int): String = ""
+                override fun path(): String = ""
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
     )
 
     private suspend fun awaitPort() {

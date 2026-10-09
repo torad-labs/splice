@@ -8,12 +8,17 @@ import splice.core.util.LogSink
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.ResponsesBackendQuirks
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesReasoningQuirks
+import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.dialect.responses.tools.ToolSearchMode
 import splice.oauth.muse.MuseRefresh
 import splice.provider.muse.MuseKeyMintCall
 import splice.upstream.CredentialHeaders
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.ToolNameShortener
 
@@ -39,15 +44,16 @@ internal class MuseResponsesArm(
         val headers = SSE_HEADERS + MUSE_BASE_HEADERS + ctx.providerCfg.staticHeaders
         val provider = MuseResponsesProvider(
             tuning = ProviderTuning(
-                key = ctx.key,
-                label = label,
+                name = ProviderName(key = ctx.key, label = label),
                 catalog = ctx.catalog,
                 pinnedModel = ctx.head.pinnedModel,
                 auth = default.auth,
-                baseUrl = ctx.providerCfg.baseUrl,
-                watchdog = ctx.watchdog,
-                loginCommand = ctx.loginCommand,
-                stateDir = statePaths.headsDir.resolve(ctx.key),
+                locations = ProviderLocations(
+                    baseUrl = ctx.providerCfg.baseUrl,
+                    stateDir = statePaths.headsDir.resolve(ctx.key),
+                ),
+                watchdog = ctx.faultPlan.watchdog,
+                loginCommand = ctx.faultPlan.loginCommand,
             ),
             options = MuseResponsesOptions(
                 reasoning = ReasoningSettings(
@@ -68,11 +74,17 @@ internal class MuseResponsesArm(
         ctx.providerCfg,
         ResponsesQuirks(
             providerTag = "muse",
-            store = false,
-            promptCache = PromptCachePolicy(CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH, "24h"),
-            supportsSummary = true,
-            emitToolChoice = true,
-            toolSurface = ToolDeferralPolicy(mode = ToolSearchMode.HOSTED),
+            backend = ResponsesBackendQuirks(
+                store = false,
+                promptCache = PromptCachePolicy(CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH, "24h"),
+            ),
+            reasoning = ResponsesReasoningQuirks(
+                supportsSummary = true,
+            ),
+            tools = ResponsesToolQuirks(
+                emitToolChoice = true,
+                toolSurface = ToolDeferralPolicy(mode = ToolSearchMode.HOSTED),
+            ),
         ),
         ctx.cfg,
     ).let { overlaid ->
@@ -80,7 +92,13 @@ internal class MuseResponsesArm(
         if (ctx.providerCfg.quirks.cacheKey == "off") {
             overlaid
         } else {
-            overlaid.copy(promptCache = overlaid.promptCache.copy(key = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH))
+            overlaid.copy(
+                backend = overlaid.backend.copy(
+                    promptCache = overlaid.backend.promptCache.copy(
+                        key = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH,
+                    ),
+                ),
+            )
         }
     }
 
@@ -90,10 +108,9 @@ internal class MuseResponsesArm(
                 label = account.label,
                 primary = account.primary,
                 auth = account.auth,
-                quotaFile = account.quotaFile,
-                credentialPresent = account.credentialPresent,
+                quota = WiredAccountQuota(file = account.quotaFile),
+                credential = WiredAccountCredential(present = account.credentialPresent, refusal = account.refusal),
                 extraHeaders = CredentialHeaders { headers },
-                refusal = account.refusal,
             )
         }
 }

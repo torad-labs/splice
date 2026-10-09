@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.pool.HeadAccountCredential
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountView
 import splice.core.config.StatePaths
@@ -83,12 +84,10 @@ class DoctorAccountReportTest {
             selected = true,
             available = false,
             plan = null,
-            fiveHourUsedPercent = null,
-            fiveHourResetEpochSeconds = null,
-            sevenDayUsedPercent = null,
-            sevenDayResetEpochSeconds = null,
-            authExcludedUntilEpochMillis = 1_700_000_300_000L,
-            authExclusionReason = "terminal 401 for ops@example.com",
+            credential = HeadAccountCredential(
+                excludedUntilEpochMillis = 1_700_000_300_000L,
+                exclusionReason = "terminal 401 for ops@example.com",
+            ),
         )
         val run = DoctorRun(
             topology,

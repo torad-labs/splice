@@ -20,20 +20,31 @@ public data class ClaudeLoginStanding(val held: Boolean?, val untilEpochSeconds:
 /** One display name and the explicitly addressed edits this live login supports. */
 public data class ClaudeLoginManagement(val displayName: String, val canRemove: Boolean, val canRename: Boolean)
 
+/** The credential file one place reads: where it lives, whether a usable token is there, and the credential's own
+ *  durable refusal, if any. */
+public data class ClaudeLoginCredential(
+    val path: String,
+    val present: Boolean,
+    val refusal: String? = null,
+)
+
+/** Who a place proved it is: the verified account, and the profile read behind it. */
+public data class ClaudeLoginIdentity(
+    val account: ClaudeAccountIdentity?,
+    /** Verified identity, an outstanding/transient profile read, or this credential's durable refusal. */
+    val profileState: ClaudeProfileState =
+        if (account != null) ClaudeProfileState.VERIFIED else ClaudeProfileState.PENDING,
+)
+
 /** Secret-free facts for one command. Window figures are provider observations, not per-account dollar spend. */
 public data class ClaudeLoginPlaceView(
     val id: ClaudeLoginPlaceId,
     val head: String,
-    val credentialPath: String,
-    val credentialPresent: Boolean,
-    val account: ClaudeAccountIdentity?,
+    val credential: ClaudeLoginCredential,
+    val identity: ClaudeLoginIdentity,
     val quota: QuotaSnapshot?,
     val standing: ClaudeLoginStanding,
-    val refusal: String? = null,
     val management: ClaudeLoginManagement? = null,
-    /** Verified identity, an outstanding/transient profile read, or this credential's durable refusal. */
-    val profileState: ClaudeProfileState =
-        if (account != null) ClaudeProfileState.VERIFIED else ClaudeProfileState.PENDING,
 )
 
 /** The app owns native files and login processes; the feature owns HTTP presentation and validation. */

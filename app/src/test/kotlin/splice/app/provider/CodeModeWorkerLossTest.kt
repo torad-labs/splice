@@ -17,6 +17,8 @@ import splice.codemode.host.HostLaunch
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.GatewayCustomCall
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.CodeModeBridgeConfig
@@ -56,7 +58,7 @@ internal class CodeModeWorkerLossTest {
             runtime.release.complete(Unit)
             val failure = pending.await() as TurnOutcome.Failure
             assertEquals(ErrorType.OVERLOADED, failure.type)
-            assertFalse(failure.deterministic)
+            assertFalse(failure.traits.deterministic)
             var continued = ""
             val retry = manager.interceptor(turn(id), disableParallel = false).interceptOutcome(body(id), Sink()) {
                 continued = it
@@ -93,10 +95,12 @@ internal class CodeModeWorkerLossTest {
             put("name", "exec")
             put("input", source)
         }
-        return completed().copy(customCalls = listOf(GatewayCustomCall("outer", "exec", source, raw)))
+        return completed().copy(
+            handoffs = RoundHandoffs(customCalls = listOf(GatewayCustomCall("outer", "exec", source, raw))),
+        )
     }
 
-    private fun completed() = TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+    private fun completed() = TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
 
     private class HeldResumeRuntime(private val real: JvmCodeModeRuntime) : CodeModeRuntime {
         val entered = CompletableDeferred<Unit>()

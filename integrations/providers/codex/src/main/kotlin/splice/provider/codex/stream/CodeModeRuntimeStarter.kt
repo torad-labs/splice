@@ -38,7 +38,7 @@ internal class CodeModeRuntimeStarter(
 
     private fun reportSourceRejection(context: CodeModeRunContext, stream: CodeModeLiveRound?) {
         if (stream?.source?.startupRejected != true) return
-        context.post.perf?.add(PerfKeys.CODE_MODE_START_REJECTED, 1)
+        context.link.post.perf?.add(PerfKeys.CODE_MODE_START_REJECTED, 1)
         config.log("[code-mode] failed source released runtime startup; no cell adopted or source rerun")
     }
 
@@ -62,7 +62,7 @@ internal class CodeModeRuntimeStarter(
 
     private suspend fun open(record: CodeModeRecord, context: CodeModeRunContext, stream: CodeModeLiveRound?) =
         if (stream == null) {
-            runtime().startSession(record.key, record.source, context.turn.tools, context.turn.descriptions)
+            runtime().startSession(record.key, record.origin.source, context.turn.tools, context.turn.descriptions)
         } else {
             runtime().startStreamingSession(
                 record.key,

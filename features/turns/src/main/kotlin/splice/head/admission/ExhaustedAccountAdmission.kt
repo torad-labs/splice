@@ -46,7 +46,7 @@ internal class ExhaustedAccountAdmission(
             val hold = AccountResetText.normalizedInstant(it).toEpochMilli() - now
             (now + hold.coerceIn(0L, MAX_RATE_LIMIT_COOLDOWN_MS)) / MILLIS_PER_SECOND
         }
-        deps.turnQuota.forSession(prepared.built.meta.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
+        deps.turnQuota.forSession(prepared.built.meta.scope.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
             ?.forEach { (name, value) -> call.response.header(name, value) }
         admitted.close()
         val standby = deps.turnQuota.standbyRefusal(null)

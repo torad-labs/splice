@@ -48,7 +48,7 @@ class UpstreamClientAmendTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
-            amendBodyOnFailure = amend,
+            recovery = PostRecovery(amendBodyOnFailure = amend),
         ),
         """{"input":"original"}""",
     ) { "ok" }

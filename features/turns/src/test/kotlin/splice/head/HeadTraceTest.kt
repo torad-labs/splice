@@ -40,6 +40,8 @@ import splice.core.util.AsyncFileIo
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.trace.body.TraceBodies
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -122,12 +124,11 @@ class HeadTraceTest {
         val dir = tmp.resolve("trace-$id")
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
-                key = "anthropic",
-                label = "claude-splice",
+                name = ProviderName(key = "anthropic", label = "claude-splice"),
                 catalog = catalog,
                 pinnedModel = "claude-fable-5",
                 auth = TraceTestApiKeyAuth(),
-                baseUrl = upstream.baseUrl,
+                locations = ProviderLocations(baseUrl = upstream.baseUrl),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
             quirks = PassthroughQuirks(providerTag = "claude-splice"),
@@ -146,7 +147,7 @@ class HeadTraceTest {
                 gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
                 log = {},
             ).copy(
-                inferenceToken = MGMT_KEY,
+                tokens = HeadDeps.HeadTokens(inferenceToken = MGMT_KEY, operatorToken = "test-operator-token"),
                 stores = headStores(tmp, suffix = "-$id", trace = trace),
             ),
         )

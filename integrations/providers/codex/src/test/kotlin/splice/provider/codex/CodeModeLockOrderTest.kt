@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.state.CodeModeKeyLocks
@@ -64,7 +65,7 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
             assertFalse(reader.isAlive, "the reader must finish while cancellation is still held")
             assertNull(readerError.get(), "disposed capture skips the reader's delta without failing its response")
             assertTrue(read.get() is CodeModeSourcePart.Failed, "no unread source may dispatch after disposal")
-            assertEquals("", state.record.source)
+            assertEquals("", state.record.origin.source)
             assertNull(state.record.sourceEnd)
         } finally {
             releaseEnd.countDown()
@@ -87,7 +88,7 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
         state.registry.changes.edit(state.record) {
             lookup.start()
             waiting(lookup)
-            state.record.pending += CodeModePending(
+            state.record.progress.pending += CodeModePending(
                 "runtime-pending", "client-pending", "Read", JsonObject(emptyMap()), true,
             )
         }
@@ -106,7 +107,7 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
     @Test
     fun `a late reader failure cannot recreate an expired record`() {
         val state = LiveState()
-        state.registry.changes.edit(state.record) { it.updatedAt -= 25.hours.inWholeMilliseconds }
+        state.registry.changes.edit(state.record) { it.progress.updatedAt -= 25.hours.inWholeMilliseconds }
         state.registry.recordsFor(state.record.key)
         assertTrue(stateFiles.records().isEmpty(), "expiry must remove the retained record")
         state.registry.lose(state.record, "late source reader failure")
@@ -121,7 +122,7 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
         val state = LiveState()
         state.registry.lose(state.record, "the previous head ended")
         val abandoned = state.registry.recordsFor(state.record.key).single()
-        state.registry.changes.edit(abandoned) { it.updatedAt -= 25.hours.inWholeMilliseconds }
+        state.registry.changes.edit(abandoned) { it.progress.updatedAt -= 25.hours.inWholeMilliseconds }
         state.registry.recordsFor(abandoned.key)
         assertTrue(stateFiles.records().isEmpty(), "the owner's key was expired before abandon completed")
         state.registry.lose(abandoned, "additional client content arrived")
@@ -138,8 +139,8 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
                 CodeModeStateJournal.write(path, text)
             },
         )
-        val now = state.record.updatedAt
-        state.registry.changes.edit(state.record) { it.updatedAt -= 25.hours.inWholeMilliseconds }
+        val now = state.record.progress.updatedAt
+        state.registry.changes.edit(state.record) { it.progress.updatedAt -= 25.hours.inWholeMilliseconds }
         fail.set(true)
         assertThrows(CodeModePersistenceException::class.java) { state.registry.recordsFor(state.record.key) }
         val next = CodeModeRecords.of(state.record.key, 1, now)
@@ -155,7 +156,7 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
     fun `expiry releases every registry lock before ending its leased reader`() {
         val state = LiveState()
         endedAfterKey(state, "expiry") {
-            state.registry.changes.edit(state.record) { it.updatedAt -= 25.hours.inWholeMilliseconds }
+            state.registry.changes.edit(state.record) { it.progress.updatedAt -= 25.hours.inWholeMilliseconds }
             state.registry.recordsFor(state.record.key)
         }
     }
@@ -200,7 +201,7 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
             assertFalse(reader.isAlive, "the admission reader must finish while cancellation is still held")
             assertNull(readerError.get())
             assertTrue(read.get() is CodeModeSourcePart.Failed, "admission disposal cannot dispatch unread source")
-            assertEquals("", state.record.source, "disposed capture cannot stage a late delta")
+            assertEquals("", state.record.origin.source, "disposed capture cannot stage a late delta")
         } finally {
             releaseEnd.countDown()
             admission.join(WAIT_MILLIS)
@@ -214,7 +215,7 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
     fun `a key holder can read the source while a retry holds lifecycle and waits for that key`() {
         val state = LiveState()
         runBlocking {
-            state.round.switching.customToolSource(CustomToolSource.Delta(state.record.outerCallId, ";next"))
+            state.round.switching.customToolSource(CustomToolSource.Delta(state.record.origin.outerCallId, ";next"))
         }
         val cursor = state.round.source.view()
         val ownerError = AtomicReference<Throwable?>()
@@ -242,7 +243,7 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
         val prefix = "const value = 1;"
         val complete = "$prefix return value;"
         runBlocking {
-            state.round.switching.customToolSource(CustomToolSource.Delta(state.record.outerCallId, prefix))
+            state.round.switching.customToolSource(CustomToolSource.Delta(state.record.origin.outerCallId, prefix))
         }
         val cursor = state.round.source.view()
         val consumerError = AtomicReference<Throwable?>()
@@ -250,8 +251,13 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
         state.registry.changes.edit(state.record) {
             consumer.start()
             waiting(consumer)
-            val call = outer(state.record.outerCallId, source = complete)
-            val outcome = TurnOutcome.Success(false, false, Usage(), customCalls = listOf(call))
+            val call = outer(state.record.origin.outerCallId, source = complete)
+            val outcome = TurnOutcome.Success(
+                false,
+                false,
+                Usage(),
+                handoffs = RoundHandoffs(customCalls = listOf(call)),
+            )
             val continuity = CodexCodeModeWire(Json, {}).continuity(outcome)
             state.registry.source.finish(state.record, call, continuity, Usage())
             state.round.source.complete(complete)
@@ -261,7 +267,7 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
         assertNull(consumerError.get())
         assertEquals(
             complete,
-            state.record.source,
+            state.record.origin.source,
             "an older read prefix must not replace the certified complete source",
         )
     }
@@ -309,7 +315,7 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
 
     /** Ownership still takes lifecycle then key; the consumer read afterwards checks the revoked source fence. */
     private fun readSource(state: LiveState) = runBlocking {
-        state.round.switching.customToolSource(CustomToolSource.Delta(state.record.outerCallId, ";next"))
+        state.round.switching.customToolSource(CustomToolSource.Delta(state.record.origin.outerCallId, ";next"))
         state.round.owns(turn("source-consumer"))
         state.round.source.view().read()
     }
@@ -334,7 +340,7 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
         assertFalse(reader.isAlive, "the revoked reader must leave its key wait")
         assertNull(endingError.get())
         assertNull(readerError.get(), "disposed capture must discard the delta without tearing the response")
-        assertEquals("", state.record.source)
+        assertEquals("", state.record.origin.source)
         assertNull(state.record.sourceEnd)
     }
 
@@ -349,20 +355,22 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
             { error("no runtime is needed") },
             stateLocation(),
             retention = retention,
-            sessionAlive = CodeModeSessionAlive {
-                if (dead.get()) {
-                    onDeath.run()
-                    false
-                } else {
-                    true
-                }
-            },
+            cellLease = CodeModeCellLease(
+                sessionAlive = CodeModeSessionAlive {
+                    if (dead.get()) {
+                        onDeath.run()
+                        false
+                    } else {
+                        true
+                    }
+                },
+            ),
         )
         val registry = CodexCodeModeRegistry(config, Json, 1.hours, writer)
         val machine = CodexCodeModeMachine(config, registry, CodexCodeModeValidation(config))
         val record = CodeModeRecords.of(CodeModeTurnIdentity().turnKey(turn()), 0, config.clock.millis()).also {
             it.sessionId = turn().sessionId
-            it.source = ""
+            it.origin.source = ""
         }
         val round = CodeModeLiveRound(
             config,
@@ -376,7 +384,9 @@ class CodeModeLockOrderTest : CodeModeBridgeTestSupport() {
             assertTrue(registry.add(record))
             record.phase = CodeModePhase.ACTIVE
             runBlocking {
-                round.switching.customToolSource(CustomToolSource.Started(outer(record.outerCallId, source = "")))
+                round.switching.customToolSource(
+                    CustomToolSource.Started(outer(record.origin.outerCallId, source = "")),
+                )
             }
             val rounds = ConcurrentHashMap<String, CodeModeLiveRound>()
             rounds[record.id] = round

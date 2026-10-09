@@ -10,6 +10,8 @@
 package splice.app.auth.claude
 
 import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.claude.ClaudeLoginCredential
+import splice.accounts.claude.ClaudeLoginIdentity
 import splice.accounts.claude.ClaudeLoginManagement
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
@@ -115,16 +117,13 @@ internal class ClaudeLoginRead(
         return ClaudeLoginPlaceView(
             id = location.id,
             head = head,
-            credentialPath = location.credentials.toString(),
-            credentialPresent = native.present,
-            account = native.account,
+            credential = ClaudeLoginCredential(location.credentials.toString(), native.present, native.refusal),
+            identity = ClaudeLoginIdentity(native.account, native.profileState),
             quota = quota,
             standing = ClaudeLoginStanding(
                 held = until?.let { it > clock() / 1000L },
                 untilEpochSeconds = until,
             ),
-            refusal = native.refusal,
-            profileState = native.profileState,
             management = names?.let {
                 ClaudeLoginManagement(name ?: location.id.command, native.present, name != null)
             },

@@ -225,9 +225,11 @@ internal class ClientAuth(
         return false
     }
 
-    private fun matchesInferenceToken(presented: String?): Boolean = constantTimeEquals(presented, deps.inferenceToken)
+    private fun matchesInferenceToken(presented: String?): Boolean =
+        constantTimeEquals(presented, deps.tokens.inferenceToken)
 
-    private fun matchesOperatorToken(presented: String?): Boolean = constantTimeEquals(presented, deps.operatorToken)
+    private fun matchesOperatorToken(presented: String?): Boolean =
+        constantTimeEquals(presented, deps.tokens.operatorToken)
 
     /** Constant-time compare against one of this head's own keys. Length is checked first because
      *  [MessageDigest.isEqual] is only constant-time for equal-length inputs. */

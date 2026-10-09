@@ -42,6 +42,8 @@ import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsProjection
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
+import splice.usage.perf.PerfTranscriptLink
+import splice.usage.perf.PerfTurnFacts
 import splice.usage.perf.ProjectedPerfRowsSource
 import java.io.IOException
 import java.nio.file.Files
@@ -314,8 +316,7 @@ public class PerfRowsFileSource internal constructor(
                     numericBytes = decoded.numericBytes,
                     leadingTs = ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
                     emptyModel = emptyModel.containsMatchIn(line),
-                    dropsCandidate = dropsField.containsMatchIn(line),
-                    drops = decoded.drops,
+                    drops = PerfDropsHint(candidate = dropsField.containsMatchIn(line), count = decoded.drops),
                     probe = false,
                 )
             },
@@ -330,8 +331,7 @@ public class PerfRowsFileSource internal constructor(
                 numericBytes = 0L,
                 leadingTs = ownRow.find(line)?.groupValues?.get(1)?.toLongOrNull(),
                 emptyModel = emptyModel.containsMatchIn(line),
-                dropsCandidate = dropsField.containsMatchIn(line),
-                drops = obj?.let(::drops),
+                drops = PerfDropsHint(candidate = dropsField.containsMatchIn(line), count = obj?.let(::drops)),
                 probe = false,
             )
             if (obj == null || ts == null) return facts
@@ -352,7 +352,7 @@ public class PerfRowsFileSource internal constructor(
             afterInWindowRow = row.ts >= sinceMs
             if (skipBefore(line)) return
             oldest = minOf(oldest ?: row.ts, row.ts)
-            if (row.ts < sinceMs) line.drops?.let { candidate(Baseline(drops = it)) }
+            if (row.ts < sinceMs) line.drops.count?.let { candidate(Baseline(drops = it)) }
             if (line.probe) {
                 probe(row)
                 return
@@ -373,7 +373,7 @@ public class PerfRowsFileSource internal constructor(
             if (known == null || hint == null) return false
             val before = hint < sinceMs && hint >= known
             if (!before || line.emptyModel) return false
-            if (line.dropsCandidate) candidate(Baseline(drops = line.drops))
+            if (line.drops.candidate) candidate(Baseline(drops = line.drops.count))
             latestCandidate(Skipped(hint, ts = line.row?.ts))
             return true
         }
@@ -452,13 +452,17 @@ public class PerfRowsFileSource internal constructor(
                 outcome = outcome,
                 cause = text(obj, "cause"),
                 fields = fields,
-                model = text(obj, MODEL_KEY),
-                session = text(obj, SESSION_KEY),
-                sessionId = text(obj, SESSION_ID_KEY),
-                responseMessageId = text(obj, RESPONSE_ID_KEY),
-                account = text(obj, ACCOUNT_KEY),
-                cacheCold = (obj[CACHE_COLD_KEY] as? JsonPrimitive)?.booleanOrNull,
-                compact = (obj[COMPACT_KEY] as? JsonPrimitive)?.booleanOrNull,
+                facts = PerfTurnFacts(
+                    model = text(obj, MODEL_KEY),
+                    session = text(obj, SESSION_KEY),
+                    account = text(obj, ACCOUNT_KEY),
+                    cacheCold = (obj[CACHE_COLD_KEY] as? JsonPrimitive)?.booleanOrNull,
+                    compact = (obj[COMPACT_KEY] as? JsonPrimitive)?.booleanOrNull,
+                ),
+                transcript = PerfTranscriptLink(
+                    sessionId = text(obj, SESSION_ID_KEY),
+                    responseMessageId = text(obj, RESPONSE_ID_KEY),
+                ),
                 turns = PerfTurnIds(trace = text(obj, TURN_KEY), request = text(obj, REQUEST_TURN_KEY)),
             )
         }

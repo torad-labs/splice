@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.reasoning.ReasoningReplay
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.upstream.FoldRound
@@ -50,7 +51,7 @@ private fun round(reasoningTokens: Long, envelopes: List<String>, roundIndex: In
             hasToolUse = false,
             incomplete = false,
             usage = Usage(inputTokens = 100, outputTokens = 600, cachedTokens = 0, reasoningTokens = reasoningTokens),
-            reasoningEnvelopes = envelopes,
+            handoffs = RoundHandoffs(reasoningEnvelopes = envelopes),
         ),
         roundIndex = roundIndex,
     )

@@ -16,8 +16,11 @@ import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.function.ThrowingSupplier
+import splice.app.control.HeadAuthSurface
+import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
 import splice.app.control.RuntimeNotAnswering
+import splice.app.control.UsageWarning
 import splice.app.control.api.HeadResolver
 import splice.app.control.api.HeadSignals
 import splice.app.control.healthFor
@@ -58,19 +61,20 @@ class RuntimeNotAnsweringHealthTest {
             override suspend fun credentials() = null
             override suspend fun describe() = splice.core.auth.AuthDescription(false, "x", emptyMap())
         },
-        usage = object : HeadUsageSource {
-            override fun snapshot() = UsageView(0L, 0, RateLimitView(0, 0, "0s"))
-        },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int) = ""
-            override fun path() = "/tmp/x.log"
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
-        authKind = "x",
+        sources = HeadSources(
+            usage = object : HeadUsageSource {
+                override fun snapshot() = UsageView(0L, 0, RateLimitView(0, 0, "0s"))
+            },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int) = ""
+                override fun path() = "/tmp/x.log"
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        authSurface = HeadAuthSurface(authKind = "x"),
     )
 
     /** The one signals value a test reads both surfaces through, so the health body and the heads route

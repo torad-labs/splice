@@ -39,26 +39,26 @@ public class StatuslineRoute(
         // kt-head-scoped-config-must-be-keyed on its first tree scan (2026-07-26). `key` is
         // non-empty here — the managed == null early return above guarantees it resolved.
         val roots = config.getConfig(key).statuslineGitRoots
-        val renderer = renderers.get(managed.key, managed.label, roots, managed.catalog) {
+        val renderer = renderers.get(managed.key, managed.label, roots, managed.statusline.catalog) {
             StatuslineRenderer(
                 managed.label,
                 StatuslineGit(roots, home = UserHome.dir()),
-                catalog = managed.catalog,
-                clientWindows = managed.clientWindows,
-                accountPool = managed.accountPool,
+                catalog = managed.statusline.catalog,
+                clientWindows = managed.statusline.clientWindows,
+                accountPool = managed.sinks.accountPool,
                 spend = StatuslineSpend(
                     sessionCostOf(managed),
                     // V4-45: the same checked-cast bridge sessionCostOf uses below, and captured the
                     // same way — the SOURCE, never a count, so the cached renderer reads it live.
-                    managed.perf as? HeadPerfSkipSource,
+                    managed.sinks.perf as? HeadPerfSkipSource,
                     managed.anthropicUpstream,
                 ),
             )
         }
         val sessionId = sessionId(stdin)
         // V4-274: the usage a post carries is another head's last turn until this head answers the session.
-        val unanswered = usageOwner.unanswered(managed.key, sessionId, managed.perf as? HeadSessionPerfSource)
-        val warn = StatuslineWarn(managed.warnPct, managed.warnTokens5h)
+        val unanswered = usageOwner.unanswered(managed.key, sessionId, managed.sinks.perf as? HeadSessionPerfSource)
+        val warn = StatuslineWarn(managed.warn.warnPct, managed.warn.warnTokens5h)
         val line = renderer.render(stdin, managed.usage, warn, sessionId, unanswered)
         val warning = clientVersions.statuslineWarning(sessionId)
         call.respondText(warning?.let { "$line · $it" } ?: line, ContentType.Text.Plain)
@@ -72,7 +72,7 @@ public class StatuslineRoute(
      *  client's own number, exactly as today. The head-level rate override is null here because the
      *  TOML field that populates it is stage two (HeadConfig, V4-36's file). */
     private fun sessionCostOf(managed: UsageHead): SessionCostSource? =
-        (managed.perf as? HeadSessionPerfSource)?.let { perf -> SessionCost(perf, managed.catalog) }
+        (managed.sinks.perf as? HeadSessionPerfSource)?.let { perf -> SessionCost(perf, managed.statusline.catalog) }
 
     // A statusline payload splice did not author and cannot answer to: a missing session id is the
     // absence of an OPTIONAL field, not a failure, and the render path has no sink — it degrades to

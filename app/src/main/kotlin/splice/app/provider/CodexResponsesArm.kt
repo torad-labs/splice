@@ -24,6 +24,7 @@ import splice.core.util.SafeFailureText
 import splice.dialect.responses.ReasoningSettings
 import splice.oauth.OAuthAccountFiles
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeCellLease
 import splice.provider.codex.CodeModeOnlyModels
 import splice.provider.codex.CodeModeSessionAlive
 import splice.provider.codex.CodeModeStateLocation
@@ -34,6 +35,8 @@ import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
 import splice.topology.TopologyLoader
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -53,7 +56,7 @@ internal class CodexResponsesArm(
         val head = ctx.head
         val providerCfg = ctx.providerCfg
         val catalog = ctx.catalog
-        val watchdog = ctx.watchdog
+        val watchdog = ctx.faultPlan.watchdog
         val cfg = ctx.cfg
         val primaryPath = Paths.get(
             TopologyLoader.expandHome(providerCfg.auth.file ?: cfg.codexAuthPath),
@@ -63,15 +66,16 @@ internal class CodexResponsesArm(
         return Wired(
             CodexProvider(
                 tuning = ProviderTuning(
-                    key = key,
-                    label = label,
+                    name = ProviderName(key = key, label = label),
                     catalog = catalog,
                     pinnedModel = head.pinnedModel,
                     auth = auth,
-                    baseUrl = providerCfg.baseUrl,
+                    locations = ProviderLocations(
+                        baseUrl = providerCfg.baseUrl,
+                        stateDir = statePaths.headsDir.resolve(key),
+                    ),
                     watchdog = watchdog,
-                    loginCommand = ctx.loginCommand,
-                    stateDir = statePaths.headsDir.resolve(key),
+                    loginCommand = ctx.faultPlan.loginCommand,
                 ),
                 reasoning = ReasoningSettings(cfg.showReasoning, cfg.replayReasoning, cfg.effort, cfg.summary),
                 quirks = quirksOverlay.responsesQuirks(providerCfg, CodexQuirks().defaultQuirks(), cfg),
@@ -95,7 +99,7 @@ internal class CodexResponsesArm(
      *  list) only `code_mode_models` runs code mode, and the head's log says so once. */
     private fun backendCodeModeOnly(ctx: ProviderBuild): CodeModeOnlyModels {
         val port = CodeModeOnlyModels {
-            ctx.discovered.forHead(ctx.key).filter { it.codeModeOnly }.flatMap { it.spellings }
+            ctx.roster.discovered.forHead(ctx.key).filter { it.codeModeOnly }.flatMap { it.spellings }
         }
         if (port.ids().isEmpty()) {
             HeadScopedLogs.headScopedLog(ctx.key, log).invoke(
@@ -118,9 +122,8 @@ internal class CodexResponsesArm(
                 label = file.label,
                 primary = file.primary,
                 auth = codexAuth(ctx, file.credentialFile, tokenUrl),
-                quotaFile = file.quotaFile,
-                credentialPresent = file.credentialPresent,
-                refusal = file.refusal,
+                quota = WiredAccountQuota(file = file.quotaFile),
+                credential = WiredAccountCredential(present = file.credentialPresent, refusal = file.refusal),
             )
         }
     }
@@ -155,7 +158,7 @@ internal class CodexResponsesArm(
                         legacyFile = statePaths.stateDir.resolve("${ctx.key}$CODE_MODE_STATE_SUFFIX"),
                     ),
                     log = HeadScopedLogs.headScopedLog(ctx.key, log),
-                    sessionAlive = sessionAlive,
+                    cellLease = CodeModeCellLease(sessionAlive = sessionAlive),
                 ),
             ).also { bridge ->
                 checkNotNull(probeScope.coroutineContext[Job]).invokeOnCompletion {

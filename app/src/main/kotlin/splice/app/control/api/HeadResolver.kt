@@ -83,7 +83,7 @@ internal class HeadResolver(
                 quotaResets[key]?.let { "quotaResetAtEpochSeconds" to JsonPrimitive(it) },
                 quotaFull[key]?.let { "quotaFull" to signals.quotaFullJson(it) },
             )
-            JsonObject(HeadStatus.json(managed.head, managed.authKind) + marks)
+            JsonObject(HeadStatus.json(managed.head, managed.authSurface.authKind) + marks)
         }
     }
 }

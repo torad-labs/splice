@@ -67,7 +67,7 @@ class UpstreamWriteTimingTest {
                 "http://127.0.0.1:${server.address.port}/",
                 TimingAuth(),
                 { emptyMap() },
-                perf = perf,
+                observers = PostObservers(perf = perf),
             )
             val answer = runBlocking { upstream.posted(context, "{}") { it.bodyTextLimited(100) } }
             assertEquals("done", answer)
@@ -96,7 +96,7 @@ class UpstreamWriteTimingTest {
                 "http://127.0.0.1:${server.address.port}/",
                 TimingAuth(),
                 { emptyMap() },
-                perf = perf,
+                observers = PostObservers(perf = perf),
             )
             val answer = runBlocking {
                 UpstreamClient(10_000, maxRetries = 1, client = client).posted(context, "{}") {
@@ -135,7 +135,7 @@ class UpstreamWriteTimingTest {
                 "http://127.0.0.1:${server.address.port}/",
                 TimingAuth(),
                 { emptyMap() },
-                perf = perf,
+                observers = PostObservers(perf = perf),
             )
             val answer = runBlocking {
                 val pending = async { upstream.posted(context, "{}") { it.bodyTextLimited(100) } }

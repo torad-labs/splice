@@ -29,6 +29,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.ForeignHostLog
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.model.ClientModelPolicy
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.TurnPerf
@@ -48,6 +49,8 @@ import splice.head.admission.AdmissionResponses
 import splice.head.compaction.SessionProjectLookup
 import splice.head.headDeps
 import splice.upstream.BuiltTurn
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -81,7 +84,7 @@ class TurnPreparationTest {
         val direct = provider().withSystemPrompt(built, "N", SystemPromptMode.APPEND)
 
         assertEquals(direct.requestBody.toString(), prepared.requestBody.toString())
-        assertEquals("head:kimi append", prepared.meta.systemPromptSource)
+        assertEquals("head:kimi append", prepared.meta.standingPrompt.source)
         assertEquals(0, lookups.get())
     }
 
@@ -92,10 +95,10 @@ class TurnPreparationTest {
         val prepared = preparedTurn(tmp, layers(SystemPromptMode.APPEND))
 
         assertEquals(listOf("house rules", "N", "P", "H"), systemTexts(prepared))
-        assertEquals("N\n\nP\n\nH", prepared.meta.systemPrompt)
+        assertEquals("N\n\nP\n\nH", prepared.meta.standingPrompt.text)
         assertEquals(
             "head:kimi append+project:$ROOT append+project-head:$ROOT:kimi append",
-            prepared.meta.systemPromptSource,
+            prepared.meta.standingPrompt.source,
         )
         assertEquals(1, lookups.get())
     }
@@ -107,7 +110,7 @@ class TurnPreparationTest {
         val prepared = preparedTurn(tmp, layers(SystemPromptMode.REPLACE))
 
         assertEquals(listOf("P", "H"), systemTexts(prepared))
-        assertEquals("project:$ROOT replace+project-head:$ROOT:kimi append", prepared.meta.systemPromptSource)
+        assertEquals("project:$ROOT replace+project-head:$ROOT:kimi append", prepared.meta.standingPrompt.source)
     }
 
     @Test
@@ -115,7 +118,7 @@ class TurnPreparationTest {
         val prepared = preparedTurn(tmp, layers(SystemPromptMode.APPEND), cwd = null)
 
         assertEquals(listOf("house rules", "N"), systemTexts(prepared))
-        assertEquals("head:kimi append", prepared.meta.systemPromptSource)
+        assertEquals("head:kimi append", prepared.meta.standingPrompt.source)
     }
 
     private fun layers(projectMode: SystemPromptMode) = SystemPromptLayers(
@@ -139,10 +142,12 @@ class TurnPreparationTest {
             upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
             gate = InflightGate({ 1 }),
             seams = HeadDeps.HeadSeams(
-                sessionProject = SessionProjectLookup { session ->
-                    lookups.incrementAndGet()
-                    if (session == SESSION) cwd else null
-                },
+                session = HeadDeps.SessionSeams(
+                    sessionProject = SessionProjectLookup { session ->
+                        lookups.incrementAndGet()
+                        if (session == SESSION) cwd else null
+                    },
+                ),
             ),
         ).copy(
             policy = HeadDeps.HeadPolicy(systemPrompt = layers),
@@ -215,17 +220,16 @@ class TurnPreparationTest {
 
     private fun provider(tiers: Map<String, String> = emptyMap()) = PassthroughProvider(
         ProviderTuning(
-            key = "kimi",
-            label = "kimix",
+            name = ProviderName(key = "kimi", label = "kimix"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-kimi--",
                 models = listOf(ModelEntry(MODEL, "Kimi", contextWindow = 200_000)),
                 defaultContextWindow = 200_000,
-                tierSlots = tiers,
+                client = ClientModelPolicy(tierSlots = tiers),
             ),
             pinnedModel = MODEL,
             auth = LayersTestAuth(),
-            baseUrl = "http://127.0.0.1",
+            locations = ProviderLocations(baseUrl = "http://127.0.0.1"),
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
         PassthroughQuirks(providerTag = "test-passthrough"),

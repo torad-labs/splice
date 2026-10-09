@@ -26,29 +26,33 @@ internal class ResponsesReasoningKnobs(private val quirks: ResponsesQuirks) {
     internal fun resolveEffort(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): String? {
         // No compaction pin, on any provider (2026-09-05): a compaction inherits the session's
         // effort or the reasoning mismatch invalidates the whole prompt-cache prefix.
-        if (body.thinking?.disabled == true && quirks.effortVocabulary.omitWhenDisabled()) return null
+        if (body.thinking?.disabled == true && quirks.reasoning.effortVocabulary.omitWhenDisabled()) return null
         var effort = looseFields.looseEffort(raw)
         if (effort == null) {
             // v27: the /effort picker (budget) WINS over the config/env fallback
             val budgetEffort = body.thinking
                 ?.takeIf { !it.disabled }
                 ?.budgetTokens
-                ?.let { effortRules.effortFromBudget(it, quirks.effortVocabulary) }
+                ?.let { effortRules.effortFromBudget(it, quirks.reasoning.effortVocabulary) }
             effort = budgetEffort
-                ?: effortRules.normalizeEffort(opts.configEffort, quirks.effortVocabulary)
+                ?: effortRules.normalizeEffort(opts.reasoning.effort, quirks.reasoning.effortVocabulary)
                 ?: "high"
         }
-        effort = effortRules.flooredForVisibility(effort, opts.showReasoning)
-        effort = effortRules.flooredForVendor(effort, quirks.effortVocabulary)
-        return effortRules.clampedForModelCeiling(effort, opts.upstreamModel, quirks.effortMaxRejectModelRegex)
+        effort = effortRules.flooredForVisibility(effort, opts.reasoning.display)
+        effort = effortRules.flooredForVendor(effort, quirks.reasoning.effortVocabulary)
+        return effortRules.clampedForModelCeiling(
+            effort,
+            opts.models.upstream,
+            quirks.reasoning.effortMaxRejectModelRegex,
+        )
     }
 
     internal fun resolveSummary(raw: JsonObject, opts: BuildOptions, effort: String?): String? {
-        if (!quirks.supportsSummary || effort == null) return null
+        if (!quirks.reasoning.supportsSummary || effort == null) return null
         // Operator-controlled via TOML/env/state (Knob.SUMMARY default = "detailed").
         // Precedence: request body fields > configSummary > default detailed.
         // showReasoning=off still suppresses the field (summary "none").
-        if (opts.showReasoning.isOff) return "none"
+        if (opts.reasoning.display.isOff) return "none"
         val requested = looseFields.requestedSummary(raw)
         // v27 visibility fold (the header's "folds summary to detailed" clause — was unimplemented,
         // audit 2026-07-18): when reasoning is VISIBLE, a REQUEST-level weak summary (none/auto/
@@ -56,19 +60,19 @@ internal class ResponsesReasoningKnobs(private val quirks: ResponsesQuirks) {
         // fills. The OPERATOR's configSummary stays authoritative (a deliberate `concise` in
         // TOML/env is respected) — the fold defends against the request, not the operator.
         val folded = requested?.let { if (it in summaryFloorToDetailed) SUMMARY_DETAILED else it }
-        return folded ?: effortRules.normalizeSummary(opts.configSummary) ?: SUMMARY_DETAILED
+        return folded ?: effortRules.normalizeSummary(opts.reasoning.summary) ?: SUMMARY_DETAILED
     }
 
     /** codex-rs parity: delivery rides ONLY alongside an actual summary request. */
     internal fun summaryDeliveryOptions(reasoning: JsonObject?): JsonObject? {
-        val delivery = quirks.summaryDelivery ?: return null
+        val delivery = quirks.reasoning.summaryDelivery ?: return null
         if (reasoning?.get("summary") == null) return null
         return buildJsonObject { put("reasoning_summary_delivery", delivery) }
     }
 
     internal fun reasoningBlock(effort: String?, summary: String?, opts: BuildOptions): JsonObject? {
         if (effort == null) return null
-        val dropSummary = quirks.summaryRejectModelRegex?.containsMatchIn(opts.upstreamModel) == true ||
+        val dropSummary = quirks.reasoning.summaryRejectModelRegex?.containsMatchIn(opts.models.upstream) == true ||
             summary == null || summary == "none"
         return buildJsonObject {
             put(FIELD_EFFORT, effort)

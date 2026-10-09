@@ -30,9 +30,13 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.RoundText
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
@@ -56,7 +60,10 @@ import splice.head.usage.UsageStore
 import splice.head.wire.ClientChannel
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnTerminal
+import splice.upstream.BuiltTurn
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
@@ -259,8 +266,7 @@ class TurnEndingAccountingTest {
             hasToolUse = false,
             incomplete = false,
             usage = Usage(inputTokens = 100, outputTokens = 42, cachedTokens = 7),
-            bodyText = "answer",
-            emittedText = true,
+            text = RoundText(bodyText = "answer", emittedText = true),
         )
         runBlocking {
             val drive = rig.drive(emitter = DeadClientSuccessTerminal())
@@ -566,7 +572,7 @@ class TurnFailurePermanenceTest {
                     "synthetic upstream verdict",
                     FailureCause.UPSTREAM_REPORTED,
                     FailurePhase.MID_OUTPUT,
-                    permanent = permanent,
+                    traits = FailureTraits(permanent = permanent),
                 )
                 val torn = assertThrows<IOException> { runBlocking { finish.finishTurn(drive, outcome) } }
                 assertThrows<IOException> { runBlocking { rig.ending.emitFailure(drive, torn) } }
@@ -624,7 +630,7 @@ class TurnFailurePermanenceTest {
                         "synthetic upstream verdict",
                         FailureCause.UPSTREAM_REPORTED,
                         FailurePhase.MID_OUTPUT,
-                        permanent = permanent,
+                        traits = FailureTraits(permanent = permanent),
                     ),
                 )
                 AsyncFileIo.drain()
@@ -677,8 +683,7 @@ class TurnFailurePermanenceTest {
 
 private fun accountingProvider(): Provider = TestResponsesProvider(
     tuning = ProviderTuning(
-        key = "codex",
-        label = "claudex",
+        name = ProviderName(key = "codex", label = "claudex"),
         catalog = ModelCatalog(
             discoveryPrefix = "claude-codex--",
             models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -686,7 +691,7 @@ private fun accountingProvider(): Provider = TestResponsesProvider(
         ),
         pinnedModel = "gpt-5.6-sol",
         auth = BranchlessFakeAuth(),
-        baseUrl = "http://127.0.0.1:1",
+        locations = ProviderLocations(baseUrl = "http://127.0.0.1:1"),
         watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
         loginCommand = "claudex login",
     ),
@@ -741,37 +746,46 @@ private class EndingRig(tag: String, tmp: Path, p: Provider) {
         emitter: TurnTerminal = DeadClientTerminal(),
         clientGone: Boolean = true,
     ): TurnDrive = TurnDrive(
-        requestBody = buildJsonObject { },
-        meta = TurnMeta(
-            compact = false,
-            showReasoning = ReasoningDisplay.TEXT,
-            stream = true,
-            originalModel = "claude-codex--gpt-5.6-sol",
-            upstreamModel = "gpt-5.6-sol",
-            clientMaxTokens = 100,
-            effort = "high",
-            summary = "detailed",
-            budgetTokens = null,
+        inputs = TurnInputs(
+            built = BuiltTurn(
+                requestBody = buildJsonObject { },
+                meta = TurnMeta(
+                    compact = false,
+                    reasoning = TurnReasoning(
+                        showReasoning = ReasoningDisplay.TEXT,
+                        effort = "high",
+                        summary = "detailed",
+                        budgetTokens = null,
+                    ),
+                    route = TurnRoute(
+                        stream = true,
+                        originalModel = "claude-codex--gpt-5.6-sol",
+                        upstreamModel = "gpt-5.6-sol",
+                        clientMaxTokens = 100,
+                    ),
+                ),
+                extraHeaders = emptyMap(),
+                toolSearch = null,
+            ),
+            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+            t0 = 0,
+            perf = TurnPerf(),
+            trace = null,
+            markHandedOff = {},
         ),
         emitter = emitter,
         watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
-        slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
         pipeline = TurnPipeline(
             CompactStats(perfFile.resolveSibling("compact-dr128.jsonl")),
             log = log,
             clampOutput = OutputClamp { it },
         ),
-        t0 = 0,
-        trace = null,
-        perf = TurnPerf(),
-        turnHeaders = emptyMap(),
         signals = RunnerSignals(),
         channel = ClientChannel(
             ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
             Mutex(),
             AtomicBoolean(clientGone),
         ),
-        toolSearch = null,
     )
 
     fun assertRecorded(tag: String) {

@@ -50,12 +50,13 @@ public fun headStores(
     usageStore = UsageStore(tmp.resolve("usage$suffix.json"), tmp.resolve("ratelimit$suffix.json")),
     perfStats = PerfStats(tmp.resolve("perf$suffix.jsonl")),
     economicsStore = economics,
-    compactStats = CompactStats(tmp.resolve("compact$suffix.jsonl")),
+    compaction = HeadDeps.HeadCompaction(
+        compactStats = CompactStats(tmp.resolve("compact$suffix.jsonl")),
+        compactionRecordings = FileCompactionRecordings(tmp.resolve("compactions$suffix"), log = { }),
+    ),
     shadow = ShadowClassifier(log = { }),
     clientWindows = ClientWindows(),
-    wireTap = wireTap,
-    trace = trace,
-    compactionRecordings = FileCompactionRecordings(tmp.resolve("compactions$suffix"), log = { }),
+    captures = HeadDeps.HeadCaptures(wireTap = wireTap, trace = trace),
 )
 
 /** No quota, no pool and no budget: the shape a head that neither observes nor emits quota runs as. */
@@ -90,13 +91,14 @@ public fun headDeps(
     seams: HeadDeps.HeadSeams = HeadDeps.HeadSeams(),
     policy: HeadDeps.HeadPolicy = HeadDeps.HeadPolicy(),
 ): HeadDeps = HeadDeps(
-    upstream = upstream,
-    inferenceToken = "test-inference-token",
-    operatorToken = "test-operator-token",
-    gate = gate,
-    // V4-319: a head's own registry, as a head nobody lists turns of is built; a test that stops a turn
-    // passes its own with `.copy(liveTurns = …)`, the way the rare economics site passes its stores.
-    liveTurns = LiveTurns(),
+    traffic = HeadDeps.HeadTraffic(
+        upstream = upstream,
+        gate = gate,
+        // V4-319: a head's own registry, as a head nobody lists turns of is built; a test that stops a turn
+        // passes its own with `.copy(traffic = traffic.copy(liveTurns = …))`.
+        liveTurns = LiveTurns(),
+    ),
+    tokens = HeadDeps.HeadTokens(inferenceToken = "test-inference-token", operatorToken = "test-operator-token"),
     log = log,
     stores = headStores(tmp),
     quotaBundle = noQuota(),

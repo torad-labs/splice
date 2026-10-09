@@ -28,6 +28,7 @@ import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptPage
 import splice.sessions.transcript.TranscriptRole
+import splice.sessions.transcript.TranscriptToolUse
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -299,10 +300,22 @@ class SessionsConsoleRoutesTest {
     @Test
     fun `the transcript page publishes call identities even when results have no local call`() {
         val messages = listOf(
-            TranscriptMessage(0, TranscriptRole.ASSISTANT, null, "{}", "Read", false, toolUseId = "first"),
-            TranscriptMessage(1, TranscriptRole.ASSISTANT, null, "{}", "Read", false, toolUseId = "second"),
-            TranscriptMessage(2, TranscriptRole.TOOL, null, "first body", result = true, toolUseId = "first"),
-            TranscriptMessage(3, TranscriptRole.TOOL, null, "second body", result = true, toolUseId = "second"),
+            TranscriptMessage(0, TranscriptRole.ASSISTANT, null, "{}", TranscriptToolUse("Read", false, "first")),
+            TranscriptMessage(1, TranscriptRole.ASSISTANT, null, "{}", TranscriptToolUse("Read", false, "second")),
+            TranscriptMessage(
+                2,
+                TranscriptRole.TOOL,
+                null,
+                "first body",
+                TranscriptToolUse(result = true, id = "first"),
+            ),
+            TranscriptMessage(
+                3,
+                TranscriptRole.TOOL,
+                null,
+                "second body",
+                TranscriptToolUse(result = true, id = "second"),
+            ),
         )
         val transcripts = TestTranscripts(pages = { session, _, _, _ ->
             TranscriptLookup.Found(TranscriptPage(session, "/synthetic/transcript", messages, null, emptyMap()))

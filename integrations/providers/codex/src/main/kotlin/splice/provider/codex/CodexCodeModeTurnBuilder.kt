@@ -49,12 +49,11 @@ internal class CodexCodeModeTurnBuilder(
         require(!sessionId.isNullOrBlank()) { "code mode requires a client session id" }
         val turn = CodexCodeModeBridge.Turn(
             sessionId = sessionId,
-            conversationKey = built.meta.conversationKey.orEmpty(),
-            model = built.meta.upstreamModel,
+            conversationKey = built.meta.scope.conversationKey.orEmpty(),
+            model = built.meta.route.upstreamModel,
             tools = body.typed.tools.map { it.name }.toSet(),
             toolResults = toolResults(body),
-            toolMedia = toolMedia(body),
-            legacyResults = legacyResults(body),
+            rendering = CodeModeResultRendering(toolMedia(body), legacyResults(body)),
             descriptions = descriptions(body),
         )
         val disableParallel = body.typed.toolChoice?.disableParallelToolUse == true
@@ -80,7 +79,7 @@ internal class CodexCodeModeTurnBuilder(
         val choiceAllowsBridge = choice == null || (choice.name == null && choice.type in setOf("auto", "any"))
         return body.typed.tools.isNotEmpty() &&
             choiceAllowsBridge &&
-            runsCodeMode(built.meta.upstreamModel) &&
+            runsCodeMode(built.meta.route.upstreamModel) &&
             isLiteRequest(built.requestBody)
     }
 

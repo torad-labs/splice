@@ -92,11 +92,11 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
                             put("id", safe("$section/${c.name}"))
                             put("status", c.status.name.lowercase())
                             put("detail", safe(c.detail))
-                            c.details?.let { put("details", safe(it)) }
+                            c.notes.details?.let { put("details", safe(it)) }
                             put("fix", c.fix?.let(::safe))
                             put("fix_id", c.fixId?.wire)
                             put("fix_kind", c.fixKind?.wire)
-                            put("pending_restart", c.pendingRestart)
+                            put("pending_restart", c.notes.pendingRestart)
                         },
                     )
                 }
@@ -132,14 +132,14 @@ internal class DoctorReportShape(private val redaction: DoctorRedaction, private
         put("primary", a.primary)
         put("selected", a.selected)
         put("available", a.available)
-        put("credential_present", a.credentialPresent)
-        put("auth_excluded_until_epoch_millis", a.authExcludedUntilEpochMillis)
-        put("auth_exclusion_reason", a.authExclusionReason?.let(redaction::text))
+        put("credential_present", a.credential.present)
+        put("auth_excluded_until_epoch_millis", a.credential.excludedUntilEpochMillis)
+        put("auth_exclusion_reason", a.credential.exclusionReason?.let(redaction::text))
         put("plan", a.plan?.let(names::token))
-        put("five_hour_used_percent", a.fiveHourUsedPercent)
-        put("five_hour_reset_epoch_seconds", a.fiveHourResetEpochSeconds)
-        put("seven_day_used_percent", a.sevenDayUsedPercent)
-        put("seven_day_reset_epoch_seconds", a.sevenDayResetEpochSeconds)
+        put("five_hour_used_percent", a.quota.fiveHour.usedPercent)
+        put("five_hour_reset_epoch_seconds", a.quota.fiveHour.resetEpochSeconds)
+        put("seven_day_used_percent", a.quota.sevenDay.usedPercent)
+        put("seven_day_reset_epoch_seconds", a.quota.sevenDay.resetEpochSeconds)
     }
 
     private fun provider(p: ProviderConfig): JsonObject = buildJsonObject {

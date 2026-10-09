@@ -60,6 +60,10 @@ internal class ZeroEventFailure(
         // This line used to be the boundary's SECOND author of the wire type; now the classifier
         // names the cause (it is the one holding the code, the status and the body) and the derived
         // type follows from it plus the phase, so the failure and the wire cannot disagree.
-        return outcome.copy(cause = classified.cause, message = message, providerReported = true)
+        return outcome.copy(
+            cause = classified.cause,
+            message = message,
+            traits = outcome.traits.copy(providerReported = true),
+        )
     }
 }

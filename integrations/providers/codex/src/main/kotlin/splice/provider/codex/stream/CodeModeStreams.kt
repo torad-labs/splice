@@ -101,7 +101,7 @@ internal class CodeModeStreams(
         registry,
         wire,
         admission,
-        context.sink,
+        context.link.sink,
         headStop = context.headStop,
         recovery = context.recovery,
     ).also { round ->
@@ -174,7 +174,7 @@ internal class CodeModeStreams(
     }
 
     private fun addCuts(usage: Usage, cut: Long): Usage =
-        usage.copy(history = usage.history.copy(cutRounds = usage.cutRounds + cut))
+        usage.copy(origin = usage.origin.copy(history = usage.origin.history.copy(cutRounds = usage.cutRounds + cut)))
 
     /** A source round is billed on the client step that posted it. One that finished before the step ended is merged
      *  into the step here. One still streaming then is owed to the step's row, which waits for the round's terminal

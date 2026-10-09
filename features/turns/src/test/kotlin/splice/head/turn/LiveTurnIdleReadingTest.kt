@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.util.ElapsedClock
 import splice.head.TurnsHead
 import splice.head.TurnsHeadLookup
@@ -52,14 +54,18 @@ class LiveTurnIdleReadingTest {
             slot,
             TurnMeta(
                 compact = false,
-                showReasoning = ReasoningDisplay.TEXT,
-                stream = true,
-                originalModel = "model",
-                upstreamModel = "model",
-                clientMaxTokens = 100,
-                effort = "high",
-                summary = "detailed",
-                budgetTokens = null,
+                reasoning = TurnReasoning(
+                    showReasoning = ReasoningDisplay.TEXT,
+                    effort = "high",
+                    summary = "detailed",
+                    budgetTokens = null,
+                ),
+                route = TurnRoute(
+                    stream = true,
+                    originalModel = "model",
+                    upstreamModel = "model",
+                    clientMaxTokens = 100,
+                ),
             ),
             messagesHash = null,
         )

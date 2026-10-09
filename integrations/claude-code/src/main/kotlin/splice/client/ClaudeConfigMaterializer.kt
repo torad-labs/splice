@@ -123,28 +123,28 @@ public class ClaudeConfigMaterializer(
         val existingSettings = readSettingsModelBase(spec.configDir.resolve(Keys.SETTINGS))
         val hookOrigins = jsonReads.tolerant(spec.configDir.resolve(HookSettings.ORIGINS))
         Files.createDirectories(spec.configDir)
-        linkShared(spec.configDir, spec.policy, spec.headKey)
+        linkShared(spec.configDir, spec.policy, spec.signIn.headKey)
         val hookAdditions = LoginInterception.concat(
             LoginInterception.wire(
                 configDir = spec.configDir,
                 login = HeadLogin(
-                    loginCommand = spec.loginCommand,
-                    signInLabel = spec.signInLabel,
-                    viaBrowser = spec.signInViaBrowser,
-                    outcomeFile = spec.loginOutcomeFile,
-                    canCapturePaste = spec.tokenCapture != null,
-                    headKey = spec.headKey,
+                    loginCommand = spec.signIn.loginCommand,
+                    signInLabel = spec.signIn.signInLabel,
+                    viaBrowser = spec.signIn.signInViaBrowser,
+                    outcomeFile = spec.signIn.loginOutcomeFile,
+                    canCapturePaste = spec.signIn.tokenCapture != null,
+                    headKey = spec.signIn.headKey,
                 ),
                 globalCommands = if (spec.policy.shares(Keys.COMMANDS)) globalDir().resolve(Keys.COMMANDS) else null,
-                tokenCapture = spec.tokenCapture,
+                tokenCapture = spec.signIn.tokenCapture,
                 hooks = HookInstaller(execProbe = hookExecProbe),
             ),
             LoginInterception.concat(
-                if (spec.advertiseKeySetup && spec.tokenCapture != null) {
+                if (spec.signIn.advertiseKeySetup && spec.signIn.tokenCapture != null) {
                     LoginInterception.keySetupAdvertiser(
                         configDir = spec.configDir,
-                        spec = spec.tokenCapture,
-                        loginCommand = spec.loginCommand,
+                        spec = spec.signIn.tokenCapture,
+                        loginCommand = spec.signIn.loginCommand,
                         hooks = HookInstaller(execProbe = hookExecProbe),
                     )
                 } else {
@@ -152,7 +152,7 @@ public class ClaudeConfigMaterializer(
                 },
                 resumeHook?.let { target ->
                     val hooks = HookInstaller(log = log, execProbe = hookExecProbe)
-                    ResumeHook.install(spec.configDir, target, spec.headKey, hooks)
+                    ResumeHook.install(spec.configDir, target, spec.signIn.headKey, hooks)
                 } ?: emptyMap(),
             ),
         )

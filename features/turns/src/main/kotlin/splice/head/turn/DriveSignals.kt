@@ -33,7 +33,7 @@ internal class DriveSignals(
                     "[${provider.key}] mid-stream ${f.type.wireName} absorbed by " +
                         "re-anchor: ${f.message.take(ROUND_FAILURE_SNIPPET)}\n",
                 )
-                if (f.providerReported) health.provider() else health.local()
+                if (f.traits.providerReported) health.provider() else health.local()
             },
             onSearchRound = { perf.setCount(PerfKeys.SEARCH_ROUNDS, it.toLong()) },
             onReanchor = {

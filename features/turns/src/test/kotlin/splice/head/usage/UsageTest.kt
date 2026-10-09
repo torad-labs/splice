@@ -18,6 +18,7 @@ import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.head.ProviderAnswer
+import splice.core.model.CatalogWindows
 import splice.core.model.CompactionReserve
 import splice.core.model.CompactionReserveDefaults
 import splice.core.model.ModelCatalog
@@ -25,6 +26,9 @@ import splice.core.model.ModelEntry
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.usage.RateLimitState
@@ -281,7 +285,7 @@ class UsageTest {
         val secondRound = AbsorbedRounds(rounds = 1, inputTokens = 1500, cachedTokens = 1200, outputTokens = 30)
         assertEquals(firstRound + secondRound, usage.absorbed, "both known requests are billed once")
         assertEquals(0, usage.inputTokens, "the terminal's input is unreported")
-        assertEquals(1500, usage.clientContext?.inputTokens, "the prior context rides outside billing")
+        assertEquals(1500, usage.origin.clientContext?.inputTokens, "the prior context rides outside billing")
         assertEquals(85, usage.outputTokens, "output accrues per round")
     }
 
@@ -484,14 +488,18 @@ class UsageScalingTest {
 
     private fun meta(model: String) = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = model,
-        upstreamModel = xai.stripSuffixes(model),
-        clientMaxTokens = null,
-        effort = "high",
-        summary = null,
-        budgetTokens = null,
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "high",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = model,
+            upstreamModel = xai.stripSuffixes(model),
+            clientMaxTokens = null,
+        ),
     )
 
     private fun payload(model: String, input: Long, cached: Long) =
@@ -504,9 +512,11 @@ class UsageScalingTest {
             models = listOf(ModelEntry("gpt-5.6-luna", contextWindow = 272_000)),
             defaultContextWindow = 272_000,
             pinnedModel = "gpt-5.6-luna",
-            compactionReserveDefaults = CompactionReserveDefaults { _, _ ->
-                CompactionReserve(7_830, 31_791) // luna's calibrated row
-            },
+            windows = CatalogWindows(
+                compactionReserveDefaults = CompactionReserveDefaults { _, _ ->
+                    CompactionReserve(7_830, 31_791) // luna's calibrated row
+                },
+            ),
         )
         // C=200k gives T=153k. W=272k minus luna's clean growth p99 7830 and generation
         // p99 31791 leaves 232379: 20000*T/232379 truncates to 13168, not the old 13192.
@@ -703,15 +713,19 @@ class SessionWindowUsageTest {
 
     private fun meta(model: String) = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = model,
-        upstreamModel = xai.stripSuffixes(model),
-        clientMaxTokens = null,
-        effort = "high",
-        summary = null,
-        budgetTokens = null,
-        sessionId = "s-old",
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "high",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = model,
+            upstreamModel = xai.stripSuffixes(model),
+            clientMaxTokens = null,
+        ),
+        scope = TurnScope(sessionId = "s-old"),
     )
 
     private fun payload(model: String, input: Long, cached: Long, sessionWindow: Long?) =
@@ -774,14 +788,18 @@ class ClientCacheWriteTest {
 
     private fun meta(catalog: ModelCatalog, model: String) = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = model,
-        upstreamModel = catalog.stripSuffixes(model),
-        clientMaxTokens = null,
-        effort = "high",
-        summary = null,
-        budgetTokens = null,
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "high",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = model,
+            upstreamModel = catalog.stripSuffixes(model),
+            clientMaxTokens = null,
+        ),
     )
 
     private fun payload(catalog: ModelCatalog, model: String, usage: Usage) =

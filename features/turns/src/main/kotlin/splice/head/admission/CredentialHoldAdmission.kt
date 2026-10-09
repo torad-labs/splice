@@ -44,7 +44,7 @@ internal class CredentialHoldAdmission(
         // No hold means no early auth work. Credential failures still belong to the turn's honest ending boundary.
         val cooldown = when {
             account != null -> account.account.cooldown
-            deps.upstream.rateLimitedForMs > 0L -> resolve(prepared)
+            deps.traffic.upstream.rateLimitedForMs > 0L -> resolve(prepared)
             else -> null
         }
         if (cooldown == null || cooldown.remainingMs() <= 0L) return Outcome.Allowed(account)
@@ -65,7 +65,7 @@ internal class CredentialHoldAdmission(
         if (account == null) return null
         val pool = deps.quotaBundle.activePool
             ?.takeIf { provider.relayRateLimitReplies && cooldown.rateLimitReply != null } ?: return null
-        return when (val next = pool.select(prepared.built.meta.sessionId, setOf(account.account.label))) {
+        return when (val next = pool.select(prepared.built.meta.scope.sessionId, setOf(account.account.label))) {
             is Selection.Chosen -> next.account
             is Selection.Exhausted -> null
         }
@@ -77,7 +77,7 @@ internal class CredentialHoldAdmission(
             credentials,
             provider.extraHeaders(credentials) + prepared.built.extraHeaders,
         )
-        return deps.upstream.credentialCooldown(headers, (credentials as? Credentials.ApiKey)?.header)
+        return deps.traffic.upstream.credentialCooldown(headers, (credentials as? Credentials.ApiKey)?.header)
     }
 
     private data class HeldCredential(val cooldown: RateLimitCooldown, val accountName: String?)
@@ -122,7 +122,7 @@ internal class CredentialHoldAdmission(
             responses.respondProviderRateLimited(call, native)
         } else {
             val retryEpochSeconds = plan?.resetEpochSeconds ?: (now + armedMs) / MILLIS_PER_SECOND
-            deps.turnQuota.forSession(prepared.built.meta.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
+            deps.turnQuota.forSession(prepared.built.meta.scope.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
                 ?.forEach { (name, value) -> call.response.header(name, value) }
             val message = message(armedMs, reset, plan) + standby?.let { " $it" }.orEmpty()
             responses.respondRateLimited(call, message, retryEpochSeconds)

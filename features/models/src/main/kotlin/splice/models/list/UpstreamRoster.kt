@@ -49,10 +49,7 @@ import splice.core.util.SafeFailureText
 internal data class UpstreamModel(
     public val id: String,
     public val label: String = "",
-    public val contextWindow: Long? = null,
-    /** The largest window the endpoint accepts as an override, above its default [contextWindow]
-     *  (the Codex backend's `max_context_window`: 872000 for gpt-6-astra against a 272000 default). */
-    public val maxContextWindow: Long? = null,
+    public val window: UpstreamWindow = UpstreamWindow(),
     public val aliases: List<String> = emptyList(),
     /** Why the ENDPOINT says this model cannot serve a Claude Code turn, or null when it says
      *  nothing against it. Only an affirmative statement counts (see [UpstreamRosterParser]): a row
@@ -162,8 +159,10 @@ internal class UpstreamRosterParser(private val json: Json = Json { ignoreUnknow
     private fun model(row: JsonObject): UpstreamModel = UpstreamModel(
         id = JsonScalars.str(row, "id") ?: JsonScalars.str(row, "slug").orEmpty(),
         label = JsonScalars.str(row, "display_name") ?: JsonScalars.str(row, "name").orEmpty(),
-        contextWindow = JsonScalars.firstLong(row, "context_length", "context_window", "max_context_length"),
-        maxContextWindow = JsonScalars.firstLong(row, "max_context_window"),
+        window = UpstreamWindow(
+            context = JsonScalars.firstLong(row, "context_length", "context_window", "max_context_length"),
+            maxContext = JsonScalars.firstLong(row, "max_context_window"),
+        ),
         aliases = strings(row["aliases"]),
         unusable = unusable(row),
         rates = ListedPricing.of(row),
@@ -268,7 +267,7 @@ internal class RosterDiff {
         return RosterRow(
             id = model.id,
             verdict = if (keptOut == null) RosterVerdict.NEW else RosterVerdict.EXCLUDED,
-            upstreamWindow = model.contextWindow,
+            upstreamWindow = model.window.context,
             // A head with a `models` list offers only what it names, so a discovered model joins the
             // pickers of the heads that have none (Topology.modelsFor).
             note = keptOut ?: "discovered: joins the picker of every head with no models list",
@@ -300,7 +299,7 @@ internal class RosterDiff {
 
     /** The endpoint serves this row, so the verdict is entirely about the WINDOW. */
     private fun matched(entry: ModelEntry, upstream: UpstreamModel): RosterRow {
-        val ceiling = upstream.contextWindow
+        val ceiling = upstream.window.context
             ?: return RosterRow(
                 id = entry.id,
                 verdict = RosterVerdict.SERVED,
@@ -310,7 +309,7 @@ internal class RosterDiff {
         val aliased = aliasNote(entry.id, upstream)
         // A window between the default and the override ceiling is the vendor's sanctioned opt-in
         // (gpt-6-astra at 872000, measured served at 637k tokens on 2026-09-21), not an overrun.
-        val accepted = maxOf(ceiling, upstream.maxContextWindow ?: ceiling)
+        val accepted = maxOf(ceiling, upstream.window.maxContext ?: ceiling)
         return when {
             entry.contextWindow > accepted -> RosterRow(
                 id = entry.id,

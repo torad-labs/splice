@@ -24,7 +24,7 @@ internal class IndependentSourcePost(
         val independent = sink as? IndependentRoundSink
         val owner = independent?.ownerScope ?: clientScope
         val job = owner.coroutineContext[Job] ?: clientJob
-        val lease = independent?.let { drive.slot.retainSource(drive.meta.sessionId) }
+        val lease = independent?.let { drive.slot.retainSource(drive.meta.scope.sessionId) }
         val cap = independent?.let { drive.watchdog.launchTotalCap(owner, job) }
         if (independent != null) drive.sourceRoundStarted?.started(job)
         return try {

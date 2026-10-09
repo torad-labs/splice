@@ -14,6 +14,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.GATEWAY_VERSION
+import splice.core.head.GateCounts
 import splice.core.head.GateHealth
 import splice.core.head.HeadHealth
 import splice.core.model.DiscoveryRow
@@ -26,7 +27,7 @@ import splice.upstream.retry.InflightGate
 
 internal class HeadDiagnostics(
     private val provider: Provider,
-    /** The ONE thing this collaborator needs from the head (V4-105 item 3): it reads `deps.gate`
+    /** The ONE thing this collaborator needs from the head (V4-105 item 3): it reads `deps.traffic.gate`
      *  and nothing else, so the whole 25-parameter bundle was carried to reach one snapshot. */
     private val gate: InflightGate,
     private val driver: TurnDriver,
@@ -50,10 +51,12 @@ internal class HeadDiagnostics(
                 inflight = gateSnap.inflight,
                 queued = gateSnap.queued,
                 limit = gateSnap.limit,
-                acquired = gateSnap.acquired,
-                released = gateSnap.released,
-                waited = gateSnap.waited,
-                avgWaitMs = gateSnap.avgWaitMs,
+                counts = GateCounts(
+                    acquired = gateSnap.traffic.acquired,
+                    released = gateSnap.traffic.released,
+                    waited = gateSnap.traffic.waited,
+                    avgWaitMs = gateSnap.traffic.avgWaitMs,
+                ),
                 live = gateSnap.live,
                 // restartRequired (Knob.STREAM_IDLE_MS): the budget the head was built with is the one in force.
                 streamIdleMs = provider.watchdog.streamIdle.inWholeMilliseconds,

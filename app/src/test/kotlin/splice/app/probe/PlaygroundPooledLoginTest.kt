@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.provider.WiredAccount
+import splice.app.provider.WiredAccountQuota
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -41,12 +42,12 @@ class PlaygroundPooledLoginTest {
         val one = Login("one-token", "one-account")
         val two = Login("two-token", "two-account")
         val logins = listOf(
-            WiredAccount("one", true, one, root.resolve("one.json")),
+            WiredAccount("one", true, one, WiredAccountQuota(root.resolve("one.json"))),
             WiredAccount(
                 "two",
                 false,
                 two,
-                root.resolve("two.json"),
+                WiredAccountQuota(root.resolve("two.json")),
                 extraHeaders = CredentialHeaders { mapOf("x-synthetic-login" to "two") },
             ),
         )

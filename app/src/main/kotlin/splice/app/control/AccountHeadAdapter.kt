@@ -17,12 +17,14 @@ internal object AccountHeadAdapter {
     fun adapt(head: ManagedHead): AccountHead = AccountHead(
         key = head.head.key,
         auth = head.auth,
-        pool = head.accountPool,
-        accountAuth = head.accountAuth,
+        pool = head.authSurface.accountPool,
+        accountAuth = head.authSurface.accountAuth,
         restart = HeadRestart { head.head.restart() },
         // Same fallback UsagePayloads.usageJson() reads for /api/usage's quota: the pool's selected
         // account when this head has a pool, else the head's own tracked snapshot.
-        quota = HeadQuotaSource { head.accountPool?.view(null)?.selectedQuota() ?: head.usage.snapshot().quota },
+        quota = HeadQuotaSource {
+            head.authSurface.accountPool?.view(null)?.selectedQuota() ?: head.sources.usage.snapshot().quota
+        },
         answers = HeadAccountAnswerSource { account -> head.head.providerAnswer(account) },
     )
 

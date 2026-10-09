@@ -53,7 +53,7 @@ internal class PerfSkippedRange(
         val candidate = Candidate(hint, nextEnd, line = line)
         latest.add(at, candidate)
         if (latest.size > RANGE_ANCHORS) latest.removeAt(0)
-        if (line.dropsCandidate) {
+        if (line.drops.candidate) {
             if (counters.size == RANGE_ANCHORS) counters.removeFirst()
             counters.addLast(candidate)
         }

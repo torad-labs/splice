@@ -35,7 +35,7 @@ class DoctorTraceRuntimeTest {
         assertTrue(row.detail.contains("will write after the next restart"), row.detail)
         assertTrue(row.detail.contains("nothing is written now"), row.detail)
         assertFalse(row.detail.contains("writes its FULL"), row.detail)
-        assertTrue(row.pendingRestart)
+        assertTrue(row.notes.pendingRestart)
     }
 
     @Test
@@ -44,7 +44,7 @@ class DoctorTraceRuntimeTest {
         assertEquals("trace:local", row.name)
         assertTrue(row.detail.contains("still writes until the next restart"), row.detail)
         assertTrue(row.detail.contains("kept 7 day(s) on the next start"), row.detail)
-        assertTrue(row.pendingRestart)
+        assertTrue(row.notes.pendingRestart)
         assertEquals(emptyList<String>(), rows(tmp, null, running = true).map { it.name })
     }
 
@@ -57,7 +57,7 @@ class DoctorTraceRuntimeTest {
     fun `unanswered daemon reports only an explicit opt-out as the next start`(@TempDir tmp: Path) {
         val row = rows(tmp, "false", running = null).single()
         assertTrue(row.detail.contains("next start"), row.detail)
-        assertFalse(row.pendingRestart)
+        assertFalse(row.notes.pendingRestart)
         assertEquals(emptyList<String>(), rows(tmp, null, running = null).map { it.name })
     }
 
@@ -67,7 +67,7 @@ class DoctorTraceRuntimeTest {
         assertEquals(CheckStatus.FAIL, row.status)
         assertTrue(row.detail.contains("neither true nor false"), row.detail)
         assertFalse(row.detail.contains("SENSITIVE_TEST_SECRET"), row.detail)
-        assertFalse(row.pendingRestart)
+        assertFalse(row.notes.pendingRestart)
     }
 
     private fun rows(tmp: Path, declared: String?, running: Boolean?) = DoctorTraceChecks(

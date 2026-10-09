@@ -22,8 +22,10 @@ class ClaudeConfigMaterializerSettingsTest {
         defaultModel = "m1",
         modelOptionsCache = optionsCache,
         statuslineCommand = "curl",
-        loginCommand = "claudex login",
-        signInLabel = "Codex",
+        signIn = MaterializeSignIn(
+            loginCommand = "claudex login",
+            signInLabel = "Codex",
+        ),
     )
 
     @Test

@@ -7,10 +7,10 @@ import splice.core.util.ElapsedClock
 internal class RetryBudget(private val totalTimeoutMs: Long, private val clock: ElapsedClock) {
     /** Without a turn owner, direct callers retain their legacy cross-attempt elapsed budget. */
     fun deadlineExceeded(ctx: PostContext, t0: Long): Boolean =
-        ctx.remainingTurnWait == null && clock() - t0 >= totalTimeoutMs
+        ctx.limits.remainingTurnWait == null && clock() - t0 >= totalTimeoutMs
 
     fun turnWaitExhausted(ctx: PostContext): Boolean =
-        ctx.remainingTurnWait?.invoke()?.coerceAtLeast(0L) == 0L
+        ctx.limits.remainingTurnWait?.invoke()?.coerceAtLeast(0L) == 0L
 
     /** Whether a backoff of [plannedDelayMs] fits what is left; false is said to the retry notice. */
     fun backoffFits(ctx: PostContext, t0: Long, plannedDelayMs: Long): Boolean {
@@ -25,6 +25,6 @@ internal class RetryBudget(private val totalTimeoutMs: Long, private val clock: 
     }
 
     private fun remainingMs(ctx: PostContext, t0: Long): Long =
-        ctx.remainingTurnWait?.invoke()?.coerceAtLeast(0L)
+        ctx.limits.remainingTurnWait?.invoke()?.coerceAtLeast(0L)
             ?: (totalTimeoutMs - (clock() - t0)).coerceAtLeast(0L)
 }

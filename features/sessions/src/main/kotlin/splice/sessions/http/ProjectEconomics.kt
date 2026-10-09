@@ -35,7 +35,9 @@ internal class ProjectEconomics(private val heads: Map<String, SessionHead>, now
             window.rows.filter { it.session in tags && it.fields[PerfKeys.LOCAL_STEP] != 1L }
                 .forEach { tally.add(it, head.catalog) }
         }
-        val touched = sessions.flatMap { listOfNotNull(it.updatedAt, it.status.updatedAt, it.startedAt) }
+        val touched = sessions.flatMap {
+            listOfNotNull(it.process.updatedAt, it.status.updatedAt, it.process.startedAt)
+        }
         val last = (touched + listOfNotNull(tally.lastAt)).maxOrNull()
         return buildJsonObject {
             // STALE means the registry has not refreshed, not that its pid exited: it is still running.

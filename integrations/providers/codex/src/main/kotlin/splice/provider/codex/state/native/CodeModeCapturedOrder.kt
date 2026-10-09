@@ -95,7 +95,7 @@ internal class CodeModeCapturedOrder(
         val key = CodeModeAnchorCapture.opaqueKey(CodeModeCallReplay.item(record), codec)
         val following = capture.replayAnchors?.nativeFollowing.orEmpty().entries
             .filter { (_, anchor) -> key != null && anchor.itemDigest == key }
-            .map { it.key - record.continuity.size }.distinct().singleOrNull()
+            .map { it.key - record.carry.continuity.size }.distinct().singleOrNull()
         val matched = following ?: native.positions(record).distinct().singleOrNull() ?: return null
         val segment = segments.firstOrNull { it.logicalOffset >= matched }
         return segment?.let { native ->
@@ -121,7 +121,7 @@ internal class CodeModeCapturedOrder(
     }
 
     fun continuity(record: CodeModeRecord, start: Int, prefixEnd: Int): List<ResponsesCodeModeReplay> =
-        record.continuityReplay.mapNotNull { segment ->
+        record.carry.replay.mapNotNull { segment ->
             val added = segment.items.filterNot(native::contains)
             added.takeIf(List<JsonElement>::isNotEmpty)?.let {
                 ResponsesCodeModeReplay(maxOf(start + segment.logicalOffset, prefixEnd), null, it)
@@ -181,7 +181,7 @@ private class CodeModeCapturedOccurrences(
         val seen = mutableSetOf<String>()
         records.forEach { source ->
             generateSequence(source) { it.nativeParent }.takeWhile { seen.add(it.id) }.forEach { record ->
-                record.continuityReplay.flatMap { it.items }.forEach { item ->
+                record.carry.replay.flatMap { it.items }.forEach { item ->
                     producers.getOrPut(digest(item)) { mutableListOf() } += record to item
                 }
             }
@@ -206,7 +206,7 @@ private class CodeModeCapturedOccurrences(
         return true
     }
 
-    fun positions(record: CodeModeRecord): List<Int> = record.continuityReplay.flatMap { segment ->
+    fun positions(record: CodeModeRecord): List<Int> = record.carry.replay.flatMap { segment ->
         val first = segment.items.firstOrNull() ?: return@flatMap emptyList()
         occurrences[digest(first)].orEmpty().filter { occurrence ->
             val items = slots.getValue(occurrence.offset)

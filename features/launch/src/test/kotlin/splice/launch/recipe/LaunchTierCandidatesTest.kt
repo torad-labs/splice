@@ -11,6 +11,9 @@ import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
 import splice.launch.launch
@@ -22,19 +25,25 @@ class LaunchTierCandidatesTest(@param:TempDir private val tmp: Path) {
 
     private fun spec(available: List<String>, tiers: ModelTiers, pinned: String = available.first()) = LaunchSpec(
         trees = HeadTrees(tmp.resolve(".claude-grok")),
-        pinnedModel = pinned,
-        availableModelIds = available,
-        modelLabels = available.associateWith { it },
-        tiers = tiers,
-        contextWindow = 500_000,
-        modelOptionsCache = buildJsonObject { },
-        statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
-        loginCommand = "claude-grok login",
-        signInLabel = "Grok (xAI)",
+        models = LaunchModels(
+            pinnedModel = pinned,
+            availableModelIds = available,
+            modelLabels = available.associateWith { it },
+            tiers = tiers,
+            contextWindow = 500_000,
+            modelOptionsCache = buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "claude-grok login",
+            signInLabel = "Grok (xAI)",
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
+            port = 3104,
+            inferenceToken = "test-inference-token",
+            apiTimeoutMs = 960_000,
+        ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 3104,
-        inferenceToken = "test-inference-token",
-        apiTimeoutMs = 960_000,
     )
 
     private fun env(spec: LaunchSpec): Map<String, String> =

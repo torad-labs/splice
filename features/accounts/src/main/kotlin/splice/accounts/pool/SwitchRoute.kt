@@ -67,7 +67,7 @@ public class SwitchRoute(private val resolver: AccountHeadResolver) {
      *  account with no credential file gets the plain one. Not listed is not refused here: the pin answers that. */
     private suspend fun refusalFor(head: AccountHead, label: String): String? {
         val account = head.activePool?.view(null)?.accounts?.firstOrNull { it.label == label } ?: return null
-        if (account.credentialPresent) return null
+        if (account.credential.present) return null
         return head.accountAuth?.descriptions()?.get(label)?.fields?.get(REFUSAL_FIELD)
             ?: "'$label' has no credential file; sign in to it first"
     }

@@ -40,6 +40,8 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.LogSink
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -124,12 +126,11 @@ class HeadServerClientAuthTest {
     ): Int {
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
-                key = "anthropic",
-                label = "claude-splice",
+                name = ProviderName(key = "anthropic", label = "claude-splice"),
                 catalog = catalog,
                 pinnedModel = "claude-fable-5",
                 auth = auth,
-                baseUrl = upstream.baseUrl,
+                locations = ProviderLocations(baseUrl = upstream.baseUrl),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
             quirks = PassthroughQuirks(providerTag = "claude-splice"),
@@ -152,8 +153,7 @@ class HeadServerClientAuthTest {
                 // (the port is not known until the bind) so two heads in one test never share a
                 // usage file. Two keys, as production wires them: the turn key a launched client
                 // holds, and the management key.
-                inferenceToken = TURN_KEY,
-                operatorToken = MGMT_KEY,
+                tokens = HeadDeps.HeadTokens(inferenceToken = TURN_KEY, operatorToken = MGMT_KEY),
                 stores = headStores(tmp, suffix = "-${heads.size}"),
             ),
         )

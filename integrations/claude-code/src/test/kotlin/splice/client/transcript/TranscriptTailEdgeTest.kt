@@ -24,7 +24,7 @@ class TranscriptTailEdgeTest {
         )
         val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))
         assertEquals(TranscriptRole.ASSISTANT, last?.role)
-        assertEquals("SyntheticTool", last?.tool)
+        assertEquals("SyntheticTool", last?.toolUse?.name)
         assertEquals("{}", last?.text, "the call, never its result")
     }
 
@@ -58,7 +58,7 @@ class TranscriptTailEdgeTest {
             ),
         )
         val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))
-        assertEquals("SyntheticTool", last?.tool, "a partial preceding reply must not hide the call")
+        assertEquals("SyntheticTool", last?.toolUse?.name, "a partial preceding reply must not hide the call")
         assertEquals(TranscriptRole.ASSISTANT, last?.role)
         assertTrue(fixture.bytes in 1..262_144)
     }
@@ -120,7 +120,7 @@ class TranscriptTailEdgeTest {
         )
         val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))
         assertEquals(TranscriptRole.ASSISTANT, last?.role)
-        assertEquals("SyntheticScreenshot", last?.tool)
+        assertEquals("SyntheticScreenshot", last?.toolUse?.name)
         assertEquals("{}", last?.text)
         assertTrue(fixture.bytes in 1..4_194_304, "read ${fixture.bytes} bytes")
         val read = fixture.bytes

@@ -8,5 +8,5 @@ internal object RosterHeadAdapter {
     /** In the heads map's order, keyed by the map key the declared roster is keyed by. The catalog is a
      *  reference the route reads through `live()`, so building the list once loses nothing. */
     fun heads(heads: Map<String, ManagedHead>): List<RosterHead> =
-        heads.map { (key, head) -> RosterHead(key, head.catalog) }
+        heads.map { (key, head) -> RosterHead(key, head.statusline.catalog) }
 }

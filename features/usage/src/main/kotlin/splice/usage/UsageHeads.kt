@@ -3,12 +3,6 @@
 // projection, so the usage feature never depends upward on the control plane.
 package splice.usage
 
-import splice.accounts.pool.HeadAccountPoolSource
-import splice.core.model.ClientWindows
-import splice.core.model.ModelCatalog
-import splice.usage.economics.HeadEconomicsSource
-import splice.usage.perf.HeadPerfSource
-import splice.usage.perf.PerfRowsSource
 import splice.usage.quota.HeadUsageSource
 
 /** One head as the usage surfaces see it. Built per request by the adapter, never cached: [label]
@@ -18,20 +12,9 @@ public data class UsageHead(
     val key: String,
     val label: String,
     val usage: HeadUsageSource,
-    val warnPct: Int,
-    val warnTokens5h: Long,
-    /** Per-turn perf telemetry rows for /api/perf; null = head has no perf sink wired. */
-    val perf: HeadPerfSource? = null,
-    /** The same rows with outcome tags, for the windowed summary and the per-turn view. */
-    val perfRows: PerfRowsSource? = null,
-    /** Hourly quota rollup for /api/economics; null = head has no economics sink wired. */
-    val economics: HeadEconomicsSource? = null,
-    /** Turns the statusline blob's client units back into the row's declared window and label. */
-    val catalog: ModelCatalog? = null,
-    /** Where the statusline records each session's real window. Null = a head that never learns. */
-    val clientWindows: ClientWindows? = null,
-    /** Head-local OAuth account selections and quotas, projected without credential material. */
-    val accountPool: HeadAccountPoolSource? = null,
+    val warn: UsageHeadWarn,
+    val sinks: UsageHeadSinks = UsageHeadSinks(),
+    val statusline: UsageHeadStatusline = UsageHeadStatusline(),
     /** V4-240: the head forwards the client's own Anthropic login (auth kind `client`), so its
      *  upstream is Anthropic and the figure Claude Code prices at Anthropic's card is this head's. */
     val anthropicUpstream: Boolean = false,

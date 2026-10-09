@@ -29,6 +29,8 @@ import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.HeadDeps
 import splice.head.HeadServer
 import splice.head.headDeps
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import java.net.InetSocketAddress
 import java.nio.file.Path
@@ -166,8 +168,7 @@ private class OpenFieldsRig(directory: Path) {
     val head = HeadServer(
         PassthroughProvider(
             ProviderTuning(
-                key = "open",
-                label = "open",
+                name = ProviderName(key = "open", label = "open"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "open--",
                     models = listOf(ModelEntry("native", "Native", contextWindow = 200_000)),
@@ -175,7 +176,7 @@ private class OpenFieldsRig(directory: Path) {
                 ),
                 pinnedModel = "native",
                 auth = ClientAuthProvider("open"),
-                baseUrl = "http://127.0.0.1:${server.address.port}",
+                locations = ProviderLocations(baseUrl = "http://127.0.0.1:${server.address.port}"),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
             PassthroughQuirks(providerTag = "open"),

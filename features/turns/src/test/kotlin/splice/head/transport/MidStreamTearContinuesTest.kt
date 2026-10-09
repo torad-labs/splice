@@ -55,6 +55,8 @@ import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.HeadServer
 import splice.head.headDeps
 import splice.head.headStores
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -359,8 +361,7 @@ class MidStreamTearContinuesTest {
         val id = heads.size
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
-                key = if (prefill) "deepseek-like" else "muse-like",
-                label = "claude-splice",
+                name = ProviderName(key = if (prefill) "deepseek-like" else "muse-like", label = "claude-splice"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-splice--",
                     models = listOf(ModelEntry("claude-fable-5", "Claude Fable 5", contextWindow = 200_000)),
@@ -368,7 +369,7 @@ class MidStreamTearContinuesTest {
                 ),
                 pinnedModel = "claude-fable-5",
                 auth = TearTestAuth(),
-                baseUrl = upstream.baseUrl,
+                locations = ProviderLocations(baseUrl = upstream.baseUrl),
                 // Deliberately large: no watchdog may fire inside these windows, or the arms
                 // measure a stall instead of a tear. [stallMs] arms the V4-116 mid-output
                 // stall-re-anchor tier — the ONLY tier small enough to fire here, which is what
@@ -394,12 +395,14 @@ class MidStreamTearContinuesTest {
                 upstream = UpstreamClient(totalTimeoutMs = 60_000, maxRetries = 4),
                 gate = InflightGate({ 4 }),
                 log = { line -> journal.add(line) },
-            ).copy(
-                // This rig carries its OWN bearer and keys its store files per head, so both come from
-                // the site rather than the fixture's defaults.
-                inferenceToken = INFERENCE_TOKEN,
-                stores = headStores(tmp, suffix = "-$id"),
-            ),
+            ).let {
+                it.copy(
+                    // This rig carries its OWN bearer and keys its store files per head, so both come from
+                    // the site rather than the fixture's defaults.
+                    tokens = it.tokens.copy(inferenceToken = INFERENCE_TOKEN),
+                    stores = headStores(tmp, suffix = "-$id"),
+                )
+            },
         )
         head.start()
         heads.add(head)

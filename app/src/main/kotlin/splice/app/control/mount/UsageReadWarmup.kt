@@ -69,7 +69,7 @@ internal class UsageReadWarmup(
         val context = currentCoroutineContext()
         val loaded = Cancellables.runCatchingCancellable {
             context.ensureActive()
-            val economics = head.economics?.read()
+            val economics = head.sinks.economics?.read()
             context.ensureActive()
             val first = (economics as? EconomicsRead.Rows)?.rows?.minOfOrNull { it.hour }
                 ?: (clock() - DEFAULT_REQUEST_WINDOW_MS)
@@ -77,7 +77,7 @@ internal class UsageReadWarmup(
             do {
                 context.ensureActive()
                 since = synchronized(state) { minOf(first, state.wanted ?: first) }
-                head.perfRows?.window(since)
+                head.sinks.perfRows?.window(since)
                 context.ensureActive()
             } while (synchronized(state) { state.wanted?.let { it < since } == true })
             since

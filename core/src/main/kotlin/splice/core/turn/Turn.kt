@@ -12,54 +12,12 @@ import kotlin.time.Duration
  *  the v29 body.__claudex* side channel — pure data, never smuggled on the request). */
 public data class TurnMeta(
     val compact: Boolean,
-    val showReasoning: ReasoningDisplay,
-    val stream: Boolean,
-    val originalModel: String,
-    val upstreamModel: String,
-    val clientMaxTokens: Long?,
-    val effort: String,
-    val summary: String?,
-    val budgetTokens: Long?,
-    /** Stable per-conversation scope key (responses dialect: first-message hash) — partitions the
-     *  gateway reasoning cache so concurrent conversations on one head can never cross-inject
-     *  (review 2026-07-24, RC-2's eli-risk-8 keying). Null (chat/passthrough) = one shared scope. */
-    val conversationKey: String? = null,
-    /** The client's session id when it sent one (ws-transport WS-3). [conversationKey] alone is a
-     *  hash of the first user message's TEXT, so two conversations that open with identical words
-     *  share it BY DESIGN — harmless for a cache miss, but fatal as a previous_response_id chain
-     *  anchor, where it would hand one conversation's server-side context to another. Null when
-     *  the client sends no session id; consumers must mix BOTH, never either alone. */
-    val sessionId: String? = null,
-    /** Tool-surface partition sizes for THIS turn's request; null when deferral was not in play.
-     *  Non-null stamps the perf counters even at zero — a deploy where tools_deferred stays 0 is a
-     *  false landing, and it must be visible in one grep of the perf JSONL. */
-    val toolsEager: Int? = null,
-    val toolsDeferred: Int? = null,
-    /** Effective custom compaction text and its scope source. Both stay null on ordinary turns;
-     *  compact turns use null text for the untouched client default and empty text for opt-out. */
-    val compactionInstructions: String? = null,
-    val compactionInstructionsSource: String? = null,
-    /** The head's standing system prompt and its provenance (mode, and the file when one backs it)
-     *  on every turn it was placed on — unlike the compaction pair above, which is compact-only.
-     *  Both stay null for a head that configures none, and for a dialect that could not place it
-     *  (the source then carries the " (not applied)" suffix). */
-    val systemPrompt: String? = null,
-    val systemPromptSource: String? = null,
-    /** sha256 of the provider body before any compaction tail: what a compaction retry is matched on
-     *  (CompactionReplay), so a tail resolved differently on the retry cannot miss the recording. */
-    val compactionRequestHash: String? = null,
-    /** Turn-scoped summary-dedup state shared by every continuation round's translator (rounds
-     *  build fresh translators; without a shared set, a section re-titled by a continuation round
-     *  passes each round's per-instance dedup and lands as a duplicate — the 2026-07-26 mirror
-     *  duplication).
-     *
-     *  NON-NULL WITH A FRESH DEFAULT ON PURPOSE (2026-07-26): no caller passes this argument, so
-     *  there is no per-round construction to get wrong, and `copy()` — which every continuation
-     *  path uses — preserves the reference. Dialects that render no reasoning summary simply never
-     *  read it (two empty collections). The responses dialect substitutes a CONVERSATION-lifetime
-     *  instance only when the turn has both session and conversation identities (the cross-turn
-     *  recap staircase, 2026-08-26); this default remains the state otherwise. */
-    val summaryParts: SharedSummaryParts = SharedSummaryParts(),
+    val route: TurnRoute,
+    val reasoning: TurnReasoning,
+    val scope: TurnScope = TurnScope(),
+    val tools: TurnToolSurface = TurnToolSurface(),
+    val compaction: TurnCompaction = TurnCompaction(),
+    val standingPrompt: TurnSystemPrompt = TurnSystemPrompt(),
 ) {
     /** Fresh for this turn, never keyed by session. Continuation rounds reuse this meta instance. */
     public val upstreamHeaders: TurnUpstreamHeaders = TurnUpstreamHeaders()

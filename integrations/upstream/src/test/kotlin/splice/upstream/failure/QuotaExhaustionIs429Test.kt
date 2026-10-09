@@ -25,6 +25,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.wire.HttpStatus
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.transport.PostContext
+import splice.upstream.transport.PostRecovery
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
@@ -60,7 +61,7 @@ class QuotaExhaustionIs429Test {
         auth = auth,
         extraHeaders = { emptyMap() },
         onRetry = { notices.add(it) },
-        clientFrameEmitted = ClientFrameEmitted { true },
+        recovery = PostRecovery(clientFrameEmitted = ClientFrameEmitted { true }),
     )
 
     private fun clientOver(engine: MockEngine) = UpstreamClient(

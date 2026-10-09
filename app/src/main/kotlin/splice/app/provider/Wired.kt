@@ -15,21 +15,31 @@ internal data class WiredAccount(
     val label: String,
     val primary: Boolean,
     val auth: RefreshableAuthProvider,
-    val quotaFile: Path,
-    val credentialPresent: Boolean = true,
+    val quota: WiredAccountQuota,
+    val credential: WiredAccountCredential = WiredAccountCredential(),
     val extraHeaders: CredentialHeaders? = null,
-    /** V4-410: why splice will not load this account's credential (a symlinked file), in words. */
-    val refusal: String? = null,
     /** A read-only native place, never a managed folder or the caller's forwarding placeholder. */
     val nativePlace: ClaudeLoginPlaceId? = null,
-    val quotaRead: AccountQuotaSource? = null,
+)
+
+/** Where one account's quota is kept on disk, and how a live reading of it is taken. */
+internal data class WiredAccountQuota(
+    val file: Path,
+    val read: AccountQuotaSource? = null,
+)
+
+/** Whether splice can load one account's credential, and when it cannot, why. */
+internal data class WiredAccountCredential(
+    val present: Boolean = true,
+    /** V4-410: why splice will not load this account's credential (a symlinked file), in words. */
+    val refusal: String? = null,
 )
 
 /** Chooses the legacy primary when readable, otherwise the first readable labeled credential. */
 internal object WiredAccounts {
     fun providerAccount(accounts: List<WiredAccount>): WiredAccount {
-        val readablePrimary = accounts.singleOrNull { it.primary && it.credentialPresent }
-        return readablePrimary ?: accounts.firstOrNull(WiredAccount::credentialPresent)
+        val readablePrimary = accounts.singleOrNull { it.primary && it.credential.present }
+        return readablePrimary ?: accounts.firstOrNull { it.credential.present }
             ?: accounts.single(WiredAccount::primary)
     }
 }

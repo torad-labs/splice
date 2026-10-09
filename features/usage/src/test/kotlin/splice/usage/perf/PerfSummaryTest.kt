@@ -14,6 +14,8 @@ import splice.core.perf.OutcomeTag
 import splice.core.perf.OutcomeTags
 import splice.core.perf.PerfKeys
 import splice.usage.UsageHead
+import splice.usage.UsageHeadSinks
+import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
@@ -64,12 +66,13 @@ class PerfSummaryTest {
                 key = key,
                 label = key,
                 usage = HeadUsageSource { UsageView(0, 0, null) },
-                warnPct = 90,
-                warnTokens5h = 0,
-                perfRows = PerfRowsSource { since ->
-                    reads += key to since
-                    PerfRowsWindow(rows)
-                },
+                warn = UsageHeadWarn(warnPct = 90, warnTokens5h = 0),
+                sinks = UsageHeadSinks(
+                    perfRows = PerfRowsSource { since ->
+                        reads += key to since
+                        PerfRowsWindow(rows)
+                    },
+                ),
             )
         }
         var clockReads = 0

@@ -158,10 +158,12 @@ class CodexResponsesArmTest {
                 models = listOf(ModelEntry(id = "gpt-6-astra", contextWindow = 1_000_000)),
                 defaultContextWindow = 1_000_000,
             ),
-            watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+                loginCommand = "claude-codex login",
+            ),
             cfg = config.getConfig(key),
-            loginCommand = "claude-codex login",
-            discovered = discovered,
+            roster = PublishedRoster(discovered = discovered),
         )
     }
 }

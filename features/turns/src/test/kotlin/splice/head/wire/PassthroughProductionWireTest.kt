@@ -79,8 +79,8 @@ class PassthroughProductionWireTest {
         assertTrue(wire.contains("input_json_delta"), "the tool's OWN delta must still forward: $wire")
 
         val success = outcome as TurnOutcome.Success
-        assertFalse(success.emittedText, "emittedText must not latch on a delta that was dropped")
-        assertEquals("", success.bodyText, "bodyText must not collect a delta that never reached a text block")
+        assertFalse(success.text.emittedText, "emittedText must not latch on a delta that was dropped")
+        assertEquals("", success.text.bodyText, "bodyText must not collect a delta that never reached a text block")
     }
 
     // The mixed shape, which is the one Rec cannot express at all: a real text block AND a real tool

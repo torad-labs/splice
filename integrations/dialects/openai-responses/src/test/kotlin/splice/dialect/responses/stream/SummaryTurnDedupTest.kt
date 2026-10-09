@@ -18,7 +18,10 @@ import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.turn.SharedSummaryParts
 import splice.dialect.responses.StreamTurnContext
+import splice.dialect.responses.SummaryHandling
+import splice.dialect.responses.WatchdogCaps
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
+import splice.upstream.TurnSignals
 import splice.upstream.sse.WireSink
 
 private class Sink : WireSink {
@@ -62,12 +65,18 @@ private fun ctx(shared: SharedSummaryParts) = StreamTurnContext(
     compact = false,
     emitEncryptedReasoning = EmitEncryptedReasoning(false),
     encodeReasoningEnvelope = { null },
-    clientGone = { false },
-    watchdogFired = { null },
-    streamIdleMsForMessage = 180_000,
-    upstreamTimeoutMsForMessage = 900_000,
-    dedupeRepeatedSummaryParts = true,
-    summaryPartsShared = shared,
+    signals = TurnSignals(
+        clientGone = { false },
+        watchdogFired = { null },
+    ),
+    caps = WatchdogCaps(
+        streamIdleMs = 180_000,
+        upstreamTimeoutMs = 900_000,
+    ),
+    summary = SummaryHandling(
+        dedupeRepeatedParts = true,
+        partsShared = shared,
+    ),
 )
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject

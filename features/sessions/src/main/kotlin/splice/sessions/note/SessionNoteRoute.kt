@@ -104,8 +104,8 @@ public class SessionNoteRoute(
         val running = all.filter { it.availability != SessionAvailability.GONE }
         val mine = running.filter { it.sessionId == sessionId }
         val record = mine.singleOrNull()
-        val socket = record?.messagingSocketPath
-        val sharing = running.count { it.messagingSocketPath == socket }
+        val socket = record?.process?.messagingSocketPath
+        val sharing = running.count { it.process.messagingSocketPath == socket }
         return when {
             all.none { it.sessionId == sessionId } -> stop(HttpStatusCode.NotFound, NO_SESSION)
             mine.isEmpty() -> stop(HttpStatusCode.Conflict, NOT_RUNNING)

@@ -57,6 +57,7 @@ import splice.models.roster.DeclaredHeads
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
+import splice.usage.perf.PerfTurnFacts
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
@@ -94,11 +95,13 @@ class ConsoleRoutesTest {
             ts = 1_000L,
             outcome = ROW_OUTCOME,
             fields = mapOf("total" to 5L),
-            model = ROW_MODEL,
-            session = ROW_SESSION,
-            account = ROW_ACCOUNT,
-            cacheCold = true,
-            compact = false,
+            facts = PerfTurnFacts(
+                model = ROW_MODEL,
+                session = ROW_SESSION,
+                account = ROW_ACCOUNT,
+                cacheCold = true,
+                compact = false,
+            ),
         ),
         // A row with NO account: the writer never wrote cache_cold for it, so the question was never
         // asked and the payload must say so rather than answer false.
@@ -243,7 +246,8 @@ class ConsoleRoutesTest {
     @Test
     fun `a head the roster does not name is a named failure, not a head with nothing declared`() = runBlocking {
         awaitPort()
-        control.ports.declaredHeads = DeclaredHeads { mapOf(HEAD_KEY to DeclaredHead("prov", listOf(HeadModel("m1", "fast")))) }
+        control.ports.declaredHeads =
+            DeclaredHeads { mapOf(HEAD_KEY to DeclaredHead("prov", listOf(HeadModel("m1", "fast")))) }
         val response = get("/api/models")
         assertEquals(HttpStatusCode.ServiceUnavailable, response.status, response.bodyAsText())
         assertTrue(response.bodyAsText().contains("bare"), "the failure must NAME the head: ${response.bodyAsText()}")
@@ -446,18 +450,19 @@ class ConsoleRoutesTest {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(false, "test", emptyMap())
         },
-        usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
-        catalog = catalog,
-        perfRows = perfRows,
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int): String = ""
+                override fun path(): String = ""
+            },
+            perfRows = perfRows,
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        statusline = StatuslineContext(catalog = catalog),
     )
 
     private suspend fun get(path: String): HttpResponse = withTimeout(TIMEOUT_MS) {

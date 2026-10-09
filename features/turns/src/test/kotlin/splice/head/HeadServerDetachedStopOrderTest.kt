@@ -41,6 +41,8 @@ import splice.head.turn.TurnDriveFactory
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnStreamer
 import splice.upstream.LifecycleScope
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessDispatchers
@@ -83,8 +85,7 @@ class HeadServerDetachedStopOrderTest {
     private fun provider(mock: MockChatGptUpstream): TestResponsesProvider =
         TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-codex--",
                     models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -92,7 +93,7 @@ class HeadServerDetachedStopOrderTest {
                 ),
                 pinnedModel = "gpt-5.6-sol",
                 auth = DetachedStopOrderAuth(),
-                baseUrl = mock.baseUrl,
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
                 // Enormous on purpose: nothing in these tests may end the turn but the hold release.
                 watchdog = WatchdogBudget(600.seconds, 600.seconds, 900.seconds),
                 loginCommand = "claudex login",

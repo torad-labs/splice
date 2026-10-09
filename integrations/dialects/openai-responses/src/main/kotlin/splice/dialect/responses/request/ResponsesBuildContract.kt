@@ -15,31 +15,46 @@ import splice.upstream.ToolSearchPolicy
 
 internal data class BuiltRequest(val req: JsonObject, val meta: TurnMeta, val toolSearch: ToolSearchPolicy? = null)
 
-internal data class BuildOptions(
-    public val compact: Boolean,
-    public val originalModel: String,
-    public val upstreamModel: String,
-    public val configEffort: String?,
-    public val configSummary: String?,
-    public val showReasoning: ReasoningDisplay,
+/** The client's model id and the upstream model it routes to. */
+internal data class ModelIds(
+    public val original: String,
+    public val upstream: String,
+)
+
+/** The reasoning the request asks for: the configured effort and summary, and whether it is shown. */
+internal data class RequestedReasoning(
+    public val effort: String?,
+    public val summary: String?,
+    public val display: ReasoningDisplay,
+)
+
+/** How prior reasoning rides into this request and how the opaque handle comes back out. */
+internal data class ReasoningHandoff(
     /**
      * Inject prior redacted_thinking envelopes into the request input (multi-turn continuity).
-     * Independent of [includeEncryptedReasoning]. Keep OFF for deepest fresh reasoning.
+     * Independent of [includeEncrypted]. Keep OFF for deepest fresh reasoning.
      */
-    public val replayReasoning: InjectPriorReasoning,
+    public val replay: InjectPriorReasoning,
     /**
      * Ask the server to return `reasoning.encrypted_content` on this turn's output.
      * Does NOT inject prior blobs into input. ON when reasoning is shown so we can store the
      * opaque handle for optional later replay (Grok Build / Codex always request this).
      */
-    public val includeEncryptedReasoning: RequestEncryptedReasoning = RequestEncryptedReasoning(true),
-    public val sessionId: String? = null,
+    public val includeEncrypted: RequestEncryptedReasoning = RequestEncryptedReasoning(true),
     /** Decodes a redacted_thinking envelope back into a Responses reasoning input item. */
-    public val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
+    public val decode: ReasoningEnvelopeDecoder,
     /** RC-3 (reasoning-cache 2026-07-24): the gateway-held cache lookup — tool_use id → the
      *  ordered envelopes of the turn that emitted it. Null = miss = today's behavior exactly.
      *  Wired by the provider; the default keeps unwired builds byte-identical. */
-    public val reasoningLookup: ReasoningLookup = ReasoningLookup { null },
+    public val lookup: ReasoningLookup = ReasoningLookup { null },
+)
+
+internal data class BuildOptions(
+    public val compact: Boolean,
+    public val models: ModelIds,
+    public val reasoning: RequestedReasoning,
+    public val handoff: ReasoningHandoff,
+    public val sessionId: String? = null,
     /** The provider's tool-surface capability latch, read at build time. False = the backend
      *  rejected the shape on this daemon lifetime; build the full status-quo request. */
     public val toolSurfaceOpen: Boolean = true,

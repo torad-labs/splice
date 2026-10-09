@@ -67,7 +67,7 @@ class HeadBuildInputsTest {
                     val ctx = inputs.providerContext("local", localHead, local, legacyKnobsGovern = false)
                     assertEquals(8192L, ctx.catalog.contextWindowFor("synthetic"))
                     assertEquals(8192L, ctx.catalog.clientLaunchWindow)
-                    val found = ctx.localRows as LocalRowsCheck.Checked
+                    val found = ctx.roster.localRows as LocalRowsCheck.Checked
                     assertEquals(8192L, found.rows.getValue("synthetic"))
                     assertTrue(found.refused.isEmpty())
                     val requests = calls.size
@@ -256,7 +256,7 @@ class HeadBuildInputsTest {
         val keyed = inputs.providerContext("router", router, apiKey, legacyKnobsGovern = false)
         val signed = inputs.providerContext("codex", codex, oauth, legacyKnobsGovern = false)
 
-        assertEquals("splice key set ROUTER_API_KEY", keyed.loginCommand)
-        assertEquals("codex login", signed.loginCommand)
+        assertEquals("splice key set ROUTER_API_KEY", keyed.faultPlan.loginCommand)
+        assertEquals("codex login", signed.faultPlan.loginCommand)
     }
 }

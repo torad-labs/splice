@@ -21,12 +21,15 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.model.CatalogWindows
 import splice.core.model.CompactionReserve
 import splice.core.model.CompactionReserveDefaults
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
+import splice.usage.UsageHeadStatusline
+import splice.usage.UsageHeadWarn
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import java.nio.file.Path
@@ -43,8 +46,7 @@ class StatuslineRouteBodyTest {
             key = "codex",
             label = "codex",
             usage = HeadUsageSource { UsageView(0, 0, null) },
-            warnPct = 80,
-            warnTokens5h = 0,
+            warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
         )
         return StatuslineRoute(
             UsageHeadLookup { name -> if (name == "codex") listOf(head) else emptyList() },
@@ -79,11 +81,21 @@ class StatuslineRouteBodyTest {
             models = listOf(ModelEntry("gpt-6.1-sol", contextWindow = 272_000)),
             defaultContextWindow = 272_000,
             pinnedModel = "gpt-6.1-sol",
-            compactionReserveDefaults = CompactionReserveDefaults { _, _ -> SOL_6_1_RESERVE }, // core's calibrated row
+            windows = CatalogWindows(
+                compactionReserveDefaults = CompactionReserveDefaults { _, _ -> SOL_6_1_RESERVE },
+            ),
         )
         val route = StatuslineRoute(
             UsageHeadLookup {
-                listOf(UsageHead("codex", "codex", HeadUsageSource { UsageView(0, 0, null) }, 80, 0, catalog = catalog))
+                listOf(
+                    UsageHead(
+                        "codex",
+                        "codex",
+                        HeadUsageSource { UsageView(0, 0, null) },
+                        UsageHeadWarn(80, 0),
+                        statusline = UsageHeadStatusline(catalog = catalog),
+                    ),
+                )
             },
             ConfigService(StatePaths(baseOverride = tmp.resolve("state"))),
         )

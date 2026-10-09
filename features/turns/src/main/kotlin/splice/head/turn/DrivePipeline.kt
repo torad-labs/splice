@@ -14,9 +14,9 @@ internal class DrivePipeline(
     private val deps: HeadDeps,
 ) {
     fun make(meta: TurnMeta): TurnPipeline = TurnPipeline(
-        deps.stores.compactStats,
+        deps.stores.compaction.compactStats,
         deps.log,
-        OutputClampPolicy.makeOutputClamp(meta.clientMaxTokens, meta.compact, provider.key, deps.log),
+        OutputClampPolicy.makeOutputClamp(meta.route.clientMaxTokens, meta.compact, provider.key, deps.log),
         mirrorReasoning = deps.policy.mirrorReasoning,
     )
 }

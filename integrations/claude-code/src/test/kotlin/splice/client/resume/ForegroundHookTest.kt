@@ -17,6 +17,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
 import splice.client.HookSettings
+import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import java.nio.file.Files
 import java.nio.file.Path
@@ -280,7 +281,9 @@ class ForegroundHookTest {
             defaultModel = "synthetic-model",
             modelOptionsCache = buildJsonObject { },
             statuslineCommand = "",
-            headKey = "synthetic",
+            signIn = MaterializeSignIn(
+                headKey = "synthetic",
+            ),
         )
         materializer.materialize(spec)
         Files.writeString(global.resolve("settings.json"), next)
@@ -306,7 +309,9 @@ class ForegroundHookTest {
             defaultModel = "synthetic-model",
             modelOptionsCache = buildJsonObject { },
             statuslineCommand = "",
-            headKey = "synthetic",
+            signIn = MaterializeSignIn(
+                headKey = "synthetic",
+            ),
         )
         materializer.materialize(spec)
         Files.writeString(global.resolve("settings.json"), next)
@@ -336,7 +341,9 @@ class ForegroundHookTest {
             defaultModel = "synthetic-model",
             modelOptionsCache = buildJsonObject { },
             statuslineCommand = "",
-            headKey = "synthetic",
+            signIn = MaterializeSignIn(
+                headKey = "synthetic",
+            ),
         )
         materializer.materialize(spec)
         val first = Json.parseToJsonElement(

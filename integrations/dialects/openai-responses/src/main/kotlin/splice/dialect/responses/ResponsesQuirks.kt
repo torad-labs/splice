@@ -8,20 +8,25 @@ import splice.dialect.responses.request.DefaultEffortVocabulary
 import splice.dialect.responses.tools.ToolDeferralPolicy
 import splice.upstream.EffortVocabulary
 
-/** The finite quirk surface separating codex / xai / openai-platform on this dialect. */
-public data class ResponsesQuirks(
-    val providerTag: String, // rides honest omission markers: "[image omitted by <tag> proxy: ...]"
+/** What the backend stores, how it routes the prompt cache, and how it is told who is asking. */
+public data class ResponsesBackendQuirks(
     val store: Boolean = false,
     val promptCache: PromptCachePolicy = PromptCachePolicy(),
-    val effortVocabulary: EffortVocabulary = DefaultEffortVocabulary(),
-    val supportsSummary: Boolean = true,
-    /** Null omits the drop. A vendor whose models reject reasoning.summary sets the pattern
-     *  on its own quirks — a dialect default would hide summary on every id that merely
-     *  contains the fragment (V4-29). */
-    val summaryRejectModelRegex: Regex? = null,
-    /** Null omits the clamp. A vendor whose models 400 on effort=max sets the pattern on
-     *  its own quirks — a dialect default of mini matched google/gemini-2.5-pro (V4-29). */
-    val effortMaxRejectModelRegex: Regex? = null,
+    /** Off omits the client_metadata block. On sends client=splice plus optional session_id
+     *  and thread_id — no token, no install id, no operator identity. A backend can correlate
+     *  turns of one splice session and knows it is talking to splice rather than Codex.
+     *  That is honest identification, not impersonation, and not a user-privacy leak. The
+     *  measured on-value belongs on the vendor profile that wants it (V4-31). Boolean, not
+     *  Boolean?: false is the omit (`!quirks.backend.sendClientMetadata` in ResponsesClientHints). */
+    val sendClientMetadata: Boolean = false,
+    /** ws-transport WS-3: serve rounds over the Responses WebSocket, with previous_response_id
+     *  chaining, falling back to SSE on ANY failure. DEFAULT FALSE — the overlay must be invisible
+     *  until an operator opts in, and with it off no WebSocket is ever constructed. */
+    val webSocket: Boolean = false,
+)
+
+/** The responses-lite wire shape: which models speak it and the measured bytes that ride its turns. */
+public data class ResponsesLiteQuirks(
     /** codex-rs parity (read from source 2026-07-19; models.json re-read 2026-09-04 for gpt-6-astra,
      *  `use_responses_lite: true`): the gpt-5.6 and gpt-6 families are served "responses-lite".
      *  Lite turns (compaction included): instructions ride as a developer input item (top-level field
@@ -50,17 +55,28 @@ public data class ResponsesQuirks(
      *  sends "low") belongs on that vendor's profile — a dialect default would ride to every
      *  backend that later opts into the lite pair (V4-31). */
     val liteTextVerbosity: String? = null,
-    /** Off omits the client_metadata block. On sends client=splice plus optional session_id
-     *  and thread_id — no token, no install id, no operator identity. A backend can correlate
-     *  turns of one splice session and knows it is talking to splice rather than Codex.
-     *  That is honest identification, not impersonation, and not a user-privacy leak. The
-     *  measured on-value belongs on the vendor profile that wants it (V4-31). Boolean, not
-     *  Boolean?: false is the omit (`!quirks.sendClientMetadata` in ResponsesClientHints). */
-    val sendClientMetadata: Boolean = false,
-    /** ws-transport WS-3: serve rounds over the Responses WebSocket, with previous_response_id
-     *  chaining, falling back to SSE on ANY failure. DEFAULT FALSE — the overlay must be invisible
-     *  until an operator opts in, and with it off no WebSocket is ever constructed. */
-    val webSocket: Boolean = false,
+)
+
+/** How the backend takes reasoning effort and summaries. */
+public data class ResponsesReasoningQuirks(
+    val effortVocabulary: EffortVocabulary = DefaultEffortVocabulary(),
+    val supportsSummary: Boolean = true,
+    /** Null omits the drop. A vendor whose models reject reasoning.summary sets the pattern
+     *  on its own quirks — a dialect default would hide summary on every id that merely
+     *  contains the fragment (V4-29). */
+    val summaryRejectModelRegex: Regex? = null,
+    /** Null omits the clamp. A vendor whose models 400 on effort=max sets the pattern on
+     *  its own quirks — a dialect default of mini matched google/gemini-2.5-pro (V4-29). */
+    val effortMaxRejectModelRegex: Regex? = null,
+    /** stream_options.reasoning_summary_delivery, sent only when a summary is requested. The
+     *  ChatGPT backend serves ~2.3x more titled summary sections with "sequential_cutoff"
+     *  (probed 2026-07-19: 30 parts/1546ch vs 14/646 on the same prompt) — the same value
+     *  codex-rs sends. null = field omitted (grok/openai-platform). */
+    val summaryDelivery: String? = null,
+)
+
+/** How the backend takes the tool surface: choice, strictness, schemas and deferral. */
+public data class ResponsesToolQuirks(
     val emitToolChoice: Boolean = false,
     /** Passes through a tool's own `strict == true` as `"strict": true`; false (the default,
      *  and the only value that has ever mattered — Claude Code's ToolDefinition.strict is always
@@ -79,6 +95,13 @@ public data class ResponsesQuirks(
      *  sees a verbatim client schema from its own CLI. false (the default) = today's verbatim
      *  passthrough; only CodexProvider sets this true. */
     val normalizeToolSchemas: Boolean = false,
+    /** Deferred tool surface. Null keeps non-Muse providers off; Muse supplies a hosted base.
+     *  CLIENT is responses-lite-only, HOSTED uses Meta's Responses tool search on normal turns. */
+    val toolSurface: ToolDeferralPolicy? = null,
+)
+
+/** The gateway's own help across tool round-trips: held reasoning and the loop breaker. */
+public data class ResponsesRoundTripQuirks(
     /** RC-5 (reasoning-cache 2026-07-24): gateway-held reasoning continuity for tool
      *  round-trips (codex parity — repeated tool calls / duplicated reasoning without it).
      *  Off restores the pre-cache amnesia behavior exactly. */
@@ -88,14 +111,16 @@ public data class ResponsesQuirks(
      *  harness staleness guard). From the 3rd identical failure the result's output gains an
      *  escalating directive; success or changed arguments reset. Off restores plain passthrough. */
     val loopGuard: Boolean = true,
-    /** Deferred tool surface. Null keeps non-Muse providers off; Muse supplies a hosted base.
-     *  CLIENT is responses-lite-only, HOSTED uses Meta's Responses tool search on normal turns. */
-    val toolSurface: ToolDeferralPolicy? = null,
-    /** stream_options.reasoning_summary_delivery, sent only when a summary is requested. The
-     *  ChatGPT backend serves ~2.3x more titled summary sections with "sequential_cutoff"
-     *  (probed 2026-07-19: 30 parts/1546ch vs 14/646 on the same prompt) — the same value
-     *  codex-rs sends. null = field omitted (grok/openai-platform). */
-    val summaryDelivery: String? = null,
+)
+
+/** The finite quirk surface separating codex / xai / openai-platform on this dialect. */
+public data class ResponsesQuirks(
+    val providerTag: String, // rides honest omission markers: "[image omitted by <tag> proxy: ...]"
+    val backend: ResponsesBackendQuirks = ResponsesBackendQuirks(),
+    val lite: ResponsesLiteQuirks = ResponsesLiteQuirks(),
+    val reasoning: ResponsesReasoningQuirks = ResponsesReasoningQuirks(),
+    val tools: ResponsesToolQuirks = ResponsesToolQuirks(),
+    val roundTrip: ResponsesRoundTripQuirks = ResponsesRoundTripQuirks(),
     /**
      * DR-155: the vendor's minimum image edge in pixels, or null for "this backend has no stated
      * minimum". NULL IS THE DEFAULT AND THE DEFAULT MATTERS: with it, no outbound image is ever
@@ -127,46 +152,49 @@ public data class ResponsesQuirks(
         summaryField: Boolean? = null,
         toolChoice: Boolean? = null,
     ): ResponsesQuirks = copy(
-        store = store ?: this.store,
-        promptCache = promptCache.copy(
-            key = when (cacheKey) {
-                "session-id" -> CacheKeyStrategy.SESSION_ID
-                "off" -> CacheKeyStrategy.OFF
-                "first-message-hash" -> CacheKeyStrategy.FIRST_MESSAGE_HASH
-                else -> promptCache.key
-            },
+        backend = backend.copy(
+            store = store ?: backend.store,
+            promptCache = backend.promptCache.copy(
+                key = when (cacheKey) {
+                    "session-id" -> CacheKeyStrategy.SESSION_ID
+                    "off" -> CacheKeyStrategy.OFF
+                    "first-message-hash" -> CacheKeyStrategy.FIRST_MESSAGE_HASH
+                    else -> backend.promptCache.key
+                },
+            ),
         ),
-        supportsSummary = summaryField ?: this.supportsSummary,
-        emitToolChoice = toolChoice ?: this.emitToolChoice,
+        reasoning = reasoning.copy(supportsSummary = summaryField ?: reasoning.supportsSummary),
+        tools = tools.copy(emitToolChoice = toolChoice ?: tools.emitToolChoice),
     )
 
     /** RC-5 overlay, chained after [withToml] (which sits at detekt's complexity ceiling). */
     public fun withReasoningCacheToml(reasoningCache: Boolean?): ResponsesQuirks =
-        copy(reasoningCache = reasoningCache ?: this.reasoningCache)
+        copy(roundTrip = roundTrip.copy(reasoningCache = reasoningCache ?: roundTrip.reasoningCache))
 
     /** parallel_tool_calls overlay (2026-07-31), chained like [withReasoningCacheToml] for the same
      *  reason. NULLABLE — absent TOML keeps the provider's own default, so the overlay can never stomp
      *  it. (`summary_field` is non-nullable and DOES stomp `supportsSummary`, which is how that knob
      *  became unreachable from a provider default; not repeating it here.) */
     public fun withParallelToolCallsToml(parallelToolCalls: Boolean?): ResponsesQuirks =
-        copy(liteParallelToolCalls = parallelToolCalls ?: this.liteParallelToolCalls)
+        copy(lite = lite.copy(liteParallelToolCalls = parallelToolCalls ?: lite.liteParallelToolCalls))
 
     /** Apply the assembly-resolved tool policy. An absent table preserves Muse's hosted base;
      *  an explicit opt-out or daemon-wide kill switch passes null. Chained after [withToml]
      *  because that function already sits at the complexity ceiling. */
     public fun withToolSurfaceToml(policy: ToolDeferralPolicy?): ResponsesQuirks =
-        copy(toolSurface = policy)
+        copy(tools = tools.copy(toolSurface = policy))
 
     /** ws-transport WS-3 overlay, NULLABLE like its siblings — absent TOML keeps the provider default
      *  (false). A non-nullable field would stomp the provider default; that is exactly how
      *  supportsSummary became an unreachable dead lever. */
     public fun withWebSocketToml(webSocket: Boolean?): ResponsesQuirks =
-        copy(webSocket = webSocket ?: this.webSocket)
+        copy(backend = backend.copy(webSocket = webSocket ?: backend.webSocket))
 
     /** The delivery mode sent as stream_options.reasoning_summary_delivery; null omits the field.
      *  The TOML reading (absent keeps the provider default, `off` omits) is the app overlay's, because
      *  a dialect does not import the topology (HD-9). */
-    public fun withSummaryDelivery(wire: String?): ResponsesQuirks = copy(summaryDelivery = wire)
+    public fun withSummaryDelivery(wire: String?): ResponsesQuirks =
+        copy(reasoning = reasoning.copy(summaryDelivery = wire))
 }
 
 /** One provider's prompt-cache routing and retention contract, without mutable tool-name state. */

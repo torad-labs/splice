@@ -172,11 +172,11 @@ internal class CodeModeHistoryIndex(
         if (actual.isNotEmpty()) {
             return actual.takeIf { it.size == expected.size }?.getOrNull(expected.indexOf(segment.logicalOffset))
         }
-        if (segment.logicalOffset == record.baselineLogicalCount) {
+        if (segment.logicalOffset == record.origin.baseline.logicalCount) {
             return continuityEcho(record).firstOrNull() ?: owned(record).firstOrNull() ?: boundary(record)
         }
         val references = source.replayAnchors?.native.orEmpty() +
-            listOfNotNull(source.replayAnchors?.baseline?.let { source.baselineLogicalCount to it }).toMap()
+            listOfNotNull(source.replayAnchors?.baseline?.let { source.origin.baseline.logicalCount to it }).toMap()
         // The immediately following stable item places an absent native before itself, not at a guessed tail.
         return references.firstNotNullOfOrNull { (offset, anchor) ->
             resolve(anchor.copy(logicalTail = 0))?.minus(1)
@@ -185,7 +185,7 @@ internal class CodeModeHistoryIndex(
     }
 
     fun owned(record: CodeModeRecord): List<Int> =
-        (record.clientIds() + record.outerCallId).flatMap { ids[it].orEmpty() }.sorted()
+        (record.clientIds() + record.origin.outerCallId).flatMap { ids[it].orEmpty() }.sorted()
 
     fun boundary(record: CodeModeRecord): Int? {
         val anchor = record.replayAnchors?.baseline ?: return null
@@ -206,8 +206,8 @@ internal class CodeModeHistoryIndex(
         val anchor = record.replayAnchors?.baseline
         val first = owned(record).firstOrNull() ?: return IntRange.EMPTY
         val prior = anchor?.let { resolve(it.copy(logicalTail = 0), first) } ?: return IntRange.EMPTY
-        val start = first - record.continuity.size
-        return if (start >= prior && codec.continuityAt(items, start, record.continuity)) {
+        val start = first - record.carry.continuity.size
+        return if (start >= prior && codec.continuityAt(items, start, record.carry.continuity)) {
             start until first
         } else {
             IntRange.EMPTY

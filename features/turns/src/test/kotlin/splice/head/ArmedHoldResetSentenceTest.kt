@@ -31,6 +31,8 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.LocalTimeText
 import splice.dialect.responses.ReasoningSettings
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -83,8 +85,7 @@ private class BurstHead(tmp: Path, upstreamBody: String) {
     private val head = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-codex--",
                     models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -92,7 +93,7 @@ private class BurstHead(tmp: Path, upstreamBody: String) {
                 ),
                 pinnedModel = "gpt-5.6-sol",
                 auth = PlainAuth(),
-                baseUrl = "http://127.0.0.1:${upstream.address.port}",
+                locations = ProviderLocations(baseUrl = "http://127.0.0.1:${upstream.address.port}"),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),

@@ -24,9 +24,16 @@ internal class ChatToolCalls(private val frame: ChatToolFrame, private val prose
     internal var toolArgsInvalid: String? = null
     internal var hasToolUse = false
 
-    // Ids of tool blocks already opened this turn — lets the final-message fold tell an ECHO of a
-    // streamed call (suppress) from a call present ONLY in the final consolidated array (emit).
-    internal val openedToolIds = HashSet<String>()
+    // Tool blocks already opened this turn, by id — lets the final-message fold tell an ECHO of a
+    // streamed call (complete its arguments, never open it twice) from a call present ONLY in the
+    // final consolidated array (emit). The value is the call's tool index.
+    internal val openedIndexById = HashMap<String, Int>()
+
+    // Opened calls whose id was minted here ("toolu_<n>") because the stream never carried one, and the
+    // name each opened call went out under: what lets the fold match a final echo that arrives WITH an id
+    // back to the streamed call by its position and name.
+    private val synthesizedIndices = HashSet<Int>()
+    private val openedNames = HashMap<Int, String>()
 
     // Deferred opens: backends often emit index+id first and function.name on a later delta.
     // Opening with name="" freezes an empty tool_use on the Anthropic wire — buffer until name
@@ -39,6 +46,7 @@ internal class ChatToolCalls(private val frame: ChatToolFrame, private val prose
         var id: String,
         var name: String = "",
         val args: StringBuilder = StringBuilder(),
+        var synthesizedId: Boolean = false,
     )
 
     // NF-06 buffer-capacity accessors — count every retained map entry, not only synthesized
@@ -47,7 +55,7 @@ internal class ChatToolCalls(private val frame: ChatToolFrame, private val prose
     internal val retainedIndexEntryCount: Int get() = minOf(
         Int.MAX_VALUE.toLong(),
         frame.indexCount.toLong() + pendingTools.size + toolBlocks.size +
-            toolArgsByIndex.size + openedToolIds.size,
+            toolArgsByIndex.size + openedIndexById.size + synthesizedIndices.size + openedNames.size,
     ).toInt()
     internal val bufferedArgsChars: Int get() = minOf(
         Int.MAX_VALUE.toLong(),
@@ -68,9 +76,12 @@ internal class ChatToolCalls(private val frame: ChatToolFrame, private val prose
             return
         }
         val pending = pendingTools.getOrPut(parsed.index) {
-            PendingTool(id = parsed.id.ifEmpty { "toolu_${parsed.index}" })
+            PendingTool(id = parsed.id.ifEmpty { "toolu_${parsed.index}" }, synthesizedId = parsed.id.isEmpty())
         }
-        if (parsed.id.isNotEmpty()) pending.id = parsed.id
+        if (parsed.id.isNotEmpty()) {
+            pending.id = parsed.id
+            pending.synthesizedId = false
+        }
         if (parsed.name.isNotEmpty()) pending.name = parsed.name
         if (parsed.args.isNotEmpty()) {
             val before = pending.args.length
@@ -94,13 +105,58 @@ internal class ChatToolCalls(private val frame: ChatToolFrame, private val prose
         prose.closeOpenProse(sink)
         val opened = sink.openTool(pending.id, pending.name.ifEmpty { "tool" })
         toolBlocks[index] = opened
-        openedToolIds.add(pending.id)
+        openedIndexById[pending.id] = index
+        openedNames[index] = pending.name.ifEmpty { "tool" }
+        if (pending.synthesizedId) synthesizedIndices.add(index)
         hasToolUse = true
         pendingTools.remove(index)
         pendingArgsCharCount -= pending.args.length.toLong()
         if (pending.args.isNotEmpty()) {
             sink.inputJsonDelta(opened, pending.args.toString())
             accumulateToolArgs(index, pending.args.toString())
+        }
+    }
+
+    /** Every streamed call's tool index, opened or still pending, in the order the vendor lists them. */
+    internal fun streamedIndices(): List<Int> = (toolBlocks.keys + pendingTools.keys).sorted()
+
+    /** The streamed call a final-message call with id [id] and name [name] echoes, found by id, else — for a call that
+     *  was streamed without an id and so carries a minted one — by its [position] in the final array and its name. */
+    internal fun echoedIndex(id: String, name: String, position: Int, streamed: List<Int>): Int? {
+        val byId = if (id.isEmpty()) {
+            null
+        } else {
+            openedIndexById[id] ?: pendingTools.entries.firstOrNull { it.value.id == id }?.key
+        }
+        return byId ?: streamed.getOrNull(position)?.takeIf { isMintedEchoOf(it, name) }
+    }
+
+    private fun isMintedEchoOf(candidate: Int, name: String): Boolean {
+        val minted = candidate in synthesizedIndices || pendingTools[candidate]?.synthesizedId == true
+        val streamedName = openedNames[candidate] ?: pendingTools[candidate]?.name.orEmpty()
+        return minted && (streamedName.isEmpty() || streamedName == name)
+    }
+
+    /** The final message's complete arguments for an already-opened call: when the stream delivered only a prefix of
+     *  them, the rest is sent now, so the client receives the whole input instead of truncated JSON. Arguments that
+     *  are not an extension of what was streamed are left alone: they cannot be corrected on the wire, and the
+     *  terminal validation reports them. */
+    internal suspend fun completeOpenedArgs(index: Int, finalArgs: String, sink: WireSink) {
+        val block = toolBlocks[index] ?: return
+        val streamed = toolArgsByIndex[index]?.toString().orEmpty()
+        if (finalArgs.length > streamed.length && finalArgs.startsWith(streamed)) {
+            val rest = finalArgs.substring(streamed.length)
+            sink.inputJsonDelta(block, rest)
+            accumulateToolArgs(index, rest)
+        }
+    }
+
+    /** The same completion for a call still pending, whose arguments have not gone to the wire yet. */
+    internal fun completePendingArgs(pending: PendingTool, finalArgs: String) {
+        if (finalArgs.length > pending.args.length && finalArgs.startsWith(pending.args)) {
+            val before = pending.args.length
+            pending.args.append(finalArgs, before, finalArgs.length)
+            pendingArgsCharCount += (pending.args.length - before).toLong()
         }
     }
 

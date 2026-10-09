@@ -37,6 +37,8 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.stream.FoldConfig
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -83,12 +85,11 @@ class HeadServerFoldTest {
         tmp = tempDir
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = catalog,
                 pinnedModel = "gpt-5.6-luna",
                 auth = FoldFakeAuth(),
-                baseUrl = mock.baseUrl,
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
@@ -212,12 +213,11 @@ class HeadServerFoldTest {
     private fun tightCapHead(gate: InflightGate, log: (String) -> Unit = {}): HeadServer = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = catalog,
                 pinnedModel = "gpt-5.6-luna",
                 auth = FoldFakeAuth(),
-                baseUrl = mock.baseUrl,
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 1.seconds),
                 loginCommand = "claudex login",
             ),
@@ -238,12 +238,11 @@ class HeadServerFoldTest {
     private fun stallHead(): HeadServer = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = catalog,
                 pinnedModel = "gpt-5.6-luna",
                 auth = FoldFakeAuth(),
-                baseUrl = mock.baseUrl,
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
                 watchdog = WatchdogBudget(20.seconds, 1.seconds, 60.seconds),
                 loginCommand = "claudex login",
             ),

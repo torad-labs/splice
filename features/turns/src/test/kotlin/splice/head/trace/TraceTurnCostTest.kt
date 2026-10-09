@@ -26,6 +26,9 @@ import splice.core.perf.PerfSnapshot
 import splice.core.storage.ActivityDays
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.head.TurnsHead
@@ -75,15 +78,19 @@ class TraceTurnCostTest {
 
     private fun meta(model: String) = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = "claude-kimi--$model",
-        upstreamModel = model,
-        clientMaxTokens = 8000,
-        effort = "medium",
-        summary = null,
-        budgetTokens = null,
-        sessionId = "sess-cost",
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "medium",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = "claude-kimi--$model",
+            upstreamModel = model,
+            clientMaxTokens = 8000,
+        ),
+        scope = TurnScope(sessionId = "sess-cost"),
     )
 
     /** turn-1 ran on the priced model and turn-2 on one with no card, both ended; turn-3 is still open. */

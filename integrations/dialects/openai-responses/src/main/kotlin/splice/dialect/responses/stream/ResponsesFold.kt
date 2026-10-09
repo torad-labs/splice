@@ -59,7 +59,7 @@ internal class ResponsesFoldPolicy(
 
     override fun continuation(round: FoldRound): JsonObject? {
         if (!shouldContinue(round)) return null
-        val replay = round.outcome.reasoningEnvelopes.mapNotNull { decodeReasoningEnvelope(it) }
+        val replay = round.outcome.handoffs.reasoningEnvelopes.mapNotNull { decodeReasoningEnvelope(it) }
         return if (replay.isEmpty()) null else continuationBody(round.requestBody, replay)
     }
 

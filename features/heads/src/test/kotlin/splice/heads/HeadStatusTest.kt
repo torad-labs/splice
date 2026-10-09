@@ -8,6 +8,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import splice.core.head.GateCounts
 import splice.core.head.GateHealth
 import splice.core.head.GatePhase
 import splice.core.head.GateSlot
@@ -68,10 +69,7 @@ class HeadStatusTest {
             inflight = live.size,
             queued = 1,
             limit = 4,
-            acquired = 9,
-            released = 7,
-            waited = 3,
-            avgWaitMs = 120,
+            counts = GateCounts(acquired = 9, released = 7, waited = 3, avgWaitMs = 120),
             live = live,
             streamIdleMs = 90_000,
         ),

@@ -45,7 +45,7 @@ public class PassthroughProvider(
 ) : Provider, ProviderIdentity by tuning {
 
     // baseUrl carries no /v1 (topology supplies the host root); the Messages path is /v1/messages.
-    override val upstreamUrl: String = "${tuning.baseUrl}/v1/messages"
+    override val upstreamUrl: String = "${tuning.locations.baseUrl}/v1/messages"
 
     override val showReasoning: ReasoningDisplay = ReasoningDisplay.OFF
     override val replayReasoning: Boolean = false
@@ -54,7 +54,7 @@ public class PassthroughProvider(
     // V4-32: one instance per head. The builder shortens into it, every stream translator this
     // provider makes restores out of it, so a name rewritten on the way out is recoverable on
     // the way back for the life of the head. Off (cap 0) for every head but Muse.
-    private val toolNames = ToolNameShortener(quirks.toolNameCap)
+    private val toolNames = ToolNameShortener(quirks.request.toolNameCap)
     private val builder = PassthroughRequestBuilder(quirks, configEffort, names = toolNames)
     private val compactionTail = PassthroughCompactionTail()
     private val systemPrompt = PassthroughSystemPrompt()

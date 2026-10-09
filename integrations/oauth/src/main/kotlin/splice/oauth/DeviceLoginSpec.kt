@@ -35,20 +35,35 @@ public data class DeviceAuthorization(
     public val intervalS: Long,
 )
 
+/** Who the poller says it is on both OAuth calls: the client id and any extra identity headers. */
+public data class DeviceClient(
+    public val id: String,
+    /** Extra identity headers on both OAuth calls; LoginIo already sends Accept application/json. */
+    public val headers: Map<String, String>,
+)
+
+/** The device_authorization call: where it posts, the body it sends, and how its answer is read. */
+public data class DeviceAuthEndpoint(
+    public val url: String,
+    public val form: DeviceAuthForm,
+    public val parse: DeviceAuthParse,
+)
+
+/** The token endpoint the poller waits on: where it posts, the poll body, and what a success persists. */
+public data class DeviceTokenEndpoint(
+    public val url: String,
+    public val pollForm: TokenPollForm,
+    /** token-endpoint success body → the auth.json content to persist. */
+    public val toAuthJson: AuthJsonFromResponse,
+)
+
 /** Everything the device flow needs for one provider's login (built by LoginCommand per head). */
 public data class DeviceLoginSpec(
     public val head: String,
-    public val clientId: String,
-    public val deviceAuthUrl: String,
-    public val tokenUrl: String,
+    public val client: DeviceClient,
+    public val deviceAuth: DeviceAuthEndpoint,
+    public val tokenEndpoint: DeviceTokenEndpoint,
     public val authPath: Path,
-    /** Extra identity headers on both OAuth calls; LoginIo already sends Accept application/json. */
-    public val identityHeaders: Map<String, String>,
-    /** token-endpoint success body → the auth.json content to persist. */
-    public val toAuthJson: AuthJsonFromResponse,
-    public val deviceAuthForm: DeviceAuthForm,
-    public val parseDeviceAuth: DeviceAuthParse,
-    public val tokenPollForm: TokenPollForm,
     public val account: OAuthLoginAccount? = null,
     public val afterPersist: DeviceLoginFinalizer = DeviceLoginFinalizer { _, _ -> },
 )

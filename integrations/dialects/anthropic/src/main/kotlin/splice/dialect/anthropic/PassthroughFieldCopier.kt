@@ -14,13 +14,13 @@ internal class PassthroughFieldCopier(
 ) {
 
     private val handledKeys: Set<String> =
-        if (quirks.mapThinkingToAdaptive) HANDLED_KEYS else HANDLED_KEYS - OUTPUT_CONFIG
+        if (quirks.thinking.mapThinkingToAdaptive) HANDLED_KEYS else HANDLED_KEYS - OUTPUT_CONFIG
 
     /** Copy every field the specialized scrubs do NOT own, cache_control stripped; sampling
      *  params optionally dropped. Unknown client fields ride through here verbatim. */
     fun copyUnhandledFields(sink: JsonObjectBuilder, raw: JsonObject) {
         for ((key, value) in raw) {
-            val dropped = key in handledKeys || (key in SAMPLING_KEYS && quirks.stripSamplingParams)
+            val dropped = key in handledKeys || (key in SAMPLING_KEYS && quirks.request.stripSamplingParams)
             if (!dropped) sink.put(key, cache.stripCacheControl(value))
         }
     }

@@ -12,9 +12,13 @@ import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.request.BuildOptions
+import splice.dialect.responses.request.ModelIds
+import splice.dialect.responses.request.ReasoningHandoff
+import splice.dialect.responses.request.RequestedReasoning
 import splice.dialect.responses.request.ResponsesRequestBuilder
 
 class ResponsesHostedToolRecoveryTest {
@@ -27,21 +31,29 @@ class ResponsesHostedToolRecoveryTest {
         val built = ResponsesRequestBuilder(
             ResponsesQuirks(
                 providerTag = "muse",
-                toolSurface = ToolDeferralPolicy(mode = ToolSearchMode.HOSTED, minDeferred = 1),
+                tools = ResponsesToolQuirks(
+                    toolSurface = ToolDeferralPolicy(mode = ToolSearchMode.HOSTED, minDeferred = 1),
+                ),
             ),
         ).build(
             parsed.typed,
             parsed.raw,
             BuildOptions(
                 compact = false,
-                originalModel = "muse-spark-1.3",
-                upstreamModel = "muse-spark-1.3",
-                configEffort = null,
-                configSummary = null,
-                showReasoning = ReasoningDisplay.TEXT,
-                replayReasoning = InjectPriorReasoning(false),
-                includeEncryptedReasoning = RequestEncryptedReasoning(false),
-                decodeReasoningEnvelope = { null },
+                models = ModelIds(
+                    original = "muse-spark-1.3",
+                    upstream = "muse-spark-1.3",
+                ),
+                reasoning = RequestedReasoning(
+                    effort = null,
+                    summary = null,
+                    display = ReasoningDisplay.TEXT,
+                ),
+                handoff = ReasoningHandoff(
+                    replay = InjectPriorReasoning(false),
+                    includeEncrypted = RequestEncryptedReasoning(false),
+                    decode = { null },
+                ),
             ),
         )
         val tools = built.req.getValue("tools").jsonArray.map { it.jsonObject }

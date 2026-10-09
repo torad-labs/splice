@@ -119,7 +119,7 @@ internal class ClaudeAccountSignIn(
         }
         try {
             val completed = child.await { url ->
-                cell.updateAndGet { it.copy(state = LoginState.WAITING, browserUrl = url) }
+                cell.updateAndGet { it.copy(state = LoginState.WAITING, prompt = it.prompt.copy(browserUrl = url)) }
             }
             if (completed) land(pending, cell, restart) else failed(cell, "the sign-in did not complete")
         } finally {

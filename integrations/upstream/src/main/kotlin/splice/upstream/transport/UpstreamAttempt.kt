@@ -16,18 +16,14 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TimedWork
-import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
 import splice.core.usage.PlanLimit
 import splice.core.wire.HttpStatus
 import splice.core.wire.RateLimitReply
-import splice.upstream.BodyAmendment
-import splice.upstream.ClientFrameEmitted
 import splice.upstream.CredentialHeaders
 import splice.upstream.RetryNotice
 import splice.upstream.StreamRead
 import splice.upstream.retry.RateLimitCooldown
-import splice.upstream.sse.WireObserver
 
 /** Remaining whole-turn wait budget at the instant retry policy asks. */
 public fun interface RemainingTurnWait {
@@ -54,17 +50,9 @@ public data class PostContext(
     val auth: RefreshableAuthProvider,
     val extraHeaders: CredentialHeaders,
     val onRetry: RetryNotice = RetryNotice {},
-    val perf: TurnPerf? = null,
-    val clientFrameEmitted: ClientFrameEmitted = ClientFrameEmitted { true },
-    val amendBodyOnFailure: BodyAmendment = BodyAmendment { _, _, _ -> null },
-    /** Selected account's cooldown; null preserves the client's legacy single-account cooldown. */
-    val rateLimitCooldown: RateLimitCooldown? = null,
-    /** Null preserves the legacy per-post deadline for callers without an outer turn budget. */
-    val remainingTurnWait: RemainingTurnWait? = null,
-    val authRefreshObserver: AuthRefreshObserver = AuthRefreshObserver {},
-    /** V4-174: hears every send of this post after it ends (headers redacted, body exact). Null —
-     *  the default and every head that did not opt in — records nothing and allocates nothing. */
-    val wire: WireObserver? = null,
+    val recovery: PostRecovery = PostRecovery(),
+    val limits: PostLimits = PostLimits(),
+    val observers: PostObservers = PostObservers(),
 ) {
     /** True only for the passthrough dialect, whose client understands the provider's native 429. */
     public var relayRateLimitReplies: Boolean = false
@@ -75,7 +63,7 @@ public data class PostContext(
     public var bodyRefusedAsTooLarge: Boolean = false
 
     /** A native pooled refusal is recoverable only by choosing another login, never by retrying this one. */
-    internal val nativePool: Boolean get() = relayRateLimitReplies && rateLimitCooldown != null
+    internal val nativePool: Boolean get() = relayRateLimitReplies && limits.rateLimitCooldown != null
 
     /** Delivered only after the provider accepts the HTTP request, before consuming its stream. */
     public var upstreamAccepted: splice.upstream.StreamStart = splice.upstream.StreamStart {}
@@ -88,26 +76,26 @@ public data class PostContext(
     }
 
     internal fun markRetry() {
-        perf?.add(PerfKeys.RETRIES, 1)
+        observers.perf?.add(PerfKeys.RETRIES, 1)
     }
 
     internal fun markAttempt() {
-        perf?.add(PerfKeys.ATTEMPTS, 1)
+        observers.perf?.add(PerfKeys.ATTEMPTS, 1)
     }
 
     internal fun markPostSendRetry() {
-        perf?.add(PerfKeys.POST_SEND_RETRIES, 1)
+        observers.perf?.add(PerfKeys.POST_SEND_RETRIES, 1)
     }
 
     internal fun markHeaders() {
-        perf?.mark(PerfKeys.HEADERS)
+        observers.perf?.mark(PerfKeys.HEADERS)
     }
 
     internal suspend fun <T> timedAuth(block: TimedWork<T>): T =
-        TurnPerfTiming.timedOr(perf, PerfKeys.AUTH_MS, block)
+        TurnPerfTiming.timedOr(observers.perf, PerfKeys.AUTH_MS, block)
 
     internal suspend fun <T> timedBackoff(block: TimedWork<T>): T =
-        TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS, block)
+        TurnPerfTiming.timedOr(observers.perf, PerfKeys.BACKOFF_MS, block)
 
     /** The credentials to send, or null when there are none locally: the call ends with [UpstreamAuthMissing]. */
     internal suspend fun requireAuth(): Credentials? = timedAuth { auth.credentials() }

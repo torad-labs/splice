@@ -57,7 +57,7 @@ class ActivityLabelTest {
             "Running cat build.log",
             labelAfter("Bash", """{"command":"set -e; MY=/x; cd /x; cat build.log"}"""),
         )
-        assertEquals("Running python3", labelAfter("Bash", """{"command":"python3 - <<'EOF'\nprint(1)\nEOF"}"""))
+        assertEquals("Running node", labelAfter("Bash", """{"command":"node - <<'EOF'\nconsole.log(1)\nEOF"}"""))
         assertEquals("Running a command", labelAfter("Bash", """{"command":""}"""))
         assertEquals("Running a command", labelAfter("Bash", """{}"""))
     }

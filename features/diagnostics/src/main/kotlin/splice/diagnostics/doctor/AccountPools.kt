@@ -10,9 +10,12 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import splice.accounts.pool.HeadAccountCredential
 import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
+import splice.accounts.pool.HeadAccountWindow
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
@@ -135,13 +138,21 @@ internal class AccountPoolProjection {
             selected = JsonScalars.str(a, "selected") == "true",
             available = JsonScalars.str(a, "available") == "true",
             plan = JsonScalars.str(a, "plan"),
-            fiveHourUsedPercent = JsonScalars.str(a, "five_hour_used_percent")?.toDoubleOrNull(),
-            fiveHourResetEpochSeconds = JsonScalars.long(a, "five_hour_reset_epoch_seconds"),
-            sevenDayUsedPercent = JsonScalars.str(a, "seven_day_used_percent")?.toDoubleOrNull(),
-            sevenDayResetEpochSeconds = JsonScalars.long(a, "seven_day_reset_epoch_seconds"),
-            credentialPresent = credentialPresent(a),
-            authExcludedUntilEpochMillis = authExclusion.first,
-            authExclusionReason = authExclusion.second,
+            quota = HeadAccountQuota(
+                fiveHour = HeadAccountWindow(
+                    usedPercent = JsonScalars.str(a, "five_hour_used_percent")?.toDoubleOrNull(),
+                    resetEpochSeconds = JsonScalars.long(a, "five_hour_reset_epoch_seconds"),
+                ),
+                sevenDay = HeadAccountWindow(
+                    usedPercent = JsonScalars.str(a, "seven_day_used_percent")?.toDoubleOrNull(),
+                    resetEpochSeconds = JsonScalars.long(a, "seven_day_reset_epoch_seconds"),
+                ),
+            ),
+            credential = HeadAccountCredential(
+                present = credentialPresent(a),
+                excludedUntilEpochMillis = authExclusion.first,
+                exclusionReason = authExclusion.second,
+            ),
         )
     }
 

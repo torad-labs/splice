@@ -130,7 +130,7 @@ public class AddRoutes(
         when (val outcome = adds.save(s, restart)) {
             is AddSaveOutcome.Saved -> {
                 log(
-                    "[control] add ${LogSafe.str(key)}: saved to ${LogSafe.str(s.candidate.path.toString())}; " +
+                    "[control] add ${LogSafe.str(key)}: saved to ${LogSafe.str(s.candidate.file.path.toString())}; " +
                         "restart ${LogSafe.str(views.restartStatus(outcome.saved.restart))}\n",
                 )
                 view(call, adds, s)
@@ -138,7 +138,7 @@ public class AddRoutes(
             }
             is AddSaveOutcome.ChecksFailed -> failed(call, outcome.checks)
             is AddSaveOutcome.Stale -> {
-                val text = texts.consoleStale(s.candidate.path.toString(), outcome.refused)
+                val text = texts.consoleStale(s.candidate.file.path.toString(), outcome.refused)
                 refuse(call, text, HttpStatusCode.Conflict)
             }
             AddSaveOutcome.AlreadySaved -> refuse(call, "'$key' is already saved.", HttpStatusCode.Conflict)

@@ -7,6 +7,7 @@ package splice.dialect.anthropic
 
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
 import splice.upstream.failure.UpstreamFailureClassifier
 
@@ -84,15 +85,17 @@ internal class PassthroughTerminalState(
         runawayGuard?.let {
             TurnOutcome.Failure(
                 it,
-                providerReported = false,
-                // V4-81: permanent, and it is the same argument the responses dialect's runaway arm
-                // makes by construction — the valve trips on the GENERATION ITSELF hitting its
-                // truncation bound, so re-sending the identical request reproduces the identical
-                // overrun. Marking it permanent is what stops the pre-content rule advertising a
-                // condition a retry cannot change as transient. This is the last of the four
-                // siblings (responses refusal, responses content-filter, chat refusal, chat
-                // content-filter); the sweep is closed.
-                permanent = true,
+                traits = FailureTraits(
+                    providerReported = false,
+                    // V4-81: permanent, and it is the same argument the responses dialect's runaway arm
+                    // makes by construction — the valve trips on the GENERATION ITSELF hitting its
+                    // truncation bound, so re-sending the identical request reproduces the identical
+                    // overrun. Marking it permanent is what stops the pre-content rule advertising a
+                    // condition a retry cannot change as transient. This is the last of the four
+                    // siblings (responses refusal, responses content-filter, chat refusal, chat
+                    // content-filter); the sweep is closed.
+                    permanent = true,
+                ),
                 cause = FailureCause.TOOL_TEAR,
                 phase = FailurePhase.MID_OUTPUT,
             )
@@ -102,7 +105,7 @@ internal class PassthroughTerminalState(
             // provider-reported (G20)
             TurnOutcome.Failure(
                 "${quirks.providerTag}: $failureMessage",
-                providerReported = true,
+                traits = FailureTraits(providerReported = true),
                 // V4-117: the CAUSE the two producers above latched (onError's vendor type, or
                 // stopReasonFailure's stop_reason verdict), carried through untouched. An earlier
                 // draft hard-coded UPSTREAM_REPORTED here and threw both verdicts away, which seven

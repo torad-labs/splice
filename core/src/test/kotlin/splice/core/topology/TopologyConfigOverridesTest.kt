@@ -237,14 +237,14 @@ class TopologyConfigOverridesTest {
         )
         val head = HeadConfig("client", 3107, "claude-client--")
         val empty = provider.catalogFor(head)
-        assertTrue(empty.open)
+        assertTrue(empty.client.open)
         assertTrue(empty.models.isEmpty())
         assertTrue(empty.contains("synthetic-new-model"))
         val metadata = provider.copy(models = listOf(ModelEntry("synthetic-priced-model", contextWindow = 200_000)))
         val legacy = metadata.catalogFor(
             head.copy(pinnedModel = "synthetic-retired-model", models = listOf(HeadModel("synthetic-retired-model"))),
         )
-        assertTrue(legacy.open)
+        assertTrue(legacy.client.open)
         assertEquals(
             "synthetic-retired-model",
             legacy.pinnedModel,

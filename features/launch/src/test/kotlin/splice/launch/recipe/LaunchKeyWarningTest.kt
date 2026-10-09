@@ -15,8 +15,11 @@ import splice.client.ClaudePolicy
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
 import splice.launch.LaunchHead
+import splice.launch.LaunchModels
 import splice.launch.LaunchRecipe
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.runningHead
 import java.nio.file.Path
@@ -28,20 +31,26 @@ class LaunchKeyWarningTest {
 
     private fun spec(configDir: Path) = LaunchSpec(
         trees = HeadTrees(configDir),
-        pinnedModel = "m",
-        availableModelIds = listOf("m"),
-        modelLabels = mapOf("m" to "M"),
-        contextWindow = 200_000,
-        modelOptionsCache = buildJsonObject { },
-        statuslineCommand = "\"/bin/curl\" -s :3096/statusline/$HEAD",
-        loginCommand = "$HEAD login",
-        signInLabel = "OpenRouter",
+        models = LaunchModels(
+            pinnedModel = "m",
+            availableModelIds = listOf("m"),
+            modelLabels = mapOf("m" to "M"),
+            contextWindow = 200_000,
+            modelOptionsCache = buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "$HEAD login",
+            signInLabel = "OpenRouter",
+            headKey = HEAD,
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "\"/bin/curl\" -s :3096/statusline/$HEAD",
+            port = 3102,
+            inferenceToken = "test-token",
+            apiTimeoutMs = 960_000,
+            forwardClientAuth = false,
+        ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 3102,
-        inferenceToken = "test-token",
-        apiTimeoutMs = 960_000,
-        forwardClientAuth = false,
-        headKey = HEAD,
     )
 
     private fun apiKeyHead(configDir: Path, present: Boolean, fields: Map<String, String>) = LaunchHead(

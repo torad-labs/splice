@@ -22,8 +22,10 @@ class LiveWindowsCatalogTest {
             ModelEntry(id = "bonsai-27b", label = "Bonsai 27B", contextWindow = 131_072, rates = rates),
             ModelEntry(id = "bonsai-9b", label = "Bonsai 9B", contextWindow = 65_536),
         ),
-        extraWindows = listOf(ExtraWindow("bonsai-aux", 32_768)),
-        windowRules = listOf(WindowRule("bonsai-", 16_384)),
+        windows = CatalogWindows(
+            extraWindows = listOf(ExtraWindow("bonsai-aux", 32_768)),
+            windowRules = listOf(WindowRule("bonsai-", 16_384)),
+        ),
         defaultContextWindow = 131_072,
         pinnedModel = "bonsai-27b",
     )
@@ -35,12 +37,15 @@ class LiveWindowsCatalogTest {
             ModelEntry(id = "bonsai-27b", label = "renamed in the file", contextWindow = 245_760),
             ModelEntry(id = "bonsai-9b", label = "Bonsai 9B", contextWindow = 65_536),
         ),
-        extraWindows = listOf(ExtraWindow("bonsai-aux", 49_152)),
-        windowRules = listOf(WindowRule("bonsai-", 24_576)),
+        windows = CatalogWindows(
+            extraWindows = listOf(ExtraWindow("bonsai-aux", 49_152)),
+            windowRules = listOf(WindowRule("bonsai-", 24_576)),
+        ),
         defaultContextWindow = 245_760,
     )
 
-    private fun running(current: ModelCatalog?): ModelCatalog = boot.copy(liveWindows = LiveWindows { current })
+    private fun running(current: ModelCatalog?): ModelCatalog =
+        boot.copy(windows = boot.windows.copy(liveWindows = LiveWindows { current }))
 
     @Test
     fun `every window method answers from the declaration in force now`() {
@@ -79,12 +84,12 @@ class LiveWindowsCatalogTest {
         assertEquals(listOf("Bonsai 27B", "Bonsai 9B"), merged.models.map { it.label })
         assertEquals(listOf(rates, null), merged.models.map { it.rates })
         assertEquals(listOf(245_760L, 65_536L), merged.models.map { it.contextWindow })
-        assertEquals(declared.extraWindows, merged.extraWindows)
-        assertEquals(declared.windowRules, merged.windowRules)
+        assertEquals(declared.windows.extraWindows, merged.windows.extraWindows)
+        assertEquals(declared.windows.windowRules, merged.windows.windowRules)
         assertEquals(245_760, merged.defaultContextWindow)
         assertEquals(boot.pinnedModel, merged.pinnedModel)
         assertEquals(boot.discoveryPrefix, merged.discoveryPrefix)
-        assertNull(merged.liveWindows)
+        assertNull(merged.windows.liveWindows)
     }
 
     @Test
@@ -100,8 +105,12 @@ class LiveWindowsCatalogTest {
         val published = boot.copy(
             models = listOf(ModelEntry("bonsai-27b", contextWindow = 400_000, maxContextWindow = 872_000)),
         )
-        val edited = published.copy(extraWindows = listOf(ExtraWindow("bonsai-27b", 300_000, 800_000)))
-        val live = published.copy(liveWindows = LiveWindows { published.withWindowsOf(edited) })
+        val edited = published.copy(
+            windows = published.windows.copy(extraWindows = listOf(ExtraWindow("bonsai-27b", 300_000, 800_000))),
+        )
+        val live = published.copy(
+            windows = published.windows.copy(liveWindows = LiveWindows { published.withWindowsOf(edited) }),
+        )
         assertEquals(300_000L, live.contextWindowFor("bonsai-27b"))
         assertEquals(800_000L, ModelServeWindows.forRow(live, "claude-bonsai--bonsai-27b[500k]"))
         val withoutOverride = published.withWindowsOf(
@@ -115,9 +124,11 @@ class LiveWindowsCatalogTest {
     fun `a row without a ceiling retains its target and suffixed rows retain their own override`() {
         val catalog = boot.copy(
             models = listOf(ModelEntry("bonsai-27b", contextWindow = 400_000)),
-            extraWindows = listOf(
-                ExtraWindow("bonsai-27b", 400_000, 872_000),
-                ExtraWindow("bonsai-27b[500k]", 300_000, 500_000),
+            windows = boot.windows.copy(
+                extraWindows = listOf(
+                    ExtraWindow("bonsai-27b", 400_000, 872_000),
+                    ExtraWindow("bonsai-27b[500k]", 300_000, 500_000),
+                ),
             ),
         )
         assertEquals(872_000L, ModelServeWindows.forRow(catalog, "bonsai-27b"))
@@ -134,17 +145,19 @@ class LiveWindowsCatalogTest {
                 ModelEntry("bonsai-27b[500k]", contextWindow = 400_000),
                 ModelEntry("bonsai-27b[1m]", contextWindow = 600_000),
             ),
-            extraWindows = listOf(
-                ExtraWindow("bonsai-27b[500k]", 400_000, 500_000),
-                ExtraWindow("bonsai-27b[1m]", 600_000, 872_000),
+            windows = boot.windows.copy(
+                extraWindows = listOf(
+                    ExtraWindow("bonsai-27b[500k]", 400_000, 500_000),
+                    ExtraWindow("bonsai-27b[1m]", 600_000, 872_000),
+                ),
             ),
         )
         assertEquals(600_000L, catalog.contextWindowFor("bonsai-27b"))
         assertEquals(872_000L, ModelServeWindows.forRow(catalog, "bonsai-27b"))
-        val windows = catalog.extraWindows.map {
+        val windows = catalog.windows.extraWindows.map {
             if (it.id.endsWith("[1m]")) it.copy(maxContextWindow = null) else it
         }
-        val noCeiling = catalog.copy(extraWindows = windows)
+        val noCeiling = catalog.copy(windows = catalog.windows.copy(extraWindows = windows))
         assertEquals(600_000L, ModelServeWindows.forRow(noCeiling, "bonsai-27b"))
         val bare = catalog.copy(models = catalog.models + ModelEntry("bonsai-27b", contextWindow = 300_000))
         assertEquals(300_000L, ModelServeWindows.forRow(bare, "bonsai-27b"))

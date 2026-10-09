@@ -39,13 +39,18 @@ import splice.core.perf.PerfKeys
 import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
+import splice.usage.economics.EconomicsBytes
+import splice.usage.economics.EconomicsCost
 import splice.usage.economics.EconomicsRead
 import splice.usage.economics.EconomicsRow
+import splice.usage.economics.EconomicsTokens
+import splice.usage.economics.EconomicsTools
 import splice.usage.economics.EconomicsTurnCounts
 import splice.usage.economics.HeadEconomicsSource
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
+import splice.usage.perf.PerfTurnFacts
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import java.nio.file.Path
@@ -222,18 +227,19 @@ class ColdUsageReadRouteTest {
                 override suspend fun credentials() = null
                 override suspend fun describe() = AuthDescription(true, "synthetic", emptyMap())
             },
-            usage = HeadUsageSource { UsageView(0, 0, null) },
-            compact = object : HeadCompactSource {
-                override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
-            },
-            logs = object : HeadLogSource {
-                override fun tail(lines: Int) = ""
-                override fun path() = ""
-            },
-            warnPct = 80,
-            warnTokens5h = 0,
-            economics = economicsSource(),
-            perfRows = perfSource(),
+            sources = HeadSources(
+                usage = HeadUsageSource { UsageView(0, 0, null) },
+                compact = object : HeadCompactSource {
+                    override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
+                },
+                logs = object : HeadLogSource {
+                    override fun tail(lines: Int) = ""
+                    override fun path() = ""
+                },
+                economics = economicsSource(),
+                perfRows = perfSource(),
+            ),
+            usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
         )
 
         private fun economicsSource(): HeadEconomicsSource = HeadEconomicsSource {
@@ -244,18 +250,16 @@ class ColdUsageReadRouteTest {
                     EconomicsRow(
                         hour = now / 3_600_000 * 3_600_000,
                         counts = EconomicsTurnCounts(turns = 5),
-                        inTokens = 100,
-                        cachedTokens = 30,
-                        cacheWriteTokens = 10,
-                        outTokens = 7,
-                        reqBytes = 20,
-                        upstreamBytes = 18,
-                        toolsEager = 3,
-                        toolsDeferred = 1,
-                        deferralTurns = 1,
+                        tokens = EconomicsTokens(
+                            inTokens = 100,
+                            cachedTokens = 30,
+                            cacheWriteTokens = 10,
+                            outTokens = 7,
+                        ),
+                        bytes = EconomicsBytes(reqBytes = 20, upstreamBytes = 18),
+                        tools = EconomicsTools(toolsEager = 3, toolsDeferred = 1, deferralTurns = 1),
                         rateLimited = 0,
-                        costUsd = 1.25,
-                        unpricedTurns = 0,
+                        cost = EconomicsCost(costUsd = 1.25, unpricedTurns = 0),
                     ),
                 ),
             )
@@ -276,9 +280,7 @@ class ColdUsageReadRouteTest {
                             PerfKeys.CACHED_TOKENS to 30,
                             PerfKeys.CACHE_WRITE_TOKENS to 10,
                         ),
-                        model = "synthetic",
-                        account = "synthetic",
-                        compact = false,
+                        facts = PerfTurnFacts(model = "synthetic", account = "synthetic", compact = false),
                     )
                 },
             )

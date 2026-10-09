@@ -87,7 +87,7 @@ internal class FoldRunner(
                 // gate — review-pr 2026-07-24). thinkingText STAYS: fold-mode reasoning streams
                 // LIVE to the wire, so it legitimately belongs in the mirror merge.
                 // emittedThinking rides along with thinkingText for the same reason.
-                salvaged.add(p.copy(bodyText = "", emittedText = false))
+                salvaged.add(p.copy(text = p.text.copy(bodyText = "", emittedText = false)))
                 acc = acc.plusRound(p.usage)
             }
             buffer.discard()

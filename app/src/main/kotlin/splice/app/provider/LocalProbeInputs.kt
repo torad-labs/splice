@@ -46,7 +46,7 @@ internal class LocalProbeInputs(private val http: LocalHttp? = null) {
         // suffix ("[64k]") both change what the head advertises, and the wire sees the stripped id.
         val rows = UpstreamWindows(catalog).byId()
         val declared = rows.mapValues { (id, window) ->
-            window.takeIf { provider.declaredWindowFor(id, catalog.headWindow) != null }
+            window.takeIf { provider.declaredWindowFor(id, catalog.windows.headWindow) != null }
         }
         val inferred = declared.filterValues { it == null }.keys
         val listed = probe.models(runtime, rows.keys, inferred) ?: return LocalRowsCheck.Unlisted(runtime)

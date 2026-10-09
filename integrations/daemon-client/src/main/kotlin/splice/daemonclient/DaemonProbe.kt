@@ -40,19 +40,31 @@ public object DaemonProbe {
      *  already waits on. */
     public data class HealthView(
         public val version: String?,
-        public val heads: Int?,
-        public val readyHeads: Int?,
-        public val failedHeads: Int?,
-        public val topologyDigest: String? = null,
-        public val configPath: String? = null,
-        public val topologyStale: Boolean? = null,
         public val ok: Boolean? = null,
+        public val heads: HealthHeads,
+        public val topology: HealthTopology = HealthTopology(),
         public val turnPathStalled: List<String> = emptyList(),
         public val clientVersionWarning: String? = null,
-        /** V4-394: each failed head's key and boot reason; empty on a healthy boot or an older daemon. */
-        public val failedHeadReasons: Map<String, String> = emptyMap(),
         /** V4-452: the two quota facts /health names apart, per head. */
         public val quota: HealthQuota = HealthQuota(),
+    )
+
+    /** What /health counts of the heads: how many are configured, how many are ready and how many failed to boot,
+     *  each null when the daemon does not say. [failedReasons] is V4-394: each failed head's key and boot reason;
+     *  empty on a healthy boot or an older daemon. */
+    public data class HealthHeads(
+        public val total: Int?,
+        public val ready: Int?,
+        public val failed: Int?,
+        public val failedReasons: Map<String, String> = emptyMap(),
+    )
+
+    /** Which topology the daemon booted with: its digest, the config file it read, and whether that file has
+     *  changed since. Each is null when the daemon does not say. */
+    public data class HealthTopology(
+        public val digest: String? = null,
+        public val configPath: String? = null,
+        public val stale: Boolean? = null,
     )
 
     /** V4-452: what /health says about each head's quota, the two facts kept apart. [refusedUntil] is the reset of
@@ -136,21 +148,25 @@ public object DaemonProbe {
         val obj = json.parseToJsonElement(body).jsonObject
         return HealthView(
             version = JsonScalars.str(obj, "version"),
-            heads = JsonScalars.int(obj, "heads"),
-            readyHeads = JsonScalars.int(obj, "readyHeads"),
-            failedHeads = JsonScalars.int(obj, "failedHeads"),
-            topologyDigest = JsonScalars.str(obj, "topologyDigest"),
-            configPath = JsonScalars.str(obj, "configPath"),
-            topologyStale = (obj["topologyStale"] as? JsonPrimitive)?.booleanOrNull,
             ok = (obj["ok"] as? JsonPrimitive)?.booleanOrNull,
+            heads = HealthHeads(
+                total = JsonScalars.int(obj, "heads"),
+                ready = JsonScalars.int(obj, "readyHeads"),
+                failed = JsonScalars.int(obj, "failedHeads"),
+                failedReasons = (obj["failedHeadReasons"] as? JsonObject)
+                    ?.mapNotNull { (key, reason) -> JsonScalars.str(reason)?.let { key to it } }
+                    ?.toMap()
+                    .orEmpty(),
+            ),
+            topology = HealthTopology(
+                digest = JsonScalars.str(obj, "topologyDigest"),
+                configPath = JsonScalars.str(obj, "configPath"),
+                stale = (obj["topologyStale"] as? JsonPrimitive)?.booleanOrNull,
+            ),
             turnPathStalled = (obj["turnPathStalled"] as? JsonArray)
                 ?.mapNotNull { JsonScalars.str(it) }
                 .orEmpty(),
             clientVersionWarning = JsonScalars.str(obj, "clientVersionWarning"),
-            failedHeadReasons = (obj["failedHeadReasons"] as? JsonObject)
-                ?.mapNotNull { (key, reason) -> JsonScalars.str(reason)?.let { key to it } }
-                ?.toMap()
-                .orEmpty(),
             quota = HealthQuota(
                 refusedUntil = (obj["quotaResetAtEpochSeconds"] as? JsonObject)
                     ?.mapNotNull { (key, reset) -> (reset as? JsonPrimitive)?.longOrNull?.let { key to it } }

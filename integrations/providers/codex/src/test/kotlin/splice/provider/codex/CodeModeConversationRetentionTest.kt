@@ -65,20 +65,21 @@ class CodeModeConversationRetentionTest {
         val record = CodeModeRecord(
             id = "c$conversation-s$n",
             key = "conversation-$conversation",
-            outer = JsonObject(emptyMap()),
-            outerCallId = "outer-$conversation-$n",
-            source = source,
             phase = CodeModePhase.LOST,
-            updatedAt = clock.now,
-            lastDigest = "digest-$conversation-$n",
-            baselineInputCount = n,
-            baselineInputDigest = "input-$conversation-$n",
-            metadataVersion = CODE_MODE_METADATA_VERSION,
-            baselineLogicalCount = n,
-            baselineLogicalDigest = "logical-$conversation-$n",
-            nativeSegments = emptyList(),
-            continuity = emptyList(),
-            continuityReplay = emptyList(),
+            origin = CodeModeOrigin(
+                outer = JsonObject(emptyMap()),
+                outerCallId = "outer-$conversation-$n",
+                source = source,
+                baseline = CodeModeBaseline(
+                    inputCount = n,
+                    inputDigest = "input-$conversation-$n",
+                    logicalCount = n,
+                    logicalDigest = "logical-$conversation-$n",
+                    metadataVersion = CODE_MODE_METADATA_VERSION,
+                ),
+            ),
+            progress = CodeModeProgress(updatedAt = clock.now, lastDigest = "digest-$conversation-$n"),
+            carry = CodeModeNativeContinuity(segments = emptyList(), continuity = emptyList(), replay = emptyList()),
         )
         assertTrue(add(record), "script $n of conversation $conversation was refused")
         if (!running) complete(record, "done $conversation/$n")

@@ -32,6 +32,8 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -61,8 +63,7 @@ class HeadServerCollectDisconnectTest {
         head = HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(
-                    key = "codex",
-                    label = "claudex",
+                    name = ProviderName(key = "codex", label = "claudex"),
                     catalog = ModelCatalog(
                         discoveryPrefix = "claude-codex--",
                         models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -70,7 +71,7 @@ class HeadServerCollectDisconnectTest {
                     ),
                     pinnedModel = "gpt-5.6-sol",
                     auth = CollectDisconnectAuth(),
-                    baseUrl = mock.baseUrl,
+                    locations = ProviderLocations(baseUrl = mock.baseUrl),
                     // Deliberately enormous: the watchdog must never be the thing that frees the
                     // slot inside this test's window, or the experiment answers nothing.
                     watchdog = WatchdogBudget(600.seconds, 600.seconds, 900.seconds),

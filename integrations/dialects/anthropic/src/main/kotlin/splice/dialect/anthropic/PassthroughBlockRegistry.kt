@@ -259,7 +259,7 @@ internal class PassthroughBlockRegistry(
         // upstream that signs and verifies) is untouched, and the gate below still reads it first.
         val thinkingWorthSigning =
             block.kind == Kind.THINKING && block.receivedThinkingText && !block.signatureSeen
-        if (quirks.synthesizeSignatures && thinkingWorthSigning) {
+        if (quirks.thinking.synthesizeSignatures && thinkingWorthSigning) {
             // Synthesize EXACTLY ONE signature so Claude Code keeps the thinking block. Quirk-gated:
             // an upstream that SIGNS and VERIFIES must never receive this back — a block truncated
             // before its signature would otherwise persist a forged one into the transcript.

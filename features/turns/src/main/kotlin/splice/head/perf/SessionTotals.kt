@@ -39,6 +39,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
+import splice.core.perf.PerfModelGaps
 import splice.core.perf.PerfModelTotal
 import splice.core.perf.PerfSessionTotal
 import splice.core.util.Cancellables
@@ -162,7 +163,7 @@ public class SessionTotals(
     }
 
     private fun folded(prev: PerfModelTotal?, counters: Map<String, Long>, usd: Double?): PerfModelTotal {
-        val p = prev ?: PerfModelTotal(0, 0, 0, 0, 0, usd = 0.0, unpricedTurns = 0)
+        val p = prev ?: PerfModelTotal(0, 0, 0, 0, 0, usd = 0.0, gaps = PerfModelGaps())
         val buckets = TurnBill.total(counters)
         return PerfModelTotal(
             turns = p.turns + 1,
@@ -171,8 +172,10 @@ public class SessionTotals(
             cacheWriteTokens = p.cacheWriteTokens + buckets.cacheWrite,
             outTokens = p.outTokens + buckets.output,
             usd = p.usd + (usd ?: 0.0),
-            unpricedTurns = p.unpricedTurns + if (usd == null) 1 else 0,
-            unreportedUsageTurns = p.unreportedUsageTurns + if (TurnBill.fullyReported(counters)) 0 else 1,
+            gaps = PerfModelGaps(
+                unpricedTurns = p.gaps.unpricedTurns + if (usd == null) 1 else 0,
+                unreportedUsageTurns = p.gaps.unreportedUsageTurns + if (TurnBill.fullyReported(counters)) 0 else 1,
+            ),
         )
     }
 
@@ -291,8 +294,8 @@ private object TotalsFile {
                                             put("cache_write_tokens", t.cacheWriteTokens)
                                             put("out_tokens", t.outTokens)
                                             put("cost_usd", t.usd)
-                                            put("unpriced_turns", t.unpricedTurns)
-                                            put("unreported_usage_turns", t.unreportedUsageTurns)
+                                            put("unpriced_turns", t.gaps.unpricedTurns)
+                                            put("unreported_usage_turns", t.gaps.unreportedUsageTurns)
                                         }
                                     }
                                 }
@@ -314,8 +317,10 @@ private object TotalsFile {
                 cacheWriteTokens = long(t, "cache_write_tokens"),
                 outTokens = long(t, "out_tokens"),
                 usd = field(t, "cost_usd").jsonPrimitive.double,
-                unpricedTurns = long(t, "unpriced_turns"),
-                unreportedUsageTurns = t["unreported_usage_turns"]?.jsonPrimitive?.long ?: 0L,
+                gaps = PerfModelGaps(
+                    unpricedTurns = long(t, "unpriced_turns"),
+                    unreportedUsageTurns = t["unreported_usage_turns"]?.jsonPrimitive?.long ?: 0L,
+                ),
             )
         }
         val tag = field(o, "session").jsonPrimitive.content

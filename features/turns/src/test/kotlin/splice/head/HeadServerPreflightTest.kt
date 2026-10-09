@@ -22,6 +22,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.model.CatalogWindows
 import splice.core.model.CompactionReserve
 import splice.core.model.CompactionReserveDefaults
 import splice.core.model.DiscoveredModel
@@ -42,6 +43,9 @@ import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
 import splice.head.perf.PerfRowMeta
 import splice.head.perf.PerfStats
+import splice.head.perf.PerfTranscriptIds
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import java.nio.file.Files
 import java.nio.file.Path
@@ -79,7 +83,7 @@ class HeadServerPreflightTest {
             models = listOf(ModelEntry(model, contextWindow = window)),
             defaultContextWindow = window,
             pinnedModel = model,
-            compactionReserveDefaults = CompactionReserveDefaults { id, _ -> CALIBRATED[id] },
+            windows = CatalogWindows(compactionReserveDefaults = CompactionReserveDefaults { id, _ -> CALIBRATED[id] }),
         )
         return assembled(root, upstream, catalog, stats, model)
     }
@@ -115,12 +119,11 @@ class HeadServerPreflightTest {
     ): HeadServer {
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = catalog,
                 pinnedModel = model,
                 auth = PreflightAuth(),
-                baseUrl = upstream.baseUrl,
+                locations = ProviderLocations(baseUrl = upstream.baseUrl),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
@@ -131,7 +134,9 @@ class HeadServerPreflightTest {
             "codex",
             4_096,
         )
-        val stores = headStores(root, suffix = "-preflight").copy(trace = trace, perfStats = stats)
+        val stores = headStores(root, suffix = "-preflight").let {
+            it.copy(captures = it.captures.copy(trace = trace), perfStats = stats)
+        }
         return HeadServer(provider, 0, headDeps(root).copy(stores = stores))
     }
 
@@ -164,8 +169,10 @@ class HeadServerPreflightTest {
                 model = model,
                 outcome = "ok",
                 compact = false,
-                sessionId = "preflight-session",
-                conversationKey = "splice-" + InputDigest.hex(firstText).take(32),
+                transcript = PerfTranscriptIds(
+                    sessionId = "preflight-session",
+                    conversationKey = "splice-" + InputDigest.hex(firstText).take(32),
+                ),
             ),
             perf.snapshot(),
             request,

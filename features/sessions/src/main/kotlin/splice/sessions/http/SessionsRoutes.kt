@@ -65,9 +65,9 @@ private object MessageWire {
         put("role", m.role.name.lowercase())
         m.ts?.let { put("ts", it) }
         put("text", m.text)
-        m.tool?.let { put("tool", it) }
-        m.result?.let { put("result", it) }
-        m.toolUseId?.let { put("tool_use_id", it) }
+        m.toolUse.name?.let { put("tool", it) }
+        m.toolUse.result?.let { put("result", it) }
+        m.toolUse.id?.let { put("tool_use_id", it) }
     }
 }
 
@@ -170,19 +170,19 @@ public class SessionsRoutes(
         resumable: Resumability,
         accounts: SessionAccountOf = accountOf,
     ): JsonObject = buildJsonObject {
-        put("pid", s.pid)
+        put("pid", s.process.pid)
         put("session_id", s.sessionId)
         put("name", if (viewEnabled()) s.name else null)
-        put("last", SessionActivity.last(s.sessionId, s.cwd, roots.treesFor(s.head), transcripts, viewEnabled))
-        put("kind", s.kind)
-        put("version", s.version)
-        put("cwd", s.cwd)
+        put("last", SessionActivity.last(s.sessionId, s.process.cwd, roots.treesFor(s.head), transcripts, viewEnabled))
+        put("kind", s.client.kind)
+        put("version", s.client.version)
+        put("cwd", s.process.cwd)
         put("status", s.status.state)
         put("waiting_for", s.status.waitingFor)
-        put("entrypoint", s.entrypoint)
+        put("entrypoint", s.client.entrypoint)
         put("status_updated_at", s.status.updatedAt)
-        put("started_at", s.startedAt)
-        put("updated_at", s.updatedAt)
+        put("started_at", s.process.startedAt)
+        put("updated_at", s.process.updatedAt)
         put("address", s.address)
         put("head", s.head ?: UNKNOWN_HEAD)
         put("route", routeName(s.route))
@@ -206,7 +206,8 @@ public class SessionsRoutes(
     }
 
     /** V4-131: the session's repo as its row reports it (ProjectsRoutes groups by it); null without a cwd. */
-    public fun repoOf(record: SessionRecord): RepoRoot? = record.cwd?.let { resolverFor(record.head).resolve(it) }
+    public fun repoOf(record: SessionRecord): RepoRoot? =
+        record.process.cwd?.let { resolverFor(record.head).resolve(it) }
 
     /** The trusted root [head]'s statusline would probe [path] under, through the SAME per-head root
      *  set [repoOf] walks with (statuslineGitRoots is per-head overridable), or null outside all. */

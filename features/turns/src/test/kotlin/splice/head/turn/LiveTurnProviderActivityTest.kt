@@ -30,6 +30,8 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
 import splice.dialect.responses.ReasoningSettings
@@ -48,7 +50,10 @@ import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.UsagePayloadBuilder
+import splice.upstream.BuiltTurn
 import splice.upstream.ClientFrameEmitted
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.RoundBody
 import splice.upstream.WsRound
@@ -67,8 +72,7 @@ class LiveTurnProviderActivityTest {
         val turns = LiveTurns(clock)
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "test",
-                label = "test",
+                name = ProviderName(key = "test", label = "test"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "test--",
                     models = listOf(ModelEntry("model", "Model", contextWindow = 200_000)),
@@ -80,7 +84,7 @@ class LiveTurnProviderActivityTest {
                     override suspend fun refresh(): Credentials? = null
                     override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
                 },
-                baseUrl = "http://127.0.0.1:9",
+                locations = ProviderLocations(baseUrl = "http://127.0.0.1:9"),
                 watchdog = WatchdogBudget(30.seconds, 30.seconds, 60.seconds),
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
@@ -95,34 +99,43 @@ class LiveTurnProviderActivityTest {
             val slot = InflightGate({ 1 }).admittedSlot()
             val meta = TurnMeta(
                 compact = false,
-                showReasoning = ReasoningDisplay.TEXT,
-                stream = true,
-                originalModel = "model",
-                upstreamModel = "model",
-                clientMaxTokens = 100,
-                effort = "high",
-                summary = "detailed",
-                budgetTokens = null,
+                reasoning = TurnReasoning(
+                    showReasoning = ReasoningDisplay.TEXT,
+                    effort = "high",
+                    summary = "detailed",
+                    budgetTokens = null,
+                ),
+                route = TurnRoute(
+                    stream = true,
+                    originalModel = "model",
+                    upstreamModel = "model",
+                    clientMaxTokens = 100,
+                ),
             )
             turns.admitted(slot, meta, null)
             return TurnDrive(
-                requestBody = buildJsonObject {},
-                meta = meta,
+                inputs = TurnInputs(
+                    built = BuiltTurn(
+                        requestBody = buildJsonObject {},
+                        meta = meta,
+                        extraHeaders = emptyMap(),
+                        toolSearch = null,
+                    ),
+                    slot = slot,
+                    t0 = now,
+                    perf = TurnPerf(clock = clock),
+                    trace = null,
+                    markHandedOff = {},
+                ),
                 emitter = CollectingTerminal("model", UsagePayloadBuilder { buildJsonObject {} }),
                 watchdog = TurnWatchdog(provider.watchdog),
-                slot = slot,
                 pipeline = pipeline,
-                t0 = now,
-                trace = null,
-                perf = TurnPerf(clock = clock),
-                turnHeaders = emptyMap(),
                 signals = RunnerSignals(),
                 channel = ClientChannel(
                     ImmediateSseWriter(writeRaw = {}, flushRaw = {}),
                     Mutex(),
                     AtomicBoolean(false),
                 ),
-                toolSearch = null,
             )
         }
 

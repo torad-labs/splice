@@ -475,7 +475,8 @@ class ConstructorWidthLawTest {
             // A class with NO primary constructor is out of the denominator, not an offender — so a
             // tree holding only those refuses rather than reporting a clean sweep.
             write(
-                "Fixture.kt" to "package splice.selftest\n\npublic class SelftestNoCtor\npublic object SelftestObject\n",
+                "Fixture.kt" to "package splice.selftest\n\npublic class SelftestNoCtor\n" +
+                    "public object SelftestObject\n",
             )
             assertHit(ratchet(baseline()), "vacuously") { "a tree with no constructors must REFUSE" }
             assertHit(Tree(File(root, "empty")).ratchet(baseline()), "vacuously") { "an empty tree must REFUSE" }

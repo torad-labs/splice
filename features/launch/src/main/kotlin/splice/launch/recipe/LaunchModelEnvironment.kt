@@ -13,7 +13,7 @@ internal object LaunchModelEnvironment {
     fun models(spec: LaunchSpec, slots: List<Pair<String, String>>): Map<String, String> =
         buildMap {
             // V4-449: an explicit pin selects the initial model only. Without one, the client chooses.
-            if (spec.pinnedModel.isNotBlank()) put("ANTHROPIC_MODEL", spec.pinnedModel)
+            if (spec.models.pinnedModel.isNotBlank()) put("ANTHROPIC_MODEL", spec.models.pinnedModel)
             // The picker lists one row per PLANTED TIER (Claude Code 2.1.257: fen()/hen()/uen()
             // emit a row whenever ANTHROPIC_DEFAULT_<tier>_MODEL is set, value = the alias, label =
             // _NAME) and dedupes rows by value only, so two tiers on one model drew that model
@@ -34,34 +34,34 @@ internal object LaunchModelEnvironment {
             // sends the row's own id (verified on 2.1.283), so it is routed like the first and, off
             // availableModels, drawn never, like the wrapped spelling, which the client does not know
             // and named in a [claude-code:unrecognized_model] line for every haiku-tier title and subagent.
-            val presentedAs = spec.tiers.modelOverrides.entries.associate { (claude, row) -> row to claude }
+            val presentedAs = spec.models.tiers.modelOverrides.entries.associate { (claude, row) -> row to claude }
             val planted = mutableSetOf<String>()
             slots.forEach { (slot, model) ->
                 val spelling = when {
-                    planted.add(model) -> spec.tiers.clientId(model)
+                    planted.add(model) -> spec.models.tiers.clientId(model)
                     model in presentedAs -> presentedAs.getValue(model)
-                    spec.discoveryPrefix.isNotBlank() -> spec.discoveryPrefix + model
+                    spec.models.discoveryPrefix.isNotBlank() -> spec.models.discoveryPrefix + model
                     else -> model
                 }
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL", spelling)
-                val label = spec.modelLabels[model] ?: model
+                val label = spec.models.modelLabels[model] ?: model
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_NAME", label)
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_DESCRIPTION", label)
             }
         }
 
     fun windows(spec: LaunchSpec): Map<String, String> {
-        if (spec.forwardClientAuth) return emptyMap()
+        if (spec.gateway.forwardClientAuth) return emptyMap()
         // The pinned row's window remains the compaction target on foreign-provider heads.
         // Presented and [1m]-spelled rows must retain their client's larger context ceiling.
         val compactWindow = maxOf(
             AUTO_COMPACT_FLOOR,
-            spec.contextWindow,
-            spec.tiers.presentedWindow,
-            spec.tiers.spelledWindow,
+            spec.models.contextWindow,
+            spec.models.tiers.presentedWindow,
+            spec.models.tiers.spelledWindow,
         )
         return mapOf(
-            "CLAUDE_CODE_MAX_CONTEXT_TOKENS" to spec.contextWindow.toString(),
+            "CLAUDE_CODE_MAX_CONTEXT_TOKENS" to spec.models.contextWindow.toString(),
             "CLAUDE_CODE_AUTO_COMPACT_WINDOW" to compactWindow.toString(),
         )
     }

@@ -35,8 +35,8 @@ internal class ChatRequestAssembler(private val quirks: ChatQuirks, private val 
             stream = true,
             tools = if (emitTools) wire.toolsArray(body) else null,
             toolChoice = if (emitTools) ToolChoiceMapping.openAiToolChoice(body.toolChoice) else null,
-            reasoningEffort = if (quirks.emitReasoningEffort) effort else null,
-            reasoning = if (quirks.emitReasoningEffort && effort != null) {
+            reasoningEffort = if (quirks.reasoning.emitReasoningEffort) effort else null,
+            reasoning = if (quirks.reasoning.emitReasoningEffort && effort != null) {
                 buildJsonObject { put("effort", effort) }
             } else {
                 null

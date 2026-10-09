@@ -24,6 +24,8 @@ import splice.head.headDeps
 import splice.head.turn.ProviderTurnBuild
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
@@ -69,13 +71,12 @@ class ReplayHashRoutingTest {
         val build = ProviderTurnBuild(provider, headDeps(tmp), CompactionReplay())
         val parsed = AnthropicBodyParse().parse(REQUEST).getOrThrow()
         return List(2) { build.build(parsed, compact = true, sessionId = "session-v4166", perf = TurnPerf()) }
-            .map { it.meta.compactionRequestHash }
+            .map { it.meta.compaction.requestHash }
     }
 
     private fun base() = PassthroughProvider(
         ProviderTuning(
-            key = "kimi",
-            label = "kimix",
+            name = ProviderName(key = "kimi", label = "kimix"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-kimi--",
                 models = listOf(ModelEntry(MODEL, "Kimi", contextWindow = 200_000)),
@@ -83,7 +84,7 @@ class ReplayHashRoutingTest {
             ),
             pinnedModel = MODEL,
             auth = RoutingTestAuth(),
-            baseUrl = "http://127.0.0.1",
+            locations = ProviderLocations(baseUrl = "http://127.0.0.1"),
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
         PassthroughQuirks(providerTag = "test-passthrough"),

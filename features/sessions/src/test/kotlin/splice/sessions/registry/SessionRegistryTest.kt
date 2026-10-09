@@ -76,7 +76,7 @@ class SessionRegistryTest {
         val starts = mapOf(11L to "187740", 12L to "187740", 13L to "187740")
         val identity = fakeIdentity(dir.resolve("host"), starts)
         val rows = registry(dir, alive = setOf(11L, 12L, 13L, 14L), identity = identity).read()
-            .associateBy { it.pid }
+            .associateBy { it.process.pid }
         assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability, "same domain, same start")
         assertEquals(SessionAvailability.GONE, rows.getValue(12L).availability, "a container's pid: not this host's")
         assertEquals(SessionAvailability.GONE, rows.getValue(13L).availability, "the pid was reused since")
@@ -86,7 +86,7 @@ class SessionRegistryTest {
             alive = setOf(12L),
             identity = fakeIdentity(dir.resolve("host-unreadable"), starts, machineId = null),
         ).read()
-        val unjudged = noHost.single { it.pid == 12L }.availability
+        val unjudged = noHost.single { it.process.pid == 12L }.availability
         assertEquals(SessionAvailability.LIVE, unjudged, "no host domain: not judged")
     }
 
@@ -100,12 +100,16 @@ class SessionRegistryTest {
         val old = now - 12 * 3_600_000L
         for (pid in 11L..14L) write(dir, pid, """{"pid":$pid,"sessionId":"s-$pid","status":"busy","updatedAt":$old}""")
         val heard = mapOf("s-11" to now - 5_000, "s-12" to now - 2 * hourMs, "s-14" to now - 5_000)
-        val rows = registry(dir, alive = setOf(11L, 12L, 13L), heard = heard).read().associateBy { it.pid }
+        val rows = registry(dir, alive = setOf(11L, 12L, 13L), heard = heard).read().associateBy { it.process.pid }
         assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability, "a turn 5 s ago, its file 12 h old")
         assertEquals(SessionAvailability.STALE, rows.getValue(12L).availability, "its last turn is past the window")
         assertEquals(SessionAvailability.STALE, rows.getValue(13L).availability, "no turn heard")
         assertEquals(SessionAvailability.GONE, rows.getValue(14L).availability, "a turn never revives an ended pid")
-        assertEquals(old, rows.getValue(11L).updatedAt, "the registration's own updatedAt is reported as written")
+        assertEquals(
+            old,
+            rows.getValue(11L).process.updatedAt,
+            "the registration's own updatedAt is reported as written",
+        )
     }
 
     @Test
@@ -118,7 +122,7 @@ class SessionRegistryTest {
         val idleAt = now - 2 * hourMs
         write(dir, 12, """{"pid":12,"sessionId":"s-12","name":"beta","status":"idle","updatedAt":$idleAt}""")
         write(dir, 13, """{"pid":13,"sessionId":"s-13","name":"gamma","status":"busy","updatedAt":${now - 1_000}}""")
-        val rows = registry(dir, alive = setOf(11L, 12L)).read().associateBy { it.pid }
+        val rows = registry(dir, alive = setOf(11L, 12L)).read().associateBy { it.process.pid }
         assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability)
         assertEquals(SessionAvailability.STALE, rows.getValue(12L).availability)
         assertEquals(SessionAvailability.GONE, rows.getValue(13L).availability)
@@ -133,7 +137,8 @@ class SessionRegistryTest {
         write(dir, 13, """{"pid":13,"updatedAt":$now,"startedAt":${now - day}}""")
         val started = mapOf(11L to now - 20_000, 12L to now - 60_000)
         val identity = fakeIdentity(dir.resolve("host"), started = started)
-        val rows = registry(dir, alive = setOf(11L, 12L, 13L), identity = identity).read().associateBy { it.pid }
+        val rows = registry(dir, alive = setOf(11L, 12L, 13L), identity = identity).read()
+            .associateBy { it.process.pid }
         assertEquals(SessionAvailability.LIVE, rows.getValue(11L).availability, "process older than the session")
         assertEquals(SessionAvailability.GONE, rows.getValue(12L).availability, "process a day younger: reused pid")
         assertEquals(SessionAvailability.LIVE, rows.getValue(13L).availability, "unknown start time: trusted")
@@ -144,7 +149,7 @@ class SessionRegistryTest {
         write(dir, 11, """{"pid":11,"updatedAt":$now}""")
         write(dir, 12, """{"pid":12,"updatedAt":$now}""")
         write(dir, 13, """{"pid":13,"updatedAt":$now}""")
-        val rows = registry(dir, alive = setOf(11L, 12L)).read().associateBy { it.pid }
+        val rows = registry(dir, alive = setOf(11L, 12L)).read().associateBy { it.process.pid }
         assertEquals("claudex", rows.getValue(11L).head)
         assertEquals(SessionRoute.Head("claudex"), rows.getValue(11L).route)
         assertNull(rows.getValue(12L).head)
@@ -164,11 +169,11 @@ class SessionRegistryTest {
         Files.writeString(dir.resolve("25.json"), huge)
         val rows = registry(dir, alive = setOf(21L, 25L)).read()
         assertEquals(2, rows.size)
-        val bare = rows.single { it.pid == 21L }
+        val bare = rows.single { it.process.pid == 21L }
         assertEquals(SessionAvailability.STALE, bare.availability)
         assertNull(bare.name)
         assertNull(bare.address)
-        assertEquals(SessionAvailability.GONE, rows.single { it.pid == null }.availability)
+        assertEquals(SessionAvailability.GONE, rows.single { it.process.pid == null }.availability)
     }
 
     @Test
@@ -178,7 +183,7 @@ class SessionRegistryTest {
         write(dir, 42, """{"pid":42,"name":"real","updatedAt":$now}""")
         val rows = SessionRegistry(sessionsDir = dir, routeOf = { SessionRoute.Unknown }, clock = { now }).read()
         assertEquals(3, rows.size, "the default liveness probe tolerates every row")
-        rows.filter { (it.pid ?: 0L) <= 0L }.forEach {
+        rows.filter { (it.process.pid ?: 0L) <= 0L }.forEach {
             assertEquals(SessionAvailability.GONE, it.availability, it.name)
         }
     }
@@ -188,7 +193,7 @@ class SessionRegistryTest {
         write(dir, 31, """{"pid":31,"updatedAt":${now - 10},"messagingSocketPath":"/run/user/1000/cc-socks/31.sock"}""")
         write(dir, 32, """{"pid":32,"updatedAt":${now - 1}}""")
         val rows = registry(dir, alive = setOf(31L, 32L)).read()
-        assertEquals(listOf(32L, 31L), rows.map { it.pid })
+        assertEquals(listOf(32L, 31L), rows.map { it.process.pid })
         assertEquals("uds:/run/user/1000/cc-socks/31.sock", rows[1].address)
     }
 
@@ -212,10 +217,10 @@ class SessionRegistryTest {
         val waiting = """{"pid":11,"updatedAt":$now,"status":"waiting","waitingFor":"input needed","entrypoint":"cli"}"""
         write(dir, 11, waiting)
         write(dir, 12, """{"pid":12,"updatedAt":$now,"status":"busy"}""")
-        val rows = registry(dir, alive = setOf(11L, 12L)).read().associateBy { it.pid }
+        val rows = registry(dir, alive = setOf(11L, 12L)).read().associateBy { it.process.pid }
         assertEquals("input needed", rows.getValue(11L).status.waitingFor)
-        assertEquals("cli", rows.getValue(11L).entrypoint)
+        assertEquals("cli", rows.getValue(11L).client.entrypoint)
         assertNull(rows.getValue(12L).status.waitingFor)
-        assertNull(rows.getValue(12L).entrypoint)
+        assertNull(rows.getValue(12L).client.entrypoint)
     }
 }

@@ -25,6 +25,8 @@ import splice.app.provider.HeadModelsSource
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
+import splice.app.provider.PublishedRoster
+import splice.app.provider.UpstreamFaultPlan
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -112,10 +114,12 @@ internal class RunningRosterFixture(tmp: Path, parent: CoroutineScope) {
             head = head,
             providerCfg = provider,
             catalog = provider.catalogFor(head, discovered = rosters.forHead("synthetic")),
-            watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+                loginCommand = "",
+            ),
             cfg = config.getConfig("synthetic"),
-            loginCommand = "",
-            discovered = rosters,
+            roster = PublishedRoster(discovered = rosters),
         )
         val attached = windows.attach(ctx, false)
         managed = factory().assembleHead(attached, 0)
@@ -125,7 +129,9 @@ internal class RunningRosterFixture(tmp: Path, parent: CoroutineScope) {
             Team(
                 name = "Synthetic pricing",
                 repo = paths.stateDir.toString(),
-                slots = listOf(TeamSlot("synthetic-lead", "lead", "synthetic", session = "synthetic-session", lead = true)),
+                slots = listOf(
+                    TeamSlot("synthetic-lead", "lead", "synthetic", session = "synthetic-session", lead = true),
+                ),
             ),
             "synthetic-team-key",
         ).first.id
@@ -177,7 +183,8 @@ internal class RunningRosterFixture(tmp: Path, parent: CoroutineScope) {
     fun turn(model: String): HttpResponse<String> = request(
         managed.head.port,
         "/v1/messages",
-        """{"model":"$model","max_tokens":8,"stream":true,"messages":[{"role":"user","content":"synthetic request"}]}""",
+        """{"model":"$model","max_tokens":8,"stream":true,""" +
+            """"messages":[{"role":"user","content":"synthetic request"}]}""",
     )
     fun statusline(model: String): HttpResponse<String> = request(
         control.listeningPort,

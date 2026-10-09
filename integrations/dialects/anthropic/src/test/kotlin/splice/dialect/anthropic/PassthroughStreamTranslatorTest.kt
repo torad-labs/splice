@@ -161,8 +161,8 @@ class PassthroughStreamTranslatorTest {
         assertEquals(180, s.usage.inputTokens) // 100 + cache_read 80 (re-added for HeadServer)
         assertEquals(80, s.usage.cachedTokens)
         assertEquals(42, s.usage.outputTokens)
-        assertEquals("th1th2", s.thinkingText)
-        assertEquals("Hello", s.bodyText)
+        assertEquals("th1th2", s.text.thinkingText)
+        assertEquals("Hello", s.text.bodyText)
     }
 
     @Test
@@ -318,8 +318,8 @@ class PassthroughStreamTranslatorTest {
             ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":0}}"""),
             ev("""{"type":"message_stop"}"""),
         ) as TurnOutcome.Success
-        assertEquals("", s.thinkingText)
-        assertFalse(s.emittedThinking, "an empty thinking block delivered nothing to the client")
+        assertEquals("", s.text.thinkingText)
+        assertFalse(s.text.emittedThinking, "an empty thinking block delivered nothing to the client")
     }
 
     @Test
@@ -332,7 +332,7 @@ class PassthroughStreamTranslatorTest {
             ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":0}}"""),
             ev("""{"type":"message_stop"}"""),
         ) as TurnOutcome.Success
-        assertFalse(s.emittedThinking, "whitespace is not content")
+        assertFalse(s.text.emittedThinking, "whitespace is not content")
     }
 
     @Test
@@ -348,7 +348,7 @@ class PassthroughStreamTranslatorTest {
             ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"""),
             ev("""{"type":"message_stop"}"""),
         ) as TurnOutcome.Success
-        assertTrue(s.emittedThinking, "a kimi thinking-only turn must NOT be graded empty")
+        assertTrue(s.text.emittedThinking, "a kimi thinking-only turn must NOT be graded empty")
     }
 
     // DR-75 (fresh-eyes sweep): emittedText carried the exact defect CX-09 closed for thinking —
@@ -365,8 +365,8 @@ class PassthroughStreamTranslatorTest {
             ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":0}}"""),
             ev("""{"type":"message_stop"}"""),
         ) as TurnOutcome.Success
-        assertEquals("", s.bodyText)
-        assertFalse(s.emittedText, "an empty text delta delivered nothing to the client")
+        assertEquals("", s.text.bodyText)
+        assertFalse(s.text.emittedText, "an empty text delta delivered nothing to the client")
     }
 
     @Test
@@ -379,7 +379,7 @@ class PassthroughStreamTranslatorTest {
             ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"""),
             ev("""{"type":"message_stop"}"""),
         ) as TurnOutcome.Success
-        assertTrue(s.emittedText)
+        assertTrue(s.text.emittedText)
     }
 
     @Test
@@ -396,8 +396,8 @@ class PassthroughStreamTranslatorTest {
             ev("""{"type":"message_stop"}"""),
         )
         val s = outcome as TurnOutcome.Success
-        assertEquals("real", s.bodyText)
-        assertFalse(s.bodyText.contains("null"))
+        assertEquals("real", s.text.bodyText)
+        assertFalse(s.text.bodyText.contains("null"))
         assertEquals(10, s.usage.inputTokens)
     }
 
@@ -446,7 +446,7 @@ class PassthroughStreamTranslatorTest {
             sink,
         )
         assertTrue(outcome is TurnOutcome.Success, "got $outcome")
-        assertEquals("done", (outcome as TurnOutcome.Success).bodyText)
+        assertEquals("done", (outcome as TurnOutcome.Success).text.bodyText)
     }
 
     @Test
@@ -475,7 +475,7 @@ class PassthroughStreamTranslatorTest {
         val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(events, sink)
         val failure = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.API_ERROR, failure.type)
-        assertFalse(failure.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
+        assertFalse(failure.traits.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
         assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
         // V4-81: the runaway verdict is PERMANENT, and the reason is the shape of the valve rather
         // than the shape of the error: it trips on the GENERATION ITSELF hitting the truncation
@@ -484,7 +484,7 @@ class PassthroughStreamTranslatorTest {
         // re-send until its retry budget ran out — for a turn that cannot change. The other three
         // siblings (responses refusal, responses content-filter, chat refusal/content-filter) are
         // marked the same way; this pin closes the sweep.
-        assertTrue(failure.permanent, "a tripped runaway valve is not healed by a retry")
+        assertTrue(failure.traits.permanent, "a tripped runaway valve is not healed by a retry")
         val deltas = sink.calls.count { it.startsWith("text:") }
         assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
     }
@@ -527,7 +527,7 @@ class PassthroughStreamTranslatorTest {
             ?: fail("an unrecognised failure is an OUTCOME here, never an escape — got $outcome")
         assertEquals(
             "half an answer",
-            failure.partial?.bodyText,
+            failure.partial?.text?.bodyText,
             "the salvage must ride the outcome, or no controller can ever resume this round",
         )
         assertFalse(
@@ -577,7 +577,7 @@ class PassthroughStopReasonHonestyTest {
     fun `stop_reason refusal is an honest provider-reported failure, never a clean success`() = runTest {
         val f = turnEndingWith("refusal") as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.providerReported, "the BACKEND sent stop_reason=refusal — G20 provenance is upstream")
+        assertTrue(f.traits.providerReported, "the BACKEND sent stop_reason=refusal — G20 provenance is upstream")
         assertTrue(f.message.contains("refused"), f.message)
         assertTrue(f.message.contains("stop_reason=refusal"), f.message)
     }
@@ -586,7 +586,7 @@ class PassthroughStopReasonHonestyTest {
     fun `stop_reason pause_turn is a retryable overloaded failure, not a finished answer`() = runTest {
         val f = turnEndingWith("pause_turn") as TurnOutcome.Failure
         assertEquals(ErrorType.OVERLOADED, f.type)
-        assertTrue(f.providerReported)
+        assertTrue(f.traits.providerReported)
         assertTrue(f.message.contains("paused"), f.message)
     }
 
@@ -597,7 +597,7 @@ class PassthroughStopReasonHonestyTest {
     fun `stop_reason model_context_window_exceeded triggers client compaction`() = runTest {
         val f = turnEndingWith("model_context_window_exceeded") as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.providerReported)
+        assertTrue(f.traits.providerReported)
         assertTrue(f.message.contains("prompt is too long"), f.message)
         assertTrue(f.message.contains("context window"), f.message)
     }
@@ -611,7 +611,7 @@ class PassthroughStopReasonHonestyTest {
             val outcome = turnEndingWith(reason)
             val s = outcome as? TurnOutcome.Success
                 ?: throw AssertionError("stop_reason='$reason' must stay a Success, got $outcome")
-            assertEquals("partial", s.bodyText, "stop_reason='$reason' altered the turn's text")
+            assertEquals("partial", s.text.bodyText, "stop_reason='$reason' altered the turn's text")
         }
     }
 
@@ -642,7 +642,7 @@ class PassthroughStopReasonHonestyTest {
         val f = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.OVERLOADED, f.type)
         assertTrue(f.message.contains("try later"), f.message)
-        assertTrue(f.providerReported)
+        assertTrue(f.traits.providerReported)
     }
 
     // NEUTRAL: an upstream that SIGNS and VERIFIES must never receive a synthesized signature back.
@@ -1048,7 +1048,7 @@ class PassthroughUnknownEventRelayTest {
         val sink = Rec()
         val outcome = PassthroughStreamTranslator(ctx, KIMI).driveTurn(events.asFlow(), sink)
         assertTrue(outcome is TurnOutcome.Success, "got $outcome")
-        assertEquals("hi", (outcome as TurnOutcome.Success).bodyText)
+        assertEquals("hi", (outcome as TurnOutcome.Success).text.bodyText)
         assertTrue(logs.isEmpty(), "valid future events are not anomalies: $logs")
         assertEquals(listOf(unknown, ev("""{"type":"ping"}"""), unknown), sink.relayed)
     }

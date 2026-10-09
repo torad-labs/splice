@@ -31,6 +31,9 @@ import splice.core.util.WallClock
 import splice.usage.UsageBilling
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
+import splice.usage.UsageHeadSinks
+import splice.usage.UsageHeadStatusline
+import splice.usage.UsageHeadWarn
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import java.time.Instant
@@ -47,18 +50,19 @@ class PerfTurnUsageTest {
             ts = 1_000L + i,
             outcome = "ok",
             fields = fields,
-            model = if (i == 0) "earlier" else "m",
-            account = if (i == 0) "earlier-account" else "work",
-            sessionId = "synthetic-full-session",
+            facts = PerfTurnFacts(
+                model = if (i == 0) "earlier" else "m",
+                account = if (i == 0) "earlier-account" else "work",
+            ),
+            transcript = PerfTranscriptLink(sessionId = "synthetic-full-session"),
         )
     }
     private val failure = PerfRow(
         ts = 3_600L,
         outcome = "quota-refused",
         fields = emptyMap(),
-        model = "m",
-        account = "spare",
-        sessionId = "synthetic-full-session",
+        facts = PerfTurnFacts(model = "m", account = "spare"),
+        transcript = PerfTranscriptLink(sessionId = "synthetic-full-session"),
     )
     private val local = priced.first().copy(
         ts = 2_000L,
@@ -88,11 +92,9 @@ class PerfTurnUsageTest {
             key = "synthetic",
             label = "Synthetic",
             usage = usage,
-            warnPct = 80,
-            warnTokens5h = 0,
-            perfRows = source,
-            catalog = catalog,
-            accountPool = accountPool,
+            warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
+            sinks = UsageHeadSinks(perfRows = source, accountPool = accountPool),
+            statusline = UsageHeadStatusline(catalog = catalog),
         )
         val lookup = object : UsageHeadLookup {
             override fun byName(name: String): List<UsageHead> = listOf(head)
@@ -148,8 +150,8 @@ class PerfTurnUsageTest {
             HeadAccountPoolView(
                 "plan",
                 listOf(
-                    HeadAccountView("plan", true, true, true, "pro", null, null, null, null),
-                    HeadAccountView("key", false, false, true, null, null, null, null, null),
+                    HeadAccountView("plan", true, true, true, "pro"),
+                    HeadAccountView("key", false, false, true, null),
                 ),
                 null,
             )
@@ -158,8 +160,8 @@ class PerfTurnUsageTest {
         mount(
             listOf(
                 row,
-                row.copy(ts = 1_001, fields = emptyMap(), account = "key"),
-                row.copy(ts = 1_002, model = "free", account = "key"),
+                row.copy(ts = 1_001, fields = emptyMap(), facts = row.facts.copy(account = "key")),
+                row.copy(ts = 1_002, facts = row.facts.copy(model = "free", account = "key")),
                 failure.copy(ts = 1_003, outcome = "error:upstream-failed", cause = "VENDOR_RATE_LIMITED"),
             ),
             accountPool = pool,
@@ -224,8 +226,8 @@ class PerfTurnUsageTest {
             HeadAccountPoolView(
                 "plan",
                 listOf(
-                    HeadAccountView("plan", true, true, true, "pro", null, null, null, null),
-                    HeadAccountView("key", false, false, true, null, null, null, null, null),
+                    HeadAccountView("plan", true, true, true, "pro"),
+                    HeadAccountView("key", false, false, true, null),
                 ),
                 null,
             )
@@ -234,10 +236,10 @@ class PerfTurnUsageTest {
         mount(
             listOf(
                 row,
-                row.copy(ts = 1_001, fields = emptyMap(), account = "key"),
-                row.copy(ts = 1_002, fields = emptyMap(), account = "plan"),
-                row.copy(ts = 1_003, model = "free", account = "plan"),
-                row.copy(ts = 1_004, model = "free", account = "key"),
+                row.copy(ts = 1_001, fields = emptyMap(), facts = row.facts.copy(account = "key")),
+                row.copy(ts = 1_002, fields = emptyMap(), facts = row.facts.copy(account = "plan")),
+                row.copy(ts = 1_003, facts = row.facts.copy(model = "free", account = "plan")),
+                row.copy(ts = 1_004, facts = row.facts.copy(model = "free", account = "key")),
             ),
             accountPool = pool,
         )
@@ -254,7 +256,8 @@ class PerfTurnUsageTest {
     @Test
     fun `a head with no account pool is covered by the plan its own quota names`() = testApplication {
         val plan = HeadUsageSource { UsageView(0, 0, null, QuotaView(null, null, "max")) }
-        mount(listOf(priced.last().copy(model = "free", account = "primary")), usage = plan)
+        val primary = priced.last().facts.copy(model = "free", account = "primary")
+        mount(listOf(priced.last().copy(facts = primary)), usage = plan)
         val usage = head(client.get("/api/perf/turns?head=synthetic&since=1000&local=0").bodyAsText())
             .getValue("usage").jsonObject
         assertEquals(listOf(1L, 0L, 1L, 0L), causes(usage.getValue("totals").jsonObject))
@@ -269,7 +272,10 @@ class PerfTurnUsageTest {
         )) {
             testApplication {
                 mount(
-                    listOf(priced.last().copy(model = "free"), priced.last().copy(ts = 1_002, fields = emptyMap())),
+                    listOf(
+                        priced.last().copy(facts = priced.last().facts.copy(model = "free")),
+                        priced.last().copy(ts = 1_002, fields = emptyMap()),
+                    ),
                     usage = HeadUsageSource { error("billing kind must not need quota metadata") },
                     billing = kind,
                 )
@@ -302,7 +308,7 @@ class PerfTurnUsageTest {
                 mapOf(PerfKeys.UPSTREAM_REQ_BYTES to 32L, PerfKeys.ATTEMPTS to 0L, PerfKeys.CONTENT_FRAMES_OUT to 1L),
             ).mapIndexed { index, evidence -> failure.copy(ts = 1_010L + index, fields = evidence) }
             mount(
-                listOf(failure, failure.copy(ts = 1_001, model = "free")) +
+                listOf(failure, failure.copy(ts = 1_001, facts = failure.facts.copy(model = "free"))) +
                     partial + priced.last().copy(ts = 1_030, fields = emptyMap()),
             )
             val usage = head(client.get("/api/perf/turns?head=synthetic&since=1000&local=0").bodyAsText())
@@ -364,8 +370,16 @@ class PerfTurnUsageTest {
         mount(
             listOf(
                 row,
-                row.copy(ts = 1_001, fields = twice, model = "earlier", account = "spare"),
-                row.copy(ts = 1_002, fields = fields + (PerfKeys.CUT_SOURCE_ROUNDS to 1L), sessionId = "other-session"),
+                row.copy(
+                    ts = 1_001,
+                    fields = twice,
+                    facts = row.facts.copy(model = "earlier", account = "spare"),
+                ),
+                row.copy(
+                    ts = 1_002,
+                    fields = fields + (PerfKeys.CUT_SOURCE_ROUNDS to 1L),
+                    transcript = row.transcript.copy(sessionId = "other-session"),
+                ),
             ),
         )
         val usage = head(client.get("/api/perf/turns?head=synthetic&since=1000&local=0&time_zone=UTC").bodyAsText())
@@ -416,9 +430,12 @@ class PerfTurnUsageTest {
 
     @Test
     fun `session models keep the latest ordinary request rather than a compactor or short tag`() = testApplication {
-        val ordinary = priced.first().copy(ts = 1_500, model = "earlier")
-        val compact = priced.last().copy(ts = 2_000, compact = true, model = "m")
-        val legacy = priced.first().copy(sessionId = null, session = "syntheti")
+        val ordinary = priced.first().copy(ts = 1_500, facts = priced.first().facts.copy(model = "earlier"))
+        val compact = priced.last().copy(ts = 2_000, facts = priced.last().facts.copy(model = "m", compact = true))
+        val legacy = priced.first().copy(
+            transcript = priced.first().transcript.copy(sessionId = null),
+            facts = priced.first().facts.copy(session = "syntheti"),
+        )
         mount(listOf(ordinary, compact, legacy))
         val response = client.get("/api/perf/turns?head=synthetic&since=1000&n=1&local=0")
         val sessions = head(response.bodyAsText()).getValue("usage").jsonObject.getValue("sessions").jsonArray

@@ -38,6 +38,8 @@ import splice.head.HeadServer
 import splice.head.headDeps
 import splice.head.noQuota
 import splice.head.turn.SESSION_HEADER
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.InflightGate
@@ -335,8 +337,7 @@ private class LimitRig(
     private val client = HttpClient(CIO)
     private val provider = PassthroughProvider(
         ProviderTuning(
-            key = "synthetic",
-            label = "synthetic",
+            name = ProviderName(key = "synthetic", label = "synthetic"),
             catalog = ModelCatalog(
                 discoveryPrefix = "synthetic--",
                 models = listOf(ModelEntry("model", "Synthetic", contextWindow = 200_000)),
@@ -344,7 +345,7 @@ private class LimitRig(
             ),
             pinnedModel = "model",
             auth = ClientAuthProvider("synthetic"),
-            baseUrl = "http://127.0.0.1:${server.address.port}",
+            locations = ProviderLocations(baseUrl = "http://127.0.0.1:${server.address.port}"),
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
         ),
         PassthroughQuirks(providerTag = "synthetic"),

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.LogSink
@@ -39,9 +40,9 @@ class CodeModeRecoveryRetentionTest {
                     checkNotNull(wire.anchoredBoundary(baseline(), emptyList())),
                     CodeModeNativeChain.Capture(emptyList(), null),
                     wire.continuity(outcome),
-                    outcome.bodyText,
+                    outcome.text.bodyText,
                 )
-                echo += outcome.bodyText
+                echo += outcome.text.bodyText
                 assertEquals(echo, checkNotNull(history.delivery(record)).text(null))
                 history.generated(outcome)
             }
@@ -68,9 +69,9 @@ class CodeModeRecoveryRetentionTest {
                 boundary,
                 CodeModeNativeChain.Capture(emptyList(), null),
                 wire.continuity(outcome),
-                outcome.bodyText,
+                outcome.text.bodyText,
             )
-            echo += outcome.bodyText
+            echo += outcome.text.bodyText
             history.generated(outcome)
             echo
         }
@@ -79,15 +80,15 @@ class CodeModeRecoveryRetentionTest {
             assertArrayEquals(echoes[index].toByteArray(), delivered.toByteArray())
             val upstream = history.upstream(listOf(record)).single()
             val expected = wire.continuity(success(index))
-            assertEquals(expected.logicalItems, upstream.continuity)
-            assertEquals(expected.replayItems, upstream.continuityReplay)
-            assertEquals(boundary.fullDigest, upstream.baselineInputDigest)
-            assertEquals(boundary.logicalDigest, upstream.baselineLogicalDigest)
+            assertEquals(expected.logicalItems, upstream.carry.continuity)
+            assertEquals(expected.replayItems, upstream.carry.replay)
+            assertEquals(boundary.fullDigest, upstream.origin.baseline.inputDigest)
+            assertEquals(boundary.logicalDigest, upstream.origin.baseline.logicalDigest)
         }
     }
 
     private fun history(): CodeModeRecoveryHistory = CodeModeRecoveryHistory(baseline()).also {
-        it.extend(TurnOutcome.PartialRound(bodyText = recoveryText(), emittedText = true))
+        it.extend(TurnOutcome.PartialRound(text = RoundText(bodyText = recoveryText(), emittedText = true)))
     }
 
     private fun baseline() = wire.body(
@@ -100,8 +101,10 @@ class CodeModeRecoveryRetentionTest {
         hasToolUse = false,
         incomplete = false,
         usage = Usage(),
-        emittedText = true,
-        bodyText = "script-$index:".padEnd(RECOVERY_SEGMENT_CHARS, 'a' + index % 26),
+        text = RoundText(
+            bodyText = "script-$index:".padEnd(RECOVERY_SEGMENT_CHARS, 'a' + index % 26),
+            emittedText = true,
+        ),
     )
 
     /** Follow actual retained entry fields, not a hand-authored list of the strings the implementation should keep. */

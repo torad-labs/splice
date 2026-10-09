@@ -86,10 +86,10 @@ public class OAuthLoginFlow(
         val codeRef = AtomicReference<String?>(null)
         val errRef = AtomicReference<String?>(null)
         val latch = CountDownLatch(1)
-        val server = createServer(spec.redirectPort) ?: return false
+        val server = createServer(spec.callback.port) ?: return false
         val pool = Executors.newSingleThreadExecutor()
         server.executor = pool
-        server.createContext(spec.redirectPath) { ex ->
+        server.createContext(spec.callback.path) { ex ->
             handleCallback(ex, spec, codeRef, errRef, latch)
         }
         server.start()
@@ -277,7 +277,7 @@ public class OAuthLoginFlow(
         // Only a callback carrying OUR state ends the login. A drive-by hit on the loopback port (a
         // local page, another process, a malformed-escape probe) is answered but IGNORED, so the
         // genuine provider redirect can still land — a stray request can't abort the flow.
-        if (params["state"] != spec.expectedState) {
+        if (params["state"] != spec.callback.expectedState) {
             // A callback carrying ANOTHER state is a sign-in finished in a tab from an earlier
             // attempt. It stays ignored, but it is named: silent, the pane sat until the timeout
             // while the operator believed he had signed in (rehearsal-plans-1, 2026-09-25).
@@ -324,10 +324,10 @@ public class OAuthLoginFlow(
         val client = authClients.create()
         return try {
             Cancellables.runCatchingBestEffort {
-                val resp: HttpResponse = client.post(spec.tokenUrl) {
+                val resp: HttpResponse = client.post(spec.exchange.url) {
                     header("Content-Type", "application/x-www-form-urlencoded")
                     header("Accept", "application/json")
-                    setBody(spec.exchangeForm(code))
+                    setBody(spec.exchange.form(code))
                 }
                 val bodyText = resp.bodyAsText()
                 if (!resp.status.isSuccess()) {
@@ -338,7 +338,7 @@ public class OAuthLoginFlow(
                 } else {
                     // DR-172: a 200 alone used to mean "signed in" here. The token check and the
                     // message now live together in one place, shared with the device flow.
-                    loginIo.persistIfSignedIn(spec.authPath, spec.toAuthJson(bodyText), spec.account)
+                    loginIo.persistIfSignedIn(spec.authPath, spec.exchange.toAuthJson(bodyText), spec.account)
                 }
             }.getOrElse { e ->
                 output.line("splice: token exchange error: ${SafeFailureText.render(e)}")

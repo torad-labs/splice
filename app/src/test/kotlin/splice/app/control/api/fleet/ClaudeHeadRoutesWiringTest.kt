@@ -37,7 +37,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.control.ControlAuth
 import splice.app.control.ControlRuntime
+import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
+import splice.app.control.UsageWarning
 import splice.app.control.controlServerFor
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
@@ -55,6 +57,9 @@ import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.recipe.LaunchService
 import splice.usage.quota.HeadUsageSource
@@ -73,20 +78,26 @@ class ClaudeHeadRoutesWiringTest {
 
     private fun launchSpec(configDir: Path) = LaunchSpec(
         trees = HeadTrees(configDir),
-        pinnedModel = "claude-fable-5",
-        availableModelIds = listOf("claude-fable-5"),
-        modelLabels = mapOf("claude-fable-5" to "Claude Fable 5"),
-        contextWindow = 200_000,
-        modelOptionsCache = buildJsonObject { },
-        statuslineCommand = "\"/bin/curl\" -s :3096/statusline/claude-splice",
-        loginCommand = "claude-splice login",
-        signInLabel = "Claude",
+        models = LaunchModels(
+            pinnedModel = "claude-fable-5",
+            availableModelIds = listOf("claude-fable-5"),
+            modelLabels = mapOf("claude-fable-5" to "Claude Fable 5"),
+            contextWindow = 200_000,
+            modelOptionsCache = buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "claude-splice login",
+            signInLabel = "Claude",
+            headKey = "claude-splice",
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "\"/bin/curl\" -s :3096/statusline/claude-splice",
+            port = 3104,
+            inferenceToken = "test-token",
+            apiTimeoutMs = 960_000,
+            forwardClientAuth = true,
+        ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 3104,
-        inferenceToken = "test-token",
-        apiTimeoutMs = 960_000,
-        forwardClientAuth = true,
-        headKey = "claude-splice",
     )
 
     private fun managedHead(configDir: Path): ManagedHead = ManagedHead(
@@ -102,16 +113,17 @@ class ClaudeHeadRoutesWiringTest {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(false, "client", emptyMap())
         },
-        usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int): String = ""
+                override fun path(): String = ""
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
         launchSpec = launchSpec(configDir),
     )
 

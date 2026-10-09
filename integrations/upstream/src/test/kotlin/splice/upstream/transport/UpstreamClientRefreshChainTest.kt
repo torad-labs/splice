@@ -86,7 +86,7 @@ class UpstreamClientRefreshChainTest {
                 url = "https://api.example.test/v1",
                 auth = auth,
                 extraHeaders = { emptyMap() },
-                perf = perf,
+                observers = PostObservers(perf = perf),
             ),
             "{}",
         ) { "ok" }

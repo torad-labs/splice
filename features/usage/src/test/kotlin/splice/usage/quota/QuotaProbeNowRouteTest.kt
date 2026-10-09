@@ -26,6 +26,7 @@ import splice.core.usage.QuotaWindowView
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.usage.UsageHead
+import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
 import java.nio.file.Path
 
@@ -65,7 +66,7 @@ class QuotaProbeNowRouteTest {
                 }
             }
             val payloads = UsagePayloads(
-                UsageHeads { listOf(UsageHead("synthetic", "claude-synthetic", source, 80, 0)) },
+                UsageHeads { listOf(UsageHead("synthetic", "claude-synthetic", source, UsageHeadWarn(80, 0))) },
                 ConfigService(StatePaths(baseOverride = root)),
                 WallClock { now },
             )

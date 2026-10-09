@@ -12,17 +12,19 @@ internal class PerfTurnsRetention : PerfLineKeep {
             shared
         }
         // Request and trace identities are not interned: one-off values cannot crowd repeated descriptions out.
-        listOf(row.turn, row.turnId, row.responseMessageId).forEach {
+        listOf(row.turn, row.turnId, row.transcript.responseMessageId).forEach {
             if (it != null) textBytes += PERF_STRING_OVERHEAD_BYTES + it.length * PERF_CHAR_BYTES
         }
         return line.copy(
             row = row.copy(
                 outcome = requireNotNull(share(row.outcome)),
                 cause = share(row.cause),
-                model = share(row.model),
-                session = share(row.session),
-                account = share(row.account),
-                sessionId = share(row.sessionId),
+                facts = row.facts.copy(
+                    model = share(row.facts.model),
+                    session = share(row.facts.session),
+                    account = share(row.facts.account),
+                ),
+                transcript = row.transcript.copy(sessionId = share(row.transcript.sessionId)),
             ),
             retainedTextBytes = textBytes,
         )

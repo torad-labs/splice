@@ -12,7 +12,7 @@ internal object SessionHeadAdapter {
 
     private fun adapt(head: ManagedHead): SessionHead = SessionHead(
         transcriptRoot = head.launchSpec?.trees?.own,
-        perfRows = head.perfRows?.let { source ->
+        perfRows = head.sources.perfRows?.let { source ->
             SessionPerfSource { sinceMs ->
                 val window = source.window(sinceMs)
                 SessionPerfWindow(
@@ -21,14 +21,14 @@ internal object SessionHeadAdapter {
                             ts = row.ts,
                             outcome = row.outcome,
                             fields = row.fields,
-                            model = row.model,
-                            session = row.session,
+                            model = row.facts.model,
+                            session = row.facts.session,
                         )
                     },
                     oldestHeldTs = window.oldestHeldTs,
                 )
             }
         },
-        catalog = head.catalog,
+        catalog = head.statusline.catalog,
     )
 }

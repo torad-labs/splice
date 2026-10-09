@@ -16,6 +16,7 @@ import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindowView
 import splice.core.util.WallClock
 import splice.usage.UsageHead
+import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
 import java.nio.file.Path
 
@@ -34,8 +35,7 @@ class UsageWarnPayloadTest {
             key = "claudex",
             label = "claudex",
             usage = HeadUsageSource { UsageView(0, 0, null, quota) },
-            warnPct = 80,
-            warnTokens5h = 0,
+            warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
         )
         val payloads = UsagePayloads(
             UsageHeads { listOf(head) },

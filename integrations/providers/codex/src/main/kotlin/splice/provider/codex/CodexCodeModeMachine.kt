@@ -4,6 +4,7 @@ package splice.provider.codex
 import kotlinx.coroutines.CancellationException
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
 import splice.core.turn.UsageField
 import splice.core.turn.noRequestUsage
@@ -53,7 +54,8 @@ internal class CodexCodeModeMachine(
         val source = request.source
         started.putIfAbsent(record.id, config.clock.millis())
         return when {
-            config.maxRounds?.let { record.rounds >= it } == true -> poison(record, "code-mode round limit exceeded")
+            config.bounds.maxRounds?.let { record.progress.rounds >= it } == true ->
+                poison(record, "code-mode round limit exceeded")
             else -> registry.retainedCells.acquire(record)?.let { cell ->
                 try {
                     advanceCell(request, cell)
@@ -82,12 +84,12 @@ internal class CodexCodeModeMachine(
         recovery: CodeModeRecoveryHistory.Delivery? = null,
     ): TurnOutcome {
         registry.changes.edit(record) { checkIssuable(it, cell) }
-        val previous = record.issued.firstOrNull { it.requestDigest == record.lastDigest }
+        val previous = record.issued.firstOrNull { it.requestDigest == record.progress.lastDigest }
         val served = previous?.calls ?: calls
         if (served.isEmpty()) {
             return TurnOutcome.Failure(
                 "code-mode has no client calls to emit",
-                deterministic = true,
+                traits = FailureTraits(deterministic = true),
                 salvagedUsage = noRequestUsage,
                 cause = FailureCause.CODE_MODE_PROTOCOL,
                 phase = FailurePhase.MID_OUTPUT,
@@ -97,7 +99,7 @@ internal class CodexCodeModeMachine(
             val streaming = cell as? CodeModeStreamingCell
             val text = recovery?.text(streaming) ?: streaming?.deliveredText
             val native = streaming?.deliveredNative
-            val issued = CodeModeIssuedStep(record.lastDigest, calls.map(CodeModePending::copy), text, native)
+            val issued = CodeModeIssuedStep(record.progress.lastDigest, calls.map(CodeModePending::copy), text, native)
             // A failed save: the worker already advanced, but no callback reached the client. A retry
             // reuses persisted pending ids and earns this issuance with a successful save.
             registry.changes.save(
@@ -123,17 +125,23 @@ internal class CodexCodeModeMachine(
         return TurnOutcome.Success(
             hasToolUse = true,
             incomplete = false,
-            usage = noRequestUsage.copy(localStep = true, reported = UsageField.entries.toSet()),
+            usage = noRequestUsage.copy(
+                origin = noRequestUsage.origin.copy(localStep = true),
+                reported = UsageField.entries.toSet(),
+            ),
         )
     }
 
     fun interrupt(record: CodeModeRecord, detail: String = "additional client content arrived"): TurnOutcome {
-        val output = CodeModeExecOutput.terminated(record, detail, wallMillis(record), config.maxOutputChars)
+        val output = CodeModeExecOutput.terminated(record, detail, wallMillis(record), config.bounds.maxOutputChars)
         registry.complete(record, output)
         return TurnOutcome.Success(
             hasToolUse = false,
             incomplete = false,
-            usage = noRequestUsage.copy(localStep = true, reported = UsageField.entries.toSet()),
+            usage = noRequestUsage.copy(
+                origin = noRequestUsage.origin.copy(localStep = true),
+                reported = UsageField.entries.toSet(),
+            ),
         )
     }
 
@@ -148,7 +156,7 @@ internal class CodexCodeModeMachine(
         registry.lose(record, message)
         return TurnOutcome.Failure(
             message,
-            deterministic = true,
+            traits = FailureTraits(deterministic = true),
             salvagedUsage = noRequestUsage,
             cause = FailureCause.CODE_MODE_PROTOCOL,
             phase = FailurePhase.MID_OUTPUT,
@@ -159,7 +167,7 @@ internal class CodexCodeModeMachine(
         "completed client call ids=${record.results.keys}; source was not rerun"
 
     private suspend fun advanceCell(request: CodeModeAdvanceRequest, cell: CodeModeCell): TurnOutcome = try {
-        registry.changes.edit(request.record) { it.rounds++ }
+        registry.changes.edit(request.record) { it.progress.rounds++ }
         dispatchStep(request, cell, cell.advance(request.results))
     } catch (error: CancellationException) {
         started.remove(request.record.id)
@@ -252,9 +260,9 @@ internal class CodexCodeModeMachine(
             growthBytes = pending.sumOf(splice.provider.codex.state.CodeModeWeight.STORED::call),
         ) { record ->
             checkIssuable(record, cell)
-            record.totalCalls += calls.size
-            record.pending += pending
-            record.updatedAt = config.clock.millis()
+            record.progress.totalCalls += calls.size
+            record.progress.pending += pending
+            record.progress.updatedAt = config.clock.millis()
         }
         return emit(request.record, request.record.visiblePending(), request.sink, cell, request.recovery)
     }
@@ -262,13 +270,16 @@ internal class CodexCodeModeMachine(
     private fun complete(record: CodeModeRecord, step: CodeModeStep.Completed): TurnOutcome {
         if (!validation.fitsOutput(step.output)) return poison(record, "code-mode output exceeds the size limit")
         val wall = wallMillis(record)
-        val output = step.error?.let { CodeModeExecOutput.failed(step.output, it, wall, config.maxOutputChars) }
-            ?: CodeModeExecOutput.completed(step.output, wall, config.maxOutputChars)
+        val output = step.error?.let { CodeModeExecOutput.failed(step.output, it, wall, config.bounds.maxOutputChars) }
+            ?: CodeModeExecOutput.completed(step.output, wall, config.bounds.maxOutputChars)
         registry.complete(record, output)
         return TurnOutcome.Success(
             hasToolUse = false,
             incomplete = false,
-            usage = noRequestUsage.copy(localStep = true, reported = UsageField.entries.toSet()),
+            usage = noRequestUsage.copy(
+                origin = noRequestUsage.origin.copy(localStep = true),
+                reported = UsageField.entries.toSet(),
+            ),
         )
     }
 }

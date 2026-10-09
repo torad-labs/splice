@@ -76,10 +76,10 @@ class AccountCredentialEligibilityTest {
 
         assertSame(primary, inFlight.account)
         assertSame(backup, next.account)
-        assertTrue(primaryView.credentialPresent, "a rejected credential file is still present")
+        assertTrue(primaryView.credential.present, "a rejected credential file is still present")
         assertFalse(primaryView.available)
-        assertEquals(1_300_000L, primaryView.authExcludedUntilEpochMillis)
-        assertEquals("terminal_401", primaryView.authExclusionReason)
+        assertEquals(1_300_000L, primaryView.credential.excludedUntilEpochMillis)
+        assertEquals("terminal_401", primaryView.credential.exclusionReason)
     }
 
     @Test
@@ -116,9 +116,9 @@ class AccountCredentialEligibilityTest {
         val expectedDelays = listOf(300_000L, 600_000L, 1_200_000L, 2_400_000L, 3_600_000L, 3_600_000L)
         expectedDelays.forEachIndexed { index, expected ->
             val view = pool.view(null).accounts.single { it.primary }
-            assertEquals(expected, checkNotNull(view.authExcludedUntilEpochMillis) - fixture.now.get())
+            assertEquals(expected, checkNotNull(view.credential.excludedUntilEpochMillis) - fixture.now.get())
             if (index != expectedDelays.lastIndex) {
-                fixture.now.set(checkNotNull(view.authExcludedUntilEpochMillis))
+                fixture.now.set(checkNotNull(view.credential.excludedUntilEpochMillis))
                 pool.chosen("failed-probe-$index").markCredentialUnavailable()
             }
         }
@@ -136,9 +136,9 @@ class AccountCredentialEligibilityTest {
             selection.markCredentialUnavailable()
             val view = pool.view(null).accounts.single()
             val expected = ramp.getOrElse(index) { 3_600_000L }
-            assertEquals(expected, checkNotNull(view.authExcludedUntilEpochMillis) - fixture.now.get())
+            assertEquals(expected, checkNotNull(view.credential.excludedUntilEpochMillis) - fixture.now.get())
             if (index < 69) {
-                fixture.now.set(checkNotNull(view.authExcludedUntilEpochMillis))
+                fixture.now.set(checkNotNull(view.credential.excludedUntilEpochMillis))
                 selection = pool.chosen("probe-$index")
             }
         }
@@ -159,7 +159,7 @@ class AccountCredentialEligibilityTest {
         held.markCredentialUnavailable()
         fixture.rotateCredential(primary)
         assertSame(primary, pool.chosen("after-relogin").account)
-        assertEquals(null, pool.view(null).accounts.single { it.primary }.authExclusionReason)
+        assertEquals(null, pool.view(null).accounts.single { it.primary }.credential.exclusionReason)
     }
 
     @Test
@@ -174,12 +174,12 @@ class AccountCredentialEligibilityTest {
         fixture.restoreCredentialIdentity(primary, original)
 
         var view = pool.view(null).accounts.single { it.primary }
-        assertEquals("terminal_401", view.authExclusionReason)
-        assertEquals(1_300_000L, view.authExcludedUntilEpochMillis)
-        fixture.now.set(checkNotNull(view.authExcludedUntilEpochMillis))
+        assertEquals("terminal_401", view.credential.exclusionReason)
+        assertEquals(1_300_000L, view.credential.excludedUntilEpochMillis)
+        fixture.now.set(checkNotNull(view.credential.excludedUntilEpochMillis))
         pool.chosen("failed-probe").markCredentialUnavailable()
         view = pool.view(null).accounts.single { it.primary }
-        assertEquals(600_000L, checkNotNull(view.authExcludedUntilEpochMillis) - fixture.now.get())
+        assertEquals(600_000L, checkNotNull(view.credential.excludedUntilEpochMillis) - fixture.now.get())
     }
 
     @Test
@@ -192,13 +192,13 @@ class AccountCredentialEligibilityTest {
         fixture.hideCredentialIdentity(primary)
 
         val held = pool.view(null).accounts.single { it.primary }
-        assertEquals("terminal_401", held.authExclusionReason)
+        assertEquals("terminal_401", held.credential.exclusionReason)
         assertSame(backup, pool.chosen("while-unknown").account)
 
         fixture.rotateCredential(primary)
 
         assertSame(primary, pool.chosen("after-replacement").account)
-        assertEquals(null, pool.view(null).accounts.single { it.primary }.authExclusionReason)
+        assertEquals(null, pool.view(null).accounts.single { it.primary }.credential.exclusionReason)
     }
 
     @Test
@@ -215,7 +215,8 @@ class AccountCredentialEligibilityTest {
 
         assertSame(primary, probe.account)
         assertSame(backup, follower.account)
-        assertEquals("recovery_probe_in_flight", pool.view(null).accounts.single { it.primary }.authExclusionReason)
+        val held = pool.view(null).accounts.single { it.primary }
+        assertEquals("recovery_probe_in_flight", held.credential.exclusionReason)
         probe.releaseCredentialProbe()
     }
 
@@ -232,8 +233,8 @@ class AccountCredentialEligibilityTest {
         stale.markTurnSucceeded()
 
         val view = pool.view(null).accounts.single { it.primary }
-        assertEquals("terminal_401", view.authExclusionReason)
-        assertEquals(1_300_000L, view.authExcludedUntilEpochMillis)
+        assertEquals("terminal_401", view.credential.exclusionReason)
+        assertEquals(1_300_000L, view.credential.excludedUntilEpochMillis)
         assertSame(backup, pool.chosen("after-stale-success").account)
     }
 
@@ -250,8 +251,8 @@ class AccountCredentialEligibilityTest {
         stale.markCredentialRefreshSucceeded()
 
         val view = pool.view(null).accounts.single { it.primary }
-        assertEquals("terminal_401", view.authExclusionReason)
-        assertEquals(1_300_000L, view.authExcludedUntilEpochMillis)
+        assertEquals("terminal_401", view.credential.exclusionReason)
+        assertEquals(1_300_000L, view.credential.excludedUntilEpochMillis)
         assertSame(backup, pool.chosen("after-stale-refresh").account)
     }
 
@@ -264,14 +265,14 @@ class AccountCredentialEligibilityTest {
 
         assertSame(backup, pool.chosen("missing").account)
         val missingView = pool.view(null).accounts.single { it.primary }
-        assertFalse(missingView.credentialPresent)
-        assertEquals("credential_missing", missingView.authExclusionReason)
-        assertEquals(null, missingView.authExcludedUntilEpochMillis)
+        assertFalse(missingView.credential.present)
+        assertEquals("credential_missing", missingView.credential.exclusionReason)
+        assertEquals(null, missingView.credential.excludedUntilEpochMillis)
 
         fixture.rotateCredential(primary)
 
         assertSame(primary, pool.chosen("recreated").account)
-        assertTrue(pool.view(null).accounts.single { it.primary }.credentialPresent)
+        assertTrue(pool.view(null).accounts.single { it.primary }.credential.present)
     }
 
     @Test
@@ -288,7 +289,7 @@ class AccountCredentialEligibilityTest {
         successfulTurn.markTurnSucceeded()
         successfulTurn.markCredentialUnavailable()
         var view = pool.view(null).accounts.single { it.primary }
-        assertEquals(300_000L, checkNotNull(view.authExcludedUntilEpochMillis) - fixture.now.get())
+        assertEquals(300_000L, checkNotNull(view.credential.excludedUntilEpochMillis) - fixture.now.get())
         fixture.advanceWall(300_000L)
 
         val successfulRefresh = pool.chosen("refresh-success")
@@ -296,7 +297,7 @@ class AccountCredentialEligibilityTest {
         successfulRefresh.markCredentialRefreshSucceeded()
         successfulRefresh.markCredentialUnavailable()
         view = pool.view(null).accounts.single { it.primary }
-        assertEquals(300_000L, checkNotNull(view.authExcludedUntilEpochMillis) - fixture.now.get())
+        assertEquals(300_000L, checkNotNull(view.credential.excludedUntilEpochMillis) - fixture.now.get())
     }
 
     // V4-70: THE READ FAILURE MUST FAIL OPEN, and this is the one way the content digest could make

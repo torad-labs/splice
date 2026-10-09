@@ -14,7 +14,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.auth.Pkce
-import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
@@ -87,14 +86,16 @@ public class CodexOAuth {
 
     public fun decodeJwtClaims(jwt: String?): JsonObject {
         val payload = jwt.orEmpty().split(".").getOrNull(1) ?: return JsonObject(emptyMap())
-        // ast-grep-ignore: kt-no-silent-result-collapse -- empty claims IS the contract for a malformed jwt; the absence surfaces loudly as a missing account-id header
-        return Cancellables.runCatchingCancellable {
+        // Empty claims IS the contract for a malformed jwt; the absence surfaces loudly as a missing account-id header.
+        return try {
             // STANDARD decoder AFTER normalizing -_ to +/ — padBase64 converts to the standard
             // alphabet, so getUrlDecoder() (which REJECTS +/) failed on virtually every real
             // id_token and ChatGPT-Account-ID was never sent (audit 2026-07-18, JVM-repro'd).
             val decoded = Base64.getDecoder().decode(padBase64(payload)).toString(Charsets.UTF_8)
             jwtJson.parseToJsonElement(decoded).jsonObject
-        }.getOrDefault(JsonObject(emptyMap()))
+        } catch (_: IllegalArgumentException) {
+            JsonObject(emptyMap())
+        }
     }
 
     private fun padBase64(s: String): String {

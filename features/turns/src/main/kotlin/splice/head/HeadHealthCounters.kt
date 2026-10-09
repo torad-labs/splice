@@ -20,8 +20,8 @@ internal class HeadHealthCounters {
     }
 
     fun failure(outcome: splice.core.turn.TurnOutcome.Failure) {
-        if (outcome.providerReported) provider() else local()
-        if (outcome.providerReported && outcome.cause == splice.core.turn.FailureCause.VENDOR_RATE_LIMITED) {
+        if (outcome.traits.providerReported) provider() else local()
+        if (outcome.traits.providerReported && outcome.cause == splice.core.turn.FailureCause.VENDOR_RATE_LIMITED) {
             rateLimited()
         }
     }

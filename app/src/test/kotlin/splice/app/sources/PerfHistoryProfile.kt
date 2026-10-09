@@ -67,8 +67,7 @@ internal class PerfHistoryProfile {
                 splice.usage.quota.HeadUsageSource {
                     splice.usage.quota.UsageView(0, 0, null)
                 },
-                80,
-                0,
+                splice.usage.UsageHeadWarn(80, 0),
             )
             val plans = Class.forName("splice.usage.perf.AccountPlans")
                 .getDeclaredConstructor(splice.usage.UsageHead::class.java, splice.usage.UsageBilling::class.java)
@@ -140,7 +139,8 @@ internal class PerfHistoryProfile {
         private fun phase(event: RecordedEvent): String {
             val names = event.stackTrace?.frames.orEmpty().map { it.method.type.name + "." + it.method.name }
             return when {
-                names.any { "PerfRowsFileSource\$Scan.parse" in it || "PerfRowsFileSource\$Scan.decode" in it } -> "decode"
+                names.any { "PerfRowsFileSource\$Scan.parse" in it || "PerfRowsFileSource\$Scan.decode" in it } ->
+                    "decode"
                 names.any { "PerfLineReader" in it || "PerfPrefixDigest" in it } -> "disk_read_and_framing"
                 names.any { "PerfRowsCache" in it || "PerfCachedLine" in it } -> "cache_and_selection"
                 else -> "other"

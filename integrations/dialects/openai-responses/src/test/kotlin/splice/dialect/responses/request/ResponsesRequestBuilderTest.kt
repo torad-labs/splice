@@ -20,7 +20,11 @@ import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.GrokEffortFixture
 import splice.dialect.responses.PromptCachePolicy
+import splice.dialect.responses.ResponsesBackendQuirks
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesReasoningQuirks
+import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.tools.ToolDeferralPolicy
@@ -29,20 +33,30 @@ private val stableIds = ResponsesStableIds()
 
 private val CODEX = ResponsesQuirks(
     providerTag = "claudex",
-    emitEmptyLiteInstructions = false,
-    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
-    summaryRejectModelRegex = Regex("spark", RegexOption.IGNORE_CASE),
-    effortMaxRejectModelRegex = Regex("mini", RegexOption.IGNORE_CASE),
+    lite = ResponsesLiteQuirks(
+        responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+        emitEmptyLiteInstructions = false,
+    ),
+    reasoning = ResponsesReasoningQuirks(
+        summaryRejectModelRegex = Regex("spark", RegexOption.IGNORE_CASE),
+        effortMaxRejectModelRegex = Regex("mini", RegexOption.IGNORE_CASE),
+    ),
 )
 private val OPENAI = ResponsesQuirks(providerTag = "openai")
 private val GROK = ResponsesQuirks(
     providerTag = "claude-grok",
-    promptCache = PromptCachePolicy(key = CacheKeyStrategy.SESSION_ID),
-    effortVocabulary = GrokEffortFixture(),
-    supportsSummary = true,
-    summaryRejectModelRegex = null,
-    emitToolChoice = true,
-    emitStrict = true,
+    backend = ResponsesBackendQuirks(
+        promptCache = PromptCachePolicy(key = CacheKeyStrategy.SESSION_ID),
+    ),
+    reasoning = ResponsesReasoningQuirks(
+        effortVocabulary = GrokEffortFixture(),
+        supportsSummary = true,
+        summaryRejectModelRegex = null,
+    ),
+    tools = ResponsesToolQuirks(
+        emitToolChoice = true,
+        emitStrict = true,
+    ),
 )
 
 /** A config word as the display it names; anything else reads as OFF, as the config reader does. */
@@ -58,22 +72,28 @@ private fun opts(
     model: String = "gpt-5.6-sol",
 ) = BuildOptions(
     compact = compact,
-    originalModel = "claude-codex--$model",
-    upstreamModel = model,
-    configEffort = null,
-    configSummary = null,
-    showReasoning = displayOf(show),
-    replayReasoning = InjectPriorReasoning(replay),
-    // Default: include when reasoning is shown (independent of input-replay, and of compact —
-    // ResponsesTurnOptions derives it the same way, so a compaction's request matches a turn's).
-    includeEncryptedReasoning = RequestEncryptedReasoning(includeEncrypted ?: (show != "off")),
+    models = ModelIds(
+        original = "claude-codex--$model",
+        upstream = model,
+    ),
+    reasoning = RequestedReasoning(
+        effort = null,
+        summary = null,
+        display = displayOf(show),
+    ),
+    handoff = ReasoningHandoff(
+        replay = InjectPriorReasoning(replay),
+        // Default: include when reasoning is shown (independent of input-replay, and of compact —
+        // ResponsesTurnOptions derives it the same way, so a compaction's request matches a turn's).
+        includeEncrypted = RequestEncryptedReasoning(includeEncrypted ?: (show != "off")),
+        decode = { data ->
+            buildJsonObject {
+                put("type", JsonPrimitive("reasoning"))
+                put("decoded", JsonPrimitive(data))
+            }
+        },
+    ),
     sessionId = null,
-    decodeReasoningEnvelope = { data ->
-        buildJsonObject {
-            put("type", JsonPrimitive("reasoning"))
-            put("decoded", JsonPrimitive(data))
-        }
-    },
 )
 
 private fun build(json: String, quirks: ResponsesQuirks = CODEX, options: BuildOptions = opts()): JsonObject {
@@ -88,7 +108,7 @@ class ResponsesRequestBuilderTest {
         val budgetBody = """{"model":"m","thinking":{"type":"enabled","budget_tokens":32000},
             "messages":[{"role":"user","content":"x"}]}"""
         // budget 32k -> xhigh (beats config low)
-        var req = build(budgetBody, options = opts().copy(configEffort = "low"))
+        var req = build(budgetBody, options = opts().let { it.copy(reasoning = it.reasoning.copy(effort = "low")) })
         assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
         // explicit body field beats the budget
         req = build(
@@ -133,7 +153,7 @@ class ResponsesRequestBuilderTest {
         assertEquals("detailed", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
         req = build(
             """{"model":"m","effort":"medium","messages":[{"role":"user","content":"x"}]}""",
-            options = opts(show = "text").copy(configSummary = "concise"),
+            options = opts(show = "text").let { it.copy(reasoning = it.reasoning.copy(summary = "concise")) },
         )
         assertEquals("medium", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
         // configSummary is operator-controlled — concise stays concise when TOML/env says so.
@@ -157,7 +177,7 @@ class ResponsesRequestBuilderTest {
     fun `summary delivery rides with the quirk and an actual summary, never otherwise`() {
         val body = """{"model":"m","thinking":{"type":"enabled","budget_tokens":32000},
             "messages":[{"role":"user","content":"x"}]}"""
-        val withDelivery = CODEX.copy(summaryDelivery = "sequential_cutoff")
+        val withDelivery = CODEX.copy(reasoning = CODEX.reasoning.copy(summaryDelivery = "sequential_cutoff"))
         var req = build(body, quirks = withDelivery)
         assertEquals(
             "sequential_cutoff",
@@ -181,7 +201,7 @@ class ResponsesRequestBuilderTest {
     fun `summary delivery - null omits stream_options, a mode is sent as written`() {
         val body = """{"model":"m","thinking":{"type":"enabled","budget_tokens":32000},
             "messages":[{"role":"user","content":"x"}]}"""
-        val cutoff = CODEX.copy(summaryDelivery = "sequential_cutoff")
+        val cutoff = CODEX.copy(reasoning = CODEX.reasoning.copy(summaryDelivery = "sequential_cutoff"))
         assertNull(build(body, quirks = cutoff.withSummaryDelivery(null))["stream_options"])
         val options = build(body, quirks = CODEX.withSummaryDelivery("sequential_cutoff"))["stream_options"]?.jsonObject
         assertEquals("sequential_cutoff", options?.get("reasoning_summary_delivery")?.jsonPrimitive?.content)
@@ -308,7 +328,8 @@ class ResponsesRequestBuilderTest {
     @Test
     fun `compact inherits the session model and effort - the cache law`() {
         val body = """{"model":"m","system":"base","messages":[{"role":"user","content":"go"}]}"""
-        val req = build(body, options = opts(compact = true, model = "gpt-5.6-sol").copy(configEffort = "high"))
+        val sol = opts(compact = true, model = "gpt-5.6-sol")
+        val req = build(body, options = sol.copy(reasoning = sol.reasoning.copy(effort = "high")))
         // model is the session's own upstream model — never swapped for a compaction run
         assertEquals("gpt-5.6-sol", req["model"]?.jsonPrimitive?.content)
         // effort is inherited from the session (config "high"), never pinned lower
@@ -499,37 +520,49 @@ private fun cacheOpts(
     lookup: (String) -> List<String>? = { null },
 ) = BuildOptions(
     compact = false,
-    originalModel = "claude-codex--gpt-5.6-sol",
-    upstreamModel = "gpt-5.6-sol",
-    configEffort = null,
-    configSummary = null,
-    showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = InjectPriorReasoning(replay),
-    includeEncryptedReasoning = RequestEncryptedReasoning(true),
+    models = ModelIds(
+        original = "claude-codex--gpt-5.6-sol",
+        upstream = "gpt-5.6-sol",
+    ),
+    reasoning = RequestedReasoning(
+        effort = null,
+        summary = null,
+        display = ReasoningDisplay.TEXT,
+    ),
+    handoff = ReasoningHandoff(
+        replay = InjectPriorReasoning(replay),
+        includeEncrypted = RequestEncryptedReasoning(true),
+        decode = { data ->
+            buildJsonObject {
+                put("type", JsonPrimitive("reasoning"))
+                put("id", JsonPrimitive("rs_$data"))
+                put("encrypted_content", JsonPrimitive(data))
+            }
+        },
+        lookup = lookup,
+    ),
     sessionId = null,
-    decodeReasoningEnvelope = { data ->
-        buildJsonObject {
-            put("type", JsonPrimitive("reasoning"))
-            put("id", JsonPrimitive("rs_$data"))
-            put("encrypted_content", JsonPrimitive(data))
-        }
-    },
-    reasoningLookup = lookup,
 )
 
 /** A pre-cache caller: identical fields, but the reasoningLookup PARAMETER is never passed —
  *  the class default carries it, which is exactly what an unwired call site looks like. */
 private fun preCacheOpts() = BuildOptions(
     compact = false,
-    originalModel = "claude-codex--gpt-5.6-sol",
-    upstreamModel = "gpt-5.6-sol",
-    configEffort = null,
-    configSummary = null,
-    showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = InjectPriorReasoning(false),
-    includeEncryptedReasoning = RequestEncryptedReasoning(true),
+    models = ModelIds(
+        original = "claude-codex--gpt-5.6-sol",
+        upstream = "gpt-5.6-sol",
+    ),
+    reasoning = RequestedReasoning(
+        effort = null,
+        summary = null,
+        display = ReasoningDisplay.TEXT,
+    ),
+    handoff = ReasoningHandoff(
+        replay = InjectPriorReasoning(false),
+        includeEncrypted = RequestEncryptedReasoning(true),
+        decode = { null },
+    ),
     sessionId = null,
-    decodeReasoningEnvelope = { null },
 )
 
 private const val TOOL_TURN_BODY = """{"model":"m","messages":[
@@ -627,7 +660,7 @@ private fun toolSurfaceBodyWithHistory(toolName: String) = """{"model":"m",
 
 class ToolSurfaceRequestTest {
 
-    private val quirksOn = CODEX.copy(toolSurface = ToolDeferralPolicy(minDeferred = 4))
+    private val quirksOn = CODEX.copy(tools = CODEX.tools.copy(toolSurface = ToolDeferralPolicy(minDeferred = 4)))
 
     @Test
     fun `deferral on - deferred names absent, tool_search last, other fields unchanged`() {
@@ -658,13 +691,13 @@ class ToolSurfaceRequestTest {
     fun `TurnMeta stamps tools eager and deferred, null when deferral is off`() {
         val parsedOn = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
         val builtOn = ResponsesRequestBuilder(quirksOn).build(parsedOn.typed, parsedOn.raw, opts(model = "gpt-5.6-sol"))
-        assertEquals(1, builtOn.meta.toolsEager)
-        assertEquals(12, builtOn.meta.toolsDeferred)
+        assertEquals(1, builtOn.meta.tools.eager)
+        assertEquals(12, builtOn.meta.tools.deferred)
 
         val parsedOff = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
         val builtOff = ResponsesRequestBuilder(CODEX).build(parsedOff.typed, parsedOff.raw, opts(model = "gpt-5.6-sol"))
-        assertNull(builtOff.meta.toolsEager)
-        assertNull(builtOff.meta.toolsDeferred)
+        assertNull(builtOff.meta.tools.eager)
+        assertNull(builtOff.meta.tools.deferred)
     }
 
     // Declaration-replay walls (cache-prefix stability, 2026-07-25): ToolSurface.kt's transcript-

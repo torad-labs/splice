@@ -39,7 +39,7 @@ internal class CodeModeClientContexts(private val persisted: CodeModePersistedCo
         note(key, measured)
         if (outcome !is TurnOutcome.Success || outcome.usage.inputTokens > 0) return outcome
         val context = synchronized(last) { last[key] } ?: persisted(key)?.let(::contextOf) ?: return outcome
-        return outcome.copy(usage = outcome.usage.copy(clientContext = context))
+        return outcome.copy(usage = outcome.usage.copy(origin = outcome.usage.origin.copy(clientContext = context)))
     }
 
     private fun contextOf(usage: Usage): Usage? = usage.takeIf { it.inputTokens > 0 }?.let {

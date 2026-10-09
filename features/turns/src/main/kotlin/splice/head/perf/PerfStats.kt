@@ -32,7 +32,6 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTurn
 import splice.core.perf.PerfSnapshot
-import splice.core.perf.PerfTurnIds
 import splice.core.perf.UpstreamMilestones
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
@@ -59,33 +58,16 @@ public data class PerfRowMeta(
      *  the perf log is attributable to ONE Claude Code session in a single grep (2026-09-02: seven
      *  client aborts in two hours could only be tied to sessions by cross-reading transcripts). */
     val session: String? = null,
-    val account: String? = null,
-    val cacheCold: Boolean = false,
-    /** V4-117: WHY this turn failed, as the taxonomy's cause, so a perf row can be grouped by cause
-     *  rather than by the wire type the client happened to be told (the two differ by design — see
-     *  WireType). Null for a turn that did not fail. */
-    val cause: String? = null,
-    /** V4-117: how many upstream attempts the retry loop made, as RECORDED by the loop itself.
-     *  Written only when it is non-zero, so a row without retries looks exactly as it did before
-     *  this field existed — the alternative would put layers=0 on every success in the file. */
-    val layers: Int = 0,
-    /** V4-345: the id of the trace turn that recorded this turn's request and answer, on a head that
-     *  keeps a trace, so the console opens the request a person clicked by its id rather than guessing
-     *  it by time. Null on a head that keeps none, and then the row carries no `turn`. */
-    val turns: PerfTurnIds = PerfTurnIds(),
-    /** The full client session id and splice's client-facing response message id, for joining the
-     *  local transcript without guessing by timestamp or the shortened session tag (V4-354). */
-    val sessionId: String? = null,
-    val responseMessageId: String? = null,
-    /** Same stable first-prompt key the provider uses, only for in-memory preflight measurements. */
-    val conversationKey: String? = null,
+    val account: PerfAccount = PerfAccount(),
+    val failure: PerfFailure = PerfFailure(),
+    val transcript: PerfTranscriptIds = PerfTranscriptIds(),
 ) {
     /** These optional string facts never enter the row's numeric snapshot. */
     internal fun putTranscriptFacts(into: JsonObjectBuilder) {
-        sessionId?.let { into.put("session_id", it) }
-        responseMessageId?.let { into.put("response_message_id", it) }
-        turns.trace?.let { into.put("turn", it) }
-        turns.request?.let { into.put("turn_id", it) }
+        transcript.sessionId?.let { into.put("session_id", it) }
+        transcript.responseMessageId?.let { into.put("response_message_id", it) }
+        transcript.turns.trace?.let { into.put("turn", it) }
+        transcript.turns.request?.let { into.put("turn_id", it) }
     }
 }
 
@@ -106,8 +88,8 @@ internal class MeasuredInputs {
     private val lock = Any()
 
     fun remember(meta: PerfRowMeta, snap: PerfSnapshot, request: JsonObject?) {
-        val key = meta.sessionId?.let { session ->
-            meta.conversationKey?.let { conversation -> Key(session, conversation, meta.model) }
+        val key = meta.transcript.sessionId?.let { session ->
+            meta.transcript.conversationKey?.let { conversation -> Key(session, conversation, meta.model) }
         }
         val sample = snap.counters[PerfKeys.IN_TOKENS]?.takeIf { it > 0 }?.let { input ->
             request?.let(InputDigest::capture)?.let { prefix -> Sample(input, prefix) }
@@ -209,11 +191,11 @@ public class PerfStats(
                 put("compact", meta.compact)
                 meta.session?.let { put("session", it) }
                 meta.putTranscriptFacts(this)
-                meta.cause?.let { put("cause", it) }
-                if (meta.layers > 0) put("layers", meta.layers)
-                meta.account?.let { account ->
+                meta.failure.cause?.let { put("cause", it) }
+                if (meta.failure.layers > 0) put("layers", meta.failure.layers)
+                meta.account.label?.let { account ->
                     put("account", account)
-                    put("cache_cold", meta.cacheCold)
+                    put("cache_cold", meta.account.cacheCold)
                 }
                 TransportTimings.putTransportTimings(this, snap)
                 put(PerfKeys.RETRIES, snap.counters.getOrDefault(PerfKeys.RETRIES, 0L))

@@ -3,7 +3,11 @@ package splice.provider.codex.state
 
 import splice.provider.codex.CODE_MODE_LEGACY_METADATA_VERSION
 import splice.provider.codex.CODE_MODE_METADATA_VERSION
+import splice.provider.codex.CodeModeBaseline
+import splice.provider.codex.CodeModeNativeContinuity
+import splice.provider.codex.CodeModeOrigin
 import splice.provider.codex.CodeModePhase
+import splice.provider.codex.CodeModeProgress
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRecordSnapshot
 
@@ -43,25 +47,29 @@ internal class CodeModeRecordRestorer {
     private fun record(saved: CodeModeRecordSnapshot, phase: CodeModePhase, error: String?) = CodeModeRecord(
         id = saved.id,
         key = saved.key,
-        outer = saved.outer,
-        outerCallId = saved.outerCallId,
-        source = saved.source,
         phase = phase,
-        pending = saved.pending.toMutableList(),
-        output = saved.output,
         error = error,
-        totalCalls = saved.totalCalls,
-        rounds = saved.rounds,
-        updatedAt = saved.updatedAt,
-        lastDigest = saved.lastDigest,
-        baselineInputCount = saved.baselineInputCount,
-        baselineInputDigest = saved.baselineInputDigest,
-        metadataVersion = saved.metadataVersion,
-        baselineLogicalCount = saved.baselineLogicalCount,
-        baselineLogicalDigest = saved.baselineLogicalDigest,
-        nativeSegments = saved.nativeSegments,
-        continuity = saved.continuity,
-        continuityReplay = saved.continuityReplay,
+        origin = CodeModeOrigin(
+            outer = saved.outer,
+            outerCallId = saved.outerCallId,
+            source = saved.source,
+            baseline = CodeModeBaseline(
+                inputCount = saved.baselineInputCount,
+                inputDigest = saved.baselineInputDigest,
+                logicalCount = saved.baselineLogicalCount,
+                logicalDigest = saved.baselineLogicalDigest,
+                metadataVersion = saved.metadataVersion,
+            ),
+        ),
+        progress = CodeModeProgress(
+            pending = saved.pending.toMutableList(),
+            output = saved.output,
+            totalCalls = saved.totalCalls,
+            rounds = saved.rounds,
+            updatedAt = saved.updatedAt,
+            lastDigest = saved.lastDigest,
+        ),
+        carry = CodeModeNativeContinuity(saved.nativeSegments, saved.continuity, saved.continuityReplay),
     )
 }
 
@@ -70,26 +78,26 @@ internal object CodeModeRecordSnapshots {
     fun of(record: CodeModeRecord): CodeModeRecordSnapshot = CodeModeRecordSnapshot(
         id = record.id,
         key = record.key,
-        outer = record.outer,
-        outerCallId = record.outerCallId,
-        source = record.source,
+        outer = record.origin.outer,
+        outerCallId = record.origin.outerCallId,
+        source = record.origin.source,
         phase = record.phase,
-        pending = record.pending.map { it.copy() },
+        pending = record.progress.pending.map { it.copy() },
         results = record.accepted.snapshot(),
-        output = record.output,
+        output = record.progress.output,
         error = record.error,
-        totalCalls = record.totalCalls,
-        rounds = record.rounds,
-        updatedAt = record.updatedAt,
-        lastDigest = record.lastDigest,
-        baselineInputCount = record.baselineInputCount,
-        baselineInputDigest = record.baselineInputDigest,
-        metadataVersion = record.metadataVersion,
-        baselineLogicalCount = record.baselineLogicalCount,
-        baselineLogicalDigest = record.baselineLogicalDigest,
-        nativeSegments = record.nativeSegments,
-        continuity = record.continuity,
-        continuityReplay = record.continuityReplay,
+        totalCalls = record.progress.totalCalls,
+        rounds = record.progress.rounds,
+        updatedAt = record.progress.updatedAt,
+        lastDigest = record.progress.lastDigest,
+        baselineInputCount = record.origin.baseline.inputCount,
+        baselineInputDigest = record.origin.baseline.inputDigest,
+        metadataVersion = record.origin.baseline.metadataVersion,
+        baselineLogicalCount = record.origin.baseline.logicalCount,
+        baselineLogicalDigest = record.origin.baseline.logicalDigest,
+        nativeSegments = record.carry.segments,
+        continuity = record.carry.continuity,
+        continuityReplay = record.carry.replay,
     ).also {
         it.issued = record.issued.toList()
         it.sessionId = record.sessionId

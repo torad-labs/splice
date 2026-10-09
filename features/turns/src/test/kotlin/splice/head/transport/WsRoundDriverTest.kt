@@ -68,6 +68,8 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
@@ -87,6 +89,7 @@ import splice.head.headStores
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RunnerSignals
 import splice.head.turn.TurnDrive
+import splice.head.turn.TurnInputs
 import splice.head.turn.ZeroEventClassifier
 import splice.head.usage.OutputClamp
 import splice.head.wire.BufferingWireSink
@@ -100,6 +103,8 @@ import splice.upstream.BuiltTurn
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.NEVER_PINGED_MS
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.RoundBody
 import splice.upstream.WsPathPulse
@@ -353,7 +358,7 @@ private class ScriptedWsProvider(
         val turn = CodexCodeModeBridge.Turn(
             "synthetic-ws-session",
             "synthetic-ws-conversation",
-            built.meta.upstreamModel,
+            built.meta.route.upstreamModel,
             setOf("SyntheticTool"),
         )
         return built.copy(roundInterceptor = manager.interceptor(turn, disableParallel = false))
@@ -369,8 +374,7 @@ private class WsDriverFixture(private val tmp: Path, private val baseUrl: String
     fun provider(runner: WsRoundRunner, bridge: CodexCodeModeBridge? = null): Provider = ScriptedWsProvider(
         TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-codex--",
                     models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -378,7 +382,7 @@ private class WsDriverFixture(private val tmp: Path, private val baseUrl: String
                 ),
                 pinnedModel = "gpt-5.6-sol",
                 auth = WsFakeAuth(),
-                baseUrl = baseUrl,
+                locations = ProviderLocations(baseUrl = baseUrl),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
@@ -386,6 +390,22 @@ private class WsDriverFixture(private val tmp: Path, private val baseUrl: String
         ),
         runner,
         bridge,
+    )
+
+    private val codexMeta = TurnMeta(
+        compact = false,
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "high",
+            summary = "detailed",
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = "claude-codex--gpt-5.6-sol",
+            upstreamModel = "gpt-5.6-sol",
+            clientMaxTokens = 100,
+        ),
     )
 
     suspend fun inputs(
@@ -396,37 +416,32 @@ private class WsDriverFixture(private val tmp: Path, private val baseUrl: String
     ): WsRoundInputs {
         val slot = InflightGate(LiveLimit { 1 }).admittedSlot()
         val drive = TurnDrive(
-            requestBody = buildJsonObject { },
-            meta = TurnMeta(
-                compact = false,
-                showReasoning = ReasoningDisplay.TEXT,
-                stream = true,
-                originalModel = "claude-codex--gpt-5.6-sol",
-                upstreamModel = "gpt-5.6-sol",
-                clientMaxTokens = 100,
-                effort = "high",
-                summary = "detailed",
-                budgetTokens = null,
+            inputs = TurnInputs(
+                built = BuiltTurn(
+                    requestBody = buildJsonObject { },
+                    meta = codexMeta,
+                    extraHeaders = emptyMap(),
+                    toolSearch = null,
+                ),
+                slot = slot,
+                t0 = 0,
+                perf = TurnPerf(),
+                trace = null,
+                markHandedOff = {},
             ),
             emitter = emitter,
             watchdog = TurnWatchdog(budget),
-            slot = slot,
             pipeline = TurnPipeline(
                 CompactStats(tmp.resolve("cold-flow-compact.jsonl")),
                 log = {},
                 clampOutput = OutputClamp { it },
             ),
-            t0 = 0,
-            trace = null,
-            perf = TurnPerf(),
-            turnHeaders = emptyMap(),
             signals = RunnerSignals(),
             channel = ClientChannel(
                 ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
                 Mutex(),
                 AtomicBoolean(false),
             ),
-            toolSearch = null,
         )
         return WsRoundInputs(
             drive = drive,
@@ -461,7 +476,12 @@ class WatchdogProgressRoundTest {
         val provider = fixture.provider(progressRunner(source))
         val original = fixture.inputs(RecordingTerminal(), this, budget)
         val inputs = original.copy(
-            drive = original.drive.copy(watchdog = dog, perf = TurnPerf { testScheduler.currentTime }),
+            drive = original.drive.let {
+                it.copy(
+                    inputs = it.inputs.copy(perf = TurnPerf { testScheduler.currentTime }),
+                    watchdog = dog,
+                )
+            },
         )
         val channel = ByteChannel(autoFlush = true)
         val feeder = if (scenario.startsWith("sse")) {
@@ -1098,7 +1118,7 @@ class WsRoundDriverTest {
                 )
             }
         }
-        val inputs = coldFlowInputs(terminal, this).let { it.copy(drive = it.drive.copy(perf = perf)) }
+        val inputs = coldFlowInputs(terminal, this).let { it.copy(drive = it.drive.let { d -> d.copy(inputs = d.inputs.copy(perf = perf)) }) }
         try {
             val result = WsRoundDriver(
                 provider(runner),
@@ -1127,7 +1147,11 @@ class WsRoundDriverTest {
             listOf("""{"type":"error","code":"permission_denied","message":"synthetic refusal"}"""),
         )
         val inputs = coldFlowInputs(RecordingTerminal(), this).let {
-            it.copy(drive = it.drive.copy(turnHeaders = mapOf("Authorization" to "Bearer synthetic override")))
+            val override = mapOf("Authorization" to "Bearer synthetic override")
+            val inputs = it.drive.inputs
+            it.copy(
+                drive = it.drive.copy(inputs = inputs.copy(built = inputs.built.copy(extraHeaders = override))),
+            )
         }
         val answers = mutableListOf<Pair<Boolean, Long>>()
         val driver = WsRoundDriver(
@@ -1559,7 +1583,7 @@ class WsRoundFailureTest(@param:TempDir private val tmp: Path) {
 
         val outcome = (result as? WsRoundResult.Streamed)?.outcome as? TurnOutcome.Failure
         assertEquals(FailureCause.CONTENT_FILTERED, outcome?.cause, "the refusal was not the round's ending: $result")
-        assertEquals(true, outcome?.permanent, "a refusal re-sent is the identical refusal")
+        assertEquals(true, outcome?.traits?.permanent, "a refusal re-sent is the identical refusal")
         assertEquals(1, runner.endedNotOk, "the refused round clears its chain")
         inputs.drive.slot.release()
     }

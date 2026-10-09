@@ -78,7 +78,7 @@ internal open class CodeModeFilesTestSupport {
         HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(key.toByteArray())) + ".jsonl"
 
     protected fun CodexCodeModeRegistry.outputs(key: String): List<String?> =
-        completed(key).map(CodeModeRecord::output)
+        completed(key).map { it.progress.output }
 }
 
 internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
@@ -277,10 +277,10 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
             writer.releaseNewer.countDown()
             threads.shutdownNow()
         }
-        assertEquals("newer-digest", alpha.lastDigest)
+        assertEquals("newer-digest", alpha.progress.lastDigest)
         assertEquals("newer", alpha.results["call"]?.output)
         val restored = registry().completed("alpha").single()
-        assertEquals(alpha.lastDigest, restored.lastDigest)
+        assertEquals(alpha.progress.lastDigest, restored.progress.lastDigest)
         assertEquals(alpha.results, restored.results)
     }
 
@@ -349,7 +349,7 @@ internal class CodeModeConversationFilesTest : CodeModeFilesTestSupport() {
         }
         val restored = registry().recordsFor("alpha")
         assertEquals(2, restored.size)
-        assertEquals("newer", restored.first().output)
+        assertEquals("newer", restored.first().progress.output)
     }
 
     @Test
@@ -600,14 +600,14 @@ internal class CodeModeSweepFailureTest : CodeModeFilesTestSupport() {
             registry.changes.save(
                 earlier,
                 undo = {
-                    it.lastDigest = "prior"
+                    it.progress.lastDigest = "prior"
                     it.accepted.restore(prior)
                 },
             ) {}
         }
         registry.script("alpha", 2, "later")
         val restored = registry().recordsFor("alpha").first()
-        assertEquals("prior", restored.lastDigest)
+        assertEquals("prior", restored.progress.lastDigest)
         assertEquals(setOf("one"), restored.results.keys)
     }
 

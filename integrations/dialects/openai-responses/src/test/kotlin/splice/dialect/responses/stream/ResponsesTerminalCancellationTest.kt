@@ -95,7 +95,7 @@ class ResponsesTerminalCancellationTest {
             assertEquals(100L, outcome.salvagedUsage.inputTokens)
             assertEquals(7L, outcome.salvagedUsage.outputTokens)
             assertNull(outcome.partial, "billing must not turn a permanent ending into a re-anchor")
-            assertTrue(outcome.permanent)
+            assertTrue(outcome.traits.permanent)
         }
     }
 

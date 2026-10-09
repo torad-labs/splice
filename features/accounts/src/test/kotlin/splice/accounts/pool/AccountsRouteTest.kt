@@ -34,13 +34,11 @@ class AccountsRouteTest {
             true,
             true,
             "plus",
-            10.0,
-            100L,
-            5.0,
-            200L,
-            fiveHourWindowSeconds = 18_000L,
-            sevenDayWindowSeconds = 604_800L,
-            quotaObservedAtEpochSeconds = 1_699_999_000L,
+            HeadAccountQuota(
+                fiveHour = HeadAccountWindow(10.0, 100L, 18_000L),
+                sevenDay = HeadAccountWindow(5.0, 200L, 604_800L),
+                observedAtEpochSeconds = 1_699_999_000L,
+            ),
         )
         val pool = HeadAccountPoolView(selectedLabel = "backup", accounts = listOf(poolAccount), lastSwitch = null)
         val authPath = "/shared/backup.json"
@@ -64,7 +62,7 @@ class AccountsRouteTest {
     @Test
     fun `a joined credential uses each head's own account label and its newest answer`() = runBlocking<Unit> {
         for ((firstLabel, secondLabel) in listOf("one" to "two", "two" to "one")) {
-            val account = HeadAccountView(firstLabel, true, true, true, null, null, null, null, null)
+            val account = HeadAccountView(firstLabel, true, true, true, null)
             val firstPool = HeadAccountPoolView(firstLabel, listOf(account), null)
             val secondPool = HeadAccountPoolView(secondLabel, listOf(account.copy(label = secondLabel)), null)
             var secondAnswer = ProviderAnswer(403, 200L)

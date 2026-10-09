@@ -59,7 +59,7 @@ internal class LaunchResponse {
                 "'$label' has no upstream API key: requests will fail until you run: splice key set $envVar. " +
                     "The next request reads it, with no restart (a key kept in the daemon's environment " +
                     "instead needs export $envVar there, then: splice restart)"
-            else -> "'$label' is not signed in. Requests will fail until you run: ${spec.loginCommand}"
+            else -> "'$label' is not signed in. Requests will fail until you run: ${spec.signIn.loginCommand}"
         }
     }
 }

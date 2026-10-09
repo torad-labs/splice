@@ -57,7 +57,11 @@ internal class FoldRounds(
             // continued: there is nobody to continue for.
             signals.clientGone() -> null
             else -> reanchor.continuationForFailure(
-                ReanchorRound(body, outcome.copy(partial = outcome.partial?.copy(bodyText = "")), attempt),
+                ReanchorRound(
+                    body,
+                    outcome.copy(partial = outcome.partial?.let { it.copy(text = it.text.copy(bodyText = "")) }),
+                    attempt,
+                ),
             )
         }
 

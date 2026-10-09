@@ -28,9 +28,12 @@ internal class SyntheticPerfHistory(private val directory: Path) {
                 val input = tokens - 64
                 writer.write(
                     """{"ts":$timestamp,"outcome":"ok","model":"synthetic-model","session":"synthetic",""" +
-                        """"session_id":"synthetic-session-${index % 128}","response_message_id":"synthetic-response-$index",""" +
-                        """"account":"synthetic-account","turn":"synthetic-turn-$index","compact":false,"cache_cold":false,""" +
-                        """"${PerfKeys.IN_TOKENS}":$input,"${PerfKeys.OUT_TOKENS}":64,"${PerfKeys.CACHED_TOKENS}":0,""" +
+                        """"session_id":"synthetic-session-${index % 128}",""" +
+                        """"response_message_id":"synthetic-response-$index",""" +
+                        """"account":"synthetic-account","turn":"synthetic-turn-$index","compact":false,""" +
+                        """"cache_cold":false,""" +
+                        """"${PerfKeys.IN_TOKENS}":$input,"${PerfKeys.OUT_TOKENS}":64,""" +
+                        """"${PerfKeys.CACHED_TOKENS}":0,""" +
                         """"${PerfKeys.FIRST_BYTE}":${index % 10_000 + 1},$metrics,"ignored_detail":"$detail"}""",
                 )
                 writer.newLine()

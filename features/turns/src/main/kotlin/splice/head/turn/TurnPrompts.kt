@@ -12,6 +12,7 @@ import splice.core.prompt.EffectiveSystemPrompt
 import splice.core.prompt.SYSTEM_PROMPT_APPLIED
 import splice.core.prompt.SYSTEM_PROMPT_LAYERS
 import splice.core.prompt.SystemPromptMode
+import splice.core.turn.TurnSystemPrompt
 import splice.head.HeadDeps
 import splice.sessions.prompt.SLOT_PROMPT_CHANGED
 import splice.upstream.BuiltTurn
@@ -23,18 +24,18 @@ internal class TurnPrompts(private val provider: Provider, private val deps: Hea
      *  rule as the layers: a dialect that could not place it leaves the body alone and the meta says
      *  "(not applied)" rather than claiming text the wire never carried. */
     fun applySlotPrompt(turn: BuiltTurn, sessionId: String?, perf: TurnPerf): BuiltTurn {
-        val slots = deps.seams.slotInstructions
+        val slots = deps.seams.session.slotInstructions
         if (slots == null || sessionId == null) return turn
         val prompt = slots.forSession(sessionId)
         if (slots.changed(sessionId, prompt)) perf.setCount(SLOT_PROMPT_CHANGED, 1L)
         if (prompt == null) return turn
         val next = provider.withSystemPrompt(turn, prompt.text, SystemPromptMode.APPEND)
         val placed = next.requestBody != turn.requestBody
-        val joined = listOfNotNull(turn.meta.systemPrompt, prompt.text).joinToString("\n\n")
-        val text = if (placed) joined else turn.meta.systemPrompt
+        val joined = listOfNotNull(turn.meta.standingPrompt.text, prompt.text).joinToString("\n\n")
+        val text = if (placed) joined else turn.meta.standingPrompt.text
         val label = if (placed) prompt.source else "${prompt.source} (not applied)"
-        val source = listOfNotNull(turn.meta.systemPromptSource, label).joinToString("+")
-        return next.copy(meta = next.meta.copy(systemPrompt = text, systemPromptSource = source))
+        val source = listOfNotNull(turn.meta.standingPrompt.source, label).joinToString("+")
+        return next.copy(meta = next.meta.copy(standingPrompt = TurnSystemPrompt(text = text, source = source)))
     }
 
     /** The standing prompt layers ride on EVERY turn (not only compact ones), at the dialect's seam,
@@ -54,7 +55,7 @@ internal class TurnPrompts(private val provider: Provider, private val deps: Hea
      *  as carried while the wire no longer had it. */
     fun applySystemPrompt(turn: BuiltTurn, sessionId: String?, perf: TurnPerf): BuiltTurn {
         val layers = deps.policy.systemPrompt
-        val cwd = if (layers.hasProjects) deps.seams.sessionProject(sessionId) else null
+        val cwd = if (layers.hasProjects) deps.seams.session.sessionProject(sessionId) else null
         val resolved = layers.resolve(cwd)
         if (resolved.isEmpty()) return turn
         val placed = BooleanArray(resolved.size)
@@ -72,8 +73,10 @@ internal class TurnPrompts(private val provider: Provider, private val deps: Hea
         }
         return prompted.copy(
             meta = prompted.meta.copy(
-                systemPrompt = applied.takeIf { it.isNotEmpty() }?.joinToString("\n\n") { it.text },
-                systemPromptSource = source,
+                standingPrompt = TurnSystemPrompt(
+                    text = applied.takeIf { it.isNotEmpty() }?.joinToString("\n\n") { it.text },
+                    source = source,
+                ),
             ),
         )
     }

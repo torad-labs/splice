@@ -21,7 +21,7 @@ internal class ResponsesReasoningReplay(private val ctx: StreamTurnContext, priv
             // encrypted-reasoning-ONLY turn reads as empty and earns a false empty_model api_error.
             state.emittedThinking = true
         }
-        if (ctx.collectReasoningEnvelopes) state.reasoningEnvelopes.add(envelope)
+        if (ctx.reasoningCapture.collectEnvelopes) state.reasoningEnvelopes.add(envelope)
     }
 
     /** Gated encrypted-reasoning EMISSION predicate — kept out of the caller so its condition stays flat. */

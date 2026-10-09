@@ -60,9 +60,13 @@ internal class CodeModeNativeDiagnosticsTest {
         val baseline = listOf(first) + native + latest
         val original = record(baseline, "legacy-v4")
         val legacy = original.copy(
-            metadataVersion = 4,
-            baselineInputDigest = InputDigest.hex(JsonArray(baseline)),
-            baselineLogicalDigest = InputDigest.hex(JsonArray(listOf(first, latest))),
+            origin = original.origin.copy(
+                baseline = original.origin.baseline.copy(
+                    metadataVersion = 4,
+                    inputDigest = InputDigest.hex(JsonArray(baseline)),
+                    logicalDigest = InputDigest.hex(JsonArray(listOf(first, latest))),
+                ),
+            ),
         )
         val changed = JsonObject(native.first().jsonObject + ("encrypted_content" to JsonPrimitive("changed")))
         val client = listOf(first, changed) + native.drop(1) + latest + callbacks(legacy)
@@ -97,7 +101,7 @@ internal class CodeModeNativeDiagnosticsTest {
         val codec = CodexCodeModeHistoryCodec(Json)
         val projection = codec.conversation(codec.projection.project(JsonArray(listOf(first) + native + follower))).body
         val index = CodeModeHistoryIndex(projection.logicalItems, codec)
-        val evidence = CodeModeNativeEvidenceCapture.capture(index, active, active, active.nativeSegments.first(), 0..2)
+        val evidence = CodeModeNativeEvidenceCapture.capture(index, active, active, active.carry.segments.first(), 0..2)
         val line = CodeModeHistoryLog.context(
             active,
             CodeModeNativeRejection(true, CodeModeNativeBranch.ABSENT, evidence),
@@ -112,7 +116,7 @@ internal class CodeModeNativeDiagnosticsTest {
         val latest = item("""{"role":"user","content":"synthetic latest"}""")
         val baseline = listOf(first) + native + middle + native + latest
         val captured = record(baseline, "survivor")
-        val delta = captured.copy(nativeSegments = captured.nativeSegments.drop(1)).also {
+        val delta = captured.copy(carry = captured.carry.copy(segments = captured.carry.segments.drop(1))).also {
             it.replayAnchors = captured.replayAnchors
             it.nativeBaseId = "missing-parent"
         }
@@ -149,9 +153,9 @@ internal class CodeModeNativeDiagnosticsTest {
         val latest = item("""{"role":"user","content":"synthetic latest"}""")
         val older = record(listOf(first), "older")
         val oldOutput = item("""{"type":"custom_tool_call_output","call_id":"older","output":"done"}""")
-        val baseline = listOf(first) + native + older.outer + oldOutput + native + latest
+        val baseline = listOf(first) + native + older.origin.outer + oldOutput + native + latest
         val captured = record(baseline, "survivor")
-        val delta = captured.copy(nativeSegments = captured.nativeSegments.drop(1)).also {
+        val delta = captured.copy(carry = captured.carry.copy(segments = captured.carry.segments.drop(1))).also {
             it.replayAnchors = captured.replayAnchors
             it.nativeBaseId = "missing-parent"
         }
@@ -176,7 +180,7 @@ internal class CodeModeNativeDiagnosticsTest {
         val baseline = listOf(first) + native
         val active = record(baseline, "captured-tail")
         for (width in listOf(0, 1, 3)) {
-            active.continuity = List(width) { at ->
+            active.carry.continuity = List(width) { at ->
                 item("""{"role":"assistant","content":"synthetic commentary $at"}""")
             }
             assertNull(history.restoreBaseline(body(baseline + callbacks(active)), active).error)
@@ -191,17 +195,17 @@ internal class CodeModeNativeDiagnosticsTest {
     fun `captured native continuity at a shortened raw callback bound still places`() {
         val codec = CodexCodeModeHistoryCodec(Json)
         val earlier = retainedRecord(listOf(first), "prefix-first", emptyList())
-        val prefix = listOf(first, earlier.outer, codec.customOutput(earlier))
+        val prefix = listOf(first, earlier.origin.outer, codec.customOutput(earlier))
         val second = retainedRecord(prefix, "prefix-second", listOf(earlier))
         val between = item("""{"type":"reasoning","id":"synthetic-between","encrypted_content":"synthetic between"}""")
         val captured = listOf(first, native.first()) + prefix.drop(1) +
-            listOf(between, native.first(), second.outer, codec.customOutput(second))
+            listOf(between, native.first(), second.origin.outer, codec.customOutput(second))
         val response = item("""{"type":"reasoning","id":"synthetic-tail","encrypted_content":"synthetic tail"}""")
         val carrier = retainedRecord(captured, "omitted-carrier", listOf(earlier, second), 0).apply {
-            continuityReplay = listOf(CodeModeNativeSegment(0, listOf(response)))
+            carry.replay = listOf(CodeModeNativeSegment(0, listOf(response)))
         }
         val completed = listOf(earlier, second, carrier)
-        val source = captured + listOf(response, carrier.outer, codec.customOutput(carrier))
+        val source = captured + listOf(response, carrier.origin.outer, codec.customOutput(carrier))
         val linked = retainedRecord(source, "shortened-tail", completed).apply { phase = CodeModePhase.ACTIVE }
         val active = CodeModeNativeChain.snapshot(linked, setOf(linked.id)).restore()
         val client = listOf(first, native.first()) + callbacks(earlier) + between +
@@ -215,8 +219,8 @@ internal class CodeModeNativeDiagnosticsTest {
         val middle = item("""{"role":"user","content":"synthetic private middle"}""")
         val latest = item("""{"role":"user","content":"synthetic latest"}""")
         val old = record(listOf(first), "old")
-        val baseline = listOf(first, old.outer, item("""{"type":"custom_tool_call_output","call_id":"old","output":"done"}""")) +
-            native + middle + latest
+        val oldOutput = item("""{"type":"custom_tool_call_output","call_id":"old","output":"done"}""")
+        val baseline = listOf(first, old.origin.outer, oldOutput) + native + middle + latest
         val active = record(baseline, "absent")
         val client = listOf(first) + callbacks(old) + latest + callbacks(active)
         return active to history.restoreBaseline(body(client), active)
@@ -232,11 +236,11 @@ internal class CodeModeNativeDiagnosticsTest {
         val capture = CodeModeNativeChain.capture(boundary.nativeSegments, completed.lastOrNull())
         return record(items, id, callbacks).also {
             it.replayAnchors = boundary.replayAnchors
-            it.nativeSegments = capture.segments
+            it.carry.segments = capture.segments
             it.nativeParent = capture.parent
             it.nativeBaseId = capture.parent?.id
             it.phase = CodeModePhase.COMPLETED
-            it.output = "synthetic result"
+            it.progress.output = "synthetic result"
         }
     }
 
@@ -248,24 +252,26 @@ internal class CodeModeNativeDiagnosticsTest {
         return CodeModeRecord(
             id = id,
             key = "synthetic-conversation",
-            outer = outer,
-            outerCallId = id,
-            source = "return 'synthetic';",
             phase = CodeModePhase.ACTIVE,
-            updatedAt = 0,
-            lastDigest = "synthetic-request",
-            baselineInputCount = boundary.fullCount,
-            baselineInputDigest = boundary.fullDigest,
-            metadataVersion = CODE_MODE_METADATA_VERSION,
-            baselineLogicalCount = boundary.logicalCount,
-            baselineLogicalDigest = boundary.logicalDigest,
-            nativeSegments = boundary.nativeSegments,
-            continuity = emptyList(),
-            continuityReplay = emptyList(),
+            origin = CodeModeOrigin(
+                outer = outer,
+                outerCallId = id,
+                source = "return 'synthetic';",
+                baseline = CodeModeBaseline(
+                    inputCount = boundary.fullCount,
+                    inputDigest = boundary.fullDigest,
+                    logicalCount = boundary.logicalCount,
+                    logicalDigest = boundary.logicalDigest,
+                    metadataVersion = CODE_MODE_METADATA_VERSION,
+                ),
+            ),
+            progress = CodeModeProgress(updatedAt = 0, lastDigest = "synthetic-request"),
+            carry = CodeModeNativeContinuity(boundary.nativeSegments, emptyList(), emptyList()),
         ).also {
             it.replayAnchors = boundary.replayAnchors
             repeat(callbacks) { _ ->
-                it.pending += CodeModePending("runtime-$id", "callback-$id", "Read", JsonObject(emptyMap()), true)
+                it.progress.pending +=
+                    CodeModePending("runtime-$id", "callback-$id", "Read", JsonObject(emptyMap()), true)
                 it.accepted.accept(
                     mapOf("callback-$id" to CodeModeResult("callback-$id", "synthetic result")),
                     emptyMap(),

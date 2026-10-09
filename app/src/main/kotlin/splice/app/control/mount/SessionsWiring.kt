@@ -46,8 +46,8 @@ internal class SessionsWiring(
         override fun forRecords(records: List<SessionRecord>): SessionAccountOf {
             val saved = records.groupBy { it.head }.mapNotNull { (head, sessions) ->
                 val managed = heads[head] ?: return@mapNotNull null
-                if (managed.authKind != CLIENT_AUTH_KIND) return@mapNotNull null
-                val source = managed.perfRows as? PerfRowsFileSource ?: return@mapNotNull null
+                if (managed.authSurface.authKind != CLIENT_AUTH_KIND) return@mapNotNull null
+                val source = managed.sources.perfRows as? PerfRowsFileSource ?: return@mapNotNull null
                 val ids = sessions.mapNotNull { it.sessionId }
                     .filterNot { ports.claudeLogins?.hasCarryingProof(requireNotNull(head), it) == true }.toSet()
                 if (ids.isEmpty()) return@mapNotNull null
@@ -84,18 +84,19 @@ internal class SessionsWiring(
                 ports.claudeLogins?.hasCarryingProof(head.orEmpty(), sessionId) == true -> SessionAccountState.NONE
                 saved[head]?.let { !it.complete || sessionId !in it.indexed } == true ->
                     SessionAccountState.HISTORY_LIMITED
-                heads[head]?.authKind == CLIENT_AUTH_KIND && head !in saved -> SessionAccountState.HISTORY_LIMITED
+                heads[head]?.authSurface?.authKind == CLIENT_AUTH_KIND && head !in saved ->
+                    SessionAccountState.HISTORY_LIMITED
                 else -> SessionAccountState.NONE
             }
         }
 
     private fun account(head: String, session: String, saved: PerfSessionAccountIndex.Snapshot?): String? {
         val managed = heads[head] ?: return null
-        val pool = managed.accountPool
+        val pool = managed.authSurface.accountPool
         return when {
-            managed.authKind == CLIENT_AUTH_KIND -> clientAccount(head, session, saved)
+            managed.authSurface.authKind == CLIENT_AUTH_KIND -> clientAccount(head, session, saved)
             pool != null -> pool.view(session).selectedLabel
-            AuthKindRegistry.isOAuth(managed.authKind) -> SINGLE_LOGIN_LABEL
+            AuthKindRegistry.isOAuth(managed.authSurface.authKind) -> SINGLE_LOGIN_LABEL
             else -> null
         }
     }

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.pool.HeadAccountCredential
 import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.pool.HeadAccountView
 import splice.core.config.StatePaths
@@ -73,11 +74,7 @@ class DoctorReportHardeningTest {
         selected = false,
         available = present,
         plan = null,
-        fiveHourUsedPercent = null,
-        fiveHourResetEpochSeconds = null,
-        sevenDayUsedPercent = null,
-        sevenDayResetEpochSeconds = null,
-        credentialPresent = present,
+        credential = HeadAccountCredential(present = present),
     )
 
     @Test

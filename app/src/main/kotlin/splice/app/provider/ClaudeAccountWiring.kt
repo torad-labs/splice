@@ -44,7 +44,7 @@ internal class ClaudeAccountWiring(
                     label = OWN_SIGN_IN_LABEL,
                     primary = true,
                     auth = caller,
-                    quotaFile = statePaths.quotaFile(head),
+                    quota = WiredAccountQuota(file = statePaths.quotaFile(head)),
                 ),
             )
         }
@@ -58,9 +58,8 @@ internal class ClaudeAccountWiring(
                     profiles = splice.app.auth.claude.ClaudeCredentialProfiles(statePaths.stateDir, log),
                     identities = identities,
                 ),
-                quotaFile = account.directory.resolve(QUOTA_FILE),
-                credentialPresent = account.refusal == null,
-                refusal = account.refusal,
+                quota = WiredAccountQuota(file = account.directory.resolve(QUOTA_FILE)),
+                credential = WiredAccountCredential(present = account.refusal == null, refusal = account.refusal),
             )
         }
     }

@@ -5,6 +5,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import splice.core.perf.PerfKeys
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.HeadStopKey
 import splice.core.turn.HeadStopSignal
@@ -38,8 +39,7 @@ internal data class CodeModeRunContext(
     val disableParallel: Boolean,
     val key: String,
     val digest: String,
-    val sink: WireSink,
-    val post: CodeModeUpstreamPost,
+    val link: CodeModeRoundLink,
     val headStop: HeadStopSignal? = null,
     val recovery: CodeModeRecoveryHistory? = null,
 ) {
@@ -84,8 +84,7 @@ internal class CodexCodeModeTurn(
             input.disableParallel,
             key,
             identity.digest(input.body.round),
-            input.sink,
-            input.post,
+            CodeModeRoundLink(input.sink, input.post),
             currentCoroutineContext()[HeadStopKey],
             input.recovery,
         )
@@ -141,7 +140,7 @@ internal class CodexCodeModeTurn(
         val resultIds = context.turn.toolResults.map(CodeModeResult::id).toSet()
         val capture = registry.owner(context.key, context.digest, resultIds, wire.callbackIds(body), conflicts)
             ?: completed.lastOrNull()
-        val completedHistory = context.post.canonicalize(body, completed, context.turn.toolMedia, capture)
+        val completedHistory = context.link.post.canonicalize(body, completed, context.turn.rendering.media, capture)
         completedHistory.error?.let { return failure(it) }
         val canonicalBody = checkNotNull(completedHistory.body)
         reconcile(context, canonicalBody)
@@ -151,7 +150,7 @@ internal class CodexCodeModeTurn(
             terminal != null -> driver.finishGenerated(terminal, context, canonicalBody)
             owner != null -> resumeOwner(owner, context)
             conflicts.isNotEmpty() -> branch.sendOwnHistory(context, canonicalBody)
-            completed.any { it.lastDigest == context.digest } ->
+            completed.any { it.progress.lastDigest == context.digest } ->
                 driver.post(context, null, canonicalBody)
             else -> driver.post(context, initialOuter, canonicalBody)
         }
@@ -203,7 +202,8 @@ internal class CodexCodeModeTurn(
         // turn of the conversation (82 identical lines for one record on 2026-09-20).
         machine.interrupt(owner, detail)
         log(
-            "[code-mode] abandoned record ${owner.id.take(CODE_MODE_RECORD_LOG_CHARS)} (outer ${owner.outerCallId}): " +
+            "[code-mode] abandoned record ${owner.id.take(CODE_MODE_RECORD_LOG_CHARS)} " +
+                "(outer ${owner.origin.outerCallId}): " +
                 "$error; continuing upstream on the client's history; ${CodeModeHistoryLog.context(owner, rejection)}",
         )
     }
@@ -211,7 +211,7 @@ internal class CodexCodeModeTurn(
     private fun failure(message: String): TurnOutcome.Failure =
         TurnOutcome.Failure(
             message,
-            deterministic = true,
+            traits = FailureTraits(deterministic = true),
             cause = FailureCause.CODE_MODE_PROTOCOL,
             phase = FailurePhase.MID_OUTPUT,
             salvagedUsage = noRequestUsage,

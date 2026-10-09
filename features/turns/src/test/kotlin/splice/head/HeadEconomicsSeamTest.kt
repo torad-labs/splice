@@ -34,6 +34,8 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.ElapsedClock
@@ -45,6 +47,7 @@ import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RunnerSignals
 import splice.head.turn.TurnDrive
+import splice.head.turn.TurnInputs
 import splice.head.turn.TurnTelemetry
 import splice.head.usage.EconomicsStore
 import splice.head.usage.OutputClamp
@@ -52,6 +55,9 @@ import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.UsagePayloadBuilder
+import splice.upstream.BuiltTurn
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
@@ -85,8 +91,7 @@ private class EconomicsRig(tmp: Path) {
     val head = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-codex--",
                     models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -94,7 +99,7 @@ private class EconomicsRig(tmp: Path) {
                 ),
                 pinnedModel = "gpt-5.6-sol",
                 auth = EconomicsFakeAuth(),
-                baseUrl = mock.baseUrl,
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),
@@ -153,37 +158,46 @@ private class TelemetryRig(tmp: Path, private val tag: String) {
     val telemetry = TurnTelemetry("anthropic", PerfStats(perfFile), log, ElapsedClock { 5L }, economics)
 
     suspend fun drive(): TurnDrive = TurnDrive(
-        requestBody = buildJsonObject { },
-        meta = TurnMeta(
-            compact = false,
-            showReasoning = ReasoningDisplay.TEXT,
-            stream = false,
-            originalModel = "claude-anthropic--sonnet-4-6",
-            upstreamModel = "sonnet-4-6",
-            clientMaxTokens = 100,
-            effort = "high",
-            summary = "detailed",
-            budgetTokens = null,
+        inputs = TurnInputs(
+            built = BuiltTurn(
+                requestBody = buildJsonObject { },
+                meta = TurnMeta(
+                    compact = false,
+                    reasoning = TurnReasoning(
+                        showReasoning = ReasoningDisplay.TEXT,
+                        effort = "high",
+                        summary = "detailed",
+                        budgetTokens = null,
+                    ),
+                    route = TurnRoute(
+                        stream = false,
+                        originalModel = "claude-anthropic--sonnet-4-6",
+                        upstreamModel = "sonnet-4-6",
+                        clientMaxTokens = 100,
+                    ),
+                ),
+                extraHeaders = emptyMap(),
+                toolSearch = null,
+            ),
+            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+            t0 = 0,
+            perf = TurnPerf(),
+            trace = null,
+            markHandedOff = {},
         ),
         emitter = CollectingTerminal("sonnet-4-6", UsagePayloadBuilder { buildJsonObject { } }),
         watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
-        slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
         pipeline = TurnPipeline(
             CompactStats(perfFile.resolveSibling("compact-$tag.jsonl")),
             log = log,
             clampOutput = OutputClamp { it },
         ),
-        t0 = 0,
-        trace = null,
-        perf = TurnPerf(),
-        turnHeaders = emptyMap(),
         signals = RunnerSignals(),
         channel = ClientChannel(
             ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
             Mutex(),
             AtomicBoolean(false),
         ),
-        toolSearch = null,
     )
 
     fun perfRow(): String {

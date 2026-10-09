@@ -19,6 +19,9 @@ import splice.upstream.TurnSignals
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.transport.AuthRefreshObserver
 import splice.upstream.transport.PostContext
+import splice.upstream.transport.PostLimits
+import splice.upstream.transport.PostObservers
+import splice.upstream.transport.PostRecovery
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamPost
 
@@ -65,7 +68,7 @@ internal class SseRoundPost(
         val account = selection?.account
         val sender = account?.auth ?: provider.auth
         val answers = TurnProviderAnswers(usageStore, sender, provider.auth)
-        val activeQuota = turnQuota.forSession(drive.meta.sessionId, drive.account)
+        val activeQuota = turnQuota.forSession(drive.meta.scope.sessionId, drive.account)
         return upstream.post(
             PostContext(
                 url = provider.upstreamUrl,
@@ -84,14 +87,20 @@ internal class SseRoundPost(
                     headers
                 },
                 onRetry = onRetry,
-                perf = drive.perf,
-                clientFrameEmitted = inputs.frameEmittedThisRound,
-                amendBodyOnFailure = provider::amendBodyOnFailure,
-                rateLimitCooldown = account?.cooldown,
-                remainingTurnWait = drive.remainingTurnWait,
-                authRefreshObserver = AuthRefreshObserver { selection?.markCredentialRefreshSucceeded() },
-                // V4-174: the trace hears every send of this round from inside the retry loop.
-                wire = drive.trace,
+                observers = PostObservers(
+                    perf = drive.perf,
+                    // V4-174: the trace hears every send of this round from inside the retry loop.
+                    wire = drive.trace,
+                    authRefreshObserver = AuthRefreshObserver { selection?.markCredentialRefreshSucceeded() },
+                ),
+                recovery = PostRecovery(
+                    clientFrameEmitted = inputs.frameEmittedThisRound,
+                    amendBodyOnFailure = provider::amendBodyOnFailure,
+                ),
+                limits = PostLimits(
+                    rateLimitCooldown = account?.cooldown,
+                    remainingTurnWait = drive.remainingTurnWait,
+                ),
             ).also { context ->
                 context.providerAnswerObserver = answers
                 context.relayRateLimitReplies = provider.relayRateLimitReplies

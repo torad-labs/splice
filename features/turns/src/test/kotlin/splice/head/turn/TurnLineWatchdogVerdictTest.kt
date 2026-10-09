@@ -16,20 +16,26 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.retry.WatchdogHeld
 
 private fun meta(compact: Boolean) = TurnMeta(
     compact = compact,
-    showReasoning = ReasoningDisplay.TEXT,
-    stream = true,
-    originalModel = "claude-codex--gpt-5.6-sol",
-    upstreamModel = "gpt-5.6-sol",
-    clientMaxTokens = 8000,
-    effort = "high",
-    summary = "detailed",
-    budgetTokens = null,
+    reasoning = TurnReasoning(
+        showReasoning = ReasoningDisplay.TEXT,
+        effort = "high",
+        summary = "detailed",
+        budgetTokens = null,
+    ),
+    route = TurnRoute(
+        stream = true,
+        originalModel = "claude-codex--gpt-5.6-sol",
+        upstreamModel = "gpt-5.6-sol",
+        clientMaxTokens = 8000,
+    ),
 )
 
 private val stalled = TurnOutcome.Failure(

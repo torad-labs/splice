@@ -9,16 +9,6 @@ private val BLOCK_KINDS = setOf(
     "server_tool_use",
     "web_search_tool_result",
 )
-private val STOP_REASONS = setOf(
-    // ast-grep-ignore: kt-l3-end-turn-literal — describing upstream evidence, never emitting a wire terminal
-    "end_turn",
-    "stop_sequence",
-    "tool_use",
-    "max_tokens",
-    "refusal",
-    "pause_turn",
-    "model_context_window_exceeded",
-)
 
 /** Backend block lifecycles only: local retirement and closeAll never count as backend stops.
  *  Retains whitelisted kinds and counts, not content, tool names, ids or arbitrary vendor strings.
@@ -42,7 +32,7 @@ internal class PassthroughOutputShape {
     }
 
     fun onStopReason(reason: String) {
-        if (reason.isNotEmpty()) stopReason = reason.takeIf { it in STOP_REASONS } ?: "other"
+        if (reason.isNotEmpty()) stopReason = reason.takeIf { it in UpstreamVocabulary.stopReasons } ?: "other"
     }
 
     fun describe(): String = "opened=[${counts(opened)}] closed=[${counts(closed)}] stop_reason=$stopReason"

@@ -26,11 +26,11 @@ class PerfRowFactsTest {
         assertEquals(listOf(1000L, 2000L), rows.map { it.ts })
 
         val full = rows[0]
-        assertEquals("m-1000", full.model)
-        assertEquals("sess-1000", full.session)
-        assertEquals("acct-1000", full.account)
-        assertEquals(true, full.cacheCold)
-        assertEquals(true, full.compact)
+        assertEquals("m-1000", full.facts.model)
+        assertEquals("sess-1000", full.facts.session)
+        assertEquals("acct-1000", full.facts.account)
+        assertEquals(true, full.facts.cacheCold)
+        assertEquals(true, full.facts.compact)
         assertEquals("ok", full.outcome, "the outcome is unchanged by the widening")
 
         // A RECORDED false is a fact; an absent flag is not a false. The writer emits `compact`
@@ -38,11 +38,11 @@ class PerfRowFactsTest {
         // come back as null. Reading it as false would report "the cache was warm" about a turn where
         // nothing looked, the did-not-run-wearing-a-legitimate-answer class this row keeps finding.
         val bare = rows[1]
-        assertEquals(false, bare.compact)
-        assertNull(bare.cacheCold, "an unrecorded cache_cold is null, never false")
-        assertEquals("m-2000", bare.model, "model is unrelated to the account and must still be read")
-        assertNull(bare.session)
-        assertNull(bare.account)
+        assertEquals(false, bare.facts.compact)
+        assertNull(bare.facts.cacheCold, "an unrecorded cache_cold is null, never false")
+        assertEquals("m-2000", bare.facts.model, "model is unrelated to the account and must still be read")
+        assertNull(bare.facts.session)
+        assertNull(bare.facts.account)
     }
 
     @Test
@@ -51,11 +51,11 @@ class PerfRowFactsTest {
         // The row shape before these keys existed: ts, outcome and the numeric marks only.
         Files.writeString(file, """{"ts":1500,"outcome":"ok","total":9}""" + "\n")
         val row = PerfRowsFileSource(file).window(0).rows.single()
-        assertNull(row.model, "an absent model is null — an empty string would be a value the file never held")
-        assertNull(row.session)
-        assertNull(row.account)
-        assertNull(row.cacheCold)
-        assertNull(row.compact)
+        assertNull(row.facts.model, "an absent model is null — an empty string would be a value the file never held")
+        assertNull(row.facts.session)
+        assertNull(row.facts.account)
+        assertNull(row.facts.cacheCold)
+        assertNull(row.facts.compact)
         assertEquals(9L, row.fields["total"], "and the numeric half is untouched by the widening")
     }
 
@@ -118,6 +118,6 @@ class PerfRowFactsTest {
         // trust must not carry U+FFFD as if it were a model name.
         Files.writeString(file, """{"ts":1000,"model":"m�del","outcome":"ok","total":5}""" + "\n")
         val row = PerfRowsFileSource(file).window(0).rows.single()
-        assertNull(row.model, "a torn value is absent, never the replacement character")
+        assertNull(row.facts.model, "a torn value is absent, never the replacement character")
     }
 }

@@ -127,7 +127,8 @@ class ConsoleActivityPublishTest {
         assertEquals(
             listOf("s-gpt-a", null, null, null, "s-gpt-b"),
             await({ stores.edges.edges() }, 5).map { it.toSession },
-            "two holders or none store no session, an address nobody holds included; a's ended registration holds the name no more",
+            "two holders or none store no session, an address nobody holds included; " +
+                "a's ended registration holds the name no more",
         )
     }
 

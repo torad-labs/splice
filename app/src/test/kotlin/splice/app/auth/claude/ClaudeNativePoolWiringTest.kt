@@ -67,7 +67,10 @@ class ClaudeNativePoolWiringTest {
         seed("splice")
         val rig = rig()
         try {
-            assertTrue(requireNotNull(rig.head.accountPool).active, "the native owner must publish both places")
+            assertTrue(
+                requireNotNull(rig.head.authSurface.accountPool).active,
+                "the native owner must publish both places",
+            )
             var authorization: String? = null
             HttpClient(
                 MockEngine {
@@ -105,7 +108,10 @@ class ClaudeNativePoolWiringTest {
                     listOf(SPLICE_SELECTOR, NATIVE_SELECTOR),
                     body.getValue("effective_order").jsonArray.map { it.jsonPrimitive.content },
                 )
-                assertEquals(SPLICE_SELECTOR, requireNotNull(rig.head.accountPool).view(null).nextTargetLabel)
+                assertEquals(
+                    SPLICE_SELECTOR,
+                    requireNotNull(rig.head.authSurface.accountPool).view(null).nextTargetLabel,
+                )
             }
         } finally {
             rig.close()
@@ -173,7 +179,8 @@ class ClaudeNativePoolWiringTest {
             bearerAuth("synthetic-caller")
             contentType(ContentType.Application.Json)
             setBody(
-                """{"model":"synthetic-model","stream":false,"max_tokens":32,"messages":[{"role":"user","content":"synthetic native turn"}]}""",
+                """{"model":"synthetic-model","stream":false,"max_tokens":32,""" +
+                    """"messages":[{"role":"user","content":"synthetic native turn"}]}""",
             )
         }
 
@@ -186,7 +193,7 @@ class ClaudeNativePoolWiringTest {
             assertEquals(NATIVE_SELECTOR, rig.plane.playgroundProviders.target(NATIVE_HEAD)?.login?.label)
             seed("native", expiresAt = 1L)
             assertEquals(SPLICE_SELECTOR, rig.plane.playgroundProviders.target(NATIVE_HEAD)?.login?.label)
-            val expired = rig.head.accountPool?.view(null)?.accounts?.single { it.label == NATIVE_SELECTOR }
+            val expired = rig.head.authSurface.accountPool?.view(null)?.accounts?.single { it.label == NATIVE_SELECTOR }
             assertEquals(false, expired?.available)
         } finally {
             rig.close()
@@ -201,10 +208,10 @@ class ClaudeNativePoolWiringTest {
         try {
             Files.delete(home.resolve(".claude/.credentials.json"))
             Files.delete(home.resolve(".claude-splice/.credentials.json"))
-            assertEquals(false, rig.head.accountPool?.active)
+            assertEquals(false, rig.head.authSurface.accountPool?.active)
             assertNull(rig.plane.playgroundProviders.target(NATIVE_HEAD)?.login)
             seed("native")
-            assertEquals(true, rig.head.accountPool?.active)
+            assertEquals(true, rig.head.authSurface.accountPool?.active)
             assertEquals(NATIVE_SELECTOR, rig.plane.playgroundProviders.target(NATIVE_HEAD)?.login?.label)
         } finally {
             rig.close()
@@ -230,12 +237,13 @@ class ClaudeNativePoolWiringTest {
                 )
                 val file = fixture.replaceNative()
                 val before = Files.readAllBytes(file)
-                val pin = requireNotNull(rig.head.accountPool as? HeadAccountPinSource)
+                val pin = requireNotNull(rig.head.authSurface.accountPool as? HeadAccountPinSource)
                 assertTrue(pin.pin(NATIVE_SELECTOR))
                 probe.run(PlaygroundHead(NATIVE_HEAD, rig.head.auth), "synthetic", null)
                 released.complete(Unit)
                 first.await()
-                val replacement = rig.head.accountPool.view(null).accounts.single { it.label == NATIVE_SELECTOR }
+                val replacement = rig.head.authSurface.accountPool.view(null).accounts
+                    .single { it.label == NATIVE_SELECTOR }
                 assertTrue(replacement.available)
                 assertArrayEquals(before, Files.readAllBytes(file))
             } finally {
@@ -293,9 +301,12 @@ class ClaudeNativePoolWiringTest {
             try {
                 withTimeout(10_000L) {
                     polled.await()
-                    while (rig.head.accountPool?.view(null)?.accounts?.single { it.label == SPLICE_SELECTOR }
-                            ?.fiveHourUsedPercent != 37.0
-                        ) yield()
+                    while (
+                        rig.head.authSurface.accountPool?.view(null)?.accounts?.single { it.label == SPLICE_SELECTOR }
+                            ?.quota?.fiveHour?.usedPercent != 37.0
+                    ) {
+                        yield()
+                    }
                 }
                 assertEquals(listOf("Bearer synthetic-splice"), requests)
                 assertArrayEquals(nativeBefore, Files.readAllBytes(nativeFile))
@@ -304,8 +315,9 @@ class ClaudeNativePoolWiringTest {
                 val snapshot = CredentialQuotaFiles(paths.quotaFile(NATIVE_HEAD), {}).read(key)
                 assertEquals(37.0, snapshot?.fiveHour?.usedPercent)
                 rig.plane.providerAssembly.claudePoolChanges.publish(NATIVE_HEAD)
-                val republished = rig.head.accountPool?.view(null)?.accounts?.single { it.label == SPLICE_SELECTOR }
-                assertEquals(37.0, republished?.fiveHourUsedPercent)
+                val republished = rig.head.authSurface.accountPool?.view(null)?.accounts
+                    ?.single { it.label == SPLICE_SELECTOR }
+                assertEquals(37.0, republished?.quota?.fiveHour?.usedPercent)
             } finally {
                 rig.close()
             }
@@ -405,7 +417,7 @@ class ClaudeNativePoolWiringTest {
                 .single { it.label == NATIVE_SELECTOR }
             assertNull(native.auth.refresh(), "only the Claude Code owning a native place may refresh it")
             assertArrayEquals(before, Files.readAllBytes(file), "splice must never write native credentials")
-            val pool = requireNotNull(rig.head.accountPool).view(null)
+            val pool = requireNotNull(rig.head.authSurface.accountPool).view(null)
             assertEquals(false, pool.accounts.single { it.label == NATIVE_SELECTOR }.available)
             assertEquals(SPLICE_SELECTOR, pool.nextTargetLabel)
             assertTrue(native.auth.describe().fields["refusal"].orEmpty().contains("expired"))
@@ -416,7 +428,8 @@ class ClaudeNativePoolWiringTest {
                 val rows = Json.parseToJsonElement(response.bodyAsText()).jsonObject.getValue("accounts").jsonArray
                 assertEquals(2, rows.size, "native places must not also appear as managed pool rows")
                 val expired = rows.single { it.jsonObject["label"]?.jsonPrimitive?.content == "claude" }.jsonObject
-                val usable = rows.single { it.jsonObject["label"]?.jsonPrimitive?.content == "claude-splice" }.jsonObject
+                val usable = rows.single { it.jsonObject["label"]?.jsonPrimitive?.content == "claude-splice" }
+                    .jsonObject
                 assertEquals("false", expired.getValue("available").jsonPrimitive.content)
                 assertEquals(
                     "Access token expired. Sign in again on claude in the console.",

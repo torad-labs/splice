@@ -31,6 +31,9 @@ import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesRoundTripQuirks
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.TurnSignals
 import splice.upstream.sse.WireSink
@@ -56,8 +59,7 @@ private class RestartProbe(
     cacheOn: Boolean = true,
 ) : ResponsesProvider(
     tuning = ProviderTuning(
-        key = "claudex",
-        label = "claudex",
+        name = ProviderName(key = "claudex", label = "claudex"),
         catalog = ModelCatalog(
             discoveryPrefix = "claude-codex",
             models = listOf(ModelEntry(id = "gpt-5.6-sol", label = "sol", contextWindow = 400_000)),
@@ -65,12 +67,19 @@ private class RestartProbe(
         ),
         pinnedModel = "gpt-5.6-sol",
         auth = RestartAuth,
-        baseUrl = "https://chatgpt.com/backend-api/codex",
+        locations = ProviderLocations(
+            baseUrl = "https://chatgpt.com/backend-api/codex",
+            stateDir = stateDir,
+        ),
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
-        stateDir = stateDir,
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
-    quirks = ResponsesQuirks(providerTag = "claudex", reasoningCache = cacheOn),
+    quirks = ResponsesQuirks(
+        providerTag = "claudex",
+        roundTrip = ResponsesRoundTripQuirks(
+            reasoningCache = cacheOn,
+        ),
+    ),
     log = { logs.add(it) },
 ) {
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()

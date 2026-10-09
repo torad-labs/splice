@@ -47,7 +47,7 @@ internal object CodeModeInterruption {
             }
         }
         putJsonArray("unresolved") {
-            record.pending.filter { it.clientId !in record.results }.forEach { pending ->
+            record.progress.pending.filter { it.clientId !in record.results }.forEach { pending ->
                 add(
                     buildJsonObject {
                         put("id", pending.clientId)

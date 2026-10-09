@@ -16,20 +16,13 @@ import splice.core.util.ElapsedClock
 import splice.upstream.transport.HeaderRedaction
 
 /** One send, as it left and as it came back. [attempt] counts sends within one [UpstreamClient.post]
- *  (a round), from 1. Exactly one of the three endings is present: a [status] (with
- *  [responseHeaders], and [errorText] when it was not 2xx — the 2xx body is the stream the caller
- *  consumed), or a [failure] (the transport threw before or during the response: class and message,
- *  and [status] is null). [requestEncoding] names a content-encoding the body rode under, when any;
- *  [requestBody] is the JSON before that encoding. */
+ *  (a round), from 1. Exactly one of the two endings is present in [response]: a status (with its headers, and
+ *  error text when it was not 2xx), or a [failure] (the transport threw before or during the response: class and
+ *  message, and the status is null). */
 public data class WireAttempt(
     val attempt: Int,
-    val url: String,
-    val requestHeaders: Map<String, String>,
-    val requestBody: String,
-    val requestEncoding: String?,
-    val status: Int?,
-    val responseHeaders: Map<String, String>,
-    val errorText: String?,
+    val request: WireRequest,
+    val response: WireResponse,
     val failure: String?,
     val durationMs: Long,
 )
@@ -73,13 +66,13 @@ internal class AttemptRecorder(
     /** [failure] is the transport throwable that ended the attempt, when one did. */
     fun finish(failure: Throwable?): WireAttempt = WireAttempt(
         attempt = attempt,
-        url = url,
-        requestHeaders = requestHeaders,
-        requestBody = requestBody,
-        requestEncoding = requestEncoding,
-        status = status,
-        responseHeaders = responseHeaders,
-        errorText = errorText,
+        request = WireRequest(
+            url = url,
+            headers = requestHeaders,
+            body = requestBody,
+            encoding = requestEncoding,
+        ),
+        response = WireResponse(status = status, headers = responseHeaders, errorText = errorText),
         failure = failure?.let { it::class.simpleName + (it.message?.let { m -> ": $m" } ?: "") },
         durationMs = clock() - startedAt,
     )

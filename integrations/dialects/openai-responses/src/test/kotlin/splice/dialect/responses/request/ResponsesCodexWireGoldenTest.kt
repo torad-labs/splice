@@ -4,7 +4,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.tools.ToolDeferralPolicy
@@ -12,11 +14,15 @@ import splice.dialect.responses.tools.ToolDeferralPolicy
 class ResponsesCodexWireGoldenTest {
     private val quirks = ResponsesQuirks(
         providerTag = "claudex",
-        emitEmptyLiteInstructions = false,
-        forceStrictFalse = true,
-        normalizeToolSchemas = true,
-        responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
-        toolSurface = ToolDeferralPolicy(minDeferred = 1),
+        lite = ResponsesLiteQuirks(
+            responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+            emitEmptyLiteInstructions = false,
+        ),
+        tools = ResponsesToolQuirks(
+            forceStrictFalse = true,
+            normalizeToolSchemas = true,
+            toolSurface = ToolDeferralPolicy(minDeferred = 1),
+        ),
     )
     private val request = """{"model":"client-model","system":"Use tools as needed.",
         "messages":[{"role":"user","content":"synthetic prompt"}],
@@ -32,14 +38,20 @@ class ResponsesCodexWireGoldenTest {
             parsed.raw,
             BuildOptions(
                 compact = false,
-                originalModel = model,
-                upstreamModel = model,
-                configEffort = null,
-                configSummary = null,
-                showReasoning = ReasoningDisplay.TEXT,
-                replayReasoning = InjectPriorReasoning(false),
-                includeEncryptedReasoning = RequestEncryptedReasoning(false),
-                decodeReasoningEnvelope = { null },
+                models = ModelIds(
+                    original = model,
+                    upstream = model,
+                ),
+                reasoning = RequestedReasoning(
+                    effort = null,
+                    summary = null,
+                    display = ReasoningDisplay.TEXT,
+                ),
+                handoff = ReasoningHandoff(
+                    replay = InjectPriorReasoning(false),
+                    includeEncrypted = RequestEncryptedReasoning(false),
+                    decode = { null },
+                ),
             ),
         ).req.toString()
     }

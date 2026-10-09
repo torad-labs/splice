@@ -65,10 +65,10 @@ internal class ResponsesRequestAssembler(
         val tools = parts.partition?.let {
             toolWire.toolsSection(
                 it,
-                quirks.emitStrict,
-                quirks.forceStrictFalse,
-                quirks.normalizeToolSchemas,
-                quirks.toolSurface,
+                quirks.tools.emitStrict,
+                quirks.tools.forceStrictFalse,
+                quirks.tools.normalizeToolSchemas,
+                quirks.tools.toolSurface,
             )
         }
         val lite = liteShape.isLite(opts)
@@ -77,18 +77,18 @@ internal class ResponsesRequestAssembler(
         // then improvises tool calls in text — stuck/looping turns). codex-rs sends tool_choice:"auto"
         // unconditionally (core/src/client.rs:896), so lite MUST too, independent of the grok-style
         // emitToolChoice negotiation that codex otherwise leaves off.
-        val emitToolChoice = tools != null && (quirks.emitToolChoice || lite)
-        val include = if (opts.includeEncryptedReasoning.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
+        val emitToolChoice = tools != null && (quirks.tools.emitToolChoice || lite)
+        val include = if (opts.handoff.includeEncrypted.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
         val shape = liteShape.wireShape(lite, parts.input, parts.instructions, tools)
         val cacheKey = cacheKey(opts, parts.conversationKey)
         val dto = ResponsesRequest(
-            model = opts.upstreamModel,
+            model = opts.models.upstream,
             input = shape.input,
-            store = quirks.store,
+            store = quirks.backend.store,
             stream = true,
             include = include,
             promptCacheKey = cacheKey,
-            promptCacheRetention = quirks.promptCache.retention,
+            promptCacheRetention = quirks.backend.promptCache.retention,
             instructions = shape.instructions,
             tools = shape.tools,
             toolChoice = toolChoiceFor(emitToolChoice, lite, body),
@@ -99,11 +99,11 @@ internal class ResponsesRequestAssembler(
             streamOptions = knobs.summaryDeliveryOptions(parts.reasoning),
         )
         val req = responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), dto) as JsonObject
-        // Stamped only when a policy is actually CONFIGURED for this provider (quirks.toolSurface
+        // Stamped only when a policy is actually CONFIGURED for this provider (quirks.tools.toolSurface
         // != null) — never for every provider globally just because tools rode this turn. A
         // configured-but-not-triggering turn (wrong model, latch closed, below the floor) still
         // stamps 0, which is the real "why no deferral happened" signal the perf JSONL needs.
-        val surfaceInPlay = parts.partition?.takeIf { quirks.toolSurface != null }
+        val surfaceInPlay = parts.partition?.takeIf { quirks.tools.toolSurface != null }
         return BuiltBody(
             req = req,
             toolSearch = toolPlan.toolSearchControllerFor(parts.partition, opts),
@@ -150,20 +150,21 @@ internal class ResponsesRequestAssembler(
         // client asked to serialize — and a TOOLLESS turn stays false (nothing to parallelize,
         // and explicit-true-without-tools is an untested combination upstream).
         liteShape.isLite(opts) ->
-            quirks.liteParallelToolCalls &&
+            quirks.lite.liteParallelToolCalls &&
                 body.tools.isNotEmpty() &&
                 body.toolChoice?.disableParallelToolUse != true
         emitToolChoice -> body.toolChoice?.disableParallelToolUse != true
         else -> null
     }
 
-    internal fun cacheKey(opts: BuildOptions, conversationKey: String?): String? = when (quirks.promptCache.key) {
-        CacheKeyStrategy.OFF -> null
-        // Prefix from quirks.providerTag (not a hard-coded "claude-grok:") so TOML cache_key=session-id
-        // on any Responses provider stays in its own cache namespace.
-        CacheKeyStrategy.SESSION_ID -> opts.sessionId?.let { "${quirks.providerTag}:$it" }
-        CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH ->
-            opts.sessionId?.let { "${quirks.providerTag}:$it" } ?: conversationKey
-        CacheKeyStrategy.FIRST_MESSAGE_HASH -> conversationKey
-    }
+    internal fun cacheKey(opts: BuildOptions, conversationKey: String?): String? =
+        when (quirks.backend.promptCache.key) {
+            CacheKeyStrategy.OFF -> null
+            // Prefix from quirks.providerTag (not a hard-coded "claude-grok:") so TOML cache_key=session-id
+            // on any Responses provider stays in its own cache namespace.
+            CacheKeyStrategy.SESSION_ID -> opts.sessionId?.let { "${quirks.providerTag}:$it" }
+            CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH ->
+                opts.sessionId?.let { "${quirks.providerTag}:$it" } ?: conversationKey
+            CacheKeyStrategy.FIRST_MESSAGE_HASH -> conversationKey
+        }
 }

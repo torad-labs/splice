@@ -246,7 +246,7 @@ class ProviderAssemblyCompatibilityTest {
                 ),
                 headers,
             )
-            assertEquals(2, wired.accounts.map { it.quotaFile }.toSet().size)
+            assertEquals(2, wired.accounts.map { it.quota.file }.toSet().size)
         }
         assertEquals(0, fixture.museMintCalls)
     }
@@ -267,7 +267,7 @@ class ProviderAssemblyCompatibilityTest {
             )
             val built = wired.provider.buildTurn(body, compact = false, sessionId = "muse-session")
             assertEquals(model, built.requestBody["model"]?.jsonPrimitive?.content)
-            assertEquals("$model[1m]", built.meta.originalModel)
+            assertEquals("$model[1m]", built.meta.route.originalModel)
             assertEquals("24h", built.requestBody["prompt_cache_retention"]?.jsonPrimitive?.content)
             assertEquals("muse:muse-session", built.requestBody["prompt_cache_key"]?.jsonPrimitive?.content)
             assertEquals("detailed", built.requestBody["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
@@ -336,7 +336,7 @@ class ProviderAssemblyCompatibilityTest {
         val wired = fixture.assembly.buildProvider(
             fixture.context(AuthKind.MuseOAuth.wire, Dialect.OPENAI_RESPONSES),
         )
-        assertFalse(wired.accounts.single(WiredAccount::primary).credentialPresent)
+        assertFalse(wired.accounts.single(WiredAccount::primary).credential.present)
         assertEquals(Credentials.Bearer("key-backup"), wired.auth.credentials())
         assertEquals(0, fixture.museMintCalls)
     }
@@ -514,9 +514,11 @@ class ProviderAssemblyCompatibilityTest {
                     models = listOf(ModelEntry(id = "model", contextWindow = 200_000)),
                     defaultContextWindow = 200_000,
                 ),
-                watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+                faultPlan = UpstreamFaultPlan(
+                    watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+                    loginCommand = "test login",
+                ),
                 cfg = config.getConfig(key),
-                loginCommand = "test login",
             )
         }
     }

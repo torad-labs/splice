@@ -364,7 +364,7 @@ internal class ControlPlane(
 
     /** The head whose Claude Code wrapper listens on [port] — the launcher's ANTHROPIC_BASE_URL. */
     private fun headOfPort(heads: Map<String, ManagedHead>, port: Int): String? =
-        heads.entries.firstOrNull { it.value.launchSpec?.port == port }?.key
+        heads.entries.firstOrNull { it.value.launchSpec?.gateway?.port == port }?.key
 
     /** V4-146: one McpGlobalRead instance for both the rewrite pipeline and the census — a second
      *  one would double the "malformed"/"unreadable" diagnostics on the same file. Split out of

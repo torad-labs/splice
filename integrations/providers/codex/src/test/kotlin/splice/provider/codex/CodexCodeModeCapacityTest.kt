@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
@@ -40,9 +41,8 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
                 { runtime },
                 stateLocation(),
                 clock = clock,
-                cellClock = splice.core.util.ElapsedClock(clock::millis),
                 log = LogSink { logLines += it },
-                sessionAlive = CodeModeSessionAlive { true },
+                cellLease = CodeModeCellLease(CodeModeSessionAlive { true }, ElapsedClock(clock::millis)),
             ),
         )
         try {
@@ -235,9 +235,11 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
                 { runtime },
                 stateLocation(),
                 clock = clock,
-                maxOutputChars = SMALL_BUDGET_CHARS,
+                bounds = CodeModeScriptBounds(maxOutputChars = SMALL_BUDGET_CHARS),
                 log = LogSink { logLines += it },
-                sessionAlive = CodeModeSessionAlive { id -> if (id in deadSessions) false else null },
+                cellLease = CodeModeCellLease(
+                    sessionAlive = CodeModeSessionAlive { id -> if (id in deadSessions) false else null },
+                ),
             ),
         )
         // Each result fits the budget on its own; together they do not.
@@ -384,9 +386,11 @@ class CodeModeUnknownCapacityTest : CodeModeBridgeTestSupport() {
                 { runtime },
                 stateLocation(),
                 clock = clock,
-                cellClock = splice.core.util.ElapsedClock(clock::millis),
                 log = LogSink { logLines += it },
-                sessionAlive = CodeModeSessionAlive { if (it == "alive") true else null },
+                cellLease = CodeModeCellLease(
+                    sessionAlive = CodeModeSessionAlive { if (it == "alive") true else null },
+                    clock = ElapsedClock(clock::millis),
+                ),
             ),
         )
         try {

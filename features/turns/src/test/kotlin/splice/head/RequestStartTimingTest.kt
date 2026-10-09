@@ -34,6 +34,8 @@ import splice.dialect.responses.ReasoningSettings
 import splice.head.admission.RequestMaterializationGate
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.memory.JvmHeap
 import splice.upstream.retry.InflightGate
@@ -264,8 +266,7 @@ private class TimingAuth : RefreshableAuthProvider {
 
 private fun timingProvider(url: String): Provider = TestResponsesProvider(
     tuning = ProviderTuning(
-        key = "synthetic",
-        label = "synthetic",
+        name = ProviderName(key = "synthetic", label = "synthetic"),
         catalog = ModelCatalog(
             discoveryPrefix = "synthetic-",
             models = listOf(ModelEntry("synthetic", contextWindow = 272_000)),
@@ -273,7 +274,7 @@ private fun timingProvider(url: String): Provider = TestResponsesProvider(
         ),
         pinnedModel = "synthetic",
         auth = TimingAuth(),
-        baseUrl = url,
+        locations = ProviderLocations(baseUrl = url),
         watchdog = WatchdogBudget(5.seconds, 5.seconds, 10.seconds),
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.OFF, false, "high", null),

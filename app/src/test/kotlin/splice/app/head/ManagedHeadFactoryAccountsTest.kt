@@ -15,6 +15,7 @@ import splice.app.auth.SignInPlanner
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
+import splice.app.provider.UpstreamFaultPlan
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -46,8 +47,8 @@ class ManagedHeadFactoryAccountsTest {
         runTest {
             val statePaths = StatePaths(baseOverride = tmp.resolve("single"))
             val managed = factory(statePaths, backgroundScope).assembleHead(build(statePaths), controlPort = 3098)
-            assertNull(managed.accountPool, "one account is no choice: the pre-0.4.0 path end to end")
-            assertNull(managed.accountAuth)
+            assertNull(managed.authSurface.accountPool, "one account is no choice: the pre-0.4.0 path end to end")
+            assertNull(managed.authSurface.accountAuth)
         }
 
     @Test
@@ -56,7 +57,7 @@ class ManagedHeadFactoryAccountsTest {
         val ctx = build(statePaths)
         OAuthAccountFiles().writeLabeled(AuthKind.ChatgptOAuth, primaryFile(ctx), "backup", buildJsonObject {})
         val managed = factory(statePaths, backgroundScope).assembleHead(ctx, controlPort = 3098)
-        val labels = checkNotNull(managed.accountPool).view(null).accounts.map { it.label }
+        val labels = checkNotNull(managed.authSurface.accountPool).view(null).accounts.map { it.label }
         assertEquals(listOf("primary", "backup"), labels)
     }
 
@@ -74,9 +75,9 @@ class ManagedHeadFactoryAccountsTest {
 
         val managed = factory(statePaths, backgroundScope).assembleHead(ctx, controlPort = 3098)
 
-        assertEquals(USED_PCT, managed.usage.snapshot().quota?.fiveHour?.usedPct, "the head's tracked quota")
-        val primary = checkNotNull(managed.accountPool).view(null).accounts.first { it.primary }
-        assertEquals(USED_PCT.toDouble(), primary.fiveHourUsedPercent, "the pool's primary reads the same file")
+        assertEquals(USED_PCT, managed.sources.usage.snapshot().quota?.fiveHour?.usedPct, "the head's tracked quota")
+        val primary = checkNotNull(managed.authSurface.accountPool).view(null).accounts.first { it.primary }
+        assertEquals(USED_PCT.toDouble(), primary.quota.fiveHour.usedPercent, "the pool's primary reads the same file")
     }
 
     private fun primaryFile(ctx: ProviderBuild): Path = Path.of(checkNotNull(ctx.providerCfg.auth.file))
@@ -131,9 +132,11 @@ class ManagedHeadFactoryAccountsTest {
                 models = listOf(model),
                 defaultContextWindow = model.contextWindow,
             ),
-            watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
+                loginCommand = "claudex login",
+            ),
             cfg = ConfigService(statePaths, headOverrides = mapOf("quotaPoll" to "off")).getConfig(),
-            loginCommand = "claudex login",
         )
     }
 }

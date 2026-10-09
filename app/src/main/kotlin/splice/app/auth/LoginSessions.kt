@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import splice.accounts.signin.AccountMutation
 import splice.accounts.signin.ConsoleAccounts
 import splice.accounts.signin.HeadRestart
+import splice.accounts.signin.LoginPrompt
 import splice.accounts.signin.LoginStart
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
@@ -113,9 +114,11 @@ internal class LoginSessions(
         update(cell) {
             it.copy(
                 state = LoginState.WAITING,
-                userCode = detail.userCode ?: it.userCode,
-                verificationUri = detail.verificationUri ?: it.verificationUri,
-                browserUrl = detail.browserUrl ?: it.browserUrl,
+                prompt = LoginPrompt(
+                    userCode = detail.userCode ?: it.prompt.userCode,
+                    verificationUri = detail.verificationUri ?: it.prompt.verificationUri,
+                    browserUrl = detail.browserUrl ?: it.prompt.browserUrl,
+                ),
             )
         }
     }

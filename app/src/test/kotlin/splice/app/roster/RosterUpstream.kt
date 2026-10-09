@@ -16,8 +16,10 @@ internal class RosterUpstream : AutoCloseable {
             exchange.responseHeaders.add("Content-Type", "text/event-stream")
             exchange.sendResponseHeaders(200, 0)
             val frames = listOf(
-                """{"id":"synthetic-answer","choices":[{"index":0,"delta":{"content":"synthetic answer"},"finish_reason":null}]}""",
-                """{"id":"synthetic-answer","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1000000,"completion_tokens":1000000}}""",
+                """{"id":"synthetic-answer","choices":[{"index":0,""" +
+                    """"delta":{"content":"synthetic answer"},"finish_reason":null}]}""",
+                """{"id":"synthetic-answer","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],""" +
+                    """"usage":{"prompt_tokens":1000000,"completion_tokens":1000000}}""",
                 "[DONE]",
             )
             exchange.responseBody.use { out ->

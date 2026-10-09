@@ -41,10 +41,10 @@ internal class MuseResponsesProvider(
     override fun extraHeaders(creds: Credentials): Map<String, String> = options.headers
 
     override fun perTurnHeaders(meta: TurnMeta): Map<String, String> {
-        if (options.quirks.promptCache.key == CacheKeyStrategy.OFF) return emptyMap()
+        if (options.quirks.backend.promptCache.key == CacheKeyStrategy.OFF) return emptyMap()
         // The same conversation key as prompt_cache_key; no client identity or raw session ID rides.
-        val key = meta.sessionId?.let { "${options.quirks.providerTag}:$it" }
-            ?: meta.conversationKey ?: return emptyMap()
+        val key = meta.scope.sessionId?.let { "${options.quirks.providerTag}:$it" }
+            ?: meta.scope.conversationKey ?: return emptyMap()
         return mapOf("x-meta-ai-gateway-session-id" to gatewaySessionId(key))
     }
 

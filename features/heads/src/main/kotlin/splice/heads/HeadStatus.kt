@@ -36,10 +36,10 @@ public object HeadStatus {
             if (gate.limit <= 0) put("max", "unlimited") else put("max", gate.limit)
             // V4-213: the gate's own measurements. These were literals (0 and []) while the
             // in-process gate kept no counts, so the console's in-flight list was always empty.
-            put("acquired", gate.acquired)
-            put("released", gate.released)
-            put("waited", gate.waited)
-            put("avg_wait_ms", gate.avgWaitMs)
+            put("acquired", gate.counts.acquired)
+            put("released", gate.counts.released)
+            put("waited", gate.counts.waited)
+            put("avg_wait_ms", gate.counts.avgWaitMs)
             putJsonArray("live") {
                 gate.live.forEach { slot ->
                     addJsonObject {

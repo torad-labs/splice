@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.provider.ProviderBuild
+import splice.app.provider.UpstreamFaultPlan
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.model.ModelCatalog
@@ -108,9 +109,11 @@ class TopologyWindowsTest {
                 head = head,
                 providerCfg = provider,
                 catalog = provider.catalogFor(head),
-                watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+                faultPlan = UpstreamFaultPlan(
+                    watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+                    loginCommand = "",
+                ),
                 cfg = config.getConfig(key),
-                loginCommand = "",
             )
             windows.attach(build, legacyKnobsGovern = false).catalog
         }

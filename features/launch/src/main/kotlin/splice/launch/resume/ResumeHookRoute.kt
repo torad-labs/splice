@@ -130,9 +130,10 @@ public class ResumeHookRoute(
     }
 
     private fun rewrite(managed: LaunchHead, transcript: Path, spec: LaunchSpec, sessionId: String): String? {
-        val pinnedModel = spec.pinnedModel
+        val pinnedModel = spec.models.pinnedModel
         val rewritten = Cancellables.runCatchingCancellable {
-            rewriter.rewrite(transcript, pinnedModel, spec.availableModelIds.takeUnless { spec.forwardClientAuth })
+            val offered = spec.models.availableModelIds.takeUnless { spec.gateway.forwardClientAuth }
+            rewriter.rewrite(transcript, pinnedModel, offered)
         }
             .getOrElse { cause ->
                 return "session $sessionId could not be moved onto $pinnedModel (${SafeFailureText.render(cause)})"

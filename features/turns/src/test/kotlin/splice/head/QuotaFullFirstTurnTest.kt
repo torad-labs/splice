@@ -32,6 +32,8 @@ import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
 import splice.dialect.responses.ReasoningSettings
 import splice.head.usage.QuotaTracker
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
@@ -67,8 +69,7 @@ class QuotaFullFirstTurnTest {
         head = HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(
-                    key = "codex",
-                    label = "claudex",
+                    name = ProviderName(key = "codex", label = "claudex"),
                     catalog = ModelCatalog(
                         discoveryPrefix = "claude-codex--",
                         models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -76,7 +77,7 @@ class QuotaFullFirstTurnTest {
                     ),
                     pinnedModel = "gpt-5.6-sol",
                     auth = QuotaFullAuth(),
-                    baseUrl = mock.baseUrl,
+                    locations = ProviderLocations(baseUrl = mock.baseUrl),
                     watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 ),
                 reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),

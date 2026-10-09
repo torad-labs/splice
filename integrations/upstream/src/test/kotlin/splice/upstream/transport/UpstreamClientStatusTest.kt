@@ -85,7 +85,7 @@ class UpstreamClientStatusTest {
             url = "https://api.example.test/v1",
             auth = auth,
             extraHeaders = { emptyMap() },
-            authRefreshObserver = AuthRefreshObserver { observed.incrementAndGet() },
+            observers = PostObservers(authRefreshObserver = AuthRefreshObserver { observed.incrementAndGet() }),
         )
 
         assertEquals("ok", clientOver(engine).posted(context, "{}") { "ok" })

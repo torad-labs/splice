@@ -8,6 +8,7 @@ import splice.client.resume.ResumableTranscript
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
+import splice.sessions.transcript.SessionFiles
 import splice.sessions.transcript.SessionHistoryEntry
 import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionHistoryScan
@@ -186,8 +187,10 @@ private class HistoryFacts(private val id: String) {
         project = project,
         head = head,
         updatedAt = historyAt ?: transcriptAt,
-        hasHistory = hasHistory,
-        hasTranscript = hasTranscript,
-        resumable = hasTranscript && transcriptContent,
+        files = SessionFiles(
+            hasHistory = hasHistory,
+            hasTranscript = hasTranscript,
+            resumable = hasTranscript && transcriptContent,
+        ),
     )
 }

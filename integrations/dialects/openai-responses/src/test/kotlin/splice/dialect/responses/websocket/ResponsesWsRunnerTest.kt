@@ -31,6 +31,9 @@ import splice.core.perf.TurnPerf
 import splice.core.perf.UpstreamAttemptTiming
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.util.LogSink
 import splice.dialect.responses.request.responsesRequestJson
 import splice.upstream.NEVER_PINGED_MS
@@ -44,16 +47,19 @@ private const val BODY = """{"model":"gpt-5.6-sol","input":[{"role":"user","cont
 
 private fun meta(session: String? = "sess-1", conversation: String? = "splice-abc") = TurnMeta(
     compact = false,
-    showReasoning = ReasoningDisplay.TEXT,
-    stream = true,
-    originalModel = "claude-codex--gpt-5.6-sol",
-    upstreamModel = "gpt-5.6-sol",
-    clientMaxTokens = null,
-    effort = "high",
-    summary = "detailed",
-    budgetTokens = null,
-    conversationKey = conversation,
-    sessionId = session,
+    reasoning = TurnReasoning(
+        showReasoning = ReasoningDisplay.TEXT,
+        effort = "high",
+        summary = "detailed",
+        budgetTokens = null,
+    ),
+    route = TurnRoute(
+        stream = true,
+        originalModel = "claude-codex--gpt-5.6-sol",
+        upstreamModel = "gpt-5.6-sol",
+        clientMaxTokens = null,
+    ),
+    scope = TurnScope(conversationKey = conversation, sessionId = session),
 )
 
 /** A scripted socket: every send replies with the frames the script returns for that round. */
@@ -321,7 +327,7 @@ class ResponsesWsTurnStateTest {
         val bodies = turns.map { turn ->
             val original = responsesRequestJson.parseToJsonElement(BODY) as JsonObject
             val metadata = responsesRequestJson.parseToJsonElement(
-                """{"client":"splice","session_id":"${turn.sessionId}"}""",
+                """{"client":"splice","session_id":"${turn.scope.sessionId}"}""",
             ) as JsonObject
             JsonObject(original + ("client_metadata" to metadata)).toString()
         }

@@ -62,8 +62,8 @@ internal class CodeModeContinuityRetentionTest {
                         " rejection=" + restored.nativeRejection,
                 )
             }
-            assertFalse(input(rewritten).any { codec.callId(it) == fixture.carrier.outerCallId })
-            assertTrue(input(rewritten).containsAll(fixture.carrier.continuity))
+            assertFalse(input(rewritten).any { codec.callId(it) == fixture.carrier.origin.outerCallId })
+            assertTrue(input(rewritten).containsAll(fixture.carrier.carry.continuity))
         }
     }
 
@@ -82,7 +82,7 @@ internal class CodeModeContinuityRetentionTest {
     @Test
     fun `retention keeps ordinary callback results and durable media`() {
         val fixture = fixture(true, 1)
-        val callback = fixture.carrier.pending.single().clientId
+        val callback = fixture.carrier.progress.pending.single().clientId
         val media = item("""{"role":"user","content":"synthetic durable media"}""")
         fixture.carrier.accepted.accept(
             mapOf(callback to CodeModeResult(callback, "synthetic result")),
@@ -94,9 +94,9 @@ internal class CodeModeContinuityRetentionTest {
         val actual = input(checkNotNull(rewrite.body))
         assertTrue(actual.containsAll(callbacks(fixture.carrier)))
         assertTrue(media in actual)
-        assertTrue(actual.containsAll(fixture.carrier.continuity))
+        assertTrue(actual.containsAll(fixture.carrier.carry.continuity))
         assertTrue(response in actual)
-        assertFalse(actual.any { codec.callId(it) == fixture.carrier.outerCallId })
+        assertFalse(actual.any { codec.callId(it) == fixture.carrier.origin.outerCallId })
         assertEquals(rewrite.bodyJson, history.canonicalize(checkNotNull(rewrite.body), fixture.completed).bodyJson)
     }
 
@@ -106,7 +106,7 @@ internal class CodeModeContinuityRetentionTest {
         val call = callbacks(fixture.carrier).first()
         val duplicate = history.canonicalize(body(fixture.client + call), fixture.completed)
         assertFalse(response in input(checkNotNull(duplicate.body)))
-        val callback = fixture.carrier.pending.single().clientId
+        val callback = fixture.carrier.progress.pending.single().clientId
         fixture.carrier.accepted.accept(
             mapOf(callback to CodeModeResult(callback, "synthetic result")),
             mapOf(callback to listOf(user)),
@@ -143,7 +143,7 @@ internal class CodeModeContinuityRetentionTest {
         val fixture = fixture(true)
         fixture.target.nativeBaseId = "synthetic-missing-parent"
         val client = listOf(user, repeated) + emitted(fixture.completed[0]) + listOf(repeated, between) +
-            emitted(fixture.completed[1]) + response + fixture.carrier.continuity + callbacks(fixture.target)
+            emitted(fixture.completed[1]) + response + fixture.carrier.carry.continuity + callbacks(fixture.target)
         val rewrite = history.canonicalize(body(client), fixture.completed, emptyMap(), fixture.target)
         val restored = history.restoreBaseline(checkNotNull(rewrite.body), fixture.target)
         assertEquals(CodeModeNativeBranch.COUNT, restored.nativeRejection?.branch)
@@ -183,29 +183,34 @@ internal class CodeModeContinuityRetentionTest {
         return CodeModeRecord(
             id = id,
             key = "synthetic-retention",
-            outer = item(
-                """{"type":"custom_tool_call","call_id":"$id","name":"exec","input":"return 1"}""",
-            ) as JsonObject,
-            outerCallId = id,
-            source = "return 1",
             phase = CodeModePhase.COMPLETED,
-            updatedAt = 0,
-            lastDigest = "synthetic-request",
-            baselineInputCount = boundary.fullCount,
-            baselineInputDigest = boundary.fullDigest,
-            metadataVersion = CODE_MODE_METADATA_VERSION,
-            baselineLogicalCount = boundary.logicalCount,
-            baselineLogicalDigest = boundary.logicalDigest,
-            nativeSegments = capture.segments,
-            continuity = continuity,
-            continuityReplay = native.takeIf(List<JsonElement>::isNotEmpty)?.let {
-                listOf(CodeModeNativeSegment(0, it))
-            }.orEmpty(),
+            origin = CodeModeOrigin(
+                outer = item(
+                    """{"type":"custom_tool_call","call_id":"$id","name":"exec","input":"return 1"}""",
+                ) as JsonObject,
+                outerCallId = id,
+                source = "return 1",
+                baseline = CodeModeBaseline(
+                    inputCount = boundary.fullCount,
+                    inputDigest = boundary.fullDigest,
+                    logicalCount = boundary.logicalCount,
+                    logicalDigest = boundary.logicalDigest,
+                    metadataVersion = CODE_MODE_METADATA_VERSION,
+                ),
+            ),
+            progress = CodeModeProgress(updatedAt = 0, lastDigest = "synthetic-request"),
+            carry = CodeModeNativeContinuity(
+                segments = capture.segments,
+                continuity = continuity,
+                replay = native.takeIf(List<JsonElement>::isNotEmpty)?.let {
+                    listOf(CodeModeNativeSegment(0, it))
+                }.orEmpty(),
+            ),
         ).also { record ->
             record.replayAnchors = boundary.replayAnchors
             record.nativeParent = capture.parent
             record.nativeBaseId = capture.parent?.id
-            record.output = "synthetic result"
+            record.progress.output = "synthetic result"
         }
     }
 
@@ -213,7 +218,7 @@ internal class CodeModeContinuityRetentionTest {
     private fun CodeModeRecord.answered(callbacks: Int): CodeModeRecord = apply {
         repeat(callbacks) { at ->
             val clientId = "callback-$id-$at"
-            pending += CodeModePending("runtime-$id-$at", clientId, "Read", JsonObject(emptyMap()), true)
+            progress.pending += CodeModePending("runtime-$id-$at", clientId, "Read", JsonObject(emptyMap()), true)
             accepted.accept(mapOf(clientId to CodeModeResult(clientId, "synthetic result")), emptyMap())
         }
     }
@@ -221,7 +226,7 @@ internal class CodeModeContinuityRetentionTest {
     private fun emitted(record: CodeModeRecord): List<JsonElement> =
         listOf(CodeModeCallReplay.item(record), codec.customOutput(record))
 
-    private fun callbacks(record: CodeModeRecord): List<JsonElement> = record.pending.flatMap { call ->
+    private fun callbacks(record: CodeModeRecord): List<JsonElement> = record.progress.pending.flatMap { call ->
         listOf(
             item("""{"type":"function_call","call_id":"${call.clientId}","name":"Read","arguments":"{}"}"""),
             item("""{"type":"function_call_output","call_id":"${call.clientId}","output":"synthetic result"}"""),

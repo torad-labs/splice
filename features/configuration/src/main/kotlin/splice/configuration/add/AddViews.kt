@@ -27,15 +27,15 @@ internal class AddViews {
     /** One catalogue profile, with what the operator must still supply ([asks]). */
     fun profile(p: AddProfile): JsonObject = buildJsonObject {
         put("name", p.name)
-        put("summary", p.summary)
-        put("auth_kind", p.authKind)
-        put("requires_key", p.requiresKey)
+        put("summary", p.labels.summary)
+        put("auth_kind", p.provider.authKind)
+        put("requires_key", p.provider.requiresKey)
         put("base_url", p.baseUrl)
-        put("head_key", p.headKey)
-        put("command", p.command)
+        put("head_key", p.head.key)
+        put("command", p.head.command)
         putJsonArray(MODELS) { p.models.forEach { add(model(it)) } }
         putJsonArray("asks") {
-            if (p.headKey.isEmpty()) add("name")
+            if (p.head.key.isEmpty()) add("name")
             if (p.baseUrl == null) add("base_url")
             if (p.models.isEmpty()) add(MODELS)
         }
@@ -52,7 +52,7 @@ internal class AddViews {
         put("auth_kind", kind)
         put("base_url", c.provider.baseUrl)
         putJsonArray(MODELS) { c.resolved.models.forEach { add(model(it)) } }
-        val signInBy = signInBy(kind, c.resolved.requiresKey)
+        val signInBy = signInBy(kind, c.resolved.provider.requiresKey)
         put("sign_in_by", signInBy)
         put("key_env", if (signInBy == SIGN_IN_KEY) console.keyEnv(s) else null)
         val credential = console.credential(s)
@@ -102,7 +102,7 @@ internal class AddViews {
         rows.firstOrNull { !it.ok }?.let { "The ${it.name} check failed: ${it.detail}." } ?: "A check failed."
 
     private fun saved(c: AddCandidate, saved: AddSaved): JsonObject = buildJsonObject {
-        put("path", c.path.toString())
+        put("path", c.file.path.toString())
         putJsonObject("wrapper") {
             when (val link = saved.link) {
                 AddLinked.Linked -> put("linked", true)
@@ -144,9 +144,9 @@ internal class AddViews {
     private fun login(status: LoginStatus): JsonObject = buildJsonObject {
         put("id", status.id)
         put("state", status.state.wire)
-        put("user_code", status.userCode)
-        put("verification_uri", status.verificationUri)
-        put("browser_url", status.browserUrl)
+        put("user_code", status.prompt.userCode)
+        put("verification_uri", status.prompt.verificationUri)
+        put("browser_url", status.prompt.browserUrl)
         put("failure_reason", status.failureReason)
     }
 

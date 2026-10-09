@@ -5,6 +5,8 @@ package splice.app.provider
 
 import splice.core.auth.ClientAuthProvider
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughRequestQuirks
+import splice.dialect.anthropic.PassthroughThinkingQuirks
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.topology.TopologyLoader
 import java.nio.file.Paths
@@ -30,8 +32,12 @@ internal class PassthroughArm(
                     auth,
                     PassthroughQuirks(
                         providerTag = key,
-                        verifiesThinkingSignatures = true,
-                        eagerToolInputs = true,
+                        thinking = PassthroughThinkingQuirks(
+                            verifiesThinkingSignatures = true,
+                        ),
+                        request = PassthroughRequestQuirks(
+                            eagerToolInputs = true,
+                        ),
                     ),
                 ),
                 auth,

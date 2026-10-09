@@ -22,6 +22,8 @@ import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
@@ -35,8 +37,7 @@ private object LatchProbeAuth : RefreshableAuthProvider {
  *  sink and replay-reasoning ON, so appendRedactedThinking actually drives decodeReasoningEnvelope. */
 private class LatchProbeProvider(logs: MutableList<String>) : ResponsesProvider(
     tuning = ProviderTuning(
-        key = "probe",
-        label = "probe",
+        name = ProviderName(key = "probe", label = "probe"),
         catalog = ModelCatalog(
             discoveryPrefix = "claude-codex",
             models = listOf(ModelEntry(id = "gpt-5.6-sol", label = "sol", contextWindow = 400_000)),
@@ -44,7 +45,7 @@ private class LatchProbeProvider(logs: MutableList<String>) : ResponsesProvider(
         ),
         pinnedModel = "gpt-5.6-sol",
         auth = LatchProbeAuth,
-        baseUrl = "https://chatgpt.com/backend-api/codex",
+        locations = ProviderLocations(baseUrl = "https://chatgpt.com/backend-api/codex"),
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.TEXT, true, null, null),

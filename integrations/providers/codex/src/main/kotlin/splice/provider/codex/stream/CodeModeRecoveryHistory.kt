@@ -1,6 +1,7 @@
 // NEW: client replay excludes private recovery inputs while the current turn keeps its original upstream view.
 package splice.provider.codex.stream
 
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeContinuity
@@ -34,7 +35,7 @@ internal class CodeModeRecoveryHistory(private val baseline: CodeModeBody) {
         private val before: Prefix? = null,
     ) {
         fun extend(partial: TurnOutcome.PartialRound): Prefix {
-            val emitted = partial.bodyText.takeIf { partial.emittedText }.orEmpty()
+            val emitted = partial.text.bodyText.takeIf { partial.text.emittedText }.orEmpty()
             return if (emitted.isEmpty() && partial.reasoningEnvelopes.isEmpty()) {
                 this
             } else {
@@ -45,7 +46,7 @@ internal class CodeModeRecoveryHistory(private val baseline: CodeModeBody) {
         fun remaining(partial: TurnOutcome.PartialRound): TurnOutcome.PartialRound {
             val envelopes = reasoning()
             return partial.copy(
-                bodyText = partial.bodyText.removePrefix(text()),
+                text = partial.text.copy(bodyText = partial.text.bodyText.removePrefix(text())),
                 reasoningEnvelopes = if (partial.reasoningEnvelopes.take(envelopes.size) == envelopes) {
                     partial.reasoningEnvelopes.drop(envelopes.size)
                 } else {
@@ -58,9 +59,13 @@ internal class CodeModeRecoveryHistory(private val baseline: CodeModeBody) {
             val text = text()
             return wire.continuity(
                 outcome.copy(
-                    bodyText = text + outcome.bodyText,
-                    emittedText = text.isNotEmpty() || outcome.emittedText,
-                    reasoningEnvelopes = reasoning() + outcome.reasoningEnvelopes,
+                    text = outcome.text.copy(
+                        bodyText = text + outcome.text.bodyText,
+                        emittedText = text.isNotEmpty() || outcome.text.emittedText,
+                    ),
+                    handoffs = outcome.handoffs.copy(
+                        reasoningEnvelopes = reasoning() + outcome.handoffs.reasoningEnvelopes,
+                    ),
                 ),
             )
         }
@@ -86,7 +91,7 @@ internal class CodeModeRecoveryHistory(private val baseline: CodeModeBody) {
     internal class Source(private val prefix: Prefix, private val posted: PostedHistory) {
         fun finish(outcome: TurnOutcome.Success, wire: CodexCodeModeWire): CodeModeContinuity {
             posted.continuity = wire.continuity(outcome)
-            posted.text = outcome.bodyText.takeIf { outcome.emittedText }.orEmpty()
+            posted.text = outcome.text.bodyText.takeIf { outcome.text.emittedText }.orEmpty()
             return prefix.continuity(outcome, wire)
         }
     }
@@ -113,9 +118,8 @@ internal class CodeModeRecoveryHistory(private val baseline: CodeModeBody) {
         val success = outcome as? TurnOutcome.Success ?: return
         generated = generated.extend(
             TurnOutcome.PartialRound(
-                bodyText = success.bodyText,
-                emittedText = success.emittedText,
-                reasoningEnvelopes = success.reasoningEnvelopes,
+                text = RoundText(bodyText = success.text.bodyText, emittedText = success.text.emittedText),
+                reasoningEnvelopes = success.handoffs.reasoningEnvelopes,
             ),
         )
     }

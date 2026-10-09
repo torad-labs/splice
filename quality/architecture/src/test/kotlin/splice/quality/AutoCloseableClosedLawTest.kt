@@ -214,9 +214,9 @@ internal object AutoCloseableClosed {
         val mentioned = main.values.sumOf { DIRECT_MENTION.findAll(it).count() }
         if (mentioned == 0 || parsedDirect.isNotEmpty()) return emptyList()
         return listOf(
-            "$mentioned supertype list(s) mention AutoCloseable/Closeable but the parser attributed NONE to a declaration — " +
-                "supertypes() has drifted from the Kotlin it reads, so the closeable denominator is empty for a parser " +
-                "reason, not a code reason.",
+            "$mentioned supertype list(s) mention AutoCloseable/Closeable but the parser attributed NONE to a " +
+                "declaration — supertypes() has drifted from the Kotlin it reads, so the closeable denominator is " +
+                "empty for a parser reason, not a code reason.",
         )
     }
 
@@ -224,8 +224,8 @@ internal object AutoCloseableClosed {
         if (DATED_REASON.containsMatchIn(reason)) {
             null
         } else {
-            "${decl.path}:${decl.line} ${decl.name} — ALLOWLIST entry is not 'YYYY-MM-DD: <reason>'. An exemption with no " +
-                "dated, written reason is an absence wearing a label."
+            "${decl.path}:${decl.line} ${decl.name} — ALLOWLIST entry is not 'YYYY-MM-DD: <reason>'. An exemption " +
+                "with no dated, written reason is an absence wearing a label."
         }
 
     /** The finding for a concrete closeable with no main-source closing evidence, or null. */
@@ -248,24 +248,24 @@ internal object AutoCloseableClosed {
         }
         val via = decl.supers.joinToString(" -> ").ifEmpty { "AutoCloseable" }
         return "${decl.path}:${decl.line} ${decl.name} implements AutoCloseable/Closeable (via $via) and is $why. " +
-            "Close it from production: `use { }`, a `close()` on a handle, or `handle::close` in a cleanup. A closeable " +
-            "whose only close() callers are tests is a leak with a green suite."
+            "Close it from production: `use { }`, a `close()` on a handle, or `handle::close` in a cleanup. A " +
+            "closeable whose only close() callers are tests is a leak with a green suite."
     }
 
     fun audit(main: Map<String, String>, allowlist: Map<String, String> = ALLOWLIST): List<String> {
         if (main.isEmpty()) {
             return listOf(
-                "no Kotlin main sources under any module the build declares — refusing to pass vacuously; a checker that " +
-                    "reads nothing vouches for nothing.",
+                "no Kotlin main sources under any module the build declares — refusing to pass vacuously; a checker " +
+                    "that reads nothing vouches for nothing.",
             )
         }
         val decls = declarations(main)
         val closeable = closeableClosure(decls)
         val problems = driftGuard(main, decls).toMutableList()
         if (closeable.isEmpty()) {
-            problems += "the closeable closure is EMPTY — refusing to pass vacuously. Either no type in this tree implements " +
-                "AutoCloseable/Closeable (then this checker has nothing to guard and should say so out loud) or the parse " +
-                "failed."
+            problems += "the closeable closure is EMPTY — refusing to pass vacuously. Either no type in this tree " +
+                "implements AutoCloseable/Closeable (then this checker has nothing to guard and should say so out " +
+                "loud) or the parse failed."
             return problems
         }
         val concrete = decls.filter { it.name in closeable && it.kind != "interface" }
@@ -387,7 +387,8 @@ class AutoCloseableClosedLawTest {
     fun `every concrete AutoCloseable in main sources is closed from a main source - V4-95`() {
         val main = AutoCloseableClosed.read(map, "src/main")
         assertTrue(main.size > 10) {
-            "the map yielded ${main.size} production file(s) — the walk is broken, and a law that reads no files passes vacuously."
+            "the map yielded ${main.size} production file(s) — the walk is broken, and a law that reads no files " +
+                "passes vacuously."
         }
         val problems = AutoCloseableClosed.audit(main)
         assertTrue(problems.isEmpty()) {
@@ -461,7 +462,11 @@ class AutoCloseableClosedLawTest {
             write(
                 mapOf(
                     SPI to SPI_CONTRACT,
-                    APP to LEAKY_APP.replace("    fun build() = Wiring(runtime = JvmCodeModeRuntime())", "    fun build() {\n        val runtime = JvmCodeModeRuntime()\n        runtime.close()\n    }"),
+                    APP to LEAKY_APP.replace(
+                        "    fun build() = Wiring(runtime = JvmCodeModeRuntime())",
+                        "    fun build() {\n        val runtime = JvmCodeModeRuntime()\n" +
+                            "        runtime.close()\n    }",
+                    ),
                     TEST to LEAKY_TEST,
                 ),
             )
@@ -489,7 +494,10 @@ class AutoCloseableClosedLawTest {
             write(
                 mapOf(
                     SPI to SPI_CONTRACT,
-                    APP to INTERFACE_CLOSED_APP.replace("    fun shutdown() { runtime.close() }", "    fun shutdown() = Unit"),
+                    APP to INTERFACE_CLOSED_APP.replace(
+                        "    fun shutdown() { runtime.close() }",
+                        "    fun shutdown() = Unit",
+                    ),
                 ),
             )
             assertHit(audit(), "JvmCodeModeRuntime") { "7b. removing the interface-typed close must be RED by name" }

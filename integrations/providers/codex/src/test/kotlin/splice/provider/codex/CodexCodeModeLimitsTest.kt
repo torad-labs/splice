@@ -16,7 +16,9 @@ class CodexCodeModeLimitsTest : CodeModeBridgeTestSupport() {
         val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("done"))))
         val outcome = bridge(runtime).interceptor(turn(), disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) {
-                RoundResult.Outcome(outerOutcome().copy(customCalls = listOf(outer(source = "é".repeat(32_769)))))
+                RoundResult.Outcome(outerOutcome().run {
+                    copy(handoffs = handoffs.copy(customCalls = listOf(outer(source = "é".repeat(32_769)))))
+                })
             }.turn()
         assertTrue(outcome is TurnOutcome.Failure)
         assertEquals(0, runtime.starts)

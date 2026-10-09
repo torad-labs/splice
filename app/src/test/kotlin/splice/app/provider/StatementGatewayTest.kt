@@ -56,6 +56,8 @@ import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeWiring
 import splice.provider.codex.CodexProvider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.Ticker
 import splice.upstream.codemode.CodeModeResult
@@ -250,7 +252,7 @@ class StatementGatewayTest {
             withTimeout(5_000) { notice.await() }
             assertFalse(resumed.isCompleted, "the result request waits for a certified statement")
             assertEquals(1, upstream.posts.get())
-            assertEquals(1L, gate.snapshot().acquired)
+            assertEquals(1L, gate.snapshot().traffic.acquired)
             assertEquals(1L, upstream.next.count)
             upstream.next.countDown()
             val next = withTimeout(5_000) { resumed.await() }
@@ -263,7 +265,7 @@ class StatementGatewayTest {
             assertEquals(1, upstream.posts.get())
             assertEquals(1, runtime.starts.get())
             assertEquals(0L, deps.stores.usageStore.readState().outputTokens5h)
-            assertEquals(1, deps.liveTurns.list().size, "adoption must not duplicate the live row")
+            assertEquals(1, deps.traffic.liveTurns.list().size, "adoption must not duplicate the live row")
             toolCalls(next).also { emitted -> assertEquals(calls.size, emitted.size, next) }
         }
 
@@ -317,7 +319,7 @@ class StatementGatewayTest {
             assertEquals(listOf("Read", "Read", "Edit", "Edit"), runtime.calls.map { it.name })
             assertEquals(4, runtime.calls.map { it.id }.distinct().size)
             assertEquals(1, runtime.starts.get())
-            assertEquals(1L, gate.snapshot().acquired)
+            assertEquals(1L, gate.snapshot().traffic.acquired)
             assertEquals(2, upstream.posts.get(), "one source POST plus one normal exec-result continuation")
             val input = Json.parseToJsonElement(upstream.requests.last()).jsonObject.getValue("input").jsonArray
             val result = input.map { it.jsonObject }
@@ -356,9 +358,9 @@ class StatementGatewayTest {
                 while (deps.stores.usageStore.readState().outputTokens5h != outputTokens) yield()
                 // The permit is counted down before its release callbacks finish.
                 while (heapProbe(RELEASE_PROBE_BYTES) != 200) yield()
-                while (deps.liveTurns.list().isNotEmpty()) yield()
+                while (deps.traffic.liveTurns.list().isNotEmpty()) yield()
             }
-            assertTrue(deps.liveTurns.list().isEmpty())
+            assertTrue(deps.traffic.liveTurns.list().isEmpty())
         }
 
         private fun resultBody(calls: List<JsonObject>): String {
@@ -482,8 +484,7 @@ class StatementGatewayTest {
 
     private fun provider(url: String, bridge: CodexCodeModeBridge): CodexProvider = CodexProvider(
         tuning = ProviderTuning(
-            key = "codex",
-            label = "source-test",
+            name = ProviderName(key = "codex", label = "source-test"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-codex--",
                 models = listOf(ModelEntry("gpt-5.6-sol", "Stream", contextWindow = 272_000)),
@@ -495,7 +496,7 @@ class StatementGatewayTest {
                 override suspend fun refresh(): Credentials = credentials()
                 override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
             },
-            baseUrl = url,
+            locations = ProviderLocations(baseUrl = url),
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 20.seconds),
         ),
         reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),

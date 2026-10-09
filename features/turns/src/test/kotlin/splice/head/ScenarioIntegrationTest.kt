@@ -56,8 +56,8 @@ class ScenarioIntegrationTest {
     fun `multipart - one thinking block, paragraph join, then text`() {
         val (outcome, sink) = drive("multipart")
         val s = outcome as TurnOutcome.Success
-        assertEquals("Part one.\n\nPart two.", s.thinkingText)
-        assertEquals("Answer text.", s.bodyText)
+        assertEquals("Part one.\n\nPart two.", s.text.thinkingText)
+        assertEquals("Answer text.", s.text.bodyText)
         assertEquals(1, sink.opens.count { it == "thinking" })
         assertEquals(1, sink.opens.count { it == "text" })
         assertEquals(10, s.usage.inputTokens)
@@ -98,17 +98,17 @@ class ScenarioIntegrationTest {
     fun `nonstream_tool - multibyte split inside the checkmark decodes intact via harvest`() {
         val (outcome, _) = drive("nonstream_tool")
         val s = outcome as TurnOutcome.Success
-        assertEquals("héllo — ✓ done", s.bodyText)
-        assertTrue(s.thinkingText.startsWith("Because reasons"))
+        assertEquals("héllo — ✓ done", s.text.bodyText)
+        assertTrue(s.text.thinkingText.startsWith("Because reasons"))
     }
 
     @Test
     fun `compactish - thinking-only turn leaves text empty for the promote step`() {
         val (outcome, _) = drive("compactish")
         val s = outcome as TurnOutcome.Success
-        assertTrue(s.thinkingText.contains("Goal: port the proxy"))
-        assertEquals("", s.bodyText)
-        assertEquals(false, s.emittedText)
+        assertTrue(s.text.thinkingText.contains("Goal: port the proxy"))
+        assertEquals("", s.text.bodyText)
+        assertEquals(false, s.text.emittedText)
     }
 
     @Test
@@ -135,7 +135,7 @@ class ScenarioIntegrationTest {
     @Test
     fun `basic - minimal text turn`() {
         val (outcome, _) = drive("basic")
-        assertEquals("ok after auth", (outcome as TurnOutcome.Success).bodyText)
+        assertEquals("ok after auth", (outcome as TurnOutcome.Success).text.bodyText)
     }
 }
 

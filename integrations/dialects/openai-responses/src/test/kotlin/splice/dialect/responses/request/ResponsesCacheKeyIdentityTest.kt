@@ -13,6 +13,8 @@ import splice.core.wire.ContentBlock
 import splice.core.wire.TextBlock
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
+import splice.dialect.responses.ResponsesBackendQuirks
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import java.security.MessageDigest
@@ -24,9 +26,13 @@ import java.util.concurrent.TimeUnit
 class ResponsesCacheKeyIdentityTest {
     private val quirks = ResponsesQuirks(
         providerTag = "synthetic",
-        promptCache = PromptCachePolicy(key = CacheKeyStrategy.FIRST_MESSAGE_HASH),
-        responsesLiteModelRegex = Regex("gpt-6"),
-        sendClientMetadata = true,
+        backend = ResponsesBackendQuirks(
+            promptCache = PromptCachePolicy(key = CacheKeyStrategy.FIRST_MESSAGE_HASH),
+            sendClientMetadata = true,
+        ),
+        lite = ResponsesLiteQuirks(
+            responsesLiteModelRegex = Regex("gpt-6"),
+        ),
     )
 
     @Test
@@ -53,7 +59,7 @@ class ResponsesCacheKeyIdentityTest {
             val expected = legacyKey(seed)
             repeat(3) { assertEquals(expected, ids.stablePromptCacheKey(body)) }
             val built = ResponsesRequestBuilder(quirks).build(body, JsonObject(emptyMap()), options())
-            assertEquals(expected, built.meta.conversationKey)
+            assertEquals(expected, built.meta.scope.conversationKey)
             assertEquals(expected, built.req["prompt_cache_key"]?.let { JsonWire.string(it).trim('"') })
         }
         assertEquals(null, ids.stablePromptCacheKey(AnthropicRequest()))
@@ -74,7 +80,7 @@ class ResponsesCacheKeyIdentityTest {
                         barrier.await(5, TimeUnit.SECONDS)
                         assertEquals(expected, ids.stablePromptCacheKey(body))
                         val built = builder.build(body, JsonObject(emptyMap()), options())
-                        assertEquals(expected, built.meta.conversationKey)
+                        assertEquals(expected, built.meta.scope.conversationKey)
                     }
                 }
             }
@@ -90,12 +96,18 @@ class ResponsesCacheKeyIdentityTest {
 
     private fun options() = BuildOptions(
         compact = false,
-        originalModel = "synthetic",
-        upstreamModel = "gpt-6.1-sol",
-        configEffort = "high",
-        configSummary = "detailed",
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = InjectPriorReasoning(false),
-        decodeReasoningEnvelope = { JsonObject(emptyMap()) },
+        models = ModelIds(
+            original = "synthetic",
+            upstream = "gpt-6.1-sol",
+        ),
+        reasoning = RequestedReasoning(
+            effort = "high",
+            summary = "detailed",
+            display = ReasoningDisplay.TEXT,
+        ),
+        handoff = ReasoningHandoff(
+            replay = InjectPriorReasoning(false),
+            decode = { JsonObject(emptyMap()) },
+        ),
     )
 }

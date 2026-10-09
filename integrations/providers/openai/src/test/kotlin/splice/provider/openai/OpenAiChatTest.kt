@@ -42,6 +42,8 @@ import splice.head.compaction.FileCompactionRecordings
 import splice.head.perf.PerfStats
 import splice.head.turn.LiveTurns
 import splice.head.usage.UsageStore
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -105,8 +107,7 @@ class OpenAiChatTest {
     fun setUp(@TempDir tmp: Path) = runBlocking {
         val provider = OpenAiChatProvider(
             tuning = ProviderTuning(
-                key = "openrouter",
-                label = "openrouter",
+                name = ProviderName(key = "openrouter", label = "openrouter"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-openrouter--",
                     models = listOf(ModelEntry("meta/llama-4", "Llama 4", contextWindow = 128_000)),
@@ -114,7 +115,7 @@ class OpenAiChatTest {
                 ),
                 pinnedModel = "meta/llama-4",
                 auth = ApiKeyAuthProvider("OPENROUTER_API_KEY", envReader = { "or-key-123456" }),
-                baseUrl = mock.baseUrl,
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
             quirks = ChatQuirks(providerTag = "openrouter"),
@@ -195,22 +196,24 @@ class OpenAiChatTest {
  *  another module test source set and this module cannot see it. Small on purpose: this module has
  *  exactly one head shape, so there is nothing here to share with a second rig. */
 private fun testDeps(tmp: java.nio.file.Path): HeadDeps = HeadDeps(
-    upstream = UpstreamClient(30_000, 2),
-    inferenceToken = "test-inference-token",
-    operatorToken = "test-operator-token",
-    gate = InflightGate({ 0 }),
-    liveTurns = LiveTurns(),
+    traffic = HeadDeps.HeadTraffic(
+        upstream = UpstreamClient(30_000, 2),
+        gate = InflightGate({ 0 }),
+        liveTurns = LiveTurns(),
+    ),
+    tokens = HeadDeps.HeadTokens(inferenceToken = "test-inference-token", operatorToken = "test-operator-token"),
     log = {},
     stores = HeadDeps.HeadStores(
         usageStore = UsageStore(tmp.resolve("u.json"), tmp.resolve("r.json")),
         perfStats = PerfStats(tmp.resolve("p.jsonl")),
         economicsStore = null,
-        compactStats = CompactStats(tmp.resolve("c.jsonl")),
+        compaction = HeadDeps.HeadCompaction(
+            compactStats = CompactStats(tmp.resolve("c.jsonl")),
+            compactionRecordings = FileCompactionRecordings(tmp.resolve("compactions"), log = {}),
+        ),
         shadow = ShadowClassifier(log = {}),
         clientWindows = ClientWindows(),
-        wireTap = null,
-        trace = null,
-        compactionRecordings = FileCompactionRecordings(tmp.resolve("compactions"), log = {}),
+        captures = HeadDeps.HeadCaptures(wireTap = null, trace = null),
     ),
     quotaBundle = HeadDeps.HeadQuota(null, null, emptyMap(), NoHeadBudget, HeadDeps.CredentialAccountNames { null }),
     seams = HeadDeps.HeadSeams(),

@@ -35,7 +35,7 @@ internal class CodeModeCellRetention(
         if (record.cellBorrowers != 0) return@withKey
         if (record.phase != CodeModePhase.ACTIVE) return@withKey
         cells[record.id]?.let {
-            record.cellIdleSince = config.cellClock()
+            record.cellIdleSince = config.cellLease.clock()
             alive(record)
         }
     }
@@ -67,7 +67,7 @@ internal class CodeModeCellRetention(
     fun supersede(key: String, digest: String, continued: Set<String>): Boolean {
         val stale = records.filter {
             it.key == key && it.phase == CodeModePhase.ACTIVE && it.id in cells && !running(it) &&
-                it.lastDigest != digest && it.id !in continued
+                it.progress.lastDigest != digest && it.id !in continued
         }
         stale.forEach {
             it.sourceEnd?.claimClient()
@@ -80,7 +80,7 @@ internal class CodeModeCellRetention(
         val retained = records.filter { it.phase == CodeModePhase.ACTIVE && it.id in cells }
         val liveness = retained.map(::alive)
         val oldest = retained.mapNotNull { it.cellIdleSince }.minOrNull()
-        val age = oldest?.let { (config.cellClock() - it).coerceAtLeast(0) } ?: 0
+        val age = oldest?.let { (config.cellLease.clock() - it).coerceAtLeast(0) } ?: 0
         config.log(
             "[code-mode] pool refusal: retained=${retained.size} " +
                 "dead=${liveness.count { it == false }} unknown=${liveness.count { it == null }} " +
@@ -107,15 +107,15 @@ internal class CodeModeCellRetention(
         val idle = record.cellIdleSince ?: return null
         val since = if (liveness == null) maxOf(idle, record.cellLastAliveAt ?: idle) else idle
         return when {
-            config.cellClock() - since < CELL_IDLE_MS -> null
+            config.cellLease.clock() - since < CELL_IDLE_MS -> null
             liveness == null -> 1
             else -> 2
         }
     }
 
-    private fun alive(record: CodeModeRecord): Boolean? = record.sessionId?.let(config.sessionAlive::invoke).also {
-        if (it == true) record.cellLastAliveAt = config.cellClock()
-    }
+    private fun alive(record: CodeModeRecord): Boolean? = record.sessionId
+        ?.let(config.cellLease.sessionAlive::invoke)
+        .also { if (it == true) record.cellLastAliveAt = config.cellLease.clock() }
 
     private val reasons = listOf(
         "code-mode cell closed after its session ended",
@@ -137,6 +137,8 @@ internal class CodeModeCellRetention(
         cells.remove(record.id)?.close()
         record.cellIdleSince = null
         if (records.none { it.key == record.key && it.phase == CodeModePhase.ACTIVE }) closeSession(record.key)
-        config.log("[code-mode] ${record.id.take(CODE_MODE_RECORD_LOG_CHARS)} (outer ${record.outerCallId}): $message")
+        config.log(
+            "[code-mode] ${record.id.take(CODE_MODE_RECORD_LOG_CHARS)} (outer ${record.origin.outerCallId}): $message",
+        )
     }
 }

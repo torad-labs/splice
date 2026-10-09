@@ -12,6 +12,9 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import java.io.IOException
 import java.net.http.WebSocket
 import java.nio.ByteBuffer
@@ -65,16 +68,19 @@ class WsSizeRefusalCountTest {
 
         private fun turnMeta() = TurnMeta(
             compact = false,
-            showReasoning = ReasoningDisplay.TEXT,
-            stream = true,
-            originalModel = "claudex--gpt-6.1-sol",
-            upstreamModel = "gpt-6.1-sol",
-            clientMaxTokens = null,
-            effort = "high",
-            summary = "detailed",
-            budgetTokens = null,
-            conversationKey = "splice-size",
-            sessionId = "sess-size",
+            reasoning = TurnReasoning(
+                showReasoning = ReasoningDisplay.TEXT,
+                effort = "high",
+                summary = "detailed",
+                budgetTokens = null,
+            ),
+            route = TurnRoute(
+                stream = true,
+                originalModel = "claudex--gpt-6.1-sol",
+                upstreamModel = "gpt-6.1-sol",
+                clientMaxTokens = null,
+            ),
+            scope = TurnScope(conversationKey = "splice-size", sessionId = "sess-size"),
         )
     }
 

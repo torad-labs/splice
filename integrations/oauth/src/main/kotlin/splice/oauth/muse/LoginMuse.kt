@@ -16,11 +16,14 @@ import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.oauth.AUTO
 import splice.oauth.AuthJsonFromResponse
+import splice.oauth.DeviceAuthEndpoint
 import splice.oauth.DeviceAuthForm
 import splice.oauth.DeviceAuthParse
 import splice.oauth.DeviceAuthorization
+import splice.oauth.DeviceClient
 import splice.oauth.DeviceLoginFinalizer
 import splice.oauth.DeviceLoginSpec
+import splice.oauth.DeviceTokenEndpoint
 import splice.oauth.OAuthAccountFiles
 import splice.oauth.OAuthLoginAccount
 import splice.oauth.OAuthLoginReservation
@@ -66,15 +69,21 @@ public class LoginMuse(
             reservation?.let(account::holdReservation)
             val spec = DeviceLoginSpec(
                 head = head,
-                clientId = MuseOAuthEndpoints.CLIENT_ID,
-                deviceAuthUrl = MuseOAuthEndpoints.DEVICE_AUTHORIZATION_URL,
-                tokenUrl = MuseOAuthEndpoints.TOKEN_URL,
+                client = DeviceClient(
+                    id = MuseOAuthEndpoints.CLIENT_ID,
+                    headers = emptyMap(),
+                ),
+                deviceAuth = DeviceAuthEndpoint(
+                    url = MuseOAuthEndpoints.DEVICE_AUTHORIZATION_URL,
+                    form = DeviceAuthForm { oauth.museDeviceAuthorizationForm(it) },
+                    parse = DeviceAuthParse(::deviceAuth),
+                ),
+                tokenEndpoint = DeviceTokenEndpoint(
+                    url = MuseOAuthEndpoints.TOKEN_URL,
+                    pollForm = TokenPollForm { code, id -> oauth.museTokenPollForm(code, id) },
+                    toAuthJson = authJson,
+                ),
                 authPath = authPath,
-                identityHeaders = emptyMap(),
-                toAuthJson = authJson,
-                deviceAuthForm = DeviceAuthForm { oauth.museDeviceAuthorizationForm(it) },
-                parseDeviceAuth = DeviceAuthParse(::deviceAuth),
-                tokenPollForm = TokenPollForm { code, id -> oauth.museTokenPollForm(code, id) },
                 account = account,
                 afterPersist = DeviceLoginFinalizer { path, acct -> mintAfterLogin(path, acct) },
             )

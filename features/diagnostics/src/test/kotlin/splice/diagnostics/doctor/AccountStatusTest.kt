@@ -7,9 +7,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.accounts.pool.HeadAccountCredential
 import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountSwitchView
 import splice.accounts.pool.HeadAccountView
+import splice.accounts.pool.HeadAccountWindow
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -50,14 +53,14 @@ class AccountStatusTest {
         val view = pools.getValue("claudex")
         assertEquals("work", view.selectedAccount()?.label)
         assertEquals(listOf("primary", "work"), view.accounts.map { it.label })
-        assertEquals(61.5, view.accounts[0].sevenDayUsedPercent)
-        assertEquals(1800000000L, view.accounts[0].fiveHourResetEpochSeconds)
-        assertEquals(1_700_000_300_000L, view.accounts[0].authExcludedUntilEpochMillis)
-        assertEquals("terminal_401", view.accounts[0].authExclusionReason)
-        assertEquals(null, view.accounts[1].authExcludedUntilEpochMillis)
-        assertEquals(null, view.accounts[1].authExclusionReason)
+        assertEquals(61.5, view.accounts[0].quota.sevenDay.usedPercent)
+        assertEquals(1800000000L, view.accounts[0].quota.fiveHour.resetEpochSeconds)
+        assertEquals(1_700_000_300_000L, view.accounts[0].credential.excludedUntilEpochMillis)
+        assertEquals("terminal_401", view.accounts[0].credential.exclusionReason)
+        assertEquals(null, view.accounts[1].credential.excludedUntilEpochMillis)
+        assertEquals(null, view.accounts[1].credential.exclusionReason)
         assertEquals("7d window exhausted", view.lastSwitch?.reason)
-        assertTrue(view.accounts.all { it.credentialPresent }, "older payloads preserve legacy presence")
+        assertTrue(view.accounts.all { it.credential.present }, "older payloads preserve legacy presence")
         assertFalse(view.toString().contains("SECRET"))
         assertFalse(view.toString().contains("example.com"))
     }
@@ -114,8 +117,8 @@ class AccountStatusTest {
     private fun nativeView(): HeadAccountPoolView = HeadAccountPoolView(
         "native:claude",
         listOf(
-            HeadAccountView("native:claude", false, true, true, null, null, null, null, null),
-            HeadAccountView("native:claude-splice", false, false, false, null, null, null, null, null),
+            HeadAccountView("native:claude", false, true, true, null),
+            HeadAccountView("native:claude-splice", false, false, false, null),
         ),
         null,
     )
@@ -223,9 +226,14 @@ class AccountStatusTest {
                 "work",
                 listOf(
                     HeadAccountView(
-                        "primary", true, false, false, null, null, null, null, null, credentialPresent = false,
+                        "primary",
+                        true,
+                        false,
+                        false,
+                        null,
+                        credential = HeadAccountCredential(present = false),
                     ),
-                    HeadAccountView("work", false, true, backupOpen, null, null, null, null, null),
+                    HeadAccountView("work", false, true, backupOpen, null),
                 ),
                 null,
             )
@@ -247,8 +255,8 @@ class AccountStatusTest {
 
         val account = AccountPoolProjection().parse(payload).getValue("head").accounts.single()
 
-        assertEquals(null, account.authExcludedUntilEpochMillis)
-        assertEquals(null, account.authExclusionReason)
+        assertEquals(null, account.credential.excludedUntilEpochMillis)
+        assertEquals(null, account.credential.exclusionReason)
         assertFalse(account.toString().contains("private provider body"))
     }
 
@@ -264,7 +272,7 @@ class AccountStatusTest {
         for ((fields, expected) in cases) {
             val payload = """{"head":{"account_pool":{"accounts":[{"label":"primary"$fields}]}}}"""
             val view = AccountPoolProjection().parse(payload).getValue("head")
-            assertEquals(expected, view.accounts.single().credentialPresent)
+            assertEquals(expected, view.accounts.single().credential.present)
         }
     }
 }
@@ -324,8 +332,8 @@ class AccountLabelBoundaryTest {
                 val view = HeadAccountPoolView(
                     unsafe,
                     listOf(
-                        HeadAccountView(unsafe, true, true, true, null, null, null, null, null),
-                        HeadAccountView("safe", false, false, true, null, null, null, null, null),
+                        HeadAccountView(unsafe, true, true, true, null),
+                        HeadAccountView("safe", false, false, true, null),
                     ),
                     HeadAccountSwitchView(from, to, "account unavailable", 0L),
                 )
@@ -339,7 +347,7 @@ class AccountLabelBoundaryTest {
 
 class AccountSwitchReasonBoundaryTest {
     private val text = AccountPoolText { 0 }
-    private val account = HeadAccountView("work", false, true, true, null, null, null, null, null)
+    private val account = HeadAccountView("work", false, true, true, null)
     private val unsafeReasons = (0..31).map { "account unavailable${it.toChar()}private" } +
         (127..159).map { "account unavailable${it.toChar()}private" } + listOf(
             "${0x1b.toChar()}[31mprivate",
@@ -561,7 +569,14 @@ class AccountHeadBoundaryTest {
 
 class AccountSelectionBoundaryTest {
     private val text = AccountPoolText { 0 }
-    private val primary = HeadAccountView("primary", true, false, true, "plus", 12.0, null, 34.0, null)
+    private val primary = HeadAccountView(
+        "primary",
+        true,
+        false,
+        true,
+        "plus",
+        HeadAccountQuota(HeadAccountWindow(12.0, null), HeadAccountWindow(34.0, null)),
+    )
     private val primaryJson = """{"label":"primary","primary":true,"available":true,
         "five_hour_used_percent":12,"seven_day_used_percent":34}"""
 

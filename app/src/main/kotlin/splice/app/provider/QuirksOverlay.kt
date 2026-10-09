@@ -11,8 +11,10 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.SummaryDelivery
 import splice.core.topology.ToolSurfaceConfig
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughRequestQuirks
 import splice.dialect.chat.ChatEffortVocabulary
 import splice.dialect.chat.ChatQuirks
+import splice.dialect.chat.ChatReasoningQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.stream.DEFAULT_MARKER_TEXT
 import splice.dialect.responses.stream.FoldConfig
@@ -45,8 +47,10 @@ internal class QuirksOverlay {
     ).withReasoningCacheToml(providerCfg.quirks.reasoningCache)
         .withParallelToolCallsToml(providerCfg.quirks.parallelToolCalls)
         .withWebSocketToml(providerCfg.quirks.webSocket)
-        .withSummaryDelivery(summaryDeliveryWire(providerCfg.quirks.summaryDelivery, base.summaryDelivery))
-        .withToolSurfaceToml(toolDeferralPolicy(providerCfg.quirks.toolSurface, cfg.toolSurfaceOff, base.toolSurface))
+        .withSummaryDelivery(summaryDeliveryWire(providerCfg.quirks.summaryDelivery, base.reasoning.summaryDelivery))
+        .withToolSurfaceToml(
+            toolDeferralPolicy(providerCfg.quirks.toolSurface, cfg.toolSurfaceOff, base.tools.toolSurface),
+        )
 
     /** summary_delivery: absent keeps the provider default, `off` omits the field, a mode is sent as
      *  written. Exhaustive, so a mode added to [SummaryDelivery] cannot reach the wire unmapped. */
@@ -79,7 +83,12 @@ internal class QuirksOverlay {
         val base = if (providerCfg.auth.kind == GROK_OAUTH) {
             GrokChatQuirks().profile(key, label)
         } else {
-            ChatQuirks(providerTag = key, xhighModels = GrokQuirks().xhighModels())
+            ChatQuirks(
+                providerTag = key,
+                reasoning = ChatReasoningQuirks(
+                    xhighModels = GrokQuirks().xhighModels(),
+                ),
+            )
         }
         // V4-163: a LOCAL runtime asks for usage frames by default. Usage is opt-in on this dialect
         // (stream_options.include_usage), and a head that never asks reports zero tokens per turn,
@@ -93,8 +102,10 @@ internal class QuirksOverlay {
         val vocabulary = configuredVocabulary?.let {
             ChatEffortVocabulary(it.default, it.normalizedLevels(), it.modelPattern?.let(::Regex))
         }
-        return base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort).withStreamUsageToml(usage)
-            .copy(effortVocabulary = vocabulary ?: base.effortVocabulary)
+        val overlaid = base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort).withStreamUsageToml(usage)
+        return overlaid.copy(
+            reasoning = overlaid.reasoning.copy(effortVocabulary = vocabulary ?: base.reasoning.effortVocabulary),
+        )
     }
 
     /** Overlay the head's TOML [providers.*.quirks] onto a passthrough head's BASE quirk profile.
@@ -104,20 +115,28 @@ internal class QuirksOverlay {
      *  dialect never imports a topology config type. */
     internal fun passthroughQuirks(providerCfg: ProviderConfig, base: PassthroughQuirks): PassthroughQuirks =
         base.copy(
-            mapThinkingToAdaptive = providerCfg.quirks.mapThinkingAdaptive ?: base.mapThinkingToAdaptive,
-            stripSamplingParams = providerCfg.quirks.stripSamplingParams ?: base.stripSamplingParams,
-            mfjsSanitize = providerCfg.quirks.mfjs ?: base.mfjsSanitize,
+            thinking = base.thinking.copy(
+                mapThinkingToAdaptive = providerCfg.quirks.mapThinkingAdaptive ?: base.thinking.mapThinkingToAdaptive,
+                synthesizeSignatures = providerCfg.quirks.synthesizeSignatures ?: base.thinking.synthesizeSignatures,
+            ),
+            request = requestQuirks(providerCfg, base),
+            reanchorPrefill = providerCfg.quirks.reanchorPrefill ?: base.reanchorPrefill,
+        )
+
+    /** The request-shaping half of [passthroughQuirks], split out so each stays under the complexity ceiling. */
+    private fun requestQuirks(providerCfg: ProviderConfig, base: PassthroughQuirks): PassthroughRequestQuirks =
+        base.request.copy(
+            stripSamplingParams = providerCfg.quirks.stripSamplingParams ?: base.request.stripSamplingParams,
+            mfjsSanitize = providerCfg.quirks.mfjs ?: base.request.mfjsSanitize,
             // Absent (null) keeps the base. Empty (`block_allowlist = []`) is the ONLY spelling that
             // turns a base allowlist OFF. takeIf-then-?: collapsed those two, so empty restored the
             // base and there was no operator spelling that cleared it. Never materialize an empty
             // set: that would drop every content block of every message, silently.
             blockAllowlist = when (val list = providerCfg.quirks.blockAllowlist) {
-                null -> base.blockAllowlist
+                null -> base.request.blockAllowlist
                 else -> list.takeIf { it.isNotEmpty() }?.toSet()
             },
-            stripCacheControl = providerCfg.quirks.stripCacheControl ?: base.stripCacheControl,
-            synthesizeSignatures = providerCfg.quirks.synthesizeSignatures ?: base.synthesizeSignatures,
-            reanchorPrefill = providerCfg.quirks.reanchorPrefill ?: base.reanchorPrefill,
+            stripCacheControl = providerCfg.quirks.stripCacheControl ?: base.request.stripCacheControl,
             toolNameCap = toolNameCap(providerCfg, base),
         )
 
@@ -125,7 +144,7 @@ internal class QuirksOverlay {
      *  (muse's 64), and absent TOML keeps the base, so an un-edited config is unchanged. Its own
      *  function so [passthroughQuirks] stays under the complexity ceiling. */
     private fun toolNameCap(providerCfg: ProviderConfig, base: PassthroughQuirks): Int =
-        providerCfg.quirks.toolNameCap ?: base.toolNameCap
+        providerCfg.quirks.toolNameCap ?: base.request.toolNameCap
 
     /** TOML table -> dialect policy. Muse inherits its hosted default when the table is absent;
      *  an explicit disabled table or the daemon-wide kill switch turns it off. The mapping lives HERE,

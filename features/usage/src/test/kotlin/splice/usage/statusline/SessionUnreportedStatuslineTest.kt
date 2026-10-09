@@ -2,6 +2,7 @@ package splice.usage.statusline
 
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.perf.PerfModelGaps
 import splice.core.perf.PerfModelTotal
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTotal
@@ -25,13 +26,13 @@ class SessionUnreportedStatuslineTest {
 
     @Test
     fun `a posted unreported turn renders known session spend as a lower bound`() {
-        val total = PerfModelTotal(2, 100, 0, 0, 7, 0.5, unpricedTurns = 1, unreportedUsageTurns = 1)
+        val total = PerfModelTotal(2, 100, 0, 0, 7, 0.5, gaps = PerfModelGaps(1, 1))
         assertTrue(render(total).contains("≥"), "the rendered cost must label incomplete spend")
     }
 
     @Test
     fun `the persisted usage coverage count itself labels a lower bound`() {
-        val total = PerfModelTotal(2, 100, 0, 0, 7, 0.5, unpricedTurns = 0, unreportedUsageTurns = 1)
+        val total = PerfModelTotal(2, 100, 0, 0, 7, 0.5, gaps = PerfModelGaps(0, 1))
         assertTrue(render(total).contains("≥"))
     }
 }

@@ -54,7 +54,7 @@ public class PeerNoteSocket(
     private val user: String = System.getProperty("user.name").orEmpty(),
 ) : SessionNoteSender {
     override suspend fun send(target: SessionRecord, text: String): NoteOutcome {
-        val version = target.version
+        val version = target.client.version
         if (version == null || version !in audited) {
             val runs = "Claude Code ${version ?: "of unknown version"}"
             val only = audited.sorted().joinToString(", ")
@@ -63,7 +63,7 @@ public class PeerNoteSocket(
                 "the session runs $runs, and notes are only sent to $only",
             )
         }
-        val socket = target.messagingSocketPath?.let(Path::of)
+        val socket = target.process.messagingSocketPath?.let(Path::of)
             ?: return NoteOutcome.Refused(HttpStatusCode.Conflict, "the session has no messaging socket")
         val id = newId.next()
         val frame = PeerNoteFrame.encode(text, id).toByteArray(Charsets.UTF_8)

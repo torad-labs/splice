@@ -200,15 +200,16 @@ class ControlServerGateTest {
     private fun gateHead(key: String, port: Int, inflight: Int, queued: Int, limit: Int) = ManagedHead(
         head = GateFakeHead(key, port, inflight, queued, limit),
         auth = GateFakeAuth(),
-        usage = HeadUsageSource { UsageView(0L, 0, null) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int) = ""
-            override fun path() = "/tmp/$key.log"
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0L, 0, null) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int) = ""
+                override fun path() = "/tmp/$key.log"
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
     )
 }

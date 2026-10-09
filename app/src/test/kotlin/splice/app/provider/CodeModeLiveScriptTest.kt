@@ -54,6 +54,8 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeWiring
 import splice.provider.codex.CodexProvider
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.WsRound
 import splice.upstream.WsRoundAbort
@@ -252,8 +254,7 @@ class CodeModeLiveScriptTest {
         log: LogSink,
     ): CodexProvider = CodexProvider(
         tuning = ProviderTuning(
-            key = "codex",
-            label = "live-script-test",
+            name = ProviderName(key = "codex", label = "live-script-test"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-codex--",
                 models = listOf(ModelEntry("gpt-5.6-sol", "Stream", contextWindow = 272_000)),
@@ -265,7 +266,7 @@ class CodeModeLiveScriptTest {
                 override suspend fun refresh(): Credentials = credentials()
                 override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
             },
-            baseUrl = url,
+            locations = ProviderLocations(baseUrl = url),
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
         ),
         reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
@@ -506,7 +507,8 @@ private class SseAnswerUpstream {
             exchange.sendResponseHeaders(200, 0)
             exchange.responseBody.use { output ->
                 listOf(
-                    """{"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"answer"}}""",
+                    """{"type":"response.output_item.added","output_index":0,""" +
+                        """"item":{"type":"message","id":"answer"}}""",
                     """{"type":"response.output_text.delta","output_index":0,"delta":"SSE ANSWER"}""",
                     """{"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"answer"}}""",
                     """{"type":"response.completed","response":{"id":"answer-response","status":"completed",""" +

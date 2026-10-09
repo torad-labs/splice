@@ -14,10 +14,12 @@ import splice.core.model.TurnBill
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.turn.UsageHistory
+import splice.core.turn.UsageOrigin
 
 class RoundSpliceSalvageTest {
 
@@ -53,8 +55,10 @@ class RoundSpliceSalvageTest {
                 inputTokens = 120,
                 outputTokens = 10,
                 reasoningTokens = 3,
-                history = UsageHistory(
+                origin = UsageOrigin(
+                    history = UsageHistory(
                     absorbed = AbsorbedRounds(rounds = 1, inputTokens = 100, cachedTokens = 20, outputTokens = 3),
+                ),
                 ),
                 reported = setOf(UsageField.INPUT, UsageField.OUTPUT),
             ),
@@ -67,10 +71,18 @@ class RoundSpliceSalvageTest {
     @Test
     fun `source rounds a turn cut accrue across its folded rounds and its dying one`() {
         val acc = RoundUsage()
-            .plusRound(Usage(inputTokens = 100, outputTokens = 3, history = UsageHistory(cutRounds = 1)))
-            .plusRound(Usage(inputTokens = 120, outputTokens = 2, history = UsageHistory(cutRounds = 2)))
+            .plusRound(Usage(
+                inputTokens = 100,
+                outputTokens = 3,
+                origin = UsageOrigin(history = UsageHistory(cutRounds = 1)),
+            ))
+            .plusRound(Usage(
+                inputTokens = 120,
+                outputTokens = 2,
+                origin = UsageOrigin(history = UsageHistory(cutRounds = 2)),
+            ))
         assertEquals(3L, acc.toUsage().cutRounds)
-        val terminal = failure(Usage(outputTokens = 1, history = UsageHistory(cutRounds = 1)))
+        val terminal = failure(Usage(outputTokens = 1, origin = UsageOrigin(history = UsageHistory(cutRounds = 1))))
         val out = rounds.withFailureSalvage(terminal, acc) as TurnOutcome.Failure
         assertEquals(4L, out.salvagedUsage.cutRounds)
     }
@@ -92,7 +104,7 @@ class RoundSpliceSalvageTest {
             acc,
         ) as TurnOutcome.Failure
         assertEquals(0L, out.salvagedUsage.inputTokens)
-        assertEquals(55L, out.salvagedUsage.clientContext?.inputTokens)
+        assertEquals(55L, out.salvagedUsage.origin.clientContext?.inputTokens)
         assertEquals(55L, TurnBill.total(TurnBill.counters(out.salvagedUsage)).input)
         assertEquals(7L, out.salvagedUsage.outputTokens)
         assertNull(TurnBill.usd(TurnBill.counters(out.salvagedUsage), ModelRates(1.0, 0.1, 4.0)))
@@ -137,7 +149,7 @@ class RoundSpliceSalvageTest {
         val acc = RoundUsage().plusRound(Usage(inputTokens = 55, outputTokens = 3))
         val out = rounds.withFailureSalvage(failure(Usage(reported = emptySet())), acc) as TurnOutcome.Failure
         assertEquals(0L, out.salvagedUsage.inputTokens)
-        assertEquals(55L, out.salvagedUsage.clientContext?.inputTokens)
+        assertEquals(55L, out.salvagedUsage.origin.clientContext?.inputTokens)
         assertEquals(55L, TurnBill.total(TurnBill.counters(out.salvagedUsage)).input)
         assertEquals(3L, out.salvagedUsage.outputTokens)
         assertNull(TurnBill.usd(TurnBill.counters(out.salvagedUsage), ModelRates(1.0, 0.1, 4.0)))
@@ -154,7 +166,7 @@ class RoundSpliceSalvageTest {
     fun `a content-only partial cannot hide the terminal provider salvage`() {
         val acc = RoundUsage().plusRound(Usage(inputTokens = 50, outputTokens = 3))
         val terminal = failure(null).copy(
-            partial = TurnOutcome.PartialRound(bodyText = "synthetic"),
+            partial = TurnOutcome.PartialRound(text = RoundText(bodyText = "synthetic")),
             salvagedUsage = Usage(inputTokens = 80, outputTokens = 7),
         )
         val out = rounds.withFailureSalvage(terminal, acc) as TurnOutcome.Failure
@@ -170,7 +182,7 @@ class RoundSpliceSalvageTest {
         val acc = RoundUsage().plusRound(Usage(inputTokens = 50, outputTokens = 6))
         val out = rounds.withFailureSalvage(TurnOutcome.ClientAbandoned(), acc) as TurnOutcome.ClientAbandoned
         assertEquals(50L, TurnBill.total(TurnBill.counters(out.salvagedUsage)).input)
-        assertEquals(50L, out.salvagedUsage.clientContext?.inputTokens)
+        assertEquals(50L, out.salvagedUsage.origin.clientContext?.inputTokens)
         assertEquals(6L, out.salvagedUsage.outputTokens)
         assertNull(TurnBill.usd(TurnBill.counters(out.salvagedUsage), ModelRates(1.0, 0.1, 4.0)))
     }
@@ -188,7 +200,9 @@ class RoundSpliceSalvageTest {
                 outputTokens = 13,
                 cachedTokens = 20,
                 reasoningTokens = 3,
-                history = UsageHistory(absorbed = AbsorbedRounds(rounds = 1, inputTokens = 50, outputTokens = 6)),
+                origin = UsageOrigin(
+                    history = UsageHistory(absorbed = AbsorbedRounds(rounds = 1, inputTokens = 50, outputTokens = 6)),
+                ),
             ),
             out.salvagedUsage,
         )
@@ -196,7 +210,10 @@ class RoundSpliceSalvageTest {
 
     @Test
     fun `known cut counts survive an unreported failure or abandonment without inventing tokens`() {
-        val acc = RoundUsage().plusRound(Usage(history = UsageHistory(cutRounds = 1), reported = emptySet()))
+        val acc = RoundUsage().plusRound(Usage(
+            origin = UsageOrigin(history = UsageHistory(cutRounds = 1)),
+            reported = emptySet(),
+        ))
         for (ending in listOf(failure(null), TurnOutcome.ClientAbandoned())) {
             val usage = when (val result = rounds.withFailureSalvage(ending, acc)) {
                 is TurnOutcome.Failure -> result.salvagedUsage

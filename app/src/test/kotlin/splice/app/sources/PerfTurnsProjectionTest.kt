@@ -22,6 +22,9 @@ import splice.core.util.JsonlSink
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
+import splice.usage.UsageHeadSinks
+import splice.usage.UsageHeadStatusline
+import splice.usage.UsageHeadWarn
 import splice.usage.perf.PerfRoutes
 import splice.usage.perf.PerfRowsSource
 import splice.usage.quota.HeadUsageSource
@@ -304,27 +307,30 @@ class PerfTurnsProjectionTest {
         "synthetic",
         "synthetic",
         HeadUsageSource { UsageView(0, 0, null) },
-        80,
-        0,
-        perfRows = source,
-        catalog = ModelCatalog(
-            discoveryPrefix = "synthetic--",
-            models = listOf(
-                ModelEntry("priced", contextWindow = 100_000, rates = ModelRates(1.0, 0.1, 4.0)),
-                ModelEntry("free", contextWindow = 100_000),
-            ),
-            defaultContextWindow = 100_000,
+        warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
+        sinks = UsageHeadSinks(
+            perfRows = source,
+            accountPool = HeadAccountPoolSource {
+                HeadAccountPoolView(
+                    "plan",
+                    listOf(
+                        HeadAccountView("plan", true, true, true, "pro"),
+                        HeadAccountView("key", false, false, true, null),
+                    ),
+                    null,
+                )
+            },
         ),
-        accountPool = HeadAccountPoolSource {
-            HeadAccountPoolView(
-                "plan",
-                listOf(
-                    HeadAccountView("plan", true, true, true, "pro", null, null, null, null),
-                    HeadAccountView("key", false, false, true, null, null, null, null, null),
+        statusline = UsageHeadStatusline(
+            catalog = ModelCatalog(
+                discoveryPrefix = "synthetic--",
+                models = listOf(
+                    ModelEntry("priced", contextWindow = 100_000, rates = ModelRates(1.0, 0.1, 4.0)),
+                    ModelEntry("free", contextWindow = 100_000),
                 ),
-                null,
-            )
-        },
+                defaultContextWindow = 100_000,
+            ),
+        ),
     )
 
     private fun render(

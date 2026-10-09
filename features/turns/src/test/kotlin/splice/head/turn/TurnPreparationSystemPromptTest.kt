@@ -53,6 +53,8 @@ import splice.head.compaction.SessionProjectLookup
 import splice.head.headDeps
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -89,8 +91,8 @@ class TurnPreparationSystemPromptTest {
         val direct = responsesProvider().buildTurn(parsed(RESPONSES_REQUEST), compact = false, sessionId = null)
 
         assertEquals(direct.requestBody.toString(), prepared.requestBody.toString())
-        assertNull(prepared.meta.systemPrompt)
-        assertNull(prepared.meta.systemPromptSource)
+        assertNull(prepared.meta.standingPrompt.text)
+        assertNull(prepared.meta.standingPrompt.source)
 
         val passthrough = preparedTurn(
             preparation(tmp, passthroughProvider(), HeadSystemPrompt()),
@@ -100,7 +102,7 @@ class TurnPreparationSystemPromptTest {
             passthroughProvider().buildTurn(parsed(PASSTHROUGH_REQUEST), compact = false, sessionId = null)
 
         assertEquals(passthroughDirect.requestBody.toString(), passthrough.requestBody.toString())
-        assertNull(passthrough.meta.systemPrompt)
+        assertNull(passthrough.meta.standingPrompt.text)
     }
 
     @Test
@@ -115,8 +117,8 @@ class TurnPreparationSystemPromptTest {
 
         assertEquals(1, entries.count { it.toString().contains("Be terse.") })
         assertEquals("developer", entries.last().jsonObject.getValue("role").jsonPrimitive.content)
-        assertEquals("Be terse.", prepared.meta.systemPrompt)
-        assertEquals("head:codex append", prepared.meta.systemPromptSource)
+        assertEquals("Be terse.", prepared.meta.standingPrompt.text)
+        assertEquals("head:codex append", prepared.meta.standingPrompt.source)
         assertEquals("house rules", prepared.requestBody.getValue("instructions").jsonPrimitive.content)
     }
 
@@ -141,8 +143,8 @@ class TurnPreparationSystemPromptTest {
         assertEquals(1, blocks.size)
         assertEquals("You are a bare model.", blocks.single().jsonObject.getValue("text").jsonPrimitive.content)
         assertFalse(prepared.requestBody.toString().contains("house rules"))
-        assertEquals("You are a bare model.", prepared.meta.systemPrompt)
-        assertEquals("head:kimi replace", prepared.meta.systemPromptSource)
+        assertEquals("You are a bare model.", prepared.meta.standingPrompt.text)
+        assertEquals("head:kimi replace", prepared.meta.standingPrompt.source)
     }
 
     /** V4-170: a strip layer edits the client's field in place, and the meta reports the layer by its
@@ -171,8 +173,8 @@ class TurnPreparationSystemPromptTest {
 
         assertEquals(1, blocks.size)
         assertEquals("house rules\n\nBe kind.", blocks.single().jsonObject.getValue("text").jsonPrimitive.content)
-        assertNull(prepared.meta.systemPrompt, "a pattern list is not prompt text")
-        assertEquals("project-head:/work/bot:kimi strip", prepared.meta.systemPromptSource)
+        assertNull(prepared.meta.standingPrompt.text, "a pattern list is not prompt text")
+        assertEquals("project-head:/work/bot:kimi strip", prepared.meta.standingPrompt.source)
     }
 
     /** V4-172, the finding both reviews ranked first: `systemPromptSource` had no production reader,
@@ -232,8 +234,8 @@ class TurnPreparationSystemPromptTest {
 
         val body = prepared.requestBody.toString()
         assertFalse(body.contains("Be terse."), body)
-        assertNull(prepared.meta.systemPrompt, "the wire does not carry it, so the meta must not claim it")
-        assertEquals("head:kimi append (not applied)+project:$root strip", prepared.meta.systemPromptSource)
+        assertNull(prepared.meta.standingPrompt.text, "the wire does not carry it, so the meta must not claim it")
+        assertEquals("head:kimi append (not applied)+project:$root strip", prepared.meta.standingPrompt.source)
         assertEquals(2L, perf.counters["system_prompt_layers"])
         assertEquals(1L, perf.counters["system_prompt_applied"], "only the strip changed the bytes that shipped")
     }
@@ -262,8 +264,8 @@ class TurnPreparationSystemPromptTest {
 
         val (prepared, perf) = preparedWithPerf(preparation(tmp, passthroughProvider(), layers, cwd = root), request)
 
-        assertEquals("head:kimi append+project:$root strip", prepared.meta.systemPromptSource)
-        assertEquals("Use tools.\nSay \"done\" at the end.\n", prepared.meta.systemPrompt)
+        assertEquals("head:kimi append+project:$root strip", prepared.meta.standingPrompt.source)
+        assertEquals("Use tools.\nSay \"done\" at the end.\n", prepared.meta.standingPrompt.text)
         assertEquals(2L, perf.counters["system_prompt_applied"], "both layers changed the bytes that shipped")
     }
 
@@ -339,8 +341,8 @@ class TurnPreparationSystemPromptTest {
             RESPONSES_REQUEST,
         )
 
-        assertNull(prepared.meta.systemPrompt)
-        assertEquals("head:codex append (not applied)", prepared.meta.systemPromptSource)
+        assertNull(prepared.meta.standingPrompt.text)
+        assertEquals("head:codex append (not applied)", prepared.meta.standingPrompt.source)
         assertFalse(prepared.requestBody.toString().contains("Be terse."))
     }
 
@@ -397,7 +399,7 @@ class TurnPreparationSystemPromptTest {
             upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
             gate = InflightGate({ 1 }),
             log = {},
-            seams = HeadDeps.HeadSeams(sessionProject = SessionProjectLookup { cwd }),
+            seams = HeadDeps.HeadSeams(session = HeadDeps.SessionSeams(sessionProject = SessionProjectLookup { cwd })),
         ).copy(
             policy = HeadDeps.HeadPolicy(systemPrompt = layers),
         )
@@ -414,8 +416,7 @@ class TurnPreparationSystemPromptTest {
 
     private fun responsesProvider() = TestResponsesProvider(
         tuning = ProviderTuning(
-            key = "codex",
-            label = "claudex",
+            name = ProviderName(key = "codex", label = "claudex"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-codex--",
                 models = listOf(ModelEntry(RESPONSES_MODEL, "Sol", contextWindow = 272_000)),
@@ -423,7 +424,7 @@ class TurnPreparationSystemPromptTest {
             ),
             pinnedModel = RESPONSES_MODEL,
             auth = PromptTestAuth(),
-            baseUrl = "http://127.0.0.1",
+            locations = ProviderLocations(baseUrl = "http://127.0.0.1"),
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
         reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
@@ -431,8 +432,7 @@ class TurnPreparationSystemPromptTest {
 
     private fun passthroughProvider() = PassthroughProvider(
         ProviderTuning(
-            key = "kimi",
-            label = "kimix",
+            name = ProviderName(key = "kimi", label = "kimix"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-kimi--",
                 models = listOf(ModelEntry(PASSTHROUGH_MODEL, "Kimi", contextWindow = 200_000)),
@@ -440,7 +440,7 @@ class TurnPreparationSystemPromptTest {
             ),
             pinnedModel = PASSTHROUGH_MODEL,
             auth = PromptTestAuth(),
-            baseUrl = "http://127.0.0.1",
+            locations = ProviderLocations(baseUrl = "http://127.0.0.1"),
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
         PassthroughQuirks(providerTag = "test-passthrough"),

@@ -317,7 +317,7 @@ public object UpstreamFailureClassifier {
     private const val SECONDS_PER_DAY = 86_400L
 
     // The deterministic prompt-level refusals: the Responses API's own error enum
-    // (openai-python ResponseError.code: invalid_prompt, bio_policy, image_content_policy_violation)
+    // (the vendor SDK's ResponseError.code: invalid_prompt, bio_policy, image_content_policy_violation)
     // plus the ChatGPT backend's Trusted-Access gate (cyber_policy, live on claudex 2026-08-31/09-01).
     // Exact codes, never wording — the same rule as RETRYABLE_CODES below.
     private val POLICY_REFUSAL_CODES = setOf(

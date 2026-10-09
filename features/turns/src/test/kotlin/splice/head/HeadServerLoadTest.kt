@@ -40,6 +40,8 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.dialect.responses.ReasoningSettings
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -227,12 +229,11 @@ class HeadServerLoadTest {
         head = HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(
-                    key = "codex",
-                    label = "claudex",
+                    name = ProviderName(key = "codex", label = "claudex"),
                     catalog = catalog,
                     pinnedModel = "gpt-5.6-sol",
                     auth = StaticAuth(),
-                    baseUrl = mock.baseUrl,
+                    locations = ProviderLocations(baseUrl = mock.baseUrl),
                     watchdog = WatchdogBudget(120.seconds, 120.seconds, 200.seconds),
                 ),
                 reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),

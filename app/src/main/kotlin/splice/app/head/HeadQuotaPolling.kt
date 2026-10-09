@@ -46,10 +46,10 @@ internal class HeadQuotaPolling(
                 live.add(it)
             }
         } else {
-            update(wired.accounts, stores.accountQuotas)
+            update(wired.accounts, stores.accounts.quotas)
         }
         if (wired.auth is ClientAuthProvider) {
-            stores.accountPool?.let { pool ->
+            stores.accounts.pool?.let { pool ->
                 trackers.putIfAbsent(OWN_SIGN_IN_LABEL, stores.quota)
                 HeadAccountMembership(ctx, wired, pool, trackers, assembly, holds, orders).bind(this)
             }
@@ -70,7 +70,8 @@ internal class HeadQuotaPolling(
         held.keys.filter { it !in labels }.forEach(::remove)
         accounts.filter { it.nativePlace != null && owners[it.label] !== it.auth }.forEach { remove(it.label) }
         accounts.filter { !held.containsKey(it.label) }.forEach { account ->
-            startAccount(account.auth, trackers.getValue(account.label), account.quotaRead as? ClaudeNativeQuota)?.let {
+            val nativeQuota = account.quota.read as? ClaudeNativeQuota
+            startAccount(account.auth, trackers.getValue(account.label), nativeQuota)?.let {
                 held[account.label] = it
                 owners[account.label] = account.auth
                 live.add(it)

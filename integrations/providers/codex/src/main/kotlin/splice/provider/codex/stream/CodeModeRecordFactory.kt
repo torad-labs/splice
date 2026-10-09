@@ -4,9 +4,13 @@ package splice.provider.codex.stream
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.CODE_MODE_METADATA_VERSION
+import splice.provider.codex.CodeModeBaseline
 import splice.provider.codex.CodeModeBody
 import splice.provider.codex.CodeModeBridgeConfig
+import splice.provider.codex.CodeModeNativeContinuity
+import splice.provider.codex.CodeModeOrigin
 import splice.provider.codex.CodeModePhase
+import splice.provider.codex.CodeModeProgress
 import splice.provider.codex.CodeModeRecord
 import splice.provider.codex.CodeModeRunContext
 import splice.provider.codex.CodexCodeModeWire
@@ -39,20 +43,21 @@ internal class CodeModeRecordFactory(private val config: CodeModeBridgeConfig, p
         return CodeModeRecord(
             id = UUID.randomUUID().toString(),
             key = context.key,
-            outer = outer.raw,
-            outerCallId = outer.callId,
-            source = outer.input,
             phase = CodeModePhase.LOST,
-            updatedAt = config.clock.millis(),
-            lastDigest = context.digest,
-            baselineInputCount = boundary.fullCount,
-            baselineInputDigest = boundary.fullDigest,
-            metadataVersion = CODE_MODE_METADATA_VERSION,
-            baselineLogicalCount = boundary.logicalCount,
-            baselineLogicalDigest = boundary.logicalDigest,
-            nativeSegments = native.segments,
-            continuity = continuity.logicalItems,
-            continuityReplay = continuity.replayItems,
+            origin = CodeModeOrigin(
+                outer = outer.raw,
+                outerCallId = outer.callId,
+                source = outer.input,
+                baseline = CodeModeBaseline(
+                    inputCount = boundary.fullCount,
+                    inputDigest = boundary.fullDigest,
+                    logicalCount = boundary.logicalCount,
+                    logicalDigest = boundary.logicalDigest,
+                    metadataVersion = CODE_MODE_METADATA_VERSION,
+                ),
+            ),
+            progress = CodeModeProgress(updatedAt = config.clock.millis(), lastDigest = context.digest),
+            carry = CodeModeNativeContinuity(native.segments, continuity.logicalItems, continuity.replayItems),
         ).also {
             it.replayAnchors = boundary.replayAnchors
             it.sessionId = context.turn.sessionId
@@ -64,7 +69,7 @@ internal class CodeModeRecordFactory(private val config: CodeModeBridgeConfig, p
                 postedBoundary,
                 CodeModeNativeChain.capture(postedBoundary.nativeSegments, upstream.lastOrNull()),
                 rawContinuity,
-                outcome.bodyText.takeIf { outcome.emittedText }.orEmpty(),
+                outcome.text.bodyText.takeIf { outcome.text.emittedText }.orEmpty(),
             )
         }
     }

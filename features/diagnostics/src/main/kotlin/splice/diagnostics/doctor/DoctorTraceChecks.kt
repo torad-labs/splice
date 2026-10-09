@@ -68,6 +68,12 @@ internal class DoctorTraceChecks(private val statePaths: StatePaths) {
             "remove overrides.trace = false from [heads.$key] and restart to resume tracing; " +
                 "`splice trace $key --purge` deletes what was written"
         }
-        return DoctorCheck("trace:$key", CheckStatus.WARN, detail, fix, pendingRestart = pending)
+        return DoctorCheck(
+            "trace:$key",
+            CheckStatus.WARN,
+            detail,
+            fix,
+            notes = DoctorCheckNotes(pendingRestart = pending),
+        )
     }
 }

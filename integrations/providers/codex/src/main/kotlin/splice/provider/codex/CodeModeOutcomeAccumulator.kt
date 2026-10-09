@@ -1,6 +1,8 @@
 // NEW: aggregates billed upstream outcomes across hidden code-mode continuation rounds.
 package splice.provider.codex
 
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.noRequestUsage
@@ -9,7 +11,7 @@ internal class CodeModeOutcomeAccumulator {
     private var success: TurnOutcome.Success? = null
 
     fun absorb(value: TurnOutcome.Success) {
-        success = mergeSuccess(success, value.copy(customCalls = emptyList()))
+        success = mergeSuccess(success, value.copy(handoffs = value.handoffs.copy(customCalls = emptyList())))
     }
 
     fun finish(outcome: TurnOutcome): TurnOutcome {
@@ -45,18 +47,24 @@ internal class CodeModeOutcomeAccumulator {
             hasToolUse = prior.hasToolUse || latest.hasToolUse,
             incomplete = prior.incomplete || latest.incomplete,
             usage = usage,
-            thinkingText = listOf(prior.thinkingText, latest.thinkingText)
-                .filter(String::isNotEmpty)
-                .joinToString("\n\n"),
-            bodyText = prior.bodyText + latest.bodyText,
-            emittedText = prior.emittedText || latest.emittedText,
-            emittedThinking = prior.emittedThinking || latest.emittedThinking,
-            messageClosed = prior.messageClosed || latest.messageClosed,
-            outputShape = listOf(prior.outputShape, latest.outputShape)
-                .filter(String::isNotEmpty)
-                .joinToString("; "),
-            reasoningEnvelopes = prior.reasoningEnvelopes + latest.reasoningEnvelopes,
-            toolSearches = prior.toolSearches + latest.toolSearches,
+            text = RoundText(
+                thinkingText = listOf(prior.text.thinkingText, latest.text.thinkingText)
+                    .filter(String::isNotEmpty)
+                    .joinToString("\n\n"),
+                bodyText = prior.text.bodyText + latest.text.bodyText,
+                emittedText = prior.text.emittedText || latest.text.emittedText,
+                emittedThinking = prior.text.emittedThinking || latest.text.emittedThinking,
+            ),
+            shape = ResponseShape(
+                messageClosed = prior.shape.messageClosed || latest.shape.messageClosed,
+                outputShape = listOf(prior.shape.outputShape, latest.shape.outputShape)
+                    .filter(String::isNotEmpty)
+                    .joinToString("; "),
+            ),
+            handoffs = latest.handoffs.copy(
+                reasoningEnvelopes = prior.handoffs.reasoningEnvelopes + latest.handoffs.reasoningEnvelopes,
+                toolSearches = prior.handoffs.toolSearches + latest.handoffs.toolSearches,
+            ),
         )
     }
 
@@ -64,14 +72,16 @@ internal class CodeModeOutcomeAccumulator {
         prior: TurnOutcome.Success,
         latest: TurnOutcome.PartialRound?,
     ): TurnOutcome.PartialRound = TurnOutcome.PartialRound(
-        thinkingText = listOf(prior.thinkingText, latest?.thinkingText.orEmpty())
-            .filter(String::isNotEmpty)
-            .joinToString("\n\n"),
-        bodyText = prior.bodyText + latest?.bodyText.orEmpty(),
-        emittedText = prior.emittedText || latest?.emittedText == true,
-        emittedThinking = prior.emittedThinking || latest?.emittedThinking == true,
+        text = RoundText(
+            thinkingText = listOf(prior.text.thinkingText, latest?.text?.thinkingText.orEmpty())
+                .filter(String::isNotEmpty)
+                .joinToString("\n\n"),
+            bodyText = prior.text.bodyText + latest?.text?.bodyText.orEmpty(),
+            emittedText = prior.text.emittedText || latest?.text?.emittedText == true,
+            emittedThinking = prior.text.emittedThinking || latest?.text?.emittedThinking == true,
+        ),
         hasToolUse = prior.hasToolUse || latest?.hasToolUse == true,
-        reasoningEnvelopes = prior.reasoningEnvelopes + latest?.reasoningEnvelopes.orEmpty(),
+        reasoningEnvelopes = prior.handoffs.reasoningEnvelopes + latest?.reasoningEnvelopes.orEmpty(),
         toolTearOpen = latest?.toolTearOpen == true,
         usage = mergeTerminalUsage(prior.usage, latest?.usage ?: noRequestUsage),
     )

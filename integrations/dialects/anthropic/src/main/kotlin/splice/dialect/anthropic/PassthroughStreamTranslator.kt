@@ -28,6 +28,8 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
@@ -203,10 +205,12 @@ public class PassthroughStreamTranslator(
     /** What this round produced before it died, for [ReanchorPolicy]. Mirrors successOutcome's
      *  reads so a continuation and a success see the SAME buffers. */
     private fun partialRound(): TurnOutcome.PartialRound = TurnOutcome.PartialRound(
-        thinkingText = channels.thinkingBuf.toString(),
-        bodyText = channels.textBuf.toString(),
-        emittedText = channels.emittedText,
-        emittedThinking = channels.emittedThinking,
+        text = RoundText(
+            thinkingText = channels.thinkingBuf.toString(),
+            bodyText = channels.textBuf.toString(),
+            emittedText = channels.emittedText,
+            emittedThinking = channels.emittedThinking,
+        ),
         hasToolUse = blocks.hasToolUse,
         toolTearOpen = blocks.toolTearOpen,
         usage = usage.toUsage(),
@@ -216,11 +220,13 @@ public class PassthroughStreamTranslator(
         hasToolUse = blocks.hasToolUse,
         incomplete = terminal.incomplete,
         usage = usage.toUsage(),
-        thinkingText = channels.thinkingBuf.toString(),
-        bodyText = channels.textBuf.toString(),
-        emittedText = channels.emittedText,
-        emittedThinking = channels.emittedThinking,
-        outputShape = router.describeOutput(),
+        text = RoundText(
+            thinkingText = channels.thinkingBuf.toString(),
+            bodyText = channels.textBuf.toString(),
+            emittedText = channels.emittedText,
+            emittedThinking = channels.emittedThinking,
+        ),
+        shape = ResponseShape(outputShape = router.describeOutput()),
     )
 }
 

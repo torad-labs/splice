@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountView
 import splice.core.head.ProviderAnswer
 import splice.core.util.Cancellables
@@ -108,20 +109,26 @@ internal class AccountRosterProjection {
             if (row["login_place"] is JsonObject) {
                 // Native presence and windows belong to Accounts' command-local reading, not the pool's usable-token cache.
                 pooled.copy(
-                    credentialPresent = account.credentialPresent,
                     plan = account.plan,
-                    fiveHourUsedPercent = account.fiveHourUsedPercent.takeUnless {
-                        JsonScalars.str(row, "five_hour_current") == "false"
-                    },
-                    fiveHourResetEpochSeconds = account.fiveHourResetEpochSeconds,
-                    sevenDayUsedPercent = account.sevenDayUsedPercent.takeUnless {
-                        JsonScalars.str(row, "seven_day_current") == "false"
-                    },
-                    sevenDayResetEpochSeconds = account.sevenDayResetEpochSeconds,
-                    quotaObservedAtEpochSeconds = account.quotaObservedAtEpochSeconds,
+                    quota = HeadAccountQuota(
+                        fiveHour = pooled.quota.fiveHour.copy(
+                            usedPercent = account.quota.fiveHour.usedPercent.takeUnless {
+                                JsonScalars.str(row, "five_hour_current") == "false"
+                            },
+                            resetEpochSeconds = account.quota.fiveHour.resetEpochSeconds,
+                        ),
+                        sevenDay = pooled.quota.sevenDay.copy(
+                            usedPercent = account.quota.sevenDay.usedPercent.takeUnless {
+                                JsonScalars.str(row, "seven_day_current") == "false"
+                            },
+                            resetEpochSeconds = account.quota.sevenDay.resetEpochSeconds,
+                        ),
+                        observedAtEpochSeconds = account.quota.observedAtEpochSeconds,
+                    ),
+                    credential = pooled.credential.copy(present = account.credential.present),
                 )
             } else {
-                pooled.copy(credentialPresent = account.credentialPresent)
+                pooled.copy(credential = pooled.credential.copy(present = account.credential.present))
             }
         }
     }

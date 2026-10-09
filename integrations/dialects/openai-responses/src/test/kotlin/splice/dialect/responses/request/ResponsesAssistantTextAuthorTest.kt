@@ -15,11 +15,14 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.RoundHandoffs
+import splice.core.turn.RoundText
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.wire.ToolDefinition
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.tools.ResponsesToolSearchPolicy
@@ -29,7 +32,12 @@ import splice.upstream.ToolSearchRound
 
 private const val PROSE = "Let me find the right tool."
 
-private val LITE = ResponsesQuirks(providerTag = "claudex", responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6"))
+private val LITE = ResponsesQuirks(
+    providerTag = "claudex",
+    lite = ResponsesLiteQuirks(
+        responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6"),
+    ),
+)
 
 class ResponsesAssistantTextAuthorTest {
 
@@ -50,9 +58,8 @@ class ResponsesAssistantTextAuthorTest {
             hasToolUse = false,
             incomplete = false,
             usage = Usage(),
-            bodyText = PROSE,
-            emittedText = true,
-            toolSearches = listOf(search),
+            text = RoundText(bodyText = PROSE, emittedText = true),
+            handoffs = RoundHandoffs(toolSearches = listOf(search)),
         )
         val prior = prior("Go.")
         val continuation = searchController().continuationForSearch(ToolSearchRound(prior, round, 0))!!
@@ -87,13 +94,19 @@ class ResponsesAssistantTextAuthorTest {
         )
         val opts = BuildOptions(
             compact = false,
-            originalModel = "claude-codex--gpt-5.6-sol",
-            upstreamModel = "gpt-5.6-sol",
-            configEffort = "high",
-            configSummary = null,
-            showReasoning = ReasoningDisplay.OFF,
-            replayReasoning = InjectPriorReasoning(false),
-            decodeReasoningEnvelope = { null },
+            models = ModelIds(
+                original = "claude-codex--gpt-5.6-sol",
+                upstream = "gpt-5.6-sol",
+            ),
+            reasoning = RequestedReasoning(
+                effort = "high",
+                summary = null,
+                display = ReasoningDisplay.OFF,
+            ),
+            handoff = ReasoningHandoff(
+                replay = InjectPriorReasoning(false),
+                decode = { null },
+            ),
         )
         val input = ResponsesRequestBuilder(LITE).build(parsed.typed, parsed.raw, opts).req.getValue("input").jsonArray
         return input.map { it.jsonObject }.single { "role" in it && it["content"].toString().contains(PROSE) }

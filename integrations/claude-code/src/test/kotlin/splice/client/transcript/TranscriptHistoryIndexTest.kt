@@ -34,7 +34,7 @@ class TranscriptHistoryIndexTest {
             listOf(SessionHistoryRoot("earlier", earlier), SessionHistoryRoot("later", later)),
         )
         assertEquals(1, scan.sessions.size)
-        assertTrue(scan.sessions.single().resumable, "the launch can still adopt the older nonempty copy")
+        assertTrue(scan.sessions.single().files.resumable, "the launch can still adopt the older nonempty copy")
     }
 
     @Test
@@ -113,14 +113,14 @@ class TranscriptHistoryIndexTest {
         assertEquals(setOf(BOTH, HISTORY_ONLY, TRANSCRIPT_ONLY), scan.sessions.map { it.sessionId }.toSet())
         assertEquals(3, scan.sessions.size, "repeated history rows and symlinked trees never duplicate a session")
         val both = scan.sessions.single { it.sessionId == BOTH }
-        assertTrue(both.hasHistory && both.hasTranscript)
-        assertTrue(both.resumable)
+        assertTrue(both.files.hasHistory && both.files.hasTranscript)
+        assertTrue(both.files.resumable)
         assertEquals("Atlas parser", both.name, "the transcript's named title outranks its last prompt")
         assertEquals("/work/atlas", both.project)
         assertEquals(3000L, both.updatedAt, "the newest history entry wins even when its file is old")
         val historyOnly = scan.sessions.single { it.sessionId == HISTORY_ONLY }
-        assertTrue(historyOnly.hasHistory)
-        assertFalse(historyOnly.hasTranscript)
+        assertTrue(historyOnly.files.hasHistory)
+        assertFalse(historyOnly.files.hasTranscript)
         assertEmptyTranscriptDisposition(scan)
         assertSourceExclusions(scan)
         assertTrue(scan.errors.isEmpty(), scan.errors.toString())
@@ -136,8 +136,8 @@ class TranscriptHistoryIndexTest {
 
     private fun assertEmptyTranscriptDisposition(scan: SessionHistoryScan) {
         val empty = scan.sessions.single { it.sessionId == TRANSCRIPT_ONLY }
-        assertFalse(empty.hasHistory)
-        assertTrue(empty.hasTranscript, "an empty primary file still belongs to the source denominator")
-        assertFalse(empty.resumable, "the launch cannot continue an empty conversation")
+        assertFalse(empty.files.hasHistory)
+        assertTrue(empty.files.hasTranscript, "an empty primary file still belongs to the source denominator")
+        assertFalse(empty.files.resumable, "the launch cannot continue an empty conversation")
     }
 }

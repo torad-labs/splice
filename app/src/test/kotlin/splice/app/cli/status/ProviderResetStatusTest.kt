@@ -9,7 +9,9 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
+import splice.app.control.UsageWarning
 import splice.app.control.healthFor
 import splice.app.control.readinessFor
 import splice.core.auth.AuthDescription
@@ -103,16 +105,17 @@ class ProviderResetStatusTest {
                 override suspend fun credentials() = null
                 override suspend fun describe() = AuthDescription(false, "synthetic", emptyMap())
             },
-            usage = HeadUsageSource { UsageView(0, 0, null) },
-            compact = object : HeadCompactSource {
-                override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
-            },
-            logs = object : HeadLogSource {
-                override fun tail(lines: Int) = ""
-                override fun path() = "/synthetic/daemon.log"
-            },
-            warnPct = 80,
-            warnTokens5h = 0,
+            sources = HeadSources(
+                usage = HeadUsageSource { UsageView(0, 0, null) },
+                compact = object : HeadCompactSource {
+                    override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
+                },
+                logs = object : HeadLogSource {
+                    override fun tail(lines: Int) = ""
+                    override fun path() = "/synthetic/daemon.log"
+                },
+            ),
+            usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
         )
         val heads = mapOf(head.key to source)
         val payloads = healthFor(heads, readinessFor(heads, configuredHeads = 1))

@@ -10,7 +10,9 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountView
+import splice.accounts.pool.HeadAccountWindow
 
 private const val PAYLOAD = """{
     "model":{"id":"model","display_name":"Model"},
@@ -66,7 +68,16 @@ class StatuslineRateLimitsTest {
         val pool = HeadAccountPoolSource {
             HeadAccountPoolView(
                 selectedLabel = "backup",
-                accounts = listOf(HeadAccountView("backup", false, true, true, "plus", 1.0, 1L, 1.0, 1L)),
+                accounts = listOf(
+                    HeadAccountView(
+                        "backup",
+                        false,
+                        true,
+                        true,
+                        "plus",
+                        HeadAccountQuota(HeadAccountWindow(1.0, 1L), HeadAccountWindow(1.0, 1L)),
+                    ),
+                ),
                 lastSwitch = null,
             )
         }

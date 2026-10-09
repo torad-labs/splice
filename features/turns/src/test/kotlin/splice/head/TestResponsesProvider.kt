@@ -10,20 +10,26 @@ package splice.head
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesReasoningQuirks
 import splice.dialect.responses.stream.FoldConfig
 import splice.upstream.ProviderTuning
 
 internal class TestResponsesQuirks {
     fun profile(): ResponsesQuirks = ResponsesQuirks(
         providerTag = "test-responses",
-        // A neutral third-party responses provider is not lite: lite is a ChatGPT-internal
-        // input shape, pinned in :providers-codex. Explicit null so this double does not inherit
-        // a dialect default and emit x-openai-internal-codex-responses-lite.
-        responsesLiteModelRegex = null,
-        emitEmptyLiteInstructions = true,
-        summaryDelivery = "sequential_cutoff",
+        lite = ResponsesLiteQuirks(
+            // A neutral third-party responses provider is not lite: lite is a ChatGPT-internal
+            // input shape, pinned in :providers-codex. Explicit null so this double does not inherit
+            // a dialect default and emit x-openai-internal-codex-responses-lite.
+            responsesLiteModelRegex = null,
+            emitEmptyLiteInstructions = true,
+        ),
+        reasoning = ResponsesReasoningQuirks(
+            summaryDelivery = "sequential_cutoff",
+        ),
     )
 }
 

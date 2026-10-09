@@ -13,6 +13,8 @@ import splice.core.turn.WatchdogBudget
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
 import splice.topology.TopologyLoader
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
@@ -21,13 +23,14 @@ class ChatEffortWiringTest {
     fun `client max effort survives the configured production chat provider`() {
         val built = provider(configured = true).buildTurn(body("\"output_config\":{\"effort\":\"max\"}"), false, null)
         assertEquals("max", built.requestBody["reasoning_effort"]?.jsonPrimitive?.content)
-        assertEquals("max", built.meta.effort)
+        assertEquals("max", built.meta.reasoning.effort)
     }
 
     @Test
     fun `a provider without the vocabulary preserves its exact request bytes`() {
         val provider = provider(configured = false)
-        val expected = """{"model":"GLM-5.3-Flash","messages":[{"role":"user","content":"hello"}],"stream":true,"reasoning_effort":"high","reasoning":{"effort":"high"}}"""
+        val expected = """{"model":"GLM-5.3-Flash","messages":[{"role":"user","content":"hello"}],""" +
+            """"stream":true,"reasoning_effort":"high","reasoning":{"effort":"high"}}"""
         for (effort in listOf("low", "high", "max")) {
             val built = provider.buildTurn(body("\"output_config\":{\"effort\":\"$effort\"}"), false, null)
             assertEquals(expected, built.requestBody.toString(), effort)
@@ -109,7 +112,7 @@ class ChatEffortWiringTest {
             val turn = provider.buildTurn(body, false, "session")
             val compact = provider.buildTurn(body, true, "session")
             assertEquals(turn.requestBody.toString(), compact.requestBody.toString())
-            assertEquals(effort, compact.meta.effort)
+            assertEquals(effort, compact.meta.reasoning.effort)
         }
     }
 
@@ -120,7 +123,7 @@ class ChatEffortWiringTest {
         val built = provider.buildTurn(body("", """{"type":"disabled"}"""), false, null)
         assertFalse(built.requestBody.containsKey("reasoning_effort"), built.requestBody.toString())
         assertFalse(built.requestBody.containsKey("reasoning"), built.requestBody.toString())
-        assertEquals("n/a", built.meta.effort)
+        assertEquals("n/a", built.meta.reasoning.effort)
         assertEffort(provider, "\"effort\":\"low\"", "low", thinking = """{"type":"disabled"}""")
     }
 
@@ -182,7 +185,7 @@ class ChatEffortWiringTest {
         val built = provider.buildTurn(body("\"effort\":\"low\""), false, null)
         assertFalse(built.requestBody.containsKey("reasoning_effort"))
         assertFalse(built.requestBody.containsKey("reasoning"))
-        assertEquals("low", built.meta.effort)
+        assertEquals("low", built.meta.reasoning.effort)
     }
 
     private fun assertEffort(
@@ -194,7 +197,7 @@ class ChatEffortWiringTest {
         val built = provider.buildTurn(body(fields, thinking), false, null)
         assertEquals(expected, built.requestBody["reasoning_effort"]?.jsonPrimitive?.content, fields)
         assertEquals(expected, built.requestBody["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
-        assertEquals(expected, built.meta.effort)
+        assertEquals(expected, built.meta.reasoning.effort)
     }
 
     private fun body(
@@ -213,8 +216,7 @@ class ChatEffortWiringTest {
         val config = TopologyLoader.parse(toml).providers.getValue("glml53")
         return OpenAiChatProvider(
             ProviderTuning(
-                key = "glml53",
-                label = "GLM",
+                name = ProviderName(key = "glml53", label = "GLM"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-glml53--",
                     models = listOf(
@@ -226,7 +228,7 @@ class ChatEffortWiringTest {
                 ),
                 pinnedModel = "GLM-5.3-Flash",
                 auth = ApiKeyAuthProvider("TEST_GLM_KEY", envReader = { null }),
-                baseUrl = config.baseUrl,
+                locations = ProviderLocations(baseUrl = config.baseUrl),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
             QuirksOverlay().chatQuirks(config, "glml53", "GLM"),

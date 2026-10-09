@@ -32,8 +32,13 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundText
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
@@ -52,6 +57,8 @@ import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.SseEmitterFactory
 import splice.upstream.BuiltTurn
 import splice.upstream.LifecycleScope
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.RoundInterceptor
 import splice.upstream.RoundResult
@@ -259,8 +266,8 @@ class TurnStreamerCleanupTest {
                 assertEquals(0, recording.size, "a losing queued body must not emit any frame: ${rig.logs}")
                 assertEquals(0, rig.drives.get(), "a queued body that lost ownership must never drive upstream")
                 val settled = rig.gate.snapshot()
-                assertEquals(1L, settled.acquired)
-                assertEquals(1L, settled.released, "the real gate returns exactly its one acquired permit")
+                assertEquals(1L, settled.traffic.acquired)
+                assertEquals(1L, settled.traffic.released, "the real gate returns exactly its one acquired permit")
                 assertEquals(1, rig.releases.get(), "the actual counted slot returns exactly once")
                 assertNull(rig.replay.lookup(rig.key))
                 assertTrue(recording.isComplete)
@@ -331,8 +338,7 @@ class TurnStreamerCleanupTest {
         private val clock = ElapsedClock { 0L }
         private val provider = TestResponsesProvider(
             ProviderTuning(
-                key = "cleanup-test",
-                label = "cleanup test",
+                name = ProviderName(key = "cleanup-test", label = "cleanup test"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "cleanup-test--",
                     models = listOf(ModelEntry("synthetic-model", "Synthetic", contextWindow = 100)),
@@ -344,7 +350,7 @@ class TurnStreamerCleanupTest {
                     override suspend fun refresh(): Credentials = credentials()
                     override suspend fun describe(): AuthDescription = AuthDescription(true, "synthetic")
                 },
-                baseUrl = "http://127.0.0.1:9",
+                locations = ProviderLocations(baseUrl = "http://127.0.0.1:9"),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 20.seconds),
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.OFF, false, "high", null),
@@ -357,15 +363,19 @@ class TurnStreamerCleanupTest {
                 Json.parseToJsonElement("""{"model":"synthetic-model","input":[]}""").jsonObject,
                 TurnMeta(
                     compact = true,
-                    showReasoning = ReasoningDisplay.OFF,
-                    stream = true,
-                    originalModel = "synthetic-model",
-                    upstreamModel = "synthetic-model",
-                    clientMaxTokens = 100,
-                    effort = "high",
-                    summary = null,
-                    budgetTokens = null,
-                    sessionId = "synthetic-session",
+                    reasoning = TurnReasoning(
+                        showReasoning = ReasoningDisplay.OFF,
+                        effort = "high",
+                        summary = null,
+                        budgetTokens = null,
+                    ),
+                    route = TurnRoute(
+                        stream = true,
+                        originalModel = "synthetic-model",
+                        upstreamModel = "synthetic-model",
+                        clientMaxTokens = 100,
+                    ),
+                    scope = TurnScope(sessionId = "synthetic-session"),
                 ),
                 roundInterceptor = RoundInterceptor { _, sink, _ ->
                     drives.incrementAndGet()
@@ -381,10 +391,9 @@ class TurnStreamerCleanupTest {
                         TurnOutcome.Success(
                             hasToolUse = false,
                             incomplete = false,
-                            emittedText = true,
+                            text = RoundText(bodyText = "synthetic complete answer", emittedText = true),
                             usage = Usage(),
-                            bodyText = "synthetic complete answer",
-                            messageClosed = true,
+                            shape = ResponseShape(messageClosed = true),
                         ),
                     )
                 },

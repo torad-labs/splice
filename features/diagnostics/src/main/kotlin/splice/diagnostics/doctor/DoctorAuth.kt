@@ -38,7 +38,8 @@ internal class DoctorAuth(output: TerminalOutput) {
             ?: return listOf(DoctorCheck("auth", CheckStatus.INFO, "skipped (no readable topology)"))
         val daemon = splitBrain.read(snapshot, envReader, reads)
         val heads = probeHeads(topology, envReader).map { head ->
-            seenBy(head, daemon).copy(lastRefusal = lastRefusals[head.key])
+            val seen = seenBy(head, daemon)
+            seen.copy(observed = seen.observed.copy(lastRefusal = lastRefusals[head.key]))
         }
         if (heads.isEmpty()) return listOf(DoctorCheck("auth", CheckStatus.INFO, "no heads configured"))
         // Severity is honest to "can I use splice at all": with zero authed heads a missing credential
@@ -54,7 +55,10 @@ internal class DoctorAuth(output: TerminalOutput) {
     private fun seenBy(head: DoctorHeadAuth, daemon: DaemonAuthSeen): DoctorHeadAuth {
         val verdict = (daemon as? DaemonAuthSeen.Seen)?.heads?.get(head.key)?.verdict
         if (!head.selfManaged || verdict == null) return head
-        return head.copy(present = verdict !is CredentialVerdict.Rejected, daemonVerdict = verdict)
+        return head.copy(
+            present = verdict !is CredentialVerdict.Rejected,
+            observed = head.observed.copy(daemonVerdict = verdict),
+        )
     }
 
     /** 2026-09-05: a head whose auth.file is the vendor app's own credential file shares one

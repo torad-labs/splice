@@ -39,9 +39,11 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ResponseShape
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.UsageOrigin
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
 import splice.head.HeadServer
@@ -52,6 +54,8 @@ import splice.upstream.BuiltTurn
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.LifecycleScope
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundInterceptor
@@ -302,7 +306,7 @@ class IndependentSourceRoundTest {
                 }
                 assertEquals(count, upstream.posts.get())
                 assertEquals(count, gate.snapshot().inflight)
-                assertEquals(count.toLong(), gate.snapshot().acquired)
+                assertEquals(count.toLong(), gate.snapshot().traffic.acquired)
             } finally {
                 upstream.release.countDown()
                 head.stop()
@@ -325,8 +329,8 @@ class IndependentSourceRoundTest {
         try {
             val first = sourceStep(client, head.port, "source-stop", """[{"role":"user","content":"go"}]""")
             assertTrue(first.contains("tool_use"))
-            val live = deps.liveTurns.list().single()
-            assertTrue(deps.liveTurns.stop(live.id) != null)
+            val live = deps.traffic.liveTurns.list().single()
+            assertTrue(deps.traffic.liveTurns.stop(live.id) != null)
             withTimeout(3_000) { while (gate.snapshot().inflight != 0 || provider.ended.get() != 1) yield() }
             assertTrue(checkNotNull(interceptor.reading).isCancelled)
             assertEquals(1, provider.ended.get())
@@ -382,8 +386,7 @@ class IndependentSourceRoundTest {
         watchdog: WatchdogBudget = WatchdogBudget(10.seconds, 10.seconds, 15.seconds),
     ): Provider = TestResponsesProvider(
         ProviderTuning(
-            key = "source-test",
-            label = "source-test",
+            name = ProviderName(key = "source-test", label = "source-test"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-codex--",
                 models = listOf(ModelEntry("stream-test", "Stream", contextWindow = 272_000)),
@@ -391,7 +394,7 @@ class IndependentSourceRoundTest {
             ),
             pinnedModel = "stream-test",
             auth = SourceAuth(),
-            baseUrl = url,
+            locations = ProviderLocations(baseUrl = url),
             watchdog = watchdog,
         ),
         ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
@@ -437,7 +440,14 @@ class IndependentSourceRoundTest {
         ): RoundResult {
             if (first.isCompleted) {
                 return RoundResult.Outcome(
-                    TurnOutcome.Success(false, false, Usage(localStep = true), messageClosed = true),
+                    TurnOutcome.Success(
+                        false,
+                        false,
+                        Usage(
+                        origin = UsageOrigin(localStep = true),
+                    ),
+                        shape = ResponseShape(messageClosed = true),
+                    ),
                 )
             }
             entered.complete(Unit)
@@ -451,7 +461,7 @@ class IndependentSourceRoundTest {
             val tool = sink.openTool("test-client-call", "Read")
             sink.inputJsonDelta(tool, "{}")
             sink.closeBlock(tool)
-            return RoundResult.Outcome(TurnOutcome.Success(true, false, Usage(localStep = true)))
+            return RoundResult.Outcome(TurnOutcome.Success(true, false, Usage(origin = UsageOrigin(localStep = true))))
         }
         fun stop() {
             scope.coroutineContext.cancelChildren()

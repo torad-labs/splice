@@ -32,6 +32,8 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
 import splice.core.turn.GatewayCustomCall
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.CodeModeBridgeConfig
@@ -48,6 +50,8 @@ import java.util.concurrent.atomic.AtomicInteger
 private const val BRIDGE_BASE_REQUEST = """{"input":[{"role":"developer","content":"s"}]}"""
 
 private val COMPLETED_HEADER = Regex("^Script completed\nWall time \\d+\\.\\d seconds\nOutput:\n")
+
+private fun Usage.asLocalStep(): Usage = copy(origin = origin.copy(localStep = true))
 
 // A hang guard, above SCRIPT_DEADLINE_MS so the runtime's own deadline is what ends a stuck script.
 @Timeout(60)
@@ -78,14 +82,14 @@ class CodeModeBridgeRuntimeTest {
             assertEquals(upstreamUsage, failure.salvagedUsage)
             assertEquals(ErrorType.OVERLOADED, failure.type)
             assertEquals(FailureCause.INTERNAL, failure.cause)
-            assertFalse(failure.deterministic)
+            assertFalse(failure.traits.deterministic)
             // Reload through the public bridge, so checkpoint and patch layouts share one recovery contract.
             runtime().use { recovered ->
                 var posted = ""
                 val retry = bridge(recovered).interceptor(turn(), disableParallel = false)
                     .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) {
                         posted = it
-                        TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                        TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
                     }
                 assertTrue(retry is TurnOutcome.Success, retry.toString())
                 assertEquals("1", completedOutput(posted), "the failed boot's retained source must be retryable")
@@ -121,12 +125,12 @@ class CodeModeBridgeRuntimeTest {
             child.destroy()
             val first = pending.await()
             assertEquals(ErrorType.OVERLOADED, first.type, first.message)
-            assertFalse(first.deterministic)
+            assertFalse(first.traits.deterministic)
             var posted = ""
             val retry = manager.interceptor(turn(), disableParallel = false)
                 .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) {
                     posted = it
-                    TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                    TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
                 }
             assertTrue(retry is TurnOutcome.Success)
             assertEquals("boot-recovered", completedOutput(posted))
@@ -134,7 +138,7 @@ class CodeModeBridgeRuntimeTest {
             manager.interceptor(turn(), disableParallel = false)
                 .interceptOutcome(BRIDGE_BASE_REQUEST, Sink()) {
                     assertEquals("boot-recovered", completedOutput(it))
-                    TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                    TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
                 }
             assertEquals(2, spawns.get())
         }
@@ -157,7 +161,7 @@ class CodeModeBridgeRuntimeTest {
                         """.trimIndent(),
                     )
                 }
-            assertEquals(upstreamUsage.copy(localStep = true), (first as TurnOutcome.Success).usage)
+            assertEquals(upstreamUsage.asLocalStep(), (first as TurnOutcome.Success).usage)
             val id = sink.ids.single()
             var upstream = ""
             var posts = 0
@@ -165,7 +169,7 @@ class CodeModeBridgeRuntimeTest {
                 .interceptOutcome(requestWithResult(id, "result"), Sink()) {
                     posts++
                     upstream = it
-                    TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                    TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
                 }
             assertTrue(completed is TurnOutcome.Success)
             assertEquals(1, posts)
@@ -222,7 +226,7 @@ class CodeModeBridgeRuntimeTest {
                     if (++posts == 1) {
                         outer(source)
                     } else {
-                        TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                        TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
                     }
                 }
             assertTrue(outcome is TurnOutcome.Success)
@@ -262,7 +266,7 @@ class CodeModeBridgeRuntimeTest {
             if (++posts == 1) {
                 outer(source, callId)
             } else {
-                TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
             }
         }
     }
@@ -285,7 +289,7 @@ class CodeModeBridgeRuntimeTest {
                     .interceptOutcome(requestWithResult(id, output), Sink()) {
                         posts++
                         upstream = it
-                        TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                        TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
                     }
                 assertTrue(outcome is TurnOutcome.Success, "$bytes: $outcome")
                 assertEquals(1, posts)
@@ -316,7 +320,7 @@ class CodeModeBridgeRuntimeTest {
             val completed = bridge.interceptor(turn().copy(toolResults = corrected), disableParallel = false)
                 .interceptOutcome(requestWithResults(corrected), Sink()) {
                     upstream = it
-                    TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                    TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
                 }
             assertTrue(completed is TurnOutcome.Success)
             assertEquals("9,9,9", completedOutput(upstream))
@@ -354,7 +358,7 @@ class CodeModeBridgeRuntimeTest {
             val completed = bridge.interceptor(turn().copy(toolResults = corrected), disableParallel = true)
                 .interceptOutcome(requestWithResults(corrected), Sink()) {
                     upstream = it
-                    TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                    TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
                 }
             assertTrue(completed is TurnOutcome.Success)
             assertEquals("65536,65536,9", completedOutput(upstream))
@@ -386,7 +390,7 @@ class CodeModeBridgeRuntimeTest {
             val completed = bridge.interceptor(turn().copy(toolResults = results), disableParallel = false)
                 .interceptOutcome(requestWithResults(results), Sink()) {
                     upstream = it
-                    TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                    TurnOutcome.Success(false, false, Usage(), shape = ResponseShape(messageClosed = true))
                 }
             assertTrue(completed is TurnOutcome.Success)
             assertEquals("65536,65536,65536", completedOutput(upstream))
@@ -474,13 +478,14 @@ class CodeModeBridgeRuntimeTest {
             false,
             false,
             upstreamUsage,
-            customCalls = listOf(GatewayCustomCall(callId, "splice_exec", source, raw)),
+            handoffs = RoundHandoffs(customCalls = listOf(GatewayCustomCall(callId, "splice_exec", source, raw))),
         )
     }
 
     private fun requestWithResult(id: String, output: String): String {
         val encoded = Json.encodeToString(output)
-        return """{"input":[{"role":"developer","content":"s"},{"type":"function_call","call_id":"$id","name":"Read","arguments":"{}"},{"type":"function_call_output","call_id":"$id","output":$encoded}]}"""
+        return """{"input":[{"role":"developer","content":"s"},{"type":"function_call","call_id":"$id",""" +
+            """"name":"Read","arguments":"{}"},{"type":"function_call_output","call_id":"$id","output":$encoded}]}"""
     }
 
     private class Sink : WireSink {

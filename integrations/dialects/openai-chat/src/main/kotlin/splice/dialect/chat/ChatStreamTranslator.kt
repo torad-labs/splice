@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.takeWhile
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.upstream.StreamTranslator
 import splice.upstream.failure.TerminalStates
@@ -166,10 +167,12 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
      *  terminal, so a raised [ChatToolCalls.hasToolUse] is already the fact that refuses a
      *  continuation (the controller refuses an open OR committed tool round both ways). */
     private fun partialRound(): TurnOutcome.PartialRound = TurnOutcome.PartialRound(
-        thinkingText = channels.thinkingBuf.toString(),
-        bodyText = channels.textBuf.toString(),
-        emittedText = channels.emittedText,
-        emittedThinking = channels.emittedThinking,
+        text = RoundText(
+            thinkingText = channels.thinkingBuf.toString(),
+            bodyText = channels.textBuf.toString(),
+            emittedText = channels.emittedText,
+            emittedThinking = channels.emittedThinking,
+        ),
         hasToolUse = toolCalls.hasToolUse,
         usage = usage.toUsage(),
     )
@@ -178,9 +181,11 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         hasToolUse = toolCalls.hasToolUse,
         incomplete = terminal.incomplete,
         usage = usage.toUsage(),
-        thinkingText = channels.thinkingBuf.toString(),
-        bodyText = channels.textBuf.toString(),
-        emittedText = channels.emittedText,
-        emittedThinking = channels.emittedThinking,
+        text = RoundText(
+            thinkingText = channels.thinkingBuf.toString(),
+            bodyText = channels.textBuf.toString(),
+            emittedText = channels.emittedText,
+            emittedThinking = channels.emittedThinking,
+        ),
     )
 }

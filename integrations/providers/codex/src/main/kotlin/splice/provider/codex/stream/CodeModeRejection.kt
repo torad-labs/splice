@@ -3,6 +3,7 @@ package splice.provider.codex.stream
 
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
 import splice.core.util.Cancellables
@@ -19,7 +20,7 @@ internal object CodeModeRejection {
             "splice code-mode source rejected (${SafeFailureText.render(error)}); source was not rerun",
             cause = FailureCause.CODE_MODE_PROTOCOL,
             phase = FailurePhase.MID_OUTPUT,
-            deterministic = true,
+            traits = FailureTraits(deterministic = true),
             salvagedUsage = noRequestUsage,
         )
     }

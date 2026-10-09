@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
+import splice.app.provider.WiredAccountQuota
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -18,6 +19,8 @@ import splice.core.util.LogSink
 import splice.dialect.chat.ChatQuirks
 import splice.head.usage.QuotaTracker
 import splice.provider.openai.OpenAiChatProvider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.PoolAccount
@@ -42,12 +45,11 @@ class PooledAccountHoldPersistenceTest {
         )
         val provider = OpenAiChatProvider(
             ProviderTuning(
-                key = "head",
-                label = "Head",
+                name = ProviderName(key = "head", label = "Head"),
                 catalog = catalog,
                 pinnedModel = "model",
                 auth = primary,
-                baseUrl = "https://example.invalid",
+                locations = ProviderLocations(baseUrl = "https://example.invalid"),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
             ChatQuirks("test"),
@@ -57,8 +59,8 @@ class PooledAccountHoldPersistenceTest {
             provider,
             primary,
             listOf(
-                WiredAccount("primary", true, primary, tmp.resolve("primary-quota.json")),
-                WiredAccount("backup", false, PooledTestAuth(), tmp.resolve("backup-quota.json")),
+                WiredAccount("primary", true, primary, WiredAccountQuota(tmp.resolve("primary-quota.json"))),
+                WiredAccount("backup", false, PooledTestAuth(), WiredAccountQuota(tmp.resolve("backup-quota.json"))),
             ),
         )
     }

@@ -6,6 +6,8 @@ package splice.dialect.anthropic
 
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.wire.AnthropicRequest
 
 internal class PassthroughTurnMeta {
@@ -20,13 +22,17 @@ internal class PassthroughTurnMeta {
         compact = compact,
         // Passthrough emits REAL thinking blocks; the text mirror must NOT double-render them,
         // so pick the showReasoning value that makes mirrorInto a no-op (any value != "text").
-        showReasoning = ReasoningDisplay.THINKING,
-        stream = typed.stream,
-        originalModel = originalModel,
-        upstreamModel = upstreamModel,
-        clientMaxTokens = typed.maxTokens?.takeIf { it > 0 },
-        effort = effort,
-        summary = null,
-        budgetTokens = typed.thinking?.budgetTokens,
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.THINKING,
+            effort = effort,
+            summary = null,
+            budgetTokens = typed.thinking?.budgetTokens,
+        ),
+        route = TurnRoute(
+            stream = typed.stream,
+            originalModel = originalModel,
+            upstreamModel = upstreamModel,
+            clientMaxTokens = typed.maxTokens?.takeIf { it > 0 },
+        ),
     )
 }

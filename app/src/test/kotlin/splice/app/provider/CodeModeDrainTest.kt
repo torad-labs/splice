@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.app.head.HeadServerFactory
 import splice.app.head.HeadStores
+import splice.app.head.HeadTelemetryStores
 import splice.codemode.JvmCodeModeRuntime
 import splice.codemode.WorkerSpawn
 import splice.codemode.host.HostLaunch
@@ -36,6 +37,7 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
@@ -54,6 +56,8 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexProvider
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.RoundInterceptor
 import splice.upstream.RoundResult
@@ -140,28 +144,30 @@ internal class CodeModeDrainTest {
                 auth = AuthConfig(kind = "api-key"),
             ),
             catalog = catalog,
-            watchdog = watchdog,
+            faultPlan = UpstreamFaultPlan(watchdog = watchdog, loginCommand = ""),
             cfg = config.getConfig("synthetic"),
-            loginCommand = "",
         )
         val provider = provider(tmp, runtime, catalog, watchdog, mock)
-        val stores = HeadStores(
-            usageStore = UsageStore(tmp.resolve("usage"), tmp.resolve("rate")),
-            compactStats = CompactStats(tmp.resolve("compact")),
-            perfStats = PerfStats(tmp.resolve("perf")),
-            economics = EconomicsStore(tmp.resolve("economics"), TurnPrice(catalog)),
-            quota = QuotaTracker(tmp.resolve("quota")),
-            trace = null,
-        )
         val head = HeadServerFactory(config, mgmt, {}).headServerFor(
             ctx,
             provider,
-            stores,
+            stores(tmp, catalog),
             false,
             FileCompactionRecordings(tmp.resolve("recordings"), {}),
         )
         return Fixture(head, provider, TurnKey(mgmt).get())
     }
+
+    private fun stores(tmp: Path, catalog: ModelCatalog) = HeadStores(
+        usageStore = UsageStore(tmp.resolve("usage"), tmp.resolve("rate")),
+        telemetry = HeadTelemetryStores(
+            compactStats = CompactStats(tmp.resolve("compact")),
+            perfStats = PerfStats(tmp.resolve("perf")),
+            economics = EconomicsStore(tmp.resolve("economics"), TurnPrice(catalog)),
+        ),
+        quota = QuotaTracker(tmp.resolve("quota")),
+        trace = null,
+    )
 
     private fun provider(
         tmp: Path,
@@ -174,12 +180,11 @@ internal class CodeModeDrainTest {
             CodeModeBridgeConfig({ runtime }, CodeModeStateLocation(tmp.resolve("cells"), tmp.resolve("old"))),
         )
         val tuning = ProviderTuning(
-            "synthetic",
-            "synthetic",
+            ProviderName("synthetic", "synthetic"),
             catalog,
             "gpt-6-astra",
             FakeAuth(),
-            mock.baseUrl,
+            ProviderLocations(mock.baseUrl),
             watchdog,
         )
         return DrainProvider(
@@ -188,7 +193,10 @@ internal class CodeModeDrainTest {
         )
     }
 
-    private class DrainProvider(private val base: CodexProvider, private val bridge: CodexCodeModeBridge) : Provider by base {
+    private class DrainProvider(
+        private val base: CodexProvider,
+        private val bridge: CodexCodeModeBridge,
+    ) : Provider by base {
         @Volatile var stopped = false
         override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
             val built = base.buildTurn(body, compact, sessionId)
@@ -226,7 +234,7 @@ internal class CodeModeDrainTest {
                 put("input", source)
             }
             val call = GatewayCustomCall("outer", "exec", source, raw)
-            return TurnOutcome.Success(false, false, Usage(), customCalls = listOf(call))
+            return TurnOutcome.Success(false, false, Usage(), handoffs = RoundHandoffs(customCalls = listOf(call)))
         }
     }
 
@@ -258,4 +266,5 @@ internal class CodeModeDrainTest {
     }
 }
 
-private const val REQUEST = """{"model":"gpt-6-astra","stream":true,"max_tokens":64,"messages":[{"role":"user","content":"start"}]}"""
+private const val REQUEST = """{"model":"gpt-6-astra","stream":true,""" +
+    """"max_tokens":64,"messages":[{"role":"user","content":"start"}]}"""

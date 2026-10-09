@@ -39,6 +39,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.claude.ClaudeLoginCredential
+import splice.accounts.claude.ClaudeLoginIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginPlaces
@@ -49,6 +51,7 @@ import splice.accounts.pool.HeadAccountPoolView
 import splice.accounts.signin.AccountMutation
 import splice.accounts.signin.ConsoleAccounts
 import splice.accounts.signin.HeadRestart
+import splice.accounts.signin.LoginPrompt
 import splice.accounts.signin.LoginStart
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
@@ -161,7 +164,12 @@ class AuthAndAccountsRoutesTest {
     fun `pollLogin answers the full announcement shape for a known id`() = runBlocking {
         awaitPort()
         accounts.onPoll = { id ->
-            LoginStatus(id, WIRED, LoginState.WAITING, userCode = "ABCD-EFGH", verificationUri = "https://x/verify")
+            LoginStatus(
+                id,
+                WIRED,
+                LoginState.WAITING,
+                prompt = LoginPrompt(userCode = "ABCD-EFGH", verificationUri = "https://x/verify"),
+            )
         }
 
         val response = get("/api/auth/$WIRED/login/login-9")
@@ -284,9 +292,8 @@ class AuthAndAccountsRoutesTest {
                 ClaudeLoginPlaceView(
                     ClaudeLoginPlaceId.NATIVE,
                     WIRED,
-                    "/synthetic/.claude/.credentials.json",
-                    true,
-                    ClaudeAccountIdentity("native-account", "native@synthetic.test"),
+                    ClaudeLoginCredential("/synthetic/.claude/.credentials.json", true),
+                    ClaudeLoginIdentity(ClaudeAccountIdentity("native-account", "native@synthetic.test")),
                     null,
                     ClaudeLoginStanding(null, null),
                 ),
@@ -328,8 +335,8 @@ class AuthAndAccountsRoutesTest {
         control.ports.claudeLogins = object : ClaudeLoginPlaces {
             override fun places(): List<ClaudeLoginPlaceView> = listOf(
                 ClaudeLoginPlaceView(
-                    ClaudeLoginPlaceId.NATIVE, WIRED, "/synthetic/native", true,
-                    null, null, ClaudeLoginStanding(null, null),
+                    ClaudeLoginPlaceId.NATIVE, WIRED, ClaudeLoginCredential("/synthetic/native", true),
+                    ClaudeLoginIdentity(null), null, ClaudeLoginStanding(null, null),
                 ),
             )
             override suspend fun login(place: ClaudeLoginPlaceId, label: String?): LoginStatus = error("not used")
@@ -407,17 +414,18 @@ class AuthAndAccountsRoutesTest {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(false, "test", emptyMap())
         },
-        usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
-        accountPool = pinSource?.let { source -> PinnedPoolSource(source) },
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int): String = ""
+                override fun path(): String = ""
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        authSurface = HeadAuthSurface(accountPool = pinSource?.let { source -> PinnedPoolSource(source) }),
     )
 
     /** [HeadAccountPoolSource] AND [HeadAccountPinSource] on the same object, the same checked-cast

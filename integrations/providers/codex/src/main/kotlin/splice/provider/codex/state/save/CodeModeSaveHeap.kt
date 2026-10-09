@@ -82,7 +82,7 @@ internal class CodeModeSaveHeap(private val heap: HeapReservations) {
         var ancestor: CodeModeRecord? = parent
         while (ancestor != null) {
             val current = ancestor
-            inherited += current.nativeSegments + current.continuityReplay
+            inherited += current.carry.segments + current.carry.replay
             ancestor = current.nativeParent
         }
         // The live child survives independently of the durable snapshot after publishRoot.

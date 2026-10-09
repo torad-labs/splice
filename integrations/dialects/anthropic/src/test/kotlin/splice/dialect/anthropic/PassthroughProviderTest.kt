@@ -23,7 +23,11 @@ import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.WatchdogBudget
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
@@ -45,12 +49,11 @@ private fun provider(
     identityHeaders: () -> Map<String, String> = { emptyMap() },
 ) = PassthroughProvider(
     tuning = ProviderTuning(
-        key = "kimi",
-        label = "kimi",
+        name = ProviderName(key = "kimi", label = "kimi"),
         catalog = CATALOG,
         pinnedModel = "k3[1m]",
         auth = NoAuth,
-        baseUrl = "https://api.kimi.com/coding",
+        locations = ProviderLocations(baseUrl = "https://api.kimi.com/coding"),
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
     quirks = quirks,
@@ -121,8 +124,8 @@ class PassthroughProviderTest {
             sessionId = null,
         )
         assertEquals("k3", built.requestBody["model"]?.jsonPrimitive?.content)
-        assertEquals("k3", built.meta.upstreamModel)
-        assertEquals("claude-kimi--k3[1m]", built.meta.originalModel)
+        assertEquals("k3", built.meta.route.upstreamModel)
+        assertEquals("claude-kimi--k3[1m]", built.meta.route.originalModel)
     }
 
     // DR-27 redo (codex): stripSuffixes computes the id SENT UPSTREAM, and only the valid trailing
@@ -142,17 +145,17 @@ class PassthroughProviderTest {
 
         val preview = built("k3[preview]")
         assertEquals("k3[preview]", preview.requestBody["model"]?.jsonPrimitive?.content)
-        assertEquals("k3[preview]", preview.meta.upstreamModel, "a non-numeric bracket is not a tier")
+        assertEquals("k3[preview]", preview.meta.route.upstreamModel, "a non-numeric bracket is not a tier")
 
         val malformed = built("k3[500k")
         assertEquals("k3[500k", malformed.requestBody["model"]?.jsonPrimitive?.content)
-        assertEquals("k3[500k", malformed.meta.upstreamModel, "a malformed tier ships byte-for-byte")
-        assertEquals("k3[500k", malformed.meta.originalModel)
+        assertEquals("k3[500k", malformed.meta.route.upstreamModel, "a malformed tier ships byte-for-byte")
+        assertEquals("k3[500k", malformed.meta.route.originalModel)
 
         val valid = built("k3[500k]")
         assertEquals("k3", valid.requestBody["model"]?.jsonPrimitive?.content, "the valid tier strips")
-        assertEquals("k3", valid.meta.upstreamModel)
-        assertEquals("k3[500k]", valid.meta.originalModel, "meta keeps the raw picker id")
+        assertEquals("k3", valid.meta.route.upstreamModel)
+        assertEquals("k3[500k]", valid.meta.route.originalModel, "meta keeps the raw picker id")
     }
 
     @Test
@@ -190,14 +193,18 @@ class PassthroughProviderTest {
         val controller = provider(KimiProfileFixture().kimi("kimi")).reanchorPolicy(
             TurnMeta(
                 compact = false,
-                showReasoning = ReasoningDisplay.OFF,
-                stream = true,
-                originalModel = "k3[1m]",
-                upstreamModel = "k3",
-                clientMaxTokens = null,
-                effort = "max",
-                summary = null,
-                budgetTokens = null,
+                reasoning = TurnReasoning(
+                    showReasoning = ReasoningDisplay.OFF,
+                    effort = "max",
+                    summary = null,
+                    budgetTokens = null,
+                ),
+                route = TurnRoute(
+                    stream = true,
+                    originalModel = "k3[1m]",
+                    upstreamModel = "k3",
+                    clientMaxTokens = null,
+                ),
             ),
         )
         assertInstanceOf(PassthroughReanchorPolicy::class.java, controller)

@@ -12,12 +12,15 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionClient
 import splice.sessions.registry.SessionListing
+import splice.sessions.registry.SessionProcess
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
 import splice.sessions.registry.SessionStatus
 import splice.sessions.transcript.SentTexts
+import splice.sessions.transcript.SessionFiles
 import splice.sessions.transcript.SessionHistoryEntry
 import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionHistoryScan
@@ -36,18 +39,19 @@ class SessionTranscriptOffTest {
     @TempDir lateinit var home: Path
 
     private fun namedSession(): SessionRecord = SessionRecord(
-        pid = 71L,
         sessionId = "session-id",
-        cwd = "/work/atlas",
         name = MARKER,
-        kind = "interactive",
-        version = null,
         status = SessionStatus("busy"),
-        startedAt = null,
-        updatedAt = 1L,
-        messagingSocketPath = null,
         route = SessionRoute.Head("claudex"),
         availability = SessionAvailability.GONE,
+        process = SessionProcess(
+            pid = 71L,
+            cwd = "/work/atlas",
+            startedAt = null,
+            updatedAt = 1L,
+            messagingSocketPath = null,
+        ),
+        client = SessionClient(kind = "interactive", version = null),
     )
 
     @Test
@@ -124,7 +128,9 @@ class SessionTranscriptOffTest {
         }
         val source = SessionHistorySource {
             historyReads++
-            SessionHistoryScan(listOf(SessionHistoryEntry("session-id", MARKER, "/work/$MARKER", null, 1L, true, true)))
+            SessionHistoryScan(
+                listOf(SessionHistoryEntry("session-id", MARKER, "/work/$MARKER", null, 1L, SessionFiles(true, true))),
+            )
         }
         val routes = SessionHistoryRoute(
             registry,

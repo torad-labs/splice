@@ -10,10 +10,12 @@ import splice.core.topology.AuthKind
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.oauth.LoginSpec
+import splice.oauth.LoopbackCallback
 import splice.oauth.OAuthAccountFiles
 import splice.oauth.OAuthAccountIdentity
 import splice.oauth.OAuthAccountLabel
 import splice.oauth.OAuthAccountLabels
+import splice.oauth.TokenExchange
 import splice.provider.codex.CodexOAuth
 import splice.provider.codex.CodexOAuthEndpoints
 import java.nio.file.Path
@@ -41,17 +43,21 @@ public class LoginCodex {
         return LoginSpec(
             head = head,
             authorizeUrl = oauth.buildAuthorizeUrl(pkce.challenge, state, clientId, env),
-            redirectPort = CodexOAuthEndpoints.REDIRECT_PORT,
-            redirectPath = "/auth/callback",
-            expectedState = state,
-            // The OAuth token endpoint is the ISSUER's (auth.openai.com), not the API base_url —
-            // env-overridable via CODEX_OAUTH_TOKEN_URL, matching the daemon's refresh path.
-            tokenUrl = CodexOAuthEndpoints.tokenUrl(env),
-            exchangeForm = { code ->
-                oauth.codexCodeExchangeForm(code, pkce.verifier, clientId, CodexOAuthEndpoints.REDIRECT_URI)
-            },
+            callback = LoopbackCallback(
+                port = CodexOAuthEndpoints.REDIRECT_PORT,
+                path = "/auth/callback",
+                expectedState = state,
+            ),
+            exchange = TokenExchange(
+                // The OAuth token endpoint is the ISSUER's (auth.openai.com), not the API base_url —
+                // env-overridable via CODEX_OAUTH_TOKEN_URL, matching the daemon's refresh path.
+                url = CodexOAuthEndpoints.tokenUrl(env),
+                form = { code ->
+                    oauth.codexCodeExchangeForm(code, pkce.verifier, clientId, CodexOAuthEndpoints.REDIRECT_URI)
+                },
+                toAuthJson = { body -> authJson(body) },
+            ),
             authPath = authPath,
-            toAuthJson = { body -> authJson(body) },
             account = account,
         )
     }

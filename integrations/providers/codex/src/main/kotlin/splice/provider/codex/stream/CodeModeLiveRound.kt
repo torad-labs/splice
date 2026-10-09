@@ -165,14 +165,14 @@ internal class CodeModeLiveRound(
         // The capture loses a source its terminal does not certify, which closes the cell a client step may still be
         // advancing. Set first, so that step ends as a torn source's step does, or with a permanent failure as it is.
         executionLost = !sourceInterrupted && capture.uncertified(outcome) != null
-        permanentEnding = (outcome as? TurnOutcome.Failure)?.takeIf { sourceLost && it.permanent }
+        permanentEnding = (outcome as? TurnOutcome.Failure)?.takeIf { sourceLost && it.traits.permanent }
         Cancellables.runCatchingBestEffort { capture.finish(outcome) }
             .getOrElse { return@synchronized reject(it) }
         if (sourceInterrupted && outcome is TurnOutcome.Failure) {
             outcome.copy(
                 cause = FailureCause.UPSTREAM_CONN_RESET,
                 phase = FailurePhase.MID_OUTPUT,
-                deterministic = false,
+                traits = outcome.traits.copy(deterministic = false),
                 partial = null,
             )
         } else {

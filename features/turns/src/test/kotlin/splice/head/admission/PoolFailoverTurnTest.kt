@@ -46,6 +46,8 @@ import splice.head.headDeps
 import splice.head.headStores
 import splice.head.perf.PerfStats
 import splice.head.quotaFor
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
@@ -257,8 +259,7 @@ private class FailoverRig(
     private val head = HeadServer(
         PassthroughProvider(
             ProviderTuning(
-                key = "synthetic",
-                label = "synthetic",
+                name = ProviderName(key = "synthetic", label = "synthetic"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "synthetic--",
                     models = listOf(ModelEntry("model", "Synthetic", contextWindow = 200_000)),
@@ -266,7 +267,7 @@ private class FailoverRig(
                 ),
                 pinnedModel = "model",
                 auth = headAuth ?: if (pooled) logins.getValue("one") else ClientAuthProvider("synthetic"),
-                baseUrl = "http://127.0.0.1:${server.address.port}",
+                locations = ProviderLocations(baseUrl = "http://127.0.0.1:${server.address.port}"),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
             PassthroughQuirks(providerTag = "synthetic"),

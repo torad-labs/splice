@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
+import splice.app.provider.UpstreamFaultPlan
 import splice.core.auth.RefreshAttempt
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
@@ -87,9 +88,11 @@ class SessionHeardFromLiveTurnTest {
                 head = head,
                 providerCfg = provider,
                 catalog = provider.catalogFor(head),
-                watchdog = WatchdogBudget(30.seconds, 30.seconds, 60.seconds),
+                faultPlan = UpstreamFaultPlan(
+                    watchdog = WatchdogBudget(30.seconds, 30.seconds, 60.seconds),
+                    loginCommand = "claudex login",
+                ),
                 cfg = ConfigService(paths).getConfig("claudex"),
-                loginCommand = "claudex login",
             ),
         ).provider
     }
@@ -112,7 +115,7 @@ class SessionHeardFromLiveTurnTest {
                 upstream = UpstreamClient(totalTimeoutMs = 60_000, maxRetries = 1),
                 gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
                 seams = HeadDeps.HeadSeams(events = publisher.forHead("claudex")),
-            ).copy(liveTurns = turns),
+            ).let { it.copy(traffic = it.traffic.copy(liveTurns = turns)) },
         )
     }
 

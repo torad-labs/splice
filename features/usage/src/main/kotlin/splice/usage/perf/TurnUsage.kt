@@ -30,10 +30,10 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
             val gap = gaps.of(row)
             val day = Instant.ofEpochMilli(row.ts).atZone(zone).toLocalDate().toString()
             totals.add(row, cost, gap)
-            models.getOrPut(row.model, ::Counters).add(row, cost, gap)
-            accounts.getOrPut(row.account, ::Counters).add(row, cost, gap)
+            models.getOrPut(row.facts.model, ::Counters).add(row, cost, gap)
+            accounts.getOrPut(row.facts.account, ::Counters).add(row, cost, gap)
             days.getOrPut(day, ::Counters).add(row, cost, gap)
-            sessions.getOrPut(row.sessionId, ::Counters).add(row, cost, gap)
+            sessions.getOrPut(row.transcript.sessionId, ::Counters).add(row, cost, gap)
             recordModel(row)
         }
     }
@@ -59,11 +59,11 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
     }
 
     private fun recordModel(row: PerfRow) {
-        val id = row.sessionId
-        val model = row.model
+        val id = row.transcript.sessionId
+        val model = row.facts.model
         if (id != null && model != null) {
             val last = lastModels[id]
-            if (row.compact != true && row.ts >= (last?.ts ?: Long.MIN_VALUE)) {
+            if (row.facts.compact != true && row.ts >= (last?.ts ?: Long.MIN_VALUE)) {
                 lastModels[id] = LastModel(row.ts, model)
             }
         }
@@ -145,7 +145,9 @@ internal class AccountPlans(head: UsageHead, billing: UsageBilling? = null) {
     val kind: UsageBilling? = billing ?: if (head.anthropicUpstream) UsageBilling.SUBSCRIPTION else null
 
     // Read only when a request lacks a price, so a fully priced window never touches the pool or the quota file.
-    private val byLabel by lazy { head.accountPool?.view(null)?.accounts.orEmpty().associate { it.label to it.plan } }
+    private val byLabel by lazy {
+        head.sinks.accountPool?.view(null)?.accounts.orEmpty().associate { it.label to it.plan }
+    }
     private val headPlan by lazy { head.usage.snapshot().quota?.plan }
 
     fun of(account: String?): String? = if (account != null && account in byLabel) byLabel[account] else headPlan

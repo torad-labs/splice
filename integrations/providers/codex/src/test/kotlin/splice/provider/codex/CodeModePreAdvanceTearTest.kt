@@ -67,8 +67,7 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
                     false,
                     key,
                     "continuation",
-                    next,
-                    upstreamPost(post),
+                    CodeModeRoundLink(next, upstreamPost(post)),
                 )
                 resume.active(record, context, codeModeBody(history(listOf(first))))
             }
@@ -77,7 +76,7 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
             release.complete(Unit)
             val outcome = withTimeout(5_000) { request.await() } as TurnOutcome.Failure
             assertEquals(FailureCause.UPSTREAM_CONN_RESET, outcome.cause)
-            assertFalse(outcome.deterministic)
+            assertFalse(outcome.traits.deterministic)
             assertNull(outcome.partial)
             assertFalse(next.callback.isCompleted)
             assertEquals(1, runtime.starts)
@@ -124,7 +123,7 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
             val outcome = manager.interceptor(turn(), disableParallel = false)
                 .intercept(BASE_REQUEST, initial, post).turn() as TurnOutcome.Failure
             assertEquals(FailureCause.UPSTREAM_CONN_RESET, outcome.cause)
-            assertFalse(outcome.deterministic)
+            assertFalse(outcome.traits.deterministic)
             assertNull(outcome.partial)
             assertFalse(initial.callback.isCompleted)
             assertEquals(1, runtime.starts)
@@ -155,7 +154,7 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
             val outcome = manager.interceptor(turn(), disableParallel = false)
                 .intercept(BASE_REQUEST, initial, post).turn() as TurnOutcome.Failure
             assertEquals(FailureCause.INTERNAL, outcome.cause)
-            assertFalse(outcome.deterministic)
+            assertFalse(outcome.traits.deterministic)
             assertNull(outcome.partial)
             assertFalse(initial.callback.isCompleted)
             assertTrue(stateFiles.records().isEmpty(), "there was no script to admit or lose")

@@ -89,7 +89,7 @@ internal class CodexCodeModeHistory(private val json: Json) {
 
     private fun restoreProjected(input: ResponsesCodeModeInput, record: CodeModeRecord): ProjectedRewrite {
         metadata.problem(record)?.let { return ProjectedRewrite(null, it) }
-        val index = if (record.metadataVersion == CODE_MODE_METADATA_VERSION) {
+        val index = if (record.origin.baseline.metadataVersion == CODE_MODE_METADATA_VERSION) {
             CodeModeHistoryIndex(input.logicalItems, codec)
         } else {
             null
@@ -97,7 +97,7 @@ internal class CodexCodeModeHistory(private val json: Json) {
         if (!codec.validPrefix(input.logicalItems, record, index)) {
             return ProjectedRewrite(null, "code-mode logical history does not match its persisted baseline")
         }
-        return if (record.metadataVersion == CODE_MODE_METADATA_VERSION) {
+        return if (record.origin.baseline.metadataVersion == CODE_MODE_METADATA_VERSION) {
             val native = CodeModeNativeReplay(
                 codec,
                 input,
@@ -134,7 +134,7 @@ internal class CodexCodeModeHistory(private val json: Json) {
     }
 
     private fun rewriteRecord(input: ResponsesCodeModeInput, record: CodeModeRecord): ProjectedRewrite {
-        val boundary = record.baselineLogicalCount
+        val boundary = record.origin.baseline.logicalCount
         val continuity = extras.replayIndexes(input.logicalItems, boundary, record)
         val retained = ownership.retained(input.logicalItems, record, continuity)
             ?: return ProjectedRewrite(null, "code-mode owned history appears before its persisted boundary")
@@ -143,11 +143,11 @@ internal class CodexCodeModeHistory(private val json: Json) {
         // ONCE, right after the canonical custom output — the same place the ordinary path puts a
         // tool_result's images, after its function_call_output — whether this is the live
         // continuation or a later turn's replay of the same record.
-        val canonical = record.continuity + CodeModeCallReplay.item(record) + codec.customOutput(record) +
+        val canonical = record.carry.continuity + CodeModeCallReplay.item(record) + codec.customOutput(record) +
             record.accepted.durableMedia()
         val logical = input.logicalItems.filterIndexed { index, _ -> index in retained }.toMutableList()
         logical.addAll(boundary, canonical)
-        val continuityReplay = record.continuityReplay.map {
+        val continuityReplay = record.carry.replay.map {
             ResponsesCodeModeReplay(boundary + it.logicalOffset, null, it.items)
         }
         val remapped = remapReplay(input.replayItems, record, retained, canonical.size)
@@ -165,10 +165,10 @@ internal class CodexCodeModeHistory(private val json: Json) {
         retained: Set<Int>,
         inserted: Int,
     ): List<ResponsesCodeModeReplay> {
-        val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
+        val owned = (record.results.keys + record.progress.pending.map(CodeModePending::clientId)).toSet()
         val baselineNative = CodeModeNativeChain.replay(record).map { it.logicalOffset to it.items }.toSet()
-        val continuityReplay = record.continuityReplay.map {
-            record.baselineLogicalCount + it.logicalOffset to it.items
+        val continuityReplay = record.carry.replay.map {
+            record.origin.baseline.logicalCount + it.logicalOffset to it.items
         }.toSet()
         return CodeModeNativeChain.withoutContinuity(replay, record).mapNotNull { segment ->
             val slot = segment.logicalOffset to segment.items
@@ -178,7 +178,7 @@ internal class CodexCodeModeHistory(private val json: Json) {
                 slot in baselineNative -> segment
                 else -> {
                     val prior = (0 until segment.logicalOffset).count { it in retained }
-                    val shift = if (segment.logicalOffset >= record.baselineLogicalCount) inserted else 0
+                    val shift = if (segment.logicalOffset >= record.origin.baseline.logicalCount) inserted else 0
                     segment.copy(logicalOffset = prior + shift)
                 }
             }
@@ -200,7 +200,7 @@ internal class CodexCodeModeHistory(private val json: Json) {
             val sameId = segment.items.any { codec.callId(it) in nativeIds }
             nativeReplayValidator.conflictsWithBaseline(
                 segment,
-                record.baselineLogicalCount,
+                record.origin.baseline.logicalCount,
                 allowed,
                 expectedOffsets,
                 sameId,
@@ -219,11 +219,11 @@ internal class CodexCodeModeHistory(private val json: Json) {
     }
 
     private fun opaqueProblem(items: List<JsonElement>, record: CodeModeRecord): String? {
-        val found = items.filter { ownership.isOpaque(it, record.outerCallId) }
+        val found = items.filter { ownership.isOpaque(it, record.origin.outerCallId) }
         if (found.isEmpty()) return null
         val output = codec.customOutput(record)
         val replayed = listOf(CodeModeCallReplay.item(record), output)
-        val initial = listOf(record.outer, output)
+        val initial = listOf(record.origin.outer, output)
         return if (found == replayed || found == initial) {
             null
         } else {
@@ -247,14 +247,15 @@ internal class CodeModeOwnership(private val codec: CodexCodeModeHistoryCodec) {
      *  [continuity] indexes — or null when owned history sits BEFORE the persisted boundary, which
      *  no rewrite can place. */
     fun retained(items: List<JsonElement>, record: CodeModeRecord, continuity: Set<Int>): Set<Int>? {
-        val boundary = record.baselineLogicalCount
-        val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
+        val boundary = record.origin.baseline.logicalCount
+        val owned = (record.results.keys + record.progress.pending.map(CodeModePending::clientId)).toSet()
         val ownedFollowUps = followUps(items, record)
-        val ownedItemBefore = items.take(boundary).any { isCallback(it, owned) || isOpaque(it, record.outerCallId) }
+        val outerCallId = record.origin.outerCallId
+        val ownedItemBefore = items.take(boundary).any { isCallback(it, owned) || isOpaque(it, outerCallId) }
         if (ownedItemBefore || ownedFollowUps.any { it < boundary }) return null
         return items.indices.filter { index ->
             val removable = isCallback(items[index], owned) ||
-                isOpaque(items[index], record.outerCallId) ||
+                isOpaque(items[index], record.origin.outerCallId) ||
                 index in ownedFollowUps
             index !in continuity && !removable
         }.toSet()
@@ -301,7 +302,8 @@ internal class CodeModeOwnership(private val codec: CodexCodeModeHistoryCodec) {
         val callId = codec.string(item, CODE_MODE_FIELD_CALL_ID)
         return when (codec.string(item, CODE_MODE_FIELD_TYPE)) {
             TYPE_FUNCTION_OUTPUT -> record.accepted.media(callId) ?: candidateMedia[callId].orEmpty()
-            TYPE_CUSTOM_OUTPUT -> if (callId == record.outerCallId) record.accepted.durableMedia() else emptyList()
+            TYPE_CUSTOM_OUTPUT ->
+                if (callId == record.origin.outerCallId) record.accepted.durableMedia() else emptyList()
             else -> emptyList()
         }
     }

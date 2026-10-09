@@ -30,7 +30,7 @@ internal data class CodeModeCanonicalPlacement(
     val emission: CodeModeCanonicalEmission = CodeModeCanonicalEmission.SCRIPT,
 ) {
     val logicalSize: Int
-        get() = record.continuity.size + when (emission) {
+        get() = record.carry.continuity.size + when (emission) {
             CodeModeCanonicalEmission.SCRIPT -> 2 + record.accepted.durableMedia().size
             CodeModeCanonicalEmission.CONTINUITY -> 0
         }
@@ -94,9 +94,9 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         CodeModeNativeChain.retired(record) || natives.retainedResponse(record)
 
     private fun metadataProblem(record: CodeModeRecord): String? = when {
-        record.nativeSegments.any { it.logicalOffset !in 0..record.baselineLogicalCount } ->
+        record.carry.segments.any { it.logicalOffset !in 0..record.origin.baseline.logicalCount } ->
             "code-mode replay metadata has an invalid native offset"
-        record.continuityReplay.any { it.logicalOffset !in 0..record.continuity.size } ->
+        record.carry.replay.any { it.logicalOffset !in 0..record.carry.continuity.size } ->
             "code-mode replay metadata has an invalid continuity offset"
         else -> null
     }
@@ -131,7 +131,7 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
             val type = codec.string(item, CODE_MODE_FIELD_TYPE)
             when {
                 type == "custom_tool_call" && item?.let(index.payloads::token) !in setOf(
-                    index.payloads.token(record.outer),
+                    index.payloads.token(record.origin.outer),
                     index.payloads.token(CodeModeCallReplay.item(record)),
                 ) ->
                     "code-mode opaque call was edited"
@@ -148,7 +148,7 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         val late = lateCallbacks(index, record)
         val ids = record.clientIds() - late
         val removed = index.owned(record).filter { at ->
-            ownership.isCallback(index.items[at], ids) || ownership.isOpaque(index.items[at], record.outerCallId)
+            ownership.isCallback(index.items[at], ids) || ownership.isOpaque(index.items[at], record.origin.outerCallId)
         }.toMutableSet()
         removed += index.continuityEcho(record)
         removed += continuity.replayIndexes(index.items, boundary, record)
@@ -172,7 +172,8 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         record: CodeModeRecord,
         boundary: Int,
     ): CodeModeCanonicalPlacement {
-        val removed = index.owned(record).filter { ownership.isOpaque(index.items[it], record.outerCallId) }.toSet() +
+        val outerCallId = record.origin.outerCallId
+        val removed = index.owned(record).filter { ownership.isOpaque(index.items[it], outerCallId) }.toSet() +
             index.continuityEcho(record) + continuity.replayIndexes(index.items, boundary, record)
         return CodeModeCanonicalPlacement(
             record,
@@ -200,11 +201,11 @@ internal class CodeModeCanonicalHistory(private val codec: CodexCodeModeHistoryC
         val record = placement.record
         starts[record.id] = logical.size
         if (order == null) {
-            record.continuityReplay.forEach {
+            record.carry.replay.forEach {
                 replay += ResponsesCodeModeReplay(logical.size + it.logicalOffset, null, it.items)
             }
         }
-        logical += record.continuity
+        logical += record.carry.continuity
         when (placement.emission) {
             CodeModeCanonicalEmission.SCRIPT -> {
                 logical += CodeModeCallReplay.item(record)

@@ -70,7 +70,7 @@ internal class ClaudeLoginLabel(
             ?: session.sessionId?.let { "session ${clean(it)}" }
             ?: "a session"
         val unplaced = if (session.route == SessionRoute.Unknown) ", whose head splice cannot tell" else ""
-        return "$name, pid ${session.pid}$unplaced"
+        return "$name, pid ${session.process.pid}$unplaced"
     }
 
     /** Registry text is Claude Code's, not ours: no control or format character reaches the terminal. */

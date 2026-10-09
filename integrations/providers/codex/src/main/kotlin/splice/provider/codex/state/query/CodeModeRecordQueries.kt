@@ -70,5 +70,5 @@ internal class CodeModeRecordQueries(
         ids: Set<String>,
         excluded: Set<String>,
     ): Boolean = record.id !in excluded &&
-        (record.lastDigest == digest || (ids.isNotEmpty() && record.clientIds().any { it in ids }))
+        (record.progress.lastDigest == digest || (ids.isNotEmpty() && record.clientIds().any { it in ids }))
 }

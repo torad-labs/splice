@@ -86,19 +86,20 @@ internal object CodeModeRecords {
     fun of(key: String, n: Int, updatedAt: Long = 1_790_000_000_000L + n): CodeModeRecord = CodeModeRecord(
         id = "$key-s$n",
         key = key,
-        outer = JsonObject(emptyMap()),
-        outerCallId = "outer-$key-$n",
-        source = "text('$key/$n')",
         phase = CodeModePhase.LOST,
-        updatedAt = updatedAt,
-        lastDigest = "digest-$key-$n",
-        baselineInputCount = n,
-        baselineInputDigest = "input-$key-$n",
-        metadataVersion = CODE_MODE_METADATA_VERSION,
-        baselineLogicalCount = n,
-        baselineLogicalDigest = "logical-$key-$n",
-        nativeSegments = emptyList(),
-        continuity = emptyList(),
-        continuityReplay = emptyList(),
+        origin = CodeModeOrigin(
+            outer = JsonObject(emptyMap()),
+            outerCallId = "outer-$key-$n",
+            source = "text('$key/$n')",
+            baseline = CodeModeBaseline(
+                inputCount = n,
+                inputDigest = "input-$key-$n",
+                logicalCount = n,
+                logicalDigest = "logical-$key-$n",
+                metadataVersion = CODE_MODE_METADATA_VERSION,
+            ),
+        ),
+        progress = CodeModeProgress(updatedAt = updatedAt, lastDigest = "digest-$key-$n"),
+        carry = CodeModeNativeContinuity(segments = emptyList(), continuity = emptyList(), replay = emptyList()),
     )
 }

@@ -21,12 +21,12 @@ internal class CodeModeAnchoredIntegrityTest : CodeModeBridgeTestSupport() {
     @Test
     fun `a no-callback child remains after the newer user message it answered`() {
         val parent = record("parent", listOf(user), "parent-call")
-        val canonicalParent = listOf(user, parent.outer, codec.customOutput(parent))
+        val canonicalParent = listOf(user, parent.origin.outer, codec.customOutput(parent))
         val child = record("child", canonicalParent + next, null, listOf(parent))
         child.nativeParent = parent
         val rewritten = rewrite(canonicalParent + next, listOf(parent, child))
         val logical = projected(rewritten).logicalItems
-        assertTrue(logical.indexOf(next) < logical.indexOf(child.outer))
+        assertTrue(logical.indexOf(next) < logical.indexOf(child.origin.outer))
     }
 
     @Test
@@ -57,8 +57,9 @@ internal class CodeModeAnchoredIntegrityTest : CodeModeBridgeTestSupport() {
     @Test
     fun `a child whose parent is excluded still restores its inherited native payload`() {
         val parent = record("parent", listOf(native, user), "parent-call")
-        val baseline = listOf(native, user, parent.outer, codec.customOutput(parent), next)
-        val child = record("child", baseline, "child-call", listOf(parent)).copy(nativeSegments = emptyList()).also {
+        val baseline = listOf(native, user, parent.origin.outer, codec.customOutput(parent), next)
+        val child = record("child", baseline, "child-call", listOf(parent)).also {
+            it.carry.segments = emptyList()
             it.replayAnchors = CodeModeAnchorCapture.inputBoundary(body(baseline), listOf(parent), codec)?.replayAnchors
             it.nativeParent = parent
             it.nativeBaseId = parent.id
@@ -80,7 +81,7 @@ internal class CodeModeAnchoredIntegrityTest : CodeModeBridgeTestSupport() {
     @Test
     fun `a late unaccepted callback keeps its call and result as ordinary history`() {
         val record = record("interrupted", listOf(user), null)
-        record.pending += CodeModePending("runtime", "late", "Read", JsonObject(emptyMap()), true)
+        record.progress.pending += CodeModePending("runtime", "late", "Read", JsonObject(emptyMap()), true)
         val rewritten = rewrite(listOf(user) + callback("late"), listOf(record))
         assertTrue("function_call" in rewritten)
         assertTrue("function_call_output" in rewritten)
@@ -97,21 +98,21 @@ internal class CodeModeAnchoredIntegrityTest : CodeModeBridgeTestSupport() {
         return CodeModeRecord(
             id = id,
             key = "key",
-            outer = outer(id).raw,
-            outerCallId = id,
-            source = "source",
             phase = CodeModePhase.COMPLETED,
-            output = "done",
-            updatedAt = 1_000,
-            lastDigest = "request",
-            baselineInputCount = boundary.fullCount,
-            baselineInputDigest = "",
-            metadataVersion = CODE_MODE_METADATA_VERSION,
-            baselineLogicalCount = boundary.logicalCount,
-            baselineLogicalDigest = "",
-            nativeSegments = boundary.nativeSegments,
-            continuity = emptyList(),
-            continuityReplay = emptyList(),
+            origin = CodeModeOrigin(
+                outer = outer(id).raw,
+                outerCallId = id,
+                source = "source",
+                baseline = CodeModeBaseline(
+                    inputCount = boundary.fullCount,
+                    inputDigest = "",
+                    logicalCount = boundary.logicalCount,
+                    logicalDigest = "",
+                    metadataVersion = CODE_MODE_METADATA_VERSION,
+                ),
+            ),
+            progress = CodeModeProgress(output = "done", updatedAt = 1_000, lastDigest = "request"),
+            carry = CodeModeNativeContinuity(boundary.nativeSegments, emptyList(), emptyList()),
         ).also { record ->
             record.replayAnchors = boundary.replayAnchors
             callback?.let {

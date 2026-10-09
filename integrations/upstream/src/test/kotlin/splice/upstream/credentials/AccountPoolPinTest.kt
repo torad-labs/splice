@@ -169,8 +169,8 @@ class AccountPoolPinTest {
 
         val account = pool.view(null).accounts.single { it.label == "plus-a" }
 
-        assertEquals(18_000L, account.fiveHourWindowSeconds)
-        assertEquals(604_800L, account.sevenDayWindowSeconds)
+        assertEquals(18_000L, account.quota.fiveHour.windowSeconds)
+        assertEquals(604_800L, account.quota.sevenDay.windowSeconds)
     }
 
     private class Fixture {

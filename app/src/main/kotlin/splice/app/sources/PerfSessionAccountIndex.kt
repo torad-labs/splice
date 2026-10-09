@@ -156,8 +156,8 @@ internal class PerfSessionAccountIndex(
 
     private fun rememberLine(line: PerfCachedLine) {
         val row = line.row?.takeUnless { line.probe } ?: return
-        val session = row.sessionId?.takeIf { it in requested } ?: return
-        val account = row.account?.takeUnless { it.isBlank() || it == "?" || it == OWN_SIGN_IN_LABEL } ?: return
+        val session = row.transcript.sessionId?.takeIf { it in requested } ?: return
+        val account = row.facts.account?.takeUnless { it.isBlank() || it == "?" || it == OWN_SIGN_IN_LABEL } ?: return
         remember(row, session, account)
     }
 

@@ -34,7 +34,7 @@ class CredentialQuotaCaptureTest {
             auth = auth,
             extraHeaders = { forwarded },
             onRetry = {},
-            clientFrameEmitted = { false },
+            recovery = PostRecovery(clientFrameEmitted = { false }),
         )
         var observed: String? = null
         HttpClient(engine).use { http ->

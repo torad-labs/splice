@@ -31,6 +31,7 @@ import splice.app.head.ManagedHeadFactory
 import splice.app.head.QuotaPollSeams
 import splice.app.head.StartQuotaPoller
 import splice.app.provider.ProviderBuild
+import splice.app.provider.UpstreamFaultPlan
 import splice.core.auth.CredentialKey
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -53,6 +54,13 @@ import splice.usage.quota.QuotaSnapshotSink
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
+
+private const val MESSAGE_START =
+    """{"type":"message_start","message":{"id":"msg_synthetic","type":"message","role":"assistant",""" +
+        """"model":"synthetic-model","content":[],"stop_reason":null,""" +
+        """"usage":{"input_tokens":1,"output_tokens":0}}}"""
+private const val MESSAGE_DELTA =
+    """{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"""
 
 internal class ClaudeNativePoolFixture(private val home: Path) {
     val paths = StatePaths(baseOverride = home.resolve(".splice/state"))
@@ -203,9 +211,8 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
             topology.heads.getValue(NATIVE_HEAD).copy(port = 0),
             topology.providers.getValue("native"),
             ModelCatalog("synthetic--", listOf(model), defaultContextWindow = 4_000),
-            WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
             config.getConfig(NATIVE_HEAD),
-            "synthetic login",
+            UpstreamFaultPlan(WatchdogBudget(60.seconds, 60.seconds, 600.seconds), "synthetic login"),
         )
         val head = factory.assembleHead(ctx, 0)
         head.head.start()
@@ -234,7 +241,8 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
                             (System.currentTimeMillis() / 1_000L + 3_600L).toString(),
                         )
                         call.respondText(
-                            """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic weekly limit"}}""",
+                            """{"type":"error","error":{"type":"rate_limit_error",""" +
+                                """"message":"synthetic weekly limit"}}""",
                             ContentType.Application.Json,
                             HttpStatusCode.TooManyRequests,
                         )
@@ -242,7 +250,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
                         call.respondText(
                             """
                             event: message_start
-                            data: {"type":"message_start","message":{"id":"msg_synthetic","type":"message","role":"assistant","model":"synthetic-model","content":[],"stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}
+                            data: $MESSAGE_START
 
                             event: content_block_start
                             data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
@@ -254,7 +262,7 @@ internal class ClaudeNativePoolFixture(private val home: Path) {
                             data: {"type":"content_block_stop","index":0}
 
                             event: message_delta
-                            data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}
+                            data: $MESSAGE_DELTA
 
                             event: message_stop
                             data: {"type":"message_stop"}

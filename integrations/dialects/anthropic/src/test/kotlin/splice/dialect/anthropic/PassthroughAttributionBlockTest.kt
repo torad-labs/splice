@@ -40,7 +40,14 @@ class PassthroughAttributionBlockTest {
 
     @Test
     fun `a passthrough that strips cache control still forwards it`() {
-        val texts = systemTexts(PassthroughQuirks(providerTag = "claude-muse", stripCacheControl = true))
+        val texts = systemTexts(
+            PassthroughQuirks(
+                providerTag = "claude-muse",
+                request = PassthroughRequestQuirks(
+                    stripCacheControl = true,
+                ),
+            ),
+        )
 
         assertTrue(texts.first() == ATTRIBUTION, "$texts")
         assertEquals(3, texts.size)

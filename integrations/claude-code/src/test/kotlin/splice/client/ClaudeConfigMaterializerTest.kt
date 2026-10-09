@@ -31,6 +31,13 @@ import kotlin.io.path.writeText
 
 class ClaudeConfigMaterializerTest {
 
+    private val openRouterSignIn = MaterializeSignIn(
+        loginCommand = "claude-openrouter login",
+        signInLabel = "OpenRouter",
+        signInViaBrowser = false,
+        tokenCapture = TokenCaptureSpec("OPENROUTER_API_KEY", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
+    )
+
     // DR-11c: the local .claude.json is Claude Code's own state; an unparseable one must abort
     // the rewrite (the KeyStore strict doctrine), not become an empty merge base that a five-key
     // file then atomically replaces — destroying, among everything else, the approved
@@ -335,8 +342,7 @@ class ClaudeConfigMaterializerTest {
                 defaultModel = "gpt-5.6-sol",
                 modelOptionsCache = optionsCache,
                 statuslineCommand = statusline,
-                loginCommand = "claude-grok login",
-                signInLabel = "Grok (xAI)",
+                signIn = MaterializeSignIn(loginCommand = "claude-grok login", signInLabel = "Grok (xAI)"),
             ),
         )
         // commands is now a REAL dir (a whole-dir symlink can't hold login.md), with the sentinel
@@ -382,10 +388,7 @@ class ClaudeConfigMaterializerTest {
                 defaultModel = "m",
                 modelOptionsCache = optionsCache,
                 statuslineCommand = statusline,
-                loginCommand = "claude-openrouter login",
-                signInLabel = "OpenRouter",
-                signInViaBrowser = false,
-                tokenCapture = null, // the daemon withholds it once the key resolves
+                signIn = openRouterSignIn.copy(tokenCapture = null), // the daemon withholds it once the key resolves
             ),
         )
         assertFalse(
@@ -410,10 +413,12 @@ class ClaudeConfigMaterializerTest {
                 defaultModel = "m",
                 modelOptionsCache = optionsCache,
                 statuslineCommand = statusline,
-                loginCommand = "claude-fireworks login",
-                signInLabel = "Fireworks",
-                signInViaBrowser = false,
-                tokenCapture = null, // splice does not know this vendor's token shape
+                signIn = MaterializeSignIn(
+                    loginCommand = "claude-fireworks login",
+                    signInLabel = "Fireworks",
+                    signInViaBrowser = false,
+                    tokenCapture = null, // splice does not know this vendor's token shape
+                ),
             ),
         )
         val loginHook = dir.resolve("splice-login-hook.sh").readText()
@@ -435,10 +440,7 @@ class ClaudeConfigMaterializerTest {
                 defaultModel = "m",
                 modelOptionsCache = optionsCache,
                 statuslineCommand = statusline,
-                loginCommand = "claude-openrouter login",
-                signInLabel = "OpenRouter",
-                signInViaBrowser = false,
-                tokenCapture = TokenCaptureSpec("OPENROUTER_API_KEY", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
+                signIn = openRouterSignIn,
             ),
         )
         // THE 2026-08-01 FIX. This used to promise "a masked terminal prompt is asking for your
@@ -485,11 +487,7 @@ class ClaudeConfigMaterializerTest {
                 defaultModel = "m",
                 modelOptionsCache = optionsCache,
                 statuslineCommand = statusline,
-                loginCommand = "claude-openrouter login",
-                signInLabel = "OpenRouter",
-                signInViaBrowser = false,
-                tokenCapture = TokenCaptureSpec("OPENROUTER_API_KEY", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
-                advertiseKeySetup = true,
+                signIn = openRouterSignIn.copy(advertiseKeySetup = true),
             ),
         )
         val script = dir.resolve("splice-keysetup-hook.sh").readText()

@@ -70,10 +70,10 @@ class PassthroughOutputShapeTest {
         val shape = "opened=[] closed=[] stop_reason=end_turn " +
             "input_tokens=17 cache_read_input_tokens=0 cache_creation_input_tokens=0 output_tokens=2"
         assertAll(
-            { assertEquals(shape, success.outputShape) },
-            { assertFalse(success.messageClosed, "closure must not silently change empty-turn acceptance") },
-            { assertFalse(success.emittedText) },
-            { assertFalse(success.emittedThinking) },
+            { assertEquals(shape, success.shape.outputShape) },
+            { assertFalse(success.shape.messageClosed, "closure must not silently change empty-turn acceptance") },
+            { assertFalse(success.text.emittedText) },
+            { assertFalse(success.text.emittedThinking) },
             { assertEquals(0, sink.opens) },
             { assertEquals(1, sink.closeAlls) },
         )
@@ -93,7 +93,7 @@ class PassthroughOutputShapeTest {
         val shape = "text:1,thinking:1,redacted_thinking:1,tool_use:1,server_tool_use:1,web_search_tool_result:1"
         assertEquals(
             "opened=[$shape] closed=[$shape] stop_reason=end_turn $ZERO_INPUT",
-            drive(events + END).outputShape,
+            drive(events + END).shape.outputShape,
         )
     }
 
@@ -106,7 +106,7 @@ class PassthroughOutputShapeTest {
         assertEquals(1, sink.closeAlls)
         assertEquals(
             "opened=[text:1,thinking:1] closed=[] stop_reason=end_turn $ZERO_INPUT",
-            success.outputShape,
+            success.shape.outputShape,
         )
     }
 
@@ -122,7 +122,7 @@ class PassthroughOutputShapeTest {
         )
         assertEquals(
             "opened=[thinking:1,text:1] closed=[thinking:1,text:1] stop_reason=end_turn $ZERO_INPUT",
-            drive(events + END).outputShape,
+            drive(events + END).shape.outputShape,
         )
     }
 
@@ -138,7 +138,7 @@ class PassthroughOutputShapeTest {
         assertEquals(
             "opened=[server_tool_use:1,web_search_tool_result:1] " +
                 "closed=[server_tool_use:1,web_search_tool_result:1] stop_reason=end_turn $ZERO_INPUT",
-            success.outputShape,
+            success.shape.outputShape,
         )
     }
 
@@ -163,7 +163,7 @@ class PassthroughOutputShapeTest {
         assertEquals(
             "opened=[] closed=[] stop_reason=stop_sequence " +
                 "input_tokens=10 cache_read_input_tokens=20 cache_creation_input_tokens=12 output_tokens=2",
-            success.outputShape,
+            success.shape.outputShape,
         )
     }
 
@@ -195,7 +195,7 @@ class PassthroughOutputShapeTest {
             },
             frame("""{"type":"message_stop"}"""),
         )
-        val shape = drive(events).outputShape
+        val shape = drive(events).shape.outputShape
         assertEquals(
             "opened=[other:1,tool_use:1] closed=[other:1,tool_use:1] stop_reason=other " +
                 "input_tokens=0 cache_read_input_tokens=0 cache_creation_input_tokens=0 output_tokens=0",
@@ -214,7 +214,7 @@ class PassthroughOutputShapeTest {
             frame("""{"type":"message_stop"}"""),
         )
         val success = drive(events)
-        assertTrue(success.outputShape.startsWith("opened=[] closed=[] stop_reason=none "))
-        assertEquals("opened=[] closed=[] stop_reason=none $ZERO_INPUT", success.outputShape)
+        assertTrue(success.shape.outputShape.startsWith("opened=[] closed=[] stop_reason=none "))
+        assertEquals("opened=[] closed=[] stop_reason=none $ZERO_INPUT", success.shape.outputShape)
     }
 }

@@ -1,7 +1,7 @@
 // The final-message tool-fold cases, split out of ChatStreamTranslatorTest (which hit the detekt
 // LargeClass ceiling): a tool whose name and args arrive only on the consolidated final message, a
-// nameless final-only call, the prose block closing before a tool block opens, and args the stream
-// under-delivered reaching the client as a failure rather than corrupt JSON.
+// nameless final-only call, the prose block closing before a tool block opens, args the stream cut short completed
+// from the final copy, and a call streamed without an id matched to its echo.
 package splice.dialect.chat
 
 import kotlinx.coroutines.flow.asFlow
@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
-import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.upstream.sse.WireSink
 
@@ -163,14 +162,10 @@ class ChatToolFoldTest {
     }
 
     @Test
-    fun `under-delivered stream args echoed by id are caught as a Failure`() = runTest {
-        // The former finding 5b was a KNOWN LIMITATION: the stream under-delivers a call's
-        // arguments (partial JSON), the trailing consolidated message echoes the SAME id with the
-        // COMPLETE arguments, the echo is suppressed wholesale (by id), and the wire kept only the
-        // partial args — i.e. the turn succeeded carrying corrupt tool JSON. CX-01 (2026-08-08)
-        // makes that a Failure: the partial "{\"x\":" on the wire is invalid JSON, so the turn is
-        // rejected for retry instead of dispatching garbage. The echo-suppression itself is
-        // unchanged (still no per-id repair); CX-01 just refuses to ship the corrupt result.
+    fun `stream args cut short are completed from the final copy, so the client gets the whole input`() = runTest {
+        // The stream under-delivers a call's arguments (partial JSON) and the trailing consolidated message echoes the
+        // SAME id with the complete arguments. The echo is not a second call, and the rest of its arguments is sent,
+        // so the turn succeeds with valid tool input instead of dispatching truncated JSON.
         val sink = FoldRec()
         val outcome = ChatStreamTranslator(foldCtx()).driveTurn(
             listOf(
@@ -186,11 +181,34 @@ class ChatToolFoldTest {
             ).asFlow(),
             sink,
         )
-        val failure = outcome as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, failure.type)
-        assertTrue(failure.message.contains("malformed JSON"), failure.message)
-        // the partial args still reached the wire before the terminal verdict — the fix is the
-        // outcome, not a wire rewrite (finding 5b's suppression is untouched).
-        assertEquals(listOf("json:{\"x\":"), sink.calls.filter { it.startsWith("json:") })
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        assertEquals(listOf("t1" to "run"), sink.toolOpens)
+        val sent = sink.calls.filter { it.startsWith("json:") }.joinToString("") { it.removePrefix("json:") }
+        assertEquals("{\"x\":1}", sent)
+    }
+
+    @Test
+    fun `a call streamed without an id and echoed with one is one tool_use, not two`() = runTest {
+        // Some vendors stream a tool call with no id and repeat it WITH an id in the final message. The echo is
+        // matched back to the streamed call by its position and name, so the next turn's tool_result pairs with the
+        // one tool_use the client was given.
+        val sink = FoldRec()
+        val outcome = ChatStreamTranslator(foldCtx()).driveTurn(
+            listOf(
+                foldEv(
+                    """{"choices":[{"delta":{"tool_calls":[""" +
+                        """{"index":0,"function":{"name":"run","arguments":"{\"x\":1}"}}]}}]}""",
+                ),
+                foldEv(
+                    """{"choices":[{"message":{"role":"assistant","tool_calls":[""" +
+                        """{"id":"call_7","type":"function","function":{"name":"run","arguments":"{\"x\":1}"}}""" +
+                        """]},"finish_reason":"tool_calls"}]}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        assertEquals(1, sink.toolOpens.size, sink.toolOpens.toString())
+        assertEquals(listOf("json:{\"x\":1}"), sink.calls.filter { it.startsWith("json:") })
     }
 }

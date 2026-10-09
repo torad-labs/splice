@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.upstream.ReanchorRound
 
@@ -74,7 +75,11 @@ class PassthroughReanchorTest {
         bodyText: String = "",
         toolTearOpen: Boolean = false,
         hasToolUse: Boolean = false,
-    ) = TurnOutcome.PartialRound(bodyText = bodyText, toolTearOpen = toolTearOpen, hasToolUse = hasToolUse)
+    ) = TurnOutcome.PartialRound(
+        text = RoundText(bodyText = bodyText),
+        toolTearOpen = toolTearOpen,
+        hasToolUse = hasToolUse,
+    )
 
     private fun round(
         body: JsonObject,

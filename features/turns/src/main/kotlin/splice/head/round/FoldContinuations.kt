@@ -3,6 +3,7 @@
 // Same-package.
 package splice.head.round
 
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.head.wire.BufferingWireSink
 import splice.upstream.FoldPolicy
@@ -46,7 +47,7 @@ internal class FoldContinuations(
             // 2026-07-26 mirror-duplication incident, and HeadServerFoldTest's summary-dedup case
             // fails immediately if you try. usage is not carried either; the caller folds it into
             // `acc` separately. ONLY the honesty flag rides, which no other field can express.
-            salvaged.add(TurnOutcome.PartialRound(emittedThinking = success.emittedThinking))
+            salvaged.add(TurnOutcome.PartialRound(text = RoundText(emittedThinking = success.text.emittedThinking)))
             log(
                 "[$key] fold round ${roundIndex + 1}: reasoning truncated at " +
                     "${success.usage.reasoningTokens} tokens, continuing\n",

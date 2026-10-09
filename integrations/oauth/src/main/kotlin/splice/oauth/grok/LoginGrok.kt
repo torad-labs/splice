@@ -6,7 +6,9 @@ package splice.oauth.grok
 import splice.core.topology.AuthKind
 import splice.core.util.EnvReader
 import splice.oauth.LoginSpec
+import splice.oauth.LoopbackCallback
 import splice.oauth.OAuthAccountFiles
+import splice.oauth.TokenExchange
 import splice.provider.grok.GrokOAuth
 import splice.provider.grok.GrokOAuthEndpoints
 import java.nio.file.Path
@@ -28,28 +30,32 @@ public class LoginGrok {
         return LoginSpec(
             head = head,
             authorizeUrl = oauth.buildGrokAuthorizeUrl(pkce.challenge, state, nonce, clientId, env),
-            redirectPort = GrokOAuthEndpoints.REDIRECT_PORT,
-            redirectPath = "/callback",
-            expectedState = state,
-            tokenUrl = GrokOAuthEndpoints.tokenUrl(env),
-            exchangeForm = { code ->
-                oauth.grokCodeExchangeForm(
-                    code = code,
-                    verifier = pkce.verifier,
-                    challenge = pkce.challenge,
-                    clientId = clientId,
-                    redirectUri = GrokOAuthEndpoints.REDIRECT_URI,
-                )
-            },
+            callback = LoopbackCallback(
+                port = GrokOAuthEndpoints.REDIRECT_PORT,
+                path = "/callback",
+                expectedState = state,
+            ),
+            exchange = TokenExchange(
+                url = GrokOAuthEndpoints.tokenUrl(env),
+                form = { code ->
+                    oauth.grokCodeExchangeForm(
+                        code = code,
+                        verifier = pkce.verifier,
+                        challenge = pkce.challenge,
+                        clientId = clientId,
+                        redirectUri = GrokOAuthEndpoints.REDIRECT_URI,
+                    )
+                },
+                toAuthJson = { body ->
+                    oauth.grokAuthJsonFromTokenResponse(
+                        body,
+                        fallbackRefresh = null,
+                        nowMs = System.currentTimeMillis(),
+                        nowIso = Instant.now().toString(),
+                    ).toString()
+                },
+            ),
             authPath = authPath,
-            toAuthJson = { body ->
-                oauth.grokAuthJsonFromTokenResponse(
-                    body,
-                    fallbackRefresh = null,
-                    nowMs = System.currentTimeMillis(),
-                    nowIso = Instant.now().toString(),
-                ).toString()
-            },
             account = account,
         )
     }

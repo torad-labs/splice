@@ -21,11 +21,11 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
     public fun summary(view: HeadAccountPoolView): String {
         val safe = safeView(view)
         val selected = if (safe.selectionUnknown) null else safe.selectedAccount()
-        val open = safe.accounts.count { it.available && it.credentialPresent }
+        val open = safe.accounts.count { it.available && it.credential.present }
         val choice = selected?.label?.let(::name) ?: "no account"
         val selection = if (safe.selectionUnknown) "selection unknown" else "on $choice"
         val head = "$selection ($open of ${safe.accounts.size} open)"
-        val missing = if (safe.accounts.any { it.primary && !it.credentialPresent }) {
+        val missing = if (safe.accounts.any { it.primary && !it.credential.present }) {
             "primary credential missing"
         } else {
             null
@@ -40,10 +40,10 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
     internal fun check(headKey: String, view: HeadAccountPoolView): DoctorCheck {
         val safe = safeView(view)
         val detail = summary(safe)
-        if (safe.accounts.any { it.primary && !it.credentialPresent }) {
+        if (safe.accounts.any { it.primary && !it.credential.present }) {
             return DoctorCheck(headKey, CheckStatus.WARN, detail, "splice login $headKey", fixKind = FixKind.COMMAND)
         }
-        val exhausted = safe.accounts.isNotEmpty() && safe.accounts.none { it.available && it.credentialPresent }
+        val exhausted = safe.accounts.isNotEmpty() && safe.accounts.none { it.available && it.credential.present }
         if (!exhausted) return DoctorCheck(headKey, CheckStatus.OK, detail)
         val atMillis = now()
         val reset = safe.accounts.mapNotNull { safe.blockedUntilEpochSecondsByLabel[it.label] }
@@ -84,8 +84,8 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
         .singleOrNull { label == "native:${it.wire}" }?.let { "${it.command}'s login" } ?: label
 
     private fun windows(a: HeadAccountView): String? = listOfNotNull(
-        a.fiveHourUsedPercent?.let { "5h ${it.roundToInt()}%" },
-        a.sevenDayUsedPercent?.let { "7d ${it.roundToInt()}%" },
+        a.quota.fiveHour.usedPercent?.let { "5h ${it.roundToInt()}%" },
+        a.quota.sevenDay.usedPercent?.let { "7d ${it.roundToInt()}%" },
     ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
 
     private fun ago(atMillis: Long): String = DoctorAge.ago(now() - atMillis)

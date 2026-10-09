@@ -23,6 +23,9 @@ import splice.client.wrap.WrappedHead
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
 import splice.launch.launch
@@ -42,20 +45,26 @@ class PresentedRowLaunchTest(@param:TempDir private val tmp: Path) {
 
     private fun spec(cat: ModelCatalog) = LaunchSpec(
         trees = HeadTrees(tmp.resolve(".claude-bonsai")),
-        pinnedModel = cat.pinnedModel,
-        availableModelIds = cat.availableModelIds(),
-        modelLabels = mapOf("bonsai-2-27b" to "Bonsai"),
-        discoveryPrefix = cat.discoveryPrefix,
-        tiers = ModelTiers(modelOverrides = cat.presented.overrides),
-        contextWindow = cat.clientLaunchWindow,
-        modelOptionsCache = buildJsonObject { },
-        statuslineCommand = "true",
-        loginCommand = "claude-bonsai login",
-        signInLabel = "Bonsai",
+        models = LaunchModels(
+            pinnedModel = cat.pinnedModel,
+            availableModelIds = cat.availableModelIds(),
+            modelLabels = mapOf("bonsai-2-27b" to "Bonsai"),
+            discoveryPrefix = cat.discoveryPrefix,
+            tiers = ModelTiers(modelOverrides = cat.presented.overrides),
+            contextWindow = cat.clientLaunchWindow,
+            modelOptionsCache = buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "claude-bonsai login",
+            signInLabel = "Bonsai",
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "true",
+            port = 3108,
+            inferenceToken = "test-inference-token",
+            apiTimeoutMs = 960_000,
+        ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 3108,
-        inferenceToken = "test-inference-token",
-        apiTimeoutMs = 960_000,
     )
 
     private fun settings(file: Path): JsonObject = Json.parseToJsonElement(Files.readString(file)).jsonObject

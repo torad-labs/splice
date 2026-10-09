@@ -19,7 +19,7 @@ internal class CodeModeNativeScope(source: CodeModeRecord, private val bounds: I
         CodeModeNativeChain.replay(owner) +
             if (owner === source) emptyList() else CodeModeNativeChain.continuity(owner),
     )
-    private val terminal = owner.baselineLogicalCount + if (owner === source) 0 else owner.continuity.size
+    private val terminal = owner.origin.baseline.logicalCount + if (owner === source) 0 else owner.carry.continuity.size
     private val shortened = owner.replayAnchors?.baseline?.let { anchor ->
         index.resolve(anchor.copy(logicalTail = 0), bounds.last)?.let { prior ->
             prior + anchor.logicalTail > bounds.last

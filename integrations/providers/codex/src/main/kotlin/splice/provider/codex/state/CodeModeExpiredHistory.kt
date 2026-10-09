@@ -14,7 +14,7 @@ internal class CodeModeExpiredHistory(
     fun remember(record: CodeModeRecord, now: Long) {
         entries += CodeModeExpiredSnapshot(
             key = record.key,
-            lastDigest = record.lastDigest,
+            lastDigest = record.progress.lastDigest,
             resultIds = record.clientIds(),
             expiredAt = now,
         ).also { CodeModeHeap.own(it, heap) }

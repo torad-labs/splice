@@ -59,13 +59,13 @@ class OAuthLoginObserverTest {
         val spec = LoginSpec(
             head = "probe",
             authorizeUrl = authorizeUrl,
-            redirectPort = redirectPort,
-            redirectPath = "/cb",
-            expectedState = "s1",
-            tokenUrl = "http://127.0.0.1:${tokenServer.address.port}/token",
-            exchangeForm = { code -> "code=$code" },
+            callback = LoopbackCallback(port = redirectPort, path = "/cb", expectedState = "s1"),
+            exchange = TokenExchange(
+                url = "http://127.0.0.1:${tokenServer.address.port}/token",
+                form = { code -> "code=$code" },
+                toAuthJson = { body -> body },
+            ),
             authPath = tmp.resolve("auth.json"),
-            toAuthJson = { body -> body },
         )
         val client = HttpClient(CIO)
 

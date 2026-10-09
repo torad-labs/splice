@@ -61,7 +61,7 @@ class UpstreamClientTransportTest {
         auth = fakeAuth,
         extraHeaders = { emptyMap() },
         onRetry = onRetry,
-        clientFrameEmitted = clientFrameEmitted,
+        recovery = PostRecovery(clientFrameEmitted = clientFrameEmitted),
     )
 
     private fun clientOver(

@@ -19,12 +19,15 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.perf.PerfModelGaps
 import splice.core.perf.PerfModelTotal
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTotal
 import splice.core.perf.PerfSessionTurn
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
+import splice.usage.UsageHeadSinks
+import splice.usage.UsageHeadWarn
 import splice.usage.perf.HeadPerfSource
 import splice.usage.perf.HeadSessionPerfSource
 import splice.usage.quota.HeadUsageSource
@@ -60,9 +63,8 @@ class StatuslineResumeUsageTest {
         key = key,
         label = key,
         usage = HeadUsageSource { UsageView(0, 0, null) },
-        warnPct = 80,
-        warnTokens5h = 0,
-        perf = perf,
+        warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
+        sinks = UsageHeadSinks(perf = perf),
     )
 
     private fun route(vararg heads: UsageHead) = StatuslineRoute(
@@ -126,7 +128,7 @@ class StatuslineResumeUsageTest {
     @Test
     fun `a session whose rows left the tail is answered by its running total`() = testApplication {
         val claudex = HeadTurns()
-        claudex.total = PerfSessionTotal(0L, mapOf("gpt-6-sol" to PerfModelTotal(3, 0, 0, 0, 0, 0.0, 3)))
+        claudex.total = PerfSessionTotal(0L, mapOf("gpt-6-sol" to PerfModelTotal(3, 0, 0, 0, 0, 0.0, PerfModelGaps(3))))
         serve(route(head("claudex", claudex)))
 
         assertTrue("87k/272k · 31%" in line("claudex", post(87)), "the head counted the session's turns")

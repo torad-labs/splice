@@ -44,7 +44,7 @@ public class WireTap(public val keep: Int, private val now: WallClock = WallCloc
     /** Every round's body passes through here — fold, re-anchor and tool-search rounds included,
      *  because each is its own upstream request and an audit that showed only the first would lie. */
     public fun record(meta: TurnMeta, body: String, turnId: String?) {
-        val record = WireRecord(now(), meta.sessionId, meta.upstreamModel, meta.compact, body, turnId)
+        val record = WireRecord(now(), meta.scope.sessionId, meta.route.upstreamModel, meta.compact, body, turnId)
         synchronized(lock) {
             ring.addLast(record)
             while (ring.size > keep) ring.removeFirst()

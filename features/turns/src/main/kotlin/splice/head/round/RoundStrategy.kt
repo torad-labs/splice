@@ -104,8 +104,8 @@ internal class RoundStrategy(
      *  An interceptor owns its own custom calls and never reaches this. */
     private fun refusingCustomCalls(result: RoundResult): RoundResult {
         val outcome = (result as? RoundResult.Outcome)?.outcome
-        if (outcome !is TurnOutcome.Success || outcome.customCalls.isEmpty()) return result
-        val name = outcome.customCalls.first().name.ifEmpty { "<unnamed>" }
+        if (outcome !is TurnOutcome.Success || outcome.handoffs.customCalls.isEmpty()) return result
+        val name = outcome.handoffs.customCalls.first().name.ifEmpty { "<unnamed>" }
         return RoundResult.Outcome(
             TurnOutcome.Failure(
                 "upstream returned an unsupported custom tool call: $name",

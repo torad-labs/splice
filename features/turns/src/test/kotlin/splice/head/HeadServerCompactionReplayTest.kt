@@ -37,6 +37,8 @@ import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
 import splice.head.admission.RequestMaterializationGate
 import splice.head.wire.FrameRecording
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -79,8 +81,7 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
         HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(
-                    key = "codex",
-                    label = "claudex",
+                    name = ProviderName(key = "codex", label = "claudex"),
                     catalog = ModelCatalog(
                         discoveryPrefix = "claude-codex--",
                         models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -88,7 +89,7 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
                     ),
                     pinnedModel = "gpt-5.6-sol",
                     auth = CompactionReplayAuth(),
-                    baseUrl = mock.baseUrl,
+                    locations = ProviderLocations(baseUrl = mock.baseUrl),
                     // Enormous on purpose: nothing in this test may end the turn but the hold release.
                     watchdog = WatchdogBudget(600.seconds, 600.seconds, 900.seconds),
                 ),

@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.GatewayCustomCall
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.upstream.RoundResult
@@ -32,7 +33,9 @@ class UnsupportedCustomCallTest {
                         hasToolUse = false,
                         incomplete = false,
                         usage = billed,
-                        customCalls = listOf(GatewayCustomCall("custom-1", "unknown", "", JsonObject(emptyMap()))),
+                        handoffs = RoundHandoffs(
+                            customCalls = listOf(GatewayCustomCall("custom-1", "unknown", "", JsonObject(emptyMap()))),
+                        ),
                     ),
                 )
             },

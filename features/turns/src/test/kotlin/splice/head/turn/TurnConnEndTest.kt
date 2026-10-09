@@ -45,6 +45,8 @@ import splice.core.turn.CodeModeDivergenceMarker
 import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
@@ -64,7 +66,10 @@ import splice.head.wire.ClientChannel
 import splice.head.wire.ClientInbound
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnTerminal
+import splice.upstream.BuiltTurn
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
@@ -126,8 +131,7 @@ class TurnConnEndTest {
 
     private fun provider(): Provider = TestResponsesProvider(
         tuning = ProviderTuning(
-            key = "codex",
-            label = "claudex",
+            name = ProviderName(key = "codex", label = "claudex"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-codex--",
                 models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -135,7 +139,7 @@ class TurnConnEndTest {
             ),
             pinnedModel = "gpt-5.6-sol",
             auth = ConnEndFakeAuth(),
-            baseUrl = "http://127.0.0.1:1",
+            locations = ProviderLocations(baseUrl = "http://127.0.0.1:1"),
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),
@@ -159,37 +163,46 @@ class TurnConnEndTest {
         suspend fun drive(): TurnDrive {
             val meta = TurnMeta(
                 compact = false,
-                showReasoning = ReasoningDisplay.TEXT,
-                stream = true,
-                originalModel = "claude-codex--gpt-5.6-sol",
-                upstreamModel = "gpt-5.6-sol",
-                clientMaxTokens = 100,
-                effort = "high",
-                summary = "detailed",
-                budgetTokens = null,
+                reasoning = TurnReasoning(
+                    showReasoning = ReasoningDisplay.TEXT,
+                    effort = "high",
+                    summary = "detailed",
+                    budgetTokens = null,
+                ),
+                route = TurnRoute(
+                    stream = true,
+                    originalModel = "claude-codex--gpt-5.6-sol",
+                    upstreamModel = "gpt-5.6-sol",
+                    clientMaxTokens = 100,
+                ),
             )
             return TurnDrive(
-                requestBody = buildJsonObject { },
-                meta = meta,
+                inputs = TurnInputs(
+                    built = BuiltTurn(
+                        requestBody = buildJsonObject { },
+                        meta = meta,
+                        extraHeaders = emptyMap(),
+                        toolSearch = null,
+                    ),
+                    slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+                    t0 = 0,
+                    perf = TurnPerf(),
+                    trace = if (traceEnabled) newTrace(meta) else null,
+                    markHandedOff = {},
+                ),
                 emitter = emitter,
                 watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
-                slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
                 pipeline = TurnPipeline(
                     CompactStats(perfFile.resolveSibling("compact-$tag.jsonl")),
                     log = log,
                     clampOutput = OutputClamp { it },
                 ),
-                t0 = 0,
-                trace = if (traceEnabled) newTrace(meta) else null,
-                perf = TurnPerf(),
-                turnHeaders = emptyMap(),
                 signals = RunnerSignals(),
                 channel = ClientChannel(
                     ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
                     Mutex(),
                     AtomicBoolean(false),
                 ),
-                toolSearch = null,
             )
         }
 

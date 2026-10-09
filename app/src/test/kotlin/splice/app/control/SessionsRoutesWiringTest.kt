@@ -62,7 +62,8 @@ class SessionsRoutesWiringTest {
     ) {
         val sessions = Files.createDirectories(tmp.resolve("sessions"))
         for ((pid, id) in listOf(1 to ONE, 2 to TWO)) {
-            val row = """{"pid":$pid,"sessionId":"$id","updatedAt":$SESSIONS_AT,"messagingSocketPath":"/run/$pid.sock"}"""
+            val row = """{"pid":$pid,"sessionId":"$id","updatedAt":$SESSIONS_AT,""" +
+                """"messagingSocketPath":"/run/$pid.sock"}"""
             Files.writeString(sessions.resolve("$pid.json"), row)
         }
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
@@ -114,7 +115,8 @@ class SessionsRoutesWiringTest {
             val edge = """{"from":"$ONE","to":"uds:/run/2.sock","at":$SESSIONS_AT"""
             assertEquals(
                 json(
-                    """{"state":"on","sessions":{"$ONE":[$edge,"direction":"out"}],"$TWO":[$edge,"direction":"in"}]}}""",
+                    """{"state":"on","sessions":{"$ONE":[$edge,"direction":"out"}],"$TWO":[$edge,""" +
+                        """"direction":"in"}]}}""",
                 ),
                 json(board.bodyAsText()),
             )

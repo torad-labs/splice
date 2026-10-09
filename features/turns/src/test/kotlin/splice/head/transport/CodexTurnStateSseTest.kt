@@ -34,6 +34,8 @@ import splice.head.headDeps
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.WsRound
 import splice.upstream.WsRoundAbort
@@ -204,8 +206,7 @@ class CodexTurnStateSseTest {
         }
         return CodexProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-codex--",
                     models = listOf(ModelEntry("gpt-5.6-luna", "Luna", contextWindow = 272_000)),
@@ -213,7 +214,7 @@ class CodexTurnStateSseTest {
                 ),
                 pinnedModel = "gpt-5.6-luna",
                 auth = auth,
-                baseUrl = "http://127.0.0.1:${server.address.port}",
+                locations = ProviderLocations(baseUrl = "http://127.0.0.1:${server.address.port}"),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),

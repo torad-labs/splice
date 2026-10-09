@@ -51,7 +51,7 @@ internal class ChatProseFold {
      *
      *  DELTA-WINS accumulation, NOT [unseenSuffix]. The carriers are (i) incremental `delta.refusal`
      *  fragments and (ii) a whole-copy echo on the final message. Deltas own the buffer: each one is
-     *  appended VERBATIM (what the vendor SDK does — openai-python builds `message.refusal` by
+     *  appended VERBATIM (what the vendor SDK does — its reference client builds `message.refusal` by
      *  concatenating every `delta.refusal`), and the whole-copy carrier is used only when no delta ever
      *  arrived. Running a whole-message dedup over an INCREMENTAL carrier deleted every token that had
      *  occurred before, so a real streamed refusal shipped garbled ("I can't help with that. I can't

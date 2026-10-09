@@ -43,14 +43,14 @@ public class AccountPoolJson {
                         put("selected", account.selected)
                         put("available", account.available)
                         put("blocked_until_epoch_seconds", view.blockedUntilEpochSecondsByLabel[account.label])
-                        put("credential_present", account.credentialPresent)
-                        put("auth_excluded_until_epoch_millis", account.authExcludedUntilEpochMillis)
-                        put("auth_exclusion_reason", account.authExclusionReason)
+                        put("credential_present", account.credential.present)
+                        put("auth_excluded_until_epoch_millis", account.credential.excludedUntilEpochMillis)
+                        put("auth_exclusion_reason", account.credential.exclusionReason)
                         put("plan", account.plan)
-                        put("five_hour_used_percent", account.fiveHourUsedPercent)
-                        put("five_hour_reset_epoch_seconds", account.fiveHourResetEpochSeconds)
-                        put("seven_day_used_percent", account.sevenDayUsedPercent)
-                        put("seven_day_reset_epoch_seconds", account.sevenDayResetEpochSeconds)
+                        put("five_hour_used_percent", account.quota.fiveHour.usedPercent)
+                        put("five_hour_reset_epoch_seconds", account.quota.fiveHour.resetEpochSeconds)
+                        put("seven_day_used_percent", account.quota.sevenDay.usedPercent)
+                        put("seven_day_reset_epoch_seconds", account.quota.sevenDay.resetEpochSeconds)
                         descriptions[account.label]?.let { description -> auth(this, description) }
                     }
                 }

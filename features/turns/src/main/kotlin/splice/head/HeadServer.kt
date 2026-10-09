@@ -65,11 +65,11 @@ public class HeadServer(
     private val deps: HeadDeps,
 ) : Head {
 
-    private val gate get() = deps.gate
+    private val gate get() = deps.traffic.gate
     private val log get() = deps.log
 
     private val compactionReplay = CompactionReplay(
-        deps.stores.compactionRecordings,
+        deps.stores.compaction.compactionRecordings,
         heap = deps.seams.requestMaterializationGate.heap,
     )
     private val driver = TurnDriver(provider, deps, compactionReplay)
@@ -90,11 +90,11 @@ public class HeadServer(
         responses,
         CompactionPreflight(provider.catalog, deps.stores.perfStats),
     )
-    private val diagnostics = HeadDiagnostics(provider, deps.gate, driver, deps.stores.wireTap)
+    private val diagnostics = HeadDiagnostics(provider, deps.traffic.gate, driver, deps.stores.captures.wireTap)
     private val admission = HeadAdmission(
         deps,
         admissionGate,
-        AdmissionTelemetry(deps.gate, deps.seams.clock),
+        AdmissionTelemetry(deps.traffic.gate, deps.seams.clock),
         TurnPreparation(provider, deps, bodyReader, bodyParse, clientAuth, compactionReplay),
         responses,
         driver,
@@ -165,7 +165,7 @@ public class HeadServer(
 
     /** The refusal this head holds (V4-398/V4-412), and nothing else: a full reading is [quotaFull] (V4-452). */
     override fun providerResetForMs(): Long =
-        deps.quotaBundle.activePool?.providerResetForMs ?: deps.upstream.providerResetForMs
+        deps.quotaBundle.activePool?.providerResetForMs ?: deps.traffic.upstream.providerResetForMs
 
     /** The provider's own current reading (V4-418, renamed V4-452). Reporting only: nothing here reaches
      *  admission, which still lets the first turn probe the upstream (V4-47). */
@@ -180,7 +180,7 @@ public class HeadServer(
         driver.headStarted()
         // NF-01: restart clears whichever cooldown authority the turn path actually uses. Pooled
         // turns bypass the client-owned legacy cooldown, so reset every account instead.
-        deps.quotaBundle.activePool?.reset() ?: deps.upstream.clearRateLimitCooldown()
+        deps.quotaBundle.activePool?.reset() ?: deps.traffic.upstream.clearRateLimitCooldown()
         engine.start()
         window.open()
         deps.seams.events.lifecycle(HeadLifecycle.STARTED)
@@ -229,9 +229,9 @@ public class HeadServer(
  * or media-bearing histories go upstream; bytes/3 cannot justify blocking a real conversation. */
 internal class CompactionPreflight(private val catalog: ModelCatalog, private val perf: PerfStats) {
     fun refusal(meta: TurnMeta, request: JsonObject, hasPriorExchange: Boolean): String? {
-        val budget = CompactionBudgets.forRow(catalog, meta.originalModel) ?: return null
+        val budget = CompactionBudgets.forRow(catalog, meta.route.originalModel) ?: return null
         val window = budget.serveWindow
-        val estimate = perf.measuredInputs.estimate(meta.sessionId, meta.conversationKey, meta.upstreamModel, request)
+        val estimate = perf.measuredInputs.estimate(meta.scope.sessionId, meta.scope.conversationKey, meta.route.upstreamModel, request)
             ?: return null
         // An ordinary continuation may compact early, so use the conservative upper bound.
         // Compact and first-exchange refusals have no recovery behind them: only measured
@@ -241,11 +241,11 @@ internal class CompactionPreflight(private val catalog: ModelCatalog, private va
         val bound = if (ordinary) estimate.upperTokens else estimate.lowerTokens
         val explanation = if (ordinary) {
             "estimated $bound input tokens plus $allowance reserved context tokens " +
-                "exceed the $window-token window of ${meta.upstreamModel} " +
+                "exceed the $window-token window of ${meta.route.upstreamModel} " +
                 "(estimate basis ${estimate.basis}, compaction generation p99 ${budget.generationTokens})"
         } else {
             val request = if (meta.compact) "This compaction" else "This first request"
-            "at least $bound input tokens exceed the $window-token window of ${meta.upstreamModel}. " +
+            "at least $bound input tokens exceed the $window-token window of ${meta.route.upstreamModel}. " +
                 "$request cannot fit here. Resume on a model with a larger context window, " +
                 "or start a fresh conversation."
         }

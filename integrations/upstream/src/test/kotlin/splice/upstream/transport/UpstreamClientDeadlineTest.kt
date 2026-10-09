@@ -69,7 +69,12 @@ class UpstreamClientDeadlineTest {
 
         val failure = assertEnds<UpstreamFailed> {
             client.posted(
-                PostContext("https://api.example.test/v1", fakeAuth, { emptyMap() }, perf = perf),
+                PostContext(
+                    "https://api.example.test/v1",
+                    fakeAuth,
+                    { emptyMap() },
+                    observers = PostObservers(perf = perf),
+                ),
                 "{}",
             ) { "ok" }
         }
@@ -103,7 +108,12 @@ class UpstreamClientDeadlineTest {
 
         assertEnds<UpstreamFailed> {
             client.posted(
-                PostContext("https://api.example.test/v1", fakeAuth, { emptyMap() }, perf = perf),
+                PostContext(
+                    "https://api.example.test/v1",
+                    fakeAuth,
+                    { emptyMap() },
+                    observers = PostObservers(perf = perf),
+                ),
                 "{}",
             ) { "ok" }
         }
@@ -164,8 +174,8 @@ class UpstreamClientDeadlineTest {
             url = "https://api.example.test/v1",
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
-            remainingTurnWait = RemainingTurnWait { 5_000 },
-            clientFrameEmitted = { false },
+            limits = PostLimits(remainingTurnWait = RemainingTurnWait { 5_000 }),
+            recovery = PostRecovery(clientFrameEmitted = { false }),
         )
         var deliveries = 0
         val result = client.postedRead(context, "{}") {

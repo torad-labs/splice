@@ -51,8 +51,8 @@ internal class ResponsesInputTools(
         // function_call — the API rejects both an orphaned reasoning item and a function_call
         // whose reasoning was dropped (the replay_reasoning=false amnesia class this fixes).
         // Driven by the assistant's tool_use blocks, never by which tool_results arrived.
-        opts.reasoningLookup(block.id)?.forEach { envelope ->
-            opts.decodeReasoningEnvelope(envelope)?.let { inject.addReasoningOnce(sink, it, opts) }
+        opts.handoff.lookup(block.id)?.forEach { envelope ->
+            opts.handoff.decode(envelope)?.let { inject.addReasoningOnce(sink, it, opts) }
         }
         sink.add(
             buildJsonObject {
@@ -86,9 +86,9 @@ internal class ResponsesInputTools(
             toolSearchOutput.toolSearchOutputItem(
                 callId,
                 listOf(tool),
-                quirks.emitStrict,
-                quirks.forceStrictFalse,
-                quirks.normalizeToolSchemas,
+                quirks.tools.emitStrict,
+                quirks.tools.forceStrictFalse,
+                quirks.tools.normalizeToolSchemas,
             ),
         )
     }

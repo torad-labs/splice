@@ -61,7 +61,7 @@ class ClaudeNativePoolIdentityTest {
             val wiring = ClaudeNativeAccountWiring(fixture.paths, ClaudeLoginPlacesSource { rotating }, {})
             val login = wiring.accounts(NATIVE_HEAD).single { it.label == NATIVE_SELECTOR }
             assertNull(
-                login.quotaRead?.snapshot(),
+                login.quota.read?.snapshot(),
                 "the replacement has no reading; an orphaned credential cannot lend it a full window",
             )
         } finally {
@@ -111,9 +111,11 @@ class ClaudeNativePoolIdentityTest {
         fixture.seed("splice", expiresAt = 1L)
         val rig = fixture.rig()
         try {
-            val observed = requireNotNull(rig.head.accountPool).view(null)
+            val observed = requireNotNull(rig.head.authSurface.accountPool).view(null)
             val announcing = rig.head.copy(
-                accountPool = HeadAccountPoolSource { observed.copy(nextTargetLabel = "new-login") },
+                authSurface = rig.head.authSurface.copy(
+                    accountPool = HeadAccountPoolSource { observed.copy(nextTargetLabel = "new-login") },
+                ),
             )
             val source = NativeUsageSource(
                 announcing,
@@ -126,7 +128,7 @@ class ClaudeNativePoolIdentityTest {
     }
 
     @Test
-    fun `native places proving one account share its refusal instead of claiming another free subscription`() = runBlocking {
+    fun `native places proving one account share its refusal, not claiming another free subscription`() = runBlocking {
         val fixture = ClaudeNativePoolFixture(home)
         fixture.seed("native")
         fixture.seed("splice")
@@ -140,7 +142,8 @@ class ClaudeNativePoolIdentityTest {
             HttpClient(
                 MockEngine {
                     respond(
-                        """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic shared subscription"}}""",
+                        """{"type":"error","error":{"type":"rate_limit_error",""" +
+                            """"message":"synthetic shared subscription"}}""",
                         HttpStatusCode.TooManyRequests,
                         headersOf(
                             "anthropic-ratelimit-unified-status" to listOf("rejected"),
@@ -156,7 +159,7 @@ class ClaudeNativePoolIdentityTest {
                     .run(PlaygroundHead(NATIVE_HEAD, rig.head.auth), "synthetic shared account", null)
             }
             assertTrue(rig.head.head.providerResetForMs() > 0L, "status must see the shared refusal before a pool view")
-            val pool = requireNotNull(rig.head.accountPool).view(null)
+            val pool = requireNotNull(rig.head.authSurface.accountPool).view(null)
             assertFalse(pool.accounts.any { it.available }, "a second credential is not a second subscription")
         } finally {
             rig.close()

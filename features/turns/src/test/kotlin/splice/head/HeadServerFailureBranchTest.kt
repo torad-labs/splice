@@ -44,6 +44,8 @@ import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
 import splice.head.compact.ShadowClassifier
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
@@ -72,13 +74,13 @@ private class CredentiallessAuth : RefreshableAuthProvider {
     override suspend fun describe(): AuthDescription = AuthDescription(false, "fake")
 }
 
-/** A provider whose per-turn header build throws — the "internal gateway bug" class the last arm of
- *  TurnDriver.emitFailure exists for (its comment names a bad base_url parse and an IllegalState out
- *  of Ktor internals). IllegalStateException specifically, via [error]: TurnFailures.catchingTurnFailure
- *  captures IllegalArgument/IllegalState and nothing broader, so a *plain* RuntimeException would
- *  escape the turn boundary entirely rather than reaching this branch. */
+/** A provider whose per-turn header build throws a plain RuntimeException that is neither IllegalArgument nor
+ *  IllegalState — the "internal gateway bug" class the last arm of TurnDriver.emitFailure exists for. The turn
+ *  boundary captures every RuntimeException, so an unforeseen ClassCast or UnsupportedOperation still ends in an
+ *  error frame and a perf row (issue 400) rather than a truncated 200. */
 private class ThrowingProvider(delegate: Provider) : Provider by delegate {
-    override fun extraHeaders(creds: Credentials): Map<String, String> = error("synthetic gateway bug")
+    override fun extraHeaders(creds: Credentials): Map<String, String> =
+        throw ClassCastException("synthetic gateway bug")
 }
 
 /** The shape the real bugs have: a SUBCLASS of the base the turn boundary converts. Ktor's
@@ -138,12 +140,11 @@ class HeadServerFailureBranchTest {
     ): HeadServer {
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = catalog,
                 pinnedModel = "gpt-5.6-sol",
                 auth = auth,
-                baseUrl = mock.baseUrl,
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),

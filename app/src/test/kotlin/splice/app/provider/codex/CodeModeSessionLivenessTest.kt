@@ -12,7 +12,9 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionClient
 import splice.sessions.registry.SessionListing
+import splice.sessions.registry.SessionProcess
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
@@ -120,9 +122,9 @@ class CodeModeSessionLivenessTest {
         val source = ListingSource(
             SessionListing(
                 listOf(
-                    record("missing", SessionAvailability.GONE).copy(pid = null),
-                    record("zero", SessionAvailability.GONE).copy(pid = 0),
-                    record("negative", SessionAvailability.GONE).copy(pid = -1),
+                    record("missing", SessionAvailability.GONE).withPid(null),
+                    record("zero", SessionAvailability.GONE).withPid(0),
+                    record("negative", SessionAvailability.GONE).withPid(-1),
                 ),
             ),
         )
@@ -139,19 +141,22 @@ class CodeModeSessionLivenessTest {
     }
 
     private fun record(id: String, availability: SessionAvailability): SessionRecord = SessionRecord(
-        pid = 123,
         sessionId = id,
-        cwd = null,
         name = null,
-        kind = null,
-        version = null,
         status = SessionStatus(),
-        startedAt = null,
-        updatedAt = null,
-        messagingSocketPath = null,
         route = SessionRoute.Unknown,
         availability = availability,
+        process = SessionProcess(
+            pid = 123,
+            cwd = null,
+            startedAt = null,
+            updatedAt = null,
+            messagingSocketPath = null,
+        ),
+        client = SessionClient(kind = null, version = null),
     )
+
+    private fun SessionRecord.withPid(pid: Long?): SessionRecord = copy(process = process.copy(pid = pid))
 
     private class ListingSource(var listing: SessionListing) : SessionSource {
         override fun read(): List<SessionRecord> = listing.sessions

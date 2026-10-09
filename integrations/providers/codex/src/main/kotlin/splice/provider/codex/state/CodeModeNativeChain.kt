@@ -18,7 +18,7 @@ internal object CodeModeNativeChain {
     fun rewritable(record: CodeModeRecord): Boolean = when {
         record.abandoned() -> false
         !retired(record) -> true
-        else -> record.continuity.isNotEmpty() || record.continuityReplay.isNotEmpty()
+        else -> record.carry.continuity.isNotEmpty() || record.carry.replay.isNotEmpty()
     }
 
     data class Capture(val segments: List<CodeModeNativeSegment>, val parent: CodeModeRecord?)
@@ -59,7 +59,7 @@ internal object CodeModeNativeChain {
             cursor = cursor.nativeParent
         }
         val segments = chain.asReversed().flatMap { ancestor ->
-            ancestor.nativeSegments + if (ancestor === record) emptyList() else continuity(ancestor)
+            ancestor.carry.segments + if (ancestor === record) emptyList() else continuity(ancestor)
         }
         return normalized(segments)
     }
@@ -84,14 +84,14 @@ internal object CodeModeNativeChain {
     /** Publish a newly independent root only after its checkpoint was forced successfully. */
     fun publishRoot(record: CodeModeRecord, state: CodeModeRecordSnapshot) {
         if (record.nativeBaseId != state.nativeBaseId) {
-            record.nativeSegments = state.nativeSegments
+            record.carry.segments = state.nativeSegments
             record.nativeBaseId = state.nativeBaseId
             record.nativeParent = null
         }
     }
 
     fun continuity(record: CodeModeRecord): List<CodeModeNativeSegment> =
-        record.continuityReplay.map { it.copy(logicalOffset = record.baselineLogicalCount + it.logicalOffset) }
+        record.carry.replay.map { it.copy(logicalOffset = record.origin.baseline.logicalCount + it.logicalOffset) }
 
     /** Adjacent replay fragments at one logical slot are one sequence, irrespective of parser grouping. */
     fun normalized(segments: List<CodeModeNativeSegment>): List<CodeModeNativeSegment> =

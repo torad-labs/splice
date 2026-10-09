@@ -25,6 +25,7 @@ import org.junit.jupiter.params.provider.ValueSource
 import splice.app.TokenUrlRefreshCall
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
+import splice.app.provider.UpstreamFaultPlan
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
@@ -123,9 +124,11 @@ internal fun assembledProviders(root: Path): Map<String, Provider> {
                 head = head,
                 providerCfg = provider,
                 catalog = provider.catalogFor(head),
-                watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+                faultPlan = UpstreamFaultPlan(
+                    watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+                    loginCommand = "$key login",
+                ),
                 cfg = ConfigService(paths).getConfig(key),
-                loginCommand = "$key login",
             ),
         ).provider
     }

@@ -26,5 +26,5 @@ public class GrokProvider(
     // header rides the PER-TURN BuiltTurn (via the base's perTurnHeaders hook) — a shared provider
     // field raced concurrent sessions into each other's affinity header (audit 2026-07-18).
     override fun perTurnHeaders(meta: TurnMeta): Map<String, String> =
-        meta.sessionId?.takeIf { it.isNotEmpty() }?.let { mapOf("x-grok-conv-id" to it) } ?: emptyMap()
+        meta.scope.sessionId?.takeIf { it.isNotEmpty() }?.let { mapOf("x-grok-conv-id" to it) } ?: emptyMap()
 }

@@ -4,6 +4,9 @@ package splice.app.sources
 import splice.core.model.TurnBill
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
+import splice.head.usage.BucketBytes
+import splice.head.usage.BucketTokens
+import splice.head.usage.BucketTools
 import splice.head.usage.EconomicsBucket
 import splice.usage.perf.PerfRow
 import kotlin.time.Duration.Companion.hours
@@ -105,17 +108,24 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         val absorbed = TurnBill.absorbed(row.fields)
         return bucket.copy(
             counts = bucket.counts.add(local),
-            inTokens = bucket.inTokens + count(row, PerfKeys.IN_TOKENS) + absorbed.inputTokens,
-            cachedTokens = bucket.cachedTokens + count(row, PerfKeys.CACHED_TOKENS) + absorbed.cachedTokens,
-            cacheWriteTokens = bucket.cacheWriteTokens + count(row, PerfKeys.CACHE_WRITE_TOKENS) +
-                absorbed.cacheWriteTokens,
-            outTokens = bucket.outTokens + count(row, PerfKeys.OUT_TOKENS),
-            reqBytes = bucket.reqBytes + count(row, PerfKeys.REQ_BYTES),
-            upstreamBytes = bucket.upstreamBytes + count(row, PerfKeys.UPSTREAM_REQ_BYTES),
-            toolsEager = bucket.toolsEager + count(row, PerfKeys.TOOLS_EAGER),
-            toolsDeferred = bucket.toolsDeferred + count(row, PerfKeys.TOOLS_DEFERRED),
-            deferralTurns = bucket.deferralTurns + if (!local && row.fields.containsKey(PerfKeys.TOOLS_EAGER)) 1 else 0,
-            unpricedTurns = bucket.unpricedTurns + 1,
+            tokens = BucketTokens(
+                inTokens = bucket.inTokens + count(row, PerfKeys.IN_TOKENS) + absorbed.inputTokens,
+                cachedTokens = bucket.cachedTokens + count(row, PerfKeys.CACHED_TOKENS) + absorbed.cachedTokens,
+                cacheWriteTokens = bucket.cacheWriteTokens + count(row, PerfKeys.CACHE_WRITE_TOKENS) +
+                    absorbed.cacheWriteTokens,
+                outTokens = bucket.outTokens + count(row, PerfKeys.OUT_TOKENS),
+            ),
+            bytes = BucketBytes(
+                reqBytes = bucket.reqBytes + count(row, PerfKeys.REQ_BYTES),
+                upstreamBytes = bucket.upstreamBytes + count(row, PerfKeys.UPSTREAM_REQ_BYTES),
+            ),
+            tools = BucketTools(
+                toolsEager = bucket.toolsEager + count(row, PerfKeys.TOOLS_EAGER),
+                toolsDeferred = bucket.toolsDeferred + count(row, PerfKeys.TOOLS_DEFERRED),
+                deferralTurns = bucket.deferralTurns +
+                    if (!local && row.fields.containsKey(PerfKeys.TOOLS_EAGER)) 1 else 0,
+            ),
+            cost = bucket.cost.copy(unpricedTurns = bucket.unpricedTurns + 1),
         )
     }
 
@@ -151,11 +161,17 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
 
     private fun subtract(bucket: EconomicsBucket, probes: EconomicsBucket): EconomicsBucket = bucket.copy(
         counts = bucket.counts.copy(turns = bucket.turns - probes.turns),
-        reqBytes = bucket.reqBytes - probes.reqBytes,
-        upstreamBytes = bucket.upstreamBytes - probes.upstreamBytes,
-        toolsEager = bucket.toolsEager - probes.toolsEager,
-        toolsDeferred = bucket.toolsDeferred - probes.toolsDeferred,
-        deferralTurns = bucket.deferralTurns - probes.deferralTurns,
-        unpricedTurns = if (unpricedHour(bucket)) 0 else bucket.unpricedTurns - probes.unpricedTurns,
+        bytes = BucketBytes(
+            reqBytes = bucket.reqBytes - probes.reqBytes,
+            upstreamBytes = bucket.upstreamBytes - probes.upstreamBytes,
+        ),
+        tools = BucketTools(
+            toolsEager = bucket.toolsEager - probes.toolsEager,
+            toolsDeferred = bucket.toolsDeferred - probes.toolsDeferred,
+            deferralTurns = bucket.deferralTurns - probes.deferralTurns,
+        ),
+        cost = bucket.cost.copy(
+            unpricedTurns = if (unpricedHour(bucket)) 0 else bucket.unpricedTurns - probes.unpricedTurns,
+        ),
     )
 }

@@ -184,17 +184,23 @@ private val CODEX = ResponsesQuirks(providerTag = "claudex")
 
 private fun opts(compact: Boolean = false) = BuildOptions(
     compact = compact,
-    originalModel = "claude-grok--grok-4.6",
-    upstreamModel = "grok-4.6",
-    configEffort = null,
-    configSummary = null,
-    showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = InjectPriorReasoning(false),
-    includeEncryptedReasoning = RequestEncryptedReasoning(!compact),
+    models = ModelIds(
+        original = "claude-grok--grok-4.6",
+        upstream = "grok-4.6",
+    ),
+    reasoning = RequestedReasoning(
+        effort = null,
+        summary = null,
+        display = ReasoningDisplay.TEXT,
+    ),
+    handoff = ReasoningHandoff(
+        replay = InjectPriorReasoning(false),
+        includeEncrypted = RequestEncryptedReasoning(!compact),
+        decode = { data ->
+            buildJsonObject { put("decoded", JsonPrimitive(data)) }
+        },
+    ),
     sessionId = null,
-    decodeReasoningEnvelope = { data ->
-        buildJsonObject { put("decoded", JsonPrimitive(data)) }
-    },
 )
 
 private fun items(

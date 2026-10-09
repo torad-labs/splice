@@ -136,7 +136,7 @@ public class UpstreamClient(
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
         var body = request.body(round)
         val t0 = clock()
-        val state = RetryState(ctx.rateLimitCooldown ?: cooldown, t0)
+        val state = RetryState(ctx.limits.rateLimitCooldown ?: cooldown, t0)
         while (state.attempt < maxRetries) {
             when (val step = runAttempt(ctx, body, state, t0, block)) {
                 is LoopStep.Done -> return step.result
@@ -203,13 +203,13 @@ public class UpstreamClient(
          *  bookkeeping on this state and [runAttempt] has no complexity to spare. */
         fun recorderFor(ctx: PostContext, body: RequestBody, clock: ElapsedClock): AttemptRecorder? {
             sent += 1
-            return ctx.wire?.let { AttemptRecorder(sent, ctx.url, body.json, body.encoding, clock) }
+            return ctx.observers.wire?.let { AttemptRecorder(sent, ctx.url, body.json, body.encoding, clock) }
         }
 
         /** V4-174: the attempt is reported once, after it ended either way — a thrown transport
          *  failure and a classified HTTP failure are both endings the trace must show. */
         fun report(ctx: PostContext, recorder: AttemptRecorder?, failure: Throwable?) {
-            if (recorder != null) ctx.wire?.attempted(recorder.finish(failure))
+            if (recorder != null) ctx.observers.wire?.attempted(recorder.finish(failure))
         }
 
         /** Captures one attempt's auth once, so its hold identity and wire headers cannot diverge. */
@@ -220,9 +220,9 @@ public class UpstreamClient(
         ): AttemptCredentials? {
             val credentials = ctx.requireAuth() ?: return null
             // Preserve the request-preparation origin: header resolution belongs to POST wait, not prior round work.
-            val postedAtMs = ctx.perf?.elapsedMs()
+            val postedAtMs = ctx.observers.perf?.elapsedMs()
             val headers = ctx.extraHeaders(credentials)
-            val selected = ctx.rateLimitCooldown ?: cooldowns.forHeaders(
+            val selected = ctx.limits.rateLimitCooldown ?: cooldowns.forHeaders(
                 CredentialKey.headers(credentials, headers),
                 (credentials as? Credentials.ApiKey)?.header,
             ) ?: fallback
@@ -232,7 +232,7 @@ public class UpstreamClient(
 
         fun amendStep(ctx: PostContext, outcome: RetryOutcome.Failed, bodyJson: String): LoopStep.Amend? {
             if (amendedOnce) return null
-            val amended = ctx.amendBodyOnFailure(outcome.status, outcome.text, bodyJson) ?: return null
+            val amended = ctx.recovery.amendBodyOnFailure(outcome.status, outcome.text, bodyJson) ?: return null
             amendedOnce = true
             ctx.onRetry("amending request body after ${outcome.status} and retrying once")
             return LoopStep.Amend(amended)
@@ -404,7 +404,7 @@ public class UpstreamClient(
         state: RetryState,
         t0: Long,
     ): Boolean {
-        if (!reissueRules.canReissueStream(streamHandedOff, e, ctx.clientFrameEmitted, state.streamReissues)) {
+        if (!reissueRules.canReissueStream(streamHandedOff, e, ctx.recovery.clientFrameEmitted, state.streamReissues)) {
             return false
         }
         // G4d: same re-check the sibling BACKOFF path (applyBackoff) does before its sleep — a
@@ -463,7 +463,7 @@ public class UpstreamClient(
             state.refreshedOnce,
             RateLimitTurn(
                 cooldown = state.cooldown,
-                pooledAccount = ctx.rateLimitCooldown != null,
+                pooledAccount = ctx.limits.rateLimitCooldown != null,
             ),
         )
         state.refreshedOnce = plan.refreshedOnce

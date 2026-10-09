@@ -43,6 +43,7 @@ import splice.app.head.StartQuotaPoller
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
+import splice.app.provider.UpstreamFaultPlan
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -141,9 +142,11 @@ class SpentReadingSurfacesTest {
                 models = listOf(model),
                 defaultContextWindow = model.contextWindow,
             ),
-            watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
+                loginCommand = "claudex login",
+            ),
             cfg = ConfigService(state, headOverrides = mapOf("quotaPoll" to "off")).getConfig(),
-            loginCommand = "claudex login",
         )
     }
 

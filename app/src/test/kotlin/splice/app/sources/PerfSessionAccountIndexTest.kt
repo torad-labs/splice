@@ -149,7 +149,7 @@ class PerfSessionAccountIndexTest {
         val decode = PerfLineDecode { raw ->
             decodedBytes += raw.toByteArray(Charsets.UTF_8).size
             val parsed = decoder.decode(raw).getOrThrow()
-            PerfCachedLine(parsed.row, parsed.numericBytes, null, false, false, null, false)
+            PerfCachedLine(parsed.row, parsed.numericBytes, null, false, PerfDropsHint(false, null), false)
         }
         val index = PerfSessionAccountIndex(scanBytes = Files.size(current), scanGenerations = 1)
         val ids = setOf("older", "recent", "absent")
@@ -175,7 +175,7 @@ class PerfSessionAccountIndexTest {
         val decoder = PerfRowDecode(PerfFieldNames(1024))
         val decode = PerfLineDecode { raw ->
             val parsed = decoder.decode(raw).getOrThrow()
-            PerfCachedLine(parsed.row, parsed.numericBytes, null, false, false, null, false)
+            PerfCachedLine(parsed.row, parsed.numericBytes, null, false, PerfDropsHint(false, null), false)
         }
         val version = JsonlAppendProof.version(file)
         val scanned = reader.scan(

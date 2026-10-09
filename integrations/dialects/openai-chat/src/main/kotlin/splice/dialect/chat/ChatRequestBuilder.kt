@@ -8,6 +8,8 @@ package splice.dialect.chat
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.wire.AnthropicRequest
 
 public class ChatRequestBuilder(
@@ -18,7 +20,7 @@ public class ChatRequestBuilder(
 ) {
     private val wire = ChatWireMapper(quirks)
     private val assembler = ChatRequestAssembler(quirks, wire)
-    private val effortTiers = ChatEffortTiers(quirks.xhighModels)
+    private val effortTiers = ChatEffortTiers(quirks.reasoning.xhighModels)
 
     public fun build(
         body: AnthropicRequest,
@@ -33,8 +35,8 @@ public class ChatRequestBuilder(
         // backend's prompt-cache prefix from token zero, so every compaction read the whole
         // transcript cold. `compact` reaches TurnMeta for the response side only.
         val messages = wire.messagesArray(body.system, body)
-        val emitTools = quirks.supportsTools && body.tools.isNotEmpty()
-        val effort = quirks.effortVocabulary?.effort(raw, body, upstreamModel)
+        val emitTools = quirks.capabilities.supportsTools && body.tools.isNotEmpty()
+        val effort = quirks.reasoning.effortVocabulary?.effort(raw, body, upstreamModel)
             ?: effortTiers.chatReasoningEffort(body, upstreamModel)
         // TIER-1 (#924): the request is a CLOSED ChatRequest DTO (see chatRequestObject) — a knob
         // that doesn't belong can't be added without a field.
@@ -44,14 +46,18 @@ public class ChatRequestBuilder(
         val req = assembler.chatRequestObject(upstreamModel, messages, emitTools, body, knobs)
         val meta = TurnMeta(
             compact = compact,
-            showReasoning = showReasoning,
-            stream = body.stream,
-            originalModel = body.model,
-            upstreamModel = upstreamModel,
-            clientMaxTokens = body.maxTokens?.takeIf { it > 0 },
-            effort = effort ?: "n/a",
-            summary = if (effort != null) "detailed" else null,
-            budgetTokens = body.thinking?.budgetTokens,
+            reasoning = TurnReasoning(
+                showReasoning = showReasoning,
+                effort = effort ?: "n/a",
+                summary = if (effort != null) "detailed" else null,
+                budgetTokens = body.thinking?.budgetTokens,
+            ),
+            route = TurnRoute(
+                stream = body.stream,
+                originalModel = body.model,
+                upstreamModel = upstreamModel,
+                clientMaxTokens = body.maxTokens?.takeIf { it > 0 },
+            ),
         )
         return BuiltChatRequest(req, meta, lease)
     }

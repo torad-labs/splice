@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.RoundHandoffs
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.dialect.responses.buildResponsesTestRequest
@@ -99,24 +101,25 @@ class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {
     @Test
     fun `an unfinished call replays its admitted prefix without replacing retained raw state`() {
         val record = CodeModeRecords.of("synthetic-partial", 1)
-        val raw = JsonObject(record.outer + ("input" to JsonPrimitive("")))
+        val raw = JsonObject(record.origin.outer + ("input" to JsonPrimitive("")))
         val prefix = "await tools.Read({fixture:'synthetic'});\nawait "
-        record.outer = raw
-        record.source = prefix
+        record.origin.outer = raw
+        record.origin.source = prefix
         val replayed = CodeModeCallReplay.item(record)
         assertEquals(prefix, replayed.getValue("input").jsonPrimitive.content)
         assertEquals(raw - "input", replayed - "input", "all other model-authored fields stay exact")
-        assertSame(raw, record.outer, "rendering must not retain another raw source payload")
-        assertSame(prefix, record.source)
+        assertSame(raw, record.origin.outer, "rendering must not retain another raw source payload")
+        assertSame(prefix, record.origin.source)
     }
 
     @Test
     fun `a certified terminal call is replayed as the original model item`() {
         val record = CodeModeRecords.of("synthetic-terminal", 1)
-        record.outer = JsonObject(record.outer + ("provider_field" to JsonPrimitive("synthetic-terminal-value")))
+        record.origin.outer =
+            JsonObject(record.origin.outer + ("provider_field" to JsonPrimitive("synthetic-terminal-value")))
         record.sourceState = CodeModeSourceState(complete = true)
         val replayed = CodeModeCallReplay.item(record)
-        assertSame(record.outer, replayed, "terminal model bytes and fields remain authoritative")
+        assertSame(record.origin.outer, replayed, "terminal model bytes and fields remain authoritative")
     }
 
     private fun responsesBody(messages: String, replayReasoning: Boolean = false): String {
@@ -165,14 +168,13 @@ class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {
         false,
         false,
         Usage(inputTokens = 100),
-        bodyText = PREFACE,
-        emittedText = true,
-        customCalls = listOf(outer(callId)),
+        text = RoundText(bodyText = PREFACE, emittedText = true),
+        handoffs = RoundHandoffs(customCalls = listOf(outer(callId))),
     )
 
-    private fun continuityOuterOutcome(callId: String) = textOuterOutcome(callId).copy(
-        reasoningEnvelopes = listOf(reasoningEnvelope()),
-    )
+    private fun continuityOuterOutcome(callId: String) = textOuterOutcome(callId).run {
+        copy(handoffs = handoffs.copy(reasoningEnvelopes = listOf(reasoningEnvelope())))
+    }
 
     private fun reasoningEnvelope(): String = checkNotNull(
         ReasoningReplay.encodeReasoningEnvelope(

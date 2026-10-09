@@ -39,7 +39,9 @@ import splice.core.util.JsonlSink
 import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
 import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionClient
 import splice.sessions.registry.SessionListing
+import splice.sessions.registry.SessionProcess
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
@@ -61,7 +63,8 @@ class ClaudeCarryingPoolUsageTest {
         Files.createDirectories(pending.directory)
         Files.writeString(
             pending.directory.resolve(".credentials.json"),
-            """{"claudeAiOauth":{"accessToken":"synthetic-added","refreshToken":"must-not-be-used","expiresAt":4102444800000}}""",
+            """{"claudeAiOauth":{"accessToken":"synthetic-added",""" +
+                """"refreshToken":"must-not-be-used","expiresAt":4102444800000}}""",
         )
         Files.writeString(pending.directory.resolve(".claude.json"), """{"oauthAccount":{"accountUuid":"stale"}}""")
         val credential = key("synthetic-added")
@@ -91,18 +94,19 @@ class ClaudeCarryingPoolUsageTest {
             "foreign" to "synthetic-other-head",
         ).map { (session, head) ->
             SessionRecord(
-                pid = null,
                 sessionId = session,
-                cwd = home.toString(),
                 name = null,
-                kind = null,
-                version = null,
                 status = SessionStatus(),
-                startedAt = null,
-                updatedAt = null,
-                messagingSocketPath = null,
                 route = SessionRoute.Head(head),
                 availability = SessionAvailability.LIVE,
+                process = SessionProcess(
+                    pid = null,
+                    cwd = home.toString(),
+                    startedAt = null,
+                    updatedAt = null,
+                    messagingSocketPath = null,
+                ),
+                client = SessionClient(kind = null, version = null),
             )
         }
 
@@ -115,7 +119,8 @@ class ClaudeCarryingPoolUsageTest {
             header("x-claude-code-session-id", session)
             contentType(ContentType.Application.Json)
             setBody(
-                """{"model":"synthetic-model","stream":false,"max_tokens":32,"messages":[{"role":"user","content":"synthetic session turn"}]}""",
+                """{"model":"synthetic-model","stream":false,"max_tokens":32,""" +
+                    """"messages":[{"role":"user","content":"synthetic session turn"}]}""",
             )
         }
         assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
@@ -158,7 +163,7 @@ class ClaudeCarryingPoolUsageTest {
         try {
             control.start()
             HttpClient(Java).use { client ->
-                val pool = requireNotNull(rig.head.accountPool)
+                val pool = requireNotNull(rig.head.authSurface.accountPool)
                 val pin = pool as HeadAccountPinSource
                 assertTrue(pin.pin(NATIVE_SELECTOR))
                 send(client, rig, "moving")
@@ -233,7 +238,7 @@ class ClaudeCarryingPoolUsageTest {
     }
 
     @Test
-    fun `bounded session history renders a known recent login and never asserts absence for unread older history`() = runBlocking {
+    fun `bounded session history renders a known recent login, never absence for unread history`() = runBlocking {
         val fixture = fixture()
         val rig = fixture.rig()
         val file = home.resolve("bounded-perf.jsonl")
@@ -246,7 +251,7 @@ class ClaudeCarryingPoolUsageTest {
         )
         val control = controlServerFor(
             port = 0,
-            heads = mapOf(NATIVE_HEAD to rig.head.copy(perfRows = source)),
+            heads = mapOf(NATIVE_HEAD to rig.head.copy(sources = rig.head.sources.copy(perfRows = source))),
             config = ConfigService(fixture.paths),
             runtime = ControlRuntime(sessions = sessions()),
             auth = ControlAuth(mgmtKey = rig.key, log = {}),
@@ -290,17 +295,18 @@ class ClaudeCarryingPoolUsageTest {
             rig.plane.sentCredentials.sent(NATIVE_HEAD, "moving", key("synthetic-native"))
             rig.plane.sentCredentials.sent(NATIVE_HEAD, "staying", key("synthetic-native"))
             assertEquals(ClaudeLoginPlaceId.NATIVE, owner.carrying(NATIVE_HEAD, "moving"))
-            val pool = requireNotNull(rig.head.accountPool)
+            val pool = requireNotNull(rig.head.authSurface.accountPool)
             val accounts = pool.view(null).accounts
             assertEquals(setOf(NATIVE_SELECTOR, SPLICE_SELECTOR, "added"), accounts.map { it.label }.toSet())
-            assertEquals(false, accounts.single { it.label == SPLICE_SELECTOR }.credentialPresent)
+            assertEquals(false, accounts.single { it.label == SPLICE_SELECTOR }.credential.present)
             assertTrue((pool as HeadAccountPinSource).pin("added"))
             HttpClient(Java).use { client ->
                 val turn = client.post("http://127.0.0.1:${rig.head.head.port}/v1/messages") {
                     bearerAuth("synthetic-caller")
                     contentType(ContentType.Application.Json)
                     setBody(
-                        """{"model":"synthetic-model","stream":false,"max_tokens":32,"messages":[{"role":"user","content":"synthetic pool turn"}]}""",
+                        """{"model":"synthetic-model","stream":false,"max_tokens":32,""" +
+                            """"messages":[{"role":"user","content":"synthetic pool turn"}]}""",
                     )
                 }
                 assertEquals(HttpStatusCode.OK, turn.status, turn.bodyAsText())

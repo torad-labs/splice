@@ -93,7 +93,7 @@ internal class ResponsesTurnState {
     val reportedUsage = mutableSetOf<UsageField>()
 
     // splice-reasoning envelopes of this round's encrypted reasoning items (fold replay). Collected
-    // only when ctx.collectReasoningEnvelopes — otherwise stays empty, pre-fold behaviour intact.
+    // only when ctx.reasoningCapture.collectEnvelopes — otherwise stays empty, pre-fold behaviour intact.
     val reasoningEnvelopes = mutableListOf<String>()
 
     // Mid-stream re-anchor salvage (eli 2026-07-24) — see [ToolSalvage].

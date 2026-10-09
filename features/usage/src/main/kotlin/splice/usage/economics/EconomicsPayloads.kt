@@ -57,7 +57,7 @@ public class EconomicsPayloads(
                         put("read_pending", true)
                         put("unavailable", "Reading saved request history before showing this command's hourly totals.")
                     } else {
-                        when (val read = m.economics?.read() ?: EconomicsRead.Rows(emptyList())) {
+                        when (val read = m.sinks.economics?.read() ?: EconomicsRead.Rows(emptyList())) {
                             is EconomicsRead.Rows -> buckets(this, read.rows)
                             is EconomicsRead.Unavailable -> {
                                 buckets(this, emptyList())
@@ -77,19 +77,19 @@ public class EconomicsPayloads(
                 put("turns", b.turns)
                 put("local_steps", b.localSteps)
                 put("unreported_usage_turns", b.counts.unreportedUsageTurns)
-                put("in_tokens", b.inTokens)
-                put("cached_tokens", b.cachedTokens)
-                put("cache_write_tokens", b.cacheWriteTokens)
-                put("out_tokens", b.outTokens)
-                put("req_bytes", b.reqBytes)
-                put("upstream_req_bytes", b.upstreamBytes)
-                put("tools_eager", b.toolsEager)
-                put("tools_deferred", b.toolsDeferred)
-                put("deferral_turns", b.deferralTurns)
+                put("in_tokens", b.tokens.inTokens)
+                put("cached_tokens", b.tokens.cachedTokens)
+                put("cache_write_tokens", b.tokens.cacheWriteTokens)
+                put("out_tokens", b.tokens.outTokens)
+                put("req_bytes", b.bytes.reqBytes)
+                put("upstream_req_bytes", b.bytes.upstreamBytes)
+                put("tools_eager", b.tools.toolsEager)
+                put("tools_deferred", b.tools.toolsDeferred)
+                put("deferral_turns", b.tools.deferralTurns)
                 put("rate_limited", b.rateLimited)
                 // V4-221: null is "not priced then" (an hour from before the field).
-                put("cost_usd", b.costUsd)
-                put("unpriced_turns", b.unpricedTurns)
+                put("cost_usd", b.cost.costUsd)
+                put("unpriced_turns", b.cost.unpricedTurns)
             }
         }
     }

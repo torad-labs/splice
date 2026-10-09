@@ -77,9 +77,7 @@ internal class HeadServerFactory(
             provider = provider,
             listenPort = ctx.head.port,
             deps = HeadDeps(
-                upstream = upstreamFactory.upstreamFor(ctx, cfg, log, stores.providerHold),
-                inferenceToken = turnKey.get(),
-                operatorToken = mgmtKey.get(),
+                tokens = HeadDeps.HeadTokens(inferenceToken = turnKey.get(), operatorToken = mgmtKey.get()),
                 // NO DEFAULTS on these two bundles (V4-105 items 1 and 2): the NULLABILITY is the
                 // feature — a head may legitimately run without economics or quota, and the tests
                 // that decline them say so through ONE testFixtures builder — but a DEFAULT let a
@@ -87,8 +85,8 @@ internal class HeadServerFactory(
                 stores = headStores(key, stores, cfg, compactionRecordings),
                 quotaBundle = HeadDeps.HeadQuota(
                     quota = stores.quota,
-                    accountPool = stores.accountPool,
-                    accountQuotas = stores.accountQuotas,
+                    accountPool = stores.accounts.pool,
+                    accountQuotas = stores.accounts.quotas,
                     // V4-133 review: this head's ledger, priced from its own catalog, from the
                     // publisher's one enforcement over the daemon's budget store. Pinned by
                     // BudgetWiringPinTest: without it the console's budgets are stored and ignored.
@@ -112,17 +110,19 @@ internal class HeadServerFactory(
                     maxRequestBytes = (knobs[Knob.MAX_REQUEST_BYTES.key] as Long).toInt(),
                     requestReadTimeoutMs = knobs[Knob.REQUEST_READ_TIMEOUT_MS.key] as Long,
                 ),
-                // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
-                // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
-                // admitted 100 concurrent streams into a single account, 429'd, and armed the shared
-                // cooldown — measured 67% turn failure at inflight=100 vs 0.3% at <=14 (perf jsonl,
-                // 2026-07-24). Per-head lets a slow upstream sit low while a fast one stays high.
-                gate = InflightGate(
-                    maxInflight = { config.getConfig(key).maxInflight },
-                    maxQueued = { config.getConfig(key).maxQueued },
+                traffic = HeadDeps.HeadTraffic(
+                    upstream = upstreamFactory.upstreamFor(ctx, cfg, log, stores.providerHold),
+                    // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
+                    // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
+                    // admitted 100 concurrent streams into a single account, 429'd, and armed the shared
+                    // cooldown — measured 67% turn failure at inflight=100 vs 0.3% at <=14 (perf jsonl,
+                    // 2026-07-24). Per-head lets a slow upstream sit low while a fast one stays high.
+                    gate = InflightGate(
+                        maxInflight = { config.getConfig(key).maxInflight },
+                        maxQueued = { config.getConfig(key).maxQueued },
+                    ),
+                    liveTurns = liveTurnsFor(key),
                 ),
-                liveTurns = liveTurnsFor(key),
-                compactionTail = compactionTail,
                 log = log,
             ),
         )
@@ -137,18 +137,22 @@ internal class HeadServerFactory(
         compactionRecordings: CompactionRecordings,
     ): HeadDeps.HeadStores = HeadDeps.HeadStores(
         usageStore = stores.usageStore,
-        perfStats = stores.perfStats,
-        economicsStore = stores.economics,
-        compactStats = stores.compactStats,
+        perfStats = stores.telemetry.perfStats,
+        economicsStore = stores.telemetry.economics,
+        compaction = HeadDeps.HeadCompaction(
+            compactStats = stores.telemetry.compactStats,
+            compactionRecordings = compactionRecordings,
+        ),
         shadow = ShadowClassifier(log = log),
         clientWindows = stores.clientWindows,
-        // V4-173: the tap exists only for a head whose operator named a count, read
-        // off THIS head's cfg (keyed, never the global view) so one head's opt-in keeps
-        // every other head's bodies unkept. V4-239: registered, or its old one taken out, in the
-        // console's registry, which GET /api/heads/{head}/wire reads.
-        wireTap = cfg.wireTap.takeIf { it > 0 }?.let { WireTap(it) }.also { console?.wires?.put(key, it) },
-        trace = stores.trace,
-        compactionRecordings = compactionRecordings,
+        captures = HeadDeps.HeadCaptures(
+            // V4-173: the tap exists only for a head whose operator named a count, read
+            // off THIS head's cfg (keyed, never the global view) so one head's opt-in keeps
+            // every other head's bodies unkept. V4-239: registered, or its old one taken out, in the
+            // console's registry, which GET /api/heads/{head}/wire reads.
+            wireTap = cfg.wireTap.takeIf { it > 0 }?.let { WireTap(it) }.also { console?.wires?.put(key, it) },
+            trace = stores.trace,
+        ),
     )
 
     /** V4-319: this head's live turns, registered in the console's registry as the head is built, the
@@ -160,9 +164,12 @@ internal class HeadServerFactory(
     private fun seams(key: String): HeadDeps.HeadSeams = HeadDeps.HeadSeams(
         requestMaterializationGate = requestMaterializationGate,
         clientVersions = clientVersions,
-        sessionProject = SessionProjectLookup { prompts.sessionProject.projectFor(it) },
+        session = HeadDeps.SessionSeams(
+            sessionProject = SessionProjectLookup { prompts.sessionProject.projectFor(it) },
+            slotInstructions = console?.slots,
+            compactionTail = compactionTail,
+        ),
         events = console?.forHead(key) ?: NoHeadEvents,
-        slotInstructions = console?.slots,
     )
 
     /** Process-shared heap bytes, read once from the global layer. Zero derives spare JVM heap. */

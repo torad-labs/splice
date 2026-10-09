@@ -39,6 +39,8 @@ import splice.head.turn.TurnPreparation
 import splice.http.ingress.HeapIngress
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.RoundInterceptor
 import java.net.InetSocketAddress
@@ -331,8 +333,7 @@ private class DispatchProvider(private val base: Provider, private val blocker: 
 
 private fun dispatchProvider(baseUrl: String): Provider = TestResponsesProvider(
     tuning = ProviderTuning(
-        key = "synthetic",
-        label = "synthetic",
+        name = ProviderName(key = "synthetic", label = "synthetic"),
         catalog = ModelCatalog(
             discoveryPrefix = "synthetic-",
             models = listOf(ModelEntry("synthetic", contextWindow = 272_000)),
@@ -340,7 +341,7 @@ private fun dispatchProvider(baseUrl: String): Provider = TestResponsesProvider(
         ),
         pinnedModel = "synthetic",
         auth = ClientAuthProvider("synthetic"),
-        baseUrl = baseUrl,
+        locations = ProviderLocations(baseUrl = baseUrl),
         watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.OFF, false, "high", null),
@@ -348,7 +349,7 @@ private fun dispatchProvider(baseUrl: String): Provider = TestResponsesProvider(
 
 // The real composition, with only the engine exposed so the call group has deterministic affinity.
 private fun dispatchEngine(provider: Provider, deps: HeadDeps): HeadEngine {
-    val replay = CompactionReplay(deps.stores.compactionRecordings)
+    val replay = CompactionReplay(deps.stores.compaction.compactionRecordings)
     val driver = TurnDriver(provider, deps, replay)
     val window = AdmissionWindow().apply { open() }
     val responses = AdmissionResponses()
@@ -362,11 +363,11 @@ private fun dispatchEngine(provider: Provider, deps: HeadDeps): HeadEngine {
         responses,
         CompactionPreflight(provider.catalog, deps.stores.perfStats),
     )
-    val diagnostics = HeadDiagnostics(provider, deps.gate, driver, deps.stores.wireTap)
+    val diagnostics = HeadDiagnostics(provider, deps.traffic.gate, driver, deps.stores.captures.wireTap)
     val admission = HeadAdmission(
         deps,
         gate,
-        AdmissionTelemetry(deps.gate, deps.seams.clock),
+        AdmissionTelemetry(deps.traffic.gate, deps.seams.clock),
         TurnPreparation(provider, deps, reader, parse, auth, replay),
         responses,
         driver,

@@ -36,7 +36,7 @@ public object CompactionBudgets {
         val canonical = current.stripSuffixes(id)
         val row = current.models.firstOrNull { it.id == raw }
             ?: current.models.firstOrNull { current.stripSuffixes(it.id) == canonical }
-        val calibrated = current.compactionReserveDefaults?.forRow(canonical, current.contextWindowFor(id))
+        val calibrated = current.windows.compactionReserveDefaults?.forRow(canonical, current.contextWindowFor(id))
         val total = row?.compactionReserveTokens ?: calibrated?.totalTokens ?: return null
         return CompactionBudget(total, calibrated?.generationP99 ?: 0, ModelServeWindows.forRow(current, id))
     }

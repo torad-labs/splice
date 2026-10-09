@@ -65,9 +65,9 @@ class CodeModeCountPolicyTest : CodeModeBridgeTestSupport() {
         registry.complete(record, "done")
         clock.now += 25.hours.inWholeMilliseconds
         assertTrue(registry.recordsFor("history").isEmpty())
-        assertTrue(registry.expiredHistory("history", record.lastDigest, emptySet()))
+        assertTrue(registry.expiredHistory("history", record.progress.lastDigest, emptySet()))
         clock.now += 25.hours.inWholeMilliseconds
-        assertFalse(registry.expiredHistory("history", record.lastDigest, emptySet()))
+        assertFalse(registry.expiredHistory("history", record.progress.lastDigest, emptySet()))
         assertTrue(stateFiles.files().isEmpty(), "aged-out expiry markers leave no conversation file")
     }
 
@@ -99,12 +99,13 @@ class CodeModeCountPolicyTest : CodeModeBridgeTestSupport() {
     @Test
     fun `default callbacks continue beyond the old call count while explicit limits still reject`() {
         val config = config()
-        val record = CodeModeRecords.of("history", 1, 1_000).copy(totalCalls = 64)
+        val record = CodeModeRecords.of("history", 1, 1_000).also { it.progress.totalCalls = 64 }
         val calls = listOf(call("next", "Read"))
         assertNull(CodexCodeModeValidation(config).calls(record, setOf("Read"), calls))
         assertEquals(
             "code-mode call limit exceeded",
-            CodexCodeModeValidation(config.copy(maxCalls = 64)).calls(record, setOf("Read"), calls),
+            CodexCodeModeValidation(config.copy(bounds = CodeModeScriptBounds(maxCalls = 64)))
+                .calls(record, setOf("Read"), calls),
         )
     }
 
@@ -112,7 +113,7 @@ class CodeModeCountPolicyTest : CodeModeBridgeTestSupport() {
     fun `a default parked cell advances beyond the old round count`() = runTest {
         val config = config()
         val registry = registry(config)
-        val record = CodeModeRecords.of("history", 1, 1_000).copy(rounds = 32)
+        val record = CodeModeRecords.of("history", 1, 1_000).also { it.progress.rounds = 32 }
         val cell = ScriptedCell(ArrayDeque(listOf(CodeModeStep.Completed("done"))))
         assertTrue(registry.add(record))
         assertTrue(registry.attach(record, cell))

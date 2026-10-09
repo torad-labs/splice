@@ -41,6 +41,7 @@ import splice.app.head.StartQuotaPoller
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
+import splice.app.provider.UpstreamFaultPlan
 import splice.app.provider.Wired
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
@@ -456,9 +457,8 @@ class PlaygroundProviderAnswerTest {
             head = head,
             providerCfg = provider,
             catalog = ModelCatalog("synthetic--", listOf(model), defaultContextWindow = model.contextWindow),
-            watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+            faultPlan = UpstreamFaultPlan(WatchdogBudget(60.seconds, 60.seconds, 600.seconds), "synthetic login"),
             cfg = config.getConfig(keyName),
-            loginCommand = "synthetic login",
         )
         return factory.assembleHead(build, 3098) to registry
     }

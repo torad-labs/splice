@@ -42,7 +42,7 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
                 "restored native bytes cannot let a rejected completed record rewrite its old callbacks",
             )
             assertTrue(fixture.registry.completed(fixture.record.key).isEmpty())
-            assertTrue(fixture.record.nativeSegments.isEmpty(), "rejected input lineage is no longer retained")
+            assertTrue(fixture.record.carry.segments.isEmpty(), "rejected input lineage is no longer retained")
             assertEquals(null, fixture.record.nativeParent)
             assertEquals(null, fixture.record.nativeBaseId)
             assertEquals(2, fixture.runtime.cell.advances, "completed source was not rerun")
@@ -93,10 +93,10 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
         val fixture = completedNative()
         try {
             fixture.registry.changes.save(fixture.record) { record ->
-                record.continuity = listOf(
+                record.carry.continuity = listOf(
                     Json.parseToJsonElement("""{"role":"assistant","content":"synthetic owned commentary"}"""),
                 )
-                record.continuityReplay = listOf(
+                record.carry.replay = listOf(
                     CodeModeNativeSegment(
                         0,
                         listOf(
@@ -114,7 +114,7 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
                 "splice-synthetic-native-retirement",
                 Json.parseToJsonElement(after).jsonObject.getValue("prompt_cache_key").jsonPrimitive.content,
             )
-            assertTrue(fixture.record.nativeSegments.isEmpty(), "the native input was retired")
+            assertTrue(fixture.record.carry.segments.isEmpty(), "the native input was retired")
             assertFalse(fixture.record.abandoned(), "retirement is not abandonment")
             assertFalse(logLines.any { "abandoned record" in it })
         } finally {
@@ -133,7 +133,7 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
             val key = fixture.record.key
             val restored = registry(fresh).recordsFor(key).single()
             assertTrue(registry(fresh).completed(key).isEmpty())
-            assertTrue(restored.nativeSegments.isEmpty())
+            assertTrue(restored.carry.segments.isEmpty())
             assertEquals(null, restored.nativeParent)
             assertEquals(null, restored.nativeBaseId)
             assertFalse(restored.abandoned())
@@ -156,7 +156,7 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
             fixture.manager.interceptor(turn(), null, disableParallel = false)
                 .intercept(nativeRequest(emptyList()), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
             assertEquals(listOf(fixture.record), fixture.registry.completed(fixture.record.key))
-            assertTrue(fixture.record.nativeSegments.isNotEmpty())
+            assertTrue(fixture.record.carry.segments.isNotEmpty())
             assertEquals(null, fixture.record.error)
         } finally {
             fixture.manager.onHeadStop()
@@ -180,11 +180,11 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
             assertTrue(fixture.registry.add(other))
             rejectCompletedNative(fixture)
             assertTrue(fixture.registry.completed(fixture.record.key).isEmpty())
-            assertTrue(child.nativeSegments.isEmpty())
+            assertTrue(child.carry.segments.isEmpty())
             assertEquals(null, child.nativeParent)
             assertEquals(null, child.nativeBaseId)
             assertEquals(listOf(other), fixture.registry.completed(other.key))
-            assertTrue(other.nativeSegments.isNotEmpty())
+            assertTrue(other.carry.segments.isNotEmpty())
             assertEquals(null, other.error)
         } finally {
             fixture.manager.onHeadStop()
@@ -198,7 +198,7 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
             fixture.registry.changes.save(fixture.record) { it.sourceState = CodeModeSourceState(complete = false) }
             rejectCompletedNative(fixture)
             assertEquals(null, fixture.record.error, "an unfinished source must still accept terminal usage")
-            assertTrue(fixture.record.nativeSegments.isNotEmpty())
+            assertTrue(fixture.record.carry.segments.isNotEmpty())
         } finally {
             fixture.manager.onHeadStop()
         }
@@ -245,7 +245,7 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
                 fixture.registry.changes.retireNative(listOf(omission))
                 assertEquals(null, fixture.record.error)
                 assertEquals(listOf(fixture.record), fixture.registry.completed(fixture.record.key))
-                assertTrue(fixture.record.nativeSegments.isNotEmpty())
+                assertTrue(fixture.record.carry.segments.isNotEmpty())
             }
         } finally {
             fixture.manager.onHeadStop()
@@ -299,7 +299,7 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
         val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
         val record = registry.recordsFor(key).single()
         assertEquals(CodeModePhase.COMPLETED, record.phase, "the control must reach completed native state")
-        assertTrue(record.nativeSegments.isNotEmpty())
+        assertTrue(record.carry.segments.isNotEmpty())
         return CompletedNative(runtime, manager, registry, readId, record)
     }
 

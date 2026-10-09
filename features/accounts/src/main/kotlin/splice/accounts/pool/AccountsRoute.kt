@@ -76,25 +76,25 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         val authPath = description.fields["auth_path"]
         merge(joined, authPath ?: "$headKey:single", headKey) {
             JoinedAccount(
-                credentialPath = authPath,
-                kind = description.kind,
+                credential = JoinedCredential(path = authPath, kind = description.kind, singleLogin = true),
                 label = null,
                 primary = true,
-                singleLogin = true,
-                plan = quota?.plan,
-                // The length the provider reported rides the head's QuotaView (null when it gave none), so a long
-                // window is 30 days where the provider says 30 days, never a week by default.
-                fiveHour = QuotaWindowView(
-                    quota?.fiveHour?.usedPct?.toDouble(),
-                    quota?.fiveHour?.resetsAt,
-                    quota?.fiveHour?.windowSeconds,
+                quota = JoinedQuota(
+                    plan = quota?.plan,
+                    // The length the provider reported rides the head's QuotaView (null when it gave none), so a long
+                    // window is 30 days where the provider says 30 days, never a week by default.
+                    fiveHour = QuotaWindowView(
+                        quota?.fiveHour?.usedPct?.toDouble(),
+                        quota?.fiveHour?.resetsAt,
+                        quota?.fiveHour?.windowSeconds,
+                    ),
+                    sevenDay = QuotaWindowView(
+                        quota?.sevenDay?.usedPct?.toDouble(),
+                        quota?.sevenDay?.resetsAt,
+                        quota?.sevenDay?.windowSeconds,
+                    ),
+                    observedAtEpochSeconds = quota?.fiveHour?.observedAt ?: quota?.sevenDay?.observedAt,
                 ),
-                sevenDay = QuotaWindowView(
-                    quota?.sevenDay?.usedPct?.toDouble(),
-                    quota?.sevenDay?.resetsAt,
-                    quota?.sevenDay?.windowSeconds,
-                ),
-                observedAtEpochSeconds = quota?.fiveHour?.observedAt ?: quota?.sevenDay?.observedAt,
                 authExclusion = AuthExclusionView(null, null),
                 flags = AccountFlags(
                     available = null,
@@ -133,26 +133,26 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         view: HeadAccountPoolView,
         fields: Map<String, String>,
     ): JoinedAccount = JoinedAccount(
-        credentialPath = fields["auth_path"],
-        kind = kind,
+        credential = JoinedCredential(path = fields["auth_path"], kind = kind, singleLogin = false),
         label = account.label,
         primary = account.primary,
-        singleLogin = false,
-        plan = account.plan,
-        fiveHour = QuotaWindowView(
-            account.fiveHourUsedPercent,
-            account.fiveHourResetEpochSeconds,
-            account.fiveHourWindowSeconds,
+        quota = JoinedQuota(
+            plan = account.plan,
+            fiveHour = QuotaWindowView(
+                account.quota.fiveHour.usedPercent,
+                account.quota.fiveHour.resetEpochSeconds,
+                account.quota.fiveHour.windowSeconds,
+            ),
+            sevenDay = QuotaWindowView(
+                account.quota.sevenDay.usedPercent,
+                account.quota.sevenDay.resetEpochSeconds,
+                account.quota.sevenDay.windowSeconds,
+            ),
+            observedAtEpochSeconds = account.quota.observedAtEpochSeconds,
         ),
-        sevenDay = QuotaWindowView(
-            account.sevenDayUsedPercent,
-            account.sevenDayResetEpochSeconds,
-            account.sevenDayWindowSeconds,
-        ),
-        observedAtEpochSeconds = account.quotaObservedAtEpochSeconds,
         authExclusion = AuthExclusionView(
-            account.authExcludedUntilEpochMillis,
-            account.authExclusionReason,
+            account.credential.excludedUntilEpochMillis,
+            account.credential.exclusionReason,
             fields[REFUSAL_FIELD],
             fields["account_uuid"]?.takeIf(String::isNotBlank)?.let {
                 ClaudeAccountIdentity(it, fields["account_email"])
@@ -161,7 +161,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
         ),
         flags = AccountFlags(
             available = account.available,
-            credentialPresent = account.credentialPresent,
+            credentialPresent = account.credential.present,
             selected = account.selected,
             pinned = account.label == view.pinnedLabel,
             nextTarget = account.label == view.nextTargetLabel,
@@ -202,23 +202,23 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
     }
 
     private fun writeQuota(into: JsonObjectBuilder, row: JoinedAccount, nowSeconds: Long) {
-        into.put("five_hour_limit_percent", row.fiveHour.usedPercent?.let { 100 })
-        into.put("seven_day_limit_percent", row.sevenDay.usedPercent?.let { 100 })
-        into.put("credential_path", row.credentialPath)
-        into.put("kind", row.kind)
+        into.put("five_hour_limit_percent", row.quota.fiveHour.usedPercent?.let { 100 })
+        into.put("seven_day_limit_percent", row.quota.sevenDay.usedPercent?.let { 100 })
+        into.put("credential_path", row.credential.path)
+        into.put("kind", row.credential.kind)
         into.put("label", row.label)
         into.put("primary", row.primary)
-        into.put("single_login", row.singleLogin)
-        into.put("plan", row.plan)
-        into.put("five_hour_used_percent", row.fiveHour.usedPercent)
-        into.put("five_hour_reset_epoch_seconds", row.fiveHour.resetEpochSeconds)
-        into.put("five_hour_window_seconds", row.fiveHour.windowSeconds)
-        into.put("five_hour_current", current(row.fiveHour, row.observedAtEpochSeconds, nowSeconds))
-        into.put("seven_day_used_percent", row.sevenDay.usedPercent)
-        into.put("seven_day_reset_epoch_seconds", row.sevenDay.resetEpochSeconds)
-        into.put("seven_day_window_seconds", row.sevenDay.windowSeconds)
-        into.put("seven_day_current", current(row.sevenDay, row.observedAtEpochSeconds, nowSeconds))
-        into.put("observed_at_epoch_seconds", row.observedAtEpochSeconds)
+        into.put("single_login", row.credential.singleLogin)
+        into.put("plan", row.quota.plan)
+        into.put("five_hour_used_percent", row.quota.fiveHour.usedPercent)
+        into.put("five_hour_reset_epoch_seconds", row.quota.fiveHour.resetEpochSeconds)
+        into.put("five_hour_window_seconds", row.quota.fiveHour.windowSeconds)
+        into.put("five_hour_current", current(row.quota.fiveHour, row.quota.observedAtEpochSeconds, nowSeconds))
+        into.put("seven_day_used_percent", row.quota.sevenDay.usedPercent)
+        into.put("seven_day_reset_epoch_seconds", row.quota.sevenDay.resetEpochSeconds)
+        into.put("seven_day_window_seconds", row.quota.sevenDay.windowSeconds)
+        into.put("seven_day_current", current(row.quota.sevenDay, row.quota.observedAtEpochSeconds, nowSeconds))
+        into.put("observed_at_epoch_seconds", row.quota.observedAtEpochSeconds)
         into.put("available", row.flags.available)
         into.put("credential_present", row.flags.credentialPresent)
         into.put("auth_excluded_until_epoch_millis", row.authExclusion.untilEpochMillis)
@@ -241,8 +241,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>) {
 
 /** One quota window's percent, reset and (V4-132) its own reported LENGTH — [AccountPool]'s own
  *  [splice.upstream.credentials.AccountView] carries the same three fields; this is the console-payload copy of
- *  that shape, grouped so [JoinedAccount] stays under the constructor-width law's 12-param
- *  ceiling with five-hour and seven-day as ONE field each instead of three. */
+ *  that shape, grouped so [JoinedQuota] carries five-hour and seven-day as ONE field each instead of three. */
 private data class QuotaWindowView(val usedPercent: Double?, val resetEpochSeconds: Long?, val windowSeconds: Long?)
 
 /** Why a pooled or single-login account cannot be selected right now, or all null when it can. [refusal]
@@ -265,20 +264,26 @@ private data class AccountFlags(
     val nextTarget: Boolean?,
 )
 
-/** One joined row: an OAuth account (or a single-login head with none) plus every head riding it.
- *  A `data class` (LongParameterList's `ignoreDataClasses`) even though nothing here compares or
- *  copies one — [merge] retains each head's own selector as it joins the same credential path. */
-private data class JoinedAccount(
-    val credentialPath: String?,
-    val kind: String,
-    val label: String?,
-    val primary: Boolean,
-    val singleLogin: Boolean,
+/** The credential a joined row stands for: where it lives, which auth kind owns it, and whether it is a head's
+ *  single login rather than a pooled account. */
+private data class JoinedCredential(val path: String?, val kind: String, val singleLogin: Boolean)
+
+/** A joined row's plan, its two quota windows, and when they were read, from whichever source carried them. */
+private data class JoinedQuota(
     val plan: String?,
     val fiveHour: QuotaWindowView,
     val sevenDay: QuotaWindowView,
     /** Epoch SECONDS the quota was read, from whichever source carried it — null when it didn't. */
     val observedAtEpochSeconds: Long?,
+)
+
+/** One joined row: an OAuth account (or a single-login head with none) plus every head riding it.
+ *  [merge] retains each head's own selector in [labelsByHead] as it joins the same credential path. */
+private data class JoinedAccount(
+    val credential: JoinedCredential,
+    val label: String?,
+    val primary: Boolean,
+    val quota: JoinedQuota,
     val authExclusion: AuthExclusionView,
     val flags: AccountFlags,
     val labelsByHead: MutableMap<String, String?> = sortedMapOf(),

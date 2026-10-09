@@ -42,6 +42,7 @@ import splice.app.probe.UpstreamPlaygroundProbe
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
+import splice.app.provider.UpstreamFaultPlan
 import splice.client.wrap.ClaudeToRun
 import splice.client.wrap.WrapStateRead
 import splice.core.auth.CredentialKey
@@ -137,9 +138,11 @@ class ClaudeLivePoolMembershipTest {
                 auth = AuthConfig("client"),
             ),
             catalog = ModelCatalog("synthetic--", listOf(model), defaultContextWindow = model.contextWindow),
-            watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+                loginCommand = "synthetic login",
+            ),
             cfg = config.getConfig(HEAD),
-            loginCommand = "synthetic login",
         )
         return factory.assembleHead(build, 0)
     }
@@ -205,7 +208,7 @@ class ClaudeLivePoolMembershipTest {
     }
 
     @Test
-    fun `a login landed after boot is selectable by the very next product send without a daemon restart`() = runBlocking {
+    fun `a login landed after boot is selectable by the very next product send, no restart`() = runBlocking {
         added("work")
         val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
         val registry = PlaygroundProviders()
@@ -213,7 +216,7 @@ class ClaudeLivePoolMembershipTest {
         val child = NativeLoginTestProcess("https://claude.ai/oauth/authorize?synthetic=allowed\n")
         try {
             head.head.start()
-            val pool = requireNotNull(head.accountPool) as HeadAccountPinSource
+            val pool = requireNotNull(head.authSurface.accountPool) as HeadAccountPinSource
             assertTrue(pool.pin("work"))
             assertEquals("Bearer synthetic-work", sent(registry, head))
             val owner = signIn(scope, child)
@@ -237,7 +240,7 @@ class ClaudeLivePoolMembershipTest {
         val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
         val head = fixture(scope, PlaygroundProviders())
         try {
-            val pool = requireNotNull(head.accountPool)
+            val pool = requireNotNull(head.authSurface.accountPool)
             val pin = pool as HeadAccountPinSource
             assertTrue(pin.pin("work"))
             changes.withdraw(HEAD, "work")
@@ -270,7 +273,7 @@ class ClaudeLivePoolMembershipTest {
         val release = CompletableDeferred<Unit>()
         try {
             head.head.start()
-            assertTrue((requireNotNull(head.accountPool) as HeadAccountPinSource).pin("office"))
+            assertTrue((requireNotNull(head.authSurface.accountPool) as HeadAccountPinSource).pin("office"))
             HttpClient(
                 MockEngine {
                     entered.complete(Unit)
@@ -296,7 +299,8 @@ class ClaudeLivePoolMembershipTest {
                 assertTrue(folders.land(replacement) is ClaudeAccountLanding.Added)
                 release.complete(Unit)
                 withTimeout(TIMEOUT_MS) { pending.await() }
-                val current = requireNotNull(head.accountPool).view(null).accounts.single { it.label == "office" }
+                val current = requireNotNull(head.authSurface.accountPool).view(null).accounts
+                    .single { it.label == "office" }
                 assertTrue(current.available, "the old credential's refusal cannot hold a newly bound login")
             }
         } finally {
@@ -323,7 +327,7 @@ class ClaudeLivePoolMembershipTest {
         val head = fixture(scope, registry)
         try {
             head.head.start()
-            val source = requireNotNull(head.accountPool)
+            val source = requireNotNull(head.authSurface.accountPool)
             assertFalse(source.active)
             assertEquals(null, registry.target(HEAD)?.login)
             land(scope, head)
@@ -353,7 +357,7 @@ class ClaudeLivePoolMembershipTest {
             val release = CompletableDeferred<Unit>()
             try {
                 head.head.start()
-                val pool = requireNotNull(head.accountPool) as HeadAccountPinSource
+                val pool = requireNotNull(head.authSurface.accountPool) as HeadAccountPinSource
                 assertTrue(pool.pin("office"))
                 HttpClient(
                     MockEngine {
@@ -394,7 +398,7 @@ class ClaudeLivePoolMembershipTest {
         val head = fixture(scope, registry)
         try {
             head.head.start()
-            val pool = requireNotNull(head.accountPool) as HeadAccountPinSource
+            val pool = requireNotNull(head.authSurface.accountPool) as HeadAccountPinSource
             assertTrue(pool.pin("office"))
             assertEquals("Bearer synthetic-office", sent(registry, head))
             val arm = ClaudeAccountsArm(

@@ -122,13 +122,13 @@ class OAuthPasteReaderTest {
     private fun spec(tmp: Path, token: HttpServer) = LoginSpec(
         head = "probe",
         authorizeUrl = "http://127.0.0.1/unused?state=current",
-        redirectPort = redirectPort,
-        redirectPath = "/cb",
-        expectedState = "current",
-        tokenUrl = "http://127.0.0.1:${token.address.port}/token",
-        exchangeForm = { code -> "code=$code" },
+        callback = LoopbackCallback(port = redirectPort, path = "/cb", expectedState = "current"),
+        exchange = TokenExchange(
+            url = "http://127.0.0.1:${token.address.port}/token",
+            form = { code -> "code=$code" },
+            toAuthJson = { body -> body },
+        ),
         authPath = tmp.resolve("auth.json"),
-        toAuthJson = { body -> body },
     )
 
     /** Runs one sign-in; [whileWaiting] acts once the flow is waiting for its callback. */

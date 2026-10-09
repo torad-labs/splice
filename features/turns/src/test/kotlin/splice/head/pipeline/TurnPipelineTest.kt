@@ -18,10 +18,15 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
 import splice.core.turn.MIRROR_MIN_CHARS
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundText
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
 import splice.core.util.AsyncFileIo
 import splice.dialect.anthropic.PassthroughQuirks
@@ -99,14 +104,18 @@ class TurnPipelineTest {
 
     private fun meta(showReasoning: String, compact: Boolean = false) = TurnMeta(
         compact = compact,
-        showReasoning = displayOf(showReasoning),
-        stream = true,
-        originalModel = "claude-codex--gpt-5.6-sol",
-        upstreamModel = "gpt-5.6-sol",
-        clientMaxTokens = null,
-        effort = "medium",
-        summary = null,
-        budgetTokens = null,
+        reasoning = TurnReasoning(
+            showReasoning = displayOf(showReasoning),
+            effort = "medium",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = "claude-codex--gpt-5.6-sol",
+            upstreamModel = "gpt-5.6-sol",
+            clientMaxTokens = null,
+        ),
     )
 
     /** No text, no tools — the shape that reaches the promote/honesty branch. */
@@ -118,14 +127,16 @@ class TurnPipelineTest {
         hasToolUse = false,
         incomplete = false,
         usage = Usage(0, 0, 0),
-        thinkingText = thinking,
-        bodyText = "",
-        emittedText = false,
-        // The CX-09 axis: false models the harvest fallback (buffer refilled from the completed
-        // response, sink never touched); true models every translator that streamed a real
-        // thinking block. Defaulting to false keeps the original cases meaning what they meant.
-        emittedThinking = emittedThinking,
-        messageClosed = messageClosed,
+        text = RoundText(
+            thinkingText = thinking,
+            bodyText = "",
+            emittedText = false,
+            // The CX-09 axis: false models the harvest fallback (buffer refilled from the completed
+            // response, sink never touched); true models every translator that streamed a real
+            // thinking block. Defaulting to false keeps the original cases meaning what they meant.
+            emittedThinking = emittedThinking,
+        ),
+        shape = ResponseShape(messageClosed = messageClosed),
     )
 
     /** In the uncovered band by construction: too short to promote, too long for the old check. */
@@ -204,7 +215,12 @@ class TurnPipelineTest {
             val explained = RecTerminal()
             pipeline().finishStream(
                 explained,
-                TurnOutcome.Failure(payload, cause = cause, phase = FailurePhase.MID_OUTPUT, deterministic = true),
+                TurnOutcome.Failure(
+                    payload,
+                    cause = cause,
+                    phase = FailurePhase.MID_OUTPUT,
+                    traits = FailureTraits(deterministic = true),
+                ),
                 meta("text"),
                 elapsedMs = 1,
             )
@@ -251,7 +267,7 @@ class TurnPipelineTest {
                 """{"foo":1,"bar":[1,2,3],"baz":null}""",
                 cause = FailureCause.UPSTREAM_REPORTED,
                 phase = FailurePhase.MID_OUTPUT,
-                deterministic = true,
+                traits = FailureTraits(deterministic = true),
             ),
             meta("text"),
             elapsedMs = 1,
@@ -273,7 +289,7 @@ class TurnPipelineTest {
                 "code-mode cell is unavailable",
                 cause = FailureCause.CODE_MODE_PROTOCOL,
                 phase = FailurePhase.MID_OUTPUT,
-                deterministic = true,
+                traits = FailureTraits(deterministic = true),
             ),
             meta("text"),
             elapsedMs = 1,
@@ -489,9 +505,7 @@ class TurnPipelineTest {
             hasToolUse = true,
             incomplete = false,
             usage = Usage(0, 0, 0),
-            thinkingText = "",
-            bodyText = "",
-            emittedText = false,
+            text = RoundText(thinkingText = "", bodyText = "", emittedText = false),
         )
         val tag = pipeline(mirrorReasoning = false).finishStream(
             rec,
@@ -598,7 +612,7 @@ class TurnPipelineTest {
                 "upstream: model refused",
                 cause = FailureCause.MODEL_REFUSED,
                 phase = FailurePhase.MID_OUTPUT,
-                permanent = true,
+                traits = FailureTraits(permanent = true),
             ),
             meta("text"),
             elapsedMs = 1,

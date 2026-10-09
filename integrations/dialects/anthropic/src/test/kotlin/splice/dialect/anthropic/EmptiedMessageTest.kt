@@ -27,13 +27,15 @@ class EmptiedMessageTest {
     /** The shipped deepseek allowlist, verbatim from app/src/main/resources/splice.example.toml. */
     private val deepSeek = PassthroughQuirks(
         providerTag = "claude-deepseek",
-        blockAllowlist = setOf(
-            "text",
-            "thinking",
-            "tool_use",
-            "tool_result",
-            "server_tool_use",
-            "web_search_tool_result",
+        request = PassthroughRequestQuirks(
+            blockAllowlist = setOf(
+                "text",
+                "thinking",
+                "tool_use",
+                "tool_result",
+                "server_tool_use",
+                "web_search_tool_result",
+            ),
         ),
     )
 

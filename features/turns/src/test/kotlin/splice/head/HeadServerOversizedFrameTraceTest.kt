@@ -19,7 +19,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -56,30 +55,14 @@ private class OversizedFakeAuth : RefreshableAuthProvider {
 class HeadServerOversizedFrameTraceTest {
 
     @Test
-    fun `an oversized upstream frame leaves a wire record naming the limit and the size, not the content`(
+    fun `an oversized frame is recorded with its limit and size, not its content`(
         @TempDir tmp: Path,
     ) = runBlocking {
         val mock = MockChatGptUpstream()
         val traceDir = tmp.resolve("trace")
-        val provider = TestResponsesProvider(
-            tuning = ProviderTuning(
-                name = ProviderName(key = "codex", label = "claudex"),
-                catalog = ModelCatalog(
-                    discoveryPrefix = "claude-codex--",
-                    models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
-                    defaultContextWindow = 272_000,
-                ),
-                pinnedModel = "gpt-5.6-sol",
-                auth = OversizedFakeAuth(),
-                locations = ProviderLocations(baseUrl = mock.baseUrl),
-                watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
-                loginCommand = "claudex login",
-            ),
-            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
-        )
         val trace = splice.head.syntheticTraceStore(ActivityDays(traceDir, "codex", 7, ownerOnly = true), "codex", 4096)
         val head = HeadServer(
-            provider,
+            provider(mock),
             0,
             headDeps(tmp, upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2))
                 .copy(stores = headStores(tmp, trace = trace)),
@@ -87,18 +70,7 @@ class HeadServerOversizedFrameTraceTest {
         head.start()
         awaitListening(head.port)
         try {
-            val answer = HttpClient(CIO) {
-                engine { requestTimeout = 0 }
-                defaultRequest { bearerAuth("test-inference-token") }
-            }.use { client ->
-                client.post("http://127.0.0.1:${head.port}/v1/messages") {
-                    header("Content-Type", "application/json")
-                    setBody(
-                        """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":8000,
-                            "system":"SCENARIO:oversized_sse","messages":[{"role":"user","content":"go"}]}""",
-                    )
-                }.bodyAsText()
-            }
+            val answer = oversizedAnswer(head.port)
             assertTrue(answer.contains("oversized streaming event"), answer)
 
             val turn = awaitTurnRecord(traceDir)
@@ -115,13 +87,45 @@ class HeadServerOversizedFrameTraceTest {
         }
     }
 
+    private fun provider(mock: MockChatGptUpstream) = TestResponsesProvider(
+        tuning = ProviderTuning(
+            name = ProviderName(key = "codex", label = "claudex"),
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-codex--",
+                models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+                defaultContextWindow = 272_000,
+            ),
+            pinnedModel = "gpt-5.6-sol",
+            auth = OversizedFakeAuth(),
+            locations = ProviderLocations(baseUrl = mock.baseUrl),
+            watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
+            loginCommand = "claudex login",
+        ),
+        reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+    )
+
+    private suspend fun oversizedAnswer(port: Int): String = HttpClient(CIO) {
+        engine { requestTimeout = 0 }
+        defaultRequest { bearerAuth("test-inference-token") }
+    }.use { client ->
+        client.post("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":8000,
+                    "system":"SCENARIO:oversized_sse","messages":[{"role":"user","content":"go"}]}""",
+            )
+        }.bodyAsText()
+    }
+
     private suspend fun awaitTurnRecord(traceDir: Path): kotlinx.serialization.json.JsonObject =
         withContext(Dispatchers.IO) {
             val deadline = System.currentTimeMillis() + AWAIT_MS
             while (System.currentTimeMillis() < deadline) {
                 AsyncFileIo.drain()
                 val record = Files.list(traceDir).use { files ->
-                    files.toList().filter { it.fileName.toString().endsWith(".jsonl") }.flatMap { Files.readAllLines(it) }
+                    files.toList()
+                        .filter { it.fileName.toString().endsWith(".jsonl") }
+                        .flatMap { Files.readAllLines(it) }
                 }.map { Json.parseToJsonElement(it).jsonObject }
                     .lastOrNull { it["outcome"] != null }
                 if (record != null) return@withContext record

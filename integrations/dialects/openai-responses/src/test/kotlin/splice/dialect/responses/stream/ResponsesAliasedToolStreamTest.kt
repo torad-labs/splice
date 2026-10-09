@@ -23,8 +23,8 @@ class ResponsesAliasedToolStreamTest {
         val outcome = ResponsesStreamTranslator(ctx(collect = true), names)
             .driveTurn(museEvents(alias).asFlow(), sink)
         val success = outcome as TurnOutcome.Success
-        assertEquals("Checking the tool arguments", success.thinkingText)
-        assertEquals(1, success.reasoningEnvelopes.count { it.contains("rs_muse") })
+        assertEquals("Checking the tool arguments", success.text.thinkingText)
+        assertEquals(1, success.handoffs.reasoningEnvelopes.count { it.contains("rs_muse") })
         assertTrue(sink.calls.any { it.contains("think#") && it.contains("Checking the tool arguments") })
         assertTrue(sink.calls.any { it.contains("openTool") && it.contains(TOOL_NAME) })
         assertTrue(sink.calls.none { it.contains("openTool") && it.contains(alias) })

@@ -27,6 +27,8 @@ import splice.core.turn.WatchdogBudget
 import splice.core.usage.PlanLimit
 import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
 import java.net.InetSocketAddress
@@ -64,8 +66,7 @@ private class FailedHead(tmp: Path, status: Int, body: String) {
     private val head = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "synthetic",
-                label = "Synthetic",
+                name = ProviderName(key = "synthetic", label = "Synthetic"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-synthetic--",
                     models = listOf(ModelEntry("synthetic-model", "Synthetic", contextWindow = 272_000)),
@@ -73,7 +74,7 @@ private class FailedHead(tmp: Path, status: Int, body: String) {
                 ),
                 pinnedModel = "synthetic-model",
                 auth = SyntheticAuth(),
-                baseUrl = "http://127.0.0.1:${upstream.address.port}",
+                locations = ProviderLocations(baseUrl = "http://127.0.0.1:${upstream.address.port}"),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),

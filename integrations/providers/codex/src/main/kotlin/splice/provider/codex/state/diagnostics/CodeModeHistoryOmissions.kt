@@ -22,7 +22,7 @@ internal class CodeModeHistoryOmissions(
         rewrite.omitted.filter { announced.add(it.record.id) }.forEach { omission ->
             log(
                 "[code-mode] history rewrite skipped record ${omission.record.id.take(CODE_MODE_RECORD_LOG_CHARS)} " +
-                    "(outer ${omission.record.outerCallId}): ${omission.reason}; its client calls stay in " +
+                    "(outer ${omission.record.origin.outerCallId}): ${omission.reason}; its client calls stay in " +
                     "the history as ordinary tool calls; " +
                     CodeModeHistoryLog.context(omission.record, omission.nativeRejection),
             )

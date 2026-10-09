@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesRoundTripQuirks
 
 private val cachePolicy = ReasoningCachePolicy()
 
@@ -294,7 +295,12 @@ class ReasoningCacheTest {
 // the session's — see ReasoningCachePolicy.
 class ReasoningCacheActiveTest {
 
-    private val quirksOn = ResponsesQuirks(providerTag = "t", reasoningCache = true)
+    private val quirksOn = ResponsesQuirks(
+        providerTag = "t",
+        roundTrip = ResponsesRoundTripQuirks(
+            reasoningCache = true,
+        ),
+    )
 
     @Test
     fun `active only when the quirk is on AND the turn is not a compaction`() {
@@ -303,8 +309,9 @@ class ReasoningCacheActiveTest {
             cachePolicy.reasoningCacheActive(quirksOn, compact = true),
             "a compaction's own reasoning is never stored",
         )
-        assertFalse(cachePolicy.reasoningCacheActive(quirksOn.copy(reasoningCache = false), compact = false))
-        assertFalse(cachePolicy.reasoningCacheActive(quirksOn.copy(reasoningCache = false), compact = true))
+        val quirksOff = quirksOn.copy(roundTrip = quirksOn.roundTrip.copy(reasoningCache = false))
+        assertFalse(cachePolicy.reasoningCacheActive(quirksOff, compact = false))
+        assertFalse(cachePolicy.reasoningCacheActive(quirksOff, compact = true))
     }
 }
 

@@ -87,11 +87,7 @@ class RefusedAccountRowTest {
         selected = label == "primary",
         available = credentialPresent,
         plan = null,
-        fiveHourUsedPercent = null,
-        fiveHourResetEpochSeconds = null,
-        sevenDayUsedPercent = null,
-        sevenDayResetEpochSeconds = null,
-        credentialPresent = credentialPresent,
+        credential = HeadAccountCredential(present = credentialPresent),
     )
 
     private companion object {

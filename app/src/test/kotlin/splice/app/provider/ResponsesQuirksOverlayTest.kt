@@ -39,7 +39,7 @@ class ResponsesQuirksOverlayTest {
         TopologyLoader.parse(toml(quirks)).providers.getValue("codex"),
         CodexQuirks().defaultQuirks(),
         ConfigService(StatePaths(baseOverride = tmp), envReader = { null }).getConfig(),
-    ).summaryDelivery
+    ).reasoning.summaryDelivery
 
     @Test
     fun `absent keeps the codex default, off omits it, and the named mode is sent`(@TempDir tmp: Path) {

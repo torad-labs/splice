@@ -146,7 +146,12 @@ class ChatRequestBuilderTest {
                     {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}
                 ]}
             ]}""",
-            quirks = ChatQuirks(providerTag = "kimi", supportsVision = false),
+            quirks = ChatQuirks(
+                providerTag = "kimi",
+                capabilities = ChatCapabilityQuirks(
+                    supportsVision = false,
+                ),
+            ),
         )
         val user = req.messages().single()
         val content = user["content"]?.jsonPrimitive?.content.orEmpty()
@@ -162,7 +167,12 @@ class ChatRequestBuilderTest {
                     {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}
                 ]}]}
             ]}""",
-            quirks = ChatQuirks(providerTag = "kimi", supportsVision = false),
+            quirks = ChatQuirks(
+                providerTag = "kimi",
+                capabilities = ChatCapabilityQuirks(
+                    supportsVision = false,
+                ),
+            ),
         )
         val tool = req.messages().first { it["role"]?.jsonPrimitive?.content == "tool" }
         assertTrue(tool["content"]?.jsonPrimitive?.content.orEmpty().contains("image(s) omitted"))
@@ -235,7 +245,12 @@ class ChatRequestBuilderTest {
         assertTrue(on.containsKey("reasoning_effort"))
         val off = build(
             """{"model":"m","messages":[{"role":"user","content":"hi"}]}""",
-            quirks = ChatQuirks(providerTag = "kimi", emitReasoningEffort = false),
+            quirks = ChatQuirks(
+                providerTag = "kimi",
+                reasoning = ChatReasoningQuirks(
+                    emitReasoningEffort = false,
+                ),
+            ),
         )
         assertFalse(off.containsKey("reasoning_effort"))
         assertFalse(off.containsKey("reasoning"))
@@ -250,7 +265,9 @@ class ChatRequestBuilderTest {
             "thinking":{"type":"enabled","budget_tokens":64000}}"""
         val grok = ChatQuirks(
             providerTag = "claude-grok",
-            xhighModels = Regex("grok-4\\.(?:[6-9]|[1-9]\\d)"),
+            reasoning = ChatReasoningQuirks(
+                xhighModels = Regex("grok-4\\.(?:[6-9]|[1-9]\\d)"),
+            ),
         )
         val xhigh = build(withBudget, quirks = grok, model = "grok-4.6")
         assertEquals("xhigh", xhigh["reasoning_effort"]?.jsonPrimitive?.content)
@@ -281,6 +298,46 @@ class ChatRequestBuilderTest {
             "run",
             specific["tool_choice"]?.jsonObject?.get("function")?.jsonObject?.get("name")?.jsonPrimitive?.content,
         )
+    }
+
+    @Test
+    fun `a message that maps to nothing does not leave two messages of one role in a row`() {
+        val msgs = build(
+            """{"model":"m","messages":[
+                {"role":"user","content":"first"},
+                {"role":"assistant","content":[{"type":"thinking","thinking":"hm","signature":"s"}]},
+                {"role":"user","content":"second"}
+            ]}""",
+        ).messages()
+        assertEquals(listOf("user"), msgs.map { it["role"]?.jsonPrimitive?.content })
+        assertEquals("first\n\nsecond", msgs.single()["content"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `a block kind splice does not enumerate leaves a marker, not a silent drop`() {
+        val msgs = build(
+            """{"model":"m","messages":[{"role":"user","content":[
+                {"type":"web_search_tool_result","tool_use_id":"s1","content":[]},
+                {"type":"text","text":"and then?"}]}]}""",
+        ).messages()
+        val text = msgs.single()["content"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue("web_search_tool_result block omitted" in text) { text }
+        assertTrue("and then?" in text) { text }
+    }
+
+    @Test
+    fun `serial tool calls asked for send parallel_tool_calls false, and unasked send no field`() {
+        val serial = build(
+            """{"model":"m","tools":[{"name":"t","input_schema":{"type":"object"}}],
+                "tool_choice":{"type":"auto","disable_parallel_tool_use":true},
+                "messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("false", serial["parallel_tool_calls"]?.jsonPrimitive?.content)
+        val unset = build(
+            """{"model":"m","tools":[{"name":"t","input_schema":{"type":"object"}}],
+                "tool_choice":{"type":"auto"},"messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertFalse("parallel_tool_calls" in unset)
     }
 
     @Test

@@ -20,6 +20,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.util.ElapsedClock
 import splice.head.admission.admittedSlot
 import splice.head.wire.TurnIdMint
@@ -36,15 +39,19 @@ class LiveTurnsTest {
 
     private fun meta(session: String?, model: String = "gpt-5.6-sol", compact: Boolean = false) = TurnMeta(
         compact = compact,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = "claude-codex--$model",
-        upstreamModel = model,
-        clientMaxTokens = 8000,
-        effort = "high",
-        summary = "detailed",
-        budgetTokens = null,
-        sessionId = session,
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "high",
+            summary = "detailed",
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = "claude-codex--$model",
+            upstreamModel = model,
+            clientMaxTokens = 8000,
+        ),
+        scope = TurnScope(sessionId = session),
     )
 
     private fun request(text: String, stream: Boolean): JsonObject = Json.parseToJsonElement(

@@ -54,7 +54,7 @@ class RunningRosterRefreshTest {
                 assertFalse(JOINED in fixture.headGet("/v1/models").body())
                 assertEquals(400, fixture.turn(JOINED).statusCode())
                 assertEquals(1, fixture.requests.size, "removed discovery cannot reach the upstream")
-                assertTrue(checkNotNull(fixture.managed.catalog).contains("synthetic-original"))
+                assertTrue(checkNotNull(fixture.managed.statusline.catalog).contains("synthetic-original"))
             }
         } finally {
             fixture.close()
@@ -76,14 +76,14 @@ class RunningRosterRefreshTest {
         assertTrue("message_stop" in turn.body(), turn.body())
         val request = Json.parseToJsonElement(fixture.requests.single()).jsonObject
         assertEquals(JOINED, request["model"]?.jsonPrimitive?.content)
-        val perf = fixture.managed.perf as HeadSessionPerfSource
+        val perf = fixture.managed.sources.perf as HeadSessionPerfSource
         val total = checkNotNull(perf.sessionTotal("synthetic-session")).models.getValue(JOINED)
         assertEquals(10.0, total.usd)
-        assertEquals(0L, total.unpricedTurns)
-        val read = checkNotNull(fixture.managed.economics).read()
+        assertEquals(0L, total.gaps.unpricedTurns)
+        val read = checkNotNull(fixture.managed.sources.economics).read()
         val bucket = assertInstanceOf(EconomicsRead.Rows::class.java, read).rows.single()
-        assertEquals(10.0, bucket.costUsd)
-        assertEquals(0L, bucket.unpricedTurns)
+        assertEquals(10.0, bucket.cost.costUsd)
+        assertEquals(0L, bucket.cost.unpricedTurns)
     }
 
     private fun assertTeam(fixture: RunningRosterFixture) {

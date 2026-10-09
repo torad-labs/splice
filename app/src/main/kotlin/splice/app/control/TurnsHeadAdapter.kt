@@ -15,5 +15,5 @@ internal object TurnsHeadAdapter {
         TurnsHeadLookup { name -> resolver.headByName(name).map(::adapt) }
 
     private fun adapt(head: ManagedHead): TurnsHead =
-        TurnsHead(key = head.head.key, compact = head.compact, catalog = head.catalog)
+        TurnsHead(key = head.head.key, compact = head.sources.compact, catalog = head.statusline.catalog)
 }

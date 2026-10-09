@@ -49,6 +49,8 @@ import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
@@ -63,14 +65,18 @@ import splice.head.perf.PerfStats
 import splice.head.pipeline.TurnPipeline
 import splice.head.round.RunnerSignals
 import splice.head.turn.TurnDrive
+import splice.head.turn.TurnInputs
 import splice.head.turn.TurnTelemetry
 import splice.head.usage.OutputClamp
 import splice.head.usage.UsageStore
 import splice.head.wire.ClientChannel
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnTerminal
+import splice.upstream.BuiltTurn
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.RetryBackoff
 import splice.upstream.RetryNotice
@@ -128,8 +134,7 @@ class SseRoundConsumeTest {
 
     private fun provider(): Provider = TestResponsesProvider(
         tuning = ProviderTuning(
-            key = "codex",
-            label = "claudex",
+            name = ProviderName(key = "codex", label = "claudex"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-codex--",
                 models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -137,7 +142,7 @@ class SseRoundConsumeTest {
             ),
             pinnedModel = "gpt-5.6-sol",
             auth = ConsumeFakeAuth(),
-            baseUrl = mock.baseUrl,
+            locations = ProviderLocations(baseUrl = mock.baseUrl),
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),
@@ -149,37 +154,46 @@ class SseRoundConsumeTest {
         perf: TurnPerf = TurnPerf(),
         emitter: TurnTerminal = NoopTerminal(),
     ): TurnDrive = TurnDrive(
-        requestBody = buildJsonObject { },
-        meta = TurnMeta(
-            compact = false,
-            showReasoning = ReasoningDisplay.TEXT,
-            stream = true,
-            originalModel = "claude-codex--gpt-5.6-sol",
-            upstreamModel = "gpt-5.6-sol",
-            clientMaxTokens = 100,
-            effort = "high",
-            summary = "detailed",
-            budgetTokens = null,
+        inputs = TurnInputs(
+            built = BuiltTurn(
+                requestBody = buildJsonObject { },
+                meta = TurnMeta(
+                    compact = false,
+                    reasoning = TurnReasoning(
+                        showReasoning = ReasoningDisplay.TEXT,
+                        effort = "high",
+                        summary = "detailed",
+                        budgetTokens = null,
+                    ),
+                    route = TurnRoute(
+                        stream = true,
+                        originalModel = "claude-codex--gpt-5.6-sol",
+                        upstreamModel = "gpt-5.6-sol",
+                        clientMaxTokens = 100,
+                    ),
+                ),
+                extraHeaders = emptyMap(),
+                toolSearch = null,
+            ),
+            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+            t0 = 0,
+            perf = perf,
+            trace = null,
+            markHandedOff = {},
         ),
         emitter = emitter,
         watchdog = TurnWatchdog(budget),
-        slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
         pipeline = TurnPipeline(
             CompactStats(tmp.resolve("compact-dr90.jsonl")),
             log = {},
             clampOutput = OutputClamp { it },
         ),
-        t0 = 0,
-        trace = null,
-        perf = perf,
-        turnHeaders = emptyMap(),
         signals = RunnerSignals(),
         channel = ClientChannel(
             ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
             Mutex(),
             AtomicBoolean(false),
         ),
-        toolSearch = null,
     )
 
     /** One consume's outcome: these arms read the round's answer, so an early ending fails them loudly. */

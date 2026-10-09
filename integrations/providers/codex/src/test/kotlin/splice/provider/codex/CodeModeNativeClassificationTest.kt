@@ -35,25 +35,27 @@ internal class CodeModeNativeClassificationTest {
         val history = CodexCodeModeHistory(Json)
         val baseline = body(prefix)
         val boundary = checkNotNull(history.anchoredBoundary(baseline, emptyList()))
+        val owner = item(
+            """{"type":"custom_tool_call","call_id":"synthetic-owner","name":"exec","input":"return 'synthetic';"}""",
+        ).jsonObject
         val record = CodeModeRecord(
             id = "synthetic-owner",
             key = "synthetic-conversation",
-            outer = item(
-                """{"type":"custom_tool_call","call_id":"synthetic-owner","name":"exec","input":"return 'synthetic';"}""",
-            ).jsonObject,
-            outerCallId = "synthetic-owner",
-            source = "return 'synthetic';",
             phase = CodeModePhase.ACTIVE,
-            updatedAt = 0,
-            lastDigest = "synthetic-request",
-            baselineInputCount = boundary.fullCount,
-            baselineInputDigest = boundary.fullDigest,
-            metadataVersion = CODE_MODE_METADATA_VERSION,
-            baselineLogicalCount = boundary.logicalCount,
-            baselineLogicalDigest = boundary.logicalDigest,
-            nativeSegments = boundary.nativeSegments,
-            continuity = emptyList(),
-            continuityReplay = emptyList(),
+            origin = CodeModeOrigin(
+                outer = owner,
+                outerCallId = "synthetic-owner",
+                source = "return 'synthetic';",
+                baseline = CodeModeBaseline(
+                    inputCount = boundary.fullCount,
+                    inputDigest = boundary.fullDigest,
+                    logicalCount = boundary.logicalCount,
+                    logicalDigest = boundary.logicalDigest,
+                    metadataVersion = CODE_MODE_METADATA_VERSION,
+                ),
+            ),
+            progress = CodeModeProgress(updatedAt = 0, lastDigest = "synthetic-request"),
+            carry = CodeModeNativeContinuity(boundary.nativeSegments, emptyList(), emptyList()),
         ).also { it.replayAnchors = boundary.replayAnchors }
         val restored = history.restoreBaseline(body(prefix + callback), record)
         assertNull(restored.error, "the production placement map includes callback-scoped replay")

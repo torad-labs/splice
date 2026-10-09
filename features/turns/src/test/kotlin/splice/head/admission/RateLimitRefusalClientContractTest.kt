@@ -41,6 +41,8 @@ import splice.head.RATE_LIMITED_STATUS
 import splice.head.TestResponsesProvider
 import splice.head.headDeps
 import splice.head.usage.QuotaTracker
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -66,8 +68,7 @@ private class RefusalRig(tmp: Path) {
     val head = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-codex--",
                     models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -75,7 +76,7 @@ private class RefusalRig(tmp: Path) {
                 ),
                 pinnedModel = "gpt-5.6-sol",
                 auth = ContractFakeAuth(),
-                baseUrl = mock.baseUrl,
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),

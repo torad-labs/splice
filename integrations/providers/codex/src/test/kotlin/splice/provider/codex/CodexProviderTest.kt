@@ -27,6 +27,8 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
 import splice.dialect.responses.tools.ToolDeferralPolicy
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.TurnSignals
 import splice.upstream.sse.WireSink
@@ -66,8 +68,7 @@ class CodexProviderTest {
         log: (String) -> Unit = {},
     ) = CodexProvider(
         tuning = ProviderTuning(
-            key = "codex",
-            label = "claudex",
+            name = ProviderName(key = "codex", label = "claudex"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-codex--",
                 models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272000L)),
@@ -75,11 +76,11 @@ class CodexProviderTest {
             ),
             pinnedModel = "gpt-5.6-sol",
             auth = fakeAuth,
-            baseUrl = "https://x",
+            locations = ProviderLocations(baseUrl = "https://x"),
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
         reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
-        quirks = CodexQuirks().defaultQuirks().copy(toolSurface = toolSurface),
+        quirks = CodexQuirks().defaultQuirks().withToolSurfaceToml(toolSurface),
         accountIdHeader = accountIdHeader,
         log = log,
     )
@@ -105,7 +106,7 @@ class CodexProviderTest {
         val codex = provider(accountIdHeader = false)
         val built = codex.buildTurn(deferrableTurnBody(), compact = false, sessionId = "s1")
         assertEquals("s1", built.extraHeaders["session-id"])
-        assertEquals("model=${built.meta.upstreamModel}", built.extraHeaders["x-codex-routing-hint"])
+        assertEquals("model=${built.meta.route.upstreamModel}", built.extraHeaders["x-codex-routing-hint"])
         assertTrue(built.extraHeaders.containsKey("thread-id"), built.extraHeaders.toString())
         assertEquals("true", built.extraHeaders["x-openai-internal-codex-responses-lite"])
         // Same session, a compaction: the same three values (the WS connection key must not churn).
@@ -220,8 +221,8 @@ class CodexProviderTest {
         )
         val body = deferrableTurnBody()
         val before = deferring.buildTurn(body, compact = false, sessionId = "s1")
-        assertEquals(10, before.meta.toolsDeferred, "setup: this turn actually deferred the mcp tools")
-        assertEquals(1, before.meta.toolsEager)
+        assertEquals(10, before.meta.tools.deferred, "setup: this turn actually deferred the mcp tools")
+        assertEquals(1, before.meta.tools.eager)
 
         val amended = deferring.amendBodyOnFailure(SHAPE_400, SHAPE_400_TEXT, REJECTED_TOOL_SEARCH_BODY)
         // a second rejection on the now-closed latch must not fire a second log line
@@ -237,8 +238,8 @@ class CodexProviderTest {
             "the synthesized call/output items and their now-dangling reasoning are stripped too",
         )
 
-        assertEquals(0, after.meta.toolsDeferred, "latch closed -> the next turn builds the full eager surface")
-        assertEquals(11, after.meta.toolsEager, "all 11 tools (1 builtin + 10 mcp) ride eager now")
+        assertEquals(0, after.meta.tools.deferred, "latch closed -> the next turn builds the full eager surface")
+        assertEquals(11, after.meta.tools.eager, "all 11 tools (1 builtin + 10 mcp) ride eager now")
         assertEquals(1, loggedLines.count { "tool-surface latch closed" in it }, "fires exactly once, not per turn")
     }
 }

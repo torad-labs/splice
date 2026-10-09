@@ -53,7 +53,7 @@ internal class AddCommand(
         val title = "$BOLD${candidate.resolved.origin}$RESET"
         output.line("$title$DIM: '${candidate.key}' as $CYAN${candidate.command}$RESET")
         val ok = authenticate(candidate, env) && verified(candidate, env) && save(candidate)
-        if (!ok) output.line("${YELLOW}nothing written$RESET: ${candidate.path} is unchanged")
+        if (!ok) output.line("${YELLOW}nothing written$RESET: ${candidate.file.path} is unchanged")
         if (!ok) return false
         val live = candidate.args.live ||
             (!candidate.args.yes && confirm("Run one short live turn against '${candidate.key}' now?", default = false))
@@ -84,10 +84,10 @@ internal class AddCommand(
         val label = "saved".padEnd(ADD_PAD)
         return when (val written = AddWrite().write(c)) {
             is AddWritten.Refused -> false.also {
-                output.line("  $RED✗$RESET $label ${c.path} ${texts.cliStale(written)}")
+                output.line("  $RED✗$RESET $label ${c.file.path} ${texts.cliStale(written)}")
             }
             AddWritten.Written -> true.also {
-                output.line("  $GREEN✓$RESET $label ${c.path} (+[providers.${c.key}], +[heads.${c.key}])")
+                output.line("  $GREEN✓$RESET $label ${c.file.path} (+[providers.${c.key}], +[heads.${c.key}])")
             }
         }
     }

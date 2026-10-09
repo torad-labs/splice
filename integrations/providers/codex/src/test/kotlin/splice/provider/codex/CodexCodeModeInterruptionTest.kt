@@ -107,7 +107,7 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
             }.turn()
         assertTrue(outcome is TurnOutcome.Failure)
         assertTrue((outcome as TurnOutcome.Failure).message.contains("not exposed"))
-        assertTrue(outcome.deterministic, "a bridge verdict is the same on every retry")
+        assertTrue(outcome.traits.deterministic, "a bridge verdict is the same on every retry")
         assertEquals(state, stateFiles.text())
         assertEquals(1, runtime.cell.advances)
     }
@@ -135,7 +135,7 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
                 RoundResult.Outcome(completedOutcome())
             }.turn()
         assertTrue(outcome is TurnOutcome.Success)
-        assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
+        assertTrue((outcome as TurnOutcome.Success).usage.origin.codeModeDiverged)
         assertEquals(Json.parseToJsonElement(clientHistory), Json.parseToJsonElement(posted))
         val items = Json.parseToJsonElement(posted).jsonObject.getValue("input").jsonArray
         assertEquals(1, items.count { it.jsonObject["type"] == JsonPrimitive("function_call_output") })

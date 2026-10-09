@@ -411,7 +411,7 @@ class AddLiveCommandTest {
         val config = TopologyLoader.configPath(env)
         TopologyLoader.loadOrMaterialize(config)
         val profile = requireNotNull(AddProfiles().find(name))
-        if (name != "claude") seedCredential(profile.authKind)
+        if (name != "claude") seedCredential(profile.provider.authKind)
         val output = mutableListOf<String>()
         val events = mutableListOf<String>()
         val models = profile.models.joinToString(",") { """{"id":"${it.id}"}""" }
@@ -428,9 +428,9 @@ class AddLiveCommandTest {
             daemonUp = { true },
             prompt = { question, default -> if (question.startsWith("Run one short live")) "yes" else default },
             liveTurn = { command, _ ->
-                assertTrue(profile.headKey in TopologyLoader.parse(Files.readString(config)).heads)
+                assertTrue(profile.head.key in TopologyLoader.parse(Files.readString(config)).heads)
                 assertEquals(listOf("linked", "restarted"), events)
-                assertEquals(profile.command, command)
+                assertEquals(profile.head.command, command)
                 events += "checked"
                 if (throws) throw java.io.IOException("synthetic failure")
                 AddLiveResult(false, "the head did not answer before the check's time limit")
@@ -441,7 +441,7 @@ class AddLiveCommandTest {
         val command = AddCommand(terminal, terminal, AddChecks(terminal, http), ports, HeadPortBindable { true })
         val ok = runBlocking { command.add(args, env) }
         assertTrue(ok, output.toString())
-        assertTrue(profile.headKey in TopologyLoader.parse(Files.readString(config)).heads, name)
+        assertTrue(profile.head.key in TopologyLoader.parse(Files.readString(config)).heads, name)
         assertEquals(listOf("linked", "restarted", "checked"), events)
         assertTrue(output.any { it.contains("The head is saved") }, output.toString())
         assertFalse(output.any { it.contains("nothing written") }, output.toString())

@@ -15,6 +15,8 @@ import splice.core.perf.PerfSnapshot
 import splice.core.storage.ActivityDays
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.head.compact.CompactView
@@ -40,14 +42,18 @@ class TraceFailureSentenceTest {
         )
         val meta = TurnMeta(
             compact = false,
-            showReasoning = ReasoningDisplay.TEXT,
-            stream = true,
-            originalModel = "claude-codex--m",
-            upstreamModel = "m",
-            clientMaxTokens = 16,
-            effort = "high",
-            summary = "detailed",
-            budgetTokens = null,
+            reasoning = TurnReasoning(
+                showReasoning = ReasoningDisplay.TEXT,
+                effort = "high",
+                summary = "detailed",
+                budgetTokens = null,
+            ),
+            route = TurnRoute(
+                stream = true,
+                originalModel = "claude-codex--m",
+                upstreamModel = "m",
+                clientMaxTokens = 16,
+            ),
         )
         val trace = store.begin(meta, ClientInbound("POST", "/v1/messages", emptyMap(), "synthetic request"))
         trace.failureSentence(FAILURE)

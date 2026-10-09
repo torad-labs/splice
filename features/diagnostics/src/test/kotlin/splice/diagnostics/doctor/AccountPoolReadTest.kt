@@ -145,9 +145,9 @@ class AccountPoolReadTest {
         val view = read.pools.getValue("claude-splice")
         assertEquals("native:claude", view.selectedLabel, "the login that carried the request is current")
         val expired = view.accounts.single { it.label == "native:claude-splice" }
-        assertTrue(expired.credentialPresent, "expired does not mean absent")
-        assertEquals(4.0, view.selectedAccount()?.fiveHourUsedPercent)
-        assertEquals(1.0, view.selectedAccount()?.sevenDayUsedPercent)
+        assertTrue(expired.credential.present, "expired does not mean absent")
+        assertEquals(4.0, view.selectedAccount()?.quota?.fiveHour?.usedPercent)
+        assertEquals(1.0, view.selectedAccount()?.quota?.sevenDay?.usedPercent)
         val detail = AccountPoolText().summary(view)
         assertTrue(detail.contains("claude's login"), detail)
         assertTrue(detail.contains("5h 4%") && detail.contains("7d 1%"), detail)

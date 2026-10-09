@@ -22,6 +22,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 
+private const val CLOSED_400 = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n" +
+    "Connection: close\r\n\r\n"
+
 class TurnPathProbeLoopTest {
 
     private val sockets = mutableListOf<ServerSocket>()
@@ -46,7 +49,7 @@ class TurnPathProbeLoopTest {
                         ss.accept().use { c ->
                             c.getInputStream().read(ByteArray(1024)) // drain a little
                             c.getOutputStream().write(
-                                "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(),
+                                CLOSED_400.toByteArray(),
                             )
                         }
                     },

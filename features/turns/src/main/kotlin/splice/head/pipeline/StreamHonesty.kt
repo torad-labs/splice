@@ -14,7 +14,7 @@ internal class StreamHonesty(private val mirrorReasoning: Boolean) {
     // The mirror_reasoning knob gates the CALL — mirrorInto stays the single L2 definition
     // (the ast-grep wall pins it to Mirror.kt); off = no transcript reinjection, display untouched.
     suspend fun mirrorGated(sink: WireSink, thinkingText: String?, meta: TurnMeta) {
-        if (mirrorReasoning) mirror.mirrorInto(sink, thinkingText, meta.showReasoning, meta.compact)
+        if (mirrorReasoning) mirror.mirrorInto(sink, thinkingText, meta.reasoning.showReasoning, meta.compact)
     }
 
     /** CX-09: the empty-turn verdict — nothing reached the client this turn and nothing will.
@@ -27,7 +27,7 @@ internal class StreamHonesty(private val mirrorReasoning: Boolean) {
      *  thinking buffer is refilled from the completed response without the sink ever being
      *  touched. */
     fun nothingReachesTheClient(outcome: TurnOutcome.Success, meta: TurnMeta): Boolean =
-        !outcome.emittedThinking && !willMirrorHere(outcome.thinkingText, meta)
+        !outcome.text.emittedThinking && !willMirrorHere(outcome.text.thinkingText, meta)
 
     /** CX-09: the same predicate [mirrorGated] obeys, including the locked flag.
      *
@@ -40,5 +40,5 @@ internal class StreamHonesty(private val mirrorReasoning: Boolean) {
      *  it shipped. So the honesty gate asks [TurnOutcome.Success.emittedThinking] FIRST, and only
      *  falls back to this predicate when nothing reached the wire at all. */
     private fun willMirrorHere(thinkingText: String?, meta: TurnMeta): Boolean =
-        mirrorReasoning && mirror.willMirror(thinkingText, meta.showReasoning, meta.compact)
+        mirrorReasoning && mirror.willMirror(thinkingText, meta.reasoning.showReasoning, meta.compact)
 }

@@ -87,7 +87,7 @@ class SummaryStatusHeadersTest {
         )
 
         val text = deltas.joinToString("")
-        assertEquals(text, (outcome as TurnOutcome.Success).thinkingText)
+        assertEquals(text, (outcome as TurnOutcome.Success).text.thinkingText)
         // Released at the body's first delta: the header and that delta in one write, then the rest.
         assertEquals(
             listOf("think#0:**Evaluating screenshot capture**\n\nI need to create ", "think#0:a script."),

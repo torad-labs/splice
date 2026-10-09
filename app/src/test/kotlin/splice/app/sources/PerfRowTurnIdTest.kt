@@ -1,4 +1,4 @@
-// The reader carries a row's trace turn id by name, off real JSONL bytes: the id the console opens the row's request by.
+// The reader carries a row's trace turn id by name, off real JSONL bytes: the id the console opens the row by.
 // It is a string fact, so it stays out of the numeric bag even when every character of it is a digit.
 package splice.app.sources
 
@@ -24,7 +24,7 @@ class PerfRowTurnIdTest {
         val (traced, bare) = PerfRowsFileSource(file).window(0).rows
 
         assertEquals("3f2a9c01d4e5", traced.turn)
-        assertEquals("sess-100", traced.session, "the turn is not read into its neighbour")
+        assertEquals("sess-100", traced.facts.session, "the turn is not read into its neighbour")
         assertNull(bare.turn, "no trace, no turn")
     }
 
@@ -37,7 +37,7 @@ class PerfRowTurnIdTest {
         val row = PerfRowsFileSource(file).window(0).rows.single()
 
         assertEquals("123456789012", row.turn)
-        assertEquals("12345678", row.session)
+        assertEquals("12345678", row.facts.session)
         assertFalse("turn" in row.fields, "a string fact read as a counter: ${row.fields}")
         assertFalse("session" in row.fields, "a string fact read as a counter: ${row.fields}")
         assertEquals(5L, row.fields["total"], "the counters are still the bag")
@@ -52,8 +52,8 @@ class PerfRowTurnIdTest {
 
         val row = PerfRowsFileSource(file).window(0).rows.single()
 
-        assertEquals("sess-v4345", row.sessionId)
-        assertEquals("msg_42", row.responseMessageId)
+        assertEquals("sess-v4345", row.transcript.sessionId)
+        assertEquals("msg_42", row.transcript.responseMessageId)
         assertFalse("session_id" in row.fields)
         assertFalse("response_message_id" in row.fields)
     }

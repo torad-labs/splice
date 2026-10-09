@@ -28,6 +28,8 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
 import splice.head.admission.RequestMaterializationGate
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import java.net.Socket
 import java.nio.file.Path
@@ -48,8 +50,7 @@ class HeadServerBoundPortTest {
     ) = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-codex--",
                     models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -57,7 +58,7 @@ class HeadServerBoundPortTest {
                 ),
                 pinnedModel = "gpt-5.6-sol",
                 auth = BoundPortAuth(),
-                baseUrl = UNUSED_UPSTREAM,
+                locations = ProviderLocations(baseUrl = UNUSED_UPSTREAM),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),

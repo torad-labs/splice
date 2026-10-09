@@ -35,7 +35,10 @@ import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
 import splice.core.config.InstallPaths
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
 import splice.launch.LaunchHead
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.absentAuth
 import splice.launch.launchHeadsOf
@@ -54,20 +57,26 @@ class ClaudeHeadRoutesTest {
 
     private fun launchSpec(configDir: Path) = LaunchSpec(
         trees = HeadTrees(configDir),
-        pinnedModel = "claude-fable-5",
-        availableModelIds = listOf("claude-fable-5"),
-        modelLabels = mapOf("claude-fable-5" to "Claude Fable 5"),
-        contextWindow = 200_000,
-        modelOptionsCache = buildJsonObject { },
-        statuslineCommand = "\"/bin/curl\" -s :3096/statusline/claude-splice",
-        loginCommand = "claude-splice login",
-        signInLabel = "Claude",
+        models = LaunchModels(
+            pinnedModel = "claude-fable-5",
+            availableModelIds = listOf("claude-fable-5"),
+            modelLabels = mapOf("claude-fable-5" to "Claude Fable 5"),
+            contextWindow = 200_000,
+            modelOptionsCache = buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "claude-splice login",
+            signInLabel = "Claude",
+            headKey = "claude-splice",
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "\"/bin/curl\" -s :3096/statusline/claude-splice",
+            port = 3104,
+            inferenceToken = "test-token",
+            apiTimeoutMs = 960_000,
+            forwardClientAuth = true,
+        ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 3104,
-        inferenceToken = "test-token",
-        apiTimeoutMs = 960_000,
-        forwardClientAuth = true,
-        headKey = "claude-splice",
     )
 
     private fun claudeHead(configDir: Path): LaunchHead = LaunchHead(

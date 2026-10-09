@@ -27,7 +27,7 @@ internal class AddModelOffers {
     /** Every head of the OpenRouter provider, in splice.toml's order. */
     fun of(topology: Topology): List<AddModelOffer> {
         val profile = AddProfiles().find(OPENROUTER) ?: return emptyList()
-        return topology.heads.filter { it.value.provider == profile.headKey }.map { (headKey, head) ->
+        return topology.heads.filter { it.value.provider == profile.head.key }.map { (headKey, head) ->
             val providerIds = topology.providers.getValue(head.provider).models.map { it.id }.toSet()
             // REACHABLE, not merely present. A head that declares `models = [...]` is a ROSTER:
             // Topology.modelsFor returns it verbatim and ignores every other provider row, so a model

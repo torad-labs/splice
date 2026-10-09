@@ -83,9 +83,9 @@ public class TranscriptRequestRoute(
                         put("role", message.role.name.lowercase())
                         message.ts?.let { put("ts", it) }
                         put("text", message.text)
-                        message.tool?.let { put("tool", it) }
-                        message.result?.let { put("result", it) }
-                        message.toolUseId?.let { put("tool_use_id", it) }
+                        message.toolUse.name?.let { put("tool", it) }
+                        message.toolUse.result?.let { put("result", it) }
+                        message.toolUse.id?.let { put("tool_use_id", it) }
                         if (message.messageId == lookup.responseId) put("selected", true)
                     }
                 }

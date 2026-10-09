@@ -8,6 +8,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.turn.noRequestUsage
@@ -41,8 +42,8 @@ internal class CodexCodeModeDriver(
 
     /** A redirectable post can yield a durable script while its upstream response remains live. */
     suspend fun post(context: CodeModeRunContext, initialOuter: GatewayCustomCall?, body: CodeModeBody): TurnOutcome {
-        val post = context.post as? CodeModeRedirectablePost
-            ?: return drive(context, initialOuter, body, context.post(body))
+        val post = context.link.post as? CodeModeRedirectablePost
+            ?: return drive(context, initialOuter, body, context.link.post(body))
         val round = streams.begin(context, body, post) { call ->
             driveProblem(context, listOf(call), call)?.let { error(it) }
             validation.outer(call.copy(input = call.input.ifBlank { "source pending" }))?.let { error(it) }
@@ -98,7 +99,7 @@ internal class CodexCodeModeDriver(
         if (context.completed.none { it.id == record.id }) context.completed += record
         val posted = context.recovery?.upstream(context.completed) ?: context.completed
         val capture = posted.lastOrNull { it.id == record.id }
-        val rewritten = context.post.canonicalize(body, posted, context.turn.toolMedia, capture)
+        val rewritten = context.link.post.canonicalize(body, posted, context.turn.rendering.media, capture)
         rewritten.error?.let { return failure(it) }
         val outcome = post(context, null, checkNotNull(rewritten.body))
         val accumulated = CodeModeOutcomeAccumulator()
@@ -142,7 +143,7 @@ internal class CodexCodeModeDriver(
         accumulated: CodeModeOutcomeAccumulator,
     ): TurnOutcome? {
         val success = state.outcome as? TurnOutcome.Success ?: return accumulated.finish(state.outcome)
-        val calls = success.customCalls
+        val calls = success.handoffs.customCalls
         val outer = state.suppliedOuter ?: calls.singleOrNull()
         val problem = driveProblem(context, calls, outer)
         return when {
@@ -165,9 +166,9 @@ internal class CodexCodeModeDriver(
         if (hasTooManyCalls || isMissingOuter) return "code mode accepts one outer custom call per round"
         if (outer == null) return null
         return when {
-            context.completed.any { it.outerCallId == outer.callId } ->
+            context.completed.any { it.origin.outerCallId == outer.callId } ->
                 "duplicate completed code-mode call id '${outer.callId}'"
-            config.maxRounds?.let { context.scripts >= it } == true -> "code-mode round limit exceeded"
+            config.bounds.maxRounds?.let { context.scripts >= it } == true -> "code-mode round limit exceeded"
             else -> null
         }
     }
@@ -189,7 +190,7 @@ internal class CodexCodeModeDriver(
             context.recovery?.generated(success)
             val posted = context.recovery?.upstream(context.completed) ?: context.completed
             val capture = posted.lastOrNull { it.id == record.id }
-            val rewritten = context.post.canonicalize(state.body, posted, context.turn.toolMedia, capture)
+            val rewritten = context.link.post.canonicalize(state.body, posted, context.turn.rendering.media, capture)
             rewritten.error?.let { return accumulated.finishLocal(failure(it)) }
             state.body = checkNotNull(rewritten.body)
             accumulated.finish(post(context, null, state.body))
@@ -255,7 +256,7 @@ internal class CodexCodeModeDriver(
                     context.turn,
                     context.disableParallel,
                     emptyList(),
-                    streams.attach(record, context.sink),
+                    streams.attach(record, context.link.sink),
                     stream,
                     context.recovery?.delivery(record),
                 ),
@@ -272,7 +273,7 @@ internal class CodexCodeModeDriver(
         // content arrived (2026-09-07, 87 failed turns on one head).
         val detail = "$CAPACITY_DETAIL: ${error.message}"
         config.log(
-            "[code-mode] ${record.id.take(CODE_MODE_RECORD_LOG_CHARS)} (outer ${record.outerCallId}): $detail",
+            "[code-mode] ${record.id.take(CODE_MODE_RECORD_LOG_CHARS)} (outer ${record.origin.outerCallId}): $detail",
         )
         record to machine.interrupt(record, detail)
     } catch (error: IOException) {
@@ -294,7 +295,7 @@ internal class CodexCodeModeDriver(
     private fun failure(message: String): TurnOutcome.Failure =
         TurnOutcome.Failure(
             message,
-            deterministic = true,
+            traits = FailureTraits(deterministic = true),
             // V4-117: every path through this helper is the code-mode machine reporting its own
             // protocol state, so they share ONE cause rather than each borrowing an upstream one.
             // The type PARAMETER this used to take is gone with the hand-picked type itself: the

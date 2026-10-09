@@ -13,6 +13,8 @@ import splice.accounts.order.HeadAccountOrderSource
 import splice.accounts.pool.AccountPoolJson
 import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
+import splice.app.provider.WiredAccountCredential
+import splice.app.provider.WiredAccountQuota
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -29,6 +31,8 @@ import splice.core.util.WallClock
 import splice.dialect.chat.ChatQuirks
 import splice.head.usage.QuotaTracker
 import splice.provider.openai.OpenAiChatProvider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
@@ -67,10 +71,10 @@ class HeadAccountPoolsTest {
         assertEquals("backup", chosen(pool).label)
         val primary = pool.view(SESSION).accounts.single { it.label == "primary" }
         assertEquals(false, primary.available)
-        assertEquals(false, primary.credentialPresent)
+        assertEquals(false, primary.credential.present)
         val projected = requireNotNull(pools.source(pool)).view(SESSION)
-        assertEquals(false, projected.accounts.single { it.primary }.credentialPresent)
-        assertEquals(true, projected.accounts.single { !it.primary }.credentialPresent)
+        assertEquals(false, projected.accounts.single { it.primary }.credential.present)
+        assertEquals(true, projected.accounts.single { !it.primary }.credential.present)
     }
 
     @Test
@@ -122,7 +126,12 @@ class HeadAccountPoolsTest {
     @Test
     fun `a restart keeps the operator's order and the login the provider holds`(@TempDir tmp: Path) {
         val two = wired(tmp)
-        val third = WiredAccount("third", false, TestAuth("third-token"), tmp.resolve("third-quota.json"))
+        val third = WiredAccount(
+            "third",
+            false,
+            TestAuth("third-token"),
+            WiredAccountQuota(tmp.resolve("third-quota.json")),
+        )
         val wired = two.copy(accounts = two.accounts + third)
         val pools = HeadAccountPools()
         val holdFile = { label: String -> tmp.resolve("head-$label-provider-hold.json") }
@@ -169,12 +178,11 @@ class HeadAccountPoolsTest {
         )
         val provider = OpenAiChatProvider(
             ProviderTuning(
-                key = "head",
-                label = "Head",
+                name = ProviderName(key = "head", label = "Head"),
                 catalog = catalog,
                 pinnedModel = "model",
                 auth = defaultAuth,
-                baseUrl = "https://example.invalid",
+                locations = ProviderLocations(baseUrl = "https://example.invalid"),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
             ChatQuirks("test"),
@@ -188,10 +196,10 @@ class HeadAccountPoolsTest {
                     "primary",
                     true,
                     primary,
-                    tmp.resolve("primary-quota.json"),
-                    credentialPresent = primaryPresent,
+                    WiredAccountQuota(tmp.resolve("primary-quota.json")),
+                    credential = WiredAccountCredential(present = primaryPresent),
                 ),
-                WiredAccount("backup", false, backup, tmp.resolve("backup-quota.json")),
+                WiredAccount("backup", false, backup, WiredAccountQuota(tmp.resolve("backup-quota.json"))),
             ),
         )
     }

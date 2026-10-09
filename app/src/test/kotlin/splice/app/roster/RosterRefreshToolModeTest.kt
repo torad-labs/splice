@@ -12,6 +12,8 @@ import splice.app.provider.CodexResponsesArm
 import splice.app.provider.HeadModelsSource
 import splice.app.provider.ModelRosters
 import splice.app.provider.ProviderBuild
+import splice.app.provider.PublishedRoster
+import splice.app.provider.UpstreamFaultPlan
 import splice.core.auth.RefreshAttempt
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
@@ -93,10 +95,12 @@ class RosterRefreshToolModeTest {
             head = head,
             providerCfg = provider,
             catalog = provider.catalogFor(head),
-            watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+                loginCommand = "",
+            ),
             cfg = ConfigService(paths, envReader = { null }).getConfig("synthetic"),
-            loginCommand = "",
-            discovered = rosters,
+            roster = PublishedRoster(discovered = rosters),
         )
     }
 }

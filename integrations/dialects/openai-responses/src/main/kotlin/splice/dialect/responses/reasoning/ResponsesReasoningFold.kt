@@ -37,7 +37,7 @@ internal class ResponsesReasoningFold(
     private val emittedReasoningKeys = HashSet<Int>()
 
     // sequential_cutoff restatement dedup — state + decision encapsulated in SummaryDedup.
-    private val summaryDedup = SummaryDedup(ctx.dedupeRepeatedSummaryParts, summaryParts)
+    private val summaryDedup = SummaryDedup(ctx.summary.dedupeRepeatedParts, summaryParts)
 
     // Live summary delivery (every mode but cutoff): a header-only part is a status line, rendered
     // once per round per distinct text (V4-450).
@@ -48,7 +48,7 @@ internal class ResponsesReasoningFold(
     // restates the running summary (same text, re-fired under original AND new item ids). codex
     // IGNORES summary deltas and part.added entirely in this mode and renders ONLY
     // reasoning_summary_text.done events belonging to the ACTIVE item — pure id filtering, no
-    // text comparison. ctx.dedupeRepeatedSummaryParts is true exactly when the request asked for
+    // text comparison. ctx.summary.dedupeRepeatedParts is true exactly when the request asked for
     // sequential_cutoff delivery, so it doubles as the mode flag.
 
     /** The reducer's single reasoning-family arm: dispatch by event type. */
@@ -62,7 +62,7 @@ internal class ResponsesReasoningFold(
 
     suspend fun onSummaryPartAdded(evt: JsonObject, sink: WireSink) {
         // cutoff mode: part boundaries are rendered by the done path, never from part.added.
-        if (ctx.dedupeRepeatedSummaryParts) return
+        if (ctx.summary.dedupeRepeatedParts) return
         // New summary part = new paragraph in the SAME thinking block (v24: closing per part
         // truncated multi-part summaries — protocol violation, deltas after content_block_stop).
         // The paragraph break rides the part's first rendered text, so a part that renders nothing
@@ -79,7 +79,7 @@ internal class ResponsesReasoningFold(
             delta.isEmpty() -> null
             // cutoff mode: summary deltas are NOISE (concurrent items interleave and restate; codex
             // `continue`s on ReasoningSummaryDelta). Raw reasoning_text deltas still stream live.
-            ctx.dedupeRepeatedSummaryParts && summary -> null
+            ctx.summary.dedupeRepeatedParts && summary -> null
             summaryDedup.suppress(oi, delta) -> null
             summary -> statusHeaders.delta(frames.reasoningKey(oi), delta)
             else -> SummaryRelease(delta, startsPart = false)
@@ -92,7 +92,7 @@ internal class ResponsesReasoningFold(
     suspend fun onSummaryTextDone(evt: JsonObject, sink: WireSink) {
         val text = JsonScalars.strOrEmpty(evt["text"])
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: 0
-        if (!ctx.dedupeRepeatedSummaryParts) {
+        if (!ctx.summary.dedupeRepeatedParts) {
             // Live delivery: the done event settles a part still held as a possible bare header.
             render(oi, statusHeaders.done(frames.reasoningKey(oi), text), sink)
             return
@@ -128,7 +128,7 @@ internal class ResponsesReasoningFold(
      *  cross-POST state at all; done-path parts are ATOMIC, so the text match that token-granular
      *  deltas defeated is sound here. Each layer covers the other's blind spot. */
     private fun renderableSummaryDone(evt: JsonObject, text: String): Boolean {
-        if (!ctx.dedupeRepeatedSummaryParts || text.isEmpty()) return false
+        if (!ctx.summary.dedupeRepeatedParts || text.isEmpty()) return false
         val itemId = JsonScalars.strOrEmpty(evt["item_id"])
         val oi = frames.intOr(evt[OUTPUT_INDEX])
         val active = if (itemId.isNotEmpty() && state.activeItemId != null) {
@@ -157,7 +157,7 @@ internal class ResponsesReasoningFold(
         // cutoff mode: the done-event path is the complete render surface (codex renders nothing
         // from completed items in this mode — a completed item that never went active is a
         // restatement carrier, and re-rendering it is the staircase this port kills).
-        if (ctx.dedupeRepeatedSummaryParts) return
+        if (ctx.summary.dedupeRepeatedParts) return
         // Its summary arrived live, so it is already rendered or decided: settle only a part the
         // item ended on while still held as a possible bare header.
         val key = frames.reasoningKey(oi)
@@ -188,7 +188,7 @@ internal class ResponsesReasoningFold(
         // deltas hadn't arrived — suppressing them both late (sawDelta return) and live (recap
         // match): total summary starvation (found live 2026-07-19).
         // Late-path recap filter: drop the leading recap run + within-item repeats, keep the rest.
-        val text = if (ctx.dedupeRepeatedSummaryParts && raw.length <= MAX_DEDUP_SPLIT_CHARS) {
+        val text = if (ctx.summary.dedupeRepeatedParts && raw.length <= MAX_DEDUP_SPLIT_CHARS) {
             raw.split(PART_SEPARATOR).filter { part -> !summaryDedup.suppress(outputIndex, part) }
                 .joinToString(PART_SEPARATOR)
         } else {

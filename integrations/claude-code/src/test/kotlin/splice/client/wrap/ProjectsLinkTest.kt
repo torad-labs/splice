@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import java.nio.file.CopyOption
 import java.nio.file.Files
@@ -65,7 +66,9 @@ class ProjectsLinkTest {
             defaultModel = "m",
             modelOptionsCache = buildJsonObject { put("cache", "x") },
             statuslineCommand = "curl :3096/statusline",
-            headKey = "codex",
+            signIn = MaterializeSignIn(
+                headKey = "codex",
+            ),
         )
         ClaudeConfigMaterializer(home).materialize(spec)
     }

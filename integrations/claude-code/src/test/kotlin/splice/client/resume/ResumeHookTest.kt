@@ -22,6 +22,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.client.ClaudeConfigMaterializer
 import splice.client.ClaudePolicy
+import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import splice.client.login.HookInstaller
 import java.io.IOException
@@ -44,7 +45,9 @@ class ResumeHookTest {
                 defaultModel = "gpt-5.6-sol",
                 modelOptionsCache = buildJsonObject { put("cache", "x") },
                 statuslineCommand = "curl :3096/statusline",
-                headKey = "codex",
+                signIn = MaterializeSignIn(
+                    headKey = "codex",
+                ),
             ),
         )
         return Json.parseToJsonElement(Files.readString(configDir.resolve("settings.json"))).jsonObject

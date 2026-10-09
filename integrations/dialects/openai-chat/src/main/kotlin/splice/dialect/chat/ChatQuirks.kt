@@ -7,22 +7,10 @@ import splice.core.wire.ContentBlock
 import splice.core.wire.DocumentBlock
 import splice.core.wire.ImageBlock
 
-public data class ChatQuirks(
-    val providerTag: String,
+/** What the vendor accepts on the wire: tools, images, and the image-edge floor. */
+public data class ChatCapabilityQuirks(
     val supportsTools: Boolean = true,
     val supportsVision: Boolean = true,
-    /** Some vendors want `max_completion_tokens`, most want `max_tokens`. */
-    val maxTokensField: String = "max_tokens",
-    /**
-     * When true, emit `reasoning_effort` (and/or `reasoning`) from Anthropic thinking budget so
-     * DeepSeek/xAI-compatible chat backends return `reasoning_content` in the stream.
-     */
-    val emitReasoningEffort: Boolean = true,
-    /** When set, prompt_cache_key = "<prefix>:<sessionId>" rides every request (server-side
-     *  session cache pinning; null = field omitted for vendors of unknown tolerance). */
-    val sessionCacheKeyPrefix: String? = null,
-    /** Emit stream_options.include_usage (usage frames are opt-in on OpenAI-compat streams). */
-    val emitUsageInStream: Boolean = false,
     /**
      * DR-155: the vendor's minimum image edge in pixels, or null for "this backend has no stated
      * minimum". NULL IS THE DEFAULT AND THE DEFAULT MATTERS: with it, no outbound image is ever
@@ -32,17 +20,39 @@ public data class ChatQuirks(
      * DR-152 soak. See [splice.core.media.ImageFloor] for why every unknown forwards.
      */
     val minImageEdgePx: Int? = null,
+)
+
+/** How the vendor takes reasoning effort. */
+public data class ChatReasoningQuirks(
+    /**
+     * When true, emit `reasoning_effort` (and/or `reasoning`) from Anthropic thinking budget so
+     * DeepSeek/xAI-compatible chat backends return `reasoning_content` in the stream.
+     */
+    val emitReasoningEffort: Boolean = true,
     /** Models that accept reasoning_effort=xhigh. null = never emit xhigh (unknown vendors). */
     val xhighModels: Regex? = null,
     /** Opt-in client effort aliases. null preserves the existing thinking-budget tiers. */
     val effortVocabulary: ChatEffortVocabulary? = null,
+)
+
+public data class ChatQuirks(
+    val providerTag: String,
+    val capabilities: ChatCapabilityQuirks = ChatCapabilityQuirks(),
+    /** Some vendors want `max_completion_tokens`, most want `max_tokens`. */
+    val maxTokensField: String = "max_tokens",
+    val reasoning: ChatReasoningQuirks = ChatReasoningQuirks(),
+    /** When set, prompt_cache_key = "<prefix>:<sessionId>" rides every request (server-side
+     *  session cache pinning; null = field omitted for vendors of unknown tolerance). */
+    val sessionCacheKeyPrefix: String? = null,
+    /** Emit stream_options.include_usage (usage frames are opt-in on OpenAI-compat streams). */
+    val emitUsageInStream: Boolean = false,
 ) {
     /** Overlay TOML `[providers.*.quirks].reasoning_effort` onto a chat-dialect quirk profile — null
-     *  keeps the provider's own default (see [emitReasoningEffort]). A member rather than the
+     *  keeps the provider's own default (see [ChatReasoningQuirks.emitReasoningEffort]). A member rather than the
      *  file-level extension it used to be (Kotlin main sources carry no top-level functions); the
      *  receiver was already a ChatQuirks, so every call site is unchanged. */
     public fun withReasoningEffortToml(reasoningEffort: Boolean?): ChatQuirks =
-        copy(emitReasoningEffort = reasoningEffort ?: this.emitReasoningEffort)
+        copy(reasoning = reasoning.copy(emitReasoningEffort = reasoningEffort ?: reasoning.emitReasoningEffort))
 
     /** V4-163: overlay `[providers.*.quirks].stream_usage`, or a caller's own default for a provider
      *  kind, onto the profile — null keeps this profile's own value (see [emitUsageInStream]), which
@@ -58,7 +68,7 @@ public data class ChatQuirks(
         content.filterIsInstance<DocumentBlock>().forEach { _ ->
             out.add("[document omitted by $providerTag proxy: unsupported on this backend]")
         }
-        if (!supportsVision) {
+        if (!capabilities.supportsVision) {
             val n = content.count { it is ImageBlock }
             if (n > 0) out.add("[$n image(s) omitted by $providerTag proxy: backend has no vision]")
         }

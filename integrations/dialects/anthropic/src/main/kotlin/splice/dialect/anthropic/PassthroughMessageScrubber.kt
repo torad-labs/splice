@@ -1,7 +1,7 @@
 // NEW: the message content-block scrubbing family — split out of PassthroughRequestBuilder.kt
 // (2026-08-17, concentration campaign). Six functions that only call each other, the allowlist and
 // the stripper — the largest self-contained cluster in the file, and the only one that reads
-// quirks.blockAllowlist. Every relocated member kept its identical name and argument list.
+// quirks.request.blockAllowlist. Every relocated member kept its identical name and argument list.
 //
 // V4-39 (2026-09-16): the allowlist can empty a message that ARRIVED with blocks, and the emptied
 // message used to ride upstream as `content: []` — a shape no backend here can act on. The live
@@ -125,7 +125,7 @@ internal class PassthroughMessageScrubber(
     /** Keep an accepted block (cache_control stripped, tool_result inner content filtered) or drop. */
     private fun scrubBlock(block: JsonObject): JsonObject? {
         val type = JsonScalars.strOrEmpty(block[TYPE])
-        quirks.blockAllowlist?.let { if (type !in it) return dropDisallowed(type) }
+        quirks.request.blockAllowlist?.let { if (type !in it) return dropDisallowed(type) }
         if (isDropped(type, block)) return null
         return rebuildBlock(block, type)
     }
@@ -155,7 +155,7 @@ internal class PassthroughMessageScrubber(
     /** True when the block is dropped for [unverifiable], reporting each reason once for the life of the
      *  head (the history replays every turn). */
     private fun isUnverifiable(type: String, block: JsonObject): Boolean {
-        if (!quirks.verifiesThinkingSignatures) return false
+        if (!quirks.thinking.verifiesThinkingSignatures) return false
         val reason = unverifiable(type, block) ?: return false
         if (droppedLogged.add(reason)) {
             log(
@@ -195,7 +195,7 @@ internal class PassthroughMessageScrubber(
     private fun rebuildBlock(block: JsonObject, type: String): JsonObject = buildJsonObject {
         for ((key, value) in block) {
             when {
-                key == CACHE_CONTROL && quirks.stripCacheControl -> Unit
+                key == CACHE_CONTROL && quirks.request.stripCacheControl -> Unit
                 key == CONTENT && type == TYPE_TOOL_RESULT -> put(CONTENT, scrubContent(value))
                 // V4-32: a replayed tool_use must shorten to the SAME string its declaration
                 // did, or the upstream sees a call naming a tool it was never offered.

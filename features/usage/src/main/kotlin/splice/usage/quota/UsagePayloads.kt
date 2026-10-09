@@ -64,15 +64,14 @@ public class UsagePayloads(
                 val nowSeconds = clock().milliseconds.inWholeSeconds
                 heads.all().forEach { m ->
                     val usage = m.usage.snapshot()
-                    val pool = m.accountPool?.view(null)
+                    val pool = m.sinks.accountPool?.view(null)
                     val selectedQuota = quotaFor(m, pool?.selectedQuota(), usage.quota, nowSeconds)
                     val rlView = usage.ratelimit
                     val rl = rlView?.currentAt(nowSeconds)?.let {
                         RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens)
                     }
                     val plan = selectedQuota?.let { PlanWindows(it, nowSeconds) }
-                    val warn = refusal(m.key)
-                        ?: UsageWarnPolicy.computeUsageWarn(usage.outputTokens5h, rl, m.warnPct, m.warnTokens5h, plan)
+                    val warn = warnOf(m, usage.outputTokens5h, rl, plan)
                     addJsonObject {
                         put(KEY, m.key)
                         put(LABEL, m.label)
@@ -102,6 +101,12 @@ public class UsagePayloads(
                 }
             }
         }.toString()
+    }
+
+    private fun warnOf(head: UsageHead, outputTokens5h: Long, rl: RateLimitState?, plan: PlanWindows?): UsageWarn {
+        val (warnPct, warnTokens5h) = head.warn
+        return refusal(head.key)
+            ?: UsageWarnPolicy.computeUsageWarn(outputTokens5h, rl, warnPct, warnTokens5h, plan)
     }
 
     /** V4-398: a provider that refuses until a known instant is fully spent whatever the headers or

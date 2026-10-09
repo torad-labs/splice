@@ -94,7 +94,8 @@ class ExampleConfigTest {
     fun `a duplicated models key in one head fails loud instead of silently unioning`() {
         val valid = exampleToml()
         val roster =
-            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]"""
+            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6",""" +
+                """ slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]"""
         val malformed = valid.replace(roster, roster + "\n" + """models = [{ id = "grok-4.3", slot = "haiku" }]""")
         assertTrue(malformed != valid, "test must duplicate the shipped inline roster")
 
@@ -107,7 +108,8 @@ class ExampleConfigTest {
     fun `a braces-dropped inline model roster fails promptly before ktoml`() {
         val valid = exampleToml()
         val malformed = valid.replace(
-            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]""",
+            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6",""" +
+                """ slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]""",
             """models = ["grok-4.6", "grok-4.5"]""",
         )
         assertTrue(malformed != valid, "test must mutate the shipped inline roster")
@@ -123,7 +125,8 @@ class ExampleConfigTest {
     fun `a quoted models key with a bare roster also fails promptly before ktoml`() {
         val valid = exampleToml()
         val malformed = valid.replace(
-            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]""",
+            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6",""" +
+                """ slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]""",
             """"models" = ["grok-4.6", "grok-4.5"]""",
         )
         assertTrue(malformed != valid, "test must mutate the shipped inline roster")
@@ -143,7 +146,8 @@ class ExampleConfigTest {
         )
         assertEquals("claude-grok--\"", TopologyLoader.parse(valid).heads.getValue("claude-grok").discoveryPrefix)
         val malformed = valid.replace(
-            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]""",
+            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6",""" +
+                """ slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]""",
             """models = ["grok-4.6", "grok-4.5"]""",
         )
 
@@ -168,7 +172,8 @@ class ExampleConfigTest {
             isolate = ["commands"]         # this head gets its own commands/, everything else shared
         """.trimIndent()
         val inlineRoster =
-            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]"""
+            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6",""" +
+                """ slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]"""
         val inlineHead = """
             [heads]
             claude-grok = { provider = "xai", port = 3100, discovery_prefix = "claude-grok--", pinned_model = "grok-4.7", $inlineRoster, claude = { command = "claude-grok", isolate = ["commands"] } }
@@ -188,7 +193,8 @@ class ExampleConfigTest {
     @Test
     fun `valid multiline model rosters ignore comments and quoted text`() {
         val inlineRoster =
-            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6", slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]"""
+            """models = [{ id = "grok-4.7", slot = "opus" }, { id = "grok-4.6",""" +
+                """ slot = "sonnet" }, { id = "grok-build-0.1", slot = "haiku" }]"""
         val multilineRoster = """
             models = [
                 # models = ["comment", "text"]

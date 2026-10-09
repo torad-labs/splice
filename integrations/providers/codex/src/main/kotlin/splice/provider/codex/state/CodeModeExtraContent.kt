@@ -25,7 +25,7 @@ internal class CodeModeExtraContent(
     /** [input]: the round's parsed input array, or null when the round is not a Responses request. */
     fun of(input: JsonArray?, record: CodeModeRecord, candidateMedia: Map<String, List<JsonElement>>): CodeModeExtra {
         val (projected, boundary) = input?.let { onBaseline(it, record) } ?: return CodeModeExtra.STEERING
-        val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
+        val owned = (record.results.keys + record.progress.pending.map(CodeModePending::clientId)).toSet()
         val logicalExtra = unownedIndexes(projected.logicalItems, record, owned, candidateMedia, boundary)
             .map(projected.logicalItems::get)
         return when {
@@ -45,14 +45,14 @@ internal class CodeModeExtraContent(
     ): String {
         val baseline = input?.let { onBaseline(it, record) }
         val tail = baseline?.let { (projected, boundary) ->
-            val owned = (record.results.keys + record.pending.map(CodeModePending::clientId)).toSet()
+            val owned = (record.results.keys + record.progress.pending.map(CodeModePending::clientId)).toSet()
             val items = unownedIndexes(projected.logicalItems, record, owned, candidateMedia, boundary).map {
                 "${itemKind(projected.logicalItems[it])}@$it"
             }
             if (unexpectedReplay(projected, record, owned, boundary)) items + "unexpectedReplay" else items
         } ?: listOf("baselineMismatch")
-        val answered = record.pending.all { it.clientId in record.results }
-        return "[code-mode] interrupted extra=$extra baselineLogicalCount=${record.baselineLogicalCount} " +
+        val answered = record.progress.pending.all { it.clientId in record.results }
+        return "[code-mode] interrupted extra=$extra baselineLogicalCount=${record.origin.baseline.logicalCount} " +
             "boundary=${baseline?.second ?: "unresolved"} unowned=[${tail.joinToString(",")}] answered=$answered"
     }
 
@@ -75,7 +75,7 @@ internal class CodeModeExtraContent(
         val projected = codec.conversation(codec.projection.project(input)).body
         val boundary = codec.baselineBoundary(projected.logicalItems, record)
         val validBaseline = codec.validFullPrefix(input, record) || boundary != null
-        return if (validBaseline) projected to (boundary ?: record.baselineLogicalCount) else null
+        return if (validBaseline) projected to (boundary ?: record.origin.baseline.logicalCount) else null
     }
 
     private fun unownedIndexes(
@@ -99,8 +99,8 @@ internal class CodeModeExtraContent(
         record: CodeModeRecord,
         candidateMedia: Map<String, List<JsonElement>> = emptyMap(),
     ): Set<Int> {
-        if (record.continuity.isNotEmpty() && codec.continuityAt(items, boundary, record.continuity)) {
-            return (boundary until boundary + record.continuity.size).toSet()
+        if (record.carry.continuity.isNotEmpty() && codec.continuityAt(items, boundary, record.carry.continuity)) {
+            return (boundary until boundary + record.carry.continuity.size).toSet()
         }
         val expected = record.issued.mapNotNull { step ->
             step.deliveredText?.takeUnless(String::isEmpty)?.let {
@@ -113,7 +113,7 @@ internal class CodeModeExtraContent(
 
     /** A cut without terminal model continuity keeps its echoed prose in the original history. */
     fun replayIndexes(items: List<JsonElement>, boundary: Int, record: CodeModeRecord): Set<Int> =
-        if (record.continuity.isEmpty()) emptySet() else indexes(items, boundary, record)
+        if (record.carry.continuity.isEmpty()) emptySet() else indexes(items, boundary, record)
 
     private fun echoedIndexes(
         items: List<JsonElement>,
@@ -143,7 +143,7 @@ internal class CodeModeExtraContent(
         owned: Set<String>,
         followUps: Set<Int>,
     ): Boolean {
-        val callback = ownership.isCallback(item, owned) || ownership.isOpaque(item, record.outerCallId)
+        val callback = ownership.isCallback(item, owned) || ownership.isOpaque(item, record.origin.outerCallId)
         return callback || index in followUps || isSystemMessage(item)
     }
 

@@ -42,8 +42,8 @@ class UpstreamClientWireObserverTest {
         url = "https://api.example.test/v1/messages",
         auth = fakeAuth,
         extraHeaders = { mapOf("anthropic-version" to "2023-06-01", "X-Session-Token" to "sess-secret") },
-        amendBodyOnFailure = amend,
-        wire = wire,
+        recovery = PostRecovery(amendBodyOnFailure = amend),
+        observers = PostObservers(wire = wire),
     )
 
     @Test
@@ -55,17 +55,17 @@ class UpstreamClientWireObserverTest {
 
         val attempt = wire.attempts.single()
         assertEquals(1, attempt.attempt)
-        assertEquals("https://api.example.test/v1/messages", attempt.url)
-        assertEquals("""{"model":"m","messages":[]}""", attempt.requestBody)
+        assertEquals("https://api.example.test/v1/messages", attempt.request.url)
+        assertEquals("""{"model":"m","messages":[]}""", attempt.request.body)
         val sent = engine.requestHistory.single().body.toByteArray().decodeToString()
         assertEquals("""{"model":"m","messages":[]}""", sent, "the transport was handed the same bytes")
-        assertNull(attempt.requestEncoding)
-        assertEquals(HeaderRedaction.REDACTED, attempt.requestHeaders["x-api-key"], "the credential never crosses")
-        assertEquals(HeaderRedaction.REDACTED, attempt.requestHeaders["X-Session-Token"], "a token-named extra too")
-        assertEquals("2023-06-01", attempt.requestHeaders["anthropic-version"], "a plain header rides whole")
-        assertEquals(200, attempt.status)
-        assertEquals("req-7", attempt.responseHeaders["x-request-id"])
-        assertNull(attempt.errorText, "a 2xx body is the stream the caller consumed, not an error text")
+        assertNull(attempt.request.encoding)
+        assertEquals(HeaderRedaction.REDACTED, attempt.request.headers["x-api-key"], "the credential never crosses")
+        assertEquals(HeaderRedaction.REDACTED, attempt.request.headers["X-Session-Token"], "a token-named extra too")
+        assertEquals("2023-06-01", attempt.request.headers["anthropic-version"], "a plain header rides whole")
+        assertEquals(200, attempt.response.status)
+        assertEquals("req-7", attempt.response.headers["x-request-id"])
+        assertNull(attempt.response.errorText, "a 2xx body is the stream the caller consumed, not an error text")
         assertNull(attempt.failure)
         assertTrue(attempt.durationMs >= 0)
     }
@@ -82,10 +82,10 @@ class UpstreamClientWireObserverTest {
         client(engine).posted(context(wire), "{}") { "done" }
 
         assertEquals(listOf(1, 2), wire.attempts.map { it.attempt })
-        assertEquals(503, wire.attempts[0].status)
-        assertEquals("""{"error":"busy"}""", wire.attempts[0].errorText)
-        assertEquals(200, wire.attempts[1].status)
-        assertNull(wire.attempts[1].errorText)
+        assertEquals(503, wire.attempts[0].response.status)
+        assertEquals("""{"error":"busy"}""", wire.attempts[0].response.errorText)
+        assertEquals(200, wire.attempts[1].response.status)
+        assertNull(wire.attempts[1].response.errorText)
     }
 
     @Test
@@ -100,8 +100,8 @@ class UpstreamClientWireObserverTest {
 
         client(engine).posted(context(wire, amend), """{"draft":"v1"}""") { "done" }
 
-        assertEquals(listOf("""{"draft":"v1"}""", """{"draft":"v2"}"""), wire.attempts.map { it.requestBody })
-        assertEquals(listOf(400, 200), wire.attempts.map { it.status })
+        assertEquals(listOf("""{"draft":"v1"}""", """{"draft":"v2"}"""), wire.attempts.map { it.request.body })
+        assertEquals(listOf(400, 200), wire.attempts.map { it.response.status })
     }
 
     @Test
@@ -115,9 +115,9 @@ class UpstreamClientWireObserverTest {
 
         assertEquals(listOf(1, 2), wire.attempts.map { it.attempt }, "every send, the retried one included")
         wire.attempts.forEach { attempt ->
-            assertNull(attempt.status)
+            assertNull(attempt.response.status)
             assertEquals("IOException: connection reset by peer", attempt.failure)
-            assertEquals("{}", attempt.requestBody)
+            assertEquals("{}", attempt.request.body)
         }
     }
 
@@ -130,6 +130,6 @@ class UpstreamClientWireObserverTest {
             runBlocking { client(engine, maxRetries = 2).posted(context(wire), "{}") { "never" } }
         }
 
-        assertEquals(listOf(503, 503), wire.attempts.map { it.status })
+        assertEquals(listOf(503, 503), wire.attempts.map { it.response.status })
     }
 }

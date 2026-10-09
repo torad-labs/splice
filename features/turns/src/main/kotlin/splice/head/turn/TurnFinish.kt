@@ -91,7 +91,7 @@ internal class TurnFinish(
 
     /** The classified decision survives a terminal write that escapes to the conn-reset recorder. */
     private fun markPermanence(drive: TurnDrive, failure: TurnOutcome.Failure?) {
-        failure?.let { drive.markPermanent(it.permanent) }
+        failure?.let { drive.markPermanent(it.traits.permanent) }
     }
 
     private fun markCodeMode(drive: TurnDrive, outcome: TurnOutcome) {
@@ -101,8 +101,8 @@ internal class TurnFinish(
             is TurnOutcome.ClientAbandoned -> outcome.salvagedUsage
         }
         // The same perf snapshot is included in the turn trace, even if the upstream failed.
-        if (usage.codeModeDiverged) drive.perf.setCount(PerfKeys.CODE_MODE_DIVERGENCE, 1)
-        if (outcome !is TurnOutcome.Success || !usage.localStep) return
+        if (usage.origin.codeModeDiverged) drive.perf.setCount(PerfKeys.CODE_MODE_DIVERGENCE, 1)
+        if (outcome !is TurnOutcome.Success || !usage.origin.localStep) return
         // A turn that began upstream and then emitted a code-mode tool call remains a turn.
         if (drive.perfCounter(PerfKeys.ATTEMPTS) == 0L && drive.perfCounter(PerfKeys.UPSTREAM_REQ_BYTES) == 0L) {
             drive.perf.setCount(PerfKeys.LOCAL_STEP, 1)

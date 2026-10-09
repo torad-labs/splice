@@ -33,7 +33,7 @@ public class OpenAiChatProvider(
     affinity: SlotAffinity? = null,
 ) : Provider, ProviderIdentity by tuning {
 
-    override val upstreamUrl: String = "${tuning.baseUrl}/chat/completions"
+    override val upstreamUrl: String = "${tuning.locations.baseUrl}/chat/completions"
     override val replayReasoning: Boolean = false // chat dialect has no encrypted-reasoning replay
 
     private val builder = ChatRequestBuilder(quirks, showReasoning, affinity)

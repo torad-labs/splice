@@ -136,8 +136,8 @@ internal class CodeModeNativeAbandonBillingTest : CodeModeStatementStreamSupport
     }
 
     private fun assertEmptyStep(first: TurnOutcome.Success, source: GatedPost) {
-        assertFalse(first.emittedText)
-        assertEquals("", first.bodyText)
+        assertFalse(first.text.emittedText)
+        assertEquals("", first.text.bodyText)
         assertEquals(0L, first.usage.outputTokens)
         assertEquals(0L, first.usage.cutRounds)
         assertFalse(source.stopped.isCompleted, "the source is still live after the empty-text local step")

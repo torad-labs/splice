@@ -60,7 +60,7 @@ internal class DoctorLocalRuntime(
             val provider = topology.providers.getValue(key)
             val catalog = provider.catalogFor(head, override(topology, headKey))
             UpstreamWindows(catalog).byId().map { (id, window) ->
-                id to window.takeIf { provider.declaredWindowFor(id, catalog.headWindow) != null }
+                id to window.takeIf { provider.declaredWindowFor(id, catalog.windows.headWindow) != null }
             }
         }
         .groupBy({ it.first }, { it.second })

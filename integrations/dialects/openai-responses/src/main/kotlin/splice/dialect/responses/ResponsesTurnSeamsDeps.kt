@@ -3,25 +3,29 @@
 package splice.dialect.responses
 
 import splice.core.util.LogSink
-import splice.dialect.responses.reasoning.ReasoningCache
-import splice.dialect.responses.reasoning.ReasoningCachePolicy
-import splice.dialect.responses.request.ResponsesStableIds
 import splice.dialect.responses.stream.ConversationSummaryParts
 import splice.dialect.responses.stream.FoldConfig
 import splice.upstream.ToolNameShortener
 
+/** What the seams carry from one round to the next: intra-turn fold, and transcript replay of reasoning. */
+internal data class RoundCarry(
+    val foldConfig: FoldConfig?,
+    val replayReasoning: Boolean,
+)
+
+/** The two collaborators the seams hand the stream translator beside its turn context. */
+internal data class TranslatorServices(
+    val toolNames: ToolNameShortener = ToolNameShortener(),
+    val log: LogSink = LogSink { },
+)
+
 /** Everything stream/fold/reanchor construction reads from the provider. */
 internal data class ResponsesTurnSeamsDeps(
     val quirks: ResponsesQuirks,
-    val cachePolicy: ReasoningCachePolicy,
-    val ids: ResponsesStableIds,
-    val reasoningCache: ReasoningCache,
+    val continuity: ReasoningContinuity,
     val summaryParts: ConversationSummaryParts,
     val turnOptions: ResponsesTurnOptions,
-    val foldConfig: FoldConfig?,
-    val replayReasoning: Boolean,
-    val streamIdleMs: Long,
-    val upstreamTimeoutMs: Long,
-    val toolNames: ToolNameShortener = ToolNameShortener(),
-    val log: LogSink = LogSink { },
+    val carry: RoundCarry,
+    val caps: WatchdogCaps,
+    val services: TranslatorServices = TranslatorServices(),
 )

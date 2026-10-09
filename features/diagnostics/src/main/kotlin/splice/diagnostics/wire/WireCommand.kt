@@ -19,7 +19,6 @@ import splice.core.terminal.BOLD
 import splice.core.terminal.DIM
 import splice.core.terminal.RESET
 import splice.core.terminal.TerminalOutput
-import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.SafeFailureText
@@ -119,9 +118,12 @@ public class WireCommand(
         output.line(body)
     }
 
-    private fun parse(text: String): JsonObject? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- V4-173: callers print a non-JSON body verbatim
-        Cancellables.runCatchingCancellable { json.parseToJsonElement(text).jsonObject }.getOrNull()
+    /** The body as a JSON object; null when it is not one, because callers print a non-JSON body verbatim (V4-173). */
+    private fun parse(text: String): JsonObject? = try {
+        json.parseToJsonElement(text).jsonObject
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 
     private fun fail(message: String): Boolean {
         errors.line("splice wire: $message")

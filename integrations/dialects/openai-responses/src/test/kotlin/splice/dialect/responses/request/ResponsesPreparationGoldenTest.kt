@@ -9,6 +9,8 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.util.JsonWire
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
+import splice.dialect.responses.ResponsesBackendQuirks
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 
@@ -17,23 +19,33 @@ class ResponsesPreparationGoldenTest {
     fun `cache key and all request bytes match the preparation baseline`() {
         val quirks = ResponsesQuirks(
             providerTag = "synthetic",
-            promptCache = PromptCachePolicy(key = CacheKeyStrategy.FIRST_MESSAGE_HASH),
-            responsesLiteModelRegex = Regex("gpt-6"),
-            sendClientMetadata = true,
+            backend = ResponsesBackendQuirks(
+                promptCache = PromptCachePolicy(key = CacheKeyStrategy.FIRST_MESSAGE_HASH),
+                sendClientMetadata = true,
+            ),
+            lite = ResponsesLiteQuirks(
+                responsesLiteModelRegex = Regex("gpt-6"),
+            ),
         )
         val options = BuildOptions(
             compact = false,
-            originalModel = "synthetic",
-            upstreamModel = "gpt-6.1-sol",
-            configEffort = "high",
-            configSummary = "detailed",
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = InjectPriorReasoning(false),
-            decodeReasoningEnvelope = { JsonObject(emptyMap()) },
+            models = ModelIds(
+                original = "synthetic",
+                upstream = "gpt-6.1-sol",
+            ),
+            reasoning = RequestedReasoning(
+                effort = "high",
+                summary = "detailed",
+                display = ReasoningDisplay.TEXT,
+            ),
+            handoff = ReasoningHandoff(
+                replay = InjectPriorReasoning(false),
+                decode = { JsonObject(emptyMap()) },
+            ),
         )
         val parsed = AnthropicParse.parseAnthropicBody(GOLDEN_BODY)
         val built = ResponsesRequestBuilder(quirks).build(parsed.typed, parsed.raw, options)
-        assertEquals(GOLDEN_KEY, built.meta.conversationKey)
+        assertEquals(GOLDEN_KEY, built.meta.scope.conversationKey)
         assertEquals(GOLDEN_REQUEST, JsonWire.string(built.req))
     }
 }

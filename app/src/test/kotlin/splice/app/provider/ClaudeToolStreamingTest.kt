@@ -87,9 +87,11 @@ class ClaudeToolStreamingTest {
                 models = listOf(ModelEntry(id = "m", contextWindow = 200_000)),
                 defaultContextWindow = 200_000,
             ),
-            watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+                loginCommand = "test login",
+            ),
             cfg = config.getConfig(key),
-            loginCommand = "test login",
         )
     }
 }

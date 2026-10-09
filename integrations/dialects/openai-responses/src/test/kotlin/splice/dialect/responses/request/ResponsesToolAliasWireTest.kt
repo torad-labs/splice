@@ -13,7 +13,9 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.wire.ToolDefinition
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
+import splice.dialect.responses.ResponsesBackendQuirks
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.tools.ToolSearchOutput
@@ -24,15 +26,21 @@ private const val LONG_NAME = "mcp__plugin_some_long_server_name__a_long_tool_na
 
 private fun museOptions(sessionId: String? = "session-1") = BuildOptions(
     compact = false,
-    originalModel = "claude-muse--muse-spark-1.3[1m]",
-    upstreamModel = "muse-spark-1.3",
-    configEffort = "high",
-    configSummary = "detailed",
-    showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = InjectPriorReasoning(false),
-    includeEncryptedReasoning = RequestEncryptedReasoning(true),
+    models = ModelIds(
+        original = "claude-muse--muse-spark-1.3[1m]",
+        upstream = "muse-spark-1.3",
+    ),
+    reasoning = RequestedReasoning(
+        effort = "high",
+        summary = "detailed",
+        display = ReasoningDisplay.TEXT,
+    ),
+    handoff = ReasoningHandoff(
+        replay = InjectPriorReasoning(false),
+        includeEncrypted = RequestEncryptedReasoning(true),
+        decode = { null },
+    ),
     sessionId = sessionId,
-    decodeReasoningEnvelope = { null },
 )
 class ResponsesToolAliasWireTest {
     @Test
@@ -40,9 +48,11 @@ class ResponsesToolAliasWireTest {
         val builder = ResponsesRequestBuilder(
             ResponsesQuirks(
                 providerTag = "muse",
-                promptCache = PromptCachePolicy(
-                    key = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH,
-                    retention = "24h",
+                backend = ResponsesBackendQuirks(
+                    promptCache = PromptCachePolicy(
+                        key = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH,
+                        retention = "24h",
+                    ),
                 ),
             ),
         )
@@ -84,8 +94,15 @@ class ResponsesToolAliasWireTest {
         val names = ToolNameShortener(MUSE_CAP) { }
         val quirks = ResponsesQuirks(
             providerTag = "muse",
-            promptCache = PromptCachePolicy(key = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH, retention = "24h"),
-            emitToolChoice = true,
+            backend = ResponsesBackendQuirks(
+                promptCache = PromptCachePolicy(
+                    key = CacheKeyStrategy.SESSION_OR_FIRST_MESSAGE_HASH,
+                    retention = "24h",
+                ),
+            ),
+            tools = ResponsesToolQuirks(
+                emitToolChoice = true,
+            ),
         )
         val req = ResponsesRequestBuilder(quirks, names).build(parsed.typed, parsed.raw, opts).req
         val alias = req.getValue("tools").jsonArray.first().jsonObject.getValue("name").jsonPrimitive.content

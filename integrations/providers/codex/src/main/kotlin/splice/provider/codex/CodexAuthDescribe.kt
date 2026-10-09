@@ -56,8 +56,8 @@ internal class CodexAuthDescribe(
             JsonScalars.str(raw, FIELD_LAST_REFRESH)?.let { out[FIELD_LAST_REFRESH] = it }
             hasAccess
         }
-        // ast-grep-ignore: kt-no-silent-result-collapse -- failure consumed below via exceptionOrNull -> read_error
-        val present = presentOutcome.getOrDefault(false)
+        // A failed read is not "present"; its failure is consumed below via exceptionOrNull -> read_error.
+        val present = presentOutcome.getOrElse { false }
         presentOutcome.exceptionOrNull()?.let { failure ->
             // DR-59: indeterminate is not logged-out — name it in the description instead.
             val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&

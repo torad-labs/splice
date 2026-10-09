@@ -24,6 +24,7 @@ import splice.sessions.transcript.SessionTranscriptViewEnabled
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptMessageSource
 import splice.sessions.transcript.TranscriptRole
+import splice.sessions.transcript.TranscriptToolUse
 import java.io.IOException
 import java.nio.file.AccessDeniedException
 import java.nio.file.Path
@@ -77,10 +78,36 @@ class TranscriptRequestRouteTest {
     @Test
     fun `conversation projection preserves parallel tool-use identity`() = runBlocking {
         val calls = listOf(
-            TranscriptMessage(0, TranscriptRole.ASSISTANT, null, "{}", "Read", false, RESPONSE, "first"),
-            TranscriptMessage(1, TranscriptRole.ASSISTANT, null, "{}", "Read", false, RESPONSE, "second"),
-            TranscriptMessage(2, TranscriptRole.TOOL, null, "first body", result = true, toolUseId = "first"),
-            TranscriptMessage(3, TranscriptRole.TOOL, null, "second body", result = true, toolUseId = "second"),
+            TranscriptMessage(
+                0,
+                TranscriptRole.ASSISTANT,
+                null,
+                "{}",
+                TranscriptToolUse("Read", false, "first"),
+                RESPONSE,
+            ),
+            TranscriptMessage(
+                1,
+                TranscriptRole.ASSISTANT,
+                null,
+                "{}",
+                TranscriptToolUse("Read", false, "second"),
+                RESPONSE,
+            ),
+            TranscriptMessage(
+                2,
+                TranscriptRole.TOOL,
+                null,
+                "first body",
+                TranscriptToolUse(result = true, id = "first"),
+            ),
+            TranscriptMessage(
+                3,
+                TranscriptRole.TOOL,
+                null,
+                "second body",
+                TranscriptToolUse(result = true, id = "second"),
+            ),
         )
         val paired = TranscriptRequestRoute(
             TranscriptMessageSource { session, _, response -> MessageConversation.Found(session, response, calls, 9) },

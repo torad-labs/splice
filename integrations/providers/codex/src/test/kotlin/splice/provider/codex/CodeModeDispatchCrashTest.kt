@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.core.index.WireBlockIndex
 import splice.core.turn.GatewayCustomCall
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.state.CodeModeStateJournal
@@ -163,7 +164,12 @@ class CodeModeDispatchCrashTest {
                 put("input", "text(await tools.Read({}));")
             },
         )
-        fun crashOutcome() = TurnOutcome.Success(false, false, Usage(), customCalls = listOf(crashOuter()))
+        fun crashOutcome() = TurnOutcome.Success(
+            false,
+            false,
+            Usage(),
+            handoffs = RoundHandoffs(customCalls = listOf(crashOuter())),
+        )
     }
 
     private class QuietSink : WireSink {

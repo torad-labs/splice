@@ -45,9 +45,9 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
     /** The heads/readyHeads/failedHeads verdict; null on a foreign/ancient listener without the
      *  counters (a real daemon always sends all three) — nothing honest to report then. */
     private fun headSummary(h: HealthView): DoctorCheck? {
-        val heads = h.heads
-        val ready = h.readyHeads
-        val failed = h.failedHeads
+        val heads = h.heads.total
+        val ready = h.heads.ready
+        val failed = h.heads.failed
         val countersPresent = listOf(heads, ready, failed).none { it == null }
         if (!countersPresent) return null
         checkNotNull(heads)
@@ -86,9 +86,9 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
      *  or an unreadable local file all mean no row — never a fabricated verdict. */
     internal fun topologyFreshness(snapshot: DaemonSnapshot, configPath: Path?): DoctorCheck? {
         val h = snapshot.health
-        val booted = h?.topologyDigest?.takeIf { it.isNotEmpty() }
+        val booted = h?.topology?.digest?.takeIf { it.isNotEmpty() }
         val local = booted?.let { configPath?.let(TopologyLoader::currentDigest) } ?: return null
-        return if (local == booted && h.topologyStale != true) {
+        return if (local == booted && h.topology.stale != true) {
             DoctorCheck("topology", CheckStatus.OK, "running config matches the file on disk")
         } else {
             DoctorCheck(

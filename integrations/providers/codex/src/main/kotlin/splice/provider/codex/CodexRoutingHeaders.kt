@@ -21,8 +21,8 @@ internal class CodexRoutingHeaders {
 
     /** No session id (a bare curl, the e2e probe) = the routing hint alone. */
     fun forTurn(meta: TurnMeta): Map<String, String> = buildMap {
-        put(HEADER_ROUTING_HINT, "model=${meta.upstreamModel}")
-        val session = meta.sessionId?.takeIf { it.isNotBlank() } ?: return@buildMap
+        put(HEADER_ROUTING_HINT, "model=${meta.route.upstreamModel}")
+        val session = meta.scope.sessionId?.takeIf { it.isNotBlank() } ?: return@buildMap
         put(HEADER_SESSION_ID, session)
         put(HEADER_THREAD_ID, threadIdFor(session))
     }

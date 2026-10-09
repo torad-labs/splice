@@ -85,8 +85,8 @@ internal class TurnStreamer(
                 pending::progress,
                 ContentReached { (perf.snapshot().counters[PerfKeys.CONTENT_FRAMES_OUT] ?: 0L) > 0 },
             ),
-            model = meta.originalModel,
-            usagePayload = wiring.usagePayloadBuilder(provider.catalog, meta, clientWindow.of(call, meta.sessionId)),
+            model = meta.route.originalModel,
+            usagePayload = wiring.usagePayloadBuilder(provider.catalog, meta, clientWindow.of(call, meta.scope.sessionId)),
         )
     }
 

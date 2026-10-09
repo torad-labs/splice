@@ -32,7 +32,7 @@ internal class ReasoningCachePolicy {
      *  2026-09-05: a compaction is built exactly like a turn, cached reasoning items included, or
      *  it shares no prompt-cache prefix with the session (ResponsesRequestBuilder.kt header). */
     fun reasoningCacheActive(quirks: ResponsesQuirks, compact: Boolean): Boolean =
-        quirks.reasoningCache && !compact
+        quirks.roundTrip.reasoningCache && !compact
 
     /** V4-334: the conversation a round belongs to — its opening's hash ([opening], TurnMeta's
      *  conversationKey) within ONE Claude Code session, so two sessions with a byte-identical first

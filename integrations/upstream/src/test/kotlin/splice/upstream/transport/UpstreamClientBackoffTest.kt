@@ -361,8 +361,10 @@ class UpstreamClientBackoffTest {
             auth = auth,
             extraHeaders = { emptyMap() },
             onRetry = { notices.add(it) },
-            perf = perf,
-            remainingTurnWait = if (withTurnBudget) RemainingTurnWait { 5_000L - elapsed } else null,
+            observers = PostObservers(perf = perf),
+            limits = PostLimits(
+                remainingTurnWait = if (withTurnBudget) RemainingTurnWait { 5_000L - elapsed } else null,
+            ),
         )
 
         fun assertFailure(actual: Exception) {
@@ -375,7 +377,7 @@ class UpstreamClientBackoffTest {
         suspend fun post(): String = client.posted(context, "{}") { "ok" }
 
         suspend fun postWithHold(hold: RateLimitCooldown): String =
-            client.posted(context.copy(rateLimitCooldown = hold), "{}") { "ok" }
+            client.posted(context.copy(limits = context.limits.copy(rateLimitCooldown = hold)), "{}") { "ok" }
 
         /** The un-narrowed answer, for the one test whose subject IS the refusal (V4-114). */
         suspend fun postRaw(): UpstreamPost<String> =
@@ -383,7 +385,7 @@ class UpstreamClientBackoffTest {
 
         suspend fun postWithTornStream(): String {
             var torn = true
-            return client.posted(context.copy(clientFrameEmitted = { false }), "{}") {
+            return client.posted(context.copy(recovery = PostRecovery(clientFrameEmitted = { false })), "{}") {
                 if (torn) {
                     torn = false
                     throw failure

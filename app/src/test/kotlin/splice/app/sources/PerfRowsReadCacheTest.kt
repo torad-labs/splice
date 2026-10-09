@@ -155,8 +155,7 @@ class PerfRowsReadCacheTest {
                 numericBytes = fields.retainedBytes,
                 leadingTs = ts,
                 emptyModel = false,
-                dropsCandidate = false,
-                drops = null,
+                drops = PerfDropsHint(candidate = false, count = null),
                 probe = false,
             )
         }

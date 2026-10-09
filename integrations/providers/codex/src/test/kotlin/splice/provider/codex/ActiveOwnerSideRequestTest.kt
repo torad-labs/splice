@@ -204,7 +204,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
                 RoundResult.Outcome(completedOutcome())
             }.turn()
         assertTrue(side is TurnOutcome.Success)
-        assertTrue((side as TurnOutcome.Success).usage.codeModeDiverged, "the upstream fallback is marked")
+        assertTrue((side as TurnOutcome.Success).usage.origin.codeModeDiverged, "the upstream fallback is marked")
         assertEquals(1, upstreamSends, "the divergent fork sends its own history upstream")
         assertEquals(2, runtime.cells.single().advances, "the fork did not advance A's cell")
         val secondId = secondSink.tools.single().id
@@ -253,7 +253,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(turn(id, "Y"), disableParallel = false)
             .intercept(b, bSink) { RoundResult.Outcome(outerOutcome("B-outer")) }.turn()
         assertTrue(outcome is TurnOutcome.Success)
-        assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
+        assertTrue((outcome as TurnOutcome.Success).usage.origin.codeModeDiverged)
         assertEquals(2, runtime.starts, "B's new exec must start its own worker")
         assertEquals(1, bSink.tools.size, "B's new callback reaches its client")
         val bId = bSink.tools.single().id
@@ -372,7 +372,10 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         manager.interceptor(turn(), disableParallel = false)
             .intercept(body(listOf(DEVELOPER, user("start"))), firstSink) {
                 RoundResult.Outcome(
-                    outerOutcome("outer-first").copy(reasoningEnvelopes = listOf(reasoningEnvelope("first-reasoning"))),
+                    outerOutcome("outer-first").run {
+                        val envelope = reasoningEnvelope("first-reasoning")
+                        copy(handoffs = handoffs.copy(reasoningEnvelopes = listOf(envelope)))
+                    },
                 )
             }
         val firstId = firstSink.tools.single().id
@@ -468,11 +471,12 @@ class NativeAncestorPlacementTest : CodeModeBridgeTestSupport() {
         val sink = RecordingSink()
         manager.interceptor(turn(), disableParallel = false).intercept(body(history), sink) {
             RoundResult.Outcome(
-                outerOutcome("outer-$n").copy(
-                    emittedText = true,
-                    bodyText = "prose-$n",
-                    reasoningEnvelopes = listOf(reasoningEnvelope("ancestor-reason-$n")),
-                ),
+                outerOutcome("outer-$n").run {
+                    copy(
+                        text = text.copy(emittedText = true, bodyText = "prose-$n"),
+                        handoffs = handoffs.copy(reasoningEnvelopes = listOf(reasoningEnvelope("ancestor-reason-$n"))),
+                    )
+                },
             )
         }
         val id = sink.tools.single().id

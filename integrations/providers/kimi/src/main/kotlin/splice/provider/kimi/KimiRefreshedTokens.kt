@@ -183,8 +183,8 @@ internal class KimiAuthStore(
         val presentOutcome = Cancellables.runCatchingCancellable {
             oauth.parseSnapshot(authPath, synthesizeExpiry) != null
         }
-        // ast-grep-ignore: kt-no-silent-result-collapse -- failure consumed below via exceptionOrNull -> read_error
-        val present = presentOutcome.getOrDefault(false)
+        // A failed read is not "present"; its failure is consumed below via exceptionOrNull -> read_error.
+        val present = presentOutcome.getOrElse { false }
         return AuthDescription(
             present = present,
             kind = "kimi-oauth",

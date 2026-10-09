@@ -7,20 +7,20 @@ import splice.provider.codex.CodeModeRecord
 
 internal class CodeModeMetadataValidator {
     fun problem(record: CodeModeRecord): String? = when {
-        record.metadataVersion !in CODE_MODE_LEGACY_METADATA_VERSION..CODE_MODE_METADATA_VERSION ->
+        record.origin.baseline.metadataVersion !in CODE_MODE_LEGACY_METADATA_VERSION..CODE_MODE_METADATA_VERSION ->
             "code-mode replay metadata is unavailable"
-        record.baselineLogicalCount < 0 -> "code-mode replay metadata has an invalid logical boundary"
-        record.nativeSegments.any { it.logicalOffset !in 0..record.baselineLogicalCount } ->
+        record.origin.baseline.logicalCount < 0 -> "code-mode replay metadata has an invalid logical boundary"
+        record.carry.segments.any { it.logicalOffset !in 0..record.origin.baseline.logicalCount } ->
             "code-mode replay metadata has an invalid native offset"
-        record.continuityReplay.any { it.logicalOffset !in 0..record.continuity.size } ->
+        record.carry.replay.any { it.logicalOffset !in 0..record.carry.continuity.size } ->
             "code-mode replay metadata has an invalid continuity offset"
-        record.metadataVersion == CODE_MODE_LEGACY_METADATA_VERSION -> legacyProblem(record)
+        record.origin.baseline.metadataVersion == CODE_MODE_LEGACY_METADATA_VERSION -> legacyProblem(record)
         else -> null
     }
 
     private fun legacyProblem(record: CodeModeRecord): String? = when {
-        record.baselineLogicalDigest.isEmpty() -> "code-mode replay metadata has no logical digest"
-        record.baselineInputDigest.isEmpty() -> "code-mode replay metadata has no wire digest"
+        record.origin.baseline.logicalDigest.isEmpty() -> "code-mode replay metadata has no logical digest"
+        record.origin.baseline.inputDigest.isEmpty() -> "code-mode replay metadata has no wire digest"
         else -> null
     }
 }

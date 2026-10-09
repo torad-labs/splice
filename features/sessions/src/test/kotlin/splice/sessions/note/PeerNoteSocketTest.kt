@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionClient
+import splice.sessions.registry.SessionProcess
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionStatus
@@ -27,18 +29,19 @@ class PeerNoteSocketTest {
     private fun perms(text: String) = PosixFilePermissions.fromString(text)
 
     private fun record(socket: Path, version: String? = "2.1.285") = SessionRecord(
-        pid = 1,
         sessionId = "s-1",
-        cwd = null,
         name = null,
-        kind = null,
-        version = version,
         status = SessionStatus("idle"),
-        startedAt = null,
-        updatedAt = 1,
-        messagingSocketPath = socket.toString(),
         route = SessionRoute.Unknown,
         availability = SessionAvailability.LIVE,
+        process = SessionProcess(
+            pid = 1,
+            cwd = null,
+            startedAt = null,
+            updatedAt = 1,
+            messagingSocketPath = socket.toString(),
+        ),
+        client = SessionClient(kind = null, version = version),
     )
 
     /** A listening socket in a 0700 directory, 0600 itself, and what it was sent once the sender closed. */

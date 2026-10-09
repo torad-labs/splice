@@ -49,16 +49,16 @@ internal class ResponsesToolSearchPolicy(
         val items = buildList {
             // this round's reasoning items, ONLY when non-empty (a dangling reasoning item with no
             // following item is a 400 — the same idiom ResponsesFoldPolicy.continuation uses).
-            addAll(round.outcome.reasoningEnvelopes.mapNotNull(decodeReasoningEnvelope::invoke))
+            addAll(round.outcome.handoffs.reasoningEnvelopes.mapNotNull(decodeReasoningEnvelope::invoke))
             // The round's own prose, already on the client's wire — replay it as context so the
             // model does not re-say it (ResponsesReanchorPolicy.assistantText's sibling rule).
             // Gated on emittedText (not just bodyText.isNotEmpty()): on FoldRunner's buffered path
             // the CALLER strips both to "" / false before this outcome ever reaches here, so a
             // buffered-and-discarded round can never leak never-forwarded prose (review 2026-07-24).
-            if (round.outcome.emittedText && round.outcome.bodyText.isNotEmpty()) {
-                add(assistantText(round.outcome.bodyText))
+            if (round.outcome.text.emittedText && round.outcome.text.bodyText.isNotEmpty()) {
+                add(assistantText(round.outcome.text.bodyText))
             }
-            answeredOnce(round.outcome.toolSearches).forEach { call ->
+            answeredOnce(round.outcome.handoffs.toolSearches).forEach { call ->
                 add(call.raw) // verbatim — the backend's own shape, never a re-authored guess
                 add(
                     output.toolSearchOutputItem(
@@ -85,7 +85,7 @@ internal class ResponsesToolSearchPolicy(
     // Stop conditions, each a plain early return via a flat when — never a compound boolean.
     private fun stopSearching(round: ToolSearchRound): Boolean = when {
         round.outcome.hasToolUse -> true // a real tool_use already committed to the client's wire
-        round.outcome.toolSearches.isEmpty() -> true // nothing to answer
+        round.outcome.handoffs.toolSearches.isEmpty() -> true // nothing to answer
         else -> round.roundIndex >= policy.searchRounds // hard stop (unreachable in practice)
     }
 

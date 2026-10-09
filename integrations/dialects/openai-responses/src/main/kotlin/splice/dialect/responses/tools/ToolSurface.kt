@@ -27,7 +27,7 @@
 //     already named gets its full schema re-declared IN HISTORY, immediately before that
 //     function_call, which closes the same "replayed history references an undeclared tool" failure
 //     mode without ever touching additional_tools;
-//   - OFF (quirks.toolSurface == null), client non-lite, latch-closed, or below the minDeferred
+//   - OFF (quirks.tools.toolSurface == null), client non-lite, latch-closed, or below the minDeferred
 //     floor => (all eager, none deferred), byte-identical to today (ResponsesContractTest pins it);
 //   - CLIENT deferred tools are ABSENT from the request entirely — defer_loading rides only the
 //     tool_search_output (codex core/tests/suite/search_tool.rs:723-741). HOSTED sends each schema
@@ -125,7 +125,7 @@ internal class ToolPartitioner(private val quirks: ResponsesQuirks) {
      *  the decision has five clauses and ComplexCondition fails at 3 operands. */
     fun partitionTools(body: AnthropicRequest, opts: BuildOptions): ToolPartition {
         val allEager = ToolPartition(body.tools, emptyList())
-        val policy = quirks.toolSurface
+        val policy = quirks.tools.toolSurface
         return when {
             policy == null -> allEager
             !opts.toolSurfaceOpen -> allEager // latch closed

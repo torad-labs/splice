@@ -17,8 +17,11 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
 import splice.head.compact.CompactStats
 import splice.head.pipeline.TurnPipeline
@@ -112,7 +115,7 @@ class CodeModeStepContextTest {
             assertEquals(measured, step.context(), "the step reports the conversation's last measured context")
             assertEquals(0L, step.usage().getValue("output_tokens").jsonPrimitive.long, "a step generated nothing")
             val raw = (step.outcome as TurnOutcome.Success).usage
-            assertTrue(raw.localStep, "the step is local")
+            assertTrue(raw.origin.localStep, "the step is local")
             assertEquals(0L, raw.inputTokens + raw.cachedTokens + raw.cacheWriteTokens + raw.outputTokens, "billed")
         } finally {
             bridge.onHeadStop()
@@ -136,14 +139,13 @@ class CodeModeStepContextTest {
 
     private val meta = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = MODEL,
-        upstreamModel = MODEL,
-        clientMaxTokens = null,
-        effort = "medium",
-        summary = null,
-        budgetTokens = null,
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "medium",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(stream = true, originalModel = MODEL, upstreamModel = MODEL, clientMaxTokens = null),
     )
 
     private fun bridge(steps: List<CodeModeStep>): CodexCodeModeBridge {
@@ -163,7 +165,7 @@ class CodeModeStepContextTest {
             false,
             false,
             usage,
-            customCalls = listOf(GatewayCustomCall("outer-1", name, "source", raw)),
+            handoffs = RoundHandoffs(customCalls = listOf(GatewayCustomCall("outer-1", name, "source", raw))),
         )
     }
 

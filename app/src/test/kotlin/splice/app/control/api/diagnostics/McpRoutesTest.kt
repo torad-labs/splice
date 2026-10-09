@@ -235,4 +235,5 @@ private const val LIST_MSG = """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""
 private const val NOTIFY_MSG =
     """{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"echo","arguments":{"op":"notify"}}}"""
 private const val INIT_MSG =
-    """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"""
+    """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18",""" +
+        """"capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"""

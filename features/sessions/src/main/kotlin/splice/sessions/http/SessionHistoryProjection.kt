@@ -2,6 +2,8 @@
 package splice.sessions.http
 
 import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionClient
+import splice.sessions.registry.SessionProcess
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionStatus
@@ -14,48 +16,51 @@ internal data class JoinedSession(val entry: SessionHistoryEntry?, val live: Ses
         val source = source() ?: return null
         val historical = historicalRecord(id)
         val record = live?.let { overlay(it, historical) } ?: historical ?: return null
-        return HistoryItem(id, record, source, entry?.resumable ?: false)
+        return HistoryItem(id, record, source, entry?.files?.resumable ?: false)
     }
 
     private fun source(): String? = when {
-        entry?.hasHistory == true && entry.hasTranscript -> "history+transcript"
-        entry?.hasHistory == true -> "history-only"
-        entry?.hasTranscript == true -> "transcript-only"
+        entry?.files?.hasHistory == true && entry.files.hasTranscript -> "history+transcript"
+        entry?.files?.hasHistory == true -> "history-only"
+        entry?.files?.hasTranscript == true -> "transcript-only"
         live != null -> "registry-only"
         else -> null
     }
 
     private fun historicalRecord(id: String): SessionRecord? = entry?.let { found ->
         SessionRecord(
-            pid = null,
             sessionId = id,
-            cwd = found.project,
             name = found.name,
-            kind = null,
-            version = null,
             status = SessionStatus(),
-            startedAt = null,
-            updatedAt = found.updatedAt,
-            messagingSocketPath = null,
             route = found.head?.let(SessionRoute::Head) ?: SessionRoute.Unknown,
             availability = SessionAvailability.GONE,
+            process = SessionProcess(
+                pid = null,
+                cwd = found.project,
+                startedAt = null,
+                updatedAt = found.updatedAt,
+                messagingSocketPath = null,
+            ),
+            client = SessionClient(kind = null, version = null),
         )
     }
 
     private fun overlay(current: SessionRecord, historical: SessionRecord?): SessionRecord = current.copy(
-        cwd = current.cwd ?: historical?.cwd,
         name = current.name ?: historical?.name,
-        updatedAt = listOfNotNull(current.updatedAt, historical?.updatedAt).maxOrNull(),
         route = when (current.route) {
             is SessionRoute.Head, SessionRoute.Direct -> current.route
             SessionRoute.Unknown -> historical?.route ?: SessionRoute.Unknown
         },
+        process = current.process.copy(
+            cwd = current.process.cwd ?: historical?.process?.cwd,
+            updatedAt = listOfNotNull(current.process.updatedAt, historical?.process?.updatedAt).maxOrNull(),
+        ),
     )
 }
 
 /** Search and cursor keys are read from the same merged row the console ultimately shows. */
 internal data class HistoryItem(val id: String, val record: SessionRecord, val source: String, val resumable: Boolean) {
-    val at: Long get() = record.updatedAt ?: 0L
+    val at: Long get() = record.process.updatedAt ?: 0L
 
     /** The page after an immutable sort key, even if its anchor record was deleted or updated. */
     fun follows(cursor: Pair<Long, String>): Boolean {
@@ -66,7 +71,7 @@ internal data class HistoryItem(val id: String, val record: SessionRecord, val s
     fun matches(query: String): Boolean {
         if (query.isEmpty()) return true
         val lowered = query.lowercase(Locale.ROOT)
-        return listOfNotNull(record.name, record.cwd, record.head, id)
+        return listOfNotNull(record.name, record.process.cwd, record.head, id)
             .any { it.lowercase(Locale.ROOT).contains(lowered) }
     }
 

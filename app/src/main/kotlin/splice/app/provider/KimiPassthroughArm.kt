@@ -46,12 +46,11 @@ internal class KimiPassthroughArm(
                 label = account.label,
                 primary = account.primary,
                 auth = account.auth,
-                quotaFile = account.quotaFile,
-                credentialPresent = account.credentialPresent,
+                quota = WiredAccountQuota(file = account.quotaFile),
+                credential = WiredAccountCredential(present = account.credentialPresent, refusal = account.refusal),
                 extraHeaders = CredentialHeaders {
                     SSE_HEADERS + staticHeaders + account.identity.headers()
                 },
-                refusal = account.refusal,
             )
         }
         return Wired(provider, default.auth, wiredAccounts)

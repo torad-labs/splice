@@ -11,7 +11,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.client.ClaudePolicy
-import splice.client.login.TokenCaptureSpec
 import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.CLIENT_TABLE_WINDOW
 import splice.core.model.ClientSpelling
@@ -76,52 +75,10 @@ public data class ModelTiers(
 /** What a head needs to produce a launch recipe (supplied by :app at wiring time). */
 public data class LaunchSpec(
     val trees: HeadTrees,
-    val pinnedModel: String,
-    val availableModelIds: List<String>,
-    val modelLabels: Map<String, String>, // id -> display label (for the alias slot names)
-    /** Which models may stand behind Claude Code's tier slots — see [ModelTiers]. */
-    val tiers: ModelTiers = ModelTiers(),
-    /** The head's discovery prefix ("claude-codex--"): a tier that repeats an earlier tier's model
-     *  is planted under this wrapped spelling so the picker's allowlist hides its row (see
-     *  LaunchService.buildEnv). Blank keeps the duplicate row. */
-    val discoveryPrefix: String = "",
-    /** The client window planted as CLAUDE_CODE_MAX_CONTEXT_TOKENS: ModelCatalog.clientLaunchWindow,
-     *  a constant. Per-row windows never ride the env — usage scaling applies them on the wire. */
-    val contextWindow: Long,
-    /** Claude Code's per-request timeout (API_TIMEOUT_MS) for THIS head: the daemon's whole-turn
-     *  cap plus a grace, so the client always outlives the proxy's own wall and receives its honest
-     *  verdict instead of aborting first. 2026-09-01: the daemon allowed a compaction 900s while
-     *  Claude Code's 600s default gave up — every compaction over ten minutes ended as client_abort
-     *  with the summary still streaming, and the ones that survived had 20-100s to spare. */
-    val apiTimeoutMs: Long,
-    val modelOptionsCache: JsonElement, // the /model picker option list
-    val statuslineCommand: String, // per-head statusline command (…/statusline/<head>)
-    val loginCommand: String, // shell command that runs THIS head's provider sign-in (e.g. `claudex login`)
-    val signInLabel: String, // provider label for the /login UX ("Codex (ChatGPT)", "Grok (xAI)")
-    /** False for api-key heads: the /login block reason points at a masked terminal prompt. */
-    val signInViaBrowser: Boolean = true,
-    /** api-key heads: capture a bare pasted token into the KeyStore (blocked from model context). */
-    val tokenCapture: TokenCaptureSpec? = null,
-    /** Install the SessionStart key-missing advertiser (daemon sets it only while unconfigured). */
-    val advertiseKeySetup: Boolean = false,
-    /** Absolute path of this head's login receipt (LoginOutcomeFile) — the channel a DETACHED
-     *  sign-in uses to tell the session what happened. Empty = no in-session confirmation. */
-    val loginOutcomeFile: String = "",
-    /** The head's topology key ("codex"): `splice login <key>` and `<wrapper> login` name the same
-     *  sign-in, and the /login hook must find it under either spelling (review 2026-09-14). */
-    val headKey: String = "",
+    val models: LaunchModels,
+    val signIn: LaunchSignIn,
+    val gateway: LaunchGateway,
     val policy: ClaudePolicy,
-    val port: Int,
-    /** Per-install local gateway credential; shared with the head's inbound verifier. */
-    val inferenceToken: String,
-    /**
-     * TRUE for a client-auth head: the client keeps its OWN Anthropic credentials and its own
-     * /login (campaign claude-head). Every other head serves a FOREIGN vendor, so the recipe must
-     * strip the client's Anthropic session and plant the gateway bearer instead — here that would
-     * replace exactly the credential the head forwards upstream, and disabling /login would nail
-     * shut the only door that can heal a 401.
-     */
-    val forwardClientAuth: Boolean = false,
 ) {
     /** This boot-assembled spec with the current catalog's roster, labels, picker and windows.
      *  Read per launch: provider discoveries and accepted TOML window edits need no daemon restart.
@@ -129,16 +86,21 @@ public data class LaunchSpec(
     public fun withWindows(catalog: ModelCatalog): LaunchSpec {
         val current = catalog.live()
         val refreshed = copy(
-            availableModelIds = current.availableModelIds(),
-            modelLabels = current.models.associate { it.id to it.label.ifBlank { modelLabels[it.id] ?: it.id } },
-            contextWindow = current.clientLaunchWindow,
-            modelOptionsCache = pickerRows(current),
-            tiers = tiers.copy(
-                candidates = tiers.candidates?.let { current.tierModelIds() },
-                modelOverrides = current.presented.overrides,
+            models = models.copy(
+                availableModelIds = current.availableModelIds(),
+                modelLabels = current.models.associate {
+                    it.id to it.label.ifBlank { models.modelLabels[it.id] ?: it.id }
+                },
+                contextWindow = current.clientLaunchWindow,
+                modelOptionsCache = pickerRows(current),
+                tiers = models.tiers.copy(
+                    candidates = models.tiers.candidates?.let { current.tierModelIds() },
+                    modelOverrides = current.presented.overrides,
+                ),
             ),
         )
-        return refreshed.copy(tiers = refreshed.tiers.copy(spelled = refreshed.spelledIn(current)))
+        val tiers = refreshed.models.tiers.copy(spelled = refreshed.spelledIn(current))
+        return refreshed.copy(models = refreshed.models.copy(tiers = tiers))
     }
 
     /** V4-358: this spec as the client is handed it: the pinned row, the allowlist and each picker row
@@ -148,19 +110,22 @@ public data class LaunchSpec(
      *  moves. The picker is drawn from the tier slots and the options cache, never from the allowlist,
      *  so the extra id adds no row. This very spec when nothing is spelled. */
     public fun heldByClient(): LaunchSpec {
+        val tiers = models.tiers
         if (tiers.spelled.isEmpty()) return this
-        val options = (modelOptionsCache as? JsonArray)?.let { rows -> JsonArray(rows.map(::heldRow)) }
+        val options = (models.modelOptionsCache as? JsonArray)?.let { rows -> JsonArray(rows.map(::heldRow)) }
         return copy(
-            pinnedModel = tiers.clientId(pinnedModel),
-            availableModelIds = availableModelIds.flatMap { listOfNotNull(tiers.spelled[it], it) },
-            modelOptionsCache = options ?: modelOptionsCache,
+            models = models.copy(
+                pinnedModel = tiers.clientId(models.pinnedModel),
+                availableModelIds = models.availableModelIds.flatMap { listOfNotNull(tiers.spelled[it], it) },
+                modelOptionsCache = options ?: models.modelOptionsCache,
+            ),
         )
     }
 
     private fun spelledIn(catalog: ModelCatalog): Map<String, String> {
-        if (forwardClientAuth) return emptyMap()
+        if (gateway.forwardClientAuth) return emptyMap()
         val spelling = ClientSpelling(catalog)
-        return (listOf(pinnedModel) + availableModelIds).distinct()
+        return (listOf(models.pinnedModel) + models.availableModelIds).distinct()
             .associateWith(spelling::of)
             .filter { (id, held) -> held != id }
     }
@@ -168,15 +133,15 @@ public data class LaunchSpec(
     private fun heldRow(row: JsonElement): JsonElement {
         val option = row as? JsonObject ?: return row
         val value = JsonScalars.str(option, PICKER_VALUE) ?: return row
-        return JsonObject(option + (PICKER_VALUE to JsonPrimitive(tiers.clientId(value))))
+        return JsonObject(option + (PICKER_VALUE to JsonPrimitive(models.tiers.clientId(value))))
     }
 
     private fun pickerRows(catalog: ModelCatalog): JsonElement {
-        val rows = modelOptionsCache as? JsonArray ?: return modelOptionsCache
+        val rows = models.modelOptionsCache as? JsonArray ?: return models.modelOptionsCache
         val kept = rows.filterIsInstance<JsonObject>().associateBy { JsonScalars.str(it, PICKER_VALUE) }
         val options = catalog.models.map { model ->
             val old = kept[model.id]
-            val labelChanged = model.label != modelLabels[model.id]
+            val labelChanged = model.label != models.modelLabels[model.id]
             val includesLabel = old == null || PICKER_LABEL in old
             val label = model.label.ifBlank { old?.let { JsonScalars.str(it, PICKER_LABEL) } ?: model.id }
             buildJsonObject {

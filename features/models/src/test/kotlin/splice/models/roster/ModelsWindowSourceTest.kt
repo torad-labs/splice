@@ -87,7 +87,7 @@ class ModelsWindowSourceTest {
     fun `a live window edit carries where the new numbers came from`() {
         val boot = provider.catalogFor(HeadConfig("xai", 4104, "claude-grok--", "grok-4.6"))
         val edited = provider.catalogFor(HeadConfig("xai", 4104, "claude-grok--", "grok-4.6", contextWindow = 300_000))
-        assertEquals(300_000L, boot.withWindowsOf(edited).headWindow)
-        assertEquals(null, edited.withWindowsOf(boot).headWindow)
+        assertEquals(300_000L, boot.withWindowsOf(edited).windows.headWindow)
+        assertEquals(null, edited.withWindowsOf(boot).windows.headWindow)
     }
 }

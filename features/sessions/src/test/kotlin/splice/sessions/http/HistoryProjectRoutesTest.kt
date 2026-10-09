@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
+import splice.sessions.transcript.SessionFiles
 import splice.sessions.transcript.SessionHistoryEntry
 import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionHistoryScan
@@ -70,15 +71,14 @@ class HistoryProjectRoutesTest {
             assertEquals(roots, asked)
             SessionHistoryScan(
                 listOf(
-                    SessionHistoryEntry(id, "Tally session", nested.toString(), null, 1_000, true, true),
+                    SessionHistoryEntry(id, "Tally session", nested.toString(), null, 1_000, SessionFiles(true, true)),
                     SessionHistoryEntry(
                         "87654321-1234-4234-8234-123456789abc",
                         "Scratch",
                         outside.toString(),
                         null,
                         900,
-                        true,
-                        true,
+                        SessionFiles(true, true),
                     ),
                 ),
             )

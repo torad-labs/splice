@@ -97,9 +97,11 @@ class MuseLegacyDialectTest {
             head = head,
             providerCfg = cfg,
             catalog = cfg.catalogFor(head),
-            watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+                loginCommand = "claude-muse login",
+            ),
             cfg = ConfigService(paths).getConfig("claude-muse"),
-            loginCommand = "claude-muse login",
         )
     }
 }

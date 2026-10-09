@@ -19,10 +19,6 @@
       "subsystems": 0,
       "reason": "V4-456, 2026-10-02: eagerToolInputs selects the streaming custom-tool input policy on its own; generic profiles stay neutral"
     },
-    "app/src/main/kotlin/splice/app/head/HeadStores.kt HeadStores": {
-      "params": 10,
-      "subsystems": 7
-    },
     "integrations/claude-code/src/main/kotlin/splice/client/ClaudeMaterializeTypes.kt MaterializeSpec": {
       "params": 13,
       "subsystems": 1
@@ -42,10 +38,6 @@
     "features/launch/src/main/kotlin/splice/launch/LaunchTypes.kt LaunchSpec": {
       "params": 21,
       "subsystems": 2
-    },
-    "app/src/main/kotlin/splice/app/control/ManagedHead.kt ManagedHead": {
-      "params": 17,
-      "subsystems": 10
     },
     "features/turns/src/main/kotlin/splice/head/HeadDeps.kt HeadSeams": {
       "params": 8,

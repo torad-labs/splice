@@ -17,6 +17,9 @@ import splice.core.storage.ActivityDays
 import splice.core.terminal.TerminalOutput
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.util.AsyncFileIo
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -24,6 +27,8 @@ import splice.core.util.WallClock
 import splice.head.wire.ClientInbound
 import splice.head.wire.TurnIdMint
 import splice.upstream.sse.WireAttempt
+import splice.upstream.sse.WireRequest
+import splice.upstream.sse.WireResponse
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -43,15 +48,19 @@ class TraceCommandTest {
 
     private fun meta(session: String) = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = "claude-openrouter--m1",
-        upstreamModel = "m1",
-        clientMaxTokens = 8000,
-        effort = "medium",
-        summary = null,
-        budgetTokens = null,
-        sessionId = session,
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "medium",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = "claude-openrouter--m1",
+            upstreamModel = "m1",
+            clientMaxTokens = 8000,
+        ),
+        scope = TurnScope(sessionId = session),
     )
 
     /** Two turns as the daemon would write them: ids turn-1 and turn-2, sessions alpha and beta. */
@@ -73,13 +82,13 @@ class TraceCommandTest {
             trace.attempted(
                 WireAttempt(
                     attempt = 1,
-                    url = "https://openrouter.ai/api/v1/chat/completions",
-                    requestHeaders = mapOf("Authorization" to "[redacted]", "content-type" to "application/json"),
-                    requestBody = """{"upstream":$n}""",
-                    requestEncoding = null,
-                    status = 200,
-                    responseHeaders = mapOf("x-request-id" to "r$n"),
-                    errorText = null,
+                    request = WireRequest(
+                        url = "https://openrouter.ai/api/v1/chat/completions",
+                        headers = mapOf("Authorization" to "[redacted]", "content-type" to "application/json"),
+                        body = """{"upstream":$n}""",
+                        encoding = null,
+                    ),
+                    response = WireResponse(status = 200, headers = mapOf("x-request-id" to "r$n"), errorText = null),
                     failure = null,
                     durationMs = 40,
                 ),

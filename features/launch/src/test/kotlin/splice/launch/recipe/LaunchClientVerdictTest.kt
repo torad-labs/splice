@@ -16,8 +16,11 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.CredentialVerdict
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
 import splice.launch.LaunchHead
+import splice.launch.LaunchModels
 import splice.launch.LaunchRecipe
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.runningHead
 import java.nio.file.Path
@@ -29,20 +32,26 @@ class LaunchClientVerdictTest {
 
     private fun spec(configDir: Path) = LaunchSpec(
         trees = HeadTrees(configDir),
-        pinnedModel = "claude-fable-5",
-        availableModelIds = listOf("claude-fable-5"),
-        modelLabels = mapOf("claude-fable-5" to "Claude Fable 5"),
-        contextWindow = 200_000,
-        modelOptionsCache = buildJsonObject { },
-        statuslineCommand = "\"/bin/curl\" -s :3096/statusline/$HEAD",
-        loginCommand = "$HEAD login",
-        signInLabel = "Claude",
+        models = LaunchModels(
+            pinnedModel = "claude-fable-5",
+            availableModelIds = listOf("claude-fable-5"),
+            modelLabels = mapOf("claude-fable-5" to "Claude Fable 5"),
+            contextWindow = 200_000,
+            modelOptionsCache = buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "$HEAD login",
+            signInLabel = "Claude",
+            headKey = HEAD,
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "\"/bin/curl\" -s :3096/statusline/$HEAD",
+            port = 3104,
+            inferenceToken = "test-token",
+            apiTimeoutMs = 960_000,
+            forwardClientAuth = true,
+        ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 3104,
-        inferenceToken = "test-token",
-        apiTimeoutMs = 960_000,
-        forwardClientAuth = true,
-        headKey = HEAD,
     )
 
     private fun clientHead(verdict: CredentialVerdict, configDir: Path) = LaunchHead(

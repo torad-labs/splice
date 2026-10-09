@@ -18,6 +18,8 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.turn.RoundHandoffs
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.upstream.RoundResult
@@ -167,9 +169,8 @@ class CodeModeReasoningHistoryTest : CodeModeBridgeTestSupport() {
         hasToolUse = false,
         incomplete = false,
         usage = Usage(),
-        bodyText = PREFACE,
-        emittedText = true,
-        customCalls = listOf(outer()),
+        text = RoundText(bodyText = PREFACE, emittedText = true),
+        handoffs = RoundHandoffs(customCalls = listOf(outer())),
     )
 
     private suspend fun resume(manager: CodexCodeModeBridge, body: String, vararg results: CodeModeResult) =

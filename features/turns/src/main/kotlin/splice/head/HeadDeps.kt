@@ -66,21 +66,10 @@ internal const val DEFAULT_STOP_DRAIN_MS = 45_000L
 
 /** Collaborators the head needs, bundled to keep the constructor lean. */
 public data class HeadDeps(
-    val upstream: UpstreamClient,
-    /** Per-install bearer used by local Claude clients for their TURNS (the turn key). Never use a
-     *  source-known sentinel here. */
-    val inferenceToken: String,
-    /** The management key: the ONLY credential this head's operator routes accept (GET /wire), and
-     *  still accepted for turns so a session launched before the v0.4.0 key split keeps working. It
-     *  is never what a launched client is handed — that is [inferenceToken] — so a session's
-     *  environment cannot read what the head sent upstream on other sessions' behalf. */
-    val operatorToken: String,
-    val gate: InflightGate,
-    /** V4-319: the head's live streaming turns, which the console lists and the operator stops, and
-     *  the marks that refuse a stopped turn's re-send. Beside [gate] because it is keyed by the gate's
-     *  slots. No default, like the bundles below: a head built without the daemon's registry would run
-     *  turns no console can see or stop, and compile. */
-    val liveTurns: LiveTurns,
+    /** WHERE TURNS GO: the upstream client, the gate that admits them, and the registry of those in flight. */
+    val traffic: HeadTraffic,
+    /** The two bearer credentials the head's routes accept, one per role. */
+    val tokens: HeadTokens,
     /** WHAT THE HEAD STORES (V4-105 item 1): everything it writes observations into. */
     val stores: HeadStores,
     /** WHICH ACCOUNT A TURN SPENDS: the quota trackers, and the pool that decides eligibility. */
@@ -90,7 +79,6 @@ public data class HeadDeps(
     val seams: HeadSeams,
     /** READ-ONCE VALUES: nothing here is derived from a turn. */
     val policy: HeadPolicy,
-    val compactionTail: CompactionTail = CompactionTail(),
     val log: LogSink,
 ) {
     /** The single resolver for which quota tracker a turn reads (V4-99): the SELECTED account's
@@ -98,33 +86,68 @@ public data class HeadDeps(
     internal val turnQuota: TurnQuota get() = quotaBundle.turnQuota
 
     init {
-        require(inferenceToken.isNotBlank()) { "inferenceToken must not be blank" }
-        require(operatorToken.isNotBlank()) { "operatorToken must not be blank" }
+        require(tokens.inferenceToken.isNotBlank()) { "inferenceToken must not be blank" }
+        require(tokens.operatorToken.isNotBlank()) { "operatorToken must not be blank" }
         // The split is the security property (v0.4.0): a head wired with ONE key for both roles hands
         // every session the operator routes again, so that wiring is refused rather than served.
-        require(operatorToken != inferenceToken) { "operatorToken must differ from inferenceToken" }
+        require(tokens.operatorToken != tokens.inferenceToken) { "operatorToken must differ from inferenceToken" }
         require(policy.requestReadTimeoutMs > 0) { "requestReadTimeoutMs must be positive" }
         require(!policy.mirrorReasoning) { "mirrorReasoning is operator-locked off" }
     }
+
+    /** The head's two bearer credentials, one per role. */
+    public data class HeadTokens(
+        /** Per-install bearer used by local Claude clients for their TURNS (the turn key). Never use a
+         *  source-known sentinel here. */
+        val inferenceToken: String,
+        /** The management key: the ONLY credential this head's operator routes accept (GET /wire), and
+         *  still accepted for turns so a session launched before the v0.4.0 key split keeps working. It
+         *  is never what a launched client is handed — that is [inferenceToken] — so a session's
+         *  environment cannot read what the head sent upstream on other sessions' behalf. */
+        val operatorToken: String,
+    )
+
+    /** Where a head's turns go and what is in flight: the client that posts them upstream, the gate that admits
+     *  them, and the registry of the live streaming ones. */
+    public data class HeadTraffic(
+        val upstream: UpstreamClient,
+        val gate: InflightGate,
+        /** V4-319: the head's live streaming turns, which the console lists and the operator stops, and
+         *  the marks that refuse a stopped turn's re-send. Beside [gate] because it is keyed by the gate's
+         *  slots. No default, like the bundles below: a head built without the daemon's registry would run
+         *  turns no console can see or stop, and compile. */
+        val liveTurns: LiveTurns,
+    )
 
     /** Where the head writes what it observes. Grouped by ROLE — a bundle is a boundary, not a bag. */
     public data class HeadStores(
         val usageStore: UsageStore,
         val perfStats: PerfStats,
         val economicsStore: EconomicsStore?,
-        val compactStats: CompactStats,
+        val compaction: HeadCompaction,
         val shadow: ShadowClassifier,
         val clientWindows: ClientWindows,
-        /** V4-173: the head's opt-in ring of upstream request bodies. NULL IS OFF, and it is the
-         *  default for every head an operator has not named a count for — a nullable with no
-         *  default, like [economicsStore], so a construction site that forgets cannot get a tap. */
-        val wireTap: WireTap?,
-        /** V4-174: the head's opt-in full request/response trace. NULL IS OFF, the same law as
-         *  [wireTap]: no default, so a construction site that forgets cannot get a trace. */
-        val trace: TraceStore?,
+        val captures: HeadCaptures,
+    )
+
+    /** What the head keeps about compactions. */
+    public data class HeadCompaction(
+        val compactStats: CompactStats,
         /** V4-216: where a compaction's answer waits for its retry across a daemon restart. No
          *  default: a head built without it would replay only within one process, and compile. */
         val compactionRecordings: CompactionRecordings,
+    )
+
+    /** The head's opt-in captures of what crosses it. Both are NULL IS OFF, with no default, so a construction site
+     *  that forgets cannot get a tap or a trace. */
+    public data class HeadCaptures(
+        /** V4-173: the head's opt-in ring of upstream request bodies. NULL IS OFF, and it is the
+         *  default for every head an operator has not named a count for — a nullable with no
+         *  default, like [HeadStores.economicsStore]. */
+        val wireTap: WireTap?,
+        /** V4-174: the head's opt-in full request/response trace. NULL IS OFF, the same law as
+         *  [wireTap]: no default. */
+        val trace: TraceStore?,
     )
 
     /** Which account a turn spends, and the trackers that decide eligibility. */
@@ -166,17 +189,24 @@ public data class HeadDeps(
         val ticker: Ticker = ProcessTicker(),
         val requestMaterializationGate: RequestMaterializationGate = RequestMaterializationGate(),
         val clientVersions: ClientVersionTracker = ClientVersionTracker(),
-        /** V4-124: a session id to its working directory, for the per-project prompt layers. The
-         *  default knows no session, so a head built without it carries the head layer only. */
-        val sessionProject: SessionProjectLookup = SessionProjectLookup { null },
+        val session: SessionSeams = SessionSeams(),
         /** V4-134: where this head reports lifecycle, turn and account events for the console. The
          *  default reports to nobody, like every seam in this bundle; HeadServerFactory gives every
          *  production head a real one, and HeadEventsTest fails if a served turn stops reaching it. */
         val events: HeadEvents = NoHeadEvents,
+    )
+
+    /** What a head resolves per client session: its working directory, the team-slot text appended after its layers
+     *  and the custom compaction text, each of which a test replaces with a fixed answer. */
+    public data class SessionSeams(
+        /** V4-124: a session id to its working directory, for the per-project prompt layers. The
+         *  default knows no session, so a head built without it carries the head layer only. */
+        val sessionProject: SessionProjectLookup = SessionProjectLookup { null },
         /** V4-131: the per-session team-slot text appended after the head's layers (SlotInstructions).
          *  Null (tests, tools) appends nothing; HeadServerFactory gives every production head the
          *  daemon's one resolver, pinned by that row's tests. */
         val slotInstructions: SlotInstructions? = null,
+        val compactionTail: CompactionTail = CompactionTail(),
     )
 
     /** Read-once values. Nothing here is derived from a turn, which is what makes it policy rather
@@ -189,7 +219,7 @@ public data class HeadDeps(
         val progressLine: Boolean = true,
         val forwardClientAuth: Boolean = false,
         /** V4-124: the head layer plus any per-project layers, resolved per turn against the
-         *  session's working directory ([HeadSeams.sessionProject]). No projects = the head layer
+         *  session's working directory ([SessionSeams.sessionProject]). No projects = the head layer
          *  alone, which is exactly V4-36's bytes. */
         val systemPrompt: SystemPromptLayers = SystemPromptLayers(HeadSystemPrompt()),
     )

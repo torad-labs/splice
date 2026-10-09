@@ -19,7 +19,10 @@ import splice.client.resume.TranscriptModelRewrite
 import splice.client.resume.originals.TranscriptOriginals
 import splice.core.config.StatePaths
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
 import splice.launch.LaunchHead
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.absentAuth
 import splice.launch.launchHeadsOf
@@ -116,7 +119,12 @@ class ResumeHookRouteTest {
         )
         val managed = head(own, emptyList())
         val clientHead = managed.copy(
-            spec = checkNotNull(managed.spec).copy(pinnedModel = "", forwardClientAuth = true),
+            spec = checkNotNull(managed.spec).let { base ->
+                base.copy(
+                    models = base.models.copy(pinnedModel = ""),
+                    gateway = base.gateway.copy(forwardClientAuth = true),
+                )
+            },
         )
         val handler = ResumeHookRoute(
             launchHeadsOf(clientHead),
@@ -248,18 +256,24 @@ class ResumeHookRouteTest {
         auth = absentAuth("test"),
         spec = LaunchSpec(
             trees = HeadTrees(own),
-            pinnedModel = PINNED,
-            availableModelIds = served,
-            modelLabels = served.associateWith { it },
-            contextWindow = 1_000,
-            modelOptionsCache = buildJsonObject { },
-            statuslineCommand = "",
-            loginCommand = "",
-            signInLabel = "",
+            models = LaunchModels(
+                pinnedModel = PINNED,
+                availableModelIds = served,
+                modelLabels = served.associateWith { it },
+                contextWindow = 1_000,
+                modelOptionsCache = buildJsonObject { },
+            ),
+            signIn = LaunchSignIn(
+                loginCommand = "",
+                signInLabel = "",
+            ),
+            gateway = LaunchGateway(
+                statuslineCommand = "",
+                port = 0,
+                inferenceToken = "t",
+                apiTimeoutMs = 1_000,
+            ),
             policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-            port = 0,
-            inferenceToken = "t",
-            apiTimeoutMs = 1_000,
         ),
     )
 }

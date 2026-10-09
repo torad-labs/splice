@@ -30,9 +30,9 @@
 //     false-green signature.
 package splice.control.mcp
 
-import splice.core.util.Cancellables
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
@@ -94,15 +94,17 @@ internal class McpContainment(
 
 /** `systemctl --user show <slice> -p MemoryMax --value`; null when systemd is not there to ask. */
 internal class SystemdSliceCap : SliceMemoryCap {
-    override fun invoke(slice: String): String? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-19 (V4-147): a box with no systemd, or one where the call fails, is a box whose slices cannot be read at all; null is the complete answer and McpContainment says it out loud.
-        Cancellables.runCatchingCancellable {
-            val process = ProcessBuilder("systemctl", "--user", "show", slice, "-p", "MemoryMax", "--value")
-                .redirectErrorStream(false)
-                .start()
-            val value = process.inputStream.bufferedReader().use { it.readText() }.trim()
-            if (process.waitFor() == 0) value.takeIf { it.isNotEmpty() } else null
-        }.getOrNull()
+    // A box with no systemd, or one where the call fails, is a box whose slices cannot be read at all; null is the
+    // complete answer.
+    override fun invoke(slice: String): String? = try {
+        val process = ProcessBuilder("systemctl", "--user", "show", slice, "-p", "MemoryMax", "--value")
+            .redirectErrorStream(false)
+            .start()
+        val value = process.inputStream.bufferedReader().use { it.readText() }.trim()
+        if (process.waitFor() == 0) value.takeIf { it.isNotEmpty() } else null
+    } catch (_: IOException) {
+        null
+    }
 }
 
 /** `/proc/<pid>/oom_score_adj`, written and read back. A RAISE off an inherited -1000 is unprivileged
@@ -110,11 +112,16 @@ internal class SystemdSliceCap : SliceMemoryCap {
 internal class ProcOomScoreAdj(private val procRoot: Path = Path.of("/proc")) : OomScoreAdjWrite {
     override fun invoke(pid: Long, value: Int): Int? {
         val file = procRoot.resolve(pid.toString()).resolve("oom_score_adj")
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-19 (V4-147): a child that died between spawn and this write, or a kernel without /proc, has no adj to read back; null IS the failure and protect() reports it in words rather than swallowing it.
-        return Cancellables.runCatchingCancellable {
+        // A child that died between spawn and this write, or a kernel without /proc, has no adj to read back; null IS the
+        // failure.
+        return try {
             Files.writeString(file, value.toString())
             Files.readString(file).trim().toInt()
-        }.getOrNull()
+        } catch (_: IOException) {
+            null
+        } catch (_: NumberFormatException) {
+            null
+        }
     }
 }
 

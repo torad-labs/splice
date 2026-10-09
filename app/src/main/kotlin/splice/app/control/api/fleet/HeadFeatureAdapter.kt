@@ -23,11 +23,11 @@ internal class HeadFeatureAdapter(
 
             override suspend fun restart(): Unit = managed.head.restart()
 
-            override fun status(): JsonObject = HeadStatus.json(managed.head, managed.authKind)
+            override fun status(): JsonObject = HeadStatus.json(managed.head, managed.authSurface.authKind)
 
-            override fun tailLogs(tail: Int): String = managed.logs.tail(tail)
+            override fun tailLogs(tail: Int): String = managed.sources.logs.tail(tail)
 
-            override fun logPath(): String = managed.logs.path()
+            override fun logPath(): String = managed.sources.logs.path()
         }
     }
 }

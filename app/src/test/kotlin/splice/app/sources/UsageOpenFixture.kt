@@ -14,6 +14,8 @@ import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
 import splice.usage.UsageHead
+import splice.usage.UsageHeadSinks
+import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
 import splice.usage.perf.PerfRowsSource
 import splice.usage.quota.QuotaClocks
@@ -63,12 +65,13 @@ internal class UsageOpenFixture(dir: Path, scope: CoroutineScope) {
                 "synthetic",
                 "claude-synthetic",
                 UsageStoreSource(store, tracker, listOf(poller)),
-                80,
-                0,
-                perfRows = PerfRowsSource { cutoff ->
-                    historyReads++
-                    perf.window(cutoff)
-                },
+                warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
+                sinks = UsageHeadSinks(
+                    perfRows = PerfRowsSource { cutoff ->
+                        historyReads++
+                        perf.window(cutoff)
+                    },
+                ),
             ),
         )
     }
@@ -77,7 +80,8 @@ internal class UsageOpenFixture(dir: Path, scope: CoroutineScope) {
     private fun probe(): QuotaSnapshot {
         assertEquals(thread, Thread.currentThread().threadId(), "all probe work stays on the measured thread")
         probes++
-        val body = """{"plan_type":"synthetic","rate_limit":{"primary_window":{"used_percent":25,"limit_window_seconds":18000,"reset_after_seconds":3600}}}"""
+        val body = """{"plan_type":"synthetic","rate_limit":{"primary_window":{"used_percent":25,""" +
+            """"limit_window_seconds":18000,"reset_after_seconds":3600}}}"""
         return requireNotNull(parse.invoke(parser, Json.parseToJsonElement(body).jsonObject, now) as? QuotaSnapshot)
     }
 

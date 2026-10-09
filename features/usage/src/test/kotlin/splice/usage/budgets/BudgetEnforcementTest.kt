@@ -30,6 +30,7 @@ import splice.upstream.Ticker
 import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
+import splice.usage.perf.PerfTurnFacts
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -131,7 +132,9 @@ class BudgetEnforcementTest {
     fun `a head with no budget, or a null daily_usd, is never refused and never reads its history`(
         @TempDir tmp: Path,
     ) {
-        val history = FakeHistory(listOf(PerfRow(DAY_START + 1, "ok", turnOf(50.0), model = MODEL)))
+        val history = FakeHistory(
+            listOf(PerfRow(DAY_START + 1, "ok", turnOf(50.0), facts = PerfTurnFacts(model = MODEL))),
+        )
         val rig = Rig(tmp, history)
         rig.budget("other", 0.0, BudgetActions.BLOCK)
         val unbudgeted = rig.enforcement.forHead("h", CATALOG)
@@ -148,10 +151,10 @@ class BudgetEnforcementTest {
         val boot = DAY_START + 10 * HOUR_MS
         val history = FakeHistory(
             listOf(
-                PerfRow(DAY_START - HOUR_MS, "ok", turnOf(50.0), model = MODEL),
-                PerfRow(DAY_START + HOUR_MS, "ok", turnOf(1.5), model = MODEL),
+                PerfRow(DAY_START - HOUR_MS, "ok", turnOf(50.0), facts = PerfTurnFacts(model = MODEL)),
+                PerfRow(DAY_START + HOUR_MS, "ok", turnOf(1.5), facts = PerfTurnFacts(model = MODEL)),
                 // Written by THIS daemon after boot: it reaches the ledger through spent(), below.
-                PerfRow(boot + HOUR_MS, "ok", turnOf(1.0), model = MODEL),
+                PerfRow(boot + HOUR_MS, "ok", turnOf(1.0), facts = PerfTurnFacts(model = MODEL)),
             ),
         )
         val rig = Rig(tmp, history, startMs = boot)

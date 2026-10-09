@@ -191,7 +191,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
         val record = registry.recordsFor(key).single()
         assertEquals(1, record.issued.size)
-        record.lastDigest = "next-request-digest"
+        record.progress.lastDigest = "next-request-digest"
         val machine = CodexCodeModeMachine(config, registry, CodexCodeModeValidation(config))
         stateFiles.block()
         var failed = false
@@ -307,11 +307,11 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
             assertTrue(advanced.await(WAIT_SECONDS, TimeUnit.SECONDS), "the worker never left its advance latch")
             val thread = driverThread.get(WAIT_SECONDS, TimeUnit.SECONDS)
             awaitPendingKey(thread)
-            assertTrue(record.pending.isEmpty(), "acceptCalls changed pending while the source save held its key")
+            assertTrue(record.progress.pending.isEmpty(), "acceptCalls changed pending while the save held its key")
             release.countDown()
             reader.get(WAIT_SECONDS, TimeUnit.SECONDS)
             driver.get(WAIT_SECONDS, TimeUnit.SECONDS)
-            assertEquals(1, record.pending.size)
+            assertEquals(1, record.progress.pending.size)
             assertEquals(1, stateFiles.records().single().getValue("pending").jsonArray.size)
         } finally {
             advance.countDown()
@@ -325,7 +325,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         CodeModeAdvanceRequest(record, turn(), false, emptyList(), RecordingSink())
 
     private fun commitSourceBoundary(registry: CodexCodeModeRegistry, record: CodeModeRecord) {
-        registry.source.append(record, record.source + "; await tools.Read({});")
+        registry.source.append(record, record.origin.source + "; await tools.Read({});")
         registry.changes.save(record) {}
     }
 

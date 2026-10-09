@@ -22,8 +22,12 @@ import splice.core.turn.ErrorType
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
+import splice.dialect.responses.ReasoningCapture
 import splice.dialect.responses.StreamTurnContext
+import splice.dialect.responses.SummaryHandling
+import splice.dialect.responses.WatchdogCaps
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
+import splice.upstream.TurnSignals
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.BufferCapacity
@@ -82,14 +86,22 @@ internal fun ctx(
     compact = compact,
     emitEncryptedReasoning = EmitEncryptedReasoning(emit),
     encodeReasoningEnvelope = { "env:" + it["id"]?.toString().orEmpty() },
-    clientGone = { false },
-    watchdogFired = { fired },
-    streamIdleMsForMessage = 180_000,
-    upstreamTimeoutMsForMessage = 900_000,
-    collectReasoningEnvelopes = collect,
-    dedupeRepeatedSummaryParts = false,
-    summaryPartsShared = SharedSummaryParts(),
-    onTurnReasoning = capture ?: { _, _ -> },
+    signals = TurnSignals(
+        clientGone = { false },
+        watchdogFired = { fired },
+    ),
+    caps = WatchdogCaps(
+        streamIdleMs = 180_000,
+        upstreamTimeoutMs = 900_000,
+    ),
+    reasoningCapture = ReasoningCapture(
+        collectEnvelopes = collect,
+        onTurn = capture ?: { _, _ -> },
+    ),
+    summary = SummaryHandling(
+        dedupeRepeatedParts = false,
+        partsShared = SharedSummaryParts(),
+    ),
 )
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
@@ -129,7 +141,7 @@ class ResponsesStreamTranslatorTest {
             sink,
         )
         val success = outcome as TurnOutcome.Success
-        assertEquals("part one\n\npart two", success.thinkingText)
+        assertEquals("part one\n\npart two", success.text.thinkingText)
         // exactly ONE thinking block opened; part boundaries are deltas, not closes
         assertEquals(1, sink.calls.count { it.startsWith("openThinking") })
         assertEquals(1, sink.calls.count { it.startsWith("close#") })
@@ -274,8 +286,8 @@ class ResponsesStreamTranslatorTest {
             sink,
         )
         val success = outcome as TurnOutcome.Success
-        assertEquals("hello", success.bodyText)
-        assertTrue(success.emittedText)
+        assertEquals("hello", success.text.bodyText)
+        assertTrue(success.text.emittedText)
         assertEquals(100, success.usage.inputTokens)
         assertEquals(7, success.usage.outputTokens)
         assertEquals("openText#0", sink.calls.first())
@@ -322,7 +334,7 @@ class ResponsesStreamTranslatorTest {
         val failure = outcome as TurnOutcome.Failure
         assertEquals(9000, failure.partial?.usage?.inputTokens, "the compaction's billed input must survive")
         assertEquals(120, failure.partial?.usage?.outputTokens, "the compaction's billed output must survive")
-        assertEquals("", failure.partial?.bodyText, "no buffer copies for a turn that never re-anchors")
+        assertEquals("", failure.partial?.text?.bodyText, "no buffer copies for a turn that never re-anchors")
     }
 
     @Test
@@ -340,7 +352,8 @@ class ResponsesStreamTranslatorTest {
 
     @Test
     fun `client gone without terminal is ClientAbandoned - never an error frame`() = runTest {
-        val outcome = ResponsesStreamTranslator(ctx().copy(clientGone = { true })).driveTurn(
+        val gone = ctx().run { copy(signals = signals.copy(clientGone = { true })) }
+        val outcome = ResponsesStreamTranslator(gone).driveTurn(
             listOf(
                 ev("""{"type":"response.output_text.delta","output_index":0,"delta":"x"}"""),
             ).asFlow(),
@@ -374,8 +387,8 @@ class ResponsesStreamTranslatorTest {
             sink,
         )
         val success = outcome as TurnOutcome.Success
-        assertEquals("harvested body", success.bodyText)
-        assertEquals("deep thought", success.thinkingText)
+        assertEquals("harvested body", success.text.bodyText)
+        assertEquals("deep thought", success.text.thinkingText)
         // harvest fills BUFFERS only; no wire blocks were opened for them
         assertEquals(listOf("closeAll"), sink.calls)
     }
@@ -424,8 +437,8 @@ class ResponsesStreamTranslatorTest {
         )
         val success = outcome as TurnOutcome.Success
         assertEquals(516, success.usage.reasoningTokens)
-        assertEquals(1, success.reasoningEnvelopes.size)
-        assertTrue(success.reasoningEnvelopes.first().contains("rs_1"))
+        assertEquals(1, success.handoffs.reasoningEnvelopes.size)
+        assertTrue(success.handoffs.reasoningEnvelopes.first().contains("rs_1"))
     }
 
     @Test
@@ -440,7 +453,7 @@ class ResponsesStreamTranslatorTest {
             ).asFlow(),
             RecordingSink(),
         )
-        assertTrue((outcome as TurnOutcome.Success).reasoningEnvelopes.isEmpty())
+        assertTrue((outcome as TurnOutcome.Success).handoffs.reasoningEnvelopes.isEmpty())
     }
 
     // L3 honesty hole (BS-1): a content-filtered response.incomplete must not masquerade as a
@@ -459,7 +472,7 @@ class ResponsesStreamTranslatorTest {
         )
         val failure = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, failure.type)
-        assertTrue(failure.providerReported)
+        assertTrue(failure.traits.providerReported)
         assertTrue(failure.message.contains("content filter"))
     }
 
@@ -669,9 +682,9 @@ class ToolSearchCaptureTest {
         assertFalse(success.hasToolUse)
         val opened = setOf("openTool", "openText", "openThinking")
         assertTrue(sink.calls.none { call -> opened.any { call.startsWith(it) } }, "no wire block opens")
-        assertEquals(1, success.toolSearches.size)
-        assertEquals("ts_1", success.toolSearches.single().callId.v)
-        assertEquals("web search exa", success.toolSearches.single().query)
+        assertEquals(1, success.handoffs.toolSearches.size)
+        assertEquals("ts_1", success.handoffs.toolSearches.single().callId.v)
+        assertEquals("web search exa", success.handoffs.toolSearches.single().query)
     }
 
     @Test
@@ -687,7 +700,7 @@ class ToolSearchCaptureTest {
             RecordingSink(),
         )
         val success = outcome as TurnOutcome.Success
-        assertTrue(success.toolSearches.isEmpty())
+        assertTrue(success.handoffs.toolSearches.isEmpty())
     }
 
     @Test
@@ -704,8 +717,8 @@ class ToolSearchCaptureTest {
             RecordingSink(),
         )
         val success = outcome as TurnOutcome.Success
-        assertEquals("exa search", success.toolSearches.single().query)
-        assertEquals(3, success.toolSearches.single().limit)
+        assertEquals("exa search", success.handoffs.toolSearches.single().query)
+        assertEquals(3, success.handoffs.toolSearches.single().limit)
     }
 
     @Test
@@ -721,8 +734,8 @@ class ToolSearchCaptureTest {
             RecordingSink(),
         )
         val success = outcome as TurnOutcome.Success
-        assertEquals(1, success.toolSearches.size)
-        assertEquals("", success.toolSearches.single().query)
+        assertEquals(1, success.handoffs.toolSearches.size)
+        assertEquals("", success.handoffs.toolSearches.single().query)
     }
 
     @Test
@@ -738,7 +751,7 @@ class ToolSearchCaptureTest {
             RecordingSink(),
         )
         val success = outcome as TurnOutcome.Success
-        assertTrue(success.toolSearches.isEmpty())
+        assertTrue(success.handoffs.toolSearches.isEmpty())
     }
 
     @Test
@@ -751,8 +764,8 @@ class ToolSearchCaptureTest {
         )
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(listOf(terminal).asFlow(), RecordingSink())
         val success = outcome as TurnOutcome.Success
-        assertEquals(1, success.toolSearches.size)
-        assertEquals("ts_9", success.toolSearches.single().callId.v)
+        assertEquals(1, success.handoffs.toolSearches.size)
+        assertEquals("ts_9", success.handoffs.toolSearches.single().callId.v)
     }
 
     @Test
@@ -773,7 +786,7 @@ class ToolSearchCaptureTest {
             RecordingSink(),
         )
         val success = outcome as TurnOutcome.Success
-        assertEquals(1, success.toolSearches.size, "the streamed capture wins; the harvest never re-adds it")
+        assertEquals(1, success.handoffs.toolSearches.size, "the streamed capture wins; the harvest never re-adds it")
     }
 
     // The dispatch-after-search wall: a function_call for a tool absent from THIS turn's
@@ -878,7 +891,7 @@ class ResponsesRunawayGuardTest {
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink)
         val failure = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.API_ERROR, failure.type)
-        assertFalse(failure.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
+        assertFalse(failure.traits.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
         assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
         // consumption stopped at the latch: 20 x 1M reaches the cap, later deltas never emit
         val deltas = sink.calls.count { it.startsWith("text#") }
@@ -968,7 +981,7 @@ class ResponsesRefusalHonestyTest {
         )
         val f = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.providerReported)
+        assertTrue(f.traits.providerReported)
         assertTrue(f.message.contains("Refusing: policy."), f.message)
         assertTrue(!f.message.contains("stopped by content filter"), f.message)
         assertEquals(null, f.partial)
@@ -993,8 +1006,8 @@ class ResponsesRefusalHonestyTest {
             RecordingSink(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertTrue(f.providerReported, "the model's own refusal is provider-reported, not a local verdict")
-        assertTrue(f.permanent, "a deterministic refusal must be permanent — see V4-122 item 11")
+        assertTrue(f.traits.providerReported, "the model's own refusal is provider-reported, not a local verdict")
+        assertTrue(f.traits.permanent, "a deterministic refusal must be permanent — see V4-122 item 11")
     }
 
     @Test
@@ -1010,7 +1023,7 @@ class ResponsesRefusalHonestyTest {
         )
         val failure = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, failure.type)
-        assertTrue(failure.providerReported, "the BACKEND sent the refusal — G20 provenance is upstream")
+        assertTrue(failure.traits.providerReported, "the BACKEND sent the refusal — G20 provenance is upstream")
         assertTrue(failure.message.contains("I won't do that."), failure.message)
         // A refusal is deterministic: no salvage may ride it, or the re-anchor loop re-POSTs it.
         assertEquals(null, failure.partial)
@@ -1032,7 +1045,7 @@ class ResponsesRefusalHonestyTest {
         )
         val failure = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, failure.type)
-        assertTrue(failure.providerReported)
+        assertTrue(failure.traits.providerReported)
         assertTrue(failure.message.contains("Refusing: policy."), failure.message)
     }
 
@@ -1067,7 +1080,7 @@ class ResponsesRefusalHonestyTest {
             RecordingSink(),
         )
         val success = outcome as TurnOutcome.Success
-        assertEquals("hello", success.bodyText)
+        assertEquals("hello", success.text.bodyText)
     }
 
     // ---- repair round 2 -------------------------------------------------------------------
@@ -1087,7 +1100,7 @@ class ResponsesRefusalHonestyTest {
             ).asFlow(),
             RecordingSink(),
         )
-        assertEquals("hello", (outcome as TurnOutcome.Success).bodyText)
+        assertEquals("hello", (outcome as TurnOutcome.Success).text.bodyText)
     }
 
     @Test
@@ -1102,7 +1115,7 @@ class ResponsesRefusalHonestyTest {
             ).asFlow(),
             RecordingSink(),
         )
-        assertEquals("hello", (outcome as TurnOutcome.Success).bodyText)
+        assertEquals("hello", (outcome as TurnOutcome.Success).text.bodyText)
     }
 
     // ACCUMULATION AXIS. onTextDelta appends verbatim in the very same reducer; only the refusal
@@ -1136,7 +1149,7 @@ class ResponsesRefusalHonestyTest {
         )
         val f = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.providerReported, "the BACKEND finalized the refusal — G20 provenance is upstream")
+        assertTrue(f.traits.providerReported, "the BACKEND finalized the refusal — G20 provenance is upstream")
         assertTrue(f.message.contains("I won't do that."), f.message)
         assertEquals(null, f.partial)
     }
@@ -1178,7 +1191,7 @@ class ResponsesRefusalHonestyTest {
         )
         val f = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.INVALID_REQUEST, f.type)
-        assertTrue(f.providerReported)
+        assertTrue(f.traits.providerReported)
         assertTrue(f.message.contains("but I stop here"), f.message)
         assertEquals(null, f.partial)
     }
@@ -1366,8 +1379,11 @@ class ResponsesItemDoneToolArgsTest {
         )
         assertTrue(sink.calls.none { it.startsWith("text#") }, "no text_delta may enter a tool block: ${sink.calls}")
         val s = assertInstanceOf(TurnOutcome.Success::class.java, outcome, "clean tool args stay a Success")
-        assertTrue(!s.emittedText, "a dropped mistarget must not claim emitted text")
-        assertTrue(s.bodyText.isEmpty(), "a dropped mistarget must not pollute the text buffer: '${s.bodyText}'")
+        assertTrue(!s.text.emittedText, "a dropped mistarget must not claim emitted text")
+        assertTrue(
+            s.text.bodyText.isEmpty(),
+            "a dropped mistarget must not pollute the text buffer: '${s.text.bodyText}'",
+        )
     }
 
     // DR-108 mirror: an arguments delta aimed at an open TEXT block's index emitted
@@ -1386,7 +1402,7 @@ class ResponsesItemDoneToolArgsTest {
         )
         assertTrue(sink.calls.none { it.startsWith("json#") }, "no args delta may enter a text block: ${sink.calls}")
         val s = assertInstanceOf(TurnOutcome.Success::class.java, outcome, "the text turn stays a Success")
-        assertTrue(s.bodyText == "hello", "the real text survives untouched: '${s.bodyText}'")
+        assertTrue(s.text.bodyText == "hello", "the real text survives untouched: '${s.text.bodyText}'")
     }
 
     // DR-134: the THIRD args-emitting path. DR-108 guarded onTextDelta and onArgs, but the DR-77
@@ -1416,7 +1432,7 @@ class ResponsesItemDoneToolArgsTest {
             "no harvested args may enter a text block: ${sink.calls}",
         )
         val s = assertInstanceOf(TurnOutcome.Success::class.java, outcome, "the text turn stays a Success")
-        assertTrue(s.bodyText == "Hello", "the real text survives untouched: '${s.bodyText}'")
+        assertTrue(s.text.bodyText == "Hello", "the real text survives untouched: '${s.text.bodyText}'")
     }
 }
 
@@ -1493,8 +1509,8 @@ class ResponsesStringErrorTest {
             sink,
         )
         val success = assertInstanceOf(TurnOutcome.Success::class.java, outcome)
-        assertTrue(success.messageClosed, "the message item completed, so the answer is a deliberate empty")
-        assertFalse(success.emittedText, "no text was produced")
+        assertTrue(success.shape.messageClosed, "the message item completed, so the answer is a deliberate empty")
+        assertFalse(success.text.emittedText, "no text was produced")
         assertTrue(sink.calls.none { it.startsWith("text") }, "nothing may be invented on the wire: ${sink.calls}")
     }
 
@@ -1515,7 +1531,7 @@ class ResponsesStringErrorTest {
             RecordingSink(),
         )
         assertFalse(
-            (outcome as TurnOutcome.Success).messageClosed,
+            (outcome as TurnOutcome.Success).shape.messageClosed,
             "no message item, so the honest error still applies",
         )
     }

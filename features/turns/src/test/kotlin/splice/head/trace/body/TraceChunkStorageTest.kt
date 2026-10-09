@@ -16,6 +16,9 @@ import splice.core.perf.PerfSnapshot
 import splice.core.storage.ActivityDays
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.util.AsyncFileIo
 import splice.core.util.JsonlSink
 import splice.core.util.WallClock
@@ -25,6 +28,8 @@ import splice.head.wire.ClientInbound
 import splice.head.wire.TraceStore
 import splice.head.wire.TurnIdMint
 import splice.upstream.sse.WireAttempt
+import splice.upstream.sse.WireRequest
+import splice.upstream.sse.WireResponse
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -185,28 +190,22 @@ class TraceChunkStorageTest {
     private fun write(store: TraceStore, request: String, answer: String, upstream: String = request) {
         val meta = TurnMeta(
             compact = false,
-            showReasoning = ReasoningDisplay.OFF,
-            stream = true,
-            originalModel = "m",
-            upstreamModel = "m",
-            clientMaxTokens = 100,
-            effort = "high",
-            summary = null,
-            budgetTokens = null,
-            sessionId = "synthetic-session",
+            reasoning = TurnReasoning(
+                showReasoning = ReasoningDisplay.OFF,
+                effort = "high",
+                summary = null,
+                budgetTokens = null,
+            ),
+            route = TurnRoute(stream = true, originalModel = "m", upstreamModel = "m", clientMaxTokens = 100),
+            scope = TurnScope(sessionId = "synthetic-session"),
         )
         val trace = store.begin(meta, ClientInbound("POST", "/v1/messages", emptyMap(), request))
         trace.responseText(answer)
         trace.attempted(
             WireAttempt(
                 1,
-                "http://127.0.0.1:9",
-                emptyMap(),
-                upstream,
-                null,
-                200,
-                emptyMap(),
-                null,
+                WireRequest("http://127.0.0.1:9", emptyMap(), upstream, null),
+                WireResponse(200, emptyMap(), null),
                 null,
                 1,
             ),

@@ -21,7 +21,7 @@ internal class DoctorFindingRenderer(private val output: TerminalOutput) {
         output.line("")
         output.line("  $glyph " + palette.paint(palette.strong, check.name))
         output.line("      " + palette.paint(palette.quiet, check.detail))
-        check.details?.let {
+        check.notes.details?.let {
             output.line("      " + palette.paint(palette.quiet, "Show the details"))
             output.line("        " + palette.paint(palette.quiet, it))
         }

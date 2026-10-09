@@ -50,7 +50,7 @@ public class PerfPayloads(
             put("window", window.label)
             putJsonArray(HEADS) {
                 heads.all().forEach { m ->
-                    val read = m.perfRows?.window(now - window.ms) ?: PerfRowsWindow(emptyList())
+                    val read = m.sinks.perfRows?.window(now - window.ms) ?: PerfRowsWindow(emptyList())
                     addJsonObject {
                         put(KEY, m.key)
                         put(LABEL, m.label)
@@ -68,7 +68,7 @@ public class PerfPayloads(
         put("window", tailN)
         putJsonArray(HEADS) {
             heads.all().forEach { m ->
-                val rows = m.perf?.tailNumeric(tailN).orEmpty()
+                val rows = m.sinks.perf?.tailNumeric(tailN).orEmpty()
                 addJsonObject {
                     put(KEY, m.key)
                     put(LABEL, m.label)

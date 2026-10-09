@@ -17,7 +17,9 @@ import splice.accounts.pool.AccountsRoute
 import splice.accounts.pool.HeadAccountAuthSource
 import splice.accounts.pool.HeadAccountPoolSource
 import splice.accounts.pool.HeadAccountPoolView
+import splice.accounts.pool.HeadAccountQuota
 import splice.accounts.pool.HeadAccountView
+import splice.accounts.pool.HeadAccountWindow
 import splice.accounts.signin.HeadRestart
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
@@ -48,17 +50,18 @@ class ClaudeAccountRowsTest {
         val pending = ClaudeLoginPlaceView(
             ClaudeLoginPlaceId.NATIVE,
             "synthetic-client",
-            "/synthetic/login",
-            true,
-            null,
+            ClaudeLoginCredential("/synthetic/login", true),
+            ClaudeLoginIdentity(null),
             null,
             ClaudeLoginStanding(null, null),
         )
         val verified = pending.copy(
-            account = ClaudeAccountIdentity("synthetic-account", null),
-            profileState = ClaudeProfileState.VERIFIED,
+            identity = ClaudeLoginIdentity(
+                ClaudeAccountIdentity("synthetic-account", null),
+                ClaudeProfileState.VERIFIED,
+            ),
         )
-        val refused = pending.copy(profileState = ClaudeProfileState.REFUSED)
+        val refused = pending.copy(identity = ClaudeLoginIdentity(null, ClaudeProfileState.REFUSED))
         for ((view, state) in listOf(pending to "pending", verified to "verified", refused to "refused")) {
             val row = ClaudeLoginRows.json(view, "synthetic-provider", null, 100)
             assertEquals(state, row.getValue("profile_state").jsonPrimitive.content)
@@ -72,9 +75,8 @@ class ClaudeAccountRowsTest {
         val native = ClaudeLoginPlaceView(
             ClaudeLoginPlaceId.NATIVE,
             "claude-splice",
-            "/synthetic/native/.credentials.json",
-            true,
-            ClaudeAccountIdentity("native-account", "native@synthetic.test"),
+            ClaudeLoginCredential("/synthetic/native/.credentials.json", true),
+            ClaudeLoginIdentity(ClaudeAccountIdentity("native-account", "native@synthetic.test")),
             null,
             ClaudeLoginStanding(null, null),
         )
@@ -84,10 +86,10 @@ class ClaudeAccountRowsTest {
             selected = true,
             available = true,
             plan = "max",
-            fiveHourUsedPercent = 11.0,
-            fiveHourResetEpochSeconds = 20_000,
-            sevenDayUsedPercent = 77.0,
-            sevenDayResetEpochSeconds = 30_000,
+            quota = HeadAccountQuota(
+                fiveHour = HeadAccountWindow(usedPercent = 11.0, resetEpochSeconds = 20_000),
+                sevenDay = HeadAccountWindow(usedPercent = 77.0, resetEpochSeconds = 30_000),
+            ),
         )
         val head = AccountHead(
             key = "claude-splice",
@@ -123,16 +125,15 @@ class ClaudeAccountRowsTest {
             val first = ClaudeLoginPlaceView(
                 ClaudeLoginPlaceId.NATIVE,
                 "claude-splice",
-                "/synthetic/native/.credentials.json",
-                true,
-                ClaudeAccountIdentity("native-account", "native@test"),
+                ClaudeLoginCredential("/synthetic/native/.credentials.json", true),
+                ClaudeLoginIdentity(ClaudeAccountIdentity("native-account", "native@test")),
                 QuotaSnapshot(QuotaWindow(42.0, 20_000, 18_000), updatedAt = 100_000),
                 ClaudeLoginStanding(true, 200),
             )
             val second = first.copy(
                 id = ClaudeLoginPlaceId.SPLICE,
-                credentialPath = "/synthetic/separate/.credentials.json",
-                account = ClaudeAccountIdentity("separate-account", null),
+                credential = first.credential.copy(path = "/synthetic/separate/.credentials.json"),
+                identity = ClaudeLoginIdentity(ClaudeAccountIdentity("separate-account", null)),
                 quota = null,
                 standing = ClaudeLoginStanding(null, null),
             )

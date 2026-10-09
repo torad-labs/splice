@@ -8,6 +8,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 
 class CodexRoutingHeadersTest {
 
@@ -15,16 +18,19 @@ class CodexRoutingHeadersTest {
 
     private fun meta(session: String?, conversation: String? = "conv-1") = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = "claude-codex--gpt-5.6-sol",
-        upstreamModel = "gpt-5.6",
-        clientMaxTokens = null,
-        effort = "high",
-        summary = null,
-        budgetTokens = null,
-        conversationKey = conversation,
-        sessionId = session,
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "high",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = "claude-codex--gpt-5.6-sol",
+            upstreamModel = "gpt-5.6",
+            clientMaxTokens = null,
+        ),
+        scope = TurnScope(conversationKey = conversation, sessionId = session),
     )
 
     @Test

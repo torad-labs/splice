@@ -25,6 +25,8 @@ import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -192,8 +194,7 @@ class ClientIdentityHeadersTest {
         val auth = if (clientAuth) ClientAuthProvider("claude-splice") else IdentityProviderAuth()
         val provider = PassthroughProvider(
             ProviderTuning(
-                key = "anthropic",
-                label = "claude-splice",
+                name = ProviderName(key = "anthropic", label = "claude-splice"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-splice--",
                     models = listOf(ModelEntry(MODEL, "Claude Sonnet", contextWindow = 200_000)),
@@ -201,7 +202,7 @@ class ClientIdentityHeadersTest {
                 ),
                 pinnedModel = MODEL,
                 auth = auth,
-                baseUrl = "http://127.0.0.1:${upstream.address.port}",
+                locations = ProviderLocations(baseUrl = "http://127.0.0.1:${upstream.address.port}"),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
             PassthroughQuirks(providerTag = "test-identity"),
@@ -216,7 +217,7 @@ class ClientIdentityHeadersTest {
                 gate = InflightGate({ 1 }),
             ).copy(
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = clientAuth),
-            ).copy(inferenceToken = TURN_KEY, operatorToken = MANAGEMENT_KEY),
+            ).copy(tokens = HeadDeps.HeadTokens(inferenceToken = TURN_KEY, operatorToken = MANAGEMENT_KEY)),
         )
         val client = HttpClient(CIO)
         try {

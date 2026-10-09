@@ -14,6 +14,7 @@ import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.dialect.anthropic.PassthroughQuirks
+import splice.dialect.anthropic.PassthroughRequestQuirks
 import splice.provider.kimi.KimiQuirks
 
 private fun provider(quirks: QuirksConfig) = ProviderConfig(
@@ -35,13 +36,13 @@ class PassthroughQuirksOverlayTest {
     @Test
     fun `an empty block_allowlist means OFF, never an allowlist that permits nothing`() {
         val quirks = assembly.passthroughQuirks(provider(QuirksConfig(blockAllowlist = emptyList())), kimiBase)
-        assertNull(quirks.blockAllowlist, "empty must turn the allowlist OFF")
+        assertNull(quirks.request.blockAllowlist, "empty must turn the allowlist OFF")
     }
 
     @Test
     fun `a declared allowlist replaces the base`() {
         val quirks = assembly.passthroughQuirks(provider(QuirksConfig(blockAllowlist = listOf("text"))), kimiBase)
-        assertEquals(setOf("text"), quirks.blockAllowlist)
+        assertEquals(setOf("text"), quirks.request.blockAllowlist)
     }
 
     // ABSENT keeps the base — this is what makes a splice.toml written before these knobs existed
@@ -58,8 +59,8 @@ class PassthroughQuirksOverlayTest {
             provider(QuirksConfig(stripCacheControl = false, mfjs = false)),
             kimiBase,
         )
-        assertEquals(false, quirks.stripCacheControl)
-        assertEquals(false, quirks.mfjsSanitize)
+        assertEquals(false, quirks.request.stripCacheControl)
+        assertEquals(false, quirks.request.mfjsSanitize)
     }
 
     // compact_effort is RETIRED (2026-09-05): a compaction is built exactly like a turn and
@@ -109,26 +110,36 @@ class PassthroughQuirksOverlayTest {
     // base (muse's built-in 64; 0 = no cap for a neutral head), declared wins in both directions.
     @Test
     fun `tool_name_cap absent keeps the base profile`() {
-        val muse = PassthroughQuirks(providerTag = "muse", toolNameCap = 64)
-        assertEquals(64, assembly.passthroughQuirks(provider(QuirksConfig()), muse).toolNameCap)
+        val muse = PassthroughQuirks(
+            providerTag = "muse",
+            request = PassthroughRequestQuirks(
+                toolNameCap = 64,
+            ),
+        )
+        assertEquals(64, assembly.passthroughQuirks(provider(QuirksConfig()), muse).request.toolNameCap)
 
         val neutral = PassthroughQuirks(providerTag = "claude-splice")
-        assertEquals(0, assembly.passthroughQuirks(provider(QuirksConfig()), neutral).toolNameCap)
+        assertEquals(0, assembly.passthroughQuirks(provider(QuirksConfig()), neutral).request.toolNameCap)
     }
 
     @Test
     fun `tool_name_cap declared wins over the base in both directions`() {
-        val muse = PassthroughQuirks(providerTag = "muse", toolNameCap = 64)
+        val muse = PassthroughQuirks(
+            providerTag = "muse",
+            request = PassthroughRequestQuirks(
+                toolNameCap = 64,
+            ),
+        )
         assertEquals(
             128,
-            assembly.passthroughQuirks(provider(QuirksConfig(toolNameCap = 128)), muse).toolNameCap,
+            assembly.passthroughQuirks(provider(QuirksConfig(toolNameCap = 128)), muse).request.toolNameCap,
             "declared 128 must win over muse's base 64",
         )
 
         val neutral = PassthroughQuirks(providerTag = "claude-splice")
         assertEquals(
             64,
-            assembly.passthroughQuirks(provider(QuirksConfig(toolNameCap = 64)), neutral).toolNameCap,
+            assembly.passthroughQuirks(provider(QuirksConfig(toolNameCap = 64)), neutral).request.toolNameCap,
             "declared 64 must win over a neutral base of no cap",
         )
     }

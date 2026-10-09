@@ -61,7 +61,7 @@ internal class FleetMount(
                 addJsonObject {
                     put(KEY, m.head.key)
                     put(LABEL, m.head.label)
-                    put("authKind", m.authKind)
+                    put("authKind", m.authSurface.authKind)
                     put("family", families[m.head.key])
                 }
             }

@@ -35,7 +35,9 @@ class CodeModeNativeStorageTest : CodeModeBridgeTestSupport() {
             posts++
             RoundResult.Outcome(
                 if (posts <= 20) {
-                    outerOutcome("outer-$posts").copy(reasoningEnvelopes = listOf(reasoning(posts)))
+                    outerOutcome("outer-$posts").run {
+                        copy(handoffs = handoffs.copy(reasoningEnvelopes = listOf(reasoning(posts))))
+                    }
                 } else {
                     completedOutcome()
                 },
@@ -55,7 +57,9 @@ class CodeModeNativeStorageTest : CodeModeBridgeTestSupport() {
             posts++
             RoundResult.Outcome(
                 if (posts <= 4) {
-                    outerOutcome("outer-$posts").copy(reasoningEnvelopes = listOf(reasoning(posts)))
+                    outerOutcome("outer-$posts").run {
+                        copy(handoffs = handoffs.copy(reasoningEnvelopes = listOf(reasoning(posts))))
+                    }
                 } else {
                     completedOutcome()
                 },

@@ -25,10 +25,16 @@ import splice.core.turn.TurnOutcome
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesTurnState
 import splice.dialect.responses.StreamTurnContext
+import splice.dialect.responses.SummaryHandling
+import splice.dialect.responses.WatchdogCaps
 import splice.dialect.responses.reasoning.EmitEncryptedReasoning
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.request.BuildOptions
+import splice.dialect.responses.request.ModelIds
+import splice.dialect.responses.request.ReasoningHandoff
+import splice.dialect.responses.request.RequestedReasoning
 import splice.dialect.responses.request.ResponsesRequestBuilder
+import splice.upstream.TurnSignals
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
 
@@ -69,11 +75,17 @@ class ResponsesCustomCallTest {
             compact = false,
             emitEncryptedReasoning = EmitEncryptedReasoning(false),
             encodeReasoningEnvelope = { "unused" },
-            clientGone = { false },
-            watchdogFired = { null },
-            streamIdleMsForMessage = 1_000,
-            upstreamTimeoutMsForMessage = 5_000,
-            summaryPartsShared = SharedSummaryParts(),
+            signals = TurnSignals(
+                clientGone = { false },
+                watchdogFired = { null },
+            ),
+            caps = WatchdogCaps(
+                streamIdleMs = 1_000,
+                upstreamTimeoutMs = 5_000,
+            ),
+            summary = SummaryHandling(
+                partsShared = SharedSummaryParts(),
+            ),
         ),
     )
 
@@ -85,8 +97,8 @@ class ResponsesCustomCallTest {
         state.customCalls += checkNotNull(parser.parse(first))
         state.finalResponse = JsonObject(mapOf("output" to JsonArray(listOf(first, second))))
         val outcome = payload.successOutcome(state) as TurnOutcome.Success
-        assertEquals(listOf("first", "second"), outcome.customCalls.map { it.callId })
-        assertEquals(listOf(first, second), outcome.customCalls.map { it.raw })
+        assertEquals(listOf("first", "second"), outcome.handoffs.customCalls.map { it.callId })
+        assertEquals(listOf(first, second), outcome.handoffs.customCalls.map { it.raw })
     }
 
     @Test
@@ -96,7 +108,7 @@ class ResponsesCustomCallTest {
         state.customCalls += checkNotNull(parser.parse(first))
         state.finalResponse = JsonObject(mapOf("output" to JsonArray(emptyList())))
         val outcome = payload.successOutcome(state) as TurnOutcome.Success
-        assertEquals(listOf(first), outcome.customCalls.map { it.raw })
+        assertEquals(listOf(first), outcome.handoffs.customCalls.map { it.raw })
     }
 
     @Test
@@ -105,7 +117,7 @@ class ResponsesCustomCallTest {
         val state = ResponsesTurnState()
         state.finalResponse = JsonObject(mapOf("output" to JsonArray(listOf(first, first))))
         val outcome = payload.successOutcome(state) as TurnOutcome.Success
-        assertEquals(2, outcome.customCalls.size)
+        assertEquals(2, outcome.handoffs.customCalls.size)
     }
 
     /** V4-456: the script streams to the client while the model writes it, and the runtime still
@@ -125,9 +137,9 @@ class ResponsesCustomCallTest {
             emit(terminal(call))
         }
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(upstream, sink) as TurnOutcome.Success
-        assertEquals("", outcome.thinkingText)
-        assertEquals(emptyList<String>(), outcome.reasoningEnvelopes)
-        assertEquals(call, outcome.customCalls.single().raw)
+        assertEquals("", outcome.text.thinkingText)
+        assertEquals(emptyList<String>(), outcome.handoffs.reasoningEnvelopes)
+        assertEquals(call, outcome.handoffs.customCalls.single().raw)
         assertEquals(listOf(script), sink.deltas)
         assertEquals(listOf("runtime:$script", "shown:$script"), sink.timeline, "showing must never delay a dispatch")
         assertEquals(listOf(SpliceNotice.SIGNATURE), sink.signatures)
@@ -295,13 +307,19 @@ class ResponsesCustomCallTest {
         val parsed = AnthropicParse.parseAnthropicBody(body.toString())
         val options = BuildOptions(
             compact = false,
-            originalModel = "claudex--m",
-            upstreamModel = "m",
-            configEffort = null,
-            configSummary = null,
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = InjectPriorReasoning(false),
-            decodeReasoningEnvelope = { null },
+            models = ModelIds(
+                original = "claudex--m",
+                upstream = "m",
+            ),
+            reasoning = RequestedReasoning(
+                effort = null,
+                summary = null,
+                display = ReasoningDisplay.TEXT,
+            ),
+            handoff = ReasoningHandoff(
+                replay = InjectPriorReasoning(false),
+                decode = { null },
+            ),
         )
         return ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex"))
             .build(parsed.typed, parsed.raw, options).req

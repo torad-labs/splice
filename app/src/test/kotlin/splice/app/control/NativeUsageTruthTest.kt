@@ -57,7 +57,9 @@ import splice.head.usage.CredentialQuotaFiles
 import splice.models.roster.DeclaredHead
 import splice.models.roster.DeclaredHeads
 import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionClient
 import splice.sessions.registry.SessionListing
+import splice.sessions.registry.SessionProcess
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
@@ -67,6 +69,7 @@ import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsProjection
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
+import splice.usage.perf.PerfTurnFacts
 import splice.usage.perf.ProjectedPerfRowsSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
@@ -84,7 +87,7 @@ class NativeUsageTruthTest {
                 ts = index.toLong() + 10,
                 outcome = "ok",
                 fields = mapOf("synthetic_metric" to 77L),
-                account = account,
+                facts = PerfTurnFacts(account = account),
             )
         }
         val facts = full.map { it.copy(fields = emptyMap()) }
@@ -119,10 +122,12 @@ class NativeUsageTruthTest {
         val native = NativeAccountRows(source)
         native.projected(0) { projection ->
             val read = projection.window
-            val normalized = facts.map { if (it.account == "claude-code") it.copy(account = null) else it }
+            val normalized = facts.map {
+                if (it.facts.account == "claude-code") it.copy(facts = it.facts.copy(account = null)) else it
+            }
             assertEquals(evidence.copy(rows = normalized), read)
             val row = projection.complete(listOf(read.rows.first())).single()
-            assertNull(row.account)
+            assertNull(row.facts.account)
             assertEquals(77L, row.fields["synthetic_metric"])
         }
         assertEquals(1, completed)
@@ -200,35 +205,41 @@ class NativeUsageTruthTest {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(false, kind, emptyMap())
         },
-        usage = object : HeadUsageSource {
-            override fun snapshot(): UsageView = UsageView(
-                7,
-                3,
-                null,
-                QuotaView(QuotaWindowView(99, reset, now / 1000), null, "wrong-head-plan"),
-            )
-            override suspend fun probeNow() { probes++ }
-        },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
-        authKind = kind,
-        perfRows = PerfRowsSource {
-            PerfRowsWindow(
-                listOf(null, "claude-code", "proved@example.invalid").mapIndexed { i, account ->
-                    PerfRow(ts = now - i, outcome = "ok", fields = emptyMap(), account = account)
-                },
-                oldestHeldTs = now - 1000,
-                dropsBefore = 3,
-                newestHeldTs = now,
-            )
-        },
+        sources = HeadSources(
+            usage = object : HeadUsageSource {
+                override fun snapshot(): UsageView = UsageView(
+                    7,
+                    3,
+                    null,
+                    QuotaView(QuotaWindowView(99, reset, now / 1000), null, "wrong-head-plan"),
+                )
+                override suspend fun probeNow() { probes++ }
+            },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int): String = ""
+                override fun path(): String = ""
+            },
+            perfRows = PerfRowsSource {
+                PerfRowsWindow(
+                    listOf(null, "claude-code", "proved@example.invalid").mapIndexed { i, account ->
+                        PerfRow(
+                            ts = now - i,
+                            outcome = "ok",
+                            fields = emptyMap(),
+                            facts = PerfTurnFacts(account = account),
+                        )
+                    },
+                    oldestHeldTs = now - 1000,
+                    dropsBefore = 3,
+                    newestHeldTs = now,
+                )
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+        authSurface = HeadAuthSurface(authKind = kind),
     )
 
     /** The head a case runs against: its auth kind, the family it is declared with, and the usage it answers. */
@@ -238,7 +249,9 @@ class NativeUsageTruthTest {
         private val usageSource: HeadUsageSource? = null,
     ) {
         fun managed(): ManagedHead =
-            managed(kind).let { head -> if (usageSource == null) head else head.copy(usage = usageSource) }
+            managed(kind).let { head ->
+                if (usageSource == null) head else head.copy(sources = head.sources.copy(usage = usageSource))
+            }
 
         fun declared(): DeclaredHead = DeclaredHead("synthetic-provider", null, family)
     }
@@ -454,16 +467,16 @@ class NativeUsageTruthTest {
 
     @Test
     fun `native attribution changes only the unproved name and preserves all window evidence`() {
-        val row = PerfRow(ts = 100, outcome = "ok", fields = emptyMap(), account = "claude-code")
-        val proved = row.copy(ts = 101, account = "proved@example.invalid")
+        val row = PerfRow(ts = 100, outcome = "ok", fields = emptyMap(), facts = PerfTurnFacts(account = "claude-code"))
+        val proved = row.copy(ts = 101, facts = row.facts.copy(account = "proved@example.invalid"))
         val held = PerfRowsWindow(listOf(row, proved), 50, 7, "synthetic unread generation", 2, 101)
         val source = PerfRowsSource { since ->
             assertEquals(42L, since)
             held
         }
         val normalized = NativeAccountRows(source).window(42)
-        assertEquals(held.copy(rows = listOf(row.copy(account = null), proved)), normalized)
-        assertNull(normalized.rows.first().account)
+        assertEquals(held.copy(rows = listOf(row.copy(facts = row.facts.copy(account = null)), proved)), normalized)
+        assertNull(normalized.rows.first().facts.account)
         assertSame(proved, normalized.rows.last(), "proved attribution remains borrowed, not rebuilt")
     }
 
@@ -488,18 +501,19 @@ class NativeUsageTruthTest {
         private fun registry(ids: List<String>): SessionSource = object : SessionSource {
             override fun read(): List<SessionRecord> = ids.mapIndexed { pid, id ->
                 SessionRecord(
-                    pid = pid + 1L,
                     sessionId = id,
-                    cwd = null,
                     name = null,
-                    kind = null,
-                    version = null,
                     status = SessionStatus(),
-                    startedAt = null,
-                    updatedAt = null,
-                    messagingSocketPath = null,
                     route = SessionRoute.Head(HEAD),
                     availability = SessionAvailability.LIVE,
+                    process = SessionProcess(
+                        pid = pid + 1L,
+                        cwd = null,
+                        startedAt = null,
+                        updatedAt = null,
+                        messagingSocketPath = null,
+                    ),
+                    client = SessionClient(kind = null, version = null),
                 )
             }
 

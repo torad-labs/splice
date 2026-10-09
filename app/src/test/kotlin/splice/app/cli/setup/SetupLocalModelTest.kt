@@ -350,9 +350,9 @@ class SetupLocalModelTest {
         runBlocking { step().install(true) }
         val head = added.single()
         assertEquals("bonsai", head.key)
-        assertEquals("bonsai-2-27b", head.modelId)
-        assertEquals("Bonsai 2 27B", head.modelLabel)
-        assertEquals(WINDOW, head.contextWindow, "the ADVERTISED window, never model_ctx")
+        assertEquals("bonsai-2-27b", head.model.id)
+        assertEquals("Bonsai 2 27B", head.model.label)
+        assertEquals(WINDOW, head.model.contextWindow, "the ADVERTISED window, never model_ctx")
         assertFalse(head.emitReasoningEffort, "rejects_reasoning_effort = true means do NOT emit it")
         assertTrue(head.slotAffinity)
         assertTrue(head.anyModelId)

@@ -37,8 +37,10 @@ internal class ChatUsage {
         // field first (OpenAI standard: prompt_tokens_details.cached_tokens), then flat `cached_tokens`,
         // then DeepSeek's `prompt_cache_hit_tokens`. RAW here: prompt_tokens already INCLUDES this
         // cached portion and HeadServer disjoints them, so subtracting here would double-subtract.
-        val details = u["prompt_tokens_details"] as? JsonObject
-        val nestedCached = JsonScalars.firstLong(details, "cached_tokens")
+        // The Responses spelling carries the same nested object under input_tokens_details; a backend that
+        // reports the input_/output_ buckets reports its cache there, so it is read the same way.
+        val nestedCached = listOf("prompt_tokens_details", "input_tokens_details")
+            .firstNotNullOfOrNull { JsonScalars.firstLong(u[it] as? JsonObject, "cached_tokens") }
         val flatCached = JsonScalars.firstLong(u, "cached_tokens", "prompt_cache_hit_tokens")
         val cached = nestedCached?.takeIf { it > 0 } ?: flatCached ?: 0L
         if (cached > 0) cachedTokens = cached

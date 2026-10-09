@@ -76,15 +76,19 @@ public data class GateHealth(
     val queued: Int = 0,
     /** limit<=0 = unlimited. */
     val limit: Int = 0,
-    /** Counts since the head started. */
+    val counts: GateCounts = GateCounts(),
+    val live: List<GateSlot> = emptyList(),
+    /** The head's configured stream-idle limit, the ceiling a live slot's idle is read against. */
+    val streamIdleMs: Long = 0,
+)
+
+/** What the gate has admitted and held since the head started. */
+public data class GateCounts(
     val acquired: Long = 0,
     val released: Long = 0,
     val waited: Long = 0,
     /** Mean queue wait of the admissions that waited, rounded; 0 while none has. */
     val avgWaitMs: Long = 0,
-    val live: List<GateSlot> = emptyList(),
-    /** The head's configured stream-idle limit, the ceiling a live slot's idle is read against. */
-    val streamIdleMs: Long = 0,
 )
 
 /** Where an admitted turn stands: waiting on the upstream, or hearing from it. */

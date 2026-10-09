@@ -33,18 +33,16 @@ public enum class LoginState(public val wire: String) {
     FAILED("failed"),
 }
 
-/** One login's off-request progress — what GET /api/auth/{head}/login/{id} polls. [userCode] and
- *  [verificationUri] are the device flow's announcement; [browserUrl] is the OAuth flow's, for
- *  the console to open (FEATURES.md §6). The row's "the state reads signed in, live after restart
- *  until then": [LoginState.SIGNED_IN] once the credential is persisted, [LoginState.LIVE_AFTER_RESTART]
- *  once the head has restarted and the account is confirmed in its pool. */
+/** One login's off-request progress — what GET /api/auth/{head}/login/{id} polls. [prompt] is the device
+ *  flow's announcement or the OAuth flow's browser URL, for the console to open (FEATURES.md §6). The row's
+ *  "the state reads signed in, live after restart until then": [LoginState.SIGNED_IN] once the credential
+ *  is persisted, [LoginState.LIVE_AFTER_RESTART] once the head has restarted and the account is confirmed in
+ *  its pool. */
 public data class LoginStatus(
     val id: String,
     val head: String,
     val state: LoginState,
-    val userCode: String? = null,
-    val verificationUri: String? = null,
-    val browserUrl: String? = null,
+    val prompt: LoginPrompt = LoginPrompt(),
     val failureReason: String? = null,
     /** The label actually written, which can differ from an automatic request's candidate. */
     val label: String? = null,

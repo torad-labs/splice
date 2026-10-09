@@ -429,43 +429,44 @@ internal class CodeModeFirstClaimBillingTest : CodeModeStatementStreamSupport() 
 
     @Test
     @Timeout(20)
-    fun `a successful terminal claimed before settlement releases its early hold without inventing a cut`() = runBlocking {
-        val manager = bridge(IncrementalRuntime())
-        val sink = StepSink()
-        val source = GatedPost(sink)
-        val posting = FirstPosting(source)
-        val staged = CountDownLatch(1)
-        val settle = CountDownLatch(1)
-        try {
-            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, posting)
-            val registry = field(manager, "registry") as CodexCodeModeRegistry
-            val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
-            val record = registry.recordsFor(key).single()
-            val round = checkNotNull((field(manager, "driver") as CodexCodeModeDriver).streams.find(record))
-            val barrier = Runnable {
-                staged.countDown()
-                check(settle.await(5, TimeUnit.SECONDS)) { "synthetic terminal settlement was not released" }
+    fun `a successful terminal claimed before settlement releases its early hold without inventing a cut`() =
+        runBlocking {
+            val manager = bridge(IncrementalRuntime())
+            val sink = StepSink()
+            val source = GatedPost(sink)
+            val posting = FirstPosting(source)
+            val staged = CountDownLatch(1)
+            val settle = CountDownLatch(1)
+            try {
+                manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, posting)
+                val registry = field(manager, "registry") as CodexCodeModeRegistry
+                val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
+                val record = registry.recordsFor(key).single()
+                val round = checkNotNull((field(manager, "driver") as CodexCodeModeDriver).streams.find(record))
+                val barrier = Runnable {
+                    staged.countDown()
+                    check(settle.await(5, TimeUnit.SECONDS)) { "synthetic terminal settlement was not released" }
+                }
+                round.javaClass.getDeclaredField("beforeSettle").apply { isAccessible = true }.set(round, barrier)
+                source.gates[1].complete(Unit)
+                source.gates[2].complete(Unit)
+                source.complete.complete(Unit)
+                assertTrue(staged.await(1_500, TimeUnit.MILLISECONDS), "the real terminal must be staged before its claim")
+                round.billing.prepare(completedOutcome())
+                val usage = checkNotNull(round.billing.claim(record, completedOutcome()))
+                assertEquals(100L, usage.inputTokens)
+                assertEquals(7L, usage.outputTokens)
+                assertEquals(0L, usage.cutRounds)
+                settle.countDown()
+                withTimeout(1_500) { round.outcome() }
+                assertNull(withTimeout(1_500) { posting.released.await() }, "claimed successful usage cannot invent a cut")
+                assertEquals(1, posting.held.get(), "an early terminal cannot register the same posting row twice")
+                assertEquals(1, posting.releases.get())
+            } finally {
+                settle.countDown()
+                manager.onHeadStop()
             }
-            round.javaClass.getDeclaredField("beforeSettle").apply { isAccessible = true }.set(round, barrier)
-            source.gates[1].complete(Unit)
-            source.gates[2].complete(Unit)
-            source.complete.complete(Unit)
-            assertTrue(staged.await(1_500, TimeUnit.MILLISECONDS), "the real terminal must be staged before its claim")
-            round.billing.prepare(completedOutcome())
-            val usage = checkNotNull(round.billing.claim(record, completedOutcome()))
-            assertEquals(100L, usage.inputTokens)
-            assertEquals(7L, usage.outputTokens)
-            assertEquals(0L, usage.cutRounds)
-            settle.countDown()
-            withTimeout(1_500) { round.outcome() }
-            assertNull(withTimeout(1_500) { posting.released.await() }, "claimed successful usage cannot invent a cut")
-            assertEquals(1, posting.held.get(), "an early terminal cannot register the same posting row twice")
-            assertEquals(1, posting.releases.get())
-        } finally {
-            settle.countDown()
-            manager.onHeadStop()
         }
-    }
 
     private enum class FirstClaimEnding { RETURN, CANCEL }
 
@@ -492,10 +493,12 @@ internal class CodeModeFirstClaimBillingTest : CodeModeStatementStreamSupport() 
         val config = CodeModeBridgeConfig(
             runtimes = { IncrementalRuntime() },
             state = stateLocation(),
-            sessionAlive = CodeModeSessionAlive {
-                manager?.let { owner -> retireIdle(owner, armed, evicted, ending) }
-                null
-            },
+            cellLease = CodeModeCellLease(
+                sessionAlive = CodeModeSessionAlive {
+                    manager?.let { owner -> retireIdle(owner, armed, evicted, ending) }
+                    null
+                },
+            ),
         )
         val bridge = CodexCodeModeBridge(config).also { manager = it }
         try {

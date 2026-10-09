@@ -24,8 +24,8 @@ internal class PassthroughToolSanitizer(
 
     /** Tool keys this head drops outright — fixed by the quirks, so computed once. */
     private val droppedToolKeys: Set<String> = buildSet {
-        if (quirks.mfjsSanitize) add(STRICT)
-        if (quirks.stripCacheControl) add(CACHE_CONTROL)
+        if (quirks.request.mfjsSanitize) add(STRICT)
+        if (quirks.request.stripCacheControl) add(CACHE_CONTROL)
     }
 
     fun sanitizeTools(tools: JsonElement, clientStreams: Boolean): JsonArray {
@@ -42,12 +42,12 @@ internal class PassthroughToolSanitizer(
         }
         // Kimi 400s a tool with no description; inventing one on a faithful passthrough would be
         // splice putting words in the client's request, so it rides with the schema shaping.
-        if (quirks.mfjsSanitize && DESCRIPTION !in tool) put(DESCRIPTION, "")
+        if (quirks.request.mfjsSanitize && DESCRIPTION !in tool) put(DESCRIPTION, "")
         if (eagerInputDefault(tool, clientStreams)) put(EAGER_INPUT_STREAMING, true)
     }
 
     private fun eagerInputDefault(tool: JsonObject, clientStreams: Boolean): Boolean {
-        val enabled = clientStreams && quirks.eagerToolInputs
+        val enabled = clientStreams && quirks.request.eagerToolInputs
         if (!enabled || EAGER_INPUT_STREAMING in tool) return false
         val type = tool["type"]
         return type == null || type == JsonPrimitive("custom")
@@ -56,7 +56,7 @@ internal class PassthroughToolSanitizer(
     /** Split from [sanitizeTool] so the per-key decision does not push the loop over detekt's
      *  cyclomatic threshold — the V4-32 name rewrite was the branch that tipped it. */
     private fun sanitizedValue(key: String, value: JsonElement): JsonElement = when {
-        key == INPUT_SCHEMA && quirks.mfjsSanitize ->
+        key == INPUT_SCHEMA && quirks.request.mfjsSanitize ->
             MfjsSanitizer.sanitize(value as? JsonObject ?: EMPTY_OBJECT)
         // V4-32: the declaration the upstream validates. Shortened here, restored on the
         // response side by PassthroughBlockRegistry; see ToolNameShortener.

@@ -39,8 +39,8 @@ internal class TurnDriveFactory(
         // The actual serialized round supplies wire size at TurnRoundRun's post boundary.
         // Tool-surface partition sizes — the expected-delta instrument (#959): setCount (not add)
         // so a request that stamped tools_deferred=0 is VISIBLE, never silently absent.
-        meta.toolsEager?.let { perf.setCount(PerfKeys.TOOLS_EAGER, it.toLong()) }
-        meta.toolsDeferred?.let { perf.setCount(PerfKeys.TOOLS_DEFERRED, it.toLong()) }
+        meta.tools.eager?.let { perf.setCount(PerfKeys.TOOLS_EAGER, it.toLong()) }
+        meta.tools.deferred?.let { perf.setCount(PerfKeys.TOOLS_DEFERRED, it.toLong()) }
         // A compact turn's silence before its first output is bounded by totalCap only — see
         // WatchdogBudget.forCompact for the live evidence. Normal turns keep the provider budget.
         val budget = if (meta.compact) provider.watchdog.forCompact() else provider.watchdog
@@ -50,28 +50,19 @@ internal class TurnDriveFactory(
         val remainingTurnWait = RemainingTurnWait(watchdog::remainingMs)
         val signals = driveSignals.make(watchdog, channel, perf)
         return TurnDrive(
-            requestBody = built.requestBody,
-            meta = meta,
+            inputs = inputs,
             emitter = emitter,
             watchdog = watchdog,
-            slot = inputs.slot,
             pipeline = drivePipeline.make(meta),
-            t0 = inputs.t0,
-            trace = inputs.trace,
-            perf = perf,
-            turnHeaders = built.extraHeaders,
-            account = inputs.account,
-            channel = channel,
             signals = signals,
-            toolSearch = built.toolSearch,
-            roundInterceptor = built.roundInterceptor,
+            channel = channel,
             remainingTurnWait = remainingTurnWait,
-            quota = inputs.quota,
         ).also { drive ->
             drive.fallbackAccountLabel = if (provider.auth is ClientAuthProvider) "claude-code" else "primary"
             drive.credentialAccountNames = deps.quotaBundle.credentialAccountNames
             drive.accountHandoff = deps.quotaBundle.activePool?.let { TurnAccountHandoff(it, deps.turnQuota) }
-            drive.sourceRoundStarted = TurnDrive.SourceRoundStarted { job -> deps.liveTurns.driving(inputs.slot, job) }
+            drive.sourceRoundStarted =
+                TurnDrive.SourceRoundStarted { job -> deps.traffic.liveTurns.driving(inputs.slot, job) }
         }
     }
 }

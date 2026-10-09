@@ -69,33 +69,17 @@ public fun interface HeadPerfSkipSource {
  *  account, cache_cold, compact — therefore reached no control-plane consumer at all: they were in the
  *  file, in the JsonObject the reader had just parsed, and dropped one line later. The console's
  *  per-turn view (FEATURES.md §6) is built out of exactly those five, so they are carried as named
- *  properties rather than re-derived by a second reader over the same bytes.
- *
- *  NULL MEANS THE ROW DOES NOT CARRY THE FIELD, deliberately distinguished from a false or empty
- *  value. `cache_cold` is written ONLY alongside an account (PerfStats.record), so a row with no
- *  account never had the question asked — reading that as `false` would report "the cache was warm"
- *  about a turn where nothing looked, which is a did-not-run wearing a legitimate answer, the same
- *  defect class the unset-port named-5xx rule exists for. `compact` and `model` are unconditional in
- *  the current writer, so null there means a LEGACY or torn row, and a payload omits the field rather
- *  than inventing a value for it.
- *
- *  NAMED ARGUMENTS ARE THE CONTRACT at every construction site (the ModelRates scar, V4-127): four of
- *  these five are nullable and two of the strings are adjacent, so a POSITIONAL call that swaps
- *  session and account compiles, passes, and reports the wrong facts with a green suite. */
+ *  properties rather than re-derived by a second reader over the same bytes. [PerfTurnFacts] holds them and
+ *  states the null rule and the named-arguments contract. */
 public data class PerfRow(
     val ts: Long,
     val outcome: String,
     val fields: Map<String, Long>,
-    val model: String? = null,
-    val session: String? = null,
-    val account: String? = null,
-    val cacheCold: Boolean? = null,
-    val compact: Boolean? = null,
+    val facts: PerfTurnFacts = PerfTurnFacts(),
     /** Capture lookup and request ownership are separate facts; legacy rows can lack either. */
     val turns: PerfTurnIds = PerfTurnIds(),
-    /** V4-354: the full session and the response id the client recorded in its local transcript. */
-    val sessionId: String? = null,
-    val responseMessageId: String? = null,
+    /** V4-354: how the row joins the client's local transcript. */
+    val transcript: PerfTranscriptLink = PerfTranscriptLink(),
     /** The recorded failure cause, independent of the client-facing retry type; absent in older rows. */
     val cause: String? = null,
 ) {

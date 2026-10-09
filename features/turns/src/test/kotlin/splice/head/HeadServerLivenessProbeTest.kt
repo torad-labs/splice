@@ -28,6 +28,8 @@ import splice.core.util.AsyncFileIo
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.head.usage.EconomicsStore
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -62,7 +64,7 @@ class HeadServerLivenessProbeTest {
         try {
             isolatedHead(tmp, upstream.address.port, forward, events) { head, deps ->
                 HttpClient(CIO).use { client ->
-                    val credential = if (forward) "synthetic-client-key" else deps.inferenceToken
+                    val credential = if (forward) "synthetic-client-key" else deps.tokens.inferenceToken
                     val cases = listOf(
                         Triple(PROBE_BODY, null, null),
                         Triple(PROBE_BODY, null, "1"),
@@ -122,7 +124,7 @@ class HeadServerLivenessProbeTest {
         assertEquals(emptyList<Map<String, Long>>(), deps.stores.perfStats.tailNumeric())
         assertEquals(0, deps.stores.usageStore.readState().entries)
         assertTrue(deps.stores.economicsStore!!.read().isEmpty())
-        assertTrue(deps.liveTurns.list().isEmpty())
+        assertTrue(deps.traffic.liveTurns.list().isEmpty())
         AsyncFileIo.drain()
         assertTrue(!Files.exists(traceDir) || Files.list(traceDir).use { it.count() == 0L })
     }
@@ -142,12 +144,11 @@ class HeadServerLivenessProbeTest {
         val auth = if (forward) ClientAuthProvider("synthetic") else ProbeApiKeyAuth()
         val provider = PassthroughProvider(
             ProviderTuning(
-                key = "anthropic",
-                label = "synthetic",
+                name = ProviderName(key = "anthropic", label = "synthetic"),
                 catalog = catalog,
                 pinnedModel = "synthetic-model",
                 auth = auth,
-                baseUrl = "http://127.0.0.1:$upstreamPort",
+                locations = ProviderLocations(baseUrl = "http://127.0.0.1:$upstreamPort"),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
             PassthroughQuirks(providerTag = "synthetic"),

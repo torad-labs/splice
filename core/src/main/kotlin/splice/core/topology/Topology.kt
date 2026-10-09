@@ -24,6 +24,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import splice.core.compaction.CompactionConfig
 import splice.core.config.Knob
+import splice.core.model.CatalogWindows
+import splice.core.model.ClientModelPolicy
 import splice.core.model.CodexCompactionReserves
 import splice.core.model.DiscoveredModel
 import splice.core.model.ExtraWindow
@@ -255,8 +257,6 @@ public data class ProviderConfig(
             } else {
                 selectedModels.map { it.copy(contextWindow = headWindow(it, window, discovered)) }
             },
-            extraWindows = if (window == null) extraWindows else extraWindows.map { it.copy(contextWindow = window) },
-            windowRules = if (window == null) windowRules else windowRules.map { it.copy(contextWindow = window) },
             defaultContextWindow = if (window != null) {
                 window
             } else if (defaultContextWindow > 0) {
@@ -264,10 +264,22 @@ public data class ProviderConfig(
             } else {
                 selectedModels.firstOrNull()?.contextWindow ?: DEFAULT_WINDOW_FLOOR
             },
-            headWindow = window,
-            compactionReserveDefaults = CodexCompactionReserves.takeIf { auth.kind == AuthKind.ChatgptOAuth.wire },
-            tierSlots = head.tierSlots(),
-            open = clientPicksModels,
+            windows = CatalogWindows(
+                extraWindows = if (window == null) {
+                    extraWindows
+                } else {
+                    extraWindows.map { it.copy(contextWindow = window) }
+                },
+                windowRules = if (window == null) {
+                    windowRules
+                } else {
+                    windowRules.map { it.copy(contextWindow = window) }
+                },
+                headWindow = window,
+                compactionReserveDefaults = CodexCompactionReserves
+                    .takeIf { auth.kind == AuthKind.ChatgptOAuth.wire },
+            ),
+            client = ClientModelPolicy(tierSlots = head.tierSlots(), open = clientPicksModels),
         )
     }
 

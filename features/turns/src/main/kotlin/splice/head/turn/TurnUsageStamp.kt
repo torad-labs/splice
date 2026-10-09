@@ -32,14 +32,17 @@ internal class TurnUsageStamp(
 
     private fun record(usage: Usage): Usage {
         usageStore.appendOutputTokens(usage.unrecordedOutputTokens)
-        return usage.copy(recordedOutputTokens = usage.outputTokens)
+        return usage.copy(origin = usage.origin.copy(recordedOutputTokens = usage.outputTokens))
     }
 
     suspend fun stampSuccess(drive: TurnDrive, success: TurnOutcome.Success) = withContext(NonCancellable) {
         if (!drive.claimUsageStamp()) return@withContext
         // The posting drive owns its raw rounds, even when a durable script claim returns a local step.
         val raw = drive.rawRoundUsage()
-        val usage = raw?.copy(history = raw.history.copy(cutRounds = success.usage.cutRounds)) ?: success.usage
+        val usage = raw?.let {
+            val history = it.origin.history.copy(cutRounds = success.usage.cutRounds)
+            it.copy(origin = it.origin.copy(history = history))
+        } ?: success.usage
         setKnownCounters(drive, usage)
         drive.perf.timed(PerfKeys.USAGE_MS) { usageStore.appendOutputTokens(usage.unrecordedOutputTokens) }
         log(telemetry.cacheLine(drive.upstreamModel, usage, drive.meta.compact))

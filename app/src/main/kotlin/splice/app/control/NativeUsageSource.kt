@@ -16,9 +16,9 @@ import splice.usage.quota.UsageView
 internal class NativeUsageSource(
     private val head: ManagedHead,
     private val native: ClaudeLoginPlacesSource,
-) : HeadUsageSource by head.usage {
+) : HeadUsageSource by head.sources.usage {
     override fun snapshot(): UsageView {
-        val pool = head.accountPool?.view(null)
+        val pool = head.authSurface.accountPool?.view(null)
         val selected = pool?.selectedLabel?.let { pool.selectedAccount() }
         val quota = if (pool?.selectionUnknown == true) {
             null
@@ -28,7 +28,7 @@ internal class NativeUsageSource(
             nativeQuota(pool)
         }
         // No native observation means no quota, never another credential's aggregate fallback.
-        return head.usage.snapshot().copy(quota = quota)
+        return head.sources.usage.snapshot().copy(quota = quota)
     }
 
     private fun nativeQuota(pool: HeadAccountPoolView?): QuotaView? {

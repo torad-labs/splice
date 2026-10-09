@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.model.CatalogWindows
+import splice.core.model.ClientModelPolicy
 import splice.core.model.ClientWindows
 import splice.core.model.CompactionReserve
 import splice.core.model.CompactionReserveDefaults
@@ -95,10 +97,15 @@ class StatuslineScaledRowTest {
             discoveryPrefix = "claude-codex--",
             models = listOf(ModelEntry("gpt-6.1-sol", contextWindow = 272_000)),
             pinnedModel = "gpt-6.1-sol",
-            compactionReserveDefaults = CompactionReserveDefaults { _, _ -> SOL_6_1_RESERVE }, // core's calibrated row
+            windows = CatalogWindows(
+                compactionReserveDefaults = CompactionReserveDefaults { _, _ -> SOL_6_1_RESERVE },
+            ),
         )
         var current = boot
-        val renderer = StatuslineRenderer(label = "codex", catalog = boot.copy(liveWindows = LiveWindows { current }))
+        val renderer = StatuslineRenderer(
+            label = "codex",
+            catalog = boot.copy(windows = boot.windows.copy(liveWindows = LiveWindows { current })),
+        )
         val stdin = oldSessionBlob("gpt-6.1-sol", 872_000)
         assertTrue("/272k" in render(renderer, stdin))
         current = boot.copy(models = listOf(ModelEntry("gpt-6.1-sol", contextWindow = 400_000)))
@@ -126,7 +133,7 @@ class StatuslineScaledRowTest {
             discoveryPrefix = "claude-splice--",
             models = emptyList(),
             defaultContextWindow = 1_000_000,
-            open = true,
+            client = ClientModelPolicy(open = true),
         )
         val windows = ClientWindows()
         val renderer = StatuslineRenderer(label = "Claude", catalog = open, clientWindows = windows)

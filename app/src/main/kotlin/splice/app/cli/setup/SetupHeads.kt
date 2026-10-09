@@ -91,7 +91,7 @@ internal class SetupHeads(
         for (profile in catalog) {
             when {
                 profile.name in TICK_EXCLUDED -> Unit
-                profile.headKey in installed || profile.name in installed ->
+                profile.head.key in installed || profile.name in installed ->
                     frame.step("already installed: ${profile.name}")
                 else -> tickable += profile
             }
@@ -117,15 +117,15 @@ internal class SetupHeads(
     }
 
     private fun hasCredential(profile: AddProfile, facts: SetupFacts): Boolean = when {
-        profile.authKind in facts.spliceOwned -> true
-        profile.authKind in facts.vendorCli -> true
-        profile.authKind != API_KEY_KIND -> false
-        else -> !env(profiles.apiKeyEnv(profile.headKey)).isNullOrBlank()
+        profile.provider.authKind in facts.spliceOwned -> true
+        profile.provider.authKind in facts.vendorCli -> true
+        profile.provider.authKind != API_KEY_KIND -> false
+        else -> !env(profiles.apiKeyEnv(profile.head.key)).isNullOrBlank()
     }
 }
 
 // V4-175: `claude` LEFT this map. Its reason — "needs a name" — was never true of that row:
-// AddPrepare.kt:42 takes `args.name ?: profile.headKey` and the catalogue gives it `claude-splice`,
+// AddPrepare.kt:42 takes `args.name ?: profile.head.key` and the catalogue gives it `claude-splice`,
 // so `splice add claude --yes` has always worked unaided. The wrong reason is what kept the lane
 // choice off the wizard entirely, which is the half of V4-175 the operator asked for. `api-key`
 // and `local` stay excluded: both need a name, base URL and model before they can be added, and

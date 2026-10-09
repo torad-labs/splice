@@ -78,7 +78,12 @@ class PassthroughUnmintedThinkingTest {
         build(builder(verifying), content)
 
     private fun builder(verifying: Boolean, log: LogSink = LogSink {}) = PassthroughRequestBuilder(
-        PassthroughQuirks(providerTag = "claude-splice", verifiesThinkingSignatures = verifying),
+        PassthroughQuirks(
+            providerTag = "claude-splice",
+            thinking = PassthroughThinkingQuirks(
+                verifiesThinkingSignatures = verifying,
+            ),
+        ),
         log = log,
     )
 

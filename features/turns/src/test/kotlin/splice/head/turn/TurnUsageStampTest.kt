@@ -46,7 +46,10 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
+import splice.core.turn.UsageOrigin
 import splice.core.turn.WatchdogBudget
 import splice.core.turn.noRequestUsage
 import splice.core.util.AsyncFileIo
@@ -69,6 +72,7 @@ import splice.head.wire.ClientChannel
 import splice.head.wire.CollectingTerminal
 import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.UsagePayloadBuilder
+import splice.upstream.BuiltTurn
 import splice.upstream.RoundBody
 import splice.upstream.RoundInterceptor
 import splice.upstream.retry.InflightGate
@@ -89,38 +93,47 @@ private class UsageStampRig(tmp: Path, private val tag: String, economics: Econo
     val stamp = TurnUsageStamp(usageStore, log, telemetry)
 
     suspend fun drive(interceptor: RoundInterceptor? = null): TurnDrive = TurnDrive(
-        requestBody = buildJsonObject { },
-        meta = TurnMeta(
-            compact = false,
-            showReasoning = ReasoningDisplay.TEXT,
-            stream = false,
-            originalModel = "claude-anthropic--sonnet-4-6",
-            upstreamModel = "sonnet-4-6",
-            clientMaxTokens = 100,
-            effort = "high",
-            summary = "detailed",
-            budgetTokens = null,
+        inputs = TurnInputs(
+            built = BuiltTurn(
+                requestBody = buildJsonObject { },
+                meta = TurnMeta(
+                    compact = false,
+                    reasoning = TurnReasoning(
+                        showReasoning = ReasoningDisplay.TEXT,
+                        effort = "high",
+                        summary = "detailed",
+                        budgetTokens = null,
+                    ),
+                    route = TurnRoute(
+                        stream = false,
+                        originalModel = "claude-anthropic--sonnet-4-6",
+                        upstreamModel = "sonnet-4-6",
+                        clientMaxTokens = 100,
+                    ),
+                ),
+                extraHeaders = emptyMap(),
+                toolSearch = null,
+                roundInterceptor = interceptor,
+            ),
+            slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
+            t0 = 0,
+            perf = TurnPerf(),
+            trace = null,
+            markHandedOff = {},
         ),
         emitter = CollectingTerminal("sonnet-4-6", UsagePayloadBuilder { buildJsonObject { } }),
         watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
-        slot = InflightGate(LiveLimit { 1 }).admittedSlot(),
         pipeline = TurnPipeline(
             CompactStats(perfFile.resolveSibling("compact-$tag.jsonl")),
             log = log,
             clampOutput = OutputClamp { it },
         ),
-        t0 = 0,
-        trace = null,
-        perf = TurnPerf(),
-        turnHeaders = emptyMap(),
         signals = RunnerSignals(),
         channel = ClientChannel(
             ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
             Mutex(),
             AtomicBoolean(false),
         ),
-        toolSearch = null,
-        roundInterceptor = interceptor,
     )
 }
 
@@ -463,7 +476,7 @@ class TurnUsageStampTest {
         try {
             val raw = rig.stamp.stampIndependent(success(Usage(inputTokens = 100, outputTokens = 7, cachedTokens = 40)))
             drive.recordRawRound(raw)
-            rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
+            rig.stamp.stampSuccess(drive, success(Usage(origin = UsageOrigin(localStep = true))))
             val counters = drive.perf.snapshot().counters
             assertEquals(100L, counters[PerfKeys.IN_TOKENS], "the durable source claim cannot own the posted bill")
             assertEquals(7L, counters[PerfKeys.OUT_TOKENS])
@@ -485,7 +498,8 @@ class TurnUsageStampTest {
             val own = Usage(inputTokens = 11, outputTokens = 3)
             drive.recordRawRound(success(own))
             val generated = splice.head.round.RoundUsage().plusRound(source.usage).plusRound(own).toUsage()
-            rig.stamp.stampSuccess(drive, success(generated.copy(history = generated.history.copy(cutRounds = 1))))
+            val cut = generated.origin.copy(history = generated.origin.history.copy(cutRounds = 1))
+            rig.stamp.stampSuccess(drive, success(generated.copy(origin = cut)))
             val counters = drive.perf.snapshot().counters
             assertEquals(11L, counters[PerfKeys.IN_TOKENS])
             assertEquals(3L, counters[PerfKeys.OUT_TOKENS], "the earlier source is billed only on its posting row")
@@ -504,7 +518,7 @@ class TurnUsageStampTest {
         val drive = rig.drive()
         val held = drive.sourceRow.hold()
         try {
-            rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
+            rig.stamp.stampSuccess(drive, success(Usage(origin = UsageOrigin(localStep = true))))
             rig.telemetry.recordPerf(drive, "ok")
             val raw = rig.stamp.stampIndependent(success(Usage(inputTokens = 100, outputTokens = 7, cachedTokens = 40)))
             drive.recordRawRound(raw)
@@ -556,7 +570,7 @@ class TurnUsageStampTest {
         try {
             drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, 123)
             drive.perf.beginUpstreamAttempt()
-            rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
+            rig.stamp.stampSuccess(drive, success(Usage(origin = UsageOrigin(localStep = true))))
             rig.telemetry.recordPerf(drive, "ok")
             assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
             val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
@@ -602,7 +616,7 @@ class TurnUsageStampTest {
                 assertSame(ending, thrown)
                 assertEquals(58, frames, "content left before the raw call unwound")
                 assertNull(drive.rawRoundUsage(), "the observation runs only after raw dispatch reports")
-                rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
+                rig.stamp.stampSuccess(drive, success(Usage(origin = UsageOrigin(localStep = true))))
                 rig.telemetry.recordPerf(drive, "ok")
                 assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
                 val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
@@ -625,7 +639,7 @@ class TurnUsageStampTest {
         val rig = UsageStampRig(tmp, "owned-no-source")
         val drive = rig.drive(RoundInterceptor { _, _, _ -> error("a local step must not post") })
         try {
-            rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
+            rig.stamp.stampSuccess(drive, success(Usage(origin = UsageOrigin(localStep = true))))
             rig.telemetry.recordPerf(drive, "ok")
             assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
             val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject
@@ -655,7 +669,7 @@ class TurnUsageStampTest {
             val drive = rig.drive()
             val held = drive.sourceRow.hold()
             try {
-                rig.stamp.stampSuccess(drive, success(Usage(localStep = true)))
+                rig.stamp.stampSuccess(drive, success(Usage(origin = UsageOrigin(localStep = true))))
                 rig.telemetry.recordPerf(drive, "ok")
                 drive.recordRawRound(rig.stamp.stampIndependent(ending))
                 held.release(null)
@@ -679,11 +693,11 @@ class TurnUsageStampTest {
             val first = rig.drive()
             val resumed = rig.drive()
             try {
-                rig.stamp.stampSuccess(first, success(Usage(localStep = true)))
+                rig.stamp.stampSuccess(first, success(Usage(origin = UsageOrigin(localStep = true))))
                 val raw = rig.stamp.stampIndependent(success(Usage(inputTokens = 100, outputTokens = 7)))
                     as TurnOutcome.Success
                 assertEquals(7L, rig.usageStore.readState().outputTokens5h)
-                assertEquals(7L, raw.usage.recordedOutputTokens)
+                assertEquals(7L, raw.usage.origin.recordedOutputTokens)
                 val total = splice.head.round.RoundUsage()
                     .plusRound(raw.usage)
                     .plusRound(Usage(inputTokens = 150, outputTokens = 5))
@@ -868,7 +882,9 @@ class CodeModeZeroBillingTest {
         try {
             drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, 123)
             drive.recordRawRound(TurnOutcome.Success(false, false, Usage()))
-            rig.stamp.stampSuccess(drive, TurnOutcome.Success(false, false, Usage(localStep = true)))
+            rig.stamp.stampSuccess(drive, TurnOutcome.Success(false, false, Usage(
+                origin = UsageOrigin(localStep = true),
+            )))
             rig.telemetry.recordPerf(drive, "ok")
             assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
             val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject

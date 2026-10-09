@@ -10,6 +10,8 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.PerfTurnIds
 import splice.core.util.Cancellables
 import splice.usage.perf.PerfRow
+import splice.usage.perf.PerfTranscriptLink
+import splice.usage.perf.PerfTurnFacts
 
 // why: 64 fields cover the synthetic 49-field shape with headroom and bound retained duplicate-name scratch.
 private const val PERF_STREAM_FIELD_LIMIT = 64
@@ -111,13 +113,14 @@ internal class PerfRowDecode(private val pool: PerfFieldNames) {
                 outcome = outcome ?: "?",
                 cause = cause,
                 fields = fields,
-                model = model,
-                session = session,
-                sessionId = sessionId,
-                responseMessageId = response,
-                account = account,
-                cacheCold = cacheCold,
-                compact = compact,
+                facts = PerfTurnFacts(
+                    model = model,
+                    session = session,
+                    account = account,
+                    cacheCold = cacheCold,
+                    compact = compact,
+                ),
+                transcript = PerfTranscriptLink(sessionId = sessionId, responseMessageId = response),
                 turns = PerfTurnIds(trace = turn, request = turnId),
             )
         }

@@ -35,12 +35,15 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
+import splice.accounts.signin.LoginPrompt
 import splice.accounts.signin.LoginState
 import splice.accounts.signin.LoginStatus
 import splice.app.control.ControlAuth
 import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
+import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
+import splice.app.control.UsageWarning
 import splice.app.control.controlServerFor
 import splice.configuration.add.AddConsole
 import splice.configuration.add.AddLinked
@@ -183,7 +186,8 @@ class AddBackendRouteTest {
 
     @Test
     fun `a local model opens verifies and saves without asking for an api key`() = runBlocking {
-        val requestJson = """{"profile":"local","name":"bonsai","base_url":"http://127.0.0.1:${endpoint.address.port}/v1",""" +
+        val requestJson = """{"profile":"local","name":"bonsai",""" +
+            """"base_url":"http://127.0.0.1:${endpoint.address.port}/v1",""" +
             """"models":[{"id":"m","context_window":1000}]}"""
         val store = KeyStore(KeyStorePath.defaultPath(env))
         val opened = post("/api/add", requestJson)
@@ -211,7 +215,8 @@ class AddBackendRouteTest {
     fun `a local plan never replaces an operator-owned key`() = runBlocking {
         val name = "BONSAI_API_KEY"
         assertEquals(HttpStatusCode.OK, put("/api/keys/$name", """{"value":"operator-owned"}""").status)
-        val requestJson = """{"profile":"local","name":"bonsai","base_url":"http://127.0.0.1:${endpoint.address.port}/v1",""" +
+        val requestJson = """{"profile":"local","name":"bonsai",""" +
+            """"base_url":"http://127.0.0.1:${endpoint.address.port}/v1",""" +
             """"models":[{"id":"m","context_window":1000}]}"""
         val id = body(post("/api/add", requestJson)).getValue("id").jsonPrimitive.content
         assertEquals(HttpStatusCode.OK, post("/api/add/$id/save").status)
@@ -221,7 +226,8 @@ class AddBackendRouteTest {
 
     @Test
     fun `a refused local save takes back only its own placeholder`() = runBlocking {
-        val requestJson = """{"profile":"local","name":"bonsai","base_url":"http://127.0.0.1:${endpoint.address.port}/v1",""" +
+        val requestJson = """{"profile":"local","name":"bonsai",""" +
+            """"base_url":"http://127.0.0.1:${endpoint.address.port}/v1",""" +
             """"models":[{"id":"m","context_window":1000}]}"""
         val id = body(post("/api/add", requestJson)).getValue("id").jsonPrimitive.content
         Files.writeString(config, Files.readString(config) + "\n# another edit\n")
@@ -429,7 +435,12 @@ class AddBackendRouteTest {
 
         override fun start(key: String, provider: ProviderConfig, topology: Topology): LoginStatus {
             signIns += Triple(key, provider, topology)
-            val status = LoginStatus("login-${signIns.size}", key, LoginState.WAITING, browserUrl = "https://auth")
+            val status = LoginStatus(
+                "login-${signIns.size}",
+                key,
+                LoginState.WAITING,
+                prompt = LoginPrompt(browserUrl = "https://auth"),
+            )
             statuses[status.id] = status
             return status
         }
@@ -484,16 +495,17 @@ class AddBackendRouteTest {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(false, "test", emptyMap())
         },
-        usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int): String = ""
+                override fun path(): String = ""
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
     )
 
     private suspend fun awaitPort() {

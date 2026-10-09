@@ -6,6 +6,7 @@ package splice.dialect.chat
 
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
+import splice.core.turn.FailureTraits
 import splice.core.turn.TurnOutcome
 import splice.upstream.failure.ClassifiedFailure
 import splice.upstream.failure.FailureSource
@@ -72,7 +73,7 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
         return when {
             runaway != null -> TurnOutcome.Failure(
                 runaway,
-                providerReported = false,
+                traits = FailureTraits(providerReported = false),
                 cause = FailureCause.TOOL_TEAR,
                 phase = FailurePhase.MID_OUTPUT,
             )
@@ -80,21 +81,20 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
             // as a Success — provider-reported (the backend produced the bytes), so it retries.
             toolCalls.toolArgsInvalid != null -> TurnOutcome.Failure(
                 "chat backend: ${toolCalls.toolArgsInvalid} in tool call; retry",
-                providerReported = true,
+                traits = FailureTraits(providerReported = true),
                 cause = FailureCause.TOOL_TEAR,
                 phase = FailurePhase.MID_OUTPUT,
             )
             reported != null ->
                 TurnOutcome.Failure(
                     "chat backend: ${reported.message}",
-                    providerReported = true,
+                    traits = FailureTraits(providerReported = true, permanent = failurePermanent),
                     // V4-164: the classifier's cause, carried through untouched — the passthrough
                     // dialect's rule (PassthroughTerminalState: "an earlier draft hard-coded
                     // UPSTREAM_REPORTED here and threw both verdicts away"). An event with no
                     // recognisable shape still lands on UPSTREAM_REPORTED, from the classifier's
                     // own floor, so an unknown in-band error keeps exactly the wire it had.
                     cause = reported.cause,
-                    permanent = failurePermanent,
                     phase = FailurePhase.MID_OUTPUT,
                 )
             // CX-08: the backend populated `refusal` — a censored generation whose STATED REASON is
@@ -105,12 +105,15 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
             // "no refusal" now that fragments are accepted verbatim (round-2 review).
             refusalBuf.isNotBlank() -> TurnOutcome.Failure(
                 "chat backend: model refused. $refusalBuf",
-                providerReported = true, // the `refusal` the backend sent, not a local verdict (G20)
-                // V4-81, the responses dialect's sibling (found by sweeping rather than by being
-                // told): a refusal reproduces exactly, so advertising it as transient buys the same
-                // refusal again — see PreContentWireType. The two dialects answer the same question
-                // the same way or the behaviour depends on which head the operator happens to run.
-                permanent = true,
+                traits = FailureTraits(
+                    providerReported = true,
+                    // the `refusal` the backend sent, not a local verdict (G20)
+                    // V4-81, the responses dialect's sibling (found by sweeping rather than by being
+                    // told): a refusal reproduces exactly, so advertising it as transient buys the same
+                    // refusal again — see PreContentWireType. The two dialects answer the same question
+                    // the same way or the behaviour depends on which head the operator happens to run.
+                    permanent = true,
+                ),
                 cause = FailureCause.MODEL_REFUSED,
                 phase = FailurePhase.TERMINAL,
             )
@@ -119,8 +122,12 @@ internal class ChatTerminalState(private val toolCalls: ChatToolCalls) {
             // `finished` (the same frame sets both). Retry an api_error honestly.
             contentFiltered -> TurnOutcome.Failure(
                 "chat backend: generation stopped by content filter",
-                providerReported = true, // finish_reason the backend sent, not a local verdict (G20)
-                permanent = true, // V4-81: the identical prompt is filtered identically.
+                traits = FailureTraits(
+                    providerReported = true,
+                    // finish_reason the backend sent, not a local verdict (G20)
+                    permanent = true,
+                ),
+                // V4-81: the identical prompt is filtered identically.
                 cause = FailureCause.CONTENT_FILTERED,
                 phase = FailurePhase.TERMINAL,
             )

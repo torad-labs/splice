@@ -55,7 +55,7 @@ class PassthroughRequestBuilderTest {
             val turn = buildFull(body, quirks = quirks)
             val compaction = buildFull(body, quirks = quirks, compact = true)
             assertEquals(turn.req.toString(), compaction.req.toString(), "quirks ${quirks.providerTag}")
-            assertEquals(turn.meta.effort, compaction.meta.effort)
+            assertEquals(turn.meta.reasoning.effort, compaction.meta.reasoning.effort)
             assertTrue(compaction.meta.compact && !turn.meta.compact, "meta still names the turn kind")
         }
     }
@@ -180,7 +180,7 @@ class PassthroughRequestBuilderTest {
         )
         assertNull(built.req["thinking"])
         assertNull(built.req["output_config"])
-        assertEquals("low", built.meta.effort)
+        assertEquals("low", built.meta.reasoning.effort)
     }
 
     // SCH-006: a configured effort valid for another provider's vocab (CODEX_REASONING_EFFORT's
@@ -191,7 +191,7 @@ class PassthroughRequestBuilderTest {
             """{"model":"m","messages":[{"role":"user","content":"hi"}]}""",
             configEffort = "medium",
         )
-        assertEquals("low", built.meta.effort)
+        assertEquals("low", built.meta.reasoning.effort)
     }
 
     @Test
@@ -247,7 +247,7 @@ class PassthroughRequestBuilderTest {
         // v27 doctrine canary, now total: compact inherits the session's own effort — the 40k
         // budget rides the same "max" rung a non-compact turn gets, and no quirk can pin it.
         assertEquals("max", built.req.effort())
-        assertEquals("max", built.meta.effort)
+        assertEquals("max", built.meta.reasoning.effort)
     }
 
     // --- sampling strip quirk --------------------------------------------------------------------
@@ -266,7 +266,7 @@ class PassthroughRequestBuilderTest {
     fun `sampling params are removed when the strip quirk is on`() {
         val req = build(
             """{"model":"m","messages":[{"role":"user","content":"hi"}],"temperature":0.4,"top_p":0.9,"top_k":40}""",
-            quirks = PASS.copy(stripSamplingParams = true),
+            quirks = PASS.copy(request = PASS.request.copy(stripSamplingParams = true)),
         )
         assertNull(req["temperature"])
         assertNull(req["top_p"])
@@ -282,13 +282,13 @@ class PassthroughRequestBuilderTest {
                 "max_tokens":512,"thinking":{"type":"enabled","budget_tokens":9000}}""",
         ).meta
         // mirror must be a no-op — passthrough emits real thinking blocks
-        assertFalse(meta.showReasoning == ReasoningDisplay.TEXT)
-        assertEquals("k3", meta.upstreamModel)
-        assertEquals("claude-kimi--k3[1m]", meta.originalModel)
-        assertEquals("high", meta.effort)
-        assertEquals(512, meta.clientMaxTokens?.toInt())
-        assertEquals(9000, meta.budgetTokens?.toInt())
-        assertNull(meta.summary)
+        assertFalse(meta.reasoning.showReasoning == ReasoningDisplay.TEXT)
+        assertEquals("k3", meta.route.upstreamModel)
+        assertEquals("claude-kimi--k3[1m]", meta.route.originalModel)
+        assertEquals("high", meta.reasoning.effort)
+        assertEquals(512, meta.route.clientMaxTokens?.toInt())
+        assertEquals(9000, meta.reasoning.budgetTokens?.toInt())
+        assertNull(meta.reasoning.summary)
     }
 
     // --- NEUTRAL defaults: the faithful passthrough a real Anthropic upstream needs -------------

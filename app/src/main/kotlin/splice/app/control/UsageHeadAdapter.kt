@@ -11,6 +11,9 @@ import splice.models.roster.DeclaredHeads
 import splice.usage.UsageBilling
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
+import splice.usage.UsageHeadSinks
+import splice.usage.UsageHeadStatusline
+import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
 
 internal object UsageHeadAdapter {
@@ -21,7 +24,11 @@ internal object UsageHeadAdapter {
     ): UsageHeads = object : UsageHeads {
         override fun all(): List<UsageHead> = heads.values.map { head ->
             val adapted = adapt(head)
-            if (head.authKind == CLIENT_AUTH_KIND) adapted.copy(usage = NativeUsageSource(head, native)) else adapted
+            if (head.authSurface.authKind == CLIENT_AUTH_KIND) {
+                adapted.copy(usage = NativeUsageSource(head, native))
+            } else {
+                adapted
+            }
         }
 
         override fun providerResetForMs(key: String): Long = heads[key]?.head?.providerResetForMs() ?: 0L
@@ -36,7 +43,7 @@ internal object UsageHeadAdapter {
 
         override fun billing(key: String): UsageBilling? {
             val head = resolver.headByName(key).firstOrNull { it.head.key == key } ?: return null
-            val auth = AuthKindRegistry.from(head.authKind)
+            val auth = AuthKindRegistry.from(head.authSurface.authKind)
             return when {
                 declared()[key]?.family == "local" -> UsageBilling.LOCAL_RUNTIME
                 auth?.isOAuth == true || auth == AuthKind.Client -> UsageBilling.SUBSCRIPTION
@@ -48,15 +55,23 @@ internal object UsageHeadAdapter {
     private fun adapt(head: ManagedHead): UsageHead = UsageHead(
         key = head.head.key,
         label = head.head.label,
-        usage = head.usage,
-        warnPct = head.warnPct,
-        warnTokens5h = head.warnTokens5h,
-        perf = head.perf,
-        perfRows = head.perfRows?.let { if (head.authKind == CLIENT_AUTH_KIND) NativeAccountRows(it) else it },
-        economics = head.economics,
-        catalog = head.catalog,
-        clientWindows = head.clientWindows,
-        accountPool = head.accountPool,
-        anthropicUpstream = head.authKind == CLIENT_AUTH_KIND,
+        usage = head.sources.usage,
+        warn = UsageHeadWarn(
+            warnPct = head.usageWarning.warnPct,
+            warnTokens5h = head.usageWarning.warnTokens5h,
+        ),
+        sinks = UsageHeadSinks(
+            perf = head.sources.perf,
+            perfRows = head.sources.perfRows?.let {
+                if (head.authSurface.authKind == CLIENT_AUTH_KIND) NativeAccountRows(it) else it
+            },
+            economics = head.sources.economics,
+            accountPool = head.authSurface.accountPool,
+        ),
+        statusline = UsageHeadStatusline(
+            catalog = head.statusline.catalog,
+            clientWindows = head.statusline.clientWindows,
+        ),
+        anthropicUpstream = head.authSurface.authKind == CLIENT_AUTH_KIND,
     )
 }

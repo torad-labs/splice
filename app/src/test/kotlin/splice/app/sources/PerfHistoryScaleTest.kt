@@ -9,6 +9,8 @@ import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
 import splice.usage.UsageHead
 import splice.usage.UsageHeadLookup
+import splice.usage.UsageHeadSinks
+import splice.usage.UsageHeadWarn
 import splice.usage.perf.PerfRoutes
 import splice.usage.perf.PerfRowsSource
 import splice.usage.quota.HeadUsageSource
@@ -29,9 +31,8 @@ class PerfHistoryScaleTest {
             "synthetic",
             "claude-synthetic",
             HeadUsageSource { UsageView(0, 0, null) },
-            80,
-            0,
-            perfRows = source,
+            warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
+            sinks = UsageHeadSinks(perfRows = source),
         )
         val routes = PerfRoutes(UsageHeadLookup { listOf(head) }, WallClock { SCALE_SINCE + 604_800_000L })
         val paths = setOf(history.file, history.file.resolveSibling("${history.file.fileName}.1"))

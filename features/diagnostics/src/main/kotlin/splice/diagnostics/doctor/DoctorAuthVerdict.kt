@@ -13,13 +13,14 @@ internal class DoctorAuthVerdict {
     internal fun credentialVerdict(heads: List<DoctorHeadAuth>, missingStatus: CheckStatus): List<DoctorCheck> {
         return heads.map { auth ->
             when {
-                auth.present && auth.lastRefusal != null -> AccountHealthChecks.refusal(auth.key, auth.lastRefusal)
+                auth.present && auth.observed.lastRefusal != null ->
+                    AccountHealthChecks.refusal(auth.key, auth.observed.lastRefusal)
                 auth.present -> DoctorCheck(auth.key, CheckStatus.OK, credentialLabel(auth))
                 // V4-220 item 6b: the caller's own login, rejected upstream; only the client can sign in again.
                 auth.selfManaged -> DoctorCheck(
                     auth.key,
                     missingStatus,
-                    "upstream rejected the forwarded Claude login${at(auth.daemonVerdict)}",
+                    "upstream rejected the forwarded Claude login${at(auth.observed.daemonVerdict)}",
                     "run ${auth.command}, then /login inside it",
                 )
                 // Only genuine OAuth heads have a `<command> login` flow; api-key heads (env var known)
@@ -53,7 +54,7 @@ internal class DoctorAuthVerdict {
     // an api-key provider plus the mgmt-key door. Naming the declaration is the honest form.
     // V4-220 item 6b: with the daemon read, the line says what upstream last answered instead.
     private fun credentialLabel(auth: DoctorHeadAuth): String = when {
-        auth.selfManaged -> when (val verdict = auth.daemonVerdict) {
+        auth.selfManaged -> when (val verdict = auth.observed.daemonVerdict) {
             is CredentialVerdict.Accepted -> "client-native: upstream accepted a login for this head${at(verdict)}"
             CredentialVerdict.Unverified ->
                 "client-native: no successful turn answered on this head since the daemon started, " +

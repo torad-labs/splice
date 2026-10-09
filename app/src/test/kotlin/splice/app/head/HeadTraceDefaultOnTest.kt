@@ -17,6 +17,8 @@ import splice.core.storage.DayVolumeSpace
 import splice.core.terminal.TerminalOutput
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.util.AsyncFileIo
 import splice.core.util.EnvReader
 import splice.head.trace.TraceCommand
@@ -43,14 +45,13 @@ class HeadTraceDefaultOnTest {
 
     private fun meta(): TurnMeta = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = "claude-traced--m",
-        upstreamModel = "m",
-        clientMaxTokens = 16,
-        effort = "high",
-        summary = "detailed",
-        budgetTokens = null,
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "high",
+            summary = "detailed",
+            budgetTokens = null,
+        ),
+        route = TurnRoute(stream = true, originalModel = "claude-traced--m", upstreamModel = "m", clientMaxTokens = 16),
     )
 
     @Test

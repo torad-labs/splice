@@ -17,6 +17,9 @@ import splice.core.storage.ActivityDays
 import splice.core.storage.DayFiles
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.util.AsyncFileIo
 import splice.core.util.JsonScalars
 import splice.core.util.WallClock
@@ -26,6 +29,8 @@ import splice.head.wire.TraceStore
 import splice.head.wire.TurnIdMint
 import splice.head.wire.TurnTrace
 import splice.upstream.sse.WireAttempt
+import splice.upstream.sse.WireRequest
+import splice.upstream.sse.WireResponse
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -82,15 +87,19 @@ class TraceCensusTest {
 
     private fun meta() = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = "claude-openrouter--m1",
-        upstreamModel = "m1",
-        clientMaxTokens = 8000,
-        effort = "medium",
-        summary = null,
-        budgetTokens = null,
-        sessionId = "alpha-session",
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "medium",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = "claude-openrouter--m1",
+            upstreamModel = "m1",
+            clientMaxTokens = 8000,
+        ),
+        scope = TurnScope(sessionId = "alpha-session"),
     )
 
     private fun TraceStore.turn(id: String): TurnTrace {
@@ -103,7 +112,9 @@ class TraceCensusTest {
         now += SECOND
         val body = """{"input":"${"x".repeat(BODY_CHARS)}"}"""
         val url = "https://openrouter.ai/api/v1"
-        attempted(WireAttempt(n, url, emptyMap(), body, null, 200, emptyMap(), null, null, 40))
+        attempted(
+            WireAttempt(n, WireRequest(url, emptyMap(), body, null), WireResponse(200, emptyMap(), null), null, 40),
+        )
     }
 
     private fun TurnTrace.end() {

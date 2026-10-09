@@ -16,6 +16,7 @@ import splice.app.TokenUrlRefreshCall
 import splice.app.head.HeadAccountPools
 import splice.app.provider.CodexResponsesArm
 import splice.app.provider.ProviderBuild
+import splice.app.provider.UpstreamFaultPlan
 import splice.app.provider.Wired
 import splice.core.auth.RefreshAttempt
 import splice.core.config.ConfigService
@@ -71,8 +72,8 @@ class RefusedLinkedAccountTest {
 
         assertEquals(listOf("primary", "backup", "linked", "lost"), wired.accounts.map { it.label })
         val linked = wired.accounts.single { it.label == "linked" }
-        assertFalse(linked.credentialPresent)
-        assertTrue(linked.refusal.orEmpty().contains("symbolic link"), linked.refusal)
+        assertFalse(linked.credential.present)
+        assertTrue(linked.credential.refusal.orEmpty().contains("symbolic link"), linked.credential.refusal)
         assertEquals(false, linked.auth.describe().present, "the link's target is a valid credential; it was opened")
         assertEquals(null, linked.auth.credentials())
         assertFalse(linked.auth.describe().fields.values.any { it.contains("someone-elses-credential") })
@@ -83,11 +84,11 @@ class RefusedLinkedAccountTest {
         val wired = wire(backgroundScope, tmp, populate(tmp))
 
         val lost = wired.accounts.single { it.label == "lost" }
-        assertFalse(lost.credentialPresent)
-        assertEquals(null, lost.refusal)
+        assertFalse(lost.credential.present)
+        assertEquals(null, lost.credential.refusal)
         assertEquals(false, lost.auth.describe().present)
         val loaded = wired.accounts.filter { it.label in setOf("primary", "backup") }
-        assertEquals(listOf(true, true), loaded.map { it.credentialPresent })
+        assertEquals(listOf(true, true), loaded.map { it.credential.present })
     }
 
     @Test
@@ -96,7 +97,7 @@ class RefusedLinkedAccountTest {
 
         val described = requireNotNull(HeadAccountPools().authSource(wired)).descriptions()
 
-        val refusal = wired.accounts.single { it.label == "linked" }.refusal
+        val refusal = wired.accounts.single { it.label == "linked" }.credential.refusal
         assertTrue(refusal.orEmpty().contains("symbolic link"), refusal)
         assertEquals(refusal, described.getValue("linked").fields["refusal"])
         assertEquals(false, described.getValue("linked").present)
@@ -130,9 +131,11 @@ class RefusedLinkedAccountTest {
                 models = listOf(ModelEntry(id = "gpt-6-astra", contextWindow = 1_000_000)),
                 defaultContextWindow = 1_000_000,
             ),
-            watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+                loginCommand = "claude-codex login",
+            ),
             cfg = config.getConfig(key),
-            loginCommand = "claude-codex login",
         )
     }
 }

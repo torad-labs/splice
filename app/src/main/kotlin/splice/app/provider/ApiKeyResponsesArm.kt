@@ -12,6 +12,8 @@ import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiQuirks
 import splice.provider.openai.OpenAiResponsesProvider
 import splice.topology.TopologyLoader
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import java.nio.file.Paths
 
@@ -26,7 +28,7 @@ internal class ApiKeyResponsesArm(private val statePaths: StatePaths) {
         val head = ctx.head
         val providerCfg = ctx.providerCfg
         val catalog = ctx.catalog
-        val watchdog = ctx.watchdog
+        val watchdog = ctx.faultPlan.watchdog
         val cfg = ctx.cfg
         val auth = ApiKeyAuthProvider(
             envVar = providerCfg.auth.effectiveApiKeyEnv(key),
@@ -35,15 +37,16 @@ internal class ApiKeyResponsesArm(private val statePaths: StatePaths) {
         // Identical in both branches — factored out so adding loginCommand didn't push this past
         // detekt's LongMethod ceiling with a second duplicated ProviderTuning block.
         val tuning = ProviderTuning(
-            key = key,
-            label = label,
+            name = ProviderName(key = key, label = label),
             catalog = catalog,
             pinnedModel = head.pinnedModel,
             auth = auth,
-            baseUrl = providerCfg.baseUrl,
+            locations = ProviderLocations(
+                baseUrl = providerCfg.baseUrl,
+                stateDir = statePaths.headsDir.resolve(key),
+            ),
             watchdog = watchdog,
-            loginCommand = ctx.loginCommand,
-            stateDir = statePaths.headsDir.resolve(key),
+            loginCommand = ctx.faultPlan.loginCommand,
         )
         // Registry ids xai and grok mean this vendor. 2026-09-15 compatibility: pre-V4-21 this arm
         // selected GrokProvider by quirks.cache_key == session-id, not by the table name. Keep that

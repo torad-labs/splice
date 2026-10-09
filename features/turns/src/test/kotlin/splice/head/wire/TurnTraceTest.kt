@@ -25,10 +25,15 @@ import splice.core.storage.ActivityDays
 import splice.core.storage.DayBodyBudget
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.head.trace.body.TraceBodies
 import splice.upstream.sse.WireAttempt
+import splice.upstream.sse.WireRequest
+import splice.upstream.sse.WireResponse
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -36,15 +41,19 @@ private const val DAY_ONE = 1_789_725_600_000L // 2026-09-18T10:00Z
 
 private val meta = TurnMeta(
     compact = false,
-    showReasoning = ReasoningDisplay.TEXT,
-    stream = true,
-    originalModel = "claude-splice--gpt-5.6-sol",
-    upstreamModel = "gpt-5.6-sol",
-    clientMaxTokens = 8000,
-    effort = "high",
-    summary = "detailed",
-    budgetTokens = null,
-    sessionId = "sess-abc",
+    reasoning = TurnReasoning(
+        showReasoning = ReasoningDisplay.TEXT,
+        effort = "high",
+        summary = "detailed",
+        budgetTokens = null,
+    ),
+    route = TurnRoute(
+        stream = true,
+        originalModel = "claude-splice--gpt-5.6-sol",
+        upstreamModel = "gpt-5.6-sol",
+        clientMaxTokens = 8000,
+    ),
+    scope = TurnScope(sessionId = "sess-abc"),
 )
 
 private val inbound = ClientInbound(
@@ -57,13 +66,17 @@ private val inbound = ClientInbound(
 private fun attempt(n: Int, body: String, status: Int? = 200, errorText: String? = null, failure: String? = null) =
     WireAttempt(
         attempt = n,
-        url = "https://up.example/v1",
-        requestHeaders = mapOf("x-api-key" to "[redacted]", "anthropic-version" to "2023-06-01"),
-        requestBody = body,
-        requestEncoding = null,
-        status = status,
-        responseHeaders = if (status == null) emptyMap() else mapOf("x-request-id" to "r$n"),
-        errorText = errorText,
+        request = WireRequest(
+            url = "https://up.example/v1",
+            headers = mapOf("x-api-key" to "[redacted]", "anthropic-version" to "2023-06-01"),
+            body = body,
+            encoding = null,
+        ),
+        response = WireResponse(
+            status = status,
+            headers = if (status == null) emptyMap() else mapOf("x-request-id" to "r$n"),
+            errorText = errorText,
+        ),
         failure = failure,
         durationMs = 12,
     )

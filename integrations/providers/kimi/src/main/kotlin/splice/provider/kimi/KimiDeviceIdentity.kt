@@ -12,6 +12,7 @@ import splice.core.GATEWAY_VERSION
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
+import java.io.IOException
 import java.net.InetAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -46,8 +47,8 @@ public class KimiDeviceIdentity(
                 )
             }
         }
-        // ast-grep-ignore: kt-no-silent-result-collapse -- non-absence failures threw above; null is proven absence
-        val existing = read.getOrNull()
+        // Non-absence failures threw above, so a failure here is proven absence.
+        val existing = read.getOrElse { null }
         if (!existing.isNullOrEmpty()) return existing
         val id = UUID.randomUUID().toString()
         writeSecure(deviceIdPath, id)
@@ -80,6 +81,10 @@ public class KimiDeviceIdentity(
 // `val` would resolve the hostname once per classloader instead of once per identity).
 private class KimiHostname {
     fun defaultHostname(): String =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- hostname is cosmetic header data; "unknown" is the designed fallback
-        Cancellables.runCatchingCancellable { InetAddress.getLocalHost().hostName }.getOrNull() ?: "unknown"
+        try {
+            InetAddress.getLocalHost().hostName
+        } catch (_: IOException) {
+            // Hostname is cosmetic header data; "unknown" is the designed fallback.
+            "unknown"
+        }
 }

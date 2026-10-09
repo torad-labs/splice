@@ -4,6 +4,7 @@ package splice.client.transcript
 
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptRole
+import splice.sessions.transcript.TranscriptToolUse
 
 /** One tool call the client recorded inside an assistant message. */
 internal data class RecordedCall(val id: String?, val name: String, val input: String)
@@ -53,9 +54,7 @@ internal class MessageLedger(
             TranscriptRole.TOOL,
             ts,
             redaction.shown(text),
-            tool = toolUseId?.let(toolNames::get),
-            result = true,
-            toolUseId = toolUseId,
+            toolUse = TranscriptToolUse(toolUseId?.let(toolNames::get), result = true, id = toolUseId),
         )
     }
 
@@ -71,10 +70,8 @@ internal class MessageLedger(
                 TranscriptRole.ASSISTANT,
                 done.ts,
                 redaction.shown(call.input),
-                tool = call.name,
-                result = false,
+                toolUse = TranscriptToolUse(call.name, result = false, id = call.id),
                 messageId = done.id,
-                toolUseId = call.id,
             )
         }
     }

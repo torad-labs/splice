@@ -19,6 +19,8 @@ import org.junit.jupiter.api.Test
 import splice.accounts.AccountHead
 import splice.accounts.AccountHeadResolver
 import splice.accounts.claude.ClaudeAccountIdentity
+import splice.accounts.claude.ClaudeLoginCredential
+import splice.accounts.claude.ClaudeLoginIdentity
 import splice.accounts.claude.ClaudeLoginPlaceId
 import splice.accounts.claude.ClaudeLoginPlaceView
 import splice.accounts.claude.ClaudeLoginStanding
@@ -81,9 +83,8 @@ class AccountOrderRouteTest {
             ClaudeLoginPlaceView(
                 id = place,
                 head = "head",
-                credentialPath = "synthetic/${place.wire}",
-                credentialPresent = true,
-                account = ClaudeAccountIdentity("synthetic-account", "synthetic@example.invalid"),
+                credential = ClaudeLoginCredential("synthetic/${place.wire}", true),
+                identity = ClaudeLoginIdentity(ClaudeAccountIdentity("synthetic-account", "synthetic@example.invalid")),
                 quota = null,
                 standing = ClaudeLoginStanding(null, null),
             )
@@ -106,7 +107,7 @@ class AccountOrderRouteTest {
         val update = client.put("/api/auth/head/order") { setBody("""{"order":[]}""") }
         assertEquals(HttpStatusCode.Conflict, update.status)
         for (identity in listOf(null, ClaudeAccountIdentity("synthetic-other", "synthetic@example.invalid"))) {
-            native = listOf(native.first(), native.last().copy(account = identity))
+            native = listOf(native.first(), native.last().copy(identity = ClaudeLoginIdentity(identity)))
             assertEquals(HttpStatusCode.Conflict, client.get("/api/auth/head/order").status)
         }
     }

@@ -12,7 +12,10 @@ import splice.core.compaction.CompactionInstructions
 import splice.core.compaction.CompactionModelConfig
 import splice.core.compaction.CompactionProjectConfig
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnCompaction
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.util.AsyncFileIo
 import splice.head.compact.CompactStats
 import splice.head.pipeline.StreamCompact
@@ -87,16 +90,19 @@ class CompactionTailTest {
         val stats = CompactStats(tmp.resolve("compact.jsonl"))
         val meta = TurnMeta(
             compact = true,
-            showReasoning = ReasoningDisplay.OFF,
-            stream = true,
-            originalModel = "alias--astra",
-            upstreamModel = "astra",
-            clientMaxTokens = null,
-            effort = "high",
-            summary = null,
-            budgetTokens = null,
-            compactionInstructions = "retain decisions",
-            compactionInstructionsSource = "model:astra",
+            reasoning = TurnReasoning(
+                showReasoning = ReasoningDisplay.OFF,
+                effort = "high",
+                summary = null,
+                budgetTokens = null,
+            ),
+            route = TurnRoute(
+                stream = true,
+                originalModel = "alias--astra",
+                upstreamModel = "astra",
+                clientMaxTokens = null,
+            ),
+            compaction = TurnCompaction(instructions = "retain decisions", source = "model:astra"),
         )
 
         StreamCompact(stats).record(meta, "model_text", elapsedMs = 7, chars = 16)

@@ -11,6 +11,7 @@ import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.util.WallClock
 import splice.usage.UsageHead
+import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
 import java.nio.file.Path
 import java.time.Instant
@@ -26,8 +27,7 @@ class ProviderResetUsageTest {
             key = "claude-muse",
             label = "claude-muse",
             usage = HeadUsageSource { UsageView(0, 0, null) },
-            warnPct = 80,
-            warnTokens5h = 0,
+            warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
         )
         val sources = object : UsageHeads {
             override fun all() = listOf(head)

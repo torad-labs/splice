@@ -55,8 +55,8 @@ internal class CollectTurn(
     suspend fun collect(call: ApplicationCall, inputs: TurnInputs): Boolean {
         val built = inputs.built
         val terminal = CollectingTerminal(
-            built.meta.originalModel,
-            wiring.usagePayloadBuilder(provider.catalog, built.meta, clientWindow.of(call, built.meta.sessionId)),
+            built.meta.route.originalModel,
+            wiring.usagePayloadBuilder(provider.catalog, built.meta, clientWindow.of(call, built.meta.scope.sessionId)),
         )
         // Inert writer: collect never writes SSE frames. clientGone is flipped by Netty
         // closeFuture (HD-29), not by a failed write.
@@ -121,7 +121,7 @@ internal class CollectTurn(
     ) {
         val headers = nativeReply?.headers
         if (headers == null) {
-            turnQuota.forSession(inputs.built.meta.sessionId, drive.account)
+            turnQuota.forSession(inputs.built.meta.scope.sessionId, drive.account)
                 ?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
         } else {
             headers.forEach { (name, values) -> values.forEach { call.response.header(name, it) } }

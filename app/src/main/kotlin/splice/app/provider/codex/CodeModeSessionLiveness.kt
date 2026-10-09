@@ -57,7 +57,7 @@ internal class CodeModeSessionLiveness(
             log("[code-mode] session registry unavailable; liveness remains unknown")
             return emptyMap()
         }
-        return listing.sessions.filter { it.sessionId != null && (it.pid ?: 0) > 0 }
+        return listing.sessions.filter { it.sessionId != null && (it.process.pid ?: 0) > 0 }
             .groupBy { checkNotNull(it.sessionId) }
             .mapValues { (_, sessions) -> sessions.any { it.availability != SessionAvailability.GONE } }
     }

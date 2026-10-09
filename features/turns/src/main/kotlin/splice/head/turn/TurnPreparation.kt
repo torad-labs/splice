@@ -126,7 +126,7 @@ internal class TurnPreparation(
         perf.setCount(PerfKeys.REQ_BYTES, body.bytes.toLong())
         val parsing = bodyParse.parse(body.text)
         val parsed = parsing.getOrNull() ?: return rejectedBody(call, body, parsing.exceptionOrNull())
-        val inbound = deps.stores.trace?.let { inbound(call, body.text) }
+        val inbound = deps.stores.captures.trace?.let { inbound(call, body.text) }
         refusalOf(parsed, sessionId)?.let { return it }
         messageEdges.observe(sessionId, parsed.typed)
         val label = activityLabel.labelFor(parsed.typed)
@@ -146,7 +146,7 @@ internal class TurnPreparation(
     private fun refusalOf(parsed: AnthropicTurnBody, sessionId: String?): Preparation.Rejected? = when {
         !provider.catalog.contains(parsed.typed.model) ->
             Preparation.Rejected(provider.catalog.refusals.message(parsed.typed.model, provider.key))
-        !parsed.typed.stream && deps.liveTurns.refusesResend(sessionId, parsed.raw) -> {
+        !parsed.typed.stream && deps.traffic.liveTurns.refusesResend(sessionId, parsed.raw) -> {
             deps.log("[${provider.key}] re-send of a stopped turn refused (${who(sessionId)}no upstream turn)\n")
             Preparation.Rejected("${provider.key}: $OPERATOR_STOPPED")
         }
@@ -219,8 +219,10 @@ internal class TurnPreparation(
         // Every dialect's turn names its client session (2026-09-02): only the responses dialect
         // kept the id on its meta, so a chat or passthrough head's abort could not be tied to a
         // session. Stamped here, once, when the provider left it null.
-        val prepared = if (fromProvider.meta.sessionId == null && sessionId != null) {
-            fromProvider.copy(meta = fromProvider.meta.copy(sessionId = sessionId))
+        val prepared = if (fromProvider.meta.scope.sessionId == null && sessionId != null) {
+            fromProvider.copy(
+                meta = fromProvider.meta.copy(scope = fromProvider.meta.scope.copy(sessionId = sessionId)),
+            )
         } else {
             fromProvider
         }
@@ -255,7 +257,7 @@ internal class TurnPreparation(
     private fun compactionReplay(built: BuiltTurn, stream: Boolean): Preparation.Replay? {
         if (stream) return replayFor(built)
         deps.log(
-            "[${provider.key}] non-stream compaction (${who(built.meta.sessionId)}served attached: " +
+            "[${provider.key}] non-stream compaction (${who(built.meta.scope.sessionId)}served attached: " +
                 "no detached drive, no replay)\n",
         )
         return null
@@ -267,9 +269,9 @@ internal class TurnPreparation(
         val state = if (recording.isComplete) "finished" else "still running"
         deps.log(
             "[${provider.key}] compaction retry matches a detached compaction ($state, " +
-                "${who(built.meta.sessionId)}replaying its answer, no upstream turn)\n",
+                "${who(built.meta.scope.sessionId)}replaying its answer, no upstream turn)\n",
         )
-        return Preparation.Replay(recording, key, built.meta.sessionId, built.meta.originalModel)
+        return Preparation.Replay(recording, key, built.meta.scope.sessionId, built.meta.route.originalModel)
     }
 
     // The class, never the content (safe-failure-render): the body is the user's transcript. The

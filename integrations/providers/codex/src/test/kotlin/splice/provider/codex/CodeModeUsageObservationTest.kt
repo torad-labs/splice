@@ -10,6 +10,7 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
+import splice.core.turn.UsageOrigin
 import splice.core.turn.noRequestUsage
 
 class CodeModeUsageObservationTest {
@@ -19,7 +20,7 @@ class CodeModeUsageObservationTest {
     fun `local callbacks and protocol failures preserve the posted prefix without inventing another request`() {
         val prefix = Usage(inputTokens = 100, outputTokens = 3, cachedTokens = 20)
         val endings = listOf(
-            success(Usage(localStep = true)),
+            success(Usage(origin = UsageOrigin(localStep = true))),
             TurnOutcome.Failure(
                 "synthetic local",
                 cause = FailureCause.CODE_MODE_PROTOCOL,
@@ -49,7 +50,7 @@ class CodeModeUsageObservationTest {
     fun `a local measured zero cannot complete an unreported upstream bill`() {
         val rounds = CodeModeOutcomeAccumulator()
         rounds.absorb(success(Usage(reported = emptySet())))
-        val result = rounds.finishLocal(success(Usage(localStep = true))) as TurnOutcome.Success
+        val result = rounds.finishLocal(success(Usage(origin = UsageOrigin(localStep = true)))) as TurnOutcome.Success
         assertTrue(TurnBill.counters(result.usage).isEmpty())
     }
 
@@ -69,7 +70,7 @@ class CodeModeUsageObservationTest {
         val result = rounds.finishLocal(ending) as TurnOutcome.ClientAbandoned
         assertEquals(prior.finalRound, result.salvagedUsage.absorbed)
         assertTrue(PerfKeys.IN_TOKENS !in TurnBill.counters(result.salvagedUsage))
-        assertEquals(ending.salvagedUsage.history.request, result.salvagedUsage.history.request)
+        assertEquals(ending.salvagedUsage.origin.history.request, result.salvagedUsage.origin.history.request)
     }
 
     @Test
@@ -86,7 +87,9 @@ class CodeModeUsageObservationTest {
     @Test
     fun `an already counted source cut cannot become another missing final request`() {
         val rounds = CodeModeOutcomeAccumulator()
-        val cut = noRequestUsage.copy(history = noRequestUsage.history.copy(cutRounds = 1))
+        val cut = noRequestUsage.run {
+            copy(origin = origin.copy(history = origin.history.copy(cutRounds = 1)))
+        }
         rounds.absorb(success(cut))
         val result = rounds.finish(success(Usage(inputTokens = 100, outputTokens = 7))) as TurnOutcome.Success
         assertEquals(1L, result.usage.cutRounds)

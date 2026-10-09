@@ -24,14 +24,20 @@ class ResponsesAttributionBlockTest {
         )
         val options = BuildOptions(
             compact = false,
-            originalModel = "m",
-            upstreamModel = "m",
-            configEffort = null,
-            configSummary = null,
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = InjectPriorReasoning(false),
-            includeEncryptedReasoning = RequestEncryptedReasoning(false),
-            decodeReasoningEnvelope = { null },
+            models = ModelIds(
+                original = "m",
+                upstream = "m",
+            ),
+            reasoning = RequestedReasoning(
+                effort = null,
+                summary = null,
+                display = ReasoningDisplay.TEXT,
+            ),
+            handoff = ReasoningHandoff(
+                replay = InjectPriorReasoning(false),
+                includeEncrypted = RequestEncryptedReasoning(false),
+                decode = { null },
+            ),
         )
         val builder = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex"))
         return builder.build(parsed.typed, parsed.raw, options).req.getValue("instructions").jsonPrimitive.content

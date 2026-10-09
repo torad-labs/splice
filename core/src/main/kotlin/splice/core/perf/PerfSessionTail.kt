@@ -18,8 +18,8 @@ public data class PerfSessionTail(val turns: List<PerfSessionTurn>, val tailStar
 
 /** V4-244: one model's share of a session's running total, summed as each of its rows was appended.
  *  The token counters are the perf row's own (in_tokens INCLUDES both cache buckets). [usd] is the
- *  dollars of the turns priced at this model's card when their rows were appended; [unpricedTurns]
- *  had no card then, and their dollars are not in [usd]. */
+ *  dollars of the turns priced at this model's card when their rows were appended; [gaps]
+ *  counts the turns the figures miss. */
 public data class PerfModelTotal(
     val turns: Long,
     val inTokens: Long,
@@ -27,10 +27,13 @@ public data class PerfModelTotal(
     val cacheWriteTokens: Long,
     val outTokens: Long,
     val usd: Double,
-    val unpricedTurns: Long,
-    /** Turns with incomplete usage; numeric token totals contain only the observed lower bound. */
-    val unreportedUsageTurns: Long = 0,
+    val gaps: PerfModelGaps,
 )
+
+/** The turns of one model that a [PerfModelTotal] cannot fully count. [unpricedTurns] had no card when their
+ *  rows were appended, so their dollars are not in the total's usd. [unreportedUsageTurns] had incomplete
+ *  usage; numeric token totals contain only the observed lower bound. */
+public data class PerfModelGaps(val unpricedTurns: Long = 0, val unreportedUsageTurns: Long = 0)
 
 /** V4-244: one client session's running total, by the model each turn ran on. It holds every row of
  *  the session appended at or after [fromMs]; a session that began earlier may have rows from before

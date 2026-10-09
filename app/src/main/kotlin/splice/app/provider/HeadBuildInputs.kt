@@ -109,19 +109,20 @@ internal class HeadBuildInputs(
             head = resolvedHead,
             providerCfg = resolvedProvider,
             catalog = catalogFor(key, head, providerCfg, legacyKnobsGovern),
-            watchdog = WatchdogBudget(
-                firstByteTimeout = headCfg.firstByteTimeoutMs.milliseconds,
-                streamIdle = headCfg.streamIdleMs.milliseconds,
-                totalCap = headCfg.upstreamTimeoutMs.milliseconds,
-                // V4-116: arm the mid-output stall-re-anchor tier only where a continuation EXISTS.
-                // This is the one place the fact lives — the watchdog is handed a budget, not a
-                // provider, so arming has to happen where the two meet, and that is here.
-                stallReanchor = stallReanchorFor(resolvedProvider, headCfg),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(
+                    firstByteTimeout = headCfg.firstByteTimeoutMs.milliseconds,
+                    streamIdle = headCfg.streamIdleMs.milliseconds,
+                    totalCap = headCfg.upstreamTimeoutMs.milliseconds,
+                    // V4-116: arm the mid-output stall-re-anchor tier only where a continuation EXISTS.
+                    // This is the one place the fact lives — the watchdog is handed a budget, not a
+                    // provider, so arming has to happen where the two meet, and that is here.
+                    stallReanchor = stallReanchorFor(resolvedProvider, headCfg),
+                ),
+                loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).credentialFix,
             ),
             cfg = headCfg,
-            loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).credentialFix,
-            discovered = headModels,
-            localRows = localRows,
+            roster = PublishedRoster(discovered = headModels, localRows = localRows),
         )
     }
 

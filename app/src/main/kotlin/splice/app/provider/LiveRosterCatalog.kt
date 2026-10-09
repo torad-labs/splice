@@ -14,7 +14,7 @@ internal class LiveRosterCatalog(
 
     override fun current(): ModelCatalog {
         val declared = windows.current()
-        val models = ctx.discovered.forHead(ctx.key)
+        val models = ctx.roster.discovered.forHead(ctx.key)
         val previous = snapshot
         if (previous != null) {
             if (previous.models === models && previous.windows === declared) return previous.catalog
@@ -33,12 +33,12 @@ internal class LiveRosterCatalog(
             models = ctx.providerCfg.models.map { row ->
                 exact[row.id]?.let { row.copy(contextWindow = it) } ?: row
             },
-            extraWindows = declared.extraWindows,
-            windowRules = declared.windowRules,
+            extraWindows = declared.windows.extraWindows,
+            windowRules = declared.windows.windowRules,
             defaultContextWindow = declared.defaultContextWindow,
         )
-        val head = ctx.head.copy(contextWindow = declared.headWindow)
-        return provider.catalogFor(head, declared.headWindow ?: 0L, models)
+        val head = ctx.head.copy(contextWindow = declared.windows.headWindow)
+        return provider.catalogFor(head, declared.windows.headWindow ?: 0L, models)
     }
 
     private data class Snapshot(

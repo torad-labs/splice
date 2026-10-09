@@ -62,11 +62,11 @@ public class ModelDiscovery(credentials: ModelCredentialSource) {
                 DiscoveredModel(
                     it.id,
                     it.label,
-                    it.contextWindow,
+                    it.window.context,
                     it.aliases,
                     it.rates,
                     it.toolMode,
-                    it.maxContextWindow,
+                    it.window.maxContext,
                 )
             }
 }

@@ -44,5 +44,5 @@ internal class NativeAccountRows(private val source: PerfRowsSource) : PerfRowsS
     }
 
     private fun normalized(row: PerfRow): PerfRow =
-        if (row.account == OWN_SIGN_IN_LABEL) row.copy(account = null) else row
+        if (row.facts.account == OWN_SIGN_IN_LABEL) row.copy(facts = row.facts.copy(account = null)) else row
 }

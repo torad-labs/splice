@@ -101,12 +101,8 @@ public class InflightGate(
         val inflight: Int,
         val queued: Int,
         val limit: Int,
-        /** Slots delivered, and slots released, since the gate was built. */
-        val acquired: Long,
-        val released: Long,
-        /** Deliveries that waited in the queue first, and their mean wait, rounded (0 while none has). */
-        val waited: Long,
-        val avgWaitMs: Long,
+        /** What the gate has delivered, released and made wait since it was built. */
+        val traffic: GateTraffic,
         /** One reading per slot held, oldest first. */
         val live: List<GateSlot>,
     )
@@ -117,10 +113,12 @@ public class InflightGate(
             inflight = inflight,
             queued = queue.size,
             limit = maxInflight(),
-            acquired = acquired,
-            released = released,
-            waited = waited,
-            avgWaitMs = if (waited == 0L) 0L else (waitMsTotal + waited / 2) / waited,
+            traffic = GateTraffic(
+                acquired = acquired,
+                released = released,
+                waited = waited,
+                avgWaitMs = if (waited == 0L) 0L else (waitMsTotal + waited / 2) / waited,
+            ),
             live = live.map { it.reading(now) },
         )
     }

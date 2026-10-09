@@ -38,39 +38,20 @@ import java.util.concurrent.atomic.AtomicReference
 /** The per-turn collaborators + data the drive needs, grouped so the drive signature stays one
  *  cohesive argument (they are all created together per request inside the SSE writer). */
 internal data class TurnDrive(
-    /** The upstream request, typed. This IS the wire: the round loop serializes it per round
-     *  (RoundStrategy) and reasoning-continuation folding extends its `input` and re-POSTs without
-     *  re-parsing. DR-168: a pre-serialized String twin used to sit beside it — dispatch never read
-     *  it, so a test pinning it would have pinned nothing; HeadServerIntegrationTest pins the bytes
-     *  the mock upstream decodes instead. */
-    val requestBody: JsonObject,
-    val meta: TurnMeta,
+    /** The admission-time inputs this drive was assembled from: the built request (typed, and THE wire — the
+     *  round loop serializes `built.requestBody` per round and reasoning-continuation folding extends its `input`
+     *  and re-POSTs without re-parsing; DR-168: a pre-serialized String twin used to sit beside it, and
+     *  dispatch never read it), the admission slot, the clock origin, the perf and trace of this turn. */
+    val inputs: TurnInputs,
     val emitter: TurnTerminal,
     val watchdog: TurnWatchdog,
-    val slot: InflightGate.Slot,
     val pipeline: TurnPipeline,
-    val t0: Long,
-    /** V4-174: the turn's trace when the head's is on; null records nothing. Took the slot of the
-     *  former `upstreamModel` field, which every construction set to `meta.upstreamModel` and is
-     *  now the property below — so the constructor-width ratchet's 17 stays 17. */
-    val trace: TurnTrace?,
-    val perf: TurnPerf,
-    /** Per-turn upstream headers from BuiltTurn (e.g. grok conv-id affinity). */
-    val turnHeaders: Map<String, String>,
-    /** Current login. Only a pre-accept native refusal can replace it within this turn. */
-    var account: AccountSelection? = null,
     /** Runner liveness gates + the health hook for absorbed round failures (built once in
      *  TurnDriveFactory.assembleDrive; one construction site, the policies never drift). */
     val signals: RunnerSignals,
     /** The client-facing SSE channel: coalesced writer + write mutex + clientGone flag. */
     val channel: ClientChannel,
-    /** The provider's answering policy for THIS turn's deferred tool surface. Null = no deferral
-     *  this turn, or the feature is off — the round loop is byte-for-byte unchanged. */
-    val toolSearch: ToolSearchPolicy?,
-    /** Optional gateway-local wrapper around each posted round. */
-    val roundInterceptor: RoundInterceptor? = null,
     val remainingTurnWait: RemainingTurnWait = RemainingTurnWait { Long.MAX_VALUE },
-    var quota: QuotaTracker? = null,
 ) {
     /** The three per-turn CLAIMS, in the component that claims them (kt-no-atomic-in-data-class).
      *
@@ -128,6 +109,30 @@ internal data class TurnDrive(
         fun started(job: kotlinx.coroutines.Job)
     }
 
+    /** The upstream request, typed: the wire itself, serialized per round by the round strategy. */
+    val requestBody: JsonObject get() = inputs.built.requestBody
+    val meta: TurnMeta get() = inputs.built.meta
+    val slot: InflightGate.Slot get() = inputs.slot
+    val t0: Long get() = inputs.t0
+
+    /** V4-174: the turn's trace when the head's is on; null records nothing. */
+    val trace: TurnTrace? get() = inputs.trace
+    val perf: TurnPerf get() = inputs.perf
+
+    /** Per-turn upstream headers from BuiltTurn (e.g. grok conv-id affinity). */
+    val turnHeaders: Map<String, String> get() = inputs.built.extraHeaders
+
+    /** The provider's answering policy for THIS turn's deferred tool surface. Null = no deferral
+     *  this turn, or the feature is off — the round loop is byte-for-byte unchanged. */
+    val toolSearch: ToolSearchPolicy? get() = inputs.built.toolSearch
+
+    /** Optional gateway-local wrapper around each posted round. */
+    val roundInterceptor: RoundInterceptor? get() = inputs.built.roundInterceptor
+
+    /** Current login. Only a pre-accept native refusal can replace it within this turn. */
+    var account: AccountSelection? = inputs.accountQuota.account
+    var quota: QuotaTracker? = inputs.accountQuota.quota
+
     /** Trace ownership when captured; otherwise minted only when this drive actually posts to a tap. */
     var turnId: String? = trace?.turnId
         private set
@@ -161,12 +166,12 @@ internal data class TurnDrive(
             (credentials as? Credentials.ApiKey)?.header,
         )
         val names = credentialAccountNames
-        if (key != null) names?.sent(key, meta.sessionId)
+        if (key != null) names?.sent(key, meta.scope.sessionId)
         observedAccountLabel = key?.let { names?.forCredential(it) }
     }
 
     /** The model the upstream is asked for: the meta's, read rather than copied. */
-    val upstreamModel: String get() = meta.upstreamModel
+    val upstreamModel: String get() = meta.route.upstreamModel
 
     // `internal`, not `private`: TurnDrive is an internal type and TurnDriver (a different class)
     // reads this — a private member would be unreachable. Reads only this drive's own `perf`.
@@ -192,7 +197,7 @@ internal data class TurnDrive(
     internal fun claimAccountBoundary(): Boolean = claims.claimAccountBoundary()
 
     /** The client session's short tag for log lines and perf rows; null when it sent none. */
-    internal fun sessionTag(): String? = meta.sessionId?.take(SESSION_TAG_CHARS)
+    internal fun sessionTag(): String? = meta.scope.sessionId?.take(SESSION_TAG_CHARS)
 }
 
 internal const val SESSION_TAG_CHARS = 8

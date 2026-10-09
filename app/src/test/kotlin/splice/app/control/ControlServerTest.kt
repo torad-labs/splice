@@ -39,6 +39,9 @@ import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.recipe.LaunchService
 import splice.usage.perf.HeadPerfSource
@@ -75,6 +78,37 @@ private class FakeAbsentAuth : AuthProvider {
     override suspend fun describe() = AuthDescription(false, "api-key", mapOf("env_var" to "OPENROUTER_API_KEY"))
 }
 
+/** The `codex` head the shared control server serves: a stub lifecycle, fixed usage and compact answers. */
+private fun codexManagedHead(
+    head: StubHead,
+    perfNow: Long,
+    perf: HeadPerfSource,
+    perfRows: PerfRowsSource,
+): ManagedHead = ManagedHead(
+    head = head,
+    auth = FakeAuth(),
+    sources = HeadSources(
+        usage = object : HeadUsageSource {
+            override fun snapshot() = UsageView(
+                0L,
+                3,
+                RateLimitView(1000, 100, "6m0s", observedAt = perfNow / 1000L), // fresh 90% -> warn
+            )
+        },
+        compact = object : HeadCompactSource {
+            override fun summary(tailN: Int) =
+                CompactView(2, mapOf("model_text" to 2), listOf(mapOf("outcome" to "model_text")))
+        },
+        logs = object : HeadLogSource {
+            override fun tail(lines: Int) = "[codex] line one\n[codex] line two\n"
+            override fun path() = "/tmp/codex.log"
+        },
+        perf = perf,
+        perfRows = perfRows,
+    ),
+    usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
+)
+
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ControlServerTest {
 
@@ -109,29 +143,7 @@ class ControlServerTest {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
-        val managed = ManagedHead(
-            head = head,
-            auth = FakeAuth(),
-            usage = object : HeadUsageSource {
-                override fun snapshot() = UsageView(
-                    0L,
-                    3,
-                    RateLimitView(1000, 100, "6m0s", observedAt = perfNow / 1000L), // fresh 90% -> warn
-                )
-            },
-            compact = object : HeadCompactSource {
-                override fun summary(tailN: Int) =
-                    CompactView(2, mapOf("model_text" to 2), listOf(mapOf("outcome" to "model_text")))
-            },
-            logs = object : HeadLogSource {
-                override fun tail(lines: Int) = "[codex] line one\n[codex] line two\n"
-                override fun path() = "/tmp/codex.log"
-            },
-            warnPct = 80,
-            warnTokens5h = 0,
-            perf = fakePerf,
-            perfRows = fakePerfRows,
-        )
+        val managed = codexManagedHead(head, perfNow, fakePerf, fakePerfRows)
         val launchSpec = launchSpecFixture(tmp, mgmt.get())
         val heads = mapOf(
             "codex" to managed.copy(launchSpec = launchSpec),
@@ -166,19 +178,25 @@ class ControlServerTest {
 
     private fun launchSpecFixture(tmp: java.nio.file.Path, inferenceToken: String) = LaunchSpec(
         trees = HeadTrees(tmp.resolve(".claude-codex-test")),
-        pinnedModel = "gpt-5.6-sol",
-        availableModelIds = listOf("gpt-5.6-sol", "gpt-5.4-mini"),
-        modelLabels = mapOf("gpt-5.6-sol" to "Codex 5.6 Sol", "gpt-5.4-mini" to "Codex 5.4 Mini"),
-        // what LaunchSpecFactory passes: the pinned row's window (ModelCatalog.clientLaunchWindow)
-        contextWindow = 272_000,
-        modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
-        statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
-        loginCommand = "claudex login",
-        signInLabel = "Codex (ChatGPT)",
+        models = LaunchModels(
+            pinnedModel = "gpt-5.6-sol",
+            availableModelIds = listOf("gpt-5.6-sol", "gpt-5.4-mini"),
+            modelLabels = mapOf("gpt-5.6-sol" to "Codex 5.6 Sol", "gpt-5.4-mini" to "Codex 5.4 Mini"),
+            // what LaunchSpecFactory passes: the pinned row's window (ModelCatalog.clientLaunchWindow)
+            contextWindow = 272_000,
+            modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "claudex login",
+            signInLabel = "Codex (ChatGPT)",
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
+            port = 3099,
+            inferenceToken = inferenceToken,
+            apiTimeoutMs = 960_000,
+        ),
         policy = splice.client.ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 3099,
-        inferenceToken = inferenceToken,
-        apiTimeoutMs = 960_000,
     )
 
     /** A second head whose wrapper COMMAND differs from its topology KEY (the starter's
@@ -186,8 +204,8 @@ class ControlServerTest {
     private fun openrouterHead(managed: ManagedHead, launchSpec: LaunchSpec): ManagedHead = managed.copy(
         head = StubHead("openrouter", 3101, label = "claude-openrouter"),
         auth = FakeAbsentAuth(),
-        authKind = "api-key",
-        launchSpec = launchSpec.copy(port = 3101),
+        authSurface = managed.authSurface.copy(authKind = "api-key"),
+        launchSpec = launchSpec.copy(gateway = launchSpec.gateway.copy(port = 3101)),
     )
 
     /** A launchable head whose wrapper COMMAND (label) is the shared `dup` — two of these collide. */
@@ -197,7 +215,7 @@ class ControlServerTest {
         key: String,
     ): ManagedHead = managed.copy(
         head = StubHead(key, 3200, label = "dup"),
-        launchSpec = launchSpec.copy(port = 3200),
+        launchSpec = launchSpec.copy(gateway = launchSpec.gateway.copy(port = 3200)),
     )
 
     @AfterAll
@@ -544,7 +562,8 @@ class ControlServerTest {
             header("Authorization", "Bearer $key")
             header("Content-Type", "application/json")
             setBody(
-                """{"model":{"display_name":"Codex 5.6 Sol"},"current_usage":{"input_tokens":100,"context_window":272000}}""",
+                """{"model":{"display_name":"Codex 5.6 Sol"},""" +
+                    """"current_usage":{"input_tokens":100,"context_window":272000}}""",
             )
         }.bodyAsText()
         assertTrue(line.contains("Codex 5.6 Sol"))

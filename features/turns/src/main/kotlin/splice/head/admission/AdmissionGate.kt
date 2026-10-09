@@ -32,7 +32,7 @@ internal class AdmissionGate(
         deps.stores.perfStats,
     ),
 ) {
-    private val gate get() = deps.gate
+    private val gate get() = deps.traffic.gate
     private val log get() = deps.log
 
     /** False (with a 529 on the wire) while stopLocked drains — clients retry and land post-restart. */

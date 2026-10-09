@@ -9,6 +9,8 @@ import org.junit.jupiter.api.io.TempDir
 import splice.app.daemon.HeadCatalogs
 import splice.app.daemon.TopologyWindows
 import splice.app.provider.ProviderBuild
+import splice.app.provider.PublishedRoster
+import splice.app.provider.UpstreamFaultPlan
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
@@ -63,7 +65,7 @@ class RosterWindowJoinTest {
                 rates = ModelRates(input = 2.0, cacheRead = 0.5, output = 8.0),
             )
             assertEquals(256_000L, catalog.contextWindowFor("synthetic-small"))
-            assertEquals(400_000L, catalog.live().headWindow)
+            assertEquals(400_000L, catalog.live().windows.headWindow)
             assertEquals(400_000L, catalog.contextWindowFor("synthetic-original"))
             assertEquals("Small new", catalog.labelFor("synthetic-small"))
             assertEquals(TopologyLoader.sha256Hex(edited.toByteArray()), windows.digest())
@@ -91,7 +93,7 @@ extra_windows = [{ id = "synthetic-original", context_window = 400000, max_conte
             Files.writeString(file, edited)
             Files.setLastModifiedTime(file, FileTime.fromMillis(5_000))
             assertEquals(400_000L, catalog.contextWindowFor("synthetic-original"))
-            assertEquals(800_000L, catalog.live().extraWindows.single().maxContextWindow)
+            assertEquals(800_000L, catalog.live().windows.extraWindows.single().maxContextWindow)
             assertEquals(872_000L, catalog.live().models.single().maxContextWindow)
             assertFalse(windows.stale())
         } finally {
@@ -167,10 +169,12 @@ models = [{ id = "synthetic-original", slot = "opus" }, { id = "synthetic-select
             head = head,
             providerCfg = provider,
             catalog = provider.catalogFor(head, discovered = source.forHead("synthetic")),
-            watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+                loginCommand = "",
+            ),
             cfg = ConfigService(StatePaths(baseOverride = tmp), envReader = { null }).getConfig("synthetic"),
-            loginCommand = "",
-            discovered = source,
+            roster = PublishedRoster(discovered = source),
         )
     }
 }

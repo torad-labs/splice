@@ -22,8 +22,12 @@ import splice.head.usage.EconomicsBucket
 import splice.head.usage.EconomicsStore
 import splice.head.usage.QuotaTracker
 import splice.head.usage.UsageStore
+import splice.usage.economics.EconomicsBytes
+import splice.usage.economics.EconomicsCost
 import splice.usage.economics.EconomicsRead
 import splice.usage.economics.EconomicsRow
+import splice.usage.economics.EconomicsTokens
+import splice.usage.economics.EconomicsTools
 import splice.usage.economics.EconomicsTurnCounts
 import splice.usage.economics.HeadEconomicsSource
 import splice.usage.perf.HeadPerfSkipSource
@@ -105,18 +109,20 @@ public class EconomicsStoreSource(
         EconomicsRow(
             hour = it.hour,
             counts = EconomicsTurnCounts(it.turns, it.localSteps, it.counts.unreportedUsageTurns),
-            inTokens = it.inTokens,
-            cachedTokens = it.cachedTokens,
-            cacheWriteTokens = it.cacheWriteTokens,
-            outTokens = it.outTokens,
-            reqBytes = it.reqBytes,
-            upstreamBytes = it.upstreamBytes,
-            toolsEager = it.toolsEager,
-            toolsDeferred = it.toolsDeferred,
-            deferralTurns = it.deferralTurns,
+            tokens = EconomicsTokens(
+                inTokens = it.inTokens,
+                cachedTokens = it.cachedTokens,
+                cacheWriteTokens = it.cacheWriteTokens,
+                outTokens = it.outTokens,
+            ),
+            bytes = EconomicsBytes(reqBytes = it.reqBytes, upstreamBytes = it.upstreamBytes),
+            tools = EconomicsTools(
+                toolsEager = it.toolsEager,
+                toolsDeferred = it.toolsDeferred,
+                deferralTurns = it.deferralTurns,
+            ),
             rateLimited = it.rateLimited,
-            costUsd = it.costUsd,
-            unpricedTurns = it.unpricedTurns,
+            cost = EconomicsCost(costUsd = it.costUsd, unpricedTurns = it.unpricedTurns),
         )
 }
 

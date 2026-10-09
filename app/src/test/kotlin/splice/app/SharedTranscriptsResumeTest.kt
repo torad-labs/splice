@@ -31,7 +31,10 @@ import splice.core.compaction.SessionProject
 import splice.core.config.StatePaths
 import splice.core.util.JsonScalars
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
 import splice.launch.LaunchOutcome
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.recipe.LaunchService
 import java.nio.file.Files
@@ -233,19 +236,25 @@ class SharedTranscriptsResumeTest {
 
     private fun spec(configDir: Path, head: String, policy: ClaudePolicy, siblings: List<Path>) = LaunchSpec(
         trees = HeadTrees(configDir, siblings),
-        pinnedModel = headModel,
-        availableModelIds = listOf(headModel),
-        modelLabels = mapOf(headModel to headModel),
-        contextWindow = 272_000,
-        apiTimeoutMs = 960_000,
-        modelOptionsCache = buildJsonObject { },
-        statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:3096/statusline/$head",
-        loginCommand = "claude-$head login",
-        signInLabel = "Head $head",
-        headKey = head,
+        models = LaunchModels(
+            pinnedModel = headModel,
+            availableModelIds = listOf(headModel),
+            modelLabels = mapOf(headModel to headModel),
+            contextWindow = 272_000,
+            modelOptionsCache = buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "claude-$head login",
+            signInLabel = "Head $head",
+            headKey = head,
+        ),
+        gateway = LaunchGateway(
+            apiTimeoutMs = 960_000,
+            statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:3096/statusline/$head",
+            port = 3099,
+            inferenceToken = "test-inference-token",
+        ),
         policy = policy,
-        port = 3099,
-        inferenceToken = "test-inference-token",
     )
 
     /** The operator's global ~/.claude as a machine that has run plain `claude` leaves it. */

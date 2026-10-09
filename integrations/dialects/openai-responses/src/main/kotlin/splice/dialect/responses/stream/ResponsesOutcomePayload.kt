@@ -3,6 +3,9 @@
 // code both the success path and the salvage path share.
 package splice.dialect.responses.stream
 
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundHandoffs
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.dialect.responses.ResponsesTurnState
@@ -23,18 +26,24 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
             state.reasoningTokens,
             reported = state.reportedUsage.toSet(),
         ),
-        thinkingText = state.thinkingBuf.toString(),
-        bodyText = state.textBuf.toString(),
-        emittedText = state.emittedText,
-        emittedThinking = state.emittedThinking,
-        messageClosed = state.messageClosed,
-        outputShape = harvest.describeOutput(state.finalResponse, state.streamedItemTypes),
-        reasoningEnvelopes = state.reasoningEnvelopes.toList(),
-        // The harvest fallback runs ONLY when the streamed list is empty (needs no dedup): a round
-        // that emitted only a search call and was missed by the live capture would otherwise
-        // produce a client-visible empty turn through the honesty gate — the worst available failure.
-        toolSearches = state.toolSearches.ifEmpty { harvest.harvestToolSearchCalls(state.finalResponse) },
-        customCalls = customCalls.merge(state.customCalls, state.finalResponse),
+        text = RoundText(
+            thinkingText = state.thinkingBuf.toString(),
+            bodyText = state.textBuf.toString(),
+            emittedText = state.emittedText,
+            emittedThinking = state.emittedThinking,
+        ),
+        shape = ResponseShape(
+            messageClosed = state.messageClosed,
+            outputShape = harvest.describeOutput(state.finalResponse, state.streamedItemTypes),
+        ),
+        handoffs = RoundHandoffs(
+            reasoningEnvelopes = state.reasoningEnvelopes.toList(),
+            // The harvest fallback runs ONLY when the streamed list is empty (needs no dedup): a round
+            // that emitted only a search call and was missed by the live capture would otherwise
+            // produce a client-visible empty turn through the honesty gate — the worst available failure.
+            toolSearches = state.toolSearches.ifEmpty { harvest.harvestToolSearchCalls(state.finalResponse) },
+            customCalls = customCalls.merge(state.customCalls, state.finalResponse),
+        ),
     )
 
     /** The salvage payload for mid-stream re-anchoring — the wire is at a block boundary
@@ -50,10 +59,12 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
         if (ctx.compact) TurnOutcome.PartialRound(usage = usageOf(state)) else partialRound(state)
 
     private fun partialRound(state: ResponsesTurnState): TurnOutcome.PartialRound = TurnOutcome.PartialRound(
-        thinkingText = state.thinkingBuf.toString(),
-        bodyText = state.textBuf.toString(),
-        emittedText = state.emittedText,
-        emittedThinking = state.emittedThinking,
+        text = RoundText(
+            thinkingText = state.thinkingBuf.toString(),
+            bodyText = state.textBuf.toString(),
+            emittedText = state.emittedText,
+            emittedThinking = state.emittedThinking,
+        ),
         hasToolUse = state.hasToolUse,
         reasoningEnvelopes = state.reasoningEnvelopes.toList(),
         toolTearOpen = state.toolSalvage.tearOpen,

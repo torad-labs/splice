@@ -24,6 +24,8 @@ import splice.core.usage.QuotaWindow
 import splice.core.util.WallClock
 import splice.dialect.responses.ReasoningSettings
 import splice.head.usage.QuotaTracker
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.codemode.ProcessElapsedNow
 import splice.upstream.credentials.AccountPool
@@ -74,8 +76,7 @@ class QuotaFullReadingTest {
     private fun head(tmp: Path, quota: HeadDeps.HeadQuota): HeadServer = HeadServer(
         provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "claude-codex--",
                     models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
@@ -83,7 +84,7 @@ class QuotaFullReadingTest {
                 ),
                 pinnedModel = "gpt-5.6-sol",
                 auth = QuotaReadingAuth(),
-                baseUrl = "http://127.0.0.1:1",
+                locations = ProviderLocations(baseUrl = "http://127.0.0.1:1"),
                 watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             ),
             reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),

@@ -13,7 +13,10 @@ import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
@@ -24,8 +27,10 @@ class LiteHeaderEveryProviderTest {
         val built = provider(
             ResponsesQuirks(
                 providerTag = "claudex",
-                responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
-                responsesLiteHeader = "x-openai-internal-codex-responses-lite",
+                lite = ResponsesLiteQuirks(
+                    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+                    responsesLiteHeader = "x-openai-internal-codex-responses-lite",
+                ),
             ),
         ).buildTurn(body("gpt-6"), compact = false, sessionId = "s")
         assertEquals("true", built.extraHeaders["x-openai-internal-codex-responses-lite"])
@@ -50,7 +55,9 @@ class LiteHeaderEveryProviderTest {
         val built = provider(
             ResponsesQuirks(
                 providerTag = "claudex",
-                responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+                lite = ResponsesLiteQuirks(
+                    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+                ),
             ),
         ).buildTurn(body("gpt-6"), compact = false, sessionId = "s")
         assertNull(built.extraHeaders["x-openai-internal-codex-responses-lite"])
@@ -58,8 +65,7 @@ class LiteHeaderEveryProviderTest {
 
     private fun provider(quirks: ResponsesQuirks) = OpenAiResponsesProvider(
         tuning = ProviderTuning(
-            key = "openai",
-            label = "openai",
+            name = ProviderName(key = "openai", label = "openai"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-openai--",
                 models = listOf(ModelEntry(id = "gpt-6", contextWindow = 1_000_000)),
@@ -67,7 +73,7 @@ class LiteHeaderEveryProviderTest {
             ),
             pinnedModel = "gpt-6",
             auth = LiteAuth,
-            baseUrl = "https://example.invalid/v1",
+            locations = ProviderLocations(baseUrl = "https://example.invalid/v1"),
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
         reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),

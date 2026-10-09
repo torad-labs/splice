@@ -6,20 +6,32 @@ package splice.provider.grok
 
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.PromptCachePolicy
+import splice.dialect.responses.ResponsesBackendQuirks
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesReasoningQuirks
+import splice.dialect.responses.ResponsesRoundTripQuirks
+import splice.dialect.responses.ResponsesToolQuirks
 
 /** Holder for the grok quirk profile. Constructed by the daemon so TOML overlays a real table. */
 public class GrokQuirks {
     public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
         providerTag = "claude-grok",
-        store = false,
-        promptCache = PromptCachePolicy(key = CacheKeyStrategy.SESSION_ID),
-        effortVocabulary = GrokEffortVocabulary(),
-        supportsSummary = true,
-        summaryRejectModelRegex = null,
-        emitToolChoice = true,
-        emitStrict = true,
-        reasoningCache = false,
+        backend = ResponsesBackendQuirks(
+            store = false,
+            promptCache = PromptCachePolicy(key = CacheKeyStrategy.SESSION_ID),
+        ),
+        reasoning = ResponsesReasoningQuirks(
+            effortVocabulary = GrokEffortVocabulary(),
+            supportsSummary = true,
+            summaryRejectModelRegex = null,
+        ),
+        tools = ResponsesToolQuirks(
+            emitToolChoice = true,
+            emitStrict = true,
+        ),
+        roundTrip = ResponsesRoundTripQuirks(
+            reasoningCache = false,
+        ),
         // DR-155: xAI's documented and ENFORCED minimum image edge. Its verbatim HTTP 400 body is
         // Image dimensions 1x1 are too small. Both width and height must be at least 8 pixels.
         minImageEdgePx = XAI_MIN_IMAGE_EDGE_PX,

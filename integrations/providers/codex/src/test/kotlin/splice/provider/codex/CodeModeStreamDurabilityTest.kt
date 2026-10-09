@@ -18,8 +18,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.core.index.WireBlockIndex
 import splice.core.turn.GatewayCustomCall
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.UsageOrigin
 import splice.provider.codex.state.CodeModeExpiredHistory
 import splice.provider.codex.state.CodeModeKeyLocks
 import splice.provider.codex.state.CodeModeRegistryAccess
@@ -85,47 +87,48 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
 
     @Test
     @Timeout(20)
-    fun `the bridge recovers completed raw usage after its durable claim fails without rerunning source`() = runBlocking {
-        val runtime = IncrementalRuntime()
-        val manager = bridge(runtime)
-        val sink = StepSink()
-        val post = GatedPost(sink)
-        try {
-            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
-            val first = sink.callback.await()
-            post.gates.drop(1).forEach { it.complete(Unit) }
-            post.complete.complete(Unit)
-            withTimeout(1_500) { post.stopped.await() }
-            val field = CodexCodeModeBridge::class.java.getDeclaredField("registry").apply { isAccessible = true }
-            val registry = field.get(manager) as CodexCodeModeRegistry
-            val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
-            val record = registry.recordsFor(key).single()
-            // The mock post's finally precedes capture.finish; only stored terminal usage certifies this precondition.
-            withTimeout(1_500) {
-                while (registry.recordsFor(key).single().sourceState?.usage == null) yield()
-            }
-            registry.complete(record, "done")
-            stateFiles.block()
+    fun `the bridge recovers completed raw usage after its durable claim fails without rerunning source`() =
+        runBlocking {
+            val runtime = IncrementalRuntime()
+            val manager = bridge(runtime)
+            val sink = StepSink()
+            val post = GatedPost(sink)
             try {
-                assertThrows(CodeModePersistenceException::class.java) { registry.source.consume(record) }
-                assertFalse(record.sourceState?.consumed == true)
+                manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
+                val first = sink.callback.await()
+                post.gates.drop(1).forEach { it.complete(Unit) }
+                post.complete.complete(Unit)
+                withTimeout(1_500) { post.stopped.await() }
+                val field = CodexCodeModeBridge::class.java.getDeclaredField("registry").apply { isAccessible = true }
+                val registry = field.get(manager) as CodexCodeModeRegistry
+                val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
+                val record = registry.recordsFor(key).single()
+                // The mock post's finally precedes capture.finish; only stored terminal usage certifies this precondition.
+                withTimeout(1_500) {
+                    while (registry.recordsFor(key).single().sourceState?.usage == null) yield()
+                }
+                registry.complete(record, "done")
+                stateFiles.block()
+                try {
+                    assertThrows(CodeModePersistenceException::class.java) { registry.source.consume(record) }
+                    assertFalse(record.sourceState?.consumed == true)
+                } finally {
+                    stateFiles.unblock()
+                }
+                val recovered = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
+                    .intercept(history(listOf(first)), StepSink(), post).turn() as TurnOutcome.Success
+                assertBilling(recovered.usage)
+                assertTrue(record.sourceState?.consumed == true)
+                assertFinalIdentity(post, recovered)
+                val repeated = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
+                    .intercept(history(listOf(first)), StepSink(), post).turn() as TurnOutcome.Success
+                assertEquals(5L, repeated.usage.outputTokens, "terminal usage is claimed once")
+                assertEquals(1, runtime.starts)
+                assertEquals(3, post.posts, "only the initial source and two ordinary continuations were posted")
             } finally {
-                stateFiles.unblock()
+                manager.onHeadStop()
             }
-            val recovered = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                .intercept(history(listOf(first)), StepSink(), post).turn() as TurnOutcome.Success
-            assertBilling(recovered.usage)
-            assertTrue(record.sourceState?.consumed == true)
-            assertFinalIdentity(post, recovered)
-            val repeated = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                .intercept(history(listOf(first)), StepSink(), post).turn() as TurnOutcome.Success
-            assertEquals(5L, repeated.usage.outputTokens, "terminal usage is claimed once")
-            assertEquals(1, runtime.starts)
-            assertEquals(3, post.posts, "only the initial source and two ordinary continuations were posted")
-        } finally {
-            manager.onHeadStop()
         }
-    }
 
     @Test
     @Timeout(20)
@@ -181,7 +184,7 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         var forcedWrites = 0
         var refuseWrites = false
         val record = CodeModeRecords.of(key, 0).also {
-            it.source = ""
+            it.origin.source = ""
             it.sourceState = CodeModeSourceState()
         }
         private val config = CodeModeBridgeConfig({ error("no worker is needed") }, location)
@@ -204,18 +207,23 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
                 record
             },
         )
-        private val call = GatewayCustomCall(record.outerCallId, CODE_MODE_TOOL_NAME, "", record.outer)
+        private val call = GatewayCustomCall(record.origin.outerCallId, CODE_MODE_TOOL_NAME, "", record.origin.outer)
 
         suspend fun begin() {
             capture.observe(CustomToolSource.Started(call))
         }
 
         suspend fun append(text: String) {
-            capture.observe(CustomToolSource.Delta(record.outerCallId, text))
+            capture.observe(CustomToolSource.Delta(record.origin.outerCallId, text))
         }
 
         fun finish(text: String) {
-            capture.finish(TurnOutcome.Success(false, false, Usage(), customCalls = listOf(call.copy(input = text))))
+            capture.finish(TurnOutcome.Success(
+                false,
+                false,
+                Usage(),
+                handoffs = RoundHandoffs(customCalls = listOf(call.copy(input = text))),
+            ))
         }
 
         fun clientBoundary() {
@@ -305,9 +313,9 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
             contexts,
         )
         val terminal = GatewayCustomCall(
-            record.outerCallId,
+            record.origin.outerCallId,
             CODE_MODE_TOOL_NAME,
-            record.source + ";suffix",
+            record.origin.source + ";suffix",
             JsonObject(mapOf("id" to JsonPrimitive("completed-item"))),
         )
         val continuity = CodeModeContinuity(
@@ -324,11 +332,11 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
     fun `a source round that finishes after its client turn is its conversation's newest context`() {
         val state = SourceState()
         state.source.finish(state.record, state.terminal, state.continuity, Usage(1_400, 12, 1_100))
-        val step = TurnOutcome.Success(true, false, Usage(localStep = true))
+        val step = TurnOutcome.Success(true, false, Usage(origin = UsageOrigin(localStep = true)))
         val reported = state.contexts.report(state.record.key, step) as TurnOutcome.Success
         val observed = splice.core.turn.UsageField.entries.toSet() - splice.core.turn.UsageField.OUTPUT
         val expected = Usage(inputTokens = 1_400, cachedTokens = 1_100, reported = observed)
-        assertEquals(expected, reported.usage.clientContext)
+        assertEquals(expected, reported.usage.origin.clientContext)
     }
 
     @Test
@@ -364,7 +372,12 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
             state.record,
             state.terminal,
             state.continuity,
-            Usage(inputTokens = 100, outputTokens = 7, reasoningTokens = 3, recordedOutputTokens = 7),
+            Usage(
+                inputTokens = 100,
+                outputTokens = 7,
+                reasoningTokens = 3,
+                origin = UsageOrigin(recordedOutputTokens = 7),
+            ),
         )
         stateFiles.block()
         assertThrows(CodeModePersistenceException::class.java) { state.source.consume(state.record) }
@@ -372,7 +385,7 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         stateFiles.unblock()
         val usage = checkNotNull(state.source.consume(state.record))
         assertEquals(7L, usage.outputTokens)
-        assertEquals(7L, usage.recordedOutputTokens)
+        assertEquals(7L, usage.origin.recordedOutputTokens)
         assertEquals(0L, usage.unrecordedOutputTokens)
         assertNull(state.source.consume(state.record))
         val restored = state.record.snapshot().restore()

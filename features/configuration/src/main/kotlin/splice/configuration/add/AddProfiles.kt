@@ -47,37 +47,22 @@ internal data class AddModel(
     } ?: emptyList()
 }
 
-/** One profile. What `splice setup` reads to tick a head — [name], [headKey], [authKind] — is public
- *  (LAYOUT-01); the rest is this verb's, and only this module constructs one. */
+/** One profile. What `splice setup` reads to tick a head — [name], [AddHeadSpec.key], [AddProviderSpec.authKind] —
+ *  is public (LAYOUT-01); the rest is this verb's, and only this module constructs one. */
 @ConsistentCopyVisibility
 public data class AddProfile internal constructor(
     public val name: String,
-    internal val summary: String,
-    internal val dialect: String,
-    public val authKind: String,
     /** Null when the operator must supply it (`--base-url`). */
     internal val baseUrl: String?,
-    /** Default provider AND head key; empty when the operator must name it (`--name`). */
-    public val headKey: String,
-    /** Default wrapper command; empty means `claude-<key>`. */
-    internal val command: String,
+    public val provider: AddProviderSpec,
+    public val head: AddHeadSpec,
+    internal val labels: AddLabels,
     internal val models: List<AddModel>,
-    /** Extra provider lines, already valid TOML (a default vendor header, for one). */
-    internal val providerExtra: List<String> = emptyList(),
-    /** What added the row, named in its TOML comment and the verb's title. A catalogue row is added
-     *  by `splice add <name>`; a runtime-described row (RuntimeHeadAdd) is not in this catalogue, so
-     *  naming a verb that cannot reproduce it would send the operator to a command that fails. */
-    internal val origin: String = "splice add $name",
-    /** Whether the endpoint's model list decides the models check. False for a server that answers
-     *  ANY model id (llama-server lists a file path, not the id a row sends): there an unlisted row
-     *  is trusted and reported as such, the rule LocalRuntimeProbe applies at boot. */
-    internal val listAuthoritative: Boolean = true,
-    /** Whether an API-key profile needs a key from the operator. Local runtimes use a non-secret
-     *  placeholder at save instead; OAuth and client profiles have their own sign-in path. */
-    internal val requiresKey: Boolean = authKind == API_KEY,
-    /** The endpoint supplies the serving roster; declared rows supply only pinned models and tiers. */
-    internal val discoverRoster: Boolean = false,
-)
+    internal val policy: AddModelPolicy = AddModelPolicy(),
+) {
+    /** What added the row, named in its TOML comment and the verb's title. */
+    internal val origin: String get() = labels.origin ?: "splice add $name"
+}
 
 public class AddProfiles {
 
@@ -85,7 +70,7 @@ public class AddProfiles {
 
     public fun find(name: String): AddProfile? = profiles.firstOrNull { it.name == name }
 
-    internal fun describe(): List<String> = profiles.map { "${it.name.padEnd(NAME_PAD)} ${it.summary}" }
+    internal fun describe(): List<String> = profiles.map { "${it.name.padEnd(NAME_PAD)} ${it.labels.summary}" }
 
     /** Every profile `splice add` knows. The wizard ticks from this list, never a typed roster. */
     public fun catalog(): List<AddProfile> = profiles
@@ -97,19 +82,19 @@ public class AddProfiles {
      *  [profile] is the RESOLVED one: base URL, command and models already filled in by the command. */
     internal fun toml(profile: AddProfile, key: String, port: Int): String {
         val models = profile.models
-        val auth = if (profile.authKind == API_KEY) {
+        val auth = if (profile.provider.authKind == API_KEY) {
             """auth = { kind = "api-key", env = "${apiKeyEnv(key)}" }"""
         } else {
-            """auth = { kind = "${profile.authKind}" }"""
+            """auth = { kind = "${profile.provider.authKind}" }"""
         }
         val provider = listOf(
             "",
             "# Added by `${profile.origin}`.",
             "[providers.$key]",
-            "dialect = \"${profile.dialect}\"",
+            "dialect = \"${profile.provider.dialect}\"",
             "base_url = \"${profile.baseUrl.orEmpty()}\"",
             auth,
-        ) + profile.providerExtra + models.flatMap { m ->
+        ) + profile.provider.extra + models.flatMap { m ->
             listOf(
                 "[[providers.$key.models]]",
                 "id = \"${m.id}\"",
@@ -126,9 +111,9 @@ public class AddProfiles {
             "port = $port",
             "discovery_prefix = \"claude-$key--\"",
             "pinned_model = \"${pinned.id}\"",
-        ) + headExtras(mappings, pinned.contextWindow, profile.discoverRoster) + listOf(
+        ) + headExtras(mappings, pinned.contextWindow, profile.policy.discoverRoster) + listOf(
             "[heads.$key.claude]",
-            "command = \"${profile.command}\"",
+            "command = \"${profile.head.command}\"",
         )
         return (provider + head).joinToString("\n") + "\n"
     }

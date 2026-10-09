@@ -13,7 +13,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionClient
 import splice.sessions.registry.SessionListing
+import splice.sessions.registry.SessionProcess
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
@@ -24,6 +26,7 @@ import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptRole
+import splice.sessions.transcript.TranscriptToolUse
 import java.nio.file.Path
 
 class SessionsActivityTest {
@@ -136,10 +139,19 @@ class SessionsActivityTest {
         waitingFor: String? = null,
         entrypoint: String? = null,
     ) = SessionRecord(
-        pid = null, sessionId = id, cwd = null, name = null, kind = null, version = null,
-        status = SessionStatus(waitingFor = waitingFor), startedAt = null, updatedAt = null,
-        messagingSocketPath = null, route = SessionRoute.Unknown, availability = SessionAvailability.LIVE,
-        entrypoint = entrypoint,
+        sessionId = id,
+        name = null,
+        status = SessionStatus(waitingFor = waitingFor),
+        route = SessionRoute.Unknown,
+        availability = SessionAvailability.LIVE,
+        process = SessionProcess(
+            pid = null,
+            cwd = null,
+            startedAt = null,
+            updatedAt = null,
+            messagingSocketPath = null,
+        ),
+        client = SessionClient(kind = null, version = null, entrypoint = entrypoint),
     )
 
     private fun row(
@@ -163,7 +175,7 @@ class SessionsActivityTest {
     }
 
     private fun call(tool: String, input: String) =
-        TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, input, tool, result = false)
+        TranscriptMessage(0, TranscriptRole.ASSISTANT, 7L, input, TranscriptToolUse(tool, result = false))
 
     private class LastSource(private val message: TranscriptMessage?) : SessionTranscripts {
         var calls = 0

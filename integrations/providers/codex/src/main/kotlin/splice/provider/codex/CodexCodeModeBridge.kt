@@ -2,7 +2,6 @@
 package splice.provider.codex
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.ElapsedClock
@@ -67,6 +66,25 @@ public data class CodeModeRetention(
     /** The most the head's records take as stored (UTF-8 JSON). Never a reason to refuse a script. */
     // A boot-time share of the actual JVM heap, with room for decoded objects and transient wire buffers.
     val bytes: Long = Runtime.getRuntime().maxMemory() / RETAINED_HEAP_DIVISOR,
+    /** How long a record may sit untouched before a sweep drops it. */
+    val ttl: Duration = 24.hours,
+)
+
+/** The per-script bounds code mode enforces: source and output size, plus optional call and round counts;
+ *  protocol frame bytes still bound every step. */
+public data class CodeModeScriptBounds(
+    val maxSourceChars: Int = DEFAULT_MAX_SOURCE_CHARS,
+    val maxOutputChars: Int = DEFAULT_MAX_OUTPUT_CHARS,
+    val maxCalls: Int? = null,
+    val maxRounds: Int? = null,
+)
+
+/** How a parked cell is kept alive: the evidence that its session lives, and the monotonic clock its lease runs on. */
+public data class CodeModeCellLease(
+    /** Alive cells survive timer sweeps; capacity may reclaim any parked cell past its thirty-minute lease. */
+    val sessionAlive: CodeModeSessionAlive = CodeModeSessionAlive { null },
+    /** Monotonic lease time; persisted timestamps continue to use [CodeModeBridgeConfig.clock]. */
+    val clock: ElapsedClock = ElapsedClock { TimeUnit.NANOSECONDS.toMillis(System.nanoTime()) },
 )
 
 public data class CodeModeBridgeConfig(
@@ -74,19 +92,11 @@ public data class CodeModeBridgeConfig(
     val state: CodeModeStateLocation,
     /** Heap-derived byte retention with optional explicit conversation and head count bounds. */
     val retention: CodeModeRetention = CodeModeRetention(),
-    val ttl: Duration = 24.hours,
-    val maxSourceChars: Int = DEFAULT_MAX_SOURCE_CHARS,
-    val maxOutputChars: Int = DEFAULT_MAX_OUTPUT_CHARS,
-    /** Optional explicit call and round bounds; protocol frame bytes still bound every step. */
-    val maxCalls: Int? = null,
-    val maxRounds: Int? = null,
+    val bounds: CodeModeScriptBounds = CodeModeScriptBounds(),
     val clock: Clock = Clock.systemUTC(),
     /** Head-scoped sink for history-degradation lines; uninstalled it is a no-op. */
     val log: LogSink = LogSink { },
-    /** Alive cells survive timer sweeps; capacity may reclaim any parked cell past its thirty-minute lease. */
-    val sessionAlive: CodeModeSessionAlive = CodeModeSessionAlive { null },
-    /** Monotonic lease time; persisted timestamps continue to use [clock]. */
-    val cellClock: ElapsedClock = ElapsedClock { TimeUnit.NANOSECONDS.toMillis(System.nanoTime()) },
+    val cellLease: CodeModeCellLease = CodeModeCellLease(),
 )
 
 /** V4-340: where a head keeps its code-mode records: one owner-only file per conversation in [dir]. [legacyFile]
@@ -110,13 +120,8 @@ public class CodexCodeModeBridge(
         val model: String,
         val tools: Set<String>,
         val toolResults: List<CodeModeResult> = emptyList(),
-        /** V4-179: per code-mode result id, the follow-up wire items its images render to (the
-         *  ordinary dialect policy, rendered once by CodexCodeModeTurnBuilder). The script never
-         *  sees these; the record persists them and the history replays them. */
-        val toolMedia: Map<String, List<JsonElement>> = emptyMap(),
-        /** V4-179: the same results rendered with the V4-178 markers, for replay identity against a
-         *  record the previous daemon wrote (see CodexCodeModeValidation.conflicts). */
-        val legacyResults: List<CodeModeResult> = emptyList(),
+        /** How the results' images and legacy markers render (V4-179). */
+        val rendering: CodeModeResultRendering = CodeModeResultRendering(),
         /** V4-388: each client tool's description, for the cell's `ALL_TOOLS`. */
         val descriptions: Map<String, String> = emptyMap(),
     )
@@ -145,12 +150,12 @@ public class CodexCodeModeBridge(
         }
         require(config.retention.records?.let { it > 0 } != false) { "code-mode retention.records must be positive" }
         require(config.retention.bytes > 0) { "code-mode retention.bytes must be positive" }
-        require(config.ttl.isPositive()) { "code-mode ttl must be positive" }
+        require(config.retention.ttl.isPositive()) { "code-mode ttl must be positive" }
         require(sweepInterval.isPositive()) { "code-mode sweepInterval must be positive" }
-        require(config.maxSourceChars > 0) { "code-mode maxSourceChars must be positive" }
-        require(config.maxOutputChars > 0) { "code-mode maxOutputChars must be positive" }
-        require(config.maxCalls?.let { it > 0 } != false) { "code-mode maxCalls must be positive" }
-        require(config.maxRounds?.let { it > 0 } != false) { "code-mode maxRounds must be positive" }
+        require(config.bounds.maxSourceChars > 0) { "code-mode maxSourceChars must be positive" }
+        require(config.bounds.maxOutputChars > 0) { "code-mode maxOutputChars must be positive" }
+        require(config.bounds.maxCalls?.let { it > 0 } != false) { "code-mode maxCalls must be positive" }
+        require(config.bounds.maxRounds?.let { it > 0 } != false) { "code-mode maxRounds must be positive" }
     }
 
     public fun interceptor(
@@ -160,7 +165,7 @@ public class CodexCodeModeBridge(
     ): RoundInterceptor {
         val admitted = turn.copy(
             toolResults = turn.toolResults.map(validation::admit),
-            legacyResults = turn.legacyResults.map(validation::admit),
+            rendering = turn.rendering.copy(legacy = turn.rendering.legacy.map(validation::admit)),
         )
         return CodeModeRoundInterceptor(admitted, initialOuter, disableParallel, wire, controller, driver.streams)
     }

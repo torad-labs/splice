@@ -19,6 +19,6 @@ internal class ClaudeLoginSessions(private val registry: SessionSource) {
                         (location.id == ClaudeLoginPlaceId.NATIVE && session.route == SessionRoute.Direct)
                     )
         }
-        return HeadSessions.Read(live.map { "a running Claude session, pid ${it.pid}" })
+        return HeadSessions.Read(live.map { "a running Claude session, pid ${it.process.pid}" })
     }
 }

@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.client.ClaudePolicy
+import splice.client.MaterializeSignIn
 import splice.client.MaterializeSpec
 import splice.client.login.HookExec
 import splice.client.login.TokenCaptureSpec
@@ -29,9 +30,11 @@ class DaemonMaterializerTest {
         defaultModel = "m",
         modelOptionsCache = JsonObject(emptyMap()),
         statuslineCommand = "",
-        loginCommand = "openrouter login",
-        signInLabel = "OpenRouter",
-        tokenCapture = capture,
+        signIn = MaterializeSignIn(
+            loginCommand = "openrouter login",
+            signInLabel = "OpenRouter",
+            tokenCapture = capture,
+        ),
     )
 
     @Test

@@ -38,14 +38,14 @@ internal class CodeModeRecordChanges(
 
     fun complete(record: CodeModeRecord, output: String) = access.withKey(record.key) {
         val stored = CodeModeWeight.STORED
-        val replaced = record.output
+        val replaced = record.progress.output
         CodeModeHeap.grow(record, (stored.text(output) - stored.text(replaced.orEmpty())).coerceAtLeast(0L)) { kept ->
             if (replaced != null && kept.output === replaced) stored.text(replaced) else 0L
         }
         startup.entries.remove(record.id)
-        record.output = output
+        record.progress.output = output
         record.phase = CodeModePhase.COMPLETED
-        record.updatedAt = config.clock.millis()
+        record.progress.updatedAt = config.clock.millis()
         cells.remove(record.id)?.close()
         store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
     }
@@ -55,7 +55,7 @@ internal class CodeModeRecordChanges(
             startup.entries.remove(record.id)
             record.phase = CodeModePhase.LOST
             CodeModeRecordErrors.replace(record, message)
-            record.updatedAt = config.clock.millis()
+            record.progress.updatedAt = config.clock.millis()
             cleanup.rejected(cells.remove(record.id))
             try {
                 store.save(records, history.entries, dirtyKeys = setOf(record.key), changedRecord = record)
@@ -85,7 +85,7 @@ internal class CodeModeRecordChanges(
                 retired.forEach { record ->
                     startup.entries.remove(record.id)
                     record.error = CODE_MODE_NATIVE_RETIRED
-                    record.nativeSegments = emptyList()
+                    record.carry.segments = emptyList()
                     record.nativeParent = null
                     record.nativeBaseId = null
                     record.replayAnchors = record.replayAnchors?.copy(native = emptyMap(), nativeFollowing = emptyMap())
@@ -107,7 +107,8 @@ internal class CodeModeRecordChanges(
         val rejected = omission.nativeRejection ?: return false
         return when (rejected.branch) {
             CodeModeNativeBranch.PAYLOAD, CodeModeNativeBranch.NATIVE_ORDER -> true
-            CodeModeNativeBranch.UNEXPECTED -> rejected.following == true && rejected.evidence?.witnessResolved == true
+            CodeModeNativeBranch.UNEXPECTED ->
+                rejected.following == true && rejected.evidence?.witness?.resolved == true
             CodeModeNativeBranch.ABSENT, CodeModeNativeBranch.COUNT -> false
         }
     }

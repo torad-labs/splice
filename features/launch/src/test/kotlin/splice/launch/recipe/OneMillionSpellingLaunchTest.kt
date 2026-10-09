@@ -23,6 +23,9 @@ import splice.core.model.CLAUDE_CODE_ONE_MILLION
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.ModelTiers
 import splice.launch.launch
@@ -44,26 +47,33 @@ class OneMillionSpellingLaunchTest(@param:TempDir private val tmp: Path) {
 
     private fun spec(cat: ModelCatalog, forwardClientAuth: Boolean = false) = LaunchSpec(
         trees = HeadTrees(tmp.resolve(".claude-codex")),
-        pinnedModel = cat.pinnedModel,
-        availableModelIds = cat.availableModelIds(),
-        modelLabels = cat.models.associate { it.id to it.label },
-        tiers = ModelTiers(slots = mapOf("gpt-6-sol" to "opus", "gpt-5.6-sol" to "sonnet")),
-        discoveryPrefix = cat.discoveryPrefix,
-        contextWindow = cat.clientLaunchWindow,
-        modelOptionsCache = buildJsonArray {
-            cat.models.forEach {
-                val option = mapOf("value" to JsonPrimitive(it.id), "context_window" to JsonPrimitive(it.contextWindow))
-                add(JsonObject(option))
-            }
-        },
-        statuslineCommand = "true",
-        loginCommand = "claudex login",
-        signInLabel = "Codex",
+        models = LaunchModels(
+            pinnedModel = cat.pinnedModel,
+            availableModelIds = cat.availableModelIds(),
+            modelLabels = cat.models.associate { it.id to it.label },
+            tiers = ModelTiers(slots = mapOf("gpt-6-sol" to "opus", "gpt-5.6-sol" to "sonnet")),
+            discoveryPrefix = cat.discoveryPrefix,
+            contextWindow = cat.clientLaunchWindow,
+            modelOptionsCache = buildJsonArray {
+                cat.models.forEach {
+                    val value = JsonPrimitive(it.id)
+                    val window = JsonPrimitive(it.contextWindow)
+                    add(JsonObject(mapOf("value" to value, "context_window" to window)))
+                }
+            },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "claudex login",
+            signInLabel = "Codex",
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "true",
+            port = 3101,
+            inferenceToken = "test-inference-token",
+            apiTimeoutMs = 960_000,
+            forwardClientAuth = forwardClientAuth,
+        ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 3101,
-        inferenceToken = "test-inference-token",
-        apiTimeoutMs = 960_000,
-        forwardClientAuth = forwardClientAuth,
     )
 
     private fun launch(cat: ModelCatalog, forwardClientAuth: Boolean = false) =

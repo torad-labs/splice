@@ -322,21 +322,29 @@ public class AccountPool(
             primary = account.primary,
             selected = account.label == selected,
             plan = snapshot?.plan,
-            fiveHourUsedPercent = snapshot?.fiveHour?.usedPercent,
-            fiveHourResetEpochSeconds = snapshot?.fiveHour?.resetsAt,
-            sevenDayUsedPercent = snapshot?.sevenDay?.usedPercent,
-            sevenDayResetEpochSeconds = snapshot?.sevenDay?.resetsAt,
             available = AccountAvailability.available(account, at),
-            credentialPresent = credential.credentialPresent,
-            authExcludedUntilEpochMillis = credential.excludedUntilEpochMillis,
-            authExclusionReason = credential.reason,
-            // V4-132 (GET /api/accounts, FEATURES.md §4.5): the window's own reported LENGTH,
-            // dropped by every projection before this row even though QuotaWindow has carried it
-            // since Quota.kt:14 — a provider that reports a 30-day period (Grok) or a 7-day one
-            // must not be rendered as though both were the same "weekly" bar.
-            fiveHourWindowSeconds = snapshot?.fiveHour?.windowSeconds,
-            sevenDayWindowSeconds = snapshot?.sevenDay?.windowSeconds,
-            quotaObservedAtEpochSeconds = snapshot?.observedAtEpochSeconds,
+            quota = AccountQuotaReading(
+                fiveHour = AccountWindowReading(
+                    usedPercent = snapshot?.fiveHour?.usedPercent,
+                    resetEpochSeconds = snapshot?.fiveHour?.resetsAt,
+                    // V4-132 (GET /api/accounts, FEATURES.md §4.5): the window's own reported LENGTH,
+                    // dropped by every projection before this row even though QuotaWindow has carried it
+                    // since Quota.kt:14 — a provider that reports a 30-day period (Grok) or a 7-day one
+                    // must not be rendered as though both were the same "weekly" bar.
+                    windowSeconds = snapshot?.fiveHour?.windowSeconds,
+                ),
+                sevenDay = AccountWindowReading(
+                    usedPercent = snapshot?.sevenDay?.usedPercent,
+                    resetEpochSeconds = snapshot?.sevenDay?.resetsAt,
+                    windowSeconds = snapshot?.sevenDay?.windowSeconds,
+                ),
+                observedAtEpochSeconds = snapshot?.observedAtEpochSeconds,
+            ),
+            credential = AccountCredentialReading(
+                present = credential.credentialPresent,
+                excludedUntilEpochMillis = credential.excludedUntilEpochMillis,
+                exclusionReason = credential.reason,
+            ),
         )
     }
 

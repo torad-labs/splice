@@ -16,7 +16,12 @@ class PassthroughToolSanitizerShortenerTest {
         val name = "mcp__plugin_desktop-commander_desktop-commander__read_process_output"
         val shortener = ToolNameShortener(64)
         val sanitizer = PassthroughToolSanitizer(
-            PassthroughQuirks(providerTag = "muse", toolNameCap = 64),
+            PassthroughQuirks(
+                providerTag = "muse",
+                request = PassthroughRequestQuirks(
+                    toolNameCap = 64,
+                ),
+            ),
             PassthroughCacheControl(false),
             shortener,
         )

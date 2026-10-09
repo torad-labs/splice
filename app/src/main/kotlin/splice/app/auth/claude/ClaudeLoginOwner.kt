@@ -195,7 +195,9 @@ internal class ClaudeLoginOwner(
         attempt.child = child
         try {
             val completed = child.await { url ->
-                attempt.status.updateAndGet { it.copy(state = LoginState.WAITING, browserUrl = url) }
+                attempt.status.updateAndGet {
+                    it.copy(state = LoginState.WAITING, prompt = it.prompt.copy(browserUrl = url))
+                }
             }
             if (completed) land(attempt) else attempt.fail("native Claude login did not complete")
         } finally {

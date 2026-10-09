@@ -17,6 +17,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.reasoning.ReasoningReplay
+import splice.core.turn.RoundHandoffs
+import splice.core.turn.RoundText
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
@@ -74,10 +76,8 @@ private fun success(
     hasToolUse = hasToolUse,
     incomplete = false,
     usage = Usage(),
-    bodyText = bodyText,
-    emittedText = emittedText,
-    toolSearches = toolSearches,
-    reasoningEnvelopes = reasoningEnvelopes,
+    text = RoundText(bodyText = bodyText, emittedText = emittedText),
+    handoffs = RoundHandoffs(reasoningEnvelopes = reasoningEnvelopes, toolSearches = toolSearches),
 )
 
 /** The items a continuation APPENDED past the prior request's own input — the assertion surface

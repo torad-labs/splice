@@ -87,7 +87,7 @@ public class PerfRoutes(
 
         val asked = askedWindow(call) ?: return
 
-        val wired = matches.filter { it.perfRows != null }
+        val wired = matches.filter { it.sinks.perfRows != null }
         if (wired.isEmpty()) {
             refuse(call, UNWIRED_TURNS, HttpStatusCode.ServiceUnavailable)
             return
@@ -99,7 +99,7 @@ public class PerfRoutes(
                 put("n", asked.n)
                 putJsonArray("heads") {
                     matches.forEach { head ->
-                        val source = head.perfRows
+                        val source = head.sinks.perfRows
                         // A head that cannot answer is still LISTED, with its reason in place of its
                         // rows: dropping it would leave a shared wrapper command reporting one head's
                         // turns as if they were both, and the rows carry their own head key precisely
@@ -199,7 +199,7 @@ public class PerfRoutes(
         // after the clamp finds nothing older than the slice (V4-444).
         val matching = read.rows.filter(asked.filter::matches)
         val rows = projection.complete(matching.sortedBy { it.ts }.takeLast(asked.n))
-        val price = head.catalog?.let(::TurnPrice)
+        val price = head.statusline.catalog?.let(::TurnPrice)
         // One classification for the window's counters and for each row's own figure (TurnPriceGap).
         val gaps = TurnPriceGap(price, AccountPlans(head, heads.billing(head.key)))
         return buildJsonObject {
@@ -232,16 +232,16 @@ public class PerfRoutes(
         // the JSON null is the third state that keeps the console from rendering "the cache was warm"
         // over a turn where nothing looked. A missing `model` or `compact` is a legacy or torn row and
         // is reported the same way, rather than filled in with a value the file does not contain.
-        put("model", row.model)
-        put("session", row.session)
-        put("account", row.account)
-        put("cache_cold", row.cacheCold)
-        put("compact", row.compact)
+        put("model", row.facts.model)
+        put("session", row.facts.session)
+        put("account", row.facts.account)
+        put("cache_cold", row.facts.cacheCold)
+        put("compact", row.facts.compact)
         // V4-345: the trace turn the console opens this row's request by; null where none was kept.
         put("turn", row.turn)
         put("turn_id", row.turnId)
-        put("session_id", row.sessionId)
-        put("response_message_id", row.responseMessageId)
+        put("session_id", row.transcript.sessionId)
+        put("response_message_id", row.transcript.responseMessageId)
         // The daemon uses the head's card, as the exact trace read does (TraceRoute.turnJson), and the
         // same classification the window's counters are folded by says why a row has no figure: null
         // cost_reason exactly where cost_usd is a number, so the console never has to guess which it is.

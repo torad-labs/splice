@@ -31,7 +31,7 @@ internal class ResponsesLooseFields(private val quirks: ResponsesQuirks) {
         (raw["metadata"] as? JsonObject)?.get(FIELD_EFFORT),
         (raw[FIELD_REASONING] as? JsonObject)?.get(FIELD_EFFORT),
     ).mapNotNull { JsonScalars.str(it) }
-        .mapNotNull { effortRules.normalizeEffort(it, quirks.effortVocabulary) }
+        .mapNotNull { effortRules.normalizeEffort(it, quirks.reasoning.effortVocabulary) }
         .firstOrNull()
 
     /** The client-requested summary sequence [ResponsesReasoningKnobs.resolveSummary] folds against

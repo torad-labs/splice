@@ -47,7 +47,7 @@ class CodeModeCarryForwardTest {
     private fun finished(key: String, output: String): CodeModeRecord =
         CodeModeRecords.of(key, 1, updatedAt = NOW).also {
             it.phase = CodeModePhase.COMPLETED
-            it.output = output
+            it.progress.output = output
         }
 
     /** The single file as an older daemon wrote it: the given conversations' finished record, and [markers]. */
@@ -62,7 +62,7 @@ class CodeModeCarryForwardTest {
         )
     }
 
-    private fun CodexCodeModeRegistry.outputs(key: String): List<String?> = completed(key).map(CodeModeRecord::output)
+    private fun CodexCodeModeRegistry.outputs(key: String): List<String?> = completed(key).map { it.progress.output }
 
     @Test
     fun `a single file an older daemon wrote is carried into one file per conversation, then deleted`() {

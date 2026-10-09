@@ -20,8 +20,13 @@ import splice.core.turn.AbsorbedRounds
 import splice.core.turn.UsageHistory
 import splice.core.util.WallClock
 import splice.head.usage.EconomicsStore
+import splice.head.usage.TurnBytes
 import splice.head.usage.TurnEconomics
+import splice.head.usage.TurnTokens
+import splice.head.usage.TurnTools
 import splice.usage.UsageHead
+import splice.usage.UsageHeadSinks
+import splice.usage.UsageHeadWarn
 import splice.usage.UsageHeads
 import splice.usage.economics.EconomicsPayloads
 import splice.usage.economics.EconomicsRead
@@ -34,14 +39,20 @@ import java.nio.file.Path
 
 private const val PROBE_HOUR = 3_600_000L
 private const val SYNTHETIC_PROBE_ROW =
-    """{"ts":3600123,"model":"","outcome":"error:upstream-failed","req_bytes":30,"upstream_req_bytes":15,"tools_eager":2,"tools_deferred":1}"""
+    """{"ts":3600123,"model":"","outcome":"error:upstream-failed","req_bytes":30,""" +
+        """"upstream_req_bytes":15,"tools_eager":2,"tools_deferred":1}"""
 
 private const val MODELED_WORK_ROW =
-    """{"ts":3600123,"model":"synthetic","outcome":"ok","req_bytes":100,"upstream_req_bytes":50,"tools_eager":3,"tools_deferred":2,"in_tokens":5,"cached_tokens":2,"cache_write_tokens":1,"out_tokens":10}"""
+    """{"ts":3600123,"model":"synthetic","outcome":"ok","req_bytes":100,"upstream_req_bytes":50,"tools_eager":3,""" +
+        """"tools_deferred":2,"in_tokens":5,"cached_tokens":2,"cache_write_tokens":1,"out_tokens":10}"""
 private const val ABSORBING_WORK_ROW =
-    """{"ts":3600123,"model":"synthetic","outcome":"ok","req_bytes":100,"upstream_req_bytes":50,"tools_eager":3,"tools_deferred":2,"in_tokens":5,"cached_tokens":2,"cache_write_tokens":1,"out_tokens":10,"absorbed_rounds":1,"absorbed_in_tokens":4,"absorbed_cached_tokens":1,"absorbed_cache_write_tokens":1,"absorbed_out_tokens":3}"""
+    """{"ts":3600123,"model":"synthetic","outcome":"ok","req_bytes":100,"upstream_req_bytes":50,"tools_eager":3,""" +
+        """"tools_deferred":2,"in_tokens":5,"cached_tokens":2,"cache_write_tokens":1,"out_tokens":10,""" +
+        """"absorbed_rounds":1,"absorbed_in_tokens":4,"absorbed_cached_tokens":1,""" +
+        """"absorbed_cache_write_tokens":1,"absorbed_out_tokens":3}"""
 private const val LOCAL_WORK_ROW =
-    """{"ts":3600123,"model":"synthetic","outcome":"ok","local_step":1,"req_bytes":20,"upstream_req_bytes":10,"tools_eager":1,"tools_deferred":0,"in_tokens":7,"cached_tokens":3,"cache_write_tokens":2,"out_tokens":14}"""
+    """{"ts":3600123,"model":"synthetic","outcome":"ok","local_step":1,"req_bytes":20,"upstream_req_bytes":10,""" +
+        """"tools_eager":1,"tools_deferred":0,"in_tokens":7,"cached_tokens":3,"cache_write_tokens":2,"out_tokens":14}"""
 
 class ProbeEconomicsTest {
     @Test
@@ -55,10 +66,7 @@ class ProbeEconomicsTest {
         store.record(turn("", 0, 30, 15, 2L to 1L))
         store.record(
             turn("synthetic", 0, 100, 50, 3L to 2L).copy(
-                inTokens = null,
-                cachedTokens = null,
-                cacheWriteTokens = null,
-                outTokens = null,
+                tokens = TurnTokens(inTokens = null, cachedTokens = null, cacheWriteTokens = null, outTokens = null),
             ),
         )
         val source = EconomicsStoreSource(store, PerfRowsFileSource(file))
@@ -111,7 +119,7 @@ class ProbeEconomicsTest {
 
         val buckets = EconomicsStoreSource(store, PerfRowsFileSource(file)).rows()
         assertEquals(EconomicsStoreSource(control).rows(), buckets)
-        assertEquals(9L, buckets.single().inTokens, "the final round's 5 and the absorbed round's 4")
+        assertEquals(9L, buckets.single().tokens.inTokens, "the final round's 5 and the absorbed round's 4")
     }
 
     @Test
@@ -138,15 +146,17 @@ class ProbeEconomicsTest {
         Files.writeString(file, SYNTHETIC_PROBE_ROW + "\n" + MODELED_WORK_ROW + "\n")
         Files.writeString(
             dir.resolve("economics.json"),
-            """[{"hour":3600000,"turns":2,"req_bytes":130,"upstream_req_bytes":65,"tools_eager":5,"tools_deferred":3,"deferral_turns":2,"unpriced_turns":1,"in_tokens":5,"cached_tokens":2,"cache_write_tokens":1,"out_tokens":10}]""",
+            """[{"hour":3600000,"turns":2,"req_bytes":130,"upstream_req_bytes":65,"tools_eager":5,""" +
+                """"tools_deferred":3,"deferral_turns":2,"unpriced_turns":1,"in_tokens":5,"cached_tokens":2,""" +
+                """"cache_write_tokens":1,"out_tokens":10}]""",
         )
         val row = EconomicsStoreSource(store(dir), PerfRowsFileSource(file)).rows().single()
         assertEquals(1L, row.turns)
-        assertEquals(5L, row.inTokens)
-        assertEquals(10L, row.outTokens)
-        assertEquals(2L, row.cachedTokens)
-        assertEquals(1L, row.cacheWriteTokens)
-        assertNull(row.costUsd)
+        assertEquals(5L, row.tokens.inTokens)
+        assertEquals(10L, row.tokens.outTokens)
+        assertEquals(2L, row.tokens.cachedTokens)
+        assertEquals(1L, row.tokens.cacheWriteTokens)
+        assertNull(row.cost.costUsd)
     }
 
     @Test
@@ -263,7 +273,11 @@ class ProbeEconomicsTest {
         assertNull(answering["unavailable"], "the other head is not marked")
         val hour = answering.getValue("buckets").jsonArray.single().jsonObject
         val held = EconomicsStoreSource(healthy).rows().single()
-        assertEquals(held.inTokens, hour.getValue("in_tokens").jsonPrimitive.long, "the other head's hour, whole")
+        assertEquals(
+            held.tokens.inTokens,
+            hour.getValue("in_tokens").jsonPrimitive.long,
+            "the other head's hour, whole",
+        )
     }
 
     private fun EconomicsStoreSource.rows(): List<EconomicsRow> =
@@ -273,7 +287,13 @@ class ProbeEconomicsTest {
         assertInstanceOf(EconomicsRead.Unavailable::class.java, read()).reason
 
     private fun head(key: String, economics: HeadEconomicsSource) =
-        UsageHead(key, key, HeadUsageSource { UsageView(0, 0, null) }, 80, 0, economics = economics)
+        UsageHead(
+            key,
+            key,
+            HeadUsageSource { UsageView(0, 0, null) },
+            UsageHeadWarn(80, 0),
+            sinks = UsageHeadSinks(economics = economics),
+        )
 
     private fun recordWork(store: EconomicsStore) {
         store.record(turn("synthetic", 5, 100, 50, 3L to 2L))
@@ -303,14 +323,9 @@ class ProbeEconomicsTest {
         tools: Pair<Long, Long>,
     ) = TurnEconomics(
         model,
-        input,
-        input / 2,
-        input / 3,
-        input * 2,
-        request,
-        upstream,
-        tools.first,
-        tools.second,
+        TurnTokens(input, input / 2, input / 3, input * 2),
+        TurnBytes(request, upstream),
+        TurnTools(tools.first, tools.second),
         rateLimited = input > 0,
         history = UsageHistory(),
     )

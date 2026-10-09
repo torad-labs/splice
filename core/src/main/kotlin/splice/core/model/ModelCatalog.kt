@@ -105,7 +105,7 @@ internal object ModelServeWindows {
         val raw = current.unwrap(id)
         val canonical = current.stripSuffixes(id)
         for (spelling in listOf(raw, canonical)) {
-            val extra = current.extraWindows.lastOrNull { current.unwrap(it.id) == spelling }
+            val extra = current.windows.extraWindows.lastOrNull { current.unwrap(it.id) == spelling }
             val row = current.models.lastOrNull { current.unwrap(it.id) == spelling }
             if (extra != null || row != null) {
                 val published = row?.maxContextWindow
@@ -114,7 +114,7 @@ internal object ModelServeWindows {
             }
         }
         // The target's suffix-stripped map is associate-last-wins, with extras over picker rows.
-        val extra = current.extraWindows.lastOrNull { current.stripSuffixes(it.id) == canonical }
+        val extra = current.windows.extraWindows.lastOrNull { current.stripSuffixes(it.id) == canonical }
         val row = current.models.lastOrNull { current.stripSuffixes(it.id) == canonical }
         return extra?.maxContextWindow ?: row?.maxContextWindow ?: current.contextWindowFor(id)
     }
@@ -124,39 +124,21 @@ internal object ModelServeWindows {
 public data class ModelCatalog(
     val discoveryPrefix: String,
     val models: List<ModelEntry>,
-    val extraWindows: List<ExtraWindow> = emptyList(),
-    val windowRules: List<WindowRule> = emptyList(),
     val defaultContextWindow: Long,
     /** The head's pinned model (ANTHROPIC_MODEL at launch). Its declared window is what every launch
      *  plants as the client's window ([clientLaunchWindow]). */
     val pinnedModel: String = "",
-    /** The running head's current immutable catalog: accepted TOML windows and refreshed discovery.
-     *  Roster and window methods delegate through it; field readers resolve [live] once per operation.
-     *  Null keeps this snapshot fixed, as for catalogs built outside daemon head assembly. */
-    val liveWindows: LiveWindows? = null,
-    /** The head's own window (its `context_window`, or the contextWindowOverride knob) when it replaced
-     *  the provider's windows on every entry, rule and the default; null = the provider's numbers stand.
-     *  It exists so a reader can say WHERE a window came from (console review 2026-09-24: /api/models
-     *  labelled a head's 300k "model"). */
-    val headWindow: Long? = null,
-    /** Provider-supplied empirical reserve; absent preserves the existing window-ratio behavior. */
-    val compactionReserveDefaults: CompactionReserveDefaults? = null,
-    /** Declared model id to Claude tier, kept even when a listing omits the model. */
-    val tierSlots: Map<String, String> = emptyMap(),
-    /** The head forwards the client's own Claude login, so the client picks its models (2026-09-30): any id
-     *  is admitted and nothing about models is declared to the client. Counts ride raw except for
-     *  Claude sessions whose actual divisor was learned from a status-line post. [models] holds
-     *  only labels and rate cards, and may be empty. */
-    val open: Boolean = false,
+    val windows: CatalogWindows = CatalogWindows(),
+    val client: ClientModelPolicy = ClientModelPolicy(),
 ) {
     init {
-        require(open || models.isNotEmpty()) { "a catalog needs at least one picker model" }
+        require(client.open || models.isNotEmpty()) { "a catalog needs at least one picker model" }
         require(discoveryPrefix.isNotEmpty()) { "discovery prefix is the picker namespace and is never empty" }
     }
 
     /** V4-232: the rows the client resolves as a Claude model it knows, and the overrides that make it. */
     private val bootPresented = PresentedRows(models, discoveryPrefix)
-    public val presented: PresentedRows get() = liveWindows?.current()?.presented ?: bootPresented
+    public val presented: PresentedRows get() = windows.liveWindows?.current()?.presented ?: bootPresented
 
     public val defaultModel: String get() = live().models.first().id
 
@@ -166,7 +148,7 @@ public data class ModelCatalog(
     // / early autocompact (residual of the [1m] membership fix).
     private val exactWindows: Map<String, Long> =
         models.associate { stripSuffixes(it.id) to it.contextWindow } +
-            extraWindows.associate { stripSuffixes(it.id) to it.contextWindow }
+            windows.extraWindows.associate { stripSuffixes(it.id) to it.contextWindow }
 
     // RAW picker ids, consulted BEFORE the stripped map. Two rows over one upstream id collapse to
     // one stripped key, so the stripped map alone cannot tell "grok-4.6" (capped) from
@@ -174,7 +156,7 @@ public data class ModelCatalog(
     // own window while the stripped map still answers the bare upstream id every wire path uses.
     private val rawWindows: Map<String, Long> =
         models.associate { unwrap(it.id) to it.contextWindow } +
-            extraWindows.associate { unwrap(it.id) to it.contextWindow }
+            windows.extraWindows.associate { unwrap(it.id) to it.contextWindow }
 
     // Canonical (suffix-stripped) ids — `contains` strips its query the same way, so both sides
     // compare on the upstream id. Storing the RAW id here let a "[1m]" picker model (kimi k3[1m])
@@ -187,16 +169,19 @@ public data class ModelCatalog(
         get() {
             val current = live()
             val offered = current.models.mapTo(HashSet()) { it.id }
-            return current.tierSlots.entries.filterNot { it.key in offered }.associate { (id, slot) -> slot to id }
+            return current.client.tierSlots.entries
+                .filterNot { it.key in offered }
+                .associate { (id, slot) -> slot to id }
         }
 
     public fun wrap(id: String): String = discoveryPrefix + id
 
     public fun unwrap(id: String): String = id.removePrefix(discoveryPrefix)
 
-    /** True for a picker model owned by this head (wrapped or upstream id), and for any id on an [open] one. */
+    /** True for a picker model owned by this head (wrapped or upstream id), and for any id on an
+     *  [ClientModelPolicy.open] one. */
     public fun contains(id: String): Boolean =
-        open || (liveWindows?.current()?.contains(id) ?: (stripSuffixes(id) in modelIds))
+        client.open || (windows.liveWindows?.current()?.contains(id) ?: (stripSuffixes(id) in modelIds))
 
     /** Discovery wrapper + any valid trailing numeric tier ("[1m]", "[500k]") stripped — what the
      *  upstream actually sees. Only the [<digits><k|m>] grammar strips (DR-27): a non-numeric
@@ -212,7 +197,7 @@ public data class ModelCatalog(
         // V4-162: a running head answers from the windows splice.toml declares NOW. The live catalog
         // carries no live source of its own ([withWindowsOf]), so this delegates exactly once, and
         // [clientLaunchWindow], [clientContextWindowFor] and [usageScale] all follow through here.
-        liveWindows?.current()?.let { return it.contextWindowFor(model, defaultOverride) }
+        windows.liveWindows?.current()?.let { return it.contextWindowFor(model, defaultOverride) }
         val fallback = defaultOverride?.takeIf { it > 0 } ?: defaultContextWindow
         if (model.isNullOrEmpty()) return fallback
         val id = stripSuffixes(model)
@@ -224,7 +209,7 @@ public data class ModelCatalog(
         return rawWindows[unwrap(model)]
             ?: rawWindows[id]
             ?: exactWindows[id]
-            ?: windowRules.firstOrNull { id.startsWith(it.prefix) }?.contextWindow
+            ?: windows.windowRules.firstOrNull { id.startsWith(it.prefix) }?.contextWindow
             ?: fallback
     }
 
@@ -251,7 +236,7 @@ public data class ModelCatalog(
         presented.covers(id) -> CLIENT_TABLE_WINDOW
         // A Codex discovery wrapper starts with claude- but is not a Claude model from the
         // client's own table. It gets the client's unknown-model 200k fallback, not this row's W.
-        compactionReserveDefaults != null && id.startsWith(discoveryPrefix) -> CLIENT_TABLE_WINDOW
+        windows.compactionReserveDefaults != null && id.startsWith(discoveryPrefix) -> CLIENT_TABLE_WINDOW
         id.startsWith(CLIENT_OWN_ID_PREFIX) -> sessionWindow?.takeIf { it > 0 } ?: contextWindowFor(id)
         // An env-governed id: the window is whatever THIS session's process was launched with.
         // [sessionWindow] is that value when the session has told us (ClientWindows, fed by its
@@ -267,7 +252,7 @@ public data class ModelCatalog(
     /** True when Claude Code sizes [id]'s window from the launch env — the ids whose window a
      *  session's status-line post reveals (ClientWindows). False for a "[1m]" id (always 1e6) and
      *  a "claude-" id (Claude Code's own table): their posts say nothing about the env. */
-    public fun envGoverned(id: String): Boolean = !open &&
+    public fun envGoverned(id: String): Boolean = !client.open &&
         !oneMillionHint.containsMatchIn(unwrap(id)) && !id.startsWith(CLIENT_OWN_ID_PREFIX) && !presented.covers(id)
 
     public fun usageScale(id: String, sessionWindow: Long? = null): Double {
@@ -277,7 +262,7 @@ public data class ModelCatalog(
         // An open head keeps raw counts except for a Claude session with a learned divisor.
         val learnedClaude = id.startsWith(CLIENT_OWN_ID_PREFIX) && !presented.selectorSized(id)
         val client = when {
-            !open -> clientContextWindowFor(id, sessionWindow)
+            !client.open -> clientContextWindowFor(id, sessionWindow)
             sessionWindow?.takeIf { it > 0 } != null && learnedClaude -> clientContextWindowFor(id, sessionWindow)
             else -> 0L
         }
@@ -289,23 +274,26 @@ public data class ModelCatalog(
 
     /** The immutable catalog snapshot in force now: live windows and refreshed discovery (V4-440).
      *  Field readers resolve this once per operation; roster and window methods already delegate. */
-    public fun live(): ModelCatalog = liveWindows?.current() ?: this
+    public fun live(): ModelCatalog = windows.liveWindows?.current() ?: this
 
     /** V4-162: this roster with [declared]'s windows, which is everything a context_window edit
      *  changes. Every picker row keeps its id, label, description, rates and place, and takes the
      *  window [declared] gives the same id, or keeps its own when [declared] no longer lists it: a
      *  removed row is a roster change, and that stays a restart. The window-only ids, the prefix rules
-     *  and the default are [declared]'s whole, and so is [headWindow], which says where they came from.
+     *  and the default are [declared]'s whole, and so is [CatalogWindows.headWindow], which says where they
+     *  came from.
      *  The result has no live source of its own. */
     public fun withWindowsOf(declared: ModelCatalog): ModelCatalog {
-        val windows = declared.models.associate { it.id to it.contextWindow }
+        val rowWindows = declared.models.associate { it.id to it.contextWindow }
         return copy(
-            models = models.map { entry -> windows[entry.id]?.let { entry.copy(contextWindow = it) } ?: entry },
-            extraWindows = declared.extraWindows,
-            windowRules = declared.windowRules,
+            models = models.map { entry -> rowWindows[entry.id]?.let { entry.copy(contextWindow = it) } ?: entry },
             defaultContextWindow = declared.defaultContextWindow,
-            liveWindows = null,
-            headWindow = declared.headWindow,
+            windows = this.windows.copy(
+                extraWindows = declared.windows.extraWindows,
+                windowRules = declared.windows.windowRules,
+                liveWindows = null,
+                headWindow = declared.windows.headWindow,
+            ),
         )
     }
 

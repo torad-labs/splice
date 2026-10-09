@@ -4,6 +4,7 @@
 package splice.head.round
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.upstream.ToolSearchPolicy
@@ -40,7 +41,11 @@ internal class RoundSplice {
      *  re-anchor branch (trigger B) applies to its salvage. A no-op for ReanchorRunner's LIVE rounds
      *  (non-Success outcomes pass through; searchContinuation's own type guard ignores them anyway). */
     fun bufferedForSearch(outcome: TurnOutcome): TurnOutcome =
-        if (outcome is TurnOutcome.Success) outcome.copy(bodyText = "", emittedText = false) else outcome
+        if (outcome is TurnOutcome.Success) {
+            outcome.copy(text = outcome.text.copy(bodyText = "", emittedText = false))
+        } else {
+            outcome
+        }
     // CX-09 note: emittedThinking is deliberately NOT stripped here — BufferingWireSink buffers only
     // text/tool ops and forwards openThinking/thinkingDelta straight through, so a reasoning block from
     // a buffered round DID reach the client and must keep the honesty gate quiet.
@@ -55,21 +60,18 @@ internal class RoundSplice {
     fun searchPartial(success: TurnOutcome.Success, buffered: Boolean): TurnOutcome.PartialRound =
         if (buffered) {
             TurnOutcome.PartialRound(
-                thinkingText = success.thinkingText,
-                bodyText = "",
-                emittedText = false,
-                // CX-09: reasoning is NOT buffered (BufferingWireSink forwards openThinking/
-                // thinkingDelta to the real sink), so it genuinely reached the client — the same
-                // reason thinkingText itself survives this strip.
-                emittedThinking = success.emittedThinking,
+                text = RoundText(
+                    thinkingText = success.text.thinkingText,
+                    bodyText = "",
+                    emittedText = false,
+                    // CX-09: reasoning is NOT buffered (BufferingWireSink forwards openThinking/
+                    // thinkingDelta to the real sink), so it genuinely reached the client — the same
+                    // reason thinkingText itself survives this strip.
+                    emittedThinking = success.text.emittedThinking,
+                ),
             )
         } else {
-            TurnOutcome.PartialRound(
-                thinkingText = success.thinkingText,
-                bodyText = success.bodyText,
-                emittedText = success.emittedText,
-                emittedThinking = success.emittedThinking,
-            )
+            TurnOutcome.PartialRound(text = success.text)
         }
 
     /** A turn that absorbed re-anchor rounds and STILL failed burned real billed tokens on those
@@ -96,8 +98,8 @@ internal class RoundSplice {
     }
 
     private fun burned(total: RoundUsage): Boolean =
-        total.reported.isNotEmpty() || total.absorbed.rounds > 0 || total.cutRounds > 0 ||
-            total.outSum + total.reasoningSum > 0
+        total.reported.isNotEmpty() || total.origin.history.absorbed.rounds > 0 || total.origin.history.cutRounds > 0 ||
+            total.outputTokens + total.reasoningTokens > 0
 
     /** Cross-round merge (code-review 2026-07-24): the post-stream pipeline — empty-model honesty
      *  gate, promote-to-text, reasoning mirror — is round-blind; it sees ONE outcome. A spliced
@@ -111,12 +113,14 @@ internal class RoundSplice {
         if (outcome !is TurnOutcome.Success || salvaged.isEmpty()) return outcome
         return outcome.copy(
             hasToolUse = outcome.hasToolUse || salvaged.any { it.hasToolUse },
-            emittedText = outcome.emittedText || salvaged.any { it.emittedText },
-            emittedThinking = outcome.emittedThinking || salvaged.any { it.emittedThinking },
-            thinkingText = (salvaged.map { it.thinkingText } + outcome.thinkingText)
-                .filter { it.isNotEmpty() }
-                .joinToString("\n\n"),
-            bodyText = (salvaged.map { it.bodyText } + outcome.bodyText).joinToString(""),
+            text = RoundText(
+                emittedText = outcome.text.emittedText || salvaged.any { it.text.emittedText },
+                emittedThinking = outcome.text.emittedThinking || salvaged.any { it.text.emittedThinking },
+                thinkingText = (salvaged.map { it.text.thinkingText } + outcome.text.thinkingText)
+                    .filter { it.isNotEmpty() }
+                    .joinToString("\n\n"),
+                bodyText = (salvaged.map { it.text.bodyText } + outcome.text.bodyText).joinToString(""),
+            ),
         )
     }
 }

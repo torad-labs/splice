@@ -15,28 +15,33 @@ private const val STOPPED = "stopped"
 /** A field a link may ask to be missing, so the requests nothing attributed can be listed without inventing a name. */
 internal enum class Unattributed(val wire: String) { MODEL("model"), ACCOUNT("account") }
 
+/** Which attribution a filter asks for: an exact model, account or session, or the requests nothing attributed. */
+internal data class TurnsAttribution(
+    val model: String? = null,
+    val account: String? = null,
+    val session: String? = null,
+    val unattributed: Unattributed? = null,
+)
+
 /** What one request asked of the window's rows. A null field asks nothing; [local] false leaves out the steps splice
  *  answered itself, which are not model requests; [compact] true asks for the compactions and false for every request
  *  that was not one, a row that never carried the field included. */
 internal data class TurnsFilter(
     val until: Long? = null,
     val outcome: String? = null,
-    val model: String? = null,
-    val account: String? = null,
-    val session: String? = null,
-    val unattributed: Unattributed? = null,
+    val attribution: TurnsAttribution = TurnsAttribution(),
     val local: Boolean = true,
     val compact: Boolean? = null,
 ) {
     fun matches(row: PerfRow): Boolean = listOf(
         until == null || row.ts < until,
         outcomeMatches(row.outcome),
-        model == null || row.model == model,
-        account == null || row.account == account,
-        session == null || row.session == session,
+        attribution.model == null || row.facts.model == attribution.model,
+        attribution.account == null || row.facts.account == attribution.account,
+        attribution.session == null || row.facts.session == attribution.session,
         attributionMatches(row),
         local || row.fields[PerfKeys.LOCAL_STEP] != 1L,
-        compact == null || (row.compact == true) == compact,
+        compact == null || (row.facts.compact == true) == compact,
     ).all { it }
 
     private fun outcomeMatches(tag: String): Boolean = when (outcome) {
@@ -46,10 +51,10 @@ internal data class TurnsFilter(
         else -> tag == outcome
     }
 
-    private fun attributionMatches(row: PerfRow): Boolean = when (unattributed) {
+    private fun attributionMatches(row: PerfRow): Boolean = when (attribution.unattributed) {
         null -> true
-        Unattributed.MODEL -> row.model == null
-        Unattributed.ACCOUNT -> row.account == null
+        Unattributed.MODEL -> row.facts.model == null
+        Unattributed.ACCOUNT -> row.facts.account == null
     }
 }
 
@@ -81,10 +86,12 @@ internal class TurnsFilterReader {
         val filter = TurnsFilter(
             until = until,
             outcome = given(params["outcome"]),
-            model = given(params["model"]),
-            account = given(params["account"]),
-            session = given(params["session"]),
-            unattributed = unattributed,
+            attribution = TurnsAttribution(
+                model = given(params["model"]),
+                account = given(params["account"]),
+                session = given(params["session"]),
+                unattributed = unattributed,
+            ),
             local = switch(localText) ?: true,
             compact = switch(compactText),
         )

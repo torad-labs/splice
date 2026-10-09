@@ -69,10 +69,10 @@ public class SessionsCommand(private val output: TerminalOutput, private val err
     }
 
     private fun printRow(s: SessionRecord, home: String, now: Long) {
-        val name = shownName(s) ?: s.pid?.let { "pid $it" } ?: "?"
+        val name = shownName(s) ?: s.process.pid?.let { "pid $it" } ?: "?"
         val head = headLabel(s.route)
-        val cwd = shortCwd(clean(s.cwd.orEmpty()).replaceFirst(home, "~"))
-        val age = s.updatedAt?.let { ago(now - it) } ?: "never"
+        val cwd = shortCwd(clean(s.process.cwd.orEmpty()).replaceFirst(home, "~"))
+        val age = s.process.updatedAt?.let { ago(now - it) } ?: "never"
         val availability = s.availability.name.lowercase()
         output.line(
             "  ${glyph(s.availability)} ${BOLD}$name$RESET  $CYAN$head$RESET  ${clean(s.status.state ?: "-")}  " +

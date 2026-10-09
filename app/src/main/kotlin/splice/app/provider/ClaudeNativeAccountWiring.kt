@@ -25,7 +25,7 @@ internal class ClaudeNativeAccountWiring(
 
     fun accounts(head: String): List<WiredAccount> {
         val views = places()?.places().orEmpty().filter { it.head == head }
-        if (views.none { it.credentialPresent }) return emptyList()
+        if (views.none { it.credential.present }) return emptyList()
         val primary = views.firstOrNull { it.id == ClaudeLoginPlaceId.SPLICE }?.id ?: views.first().id
         return views.map { view ->
             val entry = requireNotNull(
@@ -35,15 +35,17 @@ internal class ClaudeNativeAccountWiring(
             )
             entry.account.copy(
                 primary = view.id == primary,
-                credentialPresent = view.credentialPresent,
-                refusal = view.refusal,
+                credential = WiredAccountCredential(
+                    present = view.credential.present,
+                    refusal = view.credential.refusal,
+                ),
             )
         }
     }
 
     private fun account(view: ClaudeLoginPlaceView): Entry {
         val auth = ClaudeNativeAuth(
-            Path.of(view.credentialPath).parent,
+            Path.of(view.credential.path).parent,
             view.id,
             ClaudeCredentialProfiles(paths.stateDir, log),
             log,
@@ -52,20 +54,21 @@ internal class ClaudeNativeAccountWiring(
             label = "native:${view.id.wire}",
             primary = view.id == ClaudeLoginPlaceId.SPLICE,
             auth = auth,
-            quotaFile = paths.stateDir.resolve("${view.head}-native%${view.id.wire}-quota.json"),
-            credentialPresent = view.credentialPresent,
-            refusal = view.refusal,
-            nativePlace = view.id,
-            quotaRead = ClaudeNativeQuota(
-                auth,
-                CredentialQuotaFiles(paths.quotaFile(view.head), log),
-                object : AccountQuotaSource {
-                    private fun current(): ClaudeLoginPlaceView? =
-                        places()?.places()?.singleOrNull { it.head == view.head && it.id == view.id }
-                    override fun snapshot(): QuotaSnapshot? = current()?.quota
-                    override val held: Boolean get() = current()?.standing?.held == true
-                },
+            quota = WiredAccountQuota(
+                file = paths.stateDir.resolve("${view.head}-native%${view.id.wire}-quota.json"),
+                read = ClaudeNativeQuota(
+                    auth,
+                    CredentialQuotaFiles(paths.quotaFile(view.head), log),
+                    object : AccountQuotaSource {
+                        private fun current(): ClaudeLoginPlaceView? =
+                            places()?.places()?.singleOrNull { it.head == view.head && it.id == view.id }
+                        override fun snapshot(): QuotaSnapshot? = current()?.quota
+                        override val held: Boolean get() = current()?.standing?.held == true
+                    },
+                ),
             ),
+            credential = WiredAccountCredential(present = view.credential.present, refusal = view.credential.refusal),
+            nativePlace = view.id,
         )
         return Entry(auth.credentialKey, auth, wired)
     }

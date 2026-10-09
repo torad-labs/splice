@@ -32,6 +32,9 @@ import splice.core.storage.DayBodyBudget
 import splice.core.terminal.TerminalOutput
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
+import splice.core.turn.TurnScope
 import splice.core.util.AsyncFileIo
 import splice.core.util.EnvReader
 import splice.core.util.WallClock
@@ -44,6 +47,8 @@ import splice.head.trace.body.TracePackIndex
 import splice.head.wire.ClientInbound
 import splice.head.wire.TurnIdMint
 import splice.upstream.sse.WireAttempt
+import splice.upstream.sse.WireRequest
+import splice.upstream.sse.WireResponse
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -67,15 +72,19 @@ class TraceTailHeapTest {
 
     private fun meta() = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.TEXT,
-        stream = true,
-        originalModel = "gpt-6-sol",
-        upstreamModel = "gpt-6-sol",
-        clientMaxTokens = 8000,
-        effort = "medium",
-        summary = null,
-        budgetTokens = null,
-        sessionId = "0f0eef86-f7d8-4170-a758-8b5ec461e250",
+        reasoning = TurnReasoning(
+            showReasoning = ReasoningDisplay.TEXT,
+            effort = "medium",
+            summary = null,
+            budgetTokens = null,
+        ),
+        route = TurnRoute(
+            stream = true,
+            originalModel = "gpt-6-sol",
+            upstreamModel = "gpt-6-sol",
+            clientMaxTokens = 8000,
+        ),
+        scope = TurnScope(sessionId = "0f0eef86-f7d8-4170-a758-8b5ec461e250"),
     )
 
     /** Writes [ids] as the daemon would, one attempt and one turn record each, on the day [at] falls in. */
@@ -95,13 +104,13 @@ class TraceTailHeapTest {
             trace.attempted(
                 WireAttempt(
                     attempt = 1,
-                    url = "https://chatgpt.com/backend-api/codex/responses",
-                    requestHeaders = emptyMap(),
-                    requestBody = body,
-                    requestEncoding = null,
-                    status = 200,
-                    responseHeaders = emptyMap(),
-                    errorText = null,
+                    request = WireRequest(
+                        url = "https://chatgpt.com/backend-api/codex/responses",
+                        headers = emptyMap(),
+                        body = body,
+                        encoding = null,
+                    ),
+                    response = WireResponse(status = 200, headers = emptyMap(), errorText = null),
                     failure = null,
                     durationMs = 40,
                 ),

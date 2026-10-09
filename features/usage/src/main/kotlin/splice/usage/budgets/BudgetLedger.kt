@@ -147,7 +147,7 @@ internal class BudgetLedger(
             unread("${window.skipped} historical request records could not be read")
         }
         window.rows.filter { it.ts in dayStart until context.bootMs }
-            .forEach { charge(before, measuredCost(it.model, it.fields), it.fields) }
+            .forEach { charge(before, measuredCost(it.facts.model, it.fields), it.fields) }
         return before
     }
 

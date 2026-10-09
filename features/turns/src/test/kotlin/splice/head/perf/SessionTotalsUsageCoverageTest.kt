@@ -17,6 +17,7 @@ import splice.core.turn.AbsorbedRounds
 import splice.core.turn.Usage
 import splice.core.turn.UsageField
 import splice.core.turn.UsageHistory
+import splice.core.turn.UsageOrigin
 import splice.core.turn.noRequestUsage
 import splice.core.util.LogSink
 import splice.core.util.WallClock
@@ -35,7 +36,7 @@ class SessionTotalsUsageCoverageTest {
         )
         val totals = SessionTotals(file, TurnPrice(null), WallClock { 3L }, LogSink {})
         val kept = checkNotNull(totals.totalFor("feed0000-synthetic")).models.getValue("synthetic")
-        assertEquals(0L, kept.unreportedUsageTurns)
+        assertEquals(0L, kept.gaps.unreportedUsageTurns)
         assertEquals(100L, kept.inTokens)
         assertEquals(0.5, kept.usd)
         totals.flushNow()
@@ -47,7 +48,7 @@ class SessionTotalsUsageCoverageTest {
         val totals = SessionTotals(file, TurnPrice(null), WallClock { 1L }, LogSink {})
         val usage = Usage(
             outputTokens = 7,
-            history = UsageHistory(absorbed = AbsorbedRounds(1, 100, 20, 10, 7)),
+            origin = UsageOrigin(history = UsageHistory(absorbed = AbsorbedRounds(1, 100, 20, 10, 7))),
             reported = setOf(UsageField.OUTPUT),
         )
         totals.add("feed0000", "synthetic", TurnBill.counters(usage), 2L)
@@ -56,7 +57,7 @@ class SessionTotalsUsageCoverageTest {
         assertEquals(20L, model.cachedTokens)
         assertEquals(10L, model.cacheWriteTokens)
         assertEquals(7L, model.outTokens)
-        assertEquals(1L, model.unreportedUsageTurns)
+        assertEquals(1L, model.gaps.unreportedUsageTurns)
         totals.flushNow()
     }
 
@@ -80,8 +81,8 @@ class SessionTotalsUsageCoverageTest {
         totals.add("feed0000", "synthetic", zero, 2L)
         totals.add("feed0000", "synthetic", TurnBill.counters(noRequestUsage), 3L)
         val model = checkNotNull(totals.totalFor("feed0000-synthetic")).models.getValue("synthetic")
-        assertEquals(0L, model.unreportedUsageTurns)
-        assertEquals(0L, model.unpricedTurns)
+        assertEquals(0L, model.gaps.unreportedUsageTurns)
+        assertEquals(0L, model.gaps.unpricedTurns)
         assertEquals(0.0, model.usd)
         totals.flushNow()
     }
@@ -95,8 +96,8 @@ class SessionTotalsUsageCoverageTest {
         val kept = SessionTotals(file, TurnPrice(null), WallClock { 3L }, LogSink {})
         val model = checkNotNull(kept.totalFor("feed0000-synthetic")).models.getValue("synthetic-no-card")
         assertEquals(1L, model.turns)
-        assertEquals(0L, model.unreportedUsageTurns)
-        assertEquals(0L, model.unpricedTurns)
+        assertEquals(0L, model.gaps.unreportedUsageTurns)
+        assertEquals(0L, model.gaps.unpricedTurns)
         assertEquals(0.0, model.usd)
     }
 
@@ -105,13 +106,15 @@ class SessionTotalsUsageCoverageTest {
         val totals = priced(tmp.resolve("local-ending-session.json"))
         val usage = noRequestUsage.copy(
             outputTokens = 7,
-            history = noRequestUsage.history.copy(absorbed = AbsorbedRounds(1, 100, 20, 0, 7)),
+            origin = noRequestUsage.origin.copy(
+                history = noRequestUsage.origin.history.copy(absorbed = AbsorbedRounds(1, 100, 20, 0, 7)),
+            ),
             reported = setOf(UsageField.OUTPUT),
         )
         totals.add("feed0000", "synthetic", TurnBill.counters(usage), 2L)
         val model = checkNotNull(totals.totalFor("feed0000-synthetic")).models.getValue("synthetic")
-        assertEquals(0L, model.unreportedUsageTurns)
-        assertEquals(0L, model.unpricedTurns)
+        assertEquals(0L, model.gaps.unreportedUsageTurns)
+        assertEquals(0L, model.gaps.unpricedTurns)
         assertEquals(0.000234, model.usd, 1e-12)
         totals.flushNow()
     }

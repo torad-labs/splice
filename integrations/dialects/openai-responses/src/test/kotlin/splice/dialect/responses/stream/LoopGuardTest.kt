@@ -25,26 +25,35 @@ import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.request.BuildOptions
+import splice.dialect.responses.request.ModelIds
+import splice.dialect.responses.request.ReasoningHandoff
+import splice.dialect.responses.request.RequestedReasoning
 import splice.dialect.responses.request.ResponsesRequestBuilder
 
 private val CODEX = ResponsesQuirks(providerTag = "claudex")
 
 private fun opts() = BuildOptions(
     compact = false,
-    originalModel = "claude-codex--gpt-5.6-sol",
-    upstreamModel = "gpt-5.6-sol",
-    configEffort = null,
-    configSummary = null,
-    showReasoning = ReasoningDisplay.TEXT,
-    replayReasoning = InjectPriorReasoning(false),
-    includeEncryptedReasoning = RequestEncryptedReasoning(true),
+    models = ModelIds(
+        original = "claude-codex--gpt-5.6-sol",
+        upstream = "gpt-5.6-sol",
+    ),
+    reasoning = RequestedReasoning(
+        effort = null,
+        summary = null,
+        display = ReasoningDisplay.TEXT,
+    ),
+    handoff = ReasoningHandoff(
+        replay = InjectPriorReasoning(false),
+        includeEncrypted = RequestEncryptedReasoning(true),
+        decode = { data ->
+            buildJsonObject {
+                put("type", JsonPrimitive("reasoning"))
+                put("decoded", JsonPrimitive(data))
+            }
+        },
+    ),
     sessionId = null,
-    decodeReasoningEnvelope = { data ->
-        buildJsonObject {
-            put("type", JsonPrimitive("reasoning"))
-            put("decoded", JsonPrimitive(data))
-        }
-    },
 )
 
 class LoopGuardTest {
@@ -206,7 +215,7 @@ class LoopGuardTest {
     @Test
     fun `quirk off restores plain passthrough`() {
         val parsed = AnthropicParse.parseAnthropicBody(body(conversation(4)))
-        val built = ResponsesRequestBuilder(CODEX.copy(loopGuard = false)).build(
+        val built = ResponsesRequestBuilder(CODEX.copy(roundTrip = CODEX.roundTrip.copy(loopGuard = false))).build(
             parsed.typed,
             parsed.raw,
             opts(),

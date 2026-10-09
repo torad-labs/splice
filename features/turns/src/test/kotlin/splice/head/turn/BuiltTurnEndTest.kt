@@ -38,6 +38,8 @@ import splice.head.admission.AdmissionResponses
 import splice.head.headDeps
 import splice.upstream.BuiltTurn
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.TurnEnd
 import splice.upstream.retry.InflightGate
@@ -122,8 +124,7 @@ class BuiltTurnEndTest {
 
     private fun base() = PassthroughProvider(
         ProviderTuning(
-            key = "kimi",
-            label = "kimix",
+            name = ProviderName(key = "kimi", label = "kimix"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-kimi--",
                 models = listOf(ModelEntry(MODEL, "Kimi", contextWindow = 200_000)),
@@ -131,7 +132,7 @@ class BuiltTurnEndTest {
             ),
             pinnedModel = MODEL,
             auth = EndTestAuth(),
-            baseUrl = "http://127.0.0.1",
+            locations = ProviderLocations(baseUrl = "http://127.0.0.1"),
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
         PassthroughQuirks(providerTag = "test-passthrough"),

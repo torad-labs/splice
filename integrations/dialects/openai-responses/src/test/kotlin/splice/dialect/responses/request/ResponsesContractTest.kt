@@ -14,7 +14,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.dialect.responses.ResponsesBackendQuirks
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesReasoningQuirks
+import splice.dialect.responses.ResponsesToolQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.tools.ToolDeferralPolicy
@@ -24,16 +28,24 @@ import java.io.File
 // this module, never the reverse — the dialect can never import a concrete provider).
 private fun codexProfileQuirks(toolSurface: ToolDeferralPolicy? = null) = ResponsesQuirks(
     providerTag = "claudex",
-    emitEmptyLiteInstructions = false,
-    summaryDelivery = "sequential_cutoff",
-    forceStrictFalse = true,
-    normalizeToolSchemas = true,
-    toolSurface = toolSurface,
-    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
-    // Mirrored from CodexQuirks (V4-31): dialect no longer defaults these, so a
-    // provider-neutral lite opt-in omits them. This profile must declare them.
-    liteTextVerbosity = "low",
-    sendClientMetadata = true,
+    lite = ResponsesLiteQuirks(
+        responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+        emitEmptyLiteInstructions = false,
+        // Mirrored from CodexQuirks (V4-31): dialect no longer defaults these, so a
+        // provider-neutral lite opt-in omits them. This profile must declare them.
+        liteTextVerbosity = "low",
+    ),
+    reasoning = ResponsesReasoningQuirks(
+        summaryDelivery = "sequential_cutoff",
+    ),
+    tools = ResponsesToolQuirks(
+        forceStrictFalse = true,
+        normalizeToolSchemas = true,
+        toolSurface = toolSurface,
+    ),
+    backend = ResponsesBackendQuirks(
+        sendClientMetadata = true,
+    ),
 )
 
 class ResponsesContractTest {
@@ -44,15 +56,21 @@ class ResponsesContractTest {
 
     private fun canonicalOpts() = BuildOptions(
         compact = false,
-        originalModel = "claude-codex--gpt-5.6-sol",
-        upstreamModel = "gpt-5.6-sol",
-        configEffort = "high",
-        configSummary = "detailed",
-        showReasoning = ReasoningDisplay.TEXT,
-        replayReasoning = InjectPriorReasoning(false),
-        includeEncryptedReasoning = RequestEncryptedReasoning(true),
+        models = ModelIds(
+            original = "claude-codex--gpt-5.6-sol",
+            upstream = "gpt-5.6-sol",
+        ),
+        reasoning = RequestedReasoning(
+            effort = "high",
+            summary = "detailed",
+            display = ReasoningDisplay.TEXT,
+        ),
+        handoff = ReasoningHandoff(
+            replay = InjectPriorReasoning(false),
+            includeEncrypted = RequestEncryptedReasoning(true),
+            decode = { null },
+        ),
         sessionId = "contract-fixture",
-        decodeReasoningEnvelope = { null },
     )
 
     @Test
@@ -63,7 +81,9 @@ class ResponsesContractTest {
         val req = ResponsesRequestBuilder(
             ResponsesQuirks(
                 providerTag = "claudex",
-                responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+                lite = ResponsesLiteQuirks(
+                    responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
+                ),
             ),
         )
             .build(parsed.typed, parsed.raw, canonicalOpts())
@@ -128,6 +148,7 @@ internal fun assertGoldenContract(name: String, actual: JsonObject, owner: () ->
         res.readText().trim(),
         pretty.trim(),
         "request-byte contract drift for '$name' — a builder change altered the upstream request. " +
-            "If intended, regenerate the golden and (Phase 1 live half) re-bind it to an `e2e heads` receipt. See .docs/architecture/request-byte-contracts.md.",
+            "If intended, regenerate the golden and (Phase 1 live half) re-bind it to an `e2e heads` " +
+            "receipt. See .docs/architecture/request-byte-contracts.md.",
     )
 }

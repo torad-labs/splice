@@ -38,6 +38,9 @@ import splice.diagnostics.logs.HeadLogSource
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
@@ -208,30 +211,37 @@ class ResumeRecipeWiringTest {
             override suspend fun credentials() = null
             override suspend fun describe() = AuthDescription(false, "test", emptyMap())
         },
-        usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int): String = ""
-            override fun path(): String = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0, 0, RateLimitView(null, null, null)) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int): CompactView = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int): String = ""
+                override fun path(): String = ""
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
         launchSpec = LaunchSpec(
             trees = HeadTrees(own),
-            pinnedModel = "gpt-6-sol",
-            availableModelIds = listOf("gpt-6-sol"),
-            modelLabels = mapOf("gpt-6-sol" to "Sol"),
-            contextWindow = 272_000,
-            modelOptionsCache = buildJsonObject { },
-            statuslineCommand = "",
-            loginCommand = "",
-            signInLabel = "",
+            models = LaunchModels(
+                pinnedModel = "gpt-6-sol",
+                availableModelIds = listOf("gpt-6-sol"),
+                modelLabels = mapOf("gpt-6-sol" to "Sol"),
+                contextWindow = 272_000,
+                modelOptionsCache = buildJsonObject { },
+            ),
+            signIn = LaunchSignIn(
+                loginCommand = "",
+                signInLabel = "",
+            ),
+            gateway = LaunchGateway(
+                statuslineCommand = "",
+                port = 0,
+                inferenceToken = "t",
+                apiTimeoutMs = 1_000,
+            ),
             policy = splice.client.ClaudePolicy(share = emptySet(), isolate = emptySet()),
-            port = 0,
-            inferenceToken = "t",
-            apiTimeoutMs = 1_000,
         ),
     )
 }

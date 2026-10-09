@@ -23,6 +23,9 @@ import splice.client.wrap.WrapStateRead
 import splice.client.wrap.WrapStateStore
 import splice.client.wrap.WrappedHead
 import splice.launch.HeadTrees
+import splice.launch.LaunchGateway
+import splice.launch.LaunchModels
+import splice.launch.LaunchSignIn
 import splice.launch.LaunchSpec
 import splice.launch.launch
 import java.nio.file.Path
@@ -35,20 +38,26 @@ class LaunchServiceWrapTest(@param:TempDir private val tmp: Path) {
 
     private fun spec(head: String, forwardClientAuth: Boolean = false) = LaunchSpec(
         trees = HeadTrees(tmp.resolve(".claude-$head")),
-        pinnedModel = "m1",
-        availableModelIds = listOf("m1"),
-        modelLabels = mapOf("m1" to "m1"),
-        contextWindow = 200_000,
-        modelOptionsCache = buildJsonObject { },
-        statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
-        loginCommand = "claude-splice login",
-        signInLabel = "Claude",
+        models = LaunchModels(
+            pinnedModel = "m1",
+            availableModelIds = listOf("m1"),
+            modelLabels = mapOf("m1" to "m1"),
+            contextWindow = 200_000,
+            modelOptionsCache = buildJsonObject { },
+        ),
+        signIn = LaunchSignIn(
+            loginCommand = "claude-splice login",
+            signInLabel = "Claude",
+            headKey = head,
+        ),
+        gateway = LaunchGateway(
+            statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
+            port = 3104,
+            inferenceToken = "test-token",
+            apiTimeoutMs = 960_000,
+            forwardClientAuth = forwardClientAuth,
+        ),
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
-        port = 3104,
-        inferenceToken = "test-token",
-        apiTimeoutMs = 960_000,
-        forwardClientAuth = forwardClientAuth,
-        headKey = head,
     )
 
     @Test

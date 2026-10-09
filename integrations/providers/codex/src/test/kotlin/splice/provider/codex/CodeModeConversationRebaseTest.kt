@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.upstream.RoundResult
@@ -56,7 +57,12 @@ class CodeModeConversationRebaseTest : CodeModeBridgeTestSupport() {
                 .intercept(if (n == 0) BASE_REQUEST else history(items), sink) { body ->
                     starts += body
                     RoundResult.Outcome(
-                        TurnOutcome.Success(false, false, Usage(), customCalls = listOf(outer("outer-$n", source))),
+                        TurnOutcome.Success(
+                            false,
+                            false,
+                            Usage(),
+                            handoffs = RoundHandoffs(customCalls = listOf(outer("outer-$n", source))),
+                        ),
                     )
                 }.turn()
             assertTrue((started as TurnOutcome.Success).hasToolUse, "script $n never reached its Read: $started")

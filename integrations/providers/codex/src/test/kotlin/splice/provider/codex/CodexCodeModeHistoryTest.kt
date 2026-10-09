@@ -55,7 +55,7 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
 
         assertTrue(outcome is TurnOutcome.Success)
         assertEquals(Json.parseToJsonElement(different), Json.parseToJsonElement(posted))
-        assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
+        assertTrue((outcome as TurnOutcome.Success).usage.origin.codeModeDiverged)
         assertEquals(2, runtime.cell.advances, "A's completed script was not rerun")
     }
 

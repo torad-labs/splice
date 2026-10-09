@@ -12,7 +12,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.http.JsonReply
 import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionClient
 import splice.sessions.registry.SessionListing
+import splice.sessions.registry.SessionProcess
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
@@ -27,18 +29,19 @@ class SessionNoteRouteTest {
         availability: SessionAvailability = SessionAvailability.LIVE,
         version: String = "2.1.285",
     ) = SessionRecord(
-        pid = 1,
         sessionId = id,
-        cwd = null,
         name = null,
-        kind = null,
-        version = version,
         status = SessionStatus("idle"),
-        startedAt = null,
-        updatedAt = 1,
-        messagingSocketPath = socket,
         route = SessionRoute.Unknown,
         availability = availability,
+        process = SessionProcess(
+            pid = 1,
+            cwd = null,
+            startedAt = null,
+            updatedAt = 1,
+            messagingSocketPath = socket,
+        ),
+        client = SessionClient(kind = null, version = version),
     )
 
     private class Recording(private val answer: NoteOutcome = NoteOutcome.Submitted("m-1")) : SessionNoteSender {
@@ -81,7 +84,7 @@ class SessionNoteRouteTest {
         val sender = Recording()
         val reply = post(route(sender, record(version = "2.1.286")), "s-1", hi)
         assertEquals(HttpStatusCode.Accepted, reply.status)
-        assertEquals("2.1.286", sender.sent.single().first.version)
+        assertEquals("2.1.286", sender.sent.single().first.client.version)
     }
 
     @Test
@@ -101,7 +104,7 @@ class SessionNoteRouteTest {
         val sender = Recording()
         val body = """{"text":"hi","socket":"/tmp/evil.sock","to":"uds:/tmp/evil.sock"}"""
         post(route(sender, record()), "s-1", body)
-        assertEquals("/run/user/1000/cc-socks/1.sock", sender.sent.single().first.messagingSocketPath)
+        assertEquals("/run/user/1000/cc-socks/1.sock", sender.sent.single().first.process.messagingSocketPath)
     }
 
     @Test

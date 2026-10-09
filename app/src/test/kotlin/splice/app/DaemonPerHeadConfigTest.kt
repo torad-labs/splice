@@ -74,12 +74,12 @@ class DaemonPerHeadConfigTest {
         // The watchdog total cap comes straight from the per-head upstreamTimeoutMs. If any call
         // site drops the key, both heads read the same global view and these collapse to equal.
         assertNotEquals(
-            slow.watchdog.totalCap,
-            fast.watchdog.totalCap,
+            slow.faultPlan.watchdog.totalCap,
+            fast.faultPlan.watchdog.totalCap,
             "per-head upstreamTimeoutMs collapsed to one shared value — getConfig(key) lost somewhere",
         )
-        assertEquals(2_400_000.milliseconds, slow.watchdog.totalCap)
-        assertEquals(600_000.milliseconds, fast.watchdog.totalCap)
+        assertEquals(2_400_000.milliseconds, slow.faultPlan.watchdog.totalCap)
+        assertEquals(600_000.milliseconds, fast.faultPlan.watchdog.totalCap)
 
         // maxInflight is the knob the Daemon comment quantifies; it feeds the admission gate.
         assertEquals(3, slow.cfg.maxInflight)

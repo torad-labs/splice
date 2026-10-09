@@ -13,6 +13,7 @@ import splice.core.config.UserHome
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.Callable
@@ -122,8 +123,11 @@ internal class DoctorProbes(
     // throws InvalidPathException (an IllegalArgumentException) on those — skip the entry, don't
     // let it collapse the whole PATH scan. `internal` because DoctorInstallProbes' pathCheck splits
     // PATH the same way and must skip the same entries — one parser, two readers.
-    // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): a malformed PATH entry is the documented case above — skip the entry; collapsing the whole PATH scan is the failure this null prevents.
-    internal fun safePath(raw: String): Path? = Cancellables.runCatchingCancellable { Paths.get(raw) }.getOrNull()
+    internal fun safePath(raw: String): Path? = try {
+        Paths.get(raw)
+    } catch (_: InvalidPathException) {
+        null
+    }
 }
 
 internal const val PROBE_SECONDS = 4L

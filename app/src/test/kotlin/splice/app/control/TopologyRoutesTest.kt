@@ -108,7 +108,9 @@ class TopologyRoutesTest {
             control.ports.topology = TopologyWriter(
                 file,
                 file.resolveSibling("backups"),
-                TopologyParse { text -> texts[text] ?: throw IllegalArgumentException("not a text this test predicted") },
+                TopologyParse { text ->
+                    texts[text] ?: throw IllegalArgumentException("not a text this test predicted")
+                },
             )
         }
         runBlocking { control.start() }

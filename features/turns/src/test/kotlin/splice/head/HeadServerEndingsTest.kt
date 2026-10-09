@@ -24,12 +24,15 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.model.CatalogWindows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.WindowRule
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ReasoningSettings
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
 import java.nio.file.Path
@@ -53,7 +56,7 @@ class HeadServerEndingsTest {
     private val catalog = ModelCatalog(
         discoveryPrefix = "claude-codex--",
         models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
-        windowRules = listOf(WindowRule("gpt-5.6", 272_000)),
+        windows = CatalogWindows(windowRules = listOf(WindowRule("gpt-5.6", 272_000))),
         defaultContextWindow = 272_000,
     )
 
@@ -61,12 +64,11 @@ class HeadServerEndingsTest {
     fun setUp(@TempDir tmp: Path) = runTest {
         val provider = TestResponsesProvider(
             tuning = ProviderTuning(
-                key = "codex",
-                label = "claudex",
+                name = ProviderName(key = "codex", label = "claudex"),
                 catalog = catalog,
                 pinnedModel = "gpt-5.6-sol",
                 auth = EndingsAuth(),
-                baseUrl = mock.baseUrl,
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
                 loginCommand = "claudex login",
             ),

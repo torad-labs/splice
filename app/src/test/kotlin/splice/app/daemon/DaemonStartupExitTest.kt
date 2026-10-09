@@ -57,7 +57,8 @@ class DaemonStartupExitTest {
                 "neither the ordered stop nor the teardown watchdog ended it:\n${run.output}"
         }
         assertTrue(run.output.contains(PORT_CLOSED_LOCK_HELD)) {
-            "the control listener was not closed, or the daemon lock was already released when it closed:\n${run.output}"
+            "the control listener was not closed, or the daemon lock was already released " +
+                "when it closed:\n${run.output}"
         }
         assertEquals(0, run.code) { run.output }
         assertFalse(run.output.contains("halting")) { "the halt watchdog had to cut the stop:\n${run.output}" }

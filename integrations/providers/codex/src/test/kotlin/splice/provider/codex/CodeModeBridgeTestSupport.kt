@@ -12,8 +12,12 @@ import splice.core.index.WireBlockIndex
 import splice.core.parse.AnthropicParse
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundHandoffs
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.Usage
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
@@ -89,13 +93,14 @@ abstract class CodeModeBridgeTestSupport {
         CodeModeBridgeConfig(
             { runtime },
             stateLocation(),
-            retention = retention,
-            ttl = ttl,
-            maxRounds = maxRounds,
+            retention = retention.copy(ttl = ttl),
+            bounds = CodeModeScriptBounds(maxRounds = maxRounds),
             clock = clock,
-            cellClock = ElapsedClock(clock::millis),
             log = LogSink { logLines += it },
-            sessionAlive = CodeModeSessionAlive { id -> if (id in deadSessions) false else null },
+            cellLease = CodeModeCellLease(
+                sessionAlive = CodeModeSessionAlive { id -> if (id in deadSessions) false else null },
+                clock = ElapsedClock(clock::millis),
+            ),
         ),
     )
 
@@ -124,7 +129,16 @@ abstract class CodeModeBridgeTestSupport {
         }
         return BuiltTurn(
             Json.parseToJsonElement(prefix).jsonObject,
-            TurnMeta(false, ReasoningDisplay.OFF, true, model, model, 100, "high", null, null),
+            TurnMeta(
+                false,
+                reasoning = TurnReasoning(
+                    showReasoning = ReasoningDisplay.OFF,
+                    effort = "high",
+                    summary = null,
+                    budgetTokens = null,
+                ),
+                route = TurnRoute(stream = true, originalModel = model, upstreamModel = model, clientMaxTokens = 100),
+            ),
         )
     }
 
@@ -189,9 +203,19 @@ abstract class CodeModeBridgeTestSupport {
     )
 
     protected fun outerOutcome(callId: String = "outer-call", name: String = CODE_MODE_TOOL_NAME) =
-        TurnOutcome.Success(false, false, Usage(), customCalls = listOf(outer(callId, name = name)))
+        TurnOutcome.Success(
+            false,
+            false,
+            Usage(),
+            handoffs = RoundHandoffs(customCalls = listOf(outer(callId, name = name))),
+        )
 
-    protected fun completedOutcome() = TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+    protected fun completedOutcome() = TurnOutcome.Success(
+        false,
+        false,
+        Usage(),
+        shape = ResponseShape(messageClosed = true),
+    )
 
     /** A request held as text, as code mode reads it: parsed once. */
     internal fun codeModeBody(text: String): CodeModeBody =

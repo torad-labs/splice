@@ -45,6 +45,8 @@ import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
 import splice.sessions.teams.TeamStore
 import splice.upstream.BuiltTurn
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
@@ -97,8 +99,8 @@ class SlotPromptTurnTest {
         val id = bindBuilder("run the gate")
         val (turn, counters) = turn(SystemPromptMode.REPLACE)
         assertEquals(listOf("N", block("run the gate")), systemTexts(turn), "appended even on a replace head")
-        assertEquals("N\n\n" + block("run the gate"), turn.meta.systemPrompt)
-        assertEquals("head:kimi replace+slot:$id/b1", turn.meta.systemPromptSource)
+        assertEquals("N\n\n" + block("run the gate"), turn.meta.standingPrompt.text)
+        assertEquals("head:kimi replace+slot:$id/b1", turn.meta.standingPrompt.source)
         assertNull(counters[SLOT_PROMPT_CHANGED], "the first turn seen is not a change")
     }
 
@@ -114,7 +116,7 @@ class SlotPromptTurnTest {
         store.bind(id, mapOf("b1" to null))
         val (unbound, cold) = turn(SystemPromptMode.APPEND)
         assertEquals(listOf("house rules", "N"), systemTexts(unbound), "unbound: the head's layers only")
-        assertEquals("head:kimi append", unbound.meta.systemPromptSource)
+        assertEquals("head:kimi append", unbound.meta.standingPrompt.source)
         assertEquals(1L, cold[SLOT_PROMPT_CHANGED], "dropping the text changes the prefix too")
     }
 
@@ -127,7 +129,7 @@ class SlotPromptTurnTest {
             tmp = tmp,
             upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
             gate = InflightGate({ 1 }),
-            seams = HeadDeps.HeadSeams(slotInstructions = slots),
+            seams = HeadDeps.HeadSeams(session = HeadDeps.SessionSeams(slotInstructions = slots)),
         ).copy(
             policy = HeadDeps.HeadPolicy(
                 systemPrompt = SystemPromptLayers(
@@ -166,8 +168,7 @@ class SlotPromptTurnTest {
 
     private fun provider() = PassthroughProvider(
         ProviderTuning(
-            key = "kimi",
-            label = "kimix",
+            name = ProviderName(key = "kimi", label = "kimix"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-kimi--",
                 models = listOf(ModelEntry(MODEL, "Kimi", contextWindow = 200_000)),
@@ -175,7 +176,7 @@ class SlotPromptTurnTest {
             ),
             pinnedModel = MODEL,
             auth = SlotTestAuth(),
-            baseUrl = "http://127.0.0.1",
+            locations = ProviderLocations(baseUrl = "http://127.0.0.1"),
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
         PassthroughQuirks(providerTag = "test-passthrough"),

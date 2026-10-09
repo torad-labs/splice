@@ -47,7 +47,7 @@ class TranscriptLastTest {
         )
         val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))
         assertEquals(TranscriptRole.ASSISTANT, last?.role)
-        assertEquals("SyntheticTool", last?.tool)
+        assertEquals("SyntheticTool", last?.toolUse?.name)
         assertEquals("""{"text":"ok"}""", last?.text)
     }
 

@@ -72,7 +72,7 @@ internal class CodeModeReplayGrowthTest : CodeModeBridgeTestSupport() {
             client = client + callback("call-${n + 1}")
         }
         records.forEach { record ->
-            record.nativeSegments = record.nativeSegments.map { it.copy(items = it.items + it.items) }
+            record.carry.segments = record.carry.segments.map { it.copy(items = it.items + it.items) }
         }
         val before = rewrite(client, records)
         store().also { it.load() }.save(records, emptyList())
@@ -92,9 +92,11 @@ internal class CodeModeReplayGrowthTest : CodeModeBridgeTestSupport() {
     fun `an issued step's delivered witness survives a restart and still owns the client's echo`() {
         val witness = "Reading the rate limiter."
         val carried = CodeModeRecords.of("key", 1).apply {
-            issued += CodeModeIssuedStep(lastDigest, emptyList(), witness)
+            issued += CodeModeIssuedStep(progress.lastDigest, emptyList(), witness)
         }
-        val legacy = CodeModeRecords.of("key", 2).apply { issued += CodeModeIssuedStep(lastDigest, emptyList()) }
+        val legacy = CodeModeRecords.of("key", 2).apply {
+            issued += CodeModeIssuedStep(progress.lastDigest, emptyList())
+        }
         store().also { it.load() }.save(listOf(carried, legacy), emptyList())
 
         // From the FILE, so this proves the save carries the witness rather than something rebuilding it.
@@ -166,7 +168,7 @@ internal class CodeModeReplayGrowthTest : CodeModeBridgeTestSupport() {
     private fun store() = CodexCodeModeStore(stateLocation(), Json { encodeDefaults = true }, {})
 
     private fun natives(records: List<CodeModeRecord>): Int = records.sumOf { record ->
-        record.nativeSegments.sumOf { it.items.size }
+        record.carry.segments.sumOf { it.items.size }
     }
 
     private fun reasoningIn(post: String): List<JsonElement> =
@@ -183,21 +185,25 @@ internal class CodeModeReplayGrowthTest : CodeModeBridgeTestSupport() {
         return CodeModeRecord(
             id = id,
             key = "key",
-            outer = outer(id).raw,
-            outerCallId = id,
-            source = "source",
             phase = CodeModePhase.COMPLETED,
-            output = "done",
-            updatedAt = 1_000,
-            lastDigest = "request",
-            baselineInputCount = boundary.fullCount,
-            baselineInputDigest = "",
-            metadataVersion = CODE_MODE_METADATA_VERSION,
-            baselineLogicalCount = boundary.logicalCount,
-            baselineLogicalDigest = "",
-            nativeSegments = boundary.nativeSegments,
-            continuity = emptyList(),
-            continuityReplay = listOf(CodeModeNativeSegment(0, listOf(reasoning("rs-$id")))),
+            origin = CodeModeOrigin(
+                outer = outer(id).raw,
+                outerCallId = id,
+                source = "source",
+                baseline = CodeModeBaseline(
+                    inputCount = boundary.fullCount,
+                    inputDigest = "",
+                    logicalCount = boundary.logicalCount,
+                    logicalDigest = "",
+                    metadataVersion = CODE_MODE_METADATA_VERSION,
+                ),
+            ),
+            progress = CodeModeProgress(output = "done", updatedAt = 1_000, lastDigest = "request"),
+            carry = CodeModeNativeContinuity(
+                segments = boundary.nativeSegments,
+                continuity = emptyList(),
+                replay = listOf(CodeModeNativeSegment(0, listOf(reasoning("rs-$id")))),
+            ),
         ).also { record ->
             record.replayAnchors = boundary.replayAnchors
             record.accepted.accept(mapOf(callback to CodeModeResult(callback, "result")), emptyMap())

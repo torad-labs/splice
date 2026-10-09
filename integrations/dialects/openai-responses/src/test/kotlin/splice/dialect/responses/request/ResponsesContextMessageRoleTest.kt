@@ -12,10 +12,16 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.reasoning.InjectPriorReasoning
 
-private val LITE = ResponsesQuirks(providerTag = "claudex", responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6"))
+private val LITE = ResponsesQuirks(
+    providerTag = "claudex",
+    lite = ResponsesLiteQuirks(
+        responsesLiteModelRegex = Regex("gpt-5\\.6|gpt-6"),
+    ),
+)
 
 private const val PEER = "Another Claude session sent a message: the build is green."
 
@@ -50,13 +56,19 @@ class ResponsesContextMessageRoleTest {
         val parsed = AnthropicParse.parseAnthropicBody(BODY)
         val opts = BuildOptions(
             compact = false,
-            originalModel = "claude-codex--$upstreamModel",
-            upstreamModel = upstreamModel,
-            configEffort = "high",
-            configSummary = "detailed",
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = InjectPriorReasoning(false),
-            decodeReasoningEnvelope = { null },
+            models = ModelIds(
+                original = "claude-codex--$upstreamModel",
+                upstream = upstreamModel,
+            ),
+            reasoning = RequestedReasoning(
+                effort = "high",
+                summary = "detailed",
+                display = ReasoningDisplay.TEXT,
+            ),
+            handoff = ReasoningHandoff(
+                replay = InjectPriorReasoning(false),
+                decode = { null },
+            ),
         )
         return ResponsesRequestBuilder(LITE).build(parsed.typed, parsed.raw, opts).req["input"]!!.jsonArray
             .map { it.jsonObject }

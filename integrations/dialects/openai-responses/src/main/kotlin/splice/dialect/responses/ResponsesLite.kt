@@ -27,18 +27,18 @@ internal class ResponsesLiteShape(private val quirks: ResponsesQuirks) {
     /** Lite gate: every turn on a responses-lite model, compaction included — lite is a property
      *  of the MODEL, and a compaction built in the non-lite shape shares no prefix with the
      *  session's lite turns (2026-09-05). */
-    fun isLite(opts: BuildOptions): Boolean = isLiteModel(opts.upstreamModel)
+    fun isLite(opts: BuildOptions): Boolean = isLiteModel(opts.models.upstream)
 
     /** The same gate on a bare model id, for a seam that holds a turn's meta rather than its build
      *  options (the re-anchor controller, V4-339). */
-    fun isLiteModel(model: String): Boolean = quirks.responsesLiteModelRegex?.containsMatchIn(model) == true
+    fun isLiteModel(model: String): Boolean = quirks.lite.responsesLiteModelRegex?.containsMatchIn(model) == true
 
     fun wireShape(lite: Boolean, input: JsonArray, instructions: String, tools: JsonArray?): WireShape =
         if (lite) {
             // Current codex-rs omits empty instructions in both transports:
             // 14a477ea8 codex-api/src/common.rs:286-287,341-342. Only an explicit legacy profile
             // override keeps the field after moving its text into the developer input item.
-            val topLevelInstructions = if (quirks.emitEmptyLiteInstructions) "" else null
+            val topLevelInstructions = if (quirks.lite.emitEmptyLiteInstructions) "" else null
             WireShape(liteInput(input, tools, instructions), instructions = topLevelInstructions, tools = null)
         } else {
             WireShape(input, instructions, tools)

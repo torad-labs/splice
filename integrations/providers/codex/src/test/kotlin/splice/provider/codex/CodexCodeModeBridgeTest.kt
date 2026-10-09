@@ -9,9 +9,13 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.AbsorbedRounds
+import splice.core.turn.ResponseShape
+import splice.core.turn.RoundHandoffs
+import splice.core.turn.RoundText
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageHistory
+import splice.core.turn.UsageOrigin
 import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -85,10 +89,21 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
                 upstreamCalls++
                 RoundResult.Outcome(
                     if (upstreamCalls == 1) {
-                        TurnOutcome.Success(false, false, Usage(10, 2, 3, 1), customCalls = listOf(outer()))
+                        TurnOutcome.Success(
+                            false,
+                            false,
+                            Usage(10, 2, 3, 1),
+                            handoffs = RoundHandoffs(customCalls = listOf(outer())),
+                        )
                     } else {
                         rewritten = body
-                        TurnOutcome.Success(false, false, Usage(20, 4, 5, 2), bodyText = "final", messageClosed = true)
+                        TurnOutcome.Success(
+                            false,
+                            false,
+                            Usage(20, 4, 5, 2),
+                            text = RoundText(bodyText = "final"),
+                            shape = ResponseShape(messageClosed = true),
+                        )
                     },
                 )
             }.turn() as TurnOutcome.Success
@@ -97,10 +112,10 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         assertTrue("custom_tool_call" in rewritten)
         assertTrue("outer-call" in rewritten)
         assertTrue("answer" in rewritten)
-        assertEquals("final", outcome.bodyText)
+        assertEquals("final", outcome.text.bodyText)
         // The script round was a request of its own: its input is absorbed beside the final round's.
         val script = AbsorbedRounds(rounds = 1, inputTokens = 10, cachedTokens = 3, outputTokens = 2)
-        assertEquals(Usage(20, 6, 5, 3, history = UsageHistory(absorbed = script)), outcome.usage)
+        assertEquals(Usage(20, 6, 5, 3, origin = UsageOrigin(history = UsageHistory(absorbed = script))), outcome.usage)
     }
 
     @Test
@@ -125,13 +140,13 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
                             false,
                             false,
                             Usage(1, 1),
-                            customCalls = listOf(outer("outer-1", "first")),
+                            handoffs = RoundHandoffs(customCalls = listOf(outer("outer-1", "first"))),
                         )
                         2 -> TurnOutcome.Success(
                             false,
                             false,
                             Usage(2, 1),
-                            customCalls = listOf(outer("outer-2", "second")),
+                            handoffs = RoundHandoffs(customCalls = listOf(outer("outer-2", "second"))),
                         )
                         else -> {
                             finalBody = body
@@ -163,7 +178,12 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val firstOutcome = first.intercept(BASE_REQUEST, sink1) {
             upstreamCalls++
             RoundResult.Outcome(
-                TurnOutcome.Success(false, false, Usage(inputTokens = 100), customCalls = listOf(outer())),
+                TurnOutcome.Success(
+                    false,
+                    false,
+                    Usage(inputTokens = 100),
+                    handoffs = RoundHandoffs(customCalls = listOf(outer())),
+                ),
             )
         }.turn()
         assertTrue((firstOutcome as TurnOutcome.Success).hasToolUse)
@@ -193,7 +213,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
             RoundResult.Outcome(completedOutcome())
         }.turn()
         assertFalse((thirdOutcome as TurnOutcome.Success).hasToolUse)
-        assertEquals(true to false, secondOutcome.usage.localStep to thirdOutcome.usage.localStep)
+        assertEquals(true to false, secondOutcome.usage.origin.localStep to thirdOutcome.usage.origin.localStep)
         assertEquals(2, upstreamCalls)
         assertEquals(listOf("runtime-1", "runtime-2"), runtime.cell.results.flatten().map { it.id })
     }

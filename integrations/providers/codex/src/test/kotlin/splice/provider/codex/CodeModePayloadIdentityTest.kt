@@ -25,7 +25,7 @@ internal class CodeModePayloadIdentityTest {
         val edited = native("BB")
         assertEquals(expected.hashCode(), edited.hashCode(), "the fixture must collide")
         val record = record(listOf(first, expected, last))
-        val result = history.restoreBaseline(body(listOf(first, edited, last, record.outer)), record)
+        val result = history.restoreBaseline(body(listOf(first, edited, last, record.origin.outer)), record)
         assertEquals("code-mode native discovery history was edited: payload", result.error)
     }
 
@@ -35,10 +35,10 @@ internal class CodeModePayloadIdentityTest {
         val reordered = item("""{"encrypted_content":"Aa","id":"synthetic-native","type":"reasoning"}""")
         assertEquals(expected, reordered)
         val record = record(listOf(first, expected, last))
-        val result = history.restoreBaseline(body(listOf(first, reordered, last, record.outer)), record)
+        val result = history.restoreBaseline(body(listOf(first, reordered, last, record.origin.outer)), record)
         assertNull(result.error)
         assertArrayEquals(
-            body(listOf(first, expected, last, record.outer)).round.bytes(),
+            body(listOf(first, expected, last, record.origin.outer)).round.bytes(),
             checkNotNull(result.body).round.bytes(),
         )
     }
@@ -67,22 +67,23 @@ internal class CodeModePayloadIdentityTest {
         return CodeModeRecord(
             id = "synthetic-record",
             key = "synthetic-conversation",
-            outer = item(
-                """{"type":"custom_tool_call","call_id":"synthetic-call","name":"exec","input":"return 1"}""",
-            ) as JsonObject,
-            outerCallId = "synthetic-call",
-            source = "return 1",
             phase = CodeModePhase.ACTIVE,
-            updatedAt = 0,
-            lastDigest = "synthetic-request",
-            baselineInputCount = baseline.fullCount,
-            baselineInputDigest = baseline.fullDigest,
-            metadataVersion = CODE_MODE_METADATA_VERSION,
-            baselineLogicalCount = baseline.logicalCount,
-            baselineLogicalDigest = baseline.logicalDigest,
-            nativeSegments = baseline.nativeSegments,
-            continuity = emptyList(),
-            continuityReplay = emptyList(),
+            origin = CodeModeOrigin(
+                outer = item(
+                    """{"type":"custom_tool_call","call_id":"synthetic-call","name":"exec","input":"return 1"}""",
+                ) as JsonObject,
+                outerCallId = "synthetic-call",
+                source = "return 1",
+                baseline = CodeModeBaseline(
+                    inputCount = baseline.fullCount,
+                    inputDigest = baseline.fullDigest,
+                    logicalCount = baseline.logicalCount,
+                    logicalDigest = baseline.logicalDigest,
+                    metadataVersion = CODE_MODE_METADATA_VERSION,
+                ),
+            ),
+            progress = CodeModeProgress(updatedAt = 0, lastDigest = "synthetic-request"),
+            carry = CodeModeNativeContinuity(baseline.nativeSegments, emptyList(), emptyList()),
         ).also { it.replayAnchors = baseline.replayAnchors }
     }
 

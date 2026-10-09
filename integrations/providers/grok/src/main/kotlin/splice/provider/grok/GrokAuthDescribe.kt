@@ -93,8 +93,8 @@ internal class GrokAuthDescribe(
         val presentOutcome = Cancellables.runCatchingCancellable {
             authJson.tokensOf()?.get("access_token") != null
         }
-        // ast-grep-ignore: kt-no-silent-result-collapse -- failure consumed below via exceptionOrNull -> read_error
-        val present = presentOutcome.getOrDefault(false)
+        // A failed read is not "present"; its failure is consumed below via exceptionOrNull -> read_error.
+        val present = presentOutcome.getOrElse { false }
         val identity = grokAuthIdentityOrNull(authPath, log)
         return AuthDescription(
             present = present,

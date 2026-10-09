@@ -36,6 +36,8 @@ import splice.head.admission.RequestMaterializationGate
 import splice.head.headDeps
 import splice.head.headStores
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.WsRound
 import splice.upstream.WsRoundRunner
@@ -146,8 +148,7 @@ class WsSizeRefusalHeadTest(@param:TempDir private val tmp: Path) {
 
     private fun provider(): Provider = TestResponsesProvider(
         tuning = ProviderTuning(
-            key = "codex",
-            label = "claudex",
+            name = ProviderName(key = "codex", label = "claudex"),
             catalog = ModelCatalog(
                 discoveryPrefix = "claude-codex--",
                 models = listOf(ModelEntry("gpt-6.1-sol", "Sol", contextWindow = 400_000)),
@@ -155,7 +156,7 @@ class WsSizeRefusalHeadTest(@param:TempDir private val tmp: Path) {
             ),
             pinnedModel = "gpt-6.1-sol",
             auth = FixedAuth(),
-            baseUrl = "http://127.0.0.1:${upstream.address.port}",
+            locations = ProviderLocations(baseUrl = "http://127.0.0.1:${upstream.address.port}"),
             watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
             loginCommand = "claudex login",
         ),

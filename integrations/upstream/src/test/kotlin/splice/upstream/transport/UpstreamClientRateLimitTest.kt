@@ -52,7 +52,7 @@ class NativeRateLimitHeadersTest {
                 url = "https://api.example.test/v1",
                 auth = fakeAuth,
                 extraHeaders = { emptyMap() },
-                rateLimitCooldown = cooldown,
+                limits = PostLimits(rateLimitCooldown = cooldown),
             )
             try {
                 val older = async { client.posted(context(), "{}") { "ok" } }
@@ -339,8 +339,10 @@ class UpstreamClientRateLimitTest {
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
             onRetry = { notices.add(it) },
-            rateLimitCooldown = cooldown,
-            remainingTurnWait = RemainingTurnWait { 5_000L },
+            limits = PostLimits(
+                rateLimitCooldown = cooldown,
+                remainingTurnWait = RemainingTurnWait { 5_000L },
+            ),
         )
 
         val observer = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }

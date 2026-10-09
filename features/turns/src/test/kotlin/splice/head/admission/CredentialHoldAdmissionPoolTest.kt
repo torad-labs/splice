@@ -23,6 +23,8 @@ import splice.core.model.ModelEntry
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnReasoning
+import splice.core.turn.TurnRoute
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
@@ -35,6 +37,8 @@ import splice.head.quotaFor
 import splice.head.turn.Preparation
 import splice.head.turn.TurnDriver
 import splice.upstream.BuiltTurn
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
@@ -105,8 +109,7 @@ class CredentialHoldAdmissionPoolTest {
 
         private val provider = PassthroughProvider(
             ProviderTuning(
-                key = "synthetic",
-                label = "synthetic",
+                name = ProviderName(key = "synthetic", label = "synthetic"),
                 catalog = ModelCatalog(
                     discoveryPrefix = "synthetic--",
                     models = listOf(ModelEntry("model", "Synthetic", contextWindow = 200_000)),
@@ -114,7 +117,7 @@ class CredentialHoldAdmissionPoolTest {
                 ),
                 pinnedModel = "model",
                 auth = logins.first().auth,
-                baseUrl = "http://127.0.0.1",
+                locations = ProviderLocations(baseUrl = "http://127.0.0.1"),
                 watchdog = WatchdogBudget(5.seconds, 5.seconds, 30.seconds),
             ),
             PassthroughQuirks(providerTag = "synthetic"),
@@ -133,11 +136,23 @@ class CredentialHoldAdmissionPoolTest {
         )
 
         suspend fun respond(call: ApplicationCall) {
-            val slot = (deps.gate.acquire() as InflightGate.Admission.Acquired).slot
+            val slot = (deps.traffic.gate.acquire() as InflightGate.Admission.Acquired).slot
             val admitted = AdmittedTurn(slot, 0L, TurnPerf(clock = ElapsedClock { 0L }))
             val meta = TurnMeta(
-                false, ReasoningDisplay.OFF, false, "model", "model", 100, "high", null, null,
-            ).copy(sessionId = "synthetic-command")
+                false,
+                reasoning = TurnReasoning(
+                    showReasoning = ReasoningDisplay.OFF,
+                    effort = "high",
+                    summary = null,
+                    budgetTokens = null,
+                ),
+                route = TurnRoute(
+                    stream = false,
+                    originalModel = "model",
+                    upstreamModel = "model",
+                    clientMaxTokens = 100,
+                ),
+            ).run { copy(scope = scope.copy(sessionId = "synthetic-command")) }
             val ready = Preparation.Ready(
                 BuiltTurn(JsonObject(emptyMap()), meta),
                 stream = false,

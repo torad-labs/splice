@@ -40,7 +40,8 @@ class ClaudeNativeLoginResumeTest {
             session?.let { headers.append("x-claude-code-session-id", it) }
             contentType(ContentType.Application.Json)
             setBody(
-                """{"model":"synthetic-model","stream":false,"max_tokens":32,"messages":[{"role":"user","content":"synthetic native turn"}]}""",
+                """{"model":"synthetic-model","stream":false,"max_tokens":32,"messages":[{"role":"user",""" +
+                    """"content":"synthetic native turn"}]}""",
             )
         }
 

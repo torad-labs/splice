@@ -60,8 +60,8 @@ internal class TurnPipeline(
                 // event carries the identical raw body, so presenting only one of the two would
                 // have left most failures still quoting a vendor's JSON at the client.
                 val spoken = failures.spoken(outcome.type, outcome.message)
-                if (outcome.deterministic) {
-                    val ending = if (outcome.providerReported) {
+                if (outcome.traits.deterministic) {
+                    val ending = if (outcome.traits.providerReported) {
                         EXPLAINED_PREFIX + spoken
                     } else {
                         OutcomeSentences.of(outcome) + ".\n\n" + EXPLAINED_PREFIX + spoken
@@ -72,13 +72,13 @@ internal class TurnPipeline(
                     // holds the pre-content rule and the counter it needs), so the pipeline passes
                     // the failure's own permanence through and no longer snapshots perf at all —
                     // the V4-79 parameter is gone with the rule it fed.
-                    emitter.emitError(outcome.type, spoken, permanent = outcome.permanent)
+                    emitter.emitError(outcome.type, spoken, permanent = outcome.traits.permanent)
                 }
                 // V4-67: a tear the gateway converted into an outcome keeps the conn-reset tag it
                 // would have carried had it escaped to TurnConnEnd. That tag is the only string in
                 // the journal that names this failure class, and the row that made a torn stream
                 // continuable is the row that would otherwise have hidden its successor.
-                return if (outcome.connReset) CONN_RESET_OUTCOME else OutcomeTags.failure(outcome.type)
+                return if (outcome.traits.connReset) CONN_RESET_OUTCOME else OutcomeTags.failure(outcome.type)
             }
             is TurnOutcome.ClientAbandoned -> {
                 emitter.abandon()

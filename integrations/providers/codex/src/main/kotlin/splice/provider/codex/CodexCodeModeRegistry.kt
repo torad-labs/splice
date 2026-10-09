@@ -68,7 +68,7 @@ internal class CodexCodeModeRegistry(
             .also(CodeModeNativeChain::link)
         history = CodeModeExpiredHistory(loaded.expired.toMutableList(), config.retention.records, heap)
     }
-    private val retention = CodeModeRecordRetention(config.retention, json, config.log, config.sessionAlive)
+    private val retention = CodeModeRecordRetention(config.retention, json, config.log, config.cellLease.sessionAlive)
     private val cells = mutableMapOf<String, CodeModeCell>()
     val startup = CodeModeStartupAdmissions(access, records, history, store, config.clock, cells)
 
@@ -298,8 +298,8 @@ internal class CodexCodeModeRegistry(
         CodeModeHeap.grow(record, record.accepted.heapGrowth(supplied, media)) { kept ->
             record.accepted.kept(kept, supplied)
         }
-        record.lastDigest = digest
-        record.updatedAt = config.clock.millis()
+        record.progress.lastDigest = digest
+        record.progress.updatedAt = config.clock.millis()
         record.accepted.accept(supplied, media)
     }
 }

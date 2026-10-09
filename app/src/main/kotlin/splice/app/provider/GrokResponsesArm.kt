@@ -11,6 +11,8 @@ import splice.oauth.grok.GrokRefresh
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokQuirks
 import splice.topology.TopologyLoader
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import java.nio.file.Paths
 
@@ -31,7 +33,7 @@ internal class GrokResponsesArm(
         val head = ctx.head
         val providerCfg = ctx.providerCfg
         val catalog = ctx.catalog
-        val watchdog = ctx.watchdog
+        val watchdog = ctx.faultPlan.watchdog
         val cfg = ctx.cfg
         val primaryPath = Paths.get(
             TopologyLoader.expandHome(providerCfg.auth.file ?: cfg.grokAuthPath),
@@ -41,15 +43,16 @@ internal class GrokResponsesArm(
         return Wired(
             GrokProvider(
                 tuning = ProviderTuning(
-                    key = key,
-                    label = label,
+                    name = ProviderName(key = key, label = label),
                     catalog = catalog,
                     pinnedModel = head.pinnedModel,
                     auth = auth,
-                    baseUrl = providerCfg.baseUrl,
+                    locations = ProviderLocations(
+                        baseUrl = providerCfg.baseUrl,
+                        stateDir = statePaths.headsDir.resolve(key),
+                    ),
                     watchdog = watchdog,
-                    loginCommand = ctx.loginCommand,
-                    stateDir = statePaths.headsDir.resolve(key),
+                    loginCommand = ctx.faultPlan.loginCommand,
                 ),
                 reasoning = ReasoningSettings(cfg.showReasoning, cfg.replayReasoning, cfg.effort, cfg.summary),
                 quirks = quirksOverlay.responsesQuirks(providerCfg, GrokQuirks().defaultQuirks(), cfg),

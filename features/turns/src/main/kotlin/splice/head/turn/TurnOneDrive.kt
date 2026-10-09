@@ -61,7 +61,7 @@ internal class TurnOneDrive(
         val owner = synchronized(lifecycle) { stopSignal }
         val turnJob = newTurnJob(owner)
         // V4-319: the operator's stop cancels exactly this job, the one the watchdog cancels (LiveTurns).
-        deps.liveTurns.driving(drive.slot, turnJob)
+        deps.traffic.liveTurns.driving(drive.slot, turnJob)
         // Per TURN: the line remembers whether it has spoken, so the first one explains itself, and
         // counts the heartbeats of the current quiet stretch to thin its lines out.
         val progress = TurnProgressLine()

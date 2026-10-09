@@ -16,7 +16,8 @@ class CompactStatsSourceTest {
         val file = tempDir.resolve("compact.jsonl")
         Files.writeString(
             file,
-            """{"ts":1790199390460,"outcome":"model_text","ms":171490,"chars":20532,"instructions_source":"client","error":null}""" + "\n",
+            """{"ts":1790199390460,"outcome":"model_text","ms":171490,"chars":20532,""" +
+                """"instructions_source":"client","error":null}""" + "\n",
         )
 
         val view = CompactStatsSource(CompactStats(file)).summary(10)

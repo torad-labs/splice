@@ -20,7 +20,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import splice.app.control.ControlAuth
+import splice.app.control.HeadSources
 import splice.app.control.ManagedHead
+import splice.app.control.UsageWarning
 import splice.app.control.controlServerFor
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.SyntheticPerfHistory
@@ -149,24 +151,25 @@ internal class PlaygroundContentionFixture(
             override fun healthSnapshot() = HeadHealth(true, true, 0, "synthetic")
         },
         auth = playgroundHead("platformy").auth,
-        usage = HeadUsageSource { UsageView(0, 0, null) },
-        compact = object : HeadCompactSource {
-            override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
-        },
-        logs = object : HeadLogSource {
-            override fun tail(lines: Int) = ""
-            override fun path() = ""
-        },
-        warnPct = 80,
-        warnTokens5h = 0,
-        perfRows = PerfRowsSource { since ->
-            readStarted.complete(Unit)
-            source.window(since).also {
-                check(readReleased.await(PROFILE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                    "the Playground sample did not release the synthetic console read"
+        sources = HeadSources(
+            usage = HeadUsageSource { UsageView(0, 0, null) },
+            compact = object : HeadCompactSource {
+                override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
+            },
+            logs = object : HeadLogSource {
+                override fun tail(lines: Int) = ""
+                override fun path() = ""
+            },
+            perfRows = PerfRowsSource { since ->
+                readStarted.complete(Unit)
+                source.window(since).also {
+                    check(readReleased.await(PROFILE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                        "the Playground sample did not release the synthetic console read"
+                    }
                 }
-            }
-        },
+            },
+        ),
+        usageWarning = UsageWarning(warnPct = 80, warnTokens5h = 0),
     )
 
     override fun close() {

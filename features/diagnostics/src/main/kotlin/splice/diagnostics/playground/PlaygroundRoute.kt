@@ -30,7 +30,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.core.util.Cancellables
 import splice.http.JsonReply
 
 /** How PlaygroundRoute reaches the daemon's ONE upstream probe — read at call time, the same
@@ -76,10 +75,16 @@ public class PlaygroundRoute(
 
     public suspend fun run(body: String): JsonReply {
         val probe = source() ?: return refuse(HttpStatusCode.ServiceUnavailable, PLAYGROUND_UNWIRED)
-        // ast-grep-ignore: kt-no-silent-result-collapse -- a body that is not JSON and a body missing head/prompt get the same answer, one 400 naming the shape expected, so the failure has nothing more to say
-        val parsed = Cancellables.runCatchingCancellable { json.decodeFromString(PlaygroundBody.serializer(), body) }
-            .getOrNull() ?: return refuse(HttpStatusCode.BadRequest, BAD_PLAYGROUND_BODY)
+        val parsed = playgroundBody(body) ?: return refuse(HttpStatusCode.BadRequest, BAD_PLAYGROUND_BODY)
         return runValidated(probe, parsed)
+    }
+
+    /** The request body; null for one that is not JSON and for one missing head/prompt, which get the same
+     *  answer, one 400 naming the shape expected, so the parse failure has nothing more to say. */
+    private fun playgroundBody(body: String): PlaygroundBody? = try {
+        json.decodeFromString(PlaygroundBody.serializer(), body)
+    } catch (_: IllegalArgumentException) {
+        null
     }
 
     // Split out of run() (ReturnCount: max 3 per function) — the body-parsing guards live in

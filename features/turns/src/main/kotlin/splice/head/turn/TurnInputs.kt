@@ -4,10 +4,8 @@
 package splice.head.turn
 
 import splice.core.perf.TurnPerf
-import splice.head.usage.QuotaTracker
 import splice.head.wire.TurnTrace
 import splice.upstream.BuiltTurn
-import splice.upstream.credentials.AccountSelection
 import splice.upstream.retry.InflightGate
 
 /** The hand-off seam, NAMED (kt-no-lambda-seam, V4-99 item 3).
@@ -54,6 +52,5 @@ internal data class TurnInputs(
     /** V4-174: this turn's trace, begun at admission for a head whose trace is on; null records
      *  nothing. REQUIRED, NO DEFAULT, for [markHandedOff]'s reason: the wiring is the control. */
     val trace: TurnTrace?,
-    val account: AccountSelection? = null,
-    val quota: QuotaTracker? = null,
+    val accountQuota: TurnAccountQuota = TurnAccountQuota(),
 )

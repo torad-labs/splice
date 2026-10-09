@@ -38,7 +38,7 @@ class DeepSeekProfileTest {
 
     @Test
     fun `the allowlist drops every block DeepSeek reject, redacted_thinking above all`() {
-        val quirks = profile.providerExtra.single { it.startsWith("block_allowlist") }
+        val quirks = profile.provider.extra.single { it.startsWith("block_allowlist") }
         // DR-118 forwards redacted_thinking verbatim because Anthropic requires it back unchanged.
         // On this endpoint that block is rejected, so it must not survive into the request.
         for (rejected in REJECTED) {

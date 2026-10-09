@@ -74,7 +74,7 @@ public class PassthroughReanchorPolicy(
         // delta): the fresh round appends new blocks after the closed ones, so a verbatim re-POST
         // duplicates nothing, and the turn keeps whatever thinking setting it asked for. That is
         // the whole-stream half of the retry. Otherwise resume from the exact text the client has.
-        val resume = partial.bodyText.trimEnd()
+        val resume = partial.text.bodyText.trimEnd()
         return when {
             resume.isEmpty() -> round.requestBody
             // This upstream has not been MEASURED to continue from a prefill, so it does not get

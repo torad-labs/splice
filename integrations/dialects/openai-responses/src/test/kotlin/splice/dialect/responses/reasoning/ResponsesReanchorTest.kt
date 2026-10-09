@@ -29,16 +29,24 @@ import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.RoundText
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
+import splice.dialect.responses.ReasoningCapture
 import splice.dialect.responses.ReasoningSettings
+import splice.dialect.responses.ResponsesLiteQuirks
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.StreamTurnContext
+import splice.dialect.responses.SummaryHandling
+import splice.dialect.responses.WatchdogCaps
 import splice.dialect.responses.stream.ResponsesStreamTranslator
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.ReanchorRound
+import splice.upstream.TurnSignals
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.sse.WireSink
 import kotlin.time.Duration.Companion.seconds
@@ -53,7 +61,7 @@ private fun previousBody(): JsonObject = Json.parseToJsonElement(
 // that passed API_ERROR or RATE_LIMIT map to causes deriving those types exactly.
 private fun failureWith(
     cause: FailureCause = FailureCause.UPSTREAM_STALLED,
-    partial: TurnOutcome.PartialRound? = TurnOutcome.PartialRound(bodyText = "The fix is to"),
+    partial: TurnOutcome.PartialRound? = TurnOutcome.PartialRound(text = RoundText(bodyText = "The fix is to")),
 ) = TurnOutcome.Failure("boom", cause = cause, phase = FailurePhase.MID_OUTPUT, partial = partial)
 
 private val controller = ResponsesReanchorPolicy(
@@ -71,8 +79,7 @@ private object ReanchorProbeAuth : RefreshableAuthProvider {
 /** V4-339: a claudex-shaped provider on gpt-5.6-sol, served responses-lite when [lite]. */
 private class ReanchorProbe(lite: Boolean) : ResponsesProvider(
     tuning = ProviderTuning(
-        key = "probe",
-        label = "probe",
+        name = ProviderName(key = "probe", label = "probe"),
         catalog = ModelCatalog(
             discoveryPrefix = "claude-codex",
             models = listOf(ModelEntry(id = "gpt-5.6-sol", label = "sol", contextWindow = 400_000)),
@@ -80,11 +87,16 @@ private class ReanchorProbe(lite: Boolean) : ResponsesProvider(
         ),
         pinnedModel = "gpt-5.6-sol",
         auth = ReanchorProbeAuth,
-        baseUrl = "https://chatgpt.com/backend-api/codex",
+        locations = ProviderLocations(baseUrl = "https://chatgpt.com/backend-api/codex"),
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, null, null),
-    quirks = ResponsesQuirks(providerTag = "claudex", responsesLiteModelRegex = Regex("gpt-5\\.6").takeIf { lite }),
+    quirks = ResponsesQuirks(
+        providerTag = "claudex",
+        lite = ResponsesLiteQuirks(
+            responsesLiteModelRegex = Regex("gpt-5\\.6").takeIf { lite },
+        ),
+    ),
 ) {
     override fun extraHeaders(creds: Credentials): Map<String, String> = emptyMap()
 }
@@ -146,7 +158,7 @@ class ResponsesReanchorPolicyTest {
     @Test
     fun `overloaded mid-text failure yields replay + partial prose + resume marker`() {
         val partial = TurnOutcome.PartialRound(
-            bodyText = "The fix is to",
+            text = RoundText(bodyText = "The fix is to"),
             reasoningEnvelopes = listOf("e1"),
         )
         val next = controller.continuationForFailure(
@@ -165,7 +177,7 @@ class ResponsesReanchorPolicyTest {
 
     @Test
     fun `a poison tool tear refuses continuation`() {
-        val partial = TurnOutcome.PartialRound(bodyText = "x", hasToolUse = true, toolTearOpen = true)
+        val partial = TurnOutcome.PartialRound(text = RoundText(bodyText = "x"), hasToolUse = true, toolTearOpen = true)
         assertNull(
             controller.continuationForFailure(
                 ReanchorRound(previousBody(), failureWith(partial = partial), 0),
@@ -176,7 +188,7 @@ class ResponsesReanchorPolicyTest {
     @Test
     fun `a committed tool_use refuses continuation - no orphan function_call, no double dispatch`() {
         val partial = TurnOutcome.PartialRound(
-            bodyText = "x",
+            text = RoundText(bodyText = "x"),
             hasToolUse = true,
         )
         assertNull(
@@ -209,7 +221,7 @@ class ResponsesReanchorPolicyTest {
 
     @Test
     fun `envelope-only salvage continues - reasoning replay needs no prose`() {
-        val partial = TurnOutcome.PartialRound(bodyText = "", reasoningEnvelopes = listOf("e1"))
+        val partial = TurnOutcome.PartialRound(text = RoundText(bodyText = ""), reasoningEnvelopes = listOf("e1"))
         val next = controller.continuationForFailure(
             ReanchorRound(previousBody(), failureWith(partial = partial), 0),
         )
@@ -256,7 +268,9 @@ class ResponsesReanchorPolicyTest {
 
     @Test
     fun `a thinking-only partial restarts from scratch - nothing replayable, no marker`() {
-        val partial = TurnOutcome.PartialRound(thinkingText = "deep partial reasoning already streamed")
+        val partial = TurnOutcome.PartialRound(
+            text = RoundText(thinkingText = "deep partial reasoning already streamed"),
+        )
         val next = controller.continuationForFailure(
             ReanchorRound(previousBody(), failureWith(partial = partial), 0),
         )
@@ -336,13 +350,21 @@ private fun reanchorCtx(fired: WatchdogFired? = null, collect: Boolean = true) =
     encodeReasoningEnvelope = { item ->
         item["id"]?.let { "env:$it" }?.takeIf { item["encrypted_content"] != null }
     },
-    clientGone = { false },
-    watchdogFired = { fired },
-    streamIdleMsForMessage = 180_000,
-    upstreamTimeoutMsForMessage = 900_000,
-    // re-anchor salvage is asserted per round here; a fresh instance is the turn's state
-    summaryPartsShared = SharedSummaryParts(),
-    collectReasoningEnvelopes = collect,
+    signals = TurnSignals(
+        clientGone = { false },
+        watchdogFired = { fired },
+    ),
+    caps = WatchdogCaps(
+        streamIdleMs = 180_000,
+        upstreamTimeoutMs = 900_000,
+    ),
+    summary = SummaryHandling(
+        // re-anchor salvage is asserted per round here; a fresh instance is the turn's state
+        partsShared = SharedSummaryParts(),
+    ),
+    reasoningCapture = ReasoningCapture(
+        collectEnvelopes = collect,
+    ),
 )
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
@@ -375,8 +397,8 @@ class ResponsesReanchorPartialTest {
         assertEquals(ErrorType.OVERLOADED, failure.type)
         val partial = failure.partial
         assertNotNull(partial)
-        assertEquals("The fix is to", partial!!.bodyText)
-        assertTrue(partial.emittedText)
+        assertEquals("The fix is to", partial!!.text.bodyText)
+        assertTrue(partial.text.emittedText)
         assertFalse(partial.toolTearOpen)
         assertFalse(partial.hasToolUse)
     }
@@ -391,8 +413,8 @@ class ResponsesReanchorPartialTest {
             NullSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.providerReported)
-        assertEquals("half an ans", failure.partial?.bodyText)
+        assertTrue(failure.traits.providerReported)
+        assertEquals("half an ans", failure.partial?.text?.bodyText)
     }
 
     @Test
@@ -408,7 +430,7 @@ class ResponsesReanchorPartialTest {
         )
         val failure = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.API_ERROR, failure.type)
-        assertTrue(failure.providerReported)
+        assertTrue(failure.traits.providerReported)
         assertNull(failure.partial)
         assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
     }
@@ -429,7 +451,7 @@ class ResponsesReanchorPartialTest {
             NullSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.providerReported)
+        assertTrue(failure.traits.providerReported)
         assertNull(failure.partial, "a deterministic failure must not carry a re-POSTable partial")
         assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
     }
@@ -448,8 +470,8 @@ class ResponsesReanchorPartialTest {
             NullSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertTrue(failure.providerReported)
-        assertEquals("half an ans", failure.partial?.bodyText, "transient flat error must keep its salvage")
+        assertTrue(failure.traits.providerReported)
+        assertEquals("half an ans", failure.partial?.text?.bodyText, "transient flat error must keep its salvage")
         val continuation = controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0))
         assertNotNull(continuation, "a transient flat error must earn a re-POST")
         assertTrue(continuation.toString().contains("half an ans"), "the marker continuation carries the salvage")
@@ -554,7 +576,7 @@ class ResponsesReanchorPartialTest {
             NullSink(),
         )
         val failure = outcome as TurnOutcome.Failure
-        assertEquals("text", failure.partial?.bodyText, "an idle stall must keep what the round produced")
+        assertEquals("text", failure.partial?.text?.bodyText, "an idle stall must keep what the round produced")
         assertNotNull(
             controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)),
             "and that salvage must be enough to earn the continuation",

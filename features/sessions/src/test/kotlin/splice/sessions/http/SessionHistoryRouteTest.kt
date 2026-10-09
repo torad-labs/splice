@@ -11,11 +11,14 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.sessions.registry.SessionAvailability
+import splice.sessions.registry.SessionClient
 import splice.sessions.registry.SessionListing
+import splice.sessions.registry.SessionProcess
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionRoute
 import splice.sessions.registry.SessionSource
 import splice.sessions.registry.SessionStatus
+import splice.sessions.transcript.SessionFiles
 import splice.sessions.transcript.SessionHistoryEntry
 import splice.sessions.transcript.SessionHistoryRoot
 import splice.sessions.transcript.SessionHistoryScan
@@ -31,24 +34,32 @@ class SessionHistoryRouteTest {
     @TempDir lateinit var home: Path
 
     private fun live(id: String, at: Long): SessionRecord = SessionRecord(
-        pid = 71L,
         sessionId = id,
-        cwd = "/work/atlas",
         name = null,
-        kind = "interactive",
-        version = null,
         status = SessionStatus("busy", at),
-        startedAt = at - 100,
-        updatedAt = at,
-        messagingSocketPath = null,
         route = SessionRoute.Head("claudex"),
         availability = SessionAvailability.LIVE,
+        process = SessionProcess(
+            pid = 71L,
+            cwd = "/work/atlas",
+            startedAt = at - 100,
+            updatedAt = at,
+            messagingSocketPath = null,
+        ),
+        client = SessionClient(kind = "interactive", version = null),
     )
 
     private val entries = listOf(
-        SessionHistoryEntry(BOTH, "Atlas parser", "/work/atlas", "claudex", 1_000, true, true),
-        SessionHistoryEntry(HISTORY_ONLY, "Grok session", "/work/grok", "grok", 900, true, false),
-        SessionHistoryEntry(TRANSCRIPT_ONLY, "Unnamed", "/work/other", null, 800, false, true, resumable = false),
+        SessionHistoryEntry(BOTH, "Atlas parser", "/work/atlas", "claudex", 1_000, SessionFiles(true, true)),
+        SessionHistoryEntry(HISTORY_ONLY, "Grok session", "/work/grok", "grok", 900, SessionFiles(true, false)),
+        SessionHistoryEntry(
+            TRANSCRIPT_ONLY,
+            "Unnamed",
+            "/work/other",
+            null,
+            800,
+            SessionFiles(false, true, resumable = false),
+        ),
     )
 
     private fun route(

@@ -30,8 +30,7 @@ internal class PerfAccountRows(private val scanBytes: Long) {
         val complete: Long = 0L,
         val digest: ByteArray? = null,
         val prefix: PerfPrefixState? = null,
-        val start: Long = 0L,
-        val suffix: ByteArray? = null,
+        val proof: PerfSuffixProof = PerfSuffixProof(),
     ) {
         val bytes: Long get() = GENERATION_BYTES + path.toString().length * PATH_CHAR_BYTES
     }
@@ -47,9 +46,9 @@ internal class PerfAccountRows(private val scanBytes: Long) {
 
     private fun unchanged(before: Generation, after: Generation): Boolean {
         if (after.version?.changed != null) return true
-        val expected = before.suffix ?: return false
+        val expected = before.proof.suffix ?: return false
         return FileChannel.open(after.path, READ).use { channel ->
-            fingerprint(channel, before.start, requireNotNull(after.version).size).contentEquals(expected)
+            fingerprint(channel, before.proof.start, requireNotNull(after.version).size).contentEquals(expected)
         }
     }
 
@@ -59,7 +58,7 @@ internal class PerfAccountRows(private val scanBytes: Long) {
         val receipt = JsonlAppendProof.current(after.path)
         return when {
             previous.key != next.key || previous.size != before.complete -> false
-            next.size - before.start > scanBytes -> false
+            next.size - before.proof.start > scanBytes -> false
             receipt?.continues(previous, next, before.receipt) == true -> true
             before.digest == null -> false
             else -> FileChannel.open(after.path, READ).use { channel ->
@@ -87,12 +86,11 @@ internal class PerfAccountRows(private val scanBytes: Long) {
             complete = end,
             digest = if (wholePrefix) prefix.fingerprint() else null,
             prefix = if (wholePrefix) prefix.save() else null,
-            start = proofStart,
-            suffix = suffix,
+            proof = PerfSuffixProof(start = proofStart, suffix = suffix),
         )
     }
 
-    private fun proofStart(before: Generation?, start: Long): Long = before?.start ?: start
+    private fun proofStart(before: Generation?, start: Long): Long = before?.proof?.start ?: start
 
     private fun wholePrefix(before: Generation?, start: Long): Boolean = start == 0L || before?.prefix != null
 

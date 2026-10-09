@@ -62,7 +62,7 @@ class NativeClaudeAuthTest {
     }
 
     @Test
-    fun `only native authorization URLs survive unrelated huge child output and multiple URLs in one read`() = runBlocking {
+    fun `only native authorization URLs survive huge unrelated child output and multiple URLs`() = runBlocking {
         val good = "https://claude.ai/oauth/authorize?fixture=allowed"
         val text = "x".repeat(40_000) + " https://evil.invalid/oauth/authorize?private=discarded " + good
         val process = NativeLoginTestProcess(text)

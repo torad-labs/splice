@@ -13,14 +13,17 @@ import splice.dialect.responses.reasoning.ReasoningCachePolicy
 import splice.dialect.responses.reasoning.ReasoningLookup
 import splice.dialect.responses.reasoning.RequestEncryptedReasoning
 import splice.dialect.responses.request.BuildOptions
+import splice.dialect.responses.request.ModelIds
+import splice.dialect.responses.request.ReasoningHandoff
+import splice.dialect.responses.request.RequestedReasoning
 import splice.dialect.responses.request.ResponsesStableIds
 import splice.dialect.responses.tools.ToolSurfaceLatch
 
 /** The gateway-held reasoning of one head: the cache, the key a conversation is filed under, and the opening
  *  hash that names it. It answers a build's reasoning lookups from ONE snapshot of the conversation. */
 internal class ReasoningContinuity(
-    private val cache: ReasoningCache,
-    private val policy: ReasoningCachePolicy,
+    val cache: ReasoningCache,
+    val policy: ReasoningCachePolicy,
     private val ids: ResponsesStableIds,
 ) {
     /** The lookup for [body], keyed within [sessionId] as the capture keys it (ResponsesTurnSeams). Lazy, so a
@@ -54,43 +57,49 @@ internal class ResponsesTurnOptions(
         var reasoningEnvelopeDropLogged = false
         return BuildOptions(
             compact = compact,
-            originalModel = body.typed.model,
-            upstreamModel = catalog.stripSuffixes(body.typed.model),
-            // Config-driven (TOML [daemon] / env / state); "none" suppresses when display is off.
-            configEffort = reasoning.effort,
-            configSummary = reasoning.summaryForRequest(),
-            showReasoning = reasoning.display,
-            // LEGACY client-round-trip replay (redacted_thinking through Claude Code) —
-            // operator opt-in only; superseded by the gateway-held reasoning cache below.
-            replayReasoning = InjectPriorReasoning(reasoning.replay),
-            // Ask for the opaque encrypted handle whenever reasoning is visible OR the
-            // reasoning cache needs it (RC-5: the cache can only hold what the server returns).
-            // Not a function of `compact`: the request is built like a turn (the builder header).
-            includeEncryptedReasoning = RequestEncryptedReasoning(showOn || quirks.reasoningCache),
-            sessionId = sessionId,
-            decodeReasoningEnvelope = { data ->
-                ReasoningReplay.decodeReasoningEnvelope(data) { msg ->
-                    if (!reasoningEnvelopeDropLogged) {
-                        reasoningEnvelopeDropLogged = true
-                        log(msg)
+            models = ModelIds(
+                original = body.typed.model,
+                upstream = catalog.stripSuffixes(body.typed.model),
+            ),
+            reasoning = RequestedReasoning(
+                // Config-driven (TOML [daemon] / env / state); "none" suppresses when display is off.
+                effort = reasoning.effort,
+                summary = reasoning.summaryForRequest(),
+                display = reasoning.display,
+            ),
+            handoff = ReasoningHandoff(
+                // LEGACY client-round-trip replay (redacted_thinking through Claude Code) —
+                // operator opt-in only; superseded by the gateway-held reasoning cache below.
+                replay = InjectPriorReasoning(reasoning.replay),
+                // Ask for the opaque encrypted handle whenever reasoning is visible OR the
+                // reasoning cache needs it (RC-5: the cache can only hold what the server returns).
+                // Not a function of `compact`: the request is built like a turn (the builder header).
+                includeEncrypted = RequestEncryptedReasoning(showOn || quirks.roundTrip.reasoningCache),
+                decode = { data ->
+                    ReasoningReplay.decodeReasoningEnvelope(data) { msg ->
+                        if (!reasoningEnvelopeDropLogged) {
+                            reasoningEnvelopeDropLogged = true
+                            log(msg)
+                        }
                     }
-                }
-            },
-            // RC-5: gateway-held reasoning continuity — the turn that emitted these tool ids
-            // left its plan in the cache; reinject it so the model resumes instead of
-            // re-deriving (codex parity; repeated-tool-call amnesia otherwise). Scoped to
-            // THIS conversation (same first-message hash the builder stamps on TurnMeta).
-            // ONE atomic snapshot per build (review of #71 round 2): per-block lookups could
-            // tear across a concurrent eviction (rounds 1..k injected, k+1.. missing), re-ran
-            // the first-message SHA-256 per block, and re-touched the conversation per block.
-            // Lazy so a build with no tool_use blocks never touches the cache at all. Wired on a
-            // compaction too: the session's turns carry these reasoning items in their input, so
-            // a compaction built without them shares no prefix with them (2026-09-05).
-            reasoningLookup = if (!quirks.reasoningCache) {
-                ReasoningLookup { null }
-            } else {
-                continuity.lookupFor(body, sessionId)
-            },
+                },
+                // RC-5: gateway-held reasoning continuity — the turn that emitted these tool ids
+                // left its plan in the cache; reinject it so the model resumes instead of
+                // re-deriving (codex parity; repeated-tool-call amnesia otherwise). Scoped to
+                // THIS conversation (same first-message hash the builder stamps on TurnMeta).
+                // ONE atomic snapshot per build (review of #71 round 2): per-block lookups could
+                // tear across a concurrent eviction (rounds 1..k injected, k+1.. missing), re-ran
+                // the first-message SHA-256 per block, and re-touched the conversation per block.
+                // Lazy so a build with no tool_use blocks never touches the cache at all. Wired on a
+                // compaction too: the session's turns carry these reasoning items in their input, so
+                // a compaction built without them shares no prefix with them (2026-09-05).
+                lookup = if (!quirks.roundTrip.reasoningCache) {
+                    ReasoningLookup { null }
+                } else {
+                    continuity.lookupFor(body, sessionId)
+                },
+            ),
+            sessionId = sessionId,
             // The provider's capability latch, read at build time: false = a shape-400 already
             // closed it this daemon lifetime; build the full status-quo request instead.
             toolSurfaceOpen = toolSurfaceLatch.open,

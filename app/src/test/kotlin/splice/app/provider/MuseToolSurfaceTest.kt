@@ -29,8 +29,8 @@ class MuseToolSurfaceTest {
         assertEquals("function", tools.first()["type"]?.jsonPrimitive?.content)
         assertNull(tools.last()["execution"], "Meta owns hosted search, not splice's client controller")
         assertNull(turn.toolSearch)
-        assertEquals(1, turn.meta.toolsEager)
-        assertEquals(12, turn.meta.toolsDeferred)
+        assertEquals(1, turn.meta.tools.eager)
+        assertEquals(12, turn.meta.tools.deferred)
     }
 
     @Test
@@ -39,7 +39,7 @@ class MuseToolSurfaceTest {
         val tools = turn.requestBody.getValue("tools").jsonArray.map { it.jsonObject }
         assertEquals(13, tools.size)
         assertTrue(tools.none { "defer_loading" in it || it["type"]?.jsonPrimitive?.content == "tool_search" })
-        assertNull(turn.meta.toolsDeferred)
+        assertNull(turn.meta.tools.deferred)
     }
 
     @Test
@@ -48,7 +48,7 @@ class MuseToolSurfaceTest {
         val tools = turn.requestBody.getValue("tools").jsonArray.map { it.jsonObject }
         assertEquals(13, tools.size)
         assertTrue(tools.none { "defer_loading" in it || it["type"]?.jsonPrimitive?.content == "tool_search" })
-        assertEquals(0, turn.meta.toolsDeferred)
+        assertEquals(0, turn.meta.tools.deferred)
     }
 
     private suspend fun turn(root: Path, surface: String?): splice.upstream.BuiltTurn {
@@ -84,9 +84,11 @@ class MuseToolSurfaceTest {
             head = head,
             providerCfg = provider,
             catalog = provider.catalogFor(head),
-            watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+            faultPlan = UpstreamFaultPlan(
+                watchdog = WatchdogBudget(60.seconds, 60.seconds, 600.seconds),
+                loginCommand = "claude-muse login",
+            ),
             cfg = ConfigService(paths).getConfig("claude-muse"),
-            loginCommand = "claude-muse login",
         )
         val tools = (0 until 12).joinToString(",") { index ->
             """{"name":"mcp__synthetic_$index","description":"Synthetic","input_schema":{"type":"object"}}"""

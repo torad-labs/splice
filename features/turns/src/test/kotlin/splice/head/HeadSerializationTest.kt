@@ -37,6 +37,8 @@ import splice.dialect.responses.ReasoningSettings
 import splice.upstream.BuiltTurn
 import splice.upstream.FoldPolicy
 import splice.upstream.Provider
+import splice.upstream.ProviderLocations
+import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.RoundInterceptor
 import java.lang.management.ManagementFactory
@@ -206,8 +208,7 @@ class HeadSerializationTest {
 
 private fun serializationProvider(baseUrl: String): Provider = TestResponsesProvider(
     tuning = ProviderTuning(
-        key = "synthetic",
-        label = "synthetic",
+        name = ProviderName(key = "synthetic", label = "synthetic"),
         catalog = ModelCatalog(
             discoveryPrefix = "synthetic-",
             models = listOf(ModelEntry("synthetic", contextWindow = 2_000_000)),
@@ -215,7 +216,7 @@ private fun serializationProvider(baseUrl: String): Provider = TestResponsesProv
         ),
         pinnedModel = "synthetic",
         auth = ClientAuthProvider("synthetic"),
-        baseUrl = baseUrl,
+        locations = ProviderLocations(baseUrl = baseUrl),
         watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.OFF, false, null, null),

@@ -60,7 +60,7 @@ private object ProviderRefusal {
  *  plans, so the window's counters and each row's own figure are the same decision read twice. */
 internal class TurnPriceGap(private val price: TurnPrice?, private val plans: AccountPlans) {
     /** The dollars this row billed, or null when [of] has a reason instead. */
-    fun usd(row: PerfRow): Double? = price?.takeIf { declares(row) && counted(row) }?.usd(row.model, row.fields)
+    fun usd(row: PerfRow): Double? = price?.takeIf { declares(row) && counted(row) }?.usd(row.facts.model, row.fields)
 
     /** Null exactly when [usd] has a figure. */
     fun of(row: PerfRow): PriceGap? = when {
@@ -69,11 +69,11 @@ internal class TurnPriceGap(private val price: TurnPrice?, private val plans: Ac
         plans.kind == UsageBilling.LOCAL_RUNTIME -> PriceGap.LOCAL
         plans.kind == UsageBilling.SUBSCRIPTION -> PriceGap.PLAN
         declares(row) -> PriceGap.UNCOUNTED
-        plans.of(row.account) != null -> PriceGap.PLAN
+        plans.of(row.facts.account) != null -> PriceGap.PLAN
         else -> PriceGap.UNDECLARED
     }
 
-    private fun declares(row: PerfRow): Boolean = price?.declares(row.model) == true
+    private fun declares(row: PerfRow): Boolean = price?.declares(row.facts.model) == true
 
     /** A cost needs both reported token totals; an early refusal without them is not a $0 turn. */
     private fun counted(row: PerfRow): Boolean =

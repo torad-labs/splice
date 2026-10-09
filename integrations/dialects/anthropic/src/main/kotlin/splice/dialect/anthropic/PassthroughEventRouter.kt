@@ -10,7 +10,7 @@ import splice.upstream.sse.WireSink
 
 /** Dispatches one upstream Anthropic SSE frame to its owning collaborators. This translator only
  *  READS the upstream terminal discriminators to drive the WireSink (which has no terminal verbs)
- *  — it is not a second wire emitter, hence the localized L3 wall exceptions below. */
+ *  — it is not a second wire emitter, and it names the frames through [UpstreamFrame], never as wire literals. */
 internal class PassthroughEventRouter(
     private val blocks: PassthroughBlockRegistry,
     private val terminal: PassthroughTerminalState,
@@ -25,26 +25,25 @@ internal class PassthroughEventRouter(
     }
 
     private suspend fun dispatch(evt: JsonObject, sink: WireSink) {
-        when (JsonScalars.strOrEmpty(evt["type"])) {
-            "message_start" -> usage.harvestUsage((evt["message"] as? JsonObject)?.get("usage") as? JsonObject)
-            "content_block_start" -> {
+        when (UpstreamVocabulary.frame(JsonScalars.strOrEmpty(evt["type"]))) {
+            UpstreamFrame.MESSAGE_START ->
+                usage.harvestUsage((evt["message"] as? JsonObject)?.get("usage") as? JsonObject)
+            UpstreamFrame.CONTENT_BLOCK_START -> {
                 shape.openBlock(
                     JsonScalars.int(evt, "index"),
                     JsonScalars.strOrEmpty((evt["content_block"] as? JsonObject)?.get("type")),
                 )
                 blocks.onBlockStart(evt, sink)
             }
-            "content_block_delta" -> blocks.onBlockDelta(evt, sink)
-            "content_block_stop" -> {
+            UpstreamFrame.CONTENT_BLOCK_DELTA -> blocks.onBlockDelta(evt, sink)
+            UpstreamFrame.CONTENT_BLOCK_STOP -> {
                 shape.closeBlock(JsonScalars.int(evt, "index"))
                 blocks.onBlockStop(evt, sink)
             }
-            // ast-grep-ignore: kt-l3-sole-wire-terminals — reading upstream discriminator, not emitting
-            "message_delta" -> onMessageDelta(evt)
-            // ast-grep-ignore: kt-l3-sole-wire-terminals — reading upstream discriminator, not emitting
-            "message_stop" -> terminal.finished = true
-            "error" -> onError(evt)
-            else -> blocks.relayEvent(evt, sink)
+            UpstreamFrame.MESSAGE_DELTA -> onMessageDelta(evt)
+            UpstreamFrame.MESSAGE_STOP -> terminal.finished = true
+            UpstreamFrame.ERROR -> onError(evt)
+            null -> blocks.relayEvent(evt, sink)
         }
     }
 

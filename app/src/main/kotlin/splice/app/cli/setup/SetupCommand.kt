@@ -160,7 +160,7 @@ internal class SetupCommand(
         }
         val wrappers = "Wrapper commands under $bin"
         val suggested = when (start) {
-            is SetupStart.OAuth -> profiles.catalog().firstOrNull { it.authKind == start.kind }
+            is SetupStart.OAuth -> profiles.catalog().firstOrNull { it.provider.authKind == start.kind }
             SetupStart.OpenRouter -> profiles.find("openrouter")
             SetupStart.Existing -> null
         }
@@ -171,7 +171,7 @@ internal class SetupCommand(
         } else {
             listOf("Heads to add: ${heads.joinToString(", ")}")
         }
-        val keys = if (heads.any { name -> profiles.find(name)?.authKind == API_KEY_KIND }) {
+        val keys = if (heads.any { name -> profiles.find(name)?.provider?.authKind == API_KEY_KIND }) {
             listOf("API keys written by splice add (keys.toml, 0600)")
         } else {
             emptyList()

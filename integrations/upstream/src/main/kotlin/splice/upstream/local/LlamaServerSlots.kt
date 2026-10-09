@@ -14,7 +14,6 @@ package splice.upstream.local
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.upstream.transport.LocalHttp
 
@@ -41,7 +40,10 @@ public class LlamaServerSlots(baseUrl: String, private val http: LocalHttp) {
             ?: SlotsReading.Unreadable("$props answered HTTP ${reply.status} without a slot count")
     }
 
-    private fun parse(text: String): JsonObject? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-19 (V4-165): a /props body that is not a JSON object carries no slot count; read() reports that absence with the reply's status, and the caller sends the turn unpinned, which is what every turn did before slot affinity.
-        Cancellables.runCatchingCancellable { json.parseToJsonElement(text).jsonObject }.getOrNull()
+    // A /props body that is not a JSON object carries no slot count; read() reports that absence with the reply's status.
+    private fun parse(text: String): JsonObject? = try {
+        json.parseToJsonElement(text).jsonObject
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 }

@@ -9,7 +9,6 @@ package splice.upstream.local
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.wire.HttpStatus
 import splice.upstream.transport.LocalHttpReply
@@ -56,7 +55,10 @@ internal class LocalLiveReading {
             .any { JsonScalars.str((it as? JsonObject)?.get("function") as? JsonObject, "name") == PING_TOOL }
     }
 
-    private fun parse(text: String): JsonObject? =
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): an SSE chunk that is not a JSON object cannot carry a tool call (the header's whole point), so null is the complete reading; the non-200 detail above is what reaches the operator.
-        Cancellables.runCatchingCancellable { json.parseToJsonElement(text) as? JsonObject }.getOrNull()
+    // An SSE chunk that is not a JSON object cannot carry a tool call, so null is the complete reading.
+    private fun parse(text: String): JsonObject? = try {
+        json.parseToJsonElement(text) as? JsonObject
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 }

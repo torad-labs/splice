@@ -19,6 +19,9 @@ tasks.named<Test>("lawTest") {
         rootProject.file("CHANGELOG.md"),
         rootProject.file("app/src/main/resources/splice.example.toml"),
     )
-    systemProperty("splice.releaseDocs", rootProject.projectDir.absolutePath)
-    systemProperty("splice.featuresDoc", featuresDoc.asFile.absolutePath)
+    jvmArgumentProviders.add(
+        splice.testing.MachineLocalProperties(
+            provider { mapOf("splice.releaseDocs" to rootProject.projectDir.absolutePath, "splice.featuresDoc" to featuresDoc.asFile.absolutePath) },
+        ),
+    )
 }

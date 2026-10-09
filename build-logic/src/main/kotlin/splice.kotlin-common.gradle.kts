@@ -82,7 +82,8 @@ tasks.withType<Test>().configureEach {
     // developer's home instead of its own fixtures is worse than red -- it is red somewhere else.
     val testHome = layout.buildDirectory.dir("test-home").get().asFile
     doFirst { testHome.resolve("config").mkdirs() }
-    environment("XDG_CONFIG_HOME", testHome.resolve("config").absolutePath)
+    // The rig home is named after the cache key is taken (doFirst runs after the inputs are fingerprinted), so it does not key the task.
+    doFirst { environment("XDG_CONFIG_HOME", testHome.resolve("config").absolutePath) }
     // HERMETIC ENVIRONMENT — the other half of HERMETIC HOME, and the half that was still open.
     // ApiKeyAuthProvider.readKey reads the ENV VAR FIRST, then the key file, then the store
     // (splice/provider/openai/ApiKeyAuthProvider.kt:74-80), so pointing the store at the rig leaves
@@ -99,10 +100,10 @@ tasks.withType<Test>().configureEach {
     // OAuth sign-in fails by name instead of opening a login page on the operator's desktop and
     // blocking on a loopback callback that will never arrive. See LoginIo.kt's wall.
     systemProperty("splice.noSystemBrowser", "1")
-    jvmArgs("-Duser.home=${testHome.absolutePath}")
+    jvmArgumentProviders.add(splice.testing.MachineLocalArguments(provider { listOf("-Duser.home=${testHome.absolutePath}") }))
     // HOME outranks user.home (UserHome.kt, V4-218), so the rig home is named in both: a test JVM that kept
     // the shell's HOME would resolve every ~/ path into the developer's real home again.
-    environment("HOME", testHome.absolutePath)
+    doFirst { environment("HOME", testHome.absolutePath) }
     // A TEST THAT RETURNS A VALUE NEVER RUNS, AND NOW THAT FAILS THE MODULE'S OWN RUN. Kotlin makes the
     // shape easy (`fun x() = runBlocking { ... }` returns the block's last expression), and JUnit skips a
     // non-void @Test with a WARNING discovery issue, "must not return a value. It will not be executed."

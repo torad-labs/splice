@@ -91,7 +91,7 @@ val trackedPathsDigest = providers.exec {
 val declaredReadRoots: List<String> = moduleDirectories.values.map { "$it/src/main" } + "build-logic/src/main/kotlin"
 
 tasks.withType<Test>().configureEach {
-    systemProperty("splice.root", repoRoot.asFile.absolutePath)
+    jvmArgumentProviders.add(splice.testing.MachineLocalProperties(provider { mapOf("splice.root" to repoRoot.asFile.absolutePath) }))
     systemProperty("splice.declaredReadRoots", declaredReadRoots.joinToString(";"))
     inputs.files(declaredReadRoots.map { root -> repoRoot.dir(root).asFileTree.matching { include("**/*.kt") } })
         .withPropertyName("declaredReadRoots")

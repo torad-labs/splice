@@ -18,5 +18,5 @@ dependencies {
 // The journal's streaming test loads a journal larger than a child JVM's whole heap; the child runs
 // from this module's own test runtime classpath, as :integrations-codemode's worker tests do.
 tasks.test {
-    systemProperty("codex.testClasspath", sourceSets.test.get().runtimeClasspath.asPath)
+    jvmArgumentProviders.add(splice.testing.MachineLocalProperties(provider { mapOf("codex.testClasspath" to sourceSets.test.get().runtimeClasspath.asPath) }))
 }

@@ -5,15 +5,17 @@ import java.io.File
 
 private const val APP_JAR_TASK = ":app:shadowJar"
 
+/** [fresh] marks a leg whose verdict is not a function of the files (commit history, a live advisory feed): it runs every time. */
 class LadderLeg(
     val task: String,
     val command: List<String>,
     val why: String,
     val dependsOn: List<String>,
     val afterAllTests: Boolean,
+    val fresh: Boolean,
     val files: LegFiles,
 ) {
-    /** A leg that depends on the fat jar reads it, so the jar and the row's input globs decide whether the leg reruns. */
+    /** A leg that depends on the fat jar reads it. Its jar and the files its input globs name decide whether it reruns, unless it is [fresh]. */
     fun readsJar(): Boolean = APP_JAR_TASK in dependsOn
 }
 

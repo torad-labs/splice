@@ -56,23 +56,25 @@ val legTasks = legs.map { leg ->
         commandLine(leg.command)
         dependsOnTasks.forEach { dependsOn(it) }
         if (leg.afterAllTests) dependsOn(everyTestTask)
-        if (leg.readsJar()) {
-            // The verdict reads the jar and the files the row's `inputs` globs name. Both are inputs, so an unchanged tree stays
-            // UP-TO-DATE, and a rebuilt jar or an edited e2e file re-runs the leg. The stamp is the output gradle judges.
-            val e2eGlobs = leg.files.inputs
-            require(e2eGlobs.isNotEmpty()) { "$name reads the jar and names no inputs in $ladderPath" }
-            // The fat jar's task is looked up when the inputs are read, after every project is configured: :app is not
-            // configured yet while this root plugin is applied, so a lookup here would fail the whole configuration.
-            inputs.files(provider { project(":app").tasks.named("shadowJar").get() }).withPropertyName("fatJar")
+        if (leg.fresh) {
+            outputs.upToDateWhen { false }
+        } else {
+            // The verdict is a function of the files the row's `inputs` globs name (and the fat jar, for a leg that reads it), so an
+            // unchanged tree stays UP-TO-DATE and an edit to any of them re-runs the leg. The stamp is the output gradle judges.
+            val inputGlobs = leg.files.inputs
+            require(inputGlobs.isNotEmpty()) { "$name names no inputs in $ladderPath" }
+            if (leg.readsJar()) {
+                // The fat jar's task is looked up when the inputs are read, after every project is configured: :app is not
+                // configured yet while this root plugin is applied, so a lookup here would fail the whole configuration.
+                inputs.files(provider { project(":app").tasks.named("shadowJar").get() }).withPropertyName("fatJar")
+            }
             // The row's globs are expanded by git (tracked, plus untracked and not ignored), never by walking the tree: a walk reads
             // ignored directories and throws on a dangling link under them.
             inputs.files(
-                splice.lawsuite.ReadSet.globbedProvider(project, e2eGlobs).map { files -> files.map { rootDir.resolve(it) } },
+                splice.lawsuite.ReadSet.globbedProvider(project, inputGlobs).map { files -> files.map { rootDir.resolve(it) } },
             ).withPropertyName("ladderInputs")
             outputs.file(stamp)
             doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("$name\n") }
-        } else {
-            outputs.upToDateWhen { false }
         }
         // The one file a leg writes and owns is removed as the leg starts: a rerun of the leg must not find its own
         // previous output. Only the file the row names is removed, never a directory, and a failed removal stops the leg.
@@ -107,33 +109,21 @@ val gateOfRecord = tasks.register("gateOfRecord") {
     dependsOn(gradle.includedBuild("build-logic").task(":detekt"))
 }
 
-// THE PROOF IS TAKEN WHEN THE GRAPH IS READY, NEVER DURING EXECUTION. The first cut walked
-// `task.taskDependencies.getDependencies(task)` inside verifyLadder's action, and a string
-// dependency (`":app:shadowJar"`) resolves through BuildScopedTaskResolver.ensureProjectsConfigured,
-// which wants the build's state lock — held for the whole execution phase. Measured 2026-09-21,
-// twice (the second time behind a `by lazy` that only moved the same walk): the build hung at
-// `> Task :verifyLadder` with the worker parked in withStateLock. At taskGraph.whenReady the graph
-// is Gradle's own answer to "what will run", and TaskExecutionGraph.getDependencies reads the
-// nodes it already resolved; nothing here resolves a dependency of its own.
-//
-// The proof exists only under gateOfRecord: standalone, the legs are not in the graph and
-// getDependencies has nothing to read, so verifyLadder says so and fails rather than pass on an
-// empty set.
-var ladderProblems: List<String>? = null
-gradle.taskGraph.whenReady {
+// THE PROOF IS TAKEN WHEN THE BUILD IS CONFIGURED, NEVER DURING EXECUTION. Reading a task's dependencies during execution wants the
+// build's state lock, which is held for the whole execution phase (the build hung at `> Task :verifyLadder`, measured 2026-09-21), and
+// project access during execution is not allowed under the configuration cache at all. The answer is a value read once, after every
+// task is registered, and the task only reports it. A leg a command line excludes with `-x` is not seen here.
+val ladderProblems = provider {
     val root = gateOfRecord.get()
-    if (!hasTask(root)) return@whenReady
-    val direct = getDependencies(root)
-    ladderProblems = legs.mapNotNull { leg ->
+    val direct = root.taskDependencies.getDependencies(root)
+    legs.mapNotNull { leg ->
         val name = leg.task
-        val command = leg.command
         val task = tasks.findByName(name)
         when {
             task == null -> "$name: named in $ladderPath and registered by nothing"
             task !is Exec -> "$name: is not an Exec task"
-            task.commandLine != command -> "$name: runs ${task.commandLine} where $ladderPath says $command"
+            task.commandLine != leg.command -> "$name: runs ${task.commandLine} where $ladderPath says ${leg.command}"
             task !in direct -> "$name: gateOfRecord does not depend on it, so nothing runs this leg"
-            !hasTask(task) -> "$name: excluded from this graph, which makes the gate narrower than $ladderPath"
             else -> null
         }
     }
@@ -142,18 +132,13 @@ gradle.taskGraph.whenReady {
 tasks.register("verifyLadder") {
     group = "gate"
     description =
-        "Proves $ladderPath against the graph: every row is an Exec task with that argv that gateOfRecord " +
-        "depends on and this graph schedules. Meaningful only under gateOfRecord."
-    outputs.upToDateWhen { false }
+        "Proves $ladderPath against the build: every row is an Exec task with that argv that gateOfRecord depends on."
+    val problems = ladderProblems
+    val legCount = legs.size
+    val table = ladderPath
+    inputs.property("ladderProblems", problems)
     doLast {
-        val problems = checkNotNull(ladderProblems) {
-            "verifyLadder proves the ladder under gateOfRecord, which is not in this build's graph: " +
-                "run `bun tools/gate run` (or gateOfRecord)"
-        }
-        check(problems.isEmpty()) { "the gate ladder disagrees with $ladderPath:\n  " + problems.joinToString("\n  ") }
-        logger.lifecycle(
-            "verifyLadder: ${legs.size} leg(s) registered from $ladderPath, " +
-                "every one a dependency of gateOfRecord and scheduled in this graph",
-        )
+        check(problems.get().isEmpty()) { "the gate ladder disagrees with $table:\n  " + problems.get().joinToString("\n  ") }
+        logger.lifecycle("verifyLadder: $legCount leg(s) registered from $table, every one a dependency of gateOfRecord")
     }
 }

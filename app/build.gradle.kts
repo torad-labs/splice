@@ -1,11 +1,13 @@
-import com.github.jk1.license.render.JsonReportRenderer
-import com.github.jk1.license.render.ReportRenderer
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import com.github.jengelman.gradle.plugins.shadow.transformers.IncludeResourceTransformer
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import org.cyclonedx.model.Component
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.ClasspathNormalizer
+import org.gradle.api.artifacts.result.ResolvedComponentResult
+import org.gradle.api.artifacts.result.ResolvedDependencyResult
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
@@ -31,7 +33,6 @@ plugins {
     application
     id("com.gradleup.shadow") version "9.6.1"
     id("org.cyclonedx.bom") version "3.4.1"
-    id("com.github.jk1.dependency-license-report") version "3.1.4"
 }
 
 // :integrations-codemode's compiled runtime suite, rerun by codeModePackagedTest against the fat jar.
@@ -109,7 +110,7 @@ tasks.test {
         "junit.jupiter.tempdir.deletion.strategy.default",
         "splice.head.HeadFileWriteCleanup",
     )
-    systemProperty("codeMode.testClasspath", sourceSets.test.get().runtimeClasspath.asPath)
+    jvmArgumentProviders.add(splice.testing.MachineLocalProperties(provider { mapOf("codeMode.testClasspath" to sourceSets.test.get().runtimeClasspath.asPath) }))
 
     // The arms that enter at a production call site (DR-97 login(), DR-99 runCli()) redirect
     // `user.home` to a @TempDir, but TopologyLoader.configPath() consults SPLICE_CONFIG and
@@ -140,10 +141,8 @@ val releaseVersion = project.version.toString()
 val releaseGroup = rootProject.name
 val repositoryRoot = rootProject.layout.projectDirectory
 val rawBomDir = layout.buildDirectory.dir("reports/cyclonedx")
-val rawLicenseDir = layout.buildDirectory.dir("reports/licenses")
 val complianceDir = layout.buildDirectory.dir("reports/compliance")
 val rawBom = rawBomDir.map { it.file("bom.cdx.json") }
-val rawLicenses = rawLicenseDir.map { it.file("dependency-licenses.json") }
 val bom = complianceDir.map { it.file("bom.cdx.json") }
 val licenses = complianceDir.map { it.file("dependency-licenses.json") }
 val thirdPartyLicenses = complianceDir.map { it.file("THIRD_PARTY_LICENSES.txt") }
@@ -154,21 +153,25 @@ val runtimeLegalArtifacts = configurations.runtimeClasspath.get().incoming.artif
     componentFilter { it is ModuleComponentIdentifier }
 }.artifacts
 val legalResourceName = Regex("(?i)(?:.*[-_])?(LICENSE|NOTICE)(?:\\.(txt|md))?")
-val runtimeLegalTexts = providers.provider {
-    runtimeLegalArtifacts.artifacts.filter { it.file.extension == "jar" }
-        .sortedBy { it.id.displayName }.flatMap { artifact ->
-            ZipFile(artifact.file).use { archive ->
-                archive.entries().asSequence().filter { entry ->
-                    !entry.isDirectory && legalResourceName.matches(entry.name.substringAfterLast('/'))
-                }.sortedBy { it.name }.map { entry ->
-                    Triple(
-                        artifact.id.componentIdentifier.displayName,
-                        entry.name,
-                        archive.getInputStream(entry).bufferedReader(Charsets.UTF_8).use { it.readText() },
-                    )
-                }.toList()
+val runtimeLegalTexts = run {
+    val artifacts = runtimeLegalArtifacts
+    val legalName = legalResourceName
+    providers.provider {
+        artifacts.artifacts.filter { it.file.extension == "jar" }
+            .sortedBy { it.id.displayName }.flatMap { artifact ->
+                ZipFile(artifact.file).use { archive ->
+                    archive.entries().asSequence().filter { entry ->
+                        !entry.isDirectory && legalName.matches(entry.name.substringAfterLast('/'))
+                    }.sortedBy { it.name }.map { entry ->
+                        Triple(
+                            artifact.id.componentIdentifier.displayName,
+                            entry.name,
+                            archive.getInputStream(entry).bufferedReader(Charsets.UTF_8).use { it.readText() },
+                        )
+                    }.toList()
+                }
             }
-        }
+    }
 }
 val icuLicense = repositoryRoot.file("tools/release/licenses/icu-LICENSE.txt")
 val licenseFile = repositoryRoot.file("LICENSE")
@@ -195,11 +198,13 @@ val allowedReleaseLicenses = setOf(
     "Apache Software License - Version 2.0",
     "Apache-2.0",
     "Eclipse Public License - Version 1.0",
+    "EPL-1.0",
     "MIT",
     "MIT License",
     "The Apache Software License, Version 2.0",
     // Bundled GraalJS community libraries: permissive copyright/patent grant with notice retention.
     "Universal Permissive License, Version 1.0",
+    "UPL-1.0",
     // ICU's permissive grant requires the included copyright and third-party notices.
     "Unicode/ICU License",
 )
@@ -216,17 +221,16 @@ tasks.cyclonedxDirectBom {
     xmlOutput.unsetConvention()
 }
 
-licenseReport {
-    outputDir = rawLicenseDir.get().asFile.absolutePath
-    projects = arrayOf(project)
-    configurations = arrayOf("runtimeClasspath")
-    renderers = arrayOf<ReportRenderer>(JsonReportRenderer("dependency-licenses.json", false))
-}
 
 val normalizeReleaseBom = tasks.register("normalizeReleaseBom") {
+    val rawBom = rawBom
+    val bom = bom
+    val releaseGroup = releaseGroup
+    val releaseVersion = releaseVersion
     dependsOn(tasks.cyclonedxDirectBom)
-    inputs.file(rawBom)
+    inputs.file(rawBom).withPathSensitivity(PathSensitivity.NONE)
     outputs.file(bom)
+    outputs.cacheIf("a pure function of the raw BOM") { true }
     doLast {
         val bomJson = JsonSlurper().parse(rawBom.get().asFile) as Map<*, *>
         val stableBom = LinkedHashMap(bomJson)
@@ -286,27 +290,28 @@ val normalizeReleaseBom = tasks.register("normalizeReleaseBom") {
     }
 }
 
-val copyReleaseLicenses = tasks.register("copyReleaseLicenses") {
-    dependsOn(tasks.named("generateLicenseReport"))
-    inputs.file(rawLicenses)
-    outputs.file(licenses)
-    doLast {
-        val output = licenses.get().asFile
-        output.parentFile.mkdirs()
-        Files.copy(rawLicenses.get().asFile.toPath(), output.toPath(), StandardCopyOption.REPLACE_EXISTING)
-    }
+val normalizedBom = bom
+val copyReleaseLicenses = tasks.register<splice.release.LicenseInventory>("copyReleaseLicenses") {
+    dependsOn(normalizeReleaseBom)
+    bom.set(normalizedBom)
+    inventory.set(licenses)
+    firstPartyGroup.set(releaseGroup)
 }
 
 val generateThirdPartyNotices = tasks.register("generateThirdPartyNotices") {
-    inputs.file(thirdPartyNoticesSource)
-    inputs.files(runtimeLegalArtifacts.artifactFiles)
+    val noticesSource = thirdPartyNoticesSource
+    val notices = thirdPartyNotices
+    val legalTexts = runtimeLegalTexts
+    inputs.file(thirdPartyNoticesSource).withPathSensitivity(PathSensitivity.NONE)
+    inputs.files(runtimeLegalArtifacts.artifactFiles).withNormalizer(ClasspathNormalizer::class.java)
     outputs.file(thirdPartyNotices)
+    outputs.cacheIf("a pure function of the notices source and the runtime jars") { true }
     doLast {
-        val output = thirdPartyNotices.get().asFile
+        val output = notices.get().asFile
         output.parentFile.mkdirs()
         output.writeText(buildString {
-            append(thirdPartyNoticesSource.asFile.readText())
-            runtimeLegalTexts.get().filter { (_, name, _) -> "NOTICE" in name.uppercase() }
+            append(noticesSource.asFile.readText())
+            legalTexts.get().filter { (_, name, _) -> "NOTICE" in name.uppercase() }
                 .forEach { (coordinate, name, text) ->
                     appendLine()
                     appendLine("## $coordinate / $name")
@@ -319,9 +324,14 @@ val generateThirdPartyNotices = tasks.register("generateThirdPartyNotices") {
 }
 
 val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
-    inputs.file(icuLicense)
-    inputs.files(runtimeLegalArtifacts.artifactFiles)
+    val icu = icuLicense
+    val bundle = thirdPartyLicenses
+    val legalTexts = runtimeLegalTexts
+    inputs.file(icuLicense).withPathSensitivity(PathSensitivity.NONE)
+    inputs.property("cyclonedxLicenseTexts", "3.4.1")
+    inputs.files(runtimeLegalArtifacts.artifactFiles).withNormalizer(ClasspathNormalizer::class.java)
     outputs.file(thirdPartyLicenses)
+    outputs.cacheIf("a pure function of the license texts and the runtime jars") { true }
     doLast {
         val sections = linkedMapOf(
             "Apache-2.0" to "Apache License 2.0",
@@ -351,8 +361,8 @@ val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
             appendLine("================================================================================")
             appendLine("ICU license and bundled third-party notices")
             appendLine("================================================================================")
-            appendLine(icuLicense.asFile.readText().trimEnd())
-            runtimeLegalTexts.get().filter { (_, name, _) -> "LICENSE" in name.uppercase() }
+            appendLine(icu.asFile.readText().trimEnd())
+            legalTexts.get().filter { (_, name, _) -> "LICENSE" in name.uppercase() }
                 .forEach { (coordinate, name, text) ->
                     appendLine()
                     appendLine("================================================================================")
@@ -363,15 +373,36 @@ val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
                     appendLine()
                 }
         }
-        val output = thirdPartyLicenses.get().asFile
+        val output = bundle.get().asFile
         output.parentFile.mkdirs()
         output.writeText(text)
     }
 }
 
 val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
+    val bom = bom
+    val licenses = licenses
+    val thirdPartyLicenses = thirdPartyLicenses
+    val thirdPartyNotices = thirdPartyNotices
+    val legalTexts = runtimeLegalTexts
+    val releaseVersion = releaseVersion
+    val releaseGroup = releaseGroup
+    val allowedReleaseLicenses = allowedReleaseLicenses
+    val runtimeCoordinates = configurations.runtimeClasspath.get().incoming.resolutionResult.rootComponent.map { root ->
+        val seen = LinkedHashSet<ResolvedComponentResult>()
+        val pending = ArrayDeque(listOf(root))
+        while (pending.isNotEmpty()) {
+            val component = pending.removeFirst()
+            if (!seen.add(component)) continue
+            component.dependencies.filterIsInstance<ResolvedDependencyResult>().forEach { pending.addLast(it.selected) }
+        }
+        seen.mapNotNull { component -> component.moduleVersion?.let { "${it.group}:${it.name}:${it.version}" } }
+            .filterNot { it.startsWith("${releaseGroup}:") }
+            .toSet()
+    }
     dependsOn(normalizeReleaseBom, copyReleaseLicenses, generateThirdPartyLicenses, generateThirdPartyNotices)
     inputs.files(bom, licenses, thirdPartyLicenses, thirdPartyNotices)
+    inputs.property("runtimeCoordinates", runtimeCoordinates)
     doLast {
         val bomJson = JsonSlurper().parse(bom.get().asFile) as Map<*, *>
         val metadata = bomJson["metadata"] as? Map<*, *> ?: emptyMap<Any, Any>()
@@ -420,11 +451,7 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
             val entry = dependency as Map<*, *>
             "${entry["moduleName"]}:${entry["moduleVersion"]}"
         }.toSet()
-        val runtimeCoordinates = configurations.runtimeClasspath.get().incoming.resolutionResult.allComponents
-            .mapNotNull { component -> component.moduleVersion?.let { "${it.group}:${it.name}:${it.version}" } }
-            .filterNot { it.startsWith("${releaseGroup}:") }
-            .toSet()
-        val missingLicenses = runtimeCoordinates - licensedCoordinates
+        val missingLicenses = runtimeCoordinates.get() - licensedCoordinates
         check(missingLicenses.isEmpty()) { "runtime dependencies missing from license inventory: $missingLicenses" }
 
         val licenseTexts = thirdPartyLicenses.get().asFile.readText()
@@ -438,7 +465,7 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
             "Chinese/Japanese Word Break Dictionary Data",
         ).forEach { marker -> check(marker in licenseTexts) { "third-party license bundle missing $marker" } }
         val notices = thirdPartyNotices.get().asFile.readText()
-        runtimeLegalTexts.get().forEach { (coordinate, name, text) ->
+        legalTexts.get().forEach { (coordinate, name, text) ->
             val bundle = if ("NOTICE" in name.uppercase()) notices else licenseTexts
             check(text.isNotBlank() && text in bundle) { "release legal bundle missing $coordinate / $name" }
         }
@@ -487,6 +514,18 @@ val releaseTag =
 val stagingLauncher = javaToolchains.launcherFor(java.toolchain)
 
 tasks.register("stageRelease") {
+    val releaseTagPattern = releaseTagPattern
+    val releaseJar = releaseJar
+    val bom = bom
+    val licenses = licenses
+    val distDir = distDir
+    val launchShim = launchShim
+    val installScript = installScript
+    val licenseFile = licenseFile
+    val thirdPartyNotices = thirdPartyNotices
+    val thirdPartyLicenses = thirdPartyLicenses
+    val provenance = provenance
+    val releaseAssets = releaseAssets
     group = "release"
     description = "Stages dist/: the published asset set and sha256sums.txt over it (checks/release/stage.sh until PR 6)."
     inputs.file(releaseJar).withPropertyName("fatJar")
@@ -622,6 +661,7 @@ tasks.withType<ShadowJar>().configureEach {
         exclude(dependency("org.graalvm.polyglot:js-community:.*"))
     }
     archiveFileName.set("app-all.jar")
+    val licenseBytes = licenseFile.asFile
     dependsOn(verifyReleaseCompliance)
     // Copy order cannot select a dependency's license: discard every input at this path,
     // then emit splice's authoritative bytes once, after Shadow has processed the inputs.
@@ -638,7 +678,7 @@ tasks.withType<ShadowJar>().configureEach {
             val entries = archive.entries().asSequence().filter { it.name == "META-INF/LICENSE" }.toList()
             check(entries.size == 1) { "splice jar must carry exactly one META-INF/LICENSE" }
             val packaged = archive.getInputStream(entries.single()).use { it.readBytes() }
-            check(packaged.contentEquals(licenseFile.asFile.readBytes())) {
+            check(packaged.contentEquals(licenseBytes.readBytes())) {
                 "splice LICENSE differs from META-INF/LICENSE in the built jar"
             }
         }

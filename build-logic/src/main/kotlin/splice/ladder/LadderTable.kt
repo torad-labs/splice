@@ -25,6 +25,7 @@ object LadderTable {
             why = text(row, "why", task),
             dependsOn = texts(row, "dependsOn", task).orEmpty(),
             afterAllTests = row["afterAllTests"] == true,
+            fresh = row["fresh"] == true,
             files = LegFiles(
                 inputs = texts(row, "inputs", task).orEmpty(),
                 creates = optionalText(row, "creates", task),

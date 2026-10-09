@@ -53,6 +53,7 @@
     },
     {
       "task": "dependencyAudit",
+      "fresh": true,
       "inputs": ["tools/gate/index.ts","tools/gate/src/**","bun.lock"],
       "why": "bun audit --audit-level=critical over bun.lock, three attempts capped at a minute each (checks/oss/verify-OSS-I.sh until PR 6): the registry's advisory endpoint has hung and answered 503 mid-gate, and a critical advisory must still red all three attempts.",
       "command": ["bun", "tools/gate", "audit"]
@@ -82,9 +83,10 @@
       "why": "The release tooling's own red-green arms, which shipped with no row and so ran in nothing: dist's disposition law (an undispositioned file, a directory and a blank reason each fail BY NAME, with a placeholder-word positive control so the reason check is not vacuous), accept's semantic floor (a zero-byte artifact is EMPTY rather than present, a checksum that is not the file's own fails, the launcher and the jar must agree on a version, and an unmutated bundle passes every leg and still reds on the SBOM), the launch shim's arms measured against the SHIPPED shim (no fake curl survives \u2014 it speaks node:http, so PATH mocks are java and systemctl only), promote's abort paths (mismatched confirmation, EOF, main moving under the prompt, an existing tag, a missing or failing gh, each named rather than a silent exit 1), release.yml's legs (the gated stage command spelled exactly once, a comment decoy that passes a text check and fails this one, the asset list checked in both directions), verify's verb surface and zip's STORED/DEFLATED reads. Hermetic: every fixture is an mkdtemp under the OS temp dir, so the row needs no slot and no jar.",
       "command": ["bun", "test", "tools/release"]
     },
-    { "task": "prTitle", "inputs": ["**"], "why": "The commit subject against the conventional-type vocabulary; in CI the org gate judges the PR title instead.", "command": ["bun", "tools/gate", "title"] },
+    { "task": "prTitle", "fresh": true, "inputs": ["**"], "why": "The commit subject against the conventional-type vocabulary; in CI the org gate judges the PR title instead.", "command": ["bun", "tools/gate", "title"] },
     {
       "task": "attribution",
+      "fresh": true,
       "inputs": ["**"],
       "why": "splice is public: no commit HEAD reaches carries a Claude-Session trailer, a claude.ai session URL, a Co-Authored-By for noreply@anthropic.com or a Generated-with-Claude-Code line. The whole history is scanned, not the PR's commits, because a branch cut from the pre-rewrite tip carries the old attributed commits back in; a shallow CI clone is deepened blobless first and an unreadable history fails.",
       "command": ["bun", "tools/gate", "attribution"]

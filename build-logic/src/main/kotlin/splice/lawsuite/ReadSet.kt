@@ -154,8 +154,16 @@ object ReadSet {
     ) {
         val listFile = declareInputs(project, task, set, name)
         task.configure {
-            systemProperty("splice.root", project.rootProject.projectDir.absolutePath)
-            systemProperty(property, listFile.get().asFile.absolutePath)
+            jvmArgumentProviders.add(
+                splice.testing.MachineLocalProperties(
+                    project.provider {
+                        mapOf(
+                            "splice.root" to project.rootProject.projectDir.absolutePath,
+                            property to listFile.get().asFile.absolutePath,
+                        )
+                    },
+                ),
+            )
         }
     }
 

@@ -29,6 +29,24 @@ public fun interface FileIoTask {
     public operator fun invoke()
 }
 
+/** One saturation episode: [dropped] tasks refused since the last report, [sinceStart] since the process began. */
+public data class DropEpisode(public val dropped: Int, public val sinceStart: Int) {
+    /** The sentence daemon.log carries for this episode. */
+    public val line: String
+        get() = "[async-file-io] $dropped task(s) dropped while the lane was saturated (pending cap or " +
+            "rejection); $sinceStart since start\n"
+}
+
+/**
+ * Where [AsyncFileIo] writes a drop episode. Runs ON the lane's worker thread, which owns the file, and writes the
+ * line straight to it: a sink that submitted the line back would meet the same full lane that dropped the work.
+ * Returns true once the line reached the file, and false (never throws) when it did not, so the episode is kept
+ * and offered again before the worker's next task.
+ */
+public fun interface DropSink {
+    public operator fun invoke(episode: DropEpisode): Boolean
+}
+
 /**
  * One bounded, process-wide lane for best-effort state/telemetry writes.
  *
@@ -41,7 +59,7 @@ public object AsyncFileIo {
     private val episodeDrops = AtomicInteger()
 
     @Volatile
-    private var dropSink: LogSink = LogSink(DaemonLog::write)
+    private var dropSink: DropSink? = null
     private val pathLock = Any()
     private val latestByPath = HashMap<Path, CompletableFuture<Boolean>>()
     private val pendingByPath = HashMap<Path, Int>()
@@ -70,9 +88,10 @@ public object AsyncFileIo {
         }
         val guarded = Runnable {
             try {
+                reportDrops()
                 task()
             } finally {
-                if (pending.decrementAndGet() <= REPORT_BELOW && episodeDrops.get() > 0) reportDrops()
+                pending.decrementAndGet()
             }
         }
         return try {
@@ -164,28 +183,25 @@ public object AsyncFileIo {
      *  instead of assuming none (AsyncFileIoTest). */
     internal fun pendingCount(): Int = pending.get()
 
-    /** Where a drop episode is reported: the daemon's logger ([DaemonLog]) unless a caller injects its own. */
-    public fun reportDropsTo(sink: LogSink) {
+    /** Where drop episodes are written; null (the start) keeps them counted until a sink is set. */
+    public fun reportDropsTo(sink: DropSink?) {
         dropSink = sink
     }
 
-    // The lane cannot report its own saturation while it is saturated: daemon.log is one of its writes. So the
-    // drops of an episode are counted while it lasts, and reported once, through the normal logger, when a task
-    // finishes with the lane back under half its cap, where the line has room. Not at zero: a delayed task holds
-    // its slot until it runs, so steady delayed work would keep the count off zero and the drops unreported.
+    // The lane cannot report its own saturation through itself: daemon.log is one of its writes, and a line
+    // submitted into a full lane is refused like the work it reports. So the worker thread, which owns the file,
+    // writes the episode itself before it starts its next task, and the drain marker is such a task, so a
+    // shutdown flush cannot finish ahead of a pending report. The count falls only by what was written: a
+    // refused write keeps it, and a drop that lands meanwhile is still counted.
     private fun recordDrop() {
         dropped.incrementAndGet()
         episodeDrops.incrementAndGet()
     }
 
     private fun reportDrops() {
-        val episode = episodeDrops.getAndSet(0)
-        if (episode > 0) {
-            dropSink(
-                "[async-file-io] $episode task(s) dropped while the lane was saturated (pending cap or " +
-                    "rejection); ${dropped.get()} since start\n",
-            )
-        }
+        val sink = dropSink ?: return
+        val episode = episodeDrops.get()
+        if (episode > 0 && sink(DropEpisode(episode, dropped.get()))) episodeDrops.addAndGet(-episode)
     }
 
     /** Wait for all currently runnable work; delayed tasks remain delayed. Intended for reads/tests/shutdown. */
@@ -196,6 +212,5 @@ public object AsyncFileIo {
     }
 
     private const val MAX_PENDING_TASKS = 2_048
-    private const val REPORT_BELOW = MAX_PENDING_TASKS / 2
     private const val DEFAULT_DRAIN_TIMEOUT_MS = 5_000L
 }

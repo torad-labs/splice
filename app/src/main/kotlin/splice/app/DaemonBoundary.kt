@@ -9,6 +9,7 @@ import splice.core.topology.TopologyBackupName
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DirectoryListing
+import splice.core.util.DropSink
 import splice.core.util.FileTightening
 import splice.core.util.FilesListing
 import splice.core.util.LogSink
@@ -24,6 +25,52 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.CancellationException
+
+/** daemon.log and its one roll-over. Only the file lane's worker thread calls [append], so [writer] and [written]
+ *  need no lock. */
+private class DaemonLogFile(private val file: Path, private val rolled: Path, private val maxBytes: Long) {
+    private var writer: java.io.Writer? = null
+    private var written: Long = Cancellables
+        .runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
+        .onFailure {
+            System.err.print("[daemon-log] size probe failed (${SafeFailureText.render(it)}); starting at 0\n")
+        }
+        .getOrDefault(0L)
+
+    /** True when [line] reached daemon.log; a line it refused still goes to stderr, the one lane left for it. */
+    fun append(line: String, echo: Boolean): Boolean {
+        if (echo) System.err.print(line)
+        val outcome = Cancellables.runCatchingCancellable {
+            if (written >= maxBytes) {
+                writer?.close()
+                Files.move(file, rolled, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                writer = null
+                written = 0L
+            }
+            val w = writer ?: Files.newBufferedWriter(file, CREATE, APPEND).also { writer = it }
+            w.write(line)
+            w.flush()
+            written += line.toByteArray(Charsets.UTF_8).size
+        }.onFailure { failure ->
+            Cancellables.runCatchingCancellable { writer?.close() }
+            writer = null
+            // SH-14: a failed rotate used to leave `written` >= the cap forever — every later
+            // line re-entered the rotate branch, threw BEFORE reaching newBufferedWriter, and
+            // daemon.log went silent permanently. Reconcile from disk so the next line
+            // self-corrects, and say so on stderr (the one lane still alive here).
+            // The rotate failure and the reconciled size are printed together below; this
+            // stat's own failure has nowhere further to go than that same line, so it maps to 0.
+            written = Cancellables.runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
+                .getOrElse { 0L }
+            System.err.print(
+                "[daemon-log] write/rotate failed (${SafeFailureText.render(failure)}); " +
+                    "size reconciled to $written\n",
+            )
+            if (!echo) System.err.print(line)
+        }
+        return outcome.isSuccess
+    }
+}
 
 /**
  * Best-effort isolation at daemon/head boundaries without turning cancellation or fatal JVM
@@ -93,50 +140,19 @@ internal class DaemonBoundary(private val listing: DirectoryListing = FilesListi
         val logsProblem = logsDirProblem(logsDir)
         val file = logsDir.resolve("daemon.log")
         val rolled = logsDir.resolve("daemon.log.1")
-        var writer: java.io.Writer? = null
-        var written = Cancellables
-            .runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
-            .onFailure {
-                System.err.print("[daemon-log] size probe failed (${SafeFailureText.render(it)}); starting at 0\n")
-            }
-            .getOrDefault(0L)
+        val log = DaemonLogFile(file, rolled, maxBytes)
+        fun stamped(msg: String): String = "[${logStamp.format(LocalDateTime.now())}] ${msg.trimEnd('\n')}\n"
+
         val sink = LogSink { msg ->
-            val line = "[${logStamp.format(LocalDateTime.now())}] ${msg.trimEnd('\n')}\n"
+            val line = stamped(msg)
             // Decided when the line is logged, not when the lane writes it: a boot line queued before the
             // daemon came up still reaches the boot log (V4-353).
             val echo = echoToStderr()
-            AsyncFileIo.submit {
-                if (echo) System.err.print(line)
-                Cancellables.runCatchingCancellable {
-                    if (written >= maxBytes) {
-                        writer?.close()
-                        Files.move(file, rolled, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-                        writer = null
-                        written = 0L
-                    }
-                    val w = writer ?: Files.newBufferedWriter(file, CREATE, APPEND).also { writer = it }
-                    w.write(line)
-                    w.flush()
-                    written += line.toByteArray(Charsets.UTF_8).size
-                }.onFailure { failure ->
-                    Cancellables.runCatchingCancellable { writer?.close() }
-                    writer = null
-                    // SH-14: a failed rotate used to leave `written` >= the cap forever — every later
-                    // line re-entered the rotate branch, threw BEFORE reaching newBufferedWriter, and
-                    // daemon.log went silent permanently. Reconcile from disk so the next line
-                    // self-corrects, and say so on stderr (the one lane still alive here).
-                    // The rotate failure and the reconciled size are printed together below; this
-                    // stat's own failure has nowhere further to go than that same line, so it maps to 0.
-                    written = Cancellables.runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
-                        .getOrElse { 0L }
-                    System.err.print(
-                        "[daemon-log] write/rotate failed (${SafeFailureText.render(failure)}); " +
-                            "size reconciled to $written\n",
-                    )
-                    if (!echo) System.err.print(line)
-                }
-            }
+            AsyncFileIo.submit { log.append(line, echo) }
         }
+        // A drop episode is written by the lane's own worker, straight to the file: submitting it would meet the
+        // full lane that dropped the work.
+        AsyncFileIo.reportDropsTo(DropSink { episode -> log.append(stamped(episode.line), echoToStderr()) })
         logsProblem?.let(sink::invoke)
         return sink
     }

@@ -16,6 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class AsyncFileIoTest {
@@ -139,22 +140,34 @@ class AsyncFileIoTest {
         onDrained(rejected.get())
     }
 
-    /** No println: the drops of a saturated episode reach the injected sink once, after the lane has room again,
-     *  naming at least the drops seen here. The report runs as a task finishes, after drain() returned, so one more
-     *  drain orders it. */
+    /** The lane cannot report its own saturation through itself, so its worker writes the episode, on its own
+     *  thread, before its next task. A refused write keeps the count, and the next task offers it again; once a
+     *  write lands the count falls by what it reported, so nothing is said twice. */
     @Test
-    fun `a drop episode is reported once through the injected sink when the lane has room again`() {
-        val reports = CopyOnWriteArrayList<String>()
-        AsyncFileIo.reportDropsTo(LogSink { reports += it })
+    fun `a drop episode is written by the lane's worker before its next task, kept until it lands, then said once`() {
+        val reports = CopyOnWriteArrayList<DropEpisode>()
+        val threads = CopyOnWriteArrayList<String>()
+        val landing = AtomicBoolean(false)
+        AsyncFileIo.reportDropsTo(
+            DropSink { episode ->
+                threads += Thread.currentThread().name
+                landing.get().also { if (it) reports += episode }
+            },
+        )
         try {
             saturateThenDrain(heldByOthers = 0) { rejected ->
-                assertTrue(AsyncFileIo.drain(10_000), "the second drain orders the first one's report")
-                val episode = reports.singleOrNull { it.contains("dropped while the lane was saturated") }
-                val count = episode?.let { Regex("""(\d+) task\(s\) dropped""").find(it)?.groupValues?.get(1) }
-                assertTrue((count?.toInt() ?: 0) >= rejected, "one report naming the $rejected drops: $reports")
+                assertTrue(reports.isEmpty(), "a write that did not land reported nothing: $reports")
+                landing.set(true)
+                assertTrue(AsyncFileIo.drain(10_000), "the drain marker starts after the report")
+                val said = reports.sumOf { it.dropped }
+                assertTrue(said >= rejected, "the $rejected drops were kept, then said: $said in $reports")
+                assertEquals(setOf("splice-file-io"), threads.toSet(), "written by the worker that owns the file")
+                reports.clear()
+                assertTrue(AsyncFileIo.drain(10_000))
+                assertTrue(reports.isEmpty(), "an episode already written is not written again: $reports")
             }
         } finally {
-            AsyncFileIo.reportDropsTo(LogSink(DaemonLog::write))
+            AsyncFileIo.reportDropsTo(null)
         }
     }
 

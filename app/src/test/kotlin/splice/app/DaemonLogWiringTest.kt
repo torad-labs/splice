@@ -26,6 +26,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 import java.time.LocalDateTime
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.readText
 
 class DaemonLogWiringTest {
@@ -290,5 +293,40 @@ class DaemonLogWiringTest {
             System.setErr(realErr)
         }
         return captured.toString(Charsets.UTF_8)
+    }
+
+    // A full lane refuses the line that would report its own drops, so the worker that owns daemon.log writes the
+    // episode itself, before its next task, instead of submitting it back into the lane that dropped the work.
+    @Test
+    fun `work a full lane dropped is said in daemon-log by the lane's own worker`(@TempDir logs: Path) {
+        process.persistentLogger(logs)
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        assertTrue(
+            AsyncFileIo.submit {
+                started.countDown()
+                release.await()
+            },
+        )
+        try {
+            assertTrue(started.await(5, TimeUnit.SECONDS), "the worker never picked up the blocking task")
+            val ran = Semaphore(0)
+            val accepted = (1..LANE_FILL_ATTEMPTS).count { AsyncFileIo.submit { ran.release() } }
+            assertTrue(accepted < LANE_FILL_ATTEMPTS, "the lane never filled, so nothing was dropped")
+            release.countDown()
+            // Every accepted task must have run before drain() asks for its own slot: at the cap, drain() is refused.
+            assertTrue(ran.tryAcquire(accepted, 10, TimeUnit.SECONDS), "the accepted tasks never all ran")
+        } finally {
+            release.countDown()
+        }
+        drainToDisk()
+
+        val said = Files.readAllLines(logs.resolve("daemon.log")).filter { "task(s) dropped while the lane" in it }
+        assertEquals(1, said.size, "the episode is said once: $said")
+    }
+
+    private companion object {
+        // Above the lane's pending cap (2_048), which is private to AsyncFileIo.
+        const val LANE_FILL_ATTEMPTS = 2_200
     }
 }

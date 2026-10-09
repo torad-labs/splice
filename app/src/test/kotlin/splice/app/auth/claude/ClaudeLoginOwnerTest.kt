@@ -69,14 +69,20 @@ class ClaudeLoginOwnerTest {
         override fun list(): SessionListing = SessionListing(emptyList(), error)
     })
 
+    /** What the owner is wired to besides its location, scope and spawner. */
+    private data class Surroundings(
+        val sessions: ClaudeLoginSessions,
+        val places: List<ClaudeLoginLocation>,
+        val wrap: WrapStateRead = WrapStateRead { ClaudeToRun.Wrapped("fixture-native") },
+    )
+
     private fun owner(
         location: ClaudeLoginLocation,
         scope: CoroutineScope,
         start: NativeAuthStart,
-        sessions: ClaudeLoginSessions = sessions(),
-        places: List<ClaudeLoginLocation> = listOf(location),
-        wrap: WrapStateRead = WrapStateRead { ClaudeToRun.Wrapped("fixture-native") },
+        around: Surroundings = Surroundings(sessions(), listOf(location)),
     ): ClaudeLoginOwner {
+        val (sessions, places, wrap) = around
         val paths = StatePaths(baseOverride = home.resolve("state"))
         val auth = NativeClaudeAuth(
             wrap,
@@ -199,7 +205,7 @@ class ClaudeLoginOwnerTest {
         live(native, "outgoing", "outgoing bytes")
         val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
         val child = NativeLoginTestProcess()
-        val owner = owner(native, scope, NativeAuthStart { child }, places = listOf(native, other()))
+        val owner = owner(native, scope, NativeAuthStart { child }, Surroundings(sessions(), listOf(native, other())))
         try {
             val login = owner.login(ClaudeLoginPlaceId.NATIVE, null)
 
@@ -235,7 +241,12 @@ class ClaudeLoginOwnerTest {
         val location = location()
         live(location, "outgoing", "outgoing bytes")
         val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
-        val owner = owner(location, scope, NativeAuthStart { error("must not spawn") }, sessions("fixture unreadable"))
+        val owner = owner(
+            location,
+            scope,
+            NativeAuthStart { error("must not spawn") },
+            Surroundings(sessions("fixture unreadable"), listOf(location)),
+        )
         try {
             val refused = owner.login(ClaudeLoginPlaceId.NATIVE, null)
             assertEquals(LoginState.FAILED, refused.state)
@@ -255,7 +266,12 @@ class ClaudeLoginOwnerTest {
             val unusable = WrapStateRead {
                 ClaudeToRun.Refused("claude is the splice launch shim and the wrap state /x is missing")
             }
-            val owner = owner(location, scope, NativeAuthStart { error("must not spawn") }, wrap = unusable)
+            val owner = owner(
+                location,
+                scope,
+                NativeAuthStart { error("must not spawn") },
+                Surroundings(sessions(), listOf(location), unusable),
+            )
             try {
                 val login = owner.login(ClaudeLoginPlaceId.NATIVE, null)
                 withTimeout(5000) {

@@ -76,6 +76,7 @@ val closedWhenModules =
         ":integrations-providers-codex",
         ":integrations-upstream",
         ":features-turns",
+        ":app",
         ":features-events",
         ":integrations-providers-kimi",
         ":integrations-providers-openai",

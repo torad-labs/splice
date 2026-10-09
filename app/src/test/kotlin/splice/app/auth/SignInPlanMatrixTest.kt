@@ -127,7 +127,7 @@ class SignInPlanMatrixTest {
             val dialect = when (kind) {
                 is AuthKind.Client, is AuthKind.KimiOAuth, is AuthKind.MuseOAuth ->
                     Dialect.ANTHROPIC_PASSTHROUGH
-                else -> Dialect.OPENAI_RESPONSES
+                is AuthKind.ChatgptOAuth, is AuthKind.GrokOAuth -> Dialect.OPENAI_RESPONSES
             }
             val plan = planner.signInPlan(
                 providerCfg(kind.wire).copy(dialect = dialect),

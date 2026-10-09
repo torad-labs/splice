@@ -17,6 +17,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -120,7 +121,7 @@ class RuntimeWatchWiringPinTest {
         is JsonObject -> element.takeIf { it["key"]?.jsonPrimitive?.content == key }
             ?: element.values.firstNotNullOfOrNull { rowFor(it, key) }
         is JsonArray -> element.firstNotNullOfOrNull { rowFor(it, key) }
-        else -> null
+        is JsonPrimitive -> null
     }
 
     private class ScriptedProbes : HeadProbeReadings {

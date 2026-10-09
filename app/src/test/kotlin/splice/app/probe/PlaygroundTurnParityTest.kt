@@ -153,10 +153,11 @@ class PlaygroundTurnParityTest {
         return requireNotNull(captured) { "the probe never posted for $key" }
     }
 
-    private fun bodyOf(request: HttpRequestData): String = when (val body = request.body) {
-        is TextContent -> body.text
-        is OutgoingContent.ByteArrayContent -> body.bytes().decodeToString()
-        else -> error("unexpected body ${body::class}")
+    private fun bodyOf(request: HttpRequestData): String {
+        val body = request.body
+        if (body is TextContent) return body.text
+        if (body is OutgoingContent.ByteArrayContent) return body.bytes().decodeToString()
+        error("unexpected body ${body::class}")
     }
 
     @ParameterizedTest

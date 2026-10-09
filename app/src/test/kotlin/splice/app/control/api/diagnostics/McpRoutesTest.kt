@@ -18,8 +18,10 @@ import io.ktor.utils.io.readLine
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -43,6 +45,7 @@ import splice.client.mcp.PluginInlineReader
 import splice.client.mcp.PluginMcpJsonReader
 import splice.client.mcp.ProjectMcpServersReader
 import splice.client.mcp.RepoMcpJsonReader
+import splice.control.mcp.FakeMcpServer
 import splice.control.mcp.McpHost
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -53,7 +56,7 @@ import kotlin.io.path.writeText
 
 /** The HTTP face of shared MCP hosting: bearer-guarded, session header on initialize, JSON answers,
  *  an SSE notification stream on GET, DELETE ends the session. The child is the same scripted
- *  python server McpHostTest uses. */
+ *  scripted server McpHostTest uses (FakeMcpServer). */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class McpRoutesTest {
 
@@ -68,12 +71,10 @@ class McpRoutesTest {
 
     @BeforeAll
     fun setUp(@TempDir tmp: Path) {
-        val script = tmp.resolve("fake_mcp.py")
-        script.writeText(FAKE_MCP_SCRIPT)
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
         val mgmt = MgmtKey(paths)
         key = mgmt.get()
-        val global = json.parseToJsonElement("""{"fake":{"command":"python3","args":["$script"]}}""").jsonObject
+        val global = buildJsonObject { put("fake", FakeMcpServer.entry()) }
         // The endpoint prefix is only the URL a generated client config would dial, and nothing in
         // this file dials it (the tests reach the routes on the bound port directly). It is built
         // before the server exists, so it cannot name the port the server has not bound yet.
@@ -235,23 +236,3 @@ private const val NOTIFY_MSG =
     """{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"echo","arguments":{"op":"notify"}}}"""
 private const val INIT_MSG =
     """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"""
-
-private const val FAKE_MCP_SCRIPT = """
-import json, os, sys
-def send(o):
-    sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
-for line in sys.stdin:
-    line = line.strip()
-    if not line: continue
-    m = json.loads(line)
-    method = m.get("method"); rid = m.get("id")
-    if method == "initialize":
-        send({"jsonrpc":"2.0","id":rid,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"fake","version":"1"}}})
-    elif method == "tools/list":
-        send({"jsonrpc":"2.0","id":rid,"result":{"tools":[{"name":"echo","inputSchema":{"type":"object"}}]}})
-    elif method == "tools/call":
-        args = m["params"].get("arguments", {})
-        if args.get("op") == "notify":
-            send({"jsonrpc":"2.0","method":"notifications/tools/list_changed"})
-        send({"jsonrpc":"2.0","id":rid,"result":{"content":[{"type":"text","text":"pid=%d" % os.getpid()}]}})
-"""

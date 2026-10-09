@@ -2224,7 +2224,6 @@ tools/e2e/test/heads.test.ts	retain	tools/e2e/test/heads.test.ts	Cohesive engine
 tools/e2e/test/oracle.test.ts	retain	tools/e2e/test/oracle.test.ts	Cohesive engineering tooling
 tools/e2e/tsconfig.json	retain	tools/e2e/tsconfig.json	Cohesive engineering tooling
 tools/gate/config/ladder.json	retain	tools/gate/config/ladder.json	Cohesive engineering tooling
-tools/gate/config/python-burndown.json	retain	tools/gate/config/python-burndown.json	Cohesive engineering tooling
 tools/gate/config/rule-coverage-exclusions.toml	retain	tools/gate/config/rule-coverage-exclusions.toml	Cohesive engineering tooling
 tools/gate/index.ts	retain	tools/gate/index.ts	Cohesive engineering tooling
 tools/gate/src/commands/allowlist.ts	retain	tools/gate/src/commands/allowlist.ts	Cohesive engineering tooling
@@ -3940,3 +3939,6 @@ integrations/mcp/src/main/kotlin/splice/control/mcp/McpChildHistory.kt	created		
 integrations/mcp/src/test/kotlin/splice/control/mcp/McpRefusalRepliesTest.kt	created		Pins the status and body bytes of the host's refusals, and proves the reading of them fails on a changed status, code, id or words.
 integrations/claude-code/src/main/kotlin/splice/client/login/HeadLogin.kt	created		The /login interception of one head, owning the staging of its commands/login.md and hook script; replaces the LoginHookSpec parameter object.
 integrations/claude-code/src/main/kotlin/splice/client/transcript/TranscriptMessageLedger.kt	created		V4-160: the messages one transcript page has made and the numbers they took, split from PageAssembly
+integrations/mcp/src/testFixtures/kotlin/splice/control/mcp/FakeMcpServer.kt	created		The scripted stdio MCP server McpHostTest and McpRoutesTest host, as a child JVM from the test classpath, replacing a python3 script
+tools/e2e/docker/topology_checks.ts	created		The count_tokens, launch-recipe and shipped-example-topology checks of inside.sh as a bun entry, replacing three inline python3 blocks
+tools/e2e/test/topology-checks.test.ts	created		Red-green proof for topology_checks.ts against the shipped example topology with a fake daemon and fake wrappers

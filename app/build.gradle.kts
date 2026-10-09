@@ -88,6 +88,7 @@ dependencies {
     testImplementation(testFixtures(project(":core")))
     testImplementation(testFixtures(project(":integrations-codemode")))
     testImplementation(testFixtures(project(":features-lifecycle")))
+    testImplementation(testFixtures(project(":integrations-mcp")))
     testImplementation(testFixtures(project(":integrations-oauth")))
     testImplementation(testFixtures(project(":integrations-dialects-openai-responses")))
     testImplementation(testFixtures(project(":integrations-dialects-anthropic")))

@@ -1,6 +1,7 @@
 plugins {
     id("splice.kotlin-common")
     id("splice.module-law")
+    `java-test-fixtures`
 }
 
 dependencies {

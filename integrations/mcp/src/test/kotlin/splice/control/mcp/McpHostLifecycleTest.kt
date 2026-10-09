@@ -20,8 +20,8 @@ import kotlin.time.Duration.Companion.minutes
 class McpHostLifecycleTest : McpHostFixture() {
 
     @Test
-    fun `progress after response or timeout never becomes a broadcast`(@TempDir dir: Path) = runBlocking {
-        boot(dir, requestTimeout = 300.milliseconds)
+    fun `progress after response or timeout never becomes a broadcast`() = runBlocking {
+        boot(requestTimeout = 300.milliseconds)
         val a = init()
         val b = init()
         val stream = checkNotNull(host.openStream("fake", b))
@@ -29,6 +29,7 @@ class McpHostLifecycleTest : McpHostFixture() {
             val body = """{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"echo",""" +
                 """"_meta":{"progressToken":"private-token"},"arguments":{"op":"$op"}}}"""
             host.post("fake", a, body)
+            if (op == "timeout-progress") host.post("fake", a, FakeMcpServer.RELEASE)
             call(b, 9, "notify")
             val frame = withTimeout(MCP_HOST_STREAM_WAIT_MS) { stream.receive() }
             assertTrue(frame.contains("list_changed"), "orphaned progress escaped its owner: $frame")
@@ -38,7 +39,7 @@ class McpHostLifecycleTest : McpHostFixture() {
     @Test
     fun `a streamless active operation survives idle sweep and refuses capacity eviction`(@TempDir dir: Path) =
         runBlocking {
-            boot(dir, maxServers = 1)
+            boot(maxServers = 1)
             val a = init()
             val ready = dir.resolve("operation-started")
             val operation = async(Dispatchers.IO) { call(a, 8, "hold", ready.toString()) }
@@ -47,14 +48,13 @@ class McpHostLifecycleTest : McpHostFixture() {
             host.sweep()
             assertTrue(hosted("fake"), "active streamless call was swept")
             assertEquals(503, host.post("fake2", null, MCP_HOST_INIT).status, "active call must not be evicted")
+            host.post("fake", a, FakeMcpServer.RELEASE)
             assertTrue(text(operation.await()).contains("echo="))
         }
 
     @Test
-    fun `overflow forces reinitialize with or without GET and closing its pump releases capacity`(
-        @TempDir dir: Path,
-    ) = runBlocking {
-        boot(dir, maxServers = 1)
+    fun `overflow forces reinitialize with or without GET and closing its pump releases capacity`() = runBlocking {
+        boot(maxServers = 1)
         for (streaming in listOf(false, true)) {
             val session = init()
             val stream = if (streaming) checkNotNull(host.openStream("fake", session)) else null
@@ -73,8 +73,8 @@ class McpHostLifecycleTest : McpHostFixture() {
     }
 
     @Test
-    fun `stopped host cannot initialize a new orphan child`(@TempDir dir: Path) = runBlocking {
-        boot(dir)
+    fun `stopped host cannot initialize a new orphan child`() = runBlocking {
+        boot()
         init()
         host.stop()
         assertEquals(503, host.post("fake2", null, MCP_HOST_INIT).status)
@@ -82,8 +82,8 @@ class McpHostLifecycleTest : McpHostFixture() {
     }
 
     @Test
-    fun `child stderr is drained and reported without emitting its content`(@TempDir dir: Path) = runBlocking {
-        boot(dir)
+    fun `child stderr is drained and reported without emitting its content`() = runBlocking {
+        boot()
         val session = init()
         assertTrue(text(call(session, 1, "stderr")).contains("echo="))
         awaitLogged("child stderr emitted")
@@ -92,8 +92,8 @@ class McpHostLifecycleTest : McpHostFixture() {
     }
 
     @Test
-    fun `shutdown signals stubborn children together within one grace period`(@TempDir dir: Path) = runBlocking {
-        boot(dir)
+    fun `shutdown signals stubborn children together within one grace period`() = runBlocking {
+        boot()
         init("fake2")
         init("fake3")
         val pids = listOf("fake2", "fake3").map { status(it)["pid"]!!.jsonPrimitive.content.toLong() }
@@ -108,10 +108,8 @@ class McpHostLifecycleTest : McpHostFixture() {
     }
 
     @Test
-    fun `idle sessions retire while another session keeps their shared process alive`(
-        @TempDir dir: Path,
-    ) = runBlocking {
-        boot(dir)
+    fun `idle sessions retire while another session keeps their shared process alive`() = runBlocking {
+        boot()
         val idle = init()
         val active = init()
         clock.now += 20.minutes.inWholeMilliseconds
@@ -127,8 +125,8 @@ class McpHostLifecycleTest : McpHostFixture() {
     }
 
     @Test
-    fun `crash backoff stays bounded after more than sixty four crashes`(@TempDir dir: Path) = runBlocking {
-        boot(dir)
+    fun `crash backoff stays bounded after more than sixty four crashes`() = runBlocking {
+        boot()
         val session = init()
         repeat(68) { index ->
             call(session, 9, "crash")
@@ -142,9 +140,9 @@ class McpHostLifecycleTest : McpHostFixture() {
     }
 
     @Test
-    fun `a second crash in a row waits before respawning, and calls in between fail in words`(@TempDir dir: Path) =
+    fun `a second crash in a row waits before respawning, and calls in between fail in words`() =
         runBlocking {
-            boot(dir)
+            boot()
             val a = init()
             val crash = """{"jsonrpc":"2.0","id":9,"method":"tools/call",""" +
                 """"params":{"name":"echo","arguments":{"op":"crash"}}}"""
@@ -159,8 +157,8 @@ class McpHostLifecycleTest : McpHostFixture() {
         }
 
     @Test
-    fun `closing a child that ignores TERM never holds the registry lock`(@TempDir dir: Path) = runBlocking {
-        boot(dir)
+    fun `closing a child that ignores TERM never holds the registry lock`() = runBlocking {
+        boot()
         val stubborn = init("fake2")
         call(stubborn, 1, "echo", "x", name = "fake2")
         clock.now += 60.minutes.inWholeMilliseconds
@@ -177,8 +175,8 @@ class McpHostLifecycleTest : McpHostFixture() {
     }
 
     @Test
-    fun `a crash fails the pending call in words and the next call respawns`(@TempDir dir: Path) = runBlocking {
-        boot(dir)
+    fun `a crash fails the pending call in words and the next call respawns`() = runBlocking {
+        boot()
         val a = init()
         val b = init()
         val first = text(call(a, 1, "echo", "x")).substringBefore(" ")
@@ -197,8 +195,8 @@ class McpHostLifecycleTest : McpHostFixture() {
     }
 
     @Test
-    fun `ending one session keeps the other's access`(@TempDir dir: Path) = runBlocking {
-        boot(dir)
+    fun `ending one session keeps the other's access`() = runBlocking {
+        boot()
         val a = init()
         val b = init()
         assertTrue(host.endSession("fake", a))
@@ -208,9 +206,9 @@ class McpHostLifecycleTest : McpHostFixture() {
     }
 
     @Test
-    fun `idle servers are reaped only when no session streams or speaks within the timeout`(@TempDir dir: Path) =
+    fun `idle servers are reaped only when no session streams or speaks within the timeout`() =
         runBlocking {
-            boot(dir)
+            boot()
             val a = init()
             call(a, 1, "echo", "x")
             clock.now += 10.minutes.inWholeMilliseconds
@@ -231,9 +229,9 @@ class McpHostLifecycleTest : McpHostFixture() {
         }
 
     @Test
-    fun `a server whose last session ended is idle from then, so the next session reuses it`(@TempDir dir: Path) =
+    fun `a server whose last session ended is idle from then, so the next session reuses it`() =
         runBlocking {
-            boot(dir)
+            boot()
             val a = init()
             val pid = text(call(a, 1, "echo", "x")).substringBefore(" ")
             assertTrue(host.endSession("fake", a))
@@ -249,8 +247,8 @@ class McpHostLifecycleTest : McpHostFixture() {
         }
 
     @Test
-    fun `at capacity the longest-idle streamless server is evicted for the newcomer`(@TempDir dir: Path) = runBlocking {
-        boot(dir, maxServers = 1)
+    fun `at capacity the longest-idle streamless server is evicted for the newcomer`() = runBlocking {
+        boot(maxServers = 1)
         val a = init("fake")
         clock.now += 1.minutes.inWholeMilliseconds
         val b = init("fake2")

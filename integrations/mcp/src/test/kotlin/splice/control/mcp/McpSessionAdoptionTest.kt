@@ -14,24 +14,20 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
-import java.nio.file.Path
 
 class McpSessionAdoptionTest : McpHostFixture() {
 
     // Mutant: answer the lookup miss with 404 again. The client that outlived the daemon loses every
     // tool for the rest of its session, with /mcp still showing the server connected.
     @Test
-    fun `a session that outlived the host keeps working under the id the client already holds`(
-        @TempDir dir: Path,
-    ) = runBlocking {
-        boot(dir)
+    fun `a session that outlived the host keeps working under the id the client already holds`() = runBlocking {
+        boot()
         val session = init()
         assertTrue(text(call(session, 1, "echo", "before")).contains("echo=before"))
         val childBefore = text(call(session, 2, "echo")).substringBefore(" echo=")
 
         host.stop()
-        boot(dir)
+        boot()
 
         assertTrue(text(call(session, 3, "echo", "after")).contains("echo=after"), "the same id still serves")
         assertFalse(
@@ -43,8 +39,8 @@ class McpSessionAdoptionTest : McpHostFixture() {
     // Mutant: drop the DELETE tombstone. An explicit end stops meaning anything, because the next
     // request with that id silently resurrects it.
     @Test
-    fun `a session the client ended stays ended`(@TempDir dir: Path) = runBlocking {
-        boot(dir)
+    fun `a session the client ended stays ended`() = runBlocking {
+        boot()
         val session = init()
         assertTrue(host.endSession("fake", session))
 
@@ -55,10 +51,8 @@ class McpSessionAdoptionTest : McpHostFixture() {
     // Mutant: drop the overflow tombstone in expire(). The sweep forgets the overflowed session, the
     // next request adopts its id, and the client keeps caching lists whose invalidations were dropped.
     @Test
-    fun `an overflowed session reinitializes, before and after the sweep forgets it`(
-        @TempDir dir: Path,
-    ) = runBlocking {
-        boot(dir)
+    fun `an overflowed session reinitializes, before and after the sweep forgets it`() = runBlocking {
+        boot()
         val session = init()
         call(session, 8, "overflow")
         assertEquals(404, host.post("fake", session, MCP_HOST_LIST).status)
@@ -72,13 +66,11 @@ class McpSessionAdoptionTest : McpHostFixture() {
     // Mutant: keep the strict version check for adopted sessions. The 404 this row removes is traded
     // for a 400 on the client's very next request, and the client is just as broken.
     @Test
-    fun `an adopted session speaks the version the client negotiated before the restart`(
-        @TempDir dir: Path,
-    ) = runBlocking {
-        boot(dir)
+    fun `an adopted session speaks the version the client negotiated before the restart`() = runBlocking {
+        boot()
         val session = init()
         host.stop()
-        boot(dir)
+        boot()
 
         val reply = host.post("fake", session, MCP_HOST_LIST, protocolVersion = "2025-06-18")
 
@@ -93,11 +85,11 @@ class McpSessionAdoptionTest : McpHostFixture() {
 
     // The status surface must count an adopted session like any other: one session on one child.
     @Test
-    fun `an adopted session is one session on the server's own count`(@TempDir dir: Path) = runBlocking {
-        boot(dir)
+    fun `an adopted session is one session on the server's own count`() = runBlocking {
+        boot()
         val session = init()
         host.stop()
-        boot(dir)
+        boot()
         call(session, 5, "echo")
 
         assertEquals(1, status("fake")["sessions"]!!.jsonPrimitive.content.toInt())

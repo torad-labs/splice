@@ -4,8 +4,9 @@
 #   GH_REPO=torad-labs/splice .github/scripts/triage/find-duplicates.sh 21
 #
 # The issue number is numeric-validated and pinned through every call. Similarity
-# is computed with python3 difflib.SequenceMatcher (stdlib only) over the
-# normalized title + first 500 characters of body. The only mutation verbs are
+# is computed by similarity.ts (bun; a port of difflib.SequenceMatcher's ratio, pinned
+# to CPython's values by similarity.test.ts) over the normalized title + first 500
+# characters of body. The only mutation verbs are
 # `gh issue comment` and `gh issue edit --add-label potential-duplicate`; the
 # script never auto-closes and never applies the confirmed `duplicate` label.
 #
@@ -14,7 +15,7 @@
 # the label out-of-band to enable labeling). gh/API failures are logged skips,
 # never red checks.
 #
-# Upgrade path (documented only, not implemented): if stdlib fuzzy matching is
+# Upgrade path (documented only, not implemented): if edit-distance fuzzy matching is
 # too weak, swap in embedding similarity via the existing OPENROUTER_API_KEY.
 set -euo pipefail
 
@@ -56,41 +57,8 @@ jq -n --slurpfile t "$tmpdir/target.json" --slurpfile c "$tmpdir/candidates.json
   exit 0
 }
 
-ranked="$(python3 - "$tmpdir/combined.json" "$SIMILARITY_THRESHOLD" "$TOP_K" <<'PY'
-import json, difflib, sys
-
-def normalize(text):
-    if text is None:
-        return ""
-    t = str(text)[:500].lower()
-    return " ".join(t.split())
-
-def score(a_title, a_body, b_title, b_body):
-    a = normalize(a_title) + " " + normalize(a_body)
-    b = normalize(b_title) + " " + normalize(b_body)
-    if not a or not b:
-        return 0.0
-    return difflib.SequenceMatcher(None, a, b).ratio()
-
-threshold = float(sys.argv[2])
-top_k = int(sys.argv[3])
-
-with open(sys.argv[1]) as f:
-    data = json.load(f)
-
-target = data["target"]
-candidates = [c for c in data["candidates"] if c.get("number") != target.get("number")]
-
-scored = []
-for c in candidates:
-    s = score(target.get("title"), target.get("body"), c.get("title"), c.get("body"))
-    if s >= threshold:
-        scored.append({"number": c.get("number"), "title": c.get("title"), "score": round(s, 3)})
-
-scored.sort(key=lambda x: x["score"], reverse=True)
-print(json.dumps(scored[:top_k]))
-PY
-)" || {
+here="$(cd "$(dirname "$0")" && pwd)"
+ranked="$(bun "$here/similarity.ts" "$tmpdir/combined.json" "$SIMILARITY_THRESHOLD" "$TOP_K")" || {
   warn "similarity scoring failed; skipping duplicate search"
   exit 0
 }

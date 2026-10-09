@@ -21,28 +21,24 @@
  *
  * So the rule is a WALL, in the idiom the rest of the gate uses:
  *
- *   · A NEW .py fails. Any tracked Python file not in the allowlist is a hard error naming the
- *     file. This is the leg that stops the drift.
- *   · A STALE entry fails. An allowlist line whose file is gone or converted is a hard error, so
- *     the list can only shrink and never silently holds room for a file to come back into.
- *   · AN UNTRACKED .py fails, with no allowlist at all. Both legs above read `git ls-files` and
- *     are therefore blind to the scratch script that has not been added yet — which is the state
- *     every tracked .py passed through on its way in.
- *   · IT CANNOT BE SATISFIED BY WEAKENING. Adding to the allowlist to make the gate pass is the
- *     violation, not the remedy — the allowlist is a dated burn-down of what already existed.
+ *   · A .py FAILS. Any tracked Python file is a hard error naming the file. This is the leg that
+ *     stops the drift.
+ *   · A FILE THAT RUNS OR INSTALLS PYTHON FAILS, judged by structure (invokesPython): a shebang, a
+ *     command in a script, workflow or Dockerfile, a process spawn, a launcher config, a live ledger
+ *     verify=. A sentence that names the interpreter is not an invocation.
+ *   · AN UNTRACKED .py FAILS. The legs above read `git ls-files` and are therefore blind to the
+ *     scratch script that has not been added yet — which is the state every tracked .py passed
+ *     through on its way in.
+ *   · THERE IS NO LIST. Until 2026-10-09 a dated burn-down carried the debt that predated the wall
+ *     and a git-history ratchet kept it from growing; it reached zero that day and was deleted with
+ *     the ratchet. Every census is graded against zero, so nothing can be added to make the gate pass.
  *
- * The denominator comes from `git ls-files`, never from the allowlist itself (campaign law 24): a
- * list checked against itself cannot fail for anything absent from it. Every census takes the
- * repository root explicitly so the test arms can grade fixture repositories in-process.
+ * The denominator comes from `git ls-files`, never from a list (campaign law 24). Every census takes
+ * the repository root explicitly so the test arms can grade fixture repositories in-process.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-
-export const ALLOW = "tools/gate/config/python-burndown.json";
-
-type PendingTool = { tool: string; row: string; reason: string; recorded: string; callers: string[] };
-export type Burndown = { recorded: string; law: string; files: string[]; invokers?: string[]; pendingTools?: PendingTool[] };
 
 /** A census that could not run. Exit 2, never a pass: the gate leg propagates it and the guard
  *  fails OPEN on it (see the command). */
@@ -81,65 +77,16 @@ function tracked(root: string): string[] {
 }
 
 /** EXCLUDED WITH A WRITTEN REASON, which is a disposition and not a hole (law 24). These files
- *  exist to TALK about Python: the wall, its command, its test arms and the burn-down list. Their
+ *  exist to TALK about Python: the wall, its command and its test arms. Their
  *  prose necessarily contains the word, and counting them would make the wall permanently report
  *  itself. Nothing else is exempt — a file that merely explains a python command is drift and IS
  *  counted, because prose is what teaches the next session which language this repo writes
  *  tooling in. The test arms must FEED the guard the violating text, which is why they are here. */
 export const SELF = new Set([
-  ALLOW,
   "tools/gate/src/lib/no-python.ts",
   "tools/gate/src/commands/no-python.ts",
   "tools/gate/test/no-python.test.ts",
 ]);
-
-/** Does this text RUN or NAME python?
- *
- *  The wall's own NAME is not a python reference, and on 2026-09-18 that distinction was the
- *  difference between a green gate and a red one: console/.impeccable/review/ink/sweep-d7.mjs is
- *  the PORT AWAY FROM PYTHON, and the only lowercase `python` anywhere in it is the phrase "the
- *  no-python rule". A hyphen is not a word character, so `\bpython\b` matched inside the rule's
- *  own name and charged the file as an invoker — the wall failing the act of COMPLYING with it.
- *
- *  THIS IS A NARROWING, SO IT IS MEASURED RATHER THAN ARGUED: across all 79 charged files,
- *  excluding the literal `no-python` dropped EXACTLY ONE, the false positive; the other 78 keep
- *  their charge. It cannot become a dodge either: a file that actually invokes `python3` still
- *  matches on that token no matter how often it also writes "no-python". The same narrowing is why
- *  this verb, this file and its config are named `no-python`: a verb named `python` would make
- *  every file that spells the command an invoker.
- *
- *  THE SAME NARROWING, A SECOND TIME, FOR THE SAME REASON (restructure PR 5, splice-lead's
- *  measurement). The Python-semantics compat layer the ported harnesses run on is
- *  `tools/e2e/src/compat/python-{http,json,values}.ts`: three TypeScript modules that exist so this
- *  repo does NOT shell into Python, named after the thing they replace. `\bpython\b` matched inside
- *  each module's own NAME and charged all sixteen files that import or copy one — the wall failing
- *  the act of complying with it, with the same useless remedy (rename the port away from Python
- *  after the port away from Python). Measured over the whole tree at PR 5's tip: stripping these
- *  three names drops EXACTLY the 16 importers and keeps every burn-down invoker charged. It cannot
- *  become a dodge: a file that actually runs `python3` still matches on that token however often
- *  it also names python-json. Red-green: test/no-python.test.ts, "a .ts that only IMPORTS a compat
- *  module" (green) beside "imports a compat module AND shells into python3" (red).
- *
- *  A THIRD TIME, 2026-09-22 (LAYOUT-01): this wall's own config is python-burndown.json, and the
- *  restructure census lists every source path, that one included. Measured over every tracked file:
- *  stripping the name drops EXACTLY ONE charge, the census (41 -> 40), and every invoker keeps its
- *  charge. Red-green: "a census that only NAMES the burn-down config" (green) beside "names the
- *  burn-down config AND shells into python3" (red).
- *
- *  A FOURTH TIME, AND NOT BY NAME, 2026-09-29 (V4-444): console-next/src/ui/highlight.ts registers
- *  highlight.js's python grammar so a session that DISPLAYS Python code is coloured. Displaying Python
- *  is neither running nor teaching it, but the file spells the word three ways: the grammar import, a
- *  registry entry (`{ ..., python, ... }`) and a map value (`py: 'python'`). The narrowing is therefore
- *  by SHAPE, and only in a file that imports that grammar (displayOnly below): the import statement, the
- *  word as an object key or shorthand, and a quoted `: 'python'` map value. A command is none of those:
- *  `spawnSync("python3"` and `spawnSync("python", [...])` put the word behind `(` or `[`, and `python -c`
- *  is prose, so each keeps its charge. Red-green: "a .ts that only IMPORTS the highlighter's python
- *  grammar" (green) beside the three that add a real spawn of python3, of python, or a `python -c`
- *  command line (red). No burn-down line was added and no import was renamed around the wall. */
-export function namesPython(text: string): boolean {
-  const named = ["no-python", "python-http", "python-json", "python-values", "python-burndown"];
-  return /\bpython3?\b/.test(displayOnly(named.reduce((t, name) => t.replaceAll(name, ""), text)));
-}
 
 const GRAMMAR_IMPORT = /import\s+\w+\s+from\s+['"]highlight\.js\/lib\/languages\/python['"];?/;
 
@@ -152,6 +99,83 @@ function displayOnly(text: string): string {
     .replace(new RegExp(GRAMMAR_IMPORT.source, "g"), "")
     .replace(/(?<=[{,]\s*)python(?=\s*[,}])/g, "")
     .replace(/(?<=:\s*)'python'/g, "''");
+}
+
+// ─── invocations by STRUCTURE (lead ruling 2026-10-09) ─────────────────────────────────────────
+// A MENTION is not an invocation. The census used to charge any tracked file whose text spelled the
+// word, so ledger notes, CHANGELOG lines, an svg screenshot and research prose all counted as Python
+// the repo "runs", and the only way to lower the number was to rewrite history. The shapes that DO
+// run or install Python, by file kind:
+//   · a shebang naming it, in any file;
+//   · shell scripts, workflows, Dockerfiles, Makefiles and package.json scripts: python/python3/pip as
+//     a COMMAND (start of a command, after `;` `&` `|` `(` `$(`, a keyword such as `run:`/`RUN`/`then`,
+//     leading VAR=val words), a package-manager install of it, a `FROM python` image, `setup-python`;
+//   · Kotlin, TS, JS, Java sources: a process spawn (ProcessBuilder, spawn*, exec*, Bun.$, Runtime.exec)
+//     in a file that also holds a quoted `python`/`python3`/`pip` argument or `python3 …` command string;
+//   · a launcher config whose "command" is the interpreter (an MCP server entry), in sources and json;
+//   · a LIVE ledger row's verify= field (todo / in_flight), read like a shell line.
+// Comment lines never count, and neither do markdown, svg, prose json and other toml.
+
+const COMMAND_WORDS = "run|RUN|CMD|ENTRYPOINT|exec|sudo|time|xargs|then|do|else|env|nohup|npx|command|which|type";
+const SHELL_COMMAND = new RegExp(
+  `(?:^|[;&|(\`]|\\$\\(|\\b(?:${COMMAND_WORDS})\\b:?|^\\s*-)\\s*(?:[A-Za-z_]\\w*=\\S*\\s+)*(?:python3?|pip3?)(?![\\w.-])`,
+);
+const PACKAGE_INSTALL = /\b(?:apt(?:-get)?|apk|dnf|yum|brew|pacman|zypper)\b[^#\n]*\binstall\b[^#\n]*\b(?:python3?|py3?-\w+|pip3?)(?![\w.-])/;
+const PYTHON_IMAGE = /^\s*FROM\s+\S*python/i;
+const SETUP_PYTHON = /\bsetup-python\b/;
+const SHEBANG = /^#!.*\bpython/;
+
+const SHELL_KIND = /(?:\.(?:sh|bash|zsh|mk|ya?ml)|(?:^|\/)(?:Dockerfile[^/]*|Makefile))$/;
+const SOURCE_KIND = /\.(?:kt|kts|java|ts|tsx|mts|cts|js|mjs|cjs)$/;
+const SPAWN_API = /\b(?:ProcessBuilder|Runtime\.getRuntime|spawn|spawnSync|exec|execSync|execFile|execFileSync|Bun\.spawn|Bun\.spawnSync)\s*\(|\bBun\.\$|\$`/;
+const QUOTED_COMMAND = /["'`](?:python3?|pip3?)(?:\s[^"'`]*)?["'`]|\$`\s*(?:python3?|pip3?)\s/;
+
+/** A server/launcher config whose command IS the interpreter (an MCP server entry, a task runner). */
+const CONFIG_COMMAND = /"command"\s*:\s*"(?:python3?|pip3?)(?:\s[^"]*)?"/;
+
+const commentLine = (line: string) => /^\s*(?:#|\/\/|\*|\/\*)/.test(line);
+
+function shellLineInvokes(line: string): boolean {
+  if (commentLine(line)) return false;
+  return SHELL_COMMAND.test(line) || PACKAGE_INSTALL.test(line) || PYTHON_IMAGE.test(line) || SETUP_PYTHON.test(line);
+}
+
+/** package.json: only the values of "scripts" are commands. An unparseable file is read line by line. */
+function packageScriptsInvoke(text: string): boolean {
+  try {
+    const scripts = (JSON.parse(text) as { scripts?: Record<string, unknown> }).scripts ?? {};
+    return Object.values(scripts).some((v) => typeof v === "string" && v.split(/\n|&&|;|\|\|?/).some((c) => shellLineInvokes(c.trim())));
+  } catch {
+    return text.split("\n").some(shellLineInvokes);
+  }
+}
+
+/** A ledger: the verify= field of each row that has not run yet (a fragment with no row header is one row). */
+function ledgerVerifyInvokes(text: string): boolean {
+  const blocks = text.includes("[[items]]") ? text.split(/^\[\[items\]\]$/m).slice(1) : [text];
+  return blocks.some((block) => {
+    const status = block.match(/^status\s*=\s*"([^"]+)"/m)?.[1] ?? "todo";
+    if (status !== "todo" && status !== "in_flight") return false;
+    const quoted = block.match(/^verify\s*=\s*(?:"""([\s\S]*?)"""|"((?:[^"\\]|\\.)*)")/m);
+    const verify = quoted ? (quoted[1] ?? quoted[2] ?? "") : "";
+    return verify.split(/\\n|\n|&&|;|\|\|?/).some((c) => shellLineInvokes(c.trim()));
+  });
+}
+
+/** Does this file RUN or install Python? [path] picks the reading; [text] is what would be in the file. */
+export function invokesPython(path: string, text: string): boolean {
+  if (SHEBANG.test(text.split("\n", 1)[0] ?? "")) return true;
+  if (/(?:^|\/)package\.json$/.test(path)) return packageScriptsInvoke(text);
+  if (/(?:^|\/)\.dev\/campaigns\/[^/]+\.toml$/.test(path) || (path.endsWith(".toml") && text.includes("[[items]]"))) {
+    return ledgerVerifyInvokes(text);
+  }
+  if (SHELL_KIND.test(path)) return text.split("\n").some(shellLineInvokes);
+  if (SOURCE_KIND.test(path)) {
+    const code = displayOnly(text).split("\n").filter((l) => !commentLine(l));
+    return code.some((l) => CONFIG_COMMAND.test(l)) || (code.some((l) => SPAWN_API.test(l)) && code.some((l) => QUOTED_COMMAND.test(l)));
+  }
+  if (path.endsWith(".json")) return text.split("\n").some((l) => CONFIG_COMMAND.test(l));
+  return false;
 }
 
 /** A caller line that runs a file with the WRONG RUNTIME for its extension: `python3 wall.ts`, or
@@ -207,91 +231,21 @@ function runtimeMismatch(root: string): string[] {
   return out.sort();
 }
 
-/** THE THIRD DISPOSITION: a file that names python ONLY because it calls a tool that is still
- *  Python and is owned by an open conversion row.
- *
- *  FORCED BY A REAL COLLISION, 2026-09-18: converting the 21 hook scripts to .ts made four of them
- *  new invokers purely because they named the ledger CLI while it was still Python. Adding four
- *  burn-down lines is refused by the growth census; rewording the prose to advertise a command that
- *  does not exist is the class of lie this wall was built to catch.
- *
- *  An entry excuses a caller only while ALL THREE hold, each checked against the tree: the named
- *  tool is still on the burn-down's `files` list; the tool still EXISTS; and stripping that tool's
- *  own invocations from the caller leaves NO python behind. An entry whose tool is gone, or was
- *  never debt, is STALE and reds the wall by name until it is deleted. */
-export function pendingStrip(text: string, tool: string): string {
-  return text
-    .split("\n")
-    .filter((line) => {
-      if (line.includes(tool)) return false; // this line is about the pending tool
-      if (!namesPython(line)) return true; // nothing to excuse
-      // An interpreter token with no .py path of its own is the spawn-through-a-variable form
-      // (`spawnSync("python3", [manifest, "laws"])`). Naming ANY OTHER .py keeps the charge.
-      return /[A-Za-z0-9_./$-]+\.py\b/.test(line);
-    })
-    .join("\n");
-}
-
-/** Entries that no longer describe the tree. Graded from the SOURCE — the tool's existence and
- *  the burn-down's own files list — never from the entry's say-so. */
-function stalePending(root: string, list: Burndown): string[] {
-  const debt = new Set(list.files);
-  const out: string[] = [];
-  for (const p of list.pendingTools ?? []) {
-    if (!existsSync(at(root, p.tool))) {
-      out.push(`${p.tool} (${p.row}): the tool is GONE, so every exclusion this entry granted has expired — delete the entry`);
-      continue;
-    }
-    if (!debt.has(p.tool)) {
-      out.push(`${p.tool} (${p.row}): not on the burn-down's files list, so this entry excuses calls to something the wall never tracked as debt`);
-      continue;
-    }
-    for (const f of p.callers) {
-      if (!existsSync(at(root, f))) {
-        out.push(`${p.tool} (${p.row}): names caller ${f}, which does not exist — an exclusion for a file that is gone`);
-      } else if (!namesPython(readFileSync(at(root, f), "utf8"))) {
-        out.push(`${p.tool} (${p.row}): names caller ${f}, which no longer mentions python at all — drop it from callers`);
-      }
-    }
-  }
-  return out.sort();
-}
-
-const livePending = (root: string, list: Burndown) =>
-  (list.pendingTools ?? []).filter((p) => existsSync(at(root, p.tool)) && list.files.includes(p.tool));
-
-/** THE SECOND CENSUS, and the wall was a lie without it. Counting files named `.py` is not
- *  counting PYTHON: measured 2026-09-18, 29 tracked .sh files invoked python3 167 times while the
- *  first census read a triumphant 90. A mention counts — a README saying `python3 checks/foo.py`
- *  is a live instruction to the next session. `.py` files are excluded only because the first
- *  census already owns them. */
-function invokers(root: string, list: Burndown): string[] {
-  const live = livePending(root, list);
+/** THE SECOND CENSUS: files that RUN or install Python, by structure (invokesPython). Counting files named
+ *  `.py` is not counting PYTHON: measured 2026-09-18, 29 tracked .sh files invoked python3 167 times while the
+ *  first census read a triumphant 90. A mention is not an invocation (lead ruling 2026-10-09); `.py` files are
+ *  left to the first census. */
+function invokers(root: string): string[] {
   return gitLs(root)
     .filter((f) => !f.endsWith(".py") && !SELF.has(f))
     .filter((f) => {
       try {
-        const text = readFileSync(at(root, f), "utf8");
-        if (!namesPython(text)) return false;
-        for (const p of live) {
-          if (!p.callers.includes(f)) continue; // an entry excuses only the files it NAMES
-          if (!namesPython(pendingStrip(text, p.tool))) return false;
-        }
-        return true;
+        return invokesPython(f, readFileSync(at(root, f), "utf8"));
       } catch {
         return false; // a binary or unreadable blob invokes nothing
       }
     })
     .sort();
-}
-
-/** Every file an entry currently excuses, printed on every run so the exclusion is never silent. */
-function excused(root: string, list: Burndown): string[] {
-  const out: string[] = [];
-  for (const p of livePending(root, list)) {
-    for (const f of p.callers) if (existsSync(at(root, f))) out.push(`${f} -> ${p.tool} (${p.row})`);
-  }
-  return out.sort();
 }
 
 /** THE THIRD CENSUS: Python that is not in git at all. `git ls-files` sees what SHIPS, and Python
@@ -386,157 +340,6 @@ function staleVerifies(root: string): string[] {
   return out.sort();
 }
 
-/** The burn-down's history, oldest first, with the path the list had at each revision.
- *
- *  `--follow`, because PR 5 moved the list from checks/config/ to tools/gate/config/ and a plain
- *  `git log -- <path>` would start history at the move — making the moved list its own birth and
- *  the ratchet below a comparison of the list against itself. `--name-only` carries the path each
- *  revision knew the file by, which is what `git show <rev>:<path>` needs. Measured 2026-09-21:
- *  `--follow` with `--reverse` stops at the rename, so the walk is newest-first and reversed here. */
-function listHistory(root: string): { rev: string; path: string }[] {
-  const log = spawnSync("git", ["log", "--follow", "--format=%H", "--name-only", "--", ALLOW], { cwd: root, encoding: "utf8" });
-  if (log.status !== 0) return [];
-  const history: { rev: string; path: string }[] = [];
-  let rev: string | undefined;
-  for (const raw of log.stdout.split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (/^[0-9a-f]{40}$/.test(line)) {
-      rev = line;
-      continue;
-    }
-    if (rev) {
-      history.push({ rev, path: line });
-      rev = undefined;
-    }
-  }
-  return history.reverse();
-}
-
-/** THE SIXTH CENSUS: the burn-down may only SHRINK, and until now that was only prose.
- *
- *  FOUND BY MUTATION-TESTING THIS WALL END TO END on 2026-09-18: write a new .py (RED, untracked
- *  census); `git add` it (RED, NEW PYTHON census); add its path to the burn-down (GREEN). Step 3
- *  is the CHEAPEST of the three moves, so it is the one a session under pressure reaches for.
- *
- *  THE DENOMINATOR IS GIT, NOT THE FILE: the baseline is the list AS FIRST COMMITTED, so the
- *  comparison is against a record no working copy can edit. Current must be a SUBSET of birth, in
- *  both `files` and `invokers`. EACH ARRAY GETS ITS OWN BIRTH — `invokers` was added days after
- *  `files`, and a ratchet whose baseline predates the thing it measures reports the measurement
- *  itself as the violation.
- *
- *  ONE EXCEPTION, AND GIT IS ITS WITNESS: an `invokers` entry whose file git records as RENAMED
- *  since the birth revision is the same file at a new path. `files` gets no such exception: a
- *  renamed .py is Python reorganised rather than converted. The rename check runs against the
- *  WORKING TREE, not HEAD: every other census measures the tree, and a checker whose verdict
- *  depends on whether the work is committed yet is not measuring the work (restructure PR 3
- *  charged two moved invokers as growth in the commit that moved them). */
-function burndownGrowth(root: string, now: Burndown): string[] {
-  const history = listHistory(root);
-  if (history.length === 0) return []; // no history here (a fresh fixture tree): the censuses above still gate.
-  const out: string[] = [];
-  for (const key of ["files", "invokers"] as const) {
-    const today = now[key] ?? [];
-    if (!today.length) continue;
-    let base: string[] | undefined;
-    let baseRev = "";
-    for (const { rev, path } of history) {
-      const shown = spawnSync("git", ["show", `${rev}:${path}`], { cwd: root, encoding: "utf8" });
-      if (shown.status !== 0) continue;
-      let v: Burndown;
-      try {
-        v = JSON.parse(shown.stdout) as Burndown;
-      } catch {
-        continue; // a revision nobody can parse cannot be a baseline; keep walking forward.
-      }
-      const arr = v[key];
-      if (Array.isArray(arr) && arr.length) {
-        base = arr;
-        baseRev = rev;
-        break;
-      }
-    }
-    if (!base) continue; // this key has never been committed with content: nothing to ratchet against yet.
-    const was = new Set(base);
-    const before = key === "invokers" ? renamedSince(root, baseRev) : new Map<string, string>();
-    for (const entry of today) {
-      const known = was.has(entry) || was.has(before.get(entry) ?? "");
-      if (!known) out.push(`${key}: ${entry} (not in the list as first recorded at ${baseRev.slice(0, 8)})`);
-    }
-  }
-  return out.sort();
-}
-
-/** today's path -> the path git says it was renamed FROM, for every rename between [rev] and the
- *  WORKING TREE.
- *
- *  V4-215: THIS MAP CAN NEVER COME BACK SHORT IN SILENCE — a missing rename is charged as growth.
- *  `-l0` lifts git's rename limit (diff.renameLimit, 1000 by default): past it git skips the
- *  inexact pass and says so only on stderr, and feat/console-redesign's diff since birth needed
- *  1191, so five invokers the restructure moved and edited read as new lines. A cut-short warning
- *  that still appears, or git failing outright, throws instead of returning what it managed. */
-export function renamedSince(root: string, rev: string): Map<string, string> {
-  // LC_ALL=C: the warnings are matched by their English words, which a translated git would change.
-  const r = spawnSync("git", ["diff", "--name-status", "-M", "-l0", "--diff-filter=R", rev], {
-    cwd: root,
-    encoding: "utf8",
-    env: { ...process.env, LC_ALL: "C" },
-  });
-  if (r.status !== 0) {
-    throw new WallError(`no-python: git diff -M ${rev} failed (${r.stderr.trim()}) — a rename census that did not run excuses no moved invoker`);
-  }
-  renamesComplete(r.stderr, rev);
-  const out = new Map<string, string>();
-  for (const line of r.stdout.split("\n")) {
-    const [status, from, to] = line.split("\t");
-    if (status?.startsWith("R") && from && to) out.set(to, from);
-  }
-  return out;
-}
-
-/** git's own words for a rename pass it cut short (diff.c, merge-ort.c): "exhaustive rename
- *  detection was skipped", "inexact rename detection was skipped", "only found copies from modified
- *  paths", each "due to too many files". */
-const RENAMES_CUT_SHORT = /(?:exhaustive|inexact) rename detection was skipped|only found copies from modified paths/;
-
-/** Throws when git's [stderr] says the rename pass since [rev] was cut short: the map it produced
- *  is missing renames, and the ratchet would charge each one as growth. */
-export function renamesComplete(stderr: string, rev: string): void {
-  const cut = stderr.split("\n").find((line) => RENAMES_CUT_SHORT.test(line));
-  if (cut) {
-    throw new WallError(`no-python: git cut rename detection short since ${rev} (${cut.trim()}) — every invoker it missed would be charged as growth`);
-  }
-}
-
-export function burndown(root: string): Burndown {
-  const path = at(root, ALLOW);
-  if (!existsSync(path)) throw new WallError(`no-python: ${ALLOW} missing — the wall has no burn-down list to grade against`);
-  try {
-    return JSON.parse(readFileSync(path, "utf8")) as Burndown;
-  } catch (e) {
-    throw new WallError(`no-python: ${ALLOW} is not valid JSON (${e}) — a list nobody can parse grades nothing`);
-  }
-}
-
-/** One census graded against its own list, both directions. Returns the problems. */
-function grade(label: string, measured: string[], allowed: string[], newHelp: string): string[] {
-  const set = new Set(allowed);
-  const added = measured.filter((f) => !set.has(f));
-  const stale = allowed.filter((f) => !measured.includes(f)).sort();
-  const out: string[] = [];
-  if (added.length) {
-    out.push(`NEW PYTHON (${label}): ${added.length} file(s) not in the burn-down list. ${newHelp}\n    ` + added.join("\n    "));
-  }
-  if (stale.length) {
-    out.push(
-      `STALE (${label}): ${stale.length} burn-down entry(ies) name a file that no longer offends — gone, ` +
-        `or already converted. Remove the line — a list held above the measured surface is unearned room ` +
-        `for Python to come back into:\n    ` + stale.join("\n    "),
-    );
-  }
-  return out;
-}
-
 export interface WallReport {
   /** the census table, printed on every run */
   readonly lines: readonly string[];
@@ -545,119 +348,58 @@ export interface WallReport {
   readonly summary: string;
 }
 
-/** The whole wall over `root`. Throws WallError for a census that could not run. */
+/** The whole wall over `root`. Throws WallError for a census that could not run. Every census is graded
+ *  against ZERO: the burn-down that once carried this repo's Python debt reached it on 2026-10-09 and was deleted
+ *  with its ratchet, so there is no list left to grow. */
 export function wall(root: string): WallReport {
-  const measured = tracked(root);
-  const list = burndown(root);
-  const problems: string[] = [];
-
-  const runners = invokers(root, list);
-  const expired = stalePending(root, list);
-  const excusedNow = excused(root, list);
-  const allowedInvokers = list.invokers ?? [];
-  const scratch = untracked(root);
-  const broken = dangling(root);
-  const willRun = staleVerifies(root);
-  const grown = burndownGrowth(root, list);
-  const mismatched = runtimeMismatch(root);
-
+  const censuses: [label: string, found: string[], help: string][] = [
+    [
+      "tracked .py files",
+      tracked(root),
+      "This repo is bun/TypeScript; write it as .ts and run it with bun.",
+    ],
+    [
+      "files that RUN or install python",
+      invokers(root),
+      "Convert the call to bun. A file that shells into python3 is Python this repo still runs.",
+    ],
+    [
+      "UNTRACKED .py in the worktree",
+      untracked(root),
+      "Move a throwaway to a scratch directory OUTSIDE the worktree, or write it as .ts. `git ls-files` cannot see it, " +
+        "which is how every tracked .py got here in the first place.",
+    ],
+    [
+      "call sites naming a missing file",
+      dangling(root),
+      "A conversion deleted the file and left a caller pointing at it. Repoint the call at the .ts, and grep for the " +
+        "stem: a converted script usually has more than one call site.",
+    ],
+    [
+      "live ledger verify= gone missing",
+      staleVerifies(root),
+      "Rows that have NOT run yet carry a verify naming a script that does not exist. Repoint it with the manifest " +
+        "CLI's edit-verify, in the SAME commit that converted the script.",
+    ],
+    [
+      "callers running the WRONG runtime",
+      runtimeMismatch(root),
+      "A half-finished conversion: the filename moved and the interpreter did not. Change the interpreter to match " +
+        "the extension.",
+    ],
+  ];
   const n = (v: number) => String(v).padStart(4);
   const lines = [
-    `NO-PYTHON WALL — burn-down recorded ${list.recorded || "(none)"}`,
-    `  tracked .py files                  measured ${n(measured.length)}   allowed ${n(list.files.length)}   [GATED]`,
-    `  files that RUN or name python      measured ${n(runners.length)}   allowed ${n(allowedInvokers.length)}   [GATED]`,
-    `  UNTRACKED .py in the worktree      measured ${n(scratch.length)}   allowed ${n(0)}   [GATED]`,
-    `  call sites naming a missing file   measured ${n(broken.length)}   allowed ${n(0)}   [GATED]`,
-    `  live ledger verify= gone missing   measured ${n(willRun.length)}   allowed ${n(0)}   [GATED]`,
-    `  burn-down lines ADDED since birth  measured ${n(grown.length)}   allowed ${n(0)}   [GATED]`,
-    `  callers running the WRONG runtime  measured ${n(mismatched.length)}   allowed ${n(0)}   [GATED]`,
-    `  EXPIRED pending-tool exclusions    measured ${n(expired.length)}   allowed ${n(0)}   [GATED]`,
+    "NO-PYTHON WALL — this repo has no Python",
+    ...censuses.map(([label, found]) => `  ${label.padEnd(35)}measured ${n(found.length)}   allowed ${n(0)}   [GATED]`),
   ];
-  if (excusedNow.length) {
-    // Printed every run, never silent: an exclusion nobody reads is an allowlist.
-    lines.push(`  excused while their tool is Python  ${excusedNow.length}`);
-    for (const e of excusedNow) lines.push(`      ${e}`);
-  }
-
-  if (expired.length) {
-    problems.push(
-      `PENDING-TOOL EXCLUSION OUTLIVED ITS REASON: ${expired.length} entry(ies) in ${ALLOW} excuse callers of a ` +
-        `tool that is no longer Python debt. An exclusion is only honest while the thing it points at is still ` +
-        `there — the moment the owning row lands, every caller it excused must be charged again, and the entry ` +
-        `has to go in the same commit that converted the tool:\n    ` + expired.join("\n    "),
-    );
-  }
-  if (mismatched.length) {
-    problems.push(
-      `WRONG RUNTIME: ${mismatched.length} live call site(s) run a file with the interpreter for the other ` +
-        `language. This is what a half-finished conversion looks like — the filename was updated and the ` +
-        `interpreter was not — and it survives every other census on this wall, because the path resolves and ` +
-        `the file exists. It fails at run time with a syntax error, which reads like a broken script rather ` +
-        `than a broken call. Fix the interpreter, not the filename:\n    ` + mismatched.join("\n    "),
-    );
-  }
-  if (grown.length) {
-    problems.push(
-      `THE BURN-DOWN GREW: ${grown.length} entry(ies) are in ${ALLOW} that were not there when it was first ` +
-        `recorded. This list may only SHRINK. Adding a line is how a new .py gets past every other census on ` +
-        `this wall — it is the cheapest way to a green gate and therefore the one that gets taken — so it is ` +
-        `graded against the list AS FIRST COMMITTED in git, which no working copy can edit. Delete the line and ` +
-        `convert the file to .ts. Moving a .py to a new path is refused here too: that is Python being ` +
-        `reorganised rather than converted:\n    ` + grown.join("\n    "),
-    );
-  }
-  if (willRun.length) {
-    problems.push(
-      `LEDGER VERIFY NAMES A MISSING FILE: ${willRun.length} row(s) that have NOT run yet carry a verify command ` +
-        `naming a script that does not exist. Unlike a done/verified row — whose verify is a record of what ran, ` +
-        `and is deliberately not graded here — these are instructions, and each one will fail the moment someone ` +
-        `runs the row. Repoint it with the manifest CLI's edit-verify, in the SAME commit that converted the ` +
-        `script, because the gap between the two is where this defect lives:\n    ` + willRun.join("\n    "),
-    );
-  }
-  if (broken.length) {
-    problems.push(
-      `DANGLING INVOCATION: ${broken.length} call site(s) name a script that does not exist. A conversion ` +
-        `deleted the file and left a caller pointing at it, so the leg fails at run time with "No such file or ` +
-        `directory" while every census above reports a clean burn-down. Repoint the call at the .ts — and grep ` +
-        `for the stem before you report, because a converted script usually has more than one call site and the ` +
-        `one you remember is not the one that breaks:\n    ` + broken.join("\n    "),
-    );
-  }
-  if (scratch.length) {
-    problems.push(
-      `UNTRACKED PYTHON: ${scratch.length} file(s) written into the worktree but never added. The two censuses ` +
-        `above read \`git ls-files\` and cannot see these, which is how every tracked .py in the burn-down got ` +
-        `here in the first place. Move it to a scratch directory OUTSIDE the worktree — a throwaway does not ` +
-        `belong in the tree whatever its language — or write it as .ts if it is going to be kept. Adding it to ` +
-        `${ALLOW} is not available: that list is a dated record of what already existed, and this file is newer ` +
-        `than the list by definition:\n    ` + scratch.join("\n    "),
-    );
-  }
-  problems.push(
-    ...grade(
-      "file",
-      measured,
-      list.files,
-      `This repo is bun/TypeScript; write it as .ts and run it with bun. Do NOT add the file to ${ALLOW} — that ` +
-        `list is a dated record of what already existed, and growing it is the violation this wall exists to catch.`,
-    ),
-    ...grade(
-      "invocation",
-      runners,
-      allowedInvokers,
-      `A file that shells into python3, or documents a python3 command, is Python this repo still runs and still ` +
-        `teaches. Convert the call to bun; if it is prose, update the prose. Do NOT add a line to ${ALLOW}.`,
-    ),
-  );
-
+  const problems = censuses
+    .filter(([, found]) => found.length > 0)
+    .map(([label, found, help]) => `${label.toUpperCase()}: ${found.length}. ${help}\n    ${found.join("\n    ")}`);
   return {
     lines,
     problems,
-    summary:
-      `OK: no-python wall holds — ${measured.length} tracked .py file(s) and ${runners.length} file(s) that run or ` +
-      `name python, both exactly the ${list.recorded} burn-down, nothing listed has already been converted, and no ` +
-      `untracked .py is sitting in the worktree waiting to be added`,
+    summary: "OK: no-python wall holds — no tracked .py, nothing that runs or installs python, no untracked .py",
   };
 }
 
@@ -670,11 +412,9 @@ export function wall(root: string): WallReport {
 // the file sits there for hours being an example. The operator's ruling: "it should be a PreToolUse
 // hook that refuses the write and returns with a message."
 //
-// WHAT IT REFUSES, and nothing more: a NEW .py file (one not already carried as debt); a write whose
-// TEXT runs or names python, into a file not already listed as an invoker; and, before the invoker
-// exemption, a caller line running a file with the wrong runtime. An EXISTING .py stays writable:
-// the burn-down rows are conversions in flight, and a guard that blocked edits to the debt would
-// block the work that removes it.
+// WHAT IT REFUSES, and nothing more: any .py file written into the repo; a write whose TEXT runs or installs
+// python (invokesPython, judged on what the call would put into the file); and a caller line running a file
+// with the wrong runtime.
 
 /** The caller surface whose invocations are literal command lines — the same one the wall's
  *  seventh census reads, so the two halves are the same rule and not two readings of it. */
@@ -695,8 +435,7 @@ function proposedText(tool: string, input: Record<string, unknown>): string {
   return "";
 }
 
-/** The block reason for a PreToolUse event, or null to allow the write. Throws when the list
- *  cannot be read — the command turns that into a fail-OPEN allow with a message. */
+/** The block reason for a PreToolUse event, or null to allow the write. */
 export function guardVerdict(root: string, data: Event): string | null {
   const tool = data.tool_name ?? "";
   if (tool !== "Write" && tool !== "Edit" && tool !== "MultiEdit") return null;
@@ -709,55 +448,36 @@ export function guardVerdict(root: string, data: Event): string | null {
   if (!rel || rel.startsWith("..")) return null;
   if (SELF.has(rel)) return null;
 
-  const list = burndown(root);
-  const files = new Set(list.files ?? []);
-  const invokerSet = new Set(list.invokers ?? []);
-
   if (rel.endsWith(".py")) {
-    if (files.has(rel)) return null; // existing debt: conversions have to be able to edit it
     return (
       `REFUSED — this repo has no Python; tooling is bun/TypeScript.\n\n` +
-      `  ${rel} is a NEW .py file.\n\n` +
-      `Write it as .ts and run it with bun. Adding it to ${ALLOW} is NOT available: that list is a\n` +
-      `dated burn-down of what already existed, it may only shrink, and \`gate no-python\` grades\n` +
-      `it against its own first commit in git — so a line added there fails the build by name.\n` +
-      `If this is a throwaway, put it in a scratch directory outside the worktree instead.`
+      `  ${rel} is a .py file.\n\n` +
+      `Write it as .ts and run it with bun. If this is a throwaway, put it in a scratch directory outside the\n` +
+      `worktree instead.`
     );
   }
 
-  // BEFORE the invoker exemption below, because the file this actually happens to is a LISTED
-  // invoker: being on the invokers list earns an exemption from naming python; it never earns an
-  // exemption from naming it in front of a .ts.
-  const crossed = CALLER.test(rel) ? mismatchedRuntimes(proposedText(tool, input)) : [];
+  const text = proposedText(tool, input);
+  const crossed = CALLER.test(rel) ? mismatchedRuntimes(text) : [];
   if (crossed.length) {
     return (
       `REFUSED — wrong runtime for the file's extension.\n\n` +
       `  ${rel}\n    ` +
       crossed.join("\n    ") +
       `\n\nThis is a half-finished conversion: the filename moved and the interpreter did not. It would\n` +
-      `not fail here — the path resolves and the file exists, so every census on the no-python wall\n` +
-      `stays green — it would fail later at run time with a syntax error that reads like a broken\n` +
-      `script rather than a broken call. Change the interpreter to match the extension.`
+      `not fail here — the path resolves and the file exists — it would fail later at run time with a syntax\n` +
+      `error that reads like a broken script rather than a broken call. Change the interpreter to match the\n` +
+      `extension.`
     );
   }
 
-  // The same third disposition the wall's invoker census applies, or the two halves disagree about
-  // the same file. Only entries whose tool still exists AND is still burn-down debt strip anything.
-  let charged = proposedText(tool, input);
-  for (const p of list.pendingTools ?? []) {
-    if (!existsSync(at(root, p.tool)) || !(list.files ?? []).includes(p.tool)) continue;
-    if (p.callers.includes(rel)) charged = pendingStrip(charged, p.tool);
-  }
-  if (namesPython(charged) && !invokerSet.has(rel)) {
+  if (invokesPython(rel, text)) {
     return (
       `REFUSED — this repo has no Python; tooling is bun/TypeScript.\n\n` +
-      `  ${rel} is not a listed invoker, and this write makes it run or name python.\n\n` +
+      `  This write makes ${rel} run or install python.\n\n` +
       `If it SHELLS OUT: do the work in bun instead. The last file to do this decoded a PNG through\n` +
       `a subprocess; zlib and forty lines of filter cases replaced it, byte-identical over seven\n` +
-      `frames. If it is PROSE — a comment, a README, a command in a docstring — reword it. A\n` +
-      `sentence naming the interpreter is what teaches the next session which language this repo\n` +
-      `writes tooling in, and that is how every file on the burn-down got there.\n` +
-      `Adding a line to ${ALLOW} is not the remedy; it is the violation the wall exists to catch.`
+      `frames. A comment, a README or a docstring that merely names the interpreter is not refused.`
     );
   }
   return null;

@@ -5,6 +5,7 @@
     "tools/gate/tsconfig.json",
     "tools/release/tsconfig.json",
     "tools/e2e/tsconfig.json",
+    ".github/scripts/tsconfig.json",
     "tools/probes/tsconfig.json",
     "tools/screen-review/tsconfig.json",
     ".dev/tsconfig.json",

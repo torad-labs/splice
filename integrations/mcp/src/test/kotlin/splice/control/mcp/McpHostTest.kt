@@ -25,8 +25,8 @@ import java.nio.file.Path
 class McpHostTest : McpHostFixture() {
 
     @Test
-    fun `two sessions share one process and each gets its own id back`(@TempDir dir: Path) = runBlocking {
-        boot(dir)
+    fun `two sessions share one process and each gets its own id back`() = runBlocking {
+        boot()
         val a = init()
         val b = init()
         assertNotEquals(a, b)
@@ -41,8 +41,8 @@ class McpHostTest : McpHostFixture() {
     }
 
     @Test
-    fun `concurrent initializes from many sessions spawn exactly one process`(@TempDir dir: Path) = runBlocking {
-        boot(dir)
+    fun `concurrent initializes from many sessions spawn exactly one process`() = runBlocking {
+        boot()
         val sessions = (1..6).map { async { init() } }.awaitAll()
         val pids = sessions.mapIndexed { i, s -> text(call(s, i, "echo", "x")).substringBefore(" ") }.toSet()
         assertEquals(1, pids.size, "one child for six sessions, got $pids")
@@ -51,9 +51,9 @@ class McpHostTest : McpHostFixture() {
     }
 
     @Test
-    fun `aliases with an identical launch tuple share one process and a different tuple does not`(@TempDir dir: Path) =
+    fun `aliases with an identical launch tuple share one process and a different tuple does not`() =
         runBlocking {
-            boot(dir)
+            boot()
             val a = init("fake")
             val b = init("alias")
             val c = init("fake2")
@@ -68,10 +68,8 @@ class McpHostTest : McpHostFixture() {
         }
 
     @Test
-    fun `a later request naming another protocol version is refused, absence rides the negotiated one`(
-        @TempDir dir: Path,
-    ) = runBlocking {
-        boot(dir)
+    fun `a later request naming another protocol version is refused, absence rides the negotiated one`() = runBlocking {
+        boot()
         val s = init()
         assertEquals(400, host.post("fake", s, MCP_HOST_LIST, protocolVersion = "2025-03-26").status)
         assertEquals(200, host.post("fake", s, MCP_HOST_LIST, protocolVersion = "2025-11-25").status)
@@ -88,7 +86,7 @@ class McpHostTest : McpHostFixture() {
     @Test
     fun `a cancel is remapped to that session's own request and dropped when it names none`(@TempDir dir: Path) =
         runBlocking {
-            boot(dir)
+            boot()
             val a = init()
             val b = init()
             val streamB = checkNotNull(host.openStream("fake", b))
@@ -126,13 +124,15 @@ class McpHostTest : McpHostFixture() {
     }
 
     @Test
-    fun `string ids and concurrent calls never cross sessions`(@TempDir dir: Path) = runBlocking {
-        boot(dir)
+    fun `string ids and concurrent calls never cross sessions`() = runBlocking {
+        boot()
         val a = init()
         val b = init()
-        val answers = (1..6).map { i ->
+        val pending = (1..6).map { i ->
             async { call(if (i % 2 == 0) a else b, "req-$i", if (i == 3) "slow" else "echo", "n$i") }
-        }.awaitAll()
+        }
+        assertEquals(202, host.post("fake", b, FakeMcpServer.RELEASE).status) // frees the one slow call
+        val answers = pending.awaitAll()
         answers.forEachIndexed { idx, ans ->
             assertEquals("req-${idx + 1}", ans["id"]!!.jsonPrimitive.content)
             assertTrue(text(ans).endsWith("echo=n${idx + 1}"), text(ans))
@@ -140,10 +140,10 @@ class McpHostTest : McpHostFixture() {
     }
 
     @Test
-    fun `a cancelled initialize releases its reservation so capacity is not held by a ghost`(@TempDir dir: Path) =
+    fun `a cancelled initialize releases its reservation so capacity is not held by a ghost`() =
         runBlocking {
-            boot(dir, maxServers = 1)
-            // 1 ms is far less than a python child needs to answer initialize: the handshake is
+            boot(maxServers = 1)
+            // 1 ms is far less than a child process needs to answer initialize: the handshake is
             // cancelled with the server still reserved — and the finally must hand that back.
             assertNull(withTimeoutOrNull(1) { host.post("fake", null, MCP_HOST_INIT) })
             val s = init("fake2")
@@ -151,10 +151,8 @@ class McpHostTest : McpHostFixture() {
         }
 
     @Test
-    fun `an unknown session is adopted, a notification on one is 404, the initialized one is 202`(
-        @TempDir dir: Path,
-    ) = runBlocking {
-        boot(dir)
+    fun `an unknown session is adopted, a notification on one is 404, the initialized one is 202`() = runBlocking {
+        boot()
         val s = init()
         // V4-148: a REQUEST on an id this host does not know is served by adopting the id, because the
         // spec's "session not found" is a signal Claude Code ignores; a NOTIFICATION needs no session.
@@ -169,10 +167,8 @@ class McpHostTest : McpHostFixture() {
     }
 
     @Test
-    fun `notifications fan out to every session's stream and server pings are answered by the host`(
-        @TempDir dir: Path,
-    ) = runBlocking {
-        boot(dir)
+    fun `notifications fan out to every session's stream and server pings are answered by the host`() = runBlocking {
+        boot()
         val a = init()
         val b = init()
         val sa = checkNotNull(host.openStream("fake", a))
@@ -187,9 +183,9 @@ class McpHostTest : McpHostFixture() {
     }
 
     @Test
-    fun `a progress notification reaches only the session whose request carries its token`(@TempDir dir: Path) =
+    fun `a progress notification reaches only the session whose request carries its token`() =
         runBlocking {
-            boot(dir)
+            boot()
             val a = init()
             val b = init()
             val sa = checkNotNull(host.openStream("fake", a))

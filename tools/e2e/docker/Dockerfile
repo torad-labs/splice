@@ -1,7 +1,7 @@
 # tools/e2e/docker/Dockerfile — a NEW MACHINE for the fresh-install e2e.
 #
 # Nothing splice-specific is baked in: the image is the prerequisite set the README asks a new
-# operator to have (Java 21+, Node 24, python3, curl, bash, Claude Code on PATH) and an unprivileged
+# operator to have (Java 21+, Node 24, curl, bash, Claude Code on PATH) and an unprivileged
 # user with an empty HOME. The release artifacts and the checkout are mounted at run time, so the
 # same image proves any build. The container runs with --network none: every byte the daemon and
 # the wrapper move goes to the two in-container mock upstreams, or the run fails.
@@ -23,7 +23,7 @@ ARG UID=1000
 # iproute2 gives `ss` for the socket assertions; procps gives `pgrep` for the daemon assertions;
 # xz-utils unpacks the Node tarball.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl bash python3 iproute2 procps xz-utils unzip \
+ && apt-get install -y --no-install-recommends ca-certificates curl bash iproute2 procps xz-utils unzip \
  && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz \
  && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - \
  && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 --exclude='*/CHANGELOG.md' --exclude='*/README.md' --exclude='*/LICENSE' \

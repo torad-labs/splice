@@ -5,8 +5,10 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import splice.client.mcp.DirectoryProbe
@@ -17,60 +19,9 @@ import java.nio.file.Path
 import java.nio.file.StandardWatchEventKinds
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
-import kotlin.io.path.writeText
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
-
-/** A scripted stdio MCP server: answers initialize, echoes tools/call with its own pid, emits one
- *  notification on `notify`, pings the client on `ping-me`, and dies on `crash`. */
-private const val FAKE_SERVER = """
-import json, os, signal, sys, time
-if os.environ.get("FAKE2"):
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-def send(o):
-    sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
-for line in sys.stdin:
-    line = line.strip()
-    if not line: continue
-    m = json.loads(line)
-    method = m.get("method"); rid = m.get("id")
-    if method == "notifications/cancelled":
-        send({"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","data":"cancelled=%s" % m["params"].get("requestId")}})
-        continue
-    if method == "initialize":
-        send({"jsonrpc":"2.0","id":rid,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},
-              "serverInfo":{"name":"fake","version":"1"}}})
-    elif method == "tools/list":
-        send({"jsonrpc":"2.0","id":rid,"result":{"tools":[{"name":"echo","inputSchema":{"type":"object"}}]}})
-    elif method == "tools/call":
-        args = m["params"].get("arguments", {})
-        if args.get("op") == "crash":
-            os._exit(3)
-        if args.get("op") == "hold":
-            with open(args["text"], "w") as ready: ready.write("started")
-            time.sleep(1)
-        if args.get("op") == "slow":
-            time.sleep(float(args.get("seconds", 1)))
-        if args.get("op") == "timeout-progress":
-            time.sleep(0.5)
-        if args.get("op") == "stderr":
-            sys.stderr.write("synthetic-private-stderr " * 10000); sys.stderr.flush()
-        if args.get("op") == "notify":
-            send({"jsonrpc":"2.0","method":"notifications/tools/list_changed"})
-        if args.get("op") == "overflow":
-            for i in range(257):
-                send({"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"test://resource"}})
-        if args.get("op") == "progress":
-            tok = m["params"].get("_meta", {}).get("progressToken")
-            send({"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":tok,"progress":1}})
-        if args.get("op") == "ping-me":
-            send({"jsonrpc":"2.0","id":"srv-1","method":"ping"})
-        send({"jsonrpc":"2.0","id":rid,"result":{"content":[{"type":"text","text":"pid=%d echo=%s" % (os.getpid(), args.get("text",""))}]}})
-        if args.get("op") in ("late-progress", "timeout-progress"):
-            tok = m["params"].get("_meta", {}).get("progressToken")
-            send({"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":tok,"progress":2}})
-"""
 
 internal const val MCP_HOST_INIT =
     """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"""
@@ -135,16 +86,14 @@ abstract class McpHostFixture {
         }
     }
 
-    protected fun boot(dir: Path, maxServers: Int = 32, requestTimeout: Duration = 20.seconds): McpHost {
-        val script = dir.resolve("fake_mcp.py")
-        script.writeText(FAKE_SERVER)
-        val global = json.parseToJsonElement(
-            """{"fake":{"command":"python3","args":["$script"]},
-                "alias":{"command":"python3","args":["$script"]},
-                "fake2":{"command":"python3","args":["$script"],"env":{"FAKE2":"1"}},
-                "fake3":{"command":"python3","args":["$script"],"env":{"FAKE2":"2"}},
-                "remote":{"type":"http","url":"https://x/mcp"}}""",
-        ).jsonObject
+    protected fun boot(maxServers: Int = 32, requestTimeout: Duration = 20.seconds): McpHost {
+        val global = buildJsonObject {
+            put("fake", FakeMcpServer.entry())
+            put("alias", FakeMcpServer.entry())
+            put("fake2", FakeMcpServer.entry(mapOf("FAKE2" to "1")))
+            put("fake3", FakeMcpServer.entry(mapOf("FAKE2" to "2")))
+            put("remote", json.parseToJsonElement("""{"type":"http","url":"https://x/mcp"}"""))
+        }
         val sharing = McpSharing(true, emptySet(), "http://127.0.0.1:1/mcp/", { "k" }, DirectoryProbe { false })
         host = McpHost(
             sharing,

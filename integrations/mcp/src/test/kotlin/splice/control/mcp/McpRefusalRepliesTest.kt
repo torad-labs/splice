@@ -5,8 +5,6 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
-import java.nio.file.Path
 
 class McpRefusalRepliesTest : McpHostFixture() {
 
@@ -17,8 +15,8 @@ class McpRefusalRepliesTest : McpHostFixture() {
     }
 
     @Test
-    fun `initializing a name that is not hosted answers 503 with the words`(@TempDir dir: Path) = runBlocking {
-        boot(dir)
+    fun `initializing a name that is not hosted answers 503 with the words`() = runBlocking {
+        boot()
         val reply = host.post("nope", null, MCP_HOST_INIT)
         assertRefusal(
             reply,
@@ -28,10 +26,8 @@ class McpRefusalRepliesTest : McpHostFixture() {
     }
 
     @Test
-    fun `a request during the crash backoff answers 200 with the words under the request id`(
-        @TempDir dir: Path,
-    ) = runBlocking {
-        boot(dir)
+    fun `a request during the crash backoff answers 200 with the words under the request id`() = runBlocking {
+        boot()
         val a = init()
         val crash = """{"jsonrpc":"2.0","id":9,"method":"tools/call",""" +
             """"params":{"name":"echo","arguments":{"op":"crash"}}}"""

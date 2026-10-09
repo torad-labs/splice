@@ -15,6 +15,7 @@ set -uo pipefail
 
 # The receipt plumbing, the mocks, the topology and the checks this scenario shares with upgrade.sh.
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+TOPOLOGY_CHECKS="$(dirname "${BASH_SOURCE[0]}")/topology_checks.ts"
 trap finish EXIT
 
 echo "fresh-machine e2e: user=$(id -un) home=$HOME artifacts=$ARTIFACTS"
@@ -60,7 +61,7 @@ step "wire probe: mockchat (openai-chat over mock)" probe mockchat "$CHAT_HEAD_P
 count_tokens() { # port model
   curl_mgmt "http://127.0.0.1:$1/v1/messages/count_tokens" -H 'Content-Type: application/json' \
     -d "{\"model\":\"$2\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}" \
-    | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d["input_tokens"], int); print(d)'
+    | bun "$TOPOLOGY_CHECKS" count-tokens
 }
 step "count_tokens: claudex" count_tokens "$CODEX_HEAD_PORT" "claude-codex--gpt-5-codex"
 step "count_tokens: mockchat" count_tokens "$CHAT_HEAD_PORT" "claude-mockchat--mock-chat"
@@ -72,17 +73,7 @@ step "count_tokens: mockchat" count_tokens "$CHAT_HEAD_PORT" "claude-mockchat--m
 launch_recipe() { # head port
   curl_mgmt -X POST -H 'Content-Type: application/json' \
     --data '{"dangerouslySkipPermissions":"","args":[]}' "http://127.0.0.1:$CONTROL_PORT/launch/$1" \
-    | python3 -c '
-import json, sys
-port = sys.argv[1]
-r = json.load(sys.stdin); env = r.get("env", {})
-print({k: env.get(k) for k in ("ANTHROPIC_BASE_URL", "API_TIMEOUT_MS", "CLAUDE_CODE_MAX_RETRIES", "CLAUDE_CODE_RETRY_WATCHDOG")}, "argv:", r.get("argv"))
-assert env.get("ANTHROPIC_BASE_URL") == "http://127.0.0.1:%s" % port, env.get("ANTHROPIC_BASE_URL")
-assert int(env.get("API_TIMEOUT_MS") or 0) > 900_000, "API_TIMEOUT_MS must exceed the daemon 900s wall: %r" % env.get("API_TIMEOUT_MS")
-# V4-72: without persistent retry the client stops after 10 attempts (~2-3 min) and a longer
-# rate-limit hold ends the session instead of resuming when the window reopens. Every head.
-assert env.get("CLAUDE_CODE_RETRY_WATCHDOG") == "1", "persistent retry must be planted: %r" % env.get("CLAUDE_CODE_RETRY_WATCHDOG")
-assert r.get("argv"), "empty argv"' "$2"
+    | bun "$TOPOLOGY_CHECKS" launch-recipe "$2"
 }
 step "launch recipe: claudex base URL + API_TIMEOUT_MS > 900s" launch_recipe claudex "$CODEX_HEAD_PORT"
 step "launch recipe: mockchat base URL + API_TIMEOUT_MS > 900s" launch_recipe mockchat "$CHAT_HEAD_PORT"
@@ -264,94 +255,7 @@ example_heads() { # example.toml
   for _ in $(seq 1 60); do curl -sf -m 3 "http://127.0.0.1:$CONTROL_PORT/health" >/dev/null 2>&1 && break; sleep 1; done
   curl -s -m 3 "http://127.0.0.1:$CONTROL_PORT/health"; echo
   curl_mgmt "http://127.0.0.1:$CONTROL_PORT/api/heads" > "$OUT/example-heads.json" || return 1
-  python3 - "$1" "$OUT/example-heads.json" "$CONTROL_PORT" "$(mgmt)" "$HOME" <<'EOF'
-import json, os, re, sys, tomllib, urllib.request
-example, heads_file, port, key, home = sys.argv[1:6]
-t = tomllib.load(open(example, "rb"))
-d = json.load(open(heads_file)); heads = d.get("heads", d)
-rows = heads.values() if isinstance(heads, dict) else heads
-listed = sorted(h["key"] for h in rows); declared = sorted(t["heads"])
-print("declared:", declared)
-print("listed:  ", [(h["key"], h.get("running"), h.get("healthy")) for h in rows])
-assert listed == declared, (listed, declared)
-
-def launch(head):
-    req = urllib.request.Request(
-        f"http://127.0.0.1:{port}/launch/{head}", data=b'{"dangerouslySkipPermissions":"","args":[]}',
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.load(resp)
-
-# A window the client would compact too early on is presented as a `[1m]` selector (V4-358, ClientSpelling:
-# grok-4.7 launches as grok-4.7[1m]); the row is the same, so the model is compared without that hint and the
-# window, which the hint never moves, exactly.
-def selector_free(model):
-    return re.sub(r"\[1m\]$", "", model or "", flags=re.IGNORECASE)
-
-registry = os.path.realpath(os.path.join(home, ".claude", "sessions"))
-bad = []
-for head, h in t["heads"].items():
-    prov = t["providers"][h["provider"]]
-    windows = {m["id"]: m.get("context_window") for m in prov.get("models", [])}
-    pinned = h.get("pinned_model", "")
-    want = h.get("context_window") or windows.get(pinned) or prov.get("context_window")
-    command = h.get("claude", {}).get("command", head)
-    wrapper = os.access(os.path.join(home, ".local", "bin", command), os.X_OK)
-    try:
-        env = launch(head).get("env", {})
-    except Exception as e:  # noqa: BLE001 — the receipt wants the reason, whatever it is
-        print(f"{head:14} {command:18} launch FAILED: {e}"); bad.append(head); continue
-    sessions = os.path.join(env.get("CLAUDE_CONFIG_DIR", ""), "sessions")
-    linked = os.path.islink(sessions) and os.path.realpath(sessions) == registry
-    # Foreign heads own the declared window. Client-login heads leave window and tier selection to Claude Code.
-    client_picks = prov.get("auth", {}).get("kind", "").lower() == "client"
-    if client_picks:
-        window_ok = not any(k in env for k in ("CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"))
-        tier_ok = not any(k.startswith("ANTHROPIC_DEFAULT_") for k in env)
-        config = env["CLAUDE_CONFIG_DIR"]
-        settings = json.load(open(os.path.join(config, "settings.json")))
-        state = json.load(open(os.path.join(config, ".claude.json")))
-        picker_ok = not any(k in settings for k in ("availableModels", "enforceAvailableModels", "modelOverrides"))
-        picker_ok = picker_ok and "additionalModelOptionsCache" not in state
-    else:
-        window_ok = env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") == str(want)
-        tier_ok = picker_ok = True
-    ok = (selector_free(env.get("ANTHROPIC_MODEL")) == selector_free(pinned)
-          and window_ok and tier_ok and picker_ok and linked and wrapper)
-    print(f"{head:14} {command:18} model={env.get('ANTHROPIC_MODEL')} window={env.get('CLAUDE_CODE_MAX_CONTEXT_TOKENS')}"
-          f" example={pinned}@{want} sessions_link={linked} wrapper={wrapper} {'OK' if ok else 'MISMATCH'}")
-    if not ok:
-        bad.append(head)
-assert not bad, f"heads off the example contract: {bad}"
-
-# `<wrapper> login` for every head of the shipped example, offline: each auth kind must reach ITS
-# flow — OAuth prints the authorize URL and waits (bounded by timeout), the Kimi device flow fails
-# on the unreachable network AFTER trying, api-key names the pipe path, client auth says so.
-import subprocess
-expect = {
-    "chatgpt-oauth": ["open this URL to sign in", "https://auth.openai.com"],
-    "grok-oauth": ["open this URL to sign in", "https://"],
-    "kimi-oauth": ["login error", "could not start device login", "enter this code"],
-    "muse-oauth": ["login error", "could not start device login", "enter this code"],
-    "api-key": ["pipe it instead", "splice key set"],
-    # A Claude head (claude-splice) signs in with Claude Code's own /login, and its verb says so (V4-276).
-    "client": ["no browser login for that kind", "signs in with Claude Code's own /login"],
-}
-failed = []
-for head, h in t["heads"].items():
-    kind = t["providers"][h["provider"]]["auth"]["kind"]
-    command = h.get("claude", {}).get("command", head)
-    proc = subprocess.run(["timeout", "10", os.path.join(home, ".local", "bin", command), "login"],
-                          stdin=subprocess.DEVNULL, capture_output=True, text=True)
-    out = proc.stdout + proc.stderr
-    wanted = expect[kind]
-    hit = all(w in out for w in wanted) if kind in ("chatgpt-oauth", "grok-oauth", "api-key") else any(w in out for w in wanted)
-    first = next((l for l in out.splitlines() if l.strip()), "")
-    print(f"{command:18} {kind:13} {'OK' if hit else 'MISSING'}  {first[:110]}")
-    if not hit:
-        print(out[-600:]); failed.append(command)
-assert not failed, f"login verb did not reach its provider flow for: {failed}"
-EOF
+  MGMT_KEY="$(mgmt)" bun "$TOPOLOGY_CHECKS" example-heads "$1" "$OUT/example-heads.json" "$CONTROL_PORT" "$HOME"
 }
 example_topology() {
   local example="$REPO/app/src/main/resources/splice.example.toml" live="$HOME/.config/splice/splice.toml" rc=0

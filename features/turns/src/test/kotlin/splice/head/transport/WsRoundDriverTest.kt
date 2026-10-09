@@ -1236,7 +1236,7 @@ class WsRoundDriverTest {
      *  stayed anchored on a round that never finished and the NEXT turn chained onto it. Same
      *  CON-003 contract as the mid-round throw above, one suspension point earlier. */
     @Test
-    fun `cancellation during the ws attempt still clears the chaining state - DR-91`() = runTest {
+    fun `cancellation during the ws attempt still clears the chaining state`() = runTest {
         val cancel = CancellationException("cancelled mid-send")
         val runner = CancellingAttemptRunner(cancel)
         val inputs = coldFlowInputs(ThrowingStartTerminal(CancellationException("unused")), this)
@@ -1274,7 +1274,7 @@ class WsRoundDriverTest {
      *  Zero budgets so the first poll fires: the poller wakes only once the collector has parked at
      *  its stall, because runTest advances virtual time only when everything else is idle. */
     @Test
-    fun `a stalled ws round is reaped and the turn survives it - DR-7`() = runTest {
+    fun `a stalled ws round is reaped and the turn survives it`() = runTest {
         val runner = StallingRunner(listOf("""{"type":"response.created","response":{"id":"r1"}}"""))
         val inputs = coldFlowInputs(RecordingTerminal(), this, WatchdogBudget(0.seconds, 0.seconds, 30.seconds))
         val driver = WsRoundDriver(
@@ -1342,7 +1342,7 @@ class WsRoundDriverTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     @ParameterizedTest
     @ValueSource(strings = ["clean", "throwing"])
-    fun `cancelling the turn supervises the round abort - DR-7`(variant: String) = runTest {
+    fun `cancelling the turn supervises the round abort`(variant: String) = runTest {
         val runner = StallingRunner(
             listOf("""{"type":"response.created","response":{"id":"r1"}}"""),
             abortFailure = if (variant == "throwing") {
@@ -1374,7 +1374,7 @@ class WsRoundDriverTest {
      *  aborted unconditionally in the finally — would pass the two arms above and tear down every
      *  healthy connection in the pool. */
     @Test
-    fun `an ordinary ws round never aborts its own connection - DR-7`() = runTest {
+    fun `an ordinary ws round never aborts its own connection`() = runTest {
         val runner = ScriptedRunner(listOf("""{"type":"response.created","response":{"id":"r1"}}"""))
         val inputs = coldFlowInputs(RecordingTerminal(), this)
         val driver = WsRoundDriver(
@@ -1397,7 +1397,7 @@ class WsRoundDriverTest {
      *  reclassified into one, still committed its chain and the next turn anchored onto a response
      *  the server never finished building. The one caller of that flag always said yes. */
     @Test
-    fun `a ws round that ends in failure must not report a clean terminal - DR-7`() = runTest {
+    fun `a ws round that ends in failure must not report a clean terminal`() = runTest {
         val runner = ScriptedRunner(listOf("""{"type":"response.created","response":{"id":"r1"}}"""))
         val inputs = coldFlowInputs(RecordingTerminal(), this)
         val driver = WsRoundDriver(

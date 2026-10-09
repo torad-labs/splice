@@ -1,4 +1,4 @@
-// NEW: V4-456 — reader tails, semantic event kinds and ping-only content silence.
+// reader tails, semantic event kinds and ping-only content silence.
 package splice.head.transport
 
 import kotlinx.coroutines.CancellationException

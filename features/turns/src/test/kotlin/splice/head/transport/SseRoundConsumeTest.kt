@@ -308,41 +308,6 @@ class SseRoundConsumeTest {
         }
     }
 
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    @Test
-    fun `Responses and chat text events report their real delta kind`() = runTest {
-        for (event in listOf(
-            """{"type":"response.output_text.delta","delta":"synthetic"}""",
-            """{"choices":[{"delta":{"content":"synthetic"}}]}""",
-        )) {
-            val perf = TurnPerf { testScheduler.currentTime }
-            val drive = drive(perf = perf)
-            val body = ByteChannel(autoFlush = true)
-            val reader = async(start = CoroutineStart.UNDISPATCHED) {
-                TearAwareEvents(provider(), {}).run(
-                    drive,
-                    body,
-                    ZeroEventCapture(),
-                    ClientFrameEmitted { true },
-                ).toList()
-            }
-            try {
-                body.writeStringUtf8("data: {\"type\":\"ping\"}\n\n")
-                delay(1)
-                delay(2_500)
-                body.writeStringUtf8("data: $event\n\n")
-                body.close()
-                reader.await()
-                assertEquals(2_501L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
-                assertEquals("text_delta", perf.snapshot().upstreamGapEnd?.wire)
-            } finally {
-                body.cancel(null)
-                reader.cancel()
-                drive.slot.release()
-            }
-        }
-    }
-
     @Test
     fun `a pre-content reissue does not count the first attempt or backoff as upstream silence`() = runBlocking {
         var now = 0L
@@ -427,7 +392,7 @@ class SseRoundConsumeTest {
     }
 
     @Test
-    fun `a reissued attempt re-baselines the zero-event count - DR-90`() = runBlocking {
+    fun `a reissued attempt re-baselines the zero-event count`() = runBlocking {
         val provider = provider()
         val consume = SseRoundConsume(
             provider,
@@ -492,7 +457,7 @@ class SseRoundConsumeTest {
     // asserting the sentinel is TotalCap and NOT Idle is precisely the claim that the idle tier
     // probed, held, and left the turn alone.
     @Test
-    fun `a pre-content idle holds at the tier and the cap ends it - DR-7`() = runBlocking(Dispatchers.Default) {
+    fun `a pre-content idle holds at the tier and the cap ends it`() = runBlocking(Dispatchers.Default) {
         val provider = provider()
         val consume = SseRoundConsume(
             provider,

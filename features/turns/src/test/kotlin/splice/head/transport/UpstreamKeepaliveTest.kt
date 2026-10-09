@@ -1,4 +1,4 @@
-// NEW: V4-125 — the row's headline criterion, driven through the REAL production path (HeadServer
+// the row's headline criterion, driven through the REAL production path (HeadServer
 // over HTTP, TurnDriveFactory wiring the budget, the mock acknowledging and then going quiet).
 //
 // THE CASE THIS EXISTS FOR is the one the operator's ruling is about (IDLE IS A PROBE): an upstream

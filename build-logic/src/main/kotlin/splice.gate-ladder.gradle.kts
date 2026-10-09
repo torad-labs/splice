@@ -70,8 +70,9 @@ val legTasks = legs.map { leg ->
             }
             // The row's globs are expanded by git (tracked, plus untracked and not ignored), never by walking the tree: a walk reads
             // ignored directories and throws on a dangling link under them.
+            val matched = splice.lawsuite.ReadSet.globbedProvider(project, inputGlobs)
             inputs.files(
-                splice.lawsuite.ReadSet.globbedProvider(project, inputGlobs).map { files -> files.map { rootDir.resolve(it) } },
+                matched.map { files -> files.map { rootDir.resolve(it) } },
             ).withPropertyName("ladderInputs")
             outputs.file(stamp)
             doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("$name\n") }
@@ -138,7 +139,11 @@ tasks.register("verifyLadder") {
     val table = ladderPath
     inputs.property("ladderProblems", problems)
     doLast {
-        check(problems.get().isEmpty()) { "the gate ladder disagrees with $table:\n  " + problems.get().joinToString("\n  ") }
-        logger.lifecycle("verifyLadder: $legCount leg(s) registered from $table, every one a dependency of gateOfRecord")
+        check(problems.get().isEmpty()) {
+            "the gate ladder disagrees with $table:\n  " + problems.get().joinToString("\n  ")
+        }
+        logger.lifecycle(
+            "verifyLadder: $legCount leg(s) registered from $table, every one a dependency of gateOfRecord",
+        )
     }
 }

@@ -104,7 +104,9 @@ tasks.withType<Test>().configureEach {
     // OAuth sign-in fails by name instead of opening a login page on the operator's desktop and
     // blocking on a loopback callback that will never arrive. See LoginIo.kt's wall.
     systemProperty("splice.noSystemBrowser", "1")
-    jvmArgumentProviders.add(splice.testing.MachineLocalArguments(provider { listOf("-Duser.home=${testHome.absolutePath}") }))
+    jvmArgumentProviders.add(
+        splice.testing.MachineLocalArguments(provider { listOf("-Duser.home=${testHome.absolutePath}") }),
+    )
     // HOME outranks user.home (UserHome.kt, V4-218), so the rig home is named in both: a test JVM that kept
     // the shell's HOME would resolve every ~/ path into the developer's real home again.
     doFirst { environment("HOME", testHome.absolutePath) }

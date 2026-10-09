@@ -5,6 +5,7 @@
 // settings.gradle.kts and package.json instead, and the file lists come from `git ls-files`.
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
+import { includedBuildDirs } from "./gradle-settings.ts";
 
 export interface GradleModule {
   readonly id: string;
@@ -101,12 +102,13 @@ export function readWorkspaces(repoRoot: string): string[] {
  * Included builds from `settings.gradle.kts` (`includeBuild("build-logic")`): they hold production Kotlin
  * (`*.gradle.kts` convention plugins and their tests) that is in no `include()`, so a denominator read from
  * the modules alone never listed it and a rule could miss it with every proof green. The id is the build's
- * directory name, which is what an exclusion row names.
+ * directory name, which is what an exclusion row names. The declarations are read from the settings file's syntax tree
+ * (gradle-settings.ts), and one that cannot be resolved there fails the proof instead of leaving the build out.
  */
 export function readIncludedBuilds(repoRoot: string, buildRoot: string): GradleModule[] {
-  const text = readFileSync(join(buildRoot, "settings.gradle.kts"), "utf8");
-  const dirs = [...text.matchAll(/includeBuild\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]!);
-  return [...new Set(dirs)].map((dir) => ({ id: dir, dir: relative(repoRoot, join(buildRoot, dir)) }));
+  const settings = join(buildRoot, "settings.gradle.kts");
+  const dirs = includedBuildDirs(repoRoot, readFileSync(settings, "utf8"), relative(repoRoot, settings));
+  return dirs.map((dir) => ({ id: dir, dir: relative(repoRoot, join(buildRoot, dir)) }));
 }
 
 /** The three domains a rule's `files:` may select, each derived from the units: every root, every production

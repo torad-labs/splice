@@ -3961,3 +3961,5 @@ quality/compiler-plugin/src/test/kotlin/splice/firchecks/UnregisteredLookupsRegi
 quality/compiler-plugin/src/main/resources/META-INF/services/org.jetbrains.kotlin.compiler.plugin.CommandLineProcessor	created		V4-92: registers the command-line processor that reads the report options
 integrations/http/src/main/kotlin/splice/http/SseResponse.kt	created		the head SSE body moved from features/turns so the events and MCP streams close clean too (kt-head-sse-drains-on-exit)
 integrations/http/src/test/kotlin/splice/http/SseResponseTest.kt	created		its test, moved with it
+tools/gate/src/lib/gradle-settings.ts	created		reads the included builds settings.gradle.kts declares from its syntax tree, failing on a spelling it cannot resolve so no build drops out of the coverage denominator
+tools/gate/test/gradle-settings.test.ts	created		pins that the repo's included builds are counted and an unresolvable declaration fails instead of dropping a build

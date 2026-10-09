@@ -22,6 +22,13 @@ import type { Layout } from "./repo.ts";
 import { exitForSignal, exitStatusOf } from "./status.ts";
 
 export const SLOT_TIMEOUT_EXIT = 75;
+/** The warm daemon's own caps, on the command line because ~/.gradle/gradle.properties (hostshield's 2 GB heap and 5 minute idle
+ *  timeout) outranks the project's gradle.properties and only the command line outranks both. The worker cap stays hostshield's. */
+const localDaemon = [
+  "-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=512m",
+  "-Dorg.gradle.daemon.idletimeout=1800000",
+  "-Pkotlin.daemon.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=512m",
+];
 export const NO_TASKS_EXIT = 2;
 const FAST_PATH_MS = 1000;
 /** The three the shell script traps. A forwarded signal is the only way the JVM ever hears one. */
@@ -217,7 +224,7 @@ function spawnGradle(
   const gradlew = `${buildRoot}/gradlew`;
   if (!existsSync(gradlew)) throw new Error(`gate: no gradle wrapper at ${gradlew}`);
   // Locally the daemon stays warm inside the gate (heap, metaspace and Kotlin-daemon caps live in gradle.properties); CI is one build per runner.
-  const daemon = childEnv.CI ? ["--no-daemon"] : [];
+  const daemon = childEnv.CI ? ["--no-daemon"] : localDaemon;
   const gradleArgs = [...offline, ...parallel, ...daemon, ...args];
   let argv = buildgate ? [buildgate, gradlew, ...gradleArgs] : [gradlew, ...gradleArgs];
   if (buildgate && admission) {

@@ -3,7 +3,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { isoSeconds, lockPath, NO_TASKS_EXIT, runUnderSlot, SLOT_TIMEOUT_EXIT } from "../src/lib/slot.ts";
 import { takeExclusive } from "../src/lib/flock.ts";
 import { layout } from "../src/lib/repo.ts";
@@ -38,9 +38,12 @@ function fakeBuildRoot(script = 'echo "ARGS:$*"\ncat "$LOCK.holder"\nexit 0\n') 
 }
 
 describe("the gradle slot", () => {
+  // The shared checkout is the git common dir's parent. Read from there, not from where this suite runs: the gate and
+  // pre-push run it inside their own build trees, which take their own locks (the next tests).
   test("the lock is the repository's: in its git common dir, where nothing is ever tracked (V4-341)", () => {
     const common = git(real.repoRoot, "rev-parse", "--path-format=absolute", "--git-common-dir").trim();
-    expect(lockPath(real, {})).toBe(join(common, "gradle-slot.lock"));
+    const checkout = { repoRoot: dirname(common), buildRoot: dirname(common) };
+    expect(lockPath(checkout, {})).toBe(join(common, "gradle-slot.lock"));
   });
 
   test("with no repository at the root, the lock falls back to the path .gitignore keeps out of the tree", () => {
@@ -55,11 +58,15 @@ describe("the gradle slot", () => {
     expect(lockPath(fake.layout, {})).toBe(join(fake.layout.buildRoot, line![1]!));
   });
 
-  test("the pre-push build tree takes its own lock, so a push never blocks the checkout's builders", () => {
-    const tree = join(real.repoRoot, ".git", "splice-prepush", "tree");
-    const layout = { repoRoot: tree, buildRoot: tree };
-    expect(lockPath(layout, {})).toBe(join(tree, ".gradle-slot.lock"));
-    expect(lockPath(layout, {})).not.toBe(lockPath(real, {}));
+  test("each build tree takes its own lock, so neither a push nor a local gate blocks the checkout's builders", () => {
+    const common = git(real.repoRoot, "rev-parse", "--path-format=absolute", "--git-common-dir").trim();
+    const checkout = { repoRoot: dirname(common), buildRoot: dirname(common) };
+    for (const name of ["tree", "gate"]) {
+      const tree = join(common, "splice-prepush", name);
+      const layout = { repoRoot: tree, buildRoot: tree };
+      expect(lockPath(layout, {})).toBe(join(tree, ".gradle-slot.lock"));
+      expect(lockPath(layout, {})).not.toBe(lockPath(checkout, {}));
+    }
   });
 
   test("GRADLE_SLOT_LOCK overrides it, as in the script", () => {

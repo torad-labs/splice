@@ -135,7 +135,7 @@ public object SecureFile {
             // the atomic move afterward still holds), THEN write the credential.
             val fallback = Files.createTempFile(parent, ".secure", ".tmp")
             Cancellables.discard(
-                runCatching { Files.setPosixFilePermissions(fallback, OWNER_ONLY) },
+                Cancellables.runCatchingBestEffort { Files.setPosixFilePermissions(fallback, OWNER_ONLY) },
                 "POSIX perms unsupported on this filesystem, so there is nothing to lock down",
             )
             fallback
@@ -145,13 +145,13 @@ public object SecureFile {
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         }.onFailure {
             Cancellables.discard(
-                runCatching { Files.deleteIfExists(tmp) },
+                Cancellables.runCatchingBestEffort { Files.deleteIfExists(tmp) },
                 "tmp cleanup is best-effort; the write failure rethrows",
             )
             throw it
         }
         Cancellables.discard(
-            runCatching { Files.setPosixFilePermissions(path, OWNER_ONLY) },
+            Cancellables.runCatchingBestEffort { Files.setPosixFilePermissions(path, OWNER_ONLY) },
             "POSIX perms unsupported on this filesystem → keep the completed write",
         )
     }

@@ -49,10 +49,10 @@ public object Cancellables {
      * guard — cleanup runs inside the cancelled coroutine's own unwind, and eating it would
      * zombie the cancellation. Capture-then-classify rather than catch clauses: the subtype
      * relation forces a supertype catch with an `is` guard, and that clause shape is detekt's
-     * InstanceOfCheckForException (a rethrow-only pre-clause is RethrowCaughtException). Raw
-     * runCatching is legal in core (the coroutine wall scopes to the turn/stream modules), and
-     * everything outside the cleanup set — cancellation first, then Errors and the rest — is
-     * rethrown unchanged.
+     * InstanceOfCheckForException (a rethrow-only pre-clause is RethrowCaughtException). The raw
+     * runCatching passes kt-no-runcatching-in-coroutine because this function rethrows the
+     * cancellation it captured, and everything outside the cleanup set — cancellation first,
+     * then Errors and the rest — is rethrown unchanged.
      */
     public inline fun <R> runCatchingCleanup(block: () -> R): Result<R> {
         val attempt = runCatching(block)
@@ -87,24 +87,12 @@ public object Cancellables {
      * Always run [cleanup], then rethrow the original failure, including cancellation and Errors.
      * A later failure is suppressed only when it is a different instance: HotSpot may reuse one OOM.
      * This is teardown, not best effort. The finally also covers a non-local return from [block].
+     * Kotlin's own [use] is exactly that contract (closeFinally suppresses through the stdlib's
+     * identity-checked addSuppressed), so nothing here captures a failure itself. [cleanup] cannot
+     * suspend or return non-locally: it runs as the resource's close.
      */
-    public inline fun <R> withCleanup(cleanup: () -> Unit, block: () -> R): R {
-        var failure: Throwable? = null
-        try {
-            val attempt = runCatching(block)
-            failure = attempt.exceptionOrNull()
-            return attempt.getOrThrow()
-        } finally {
-            val settled = runCatching(cleanup)
-            val later = settled.exceptionOrNull()
-            val original = failure
-            if (original == null) {
-                settled.getOrThrow()
-            } else if (later != null && later !== original) {
-                original.addSuppressed(later)
-            }
-        }
-    }
+    public inline fun <R> withCleanup(crossinline cleanup: () -> Unit, block: () -> R): R =
+        AutoCloseable { cleanup() }.use { block() }
 
     /**
      * The ONLY sanctioned way to drop a [Result] on the floor. Neither argument is read at runtime:

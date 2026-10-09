@@ -212,7 +212,9 @@ public class TranscriptModelRewrite(
         val staged = Files.createTempFile(target.parent, ".${target.fileName}.", ".tmp")
         Cancellables.runCatchingCancellable {
             Cancellables.discard(
-                runCatching { Files.setPosixFilePermissions(staged, Files.getPosixFilePermissions(target)) },
+                Cancellables.runCatchingBestEffort {
+                    Files.setPosixFilePermissions(staged, Files.getPosixFilePermissions(target))
+                },
                 "no POSIX permissions on this filesystem, so there are none to carry over",
             )
             val changedWhileStaging = "Transcript changed while staging its rewrite"
@@ -224,7 +226,7 @@ public class TranscriptModelRewrite(
             fs.move(staged, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         }.onFailure {
             Cancellables.discard(
-                runCatching { Files.deleteIfExists(staged) },
+                Cancellables.runCatchingBestEffort { Files.deleteIfExists(staged) },
                 "the temp file's cleanup is best-effort; the write failure rethrows",
             )
             throw it

@@ -3,7 +3,7 @@
 // showed, every recipient a socket path, because the registry that could name a holder had emptied.
 // The fixture has that shape (4 members, 28 name-addressed rows of which 4 are subagent tool traffic,
 // 10 rows to one socket, an empty registry) with synthetic ids and paths.
-package splice.sessions.v4402
+package splice.sessions.http
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -20,11 +20,6 @@ import splice.core.util.WallClock
 import splice.sessions.activity.ActivityStores
 import splice.sessions.activity.MessageEdge
 import splice.sessions.activity.RecipientResolution
-import splice.sessions.http.AT
-import splice.sessions.http.ActivitySource
-import splice.sessions.http.SentTextSource
-import splice.sessions.http.TeamSource
-import splice.sessions.http.TeamsRoutes
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
 import splice.sessions.teams.Team
@@ -34,14 +29,14 @@ import splice.sessions.transcript.SentTexts
 import java.nio.file.Files
 import java.nio.file.Path
 
-private const val LEAD = "aaaaaaaa-0000-4000-8000-000000000001"
-private const val REVIEWER = "aaaaaaaa-0000-4000-8000-000000000002"
-private const val BUILDER = "aaaaaaaa-0000-4000-8000-000000000003"
-private const val TESTER = "aaaaaaaa-0000-4000-8000-000000000004"
-private const val OUTSIDER = "bbbbbbbb-0000-4000-8000-000000000009"
+private const val LEGACY_LEAD = "aaaaaaaa-0000-4000-8000-000000000001"
+private const val LEGACY_REVIEWER = "aaaaaaaa-0000-4000-8000-000000000002"
+private const val LEGACY_BUILDER = "aaaaaaaa-0000-4000-8000-000000000003"
+private const val LEGACY_TESTER = "aaaaaaaa-0000-4000-8000-000000000004"
+private const val LEGACY_OUTSIDER = "bbbbbbbb-0000-4000-8000-000000000009"
 private const val SOCKET = "uds:/run/cc-socks/700.sock"
 
-class OldHandoffsTest {
+class LegacyHandoffsTest {
     @TempDir lateinit var tmp: Path
 
     private val store by lazy { TeamStore(tmp.resolve("state/teams.json"), WallClock { AT }) }
@@ -62,7 +57,7 @@ class OldHandoffsTest {
                 ),
             ),
         ).id
-        return store.bind(id, mapOf("claude" to LEAD, "gpt" to REVIEWER, "grok" to BUILDER, "muse" to TESTER))
+        return store.bind(id, mapOf("claude" to LEGACY_LEAD, "gpt" to LEGACY_REVIEWER, "grok" to LEGACY_BUILDER, "muse" to LEGACY_TESTER))
     }
 
     /** One legacy row: no to_session key, the way rows were written before V4-252. */
@@ -106,15 +101,15 @@ class OldHandoffsTest {
      *  lead 6 times and the tester 2, the reviewer's subagents ('main', 'code-review') carry 4, and the
      *  builder and reviewer reach one socket 9 and 1 times. */
     private fun sepDay() {
-        legacy(LEAD, "gpt", 3, "a")
-        legacy(LEAD, "grok", 9, "b")
-        legacy(LEAD, "muse", 4, "c")
-        legacy(REVIEWER, "claude", 6, "d")
-        legacy(TESTER, "claude", 2, "e")
-        legacy(REVIEWER, "code-review", 2, "f")
-        legacy(REVIEWER, "main", 2, "g")
-        legacy(BUILDER, SOCKET, 9, "h")
-        legacy(REVIEWER, SOCKET, 1, "i")
+        legacy(LEGACY_LEAD, "gpt", 3, "a")
+        legacy(LEGACY_LEAD, "grok", 9, "b")
+        legacy(LEGACY_LEAD, "muse", 4, "c")
+        legacy(LEGACY_REVIEWER, "claude", 6, "d")
+        legacy(LEGACY_TESTER, "claude", 2, "e")
+        legacy(LEGACY_REVIEWER, "code-review", 2, "f")
+        legacy(LEGACY_REVIEWER, "main", 2, "g")
+        legacy(LEGACY_BUILDER, SOCKET, 9, "h")
+        legacy(LEGACY_REVIEWER, SOCKET, 1, "i")
     }
 
     @Test
@@ -130,7 +125,7 @@ class OldHandoffsTest {
     @Test
     fun `a socket held by a registry session is filed under that session's slot`() {
         sepDay()
-        register(700, LEAD, null, "/run/cc-socks/700.sock")
+        register(700, LEGACY_LEAD, null, "/run/cc-socks/700.sock")
         val messages = chat(team())
         assertEquals(34, messages.size)
         assertEquals(10, messages.count { toSlot(it) == "claude" && it.getValue("to").jsonPrimitive.content == SOCKET })
@@ -138,8 +133,8 @@ class OldHandoffsTest {
 
     @Test
     fun `a name a registry session still carries is never guessed from the slot ids`() {
-        legacy(LEAD, "gpt", 3, "a")
-        register(11, OUTSIDER, "gpt", "/run/cc-socks/11.sock")
+        legacy(LEGACY_LEAD, "gpt", 3, "a")
+        register(11, LEGACY_OUTSIDER, "gpt", "/run/cc-socks/11.sock")
         assertEquals(0, chat(team()).size, "the one live holder is outside the team, so the name is that session's")
         register(12, "cccccccc-0000-4000-8000-000000000008", "gpt", "/run/cc-socks/12.sock")
         assertEquals(0, chat(team()).size, "two live holders are ambiguous, and ambiguity is not resolved by a slot id")
@@ -147,13 +142,13 @@ class OldHandoffsTest {
 
     @Test
     fun `a sender outside the team does not reach a member by a name`() {
-        legacy(OUTSIDER, "gpt", 3, "a")
+        legacy(LEGACY_OUTSIDER, "gpt", 3, "a")
         assertEquals(0, chat(team()).size)
     }
 
     @Test
     fun `an explicit no-holder is never recovered from the slot ids`() {
-        stores.edges.record(MessageEdge(LEAD, "gpt", AT, "toolu_null", recipient = RecipientResolution.NoHolder))
+        stores.edges.record(MessageEdge(LEGACY_LEAD, "gpt", AT, "toolu_null", recipient = RecipientResolution.NoHolder))
         assertFalse(chat(team()).any { toSlot(it) == "gpt" })
     }
 }

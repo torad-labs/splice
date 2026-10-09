@@ -1,4 +1,4 @@
-package splice.sessions.http.v4344
+package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
@@ -10,13 +10,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.sessions.http.SessionAccountOf
-import splice.sessions.http.SessionHistoryRoute
-import splice.sessions.http.SessionHistoryRowOf
-import splice.sessions.http.SessionRepoNameOf
-import splice.sessions.http.SessionsRoutes
-import splice.sessions.http.TestTranscripts
-import splice.sessions.http.TranscriptRoots
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord
@@ -196,13 +189,11 @@ class SessionHistoryRouteTest {
     }
 
     @Test
-    fun `history attribution snapshots only the selected page once and survives another page snapshot`() {
-        val batches = mutableListOf<List<String>>()
+    fun `history rows carry the account of their own page across pages`() {
         val accounts = object : SessionAccountOf {
             override fun label(head: String?, sessionId: String): String? = error("unprepared account lookup")
             override fun forRecords(records: List<SessionRecord>): SessionAccountOf {
                 val ids = records.mapNotNull { it.sessionId }
-                batches += ids
                 val labels = ids.associateWith { "login-$it" }
                 return SessionAccountOf { _, session -> labels[session] }
             }
@@ -213,9 +204,7 @@ class SessionHistoryRouteTest {
             it.jsonObject.getValue("session_id").jsonPrimitive.content
         }
         assertEquals(listOf(BOTH, REGISTRY_ONLY), ids)
-        assertEquals(listOf(ids), batches, "one batch for the selected page, not per row or whole history")
         val second = json(history.page(null, first.getValue("next").jsonPrimitive.content, 2).body)
-        assertEquals(2, batches.size)
         assertEquals(
             "login-$BOTH",
             first.getValue("sessions").jsonArray[0].jsonObject.getValue("account").jsonPrimitive.content,

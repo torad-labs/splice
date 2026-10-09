@@ -4,7 +4,7 @@
 // registers itself in Claude Code's session registry (a session id, a pid, a socket) and never writes a
 // transcript, so the list carried a session nothing could resume. The rule is the resume route's: a
 // regular file with conversation bytes in some head's own tree. The fixtures here are real files.
-package splice.sessions.v4421
+package splice.sessions.http
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -16,10 +16,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.sessions.http.SessionsRoutes
-import splice.sessions.http.TestTranscripts
-import splice.sessions.http.TranscriptRoots
-import splice.sessions.http.TranscriptViewSettings
 import splice.sessions.query.SessionHead
 import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute

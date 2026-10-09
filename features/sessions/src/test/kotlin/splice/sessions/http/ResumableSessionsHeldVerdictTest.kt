@@ -4,15 +4,13 @@
 // per session is held: a session with a transcript for five to six minutes (each id's own spread keeps the
 // ones first measured together from expiring together), one without for ten seconds (it may write its
 // first message any moment), and one that left the list is forgotten.
-package splice.sessions.v4421
+package splice.sessions.http
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.WallClock
-import splice.sessions.http.ResumableSessions
-import splice.sessions.http.TestTranscripts
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptPage
 import java.nio.file.Files
@@ -21,7 +19,7 @@ import java.nio.file.Path
 private const val HAS = "cccccccc-0000-4000-8000-000000000001"
 private const val LACKS = "cccccccc-0000-4000-8000-000000000002"
 
-class HeldVerdictTest {
+class ResumableSessionsHeldVerdictTest {
     @TempDir lateinit var tmp: Path
 
     private var now = 1_000_000L

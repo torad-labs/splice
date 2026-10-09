@@ -1,5 +1,5 @@
 // NEW: V4-444 — session cards get a compact activity projection without opening transcript pages.
-package splice.sessions.v4444
+package splice.sessions.http
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
@@ -12,9 +12,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.sessions.http.SessionsRoutes
-import splice.sessions.http.TranscriptRoots
-import splice.sessions.http.TranscriptViewSettings
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord

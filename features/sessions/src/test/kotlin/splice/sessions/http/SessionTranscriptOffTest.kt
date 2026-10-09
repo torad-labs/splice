@@ -1,4 +1,4 @@
-package splice.sessions.http.v4344
+package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
@@ -11,11 +11,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.sessions.http.SessionHistoryRoute
-import splice.sessions.http.SessionHistoryRowOf
-import splice.sessions.http.SessionsRoutes
-import splice.sessions.http.TranscriptRoots
-import splice.sessions.http.TranscriptViewSettings
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionListing
 import splice.sessions.registry.SessionRecord

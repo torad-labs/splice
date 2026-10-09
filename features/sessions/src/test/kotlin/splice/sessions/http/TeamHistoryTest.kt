@@ -1,5 +1,5 @@
 // NEW: V4-391 holds the day-history hand-offs against legacy names and recipient references.
-package splice.sessions.http.v4391
+package splice.sessions.http
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -14,15 +14,6 @@ import splice.core.util.WallClock
 import splice.sessions.activity.MessageEdge
 import splice.sessions.activity.NameHolders
 import splice.sessions.activity.RecipientResolution
-import splice.sessions.http.AT
-import splice.sessions.http.ActivitySource
-import splice.sessions.http.BUILDER
-import splice.sessions.http.LEAD
-import splice.sessions.http.OUTSIDER
-import splice.sessions.http.SentTextSource
-import splice.sessions.http.TeamRig
-import splice.sessions.http.TeamSource
-import splice.sessions.http.TeamsRoutes
 import splice.sessions.transcript.SentTexts
 import java.nio.file.Files
 import java.nio.file.Path

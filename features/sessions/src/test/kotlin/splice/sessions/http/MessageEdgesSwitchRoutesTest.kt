@@ -1,4 +1,4 @@
-package splice.sessions.v4367
+package splice.sessions.http
 
 import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.Json
@@ -14,23 +14,11 @@ import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.sessions.activity.ActivityStores
 import splice.sessions.activity.MessageEdge
-import splice.sessions.http.AT
-import splice.sessions.http.ActivityRoutes
-import splice.sessions.http.ActivitySource
-import splice.sessions.http.BUILDER
-import splice.sessions.http.KeptActivity
-import splice.sessions.http.LEAD
-import splice.sessions.http.SentTextSource
-import splice.sessions.http.SessionsRoutes
-import splice.sessions.http.TeamReads
-import splice.sessions.http.TeamRig
-import splice.sessions.http.TeamSource
-import splice.sessions.http.TestTranscripts
 import splice.sessions.transcript.SentTexts
 import java.nio.file.Files
 import java.nio.file.Path
 
-class KeptActivityRoutesTest {
+class MessageEdgesSwitchRoutesTest {
     private fun stores(root: Path, messageEdges: Boolean = true): ActivityStores = ActivityStores(
         root.resolve("activity"),
         7,

@@ -31,6 +31,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.Daemon
+import splice.configuration.add.AddLinked
 import splice.configuration.add.AddLogin
 import splice.configuration.add.AddPorts
 import splice.configuration.add.AddPrompter
@@ -176,7 +177,7 @@ class OpenRouterStatuslineTest {
         val sink = TerminalOutput { transcript += it }
         val ports = AddPorts(
             login = AddLogin { _, _, _ -> error("the key is in the environment, so no sign-in runs") },
-            install = WrapperInstall { _, _ -> true },
+            install = WrapperInstall { _, _ -> AddLinked.Linked },
             restart = DaemonRestart { true },
             daemonUp = DaemonUpProbe { false },
             prompt = AddPrompter { _, default -> default },

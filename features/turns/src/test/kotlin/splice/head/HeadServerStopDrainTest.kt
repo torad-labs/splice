@@ -12,7 +12,7 @@
 // requires the client's read to complete with a terminal event instead of throwing.
 //
 // WHY THE HOLD IS LONGER THAN THE OLD DRAIN: this test is also the mutation proof for the ladder.
-// Set STOP_DRAIN_NS back to 5s and the 6.5s hold outlives it, the drain times out, the engine stops
+// Set DEFAULT_STOP_DRAIN_MS back to 5s and the 6.5s hold outlives it, the drain times out, the engine stops
 // mid-turn and the client's read tears — recorded in the row note with its hash. Under the fixed
 // 45s ladder the turn finishes comfortably inside the drain.
 package splice.head
@@ -60,10 +60,14 @@ import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
-// why 6.5s: it must OUTLIVE the old 5s STOP_DRAIN_NS so reverting the ladder to 5s makes the
+// why 6.5s: it must OUTLIVE the old 5s DEFAULT_STOP_DRAIN_MS so reverting the ladder to 5s makes the
 // drain time out and this test fail (the ladder's mutation proof); under the fixed 45s ladder
 // the turn still finishes inside the drain.
 private const val DRAIN_HOLD_MS = 6_500L
+
+// why 1.5s: a turn held past the drain is cut when the budget is spent, so the budget is the test's wait; 1.5s
+// is long enough for the stop to start draining before it gives up, and short enough to cost the run nothing.
+private const val SHORT_DRAIN_MS = 1_500L
 
 // why 100ms: the inflight precondition flips once the turn holds a slot; 100ms keeps the 5s
 // bound (50 tries) from busy-spinning while still observing a slot promptly.
@@ -86,6 +90,7 @@ class HeadServerStopDrainTest {
         tmp: Path,
         watchdog: WatchdogBudget = WatchdogBudget(30.seconds, 30.seconds, 60.seconds),
         waiter: Waiter = ProcessWaiter(),
+        stopDrainMs: Long = DEFAULT_STOP_DRAIN_MS,
     ) {
         val mock = MockChatGptUpstream()
         val cutAt = AtomicLong(0L)
@@ -119,6 +124,7 @@ class HeadServerStopDrainTest {
                 upstream = UpstreamClient(totalTimeoutMs = 900_000, maxRetries = 1),
                 gate = gate,
                 seams = HeadDeps.HeadSeams(waiter = waiter),
+                policy = HeadDeps.HeadPolicy(stopDrainMs = stopDrainMs),
                 log = { line ->
                     if (line.contains("draining timed out")) cutAt.compareAndSet(0L, System.nanoTime())
                 },
@@ -164,7 +170,7 @@ class HeadServerStopDrainTest {
         stream: Boolean,
         @TempDir tmp: Path,
     ) = runBlocking {
-        val rig = Rig(tmp, WatchdogBudget(600.seconds, 600.seconds, 900.seconds))
+        val rig = Rig(tmp, WatchdogBudget(600.seconds, 600.seconds, 900.seconds), stopDrainMs = SHORT_DRAIN_MS)
         rig.start()
         try {
             val turn = async(Dispatchers.IO) {

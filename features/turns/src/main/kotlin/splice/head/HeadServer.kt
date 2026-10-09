@@ -40,6 +40,7 @@ import splice.head.turn.TurnDriver
 import splice.head.turn.TurnPreparation
 import splice.http.ingress.HeapIngress
 import splice.upstream.Provider
+import java.util.concurrent.TimeUnit
 
 // Wait for in-flight SSE turns to finish (or cancel cleanly) before tearing the engine.
 //
@@ -49,7 +50,6 @@ import splice.upstream.Provider
 // "API Error: Connection lost mid-response"). This is the INNERMOST budget of a five-link ladder;
 // see Main.kt's STOP_DEADLINE_MS comment for the whole chain, and DaemonStopBudgetTest for the
 // ordering that keeps each link below the next.
-private const val STOP_DRAIN_NS = 45_000_000_000L // 45s: above a 16s deepseek turn, inside the ladder
 private const val STOP_DRAIN_POLL_MS = 50L
 
 // The cut turn's seal AND its reply must land before Netty is torn down: a collect turn writes its 529 only after
@@ -195,7 +195,7 @@ public class HeadServer(
         // that never started does not tell the console it went down.
         val wasRunning = engine.isRunning
         if (wasRunning) deps.seams.events.lifecycle(HeadLifecycle.DRAINING)
-        val deadlineNs = System.nanoTime() + STOP_DRAIN_NS
+        val deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(deps.policy.stopDrainMs)
         var inflight = gate.snapshot().inflight
         while (inflight > 0 && System.nanoTime() < deadlineNs) {
             deps.seams.waiter.wait(STOP_DRAIN_POLL_MS)

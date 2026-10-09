@@ -2,7 +2,7 @@
 //
 // The daemon's stop is a stack of nested deadlines, innermost first — each one cancels everything
 // below it, so a link raised without the ones above it is not a longer stop, it is an unchanged one
-// with a bigger number in it. That is exactly how this row's bug survived: STOP_DRAIN_NS and
+// with a bigger number in it. That is exactly how this row's bug survived: DEFAULT_STOP_DRAIN_MS and
 // HEAD_STOP_BUDGET_MS were the only two the report named, and raising them alone would have done
 // nothing, because Main's cooperative cap cancels the head stop at 8s and the CLI's graceful rung
 // gives up at 11s. The whole ladder had to move together.
@@ -10,7 +10,7 @@
 // MEASURED REASON the innermost link had to grow: a restart cancelled every in-flight turn, and the
 // operator's deepseek turns run 7 to 16s.
 //
-// The drain figure itself lives in :daemon-head (HeadServer.STOP_DRAIN_NS), which this module cannot
+// The drain figure itself lives in :daemon-head (DEFAULT_STOP_DRAIN_MS), which this module cannot
 // import, so it appears here as the documented bound the head budget must clear and is pinned at
 // its source by HeadServerStopDrainTest. Two tests, one ladder, each half checked where it is
 // visible — and if either number moves wrongly, ONE of the two reds. The CLI's three rungs are read

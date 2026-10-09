@@ -88,6 +88,7 @@ public fun headDeps(
     log: LogSink = { },
     gate: InflightGate = InflightGate({ 0 }),
     seams: HeadDeps.HeadSeams = HeadDeps.HeadSeams(),
+    policy: HeadDeps.HeadPolicy = HeadDeps.HeadPolicy(),
 ): HeadDeps = HeadDeps(
     upstream = upstream,
     inferenceToken = "test-inference-token",
@@ -99,6 +100,6 @@ public fun headDeps(
     log = log,
     stores = headStores(tmp),
     quotaBundle = noQuota(),
-    policy = HeadDeps.HeadPolicy(),
+    policy = policy,
     seams = seams,
 )

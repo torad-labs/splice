@@ -59,6 +59,11 @@ internal val defaultMaxRequestBytes: Int = Knob.MAX_REQUEST_BYTES.count().toInt(
 
 internal val defaultRequestReadTimeoutMs: Long = Knob.REQUEST_READ_TIMEOUT_MS.count()
 
+/** How long a stop waits for in-flight turns to finish before it cuts them: above a 16s deepseek turn, and the
+ *  innermost budget of the daemon's stop ladder (see DaemonStopBudgetTest for the ordering that keeps each link
+ *  below the next). A test passes a short one through [HeadDeps.HeadPolicy.stopDrainMs]. */
+internal const val DEFAULT_STOP_DRAIN_MS = 45_000L
+
 /** Collaborators the head needs, bundled to keep the constructor lean. */
 public data class HeadDeps(
     val upstream: UpstreamClient,
@@ -179,6 +184,7 @@ public data class HeadDeps(
     public data class HeadPolicy(
         val maxRequestBytes: Int = defaultMaxRequestBytes,
         val requestReadTimeoutMs: Long = defaultRequestReadTimeoutMs,
+        val stopDrainMs: Long = DEFAULT_STOP_DRAIN_MS,
         val mirrorReasoning: Boolean = false,
         val progressLine: Boolean = true,
         val forwardClientAuth: Boolean = false,

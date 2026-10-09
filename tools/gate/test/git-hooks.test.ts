@@ -502,8 +502,8 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const calls: string[][] = [];
     const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(0);
-    expect(calls).toEqual([[":core:compileKotlin", ":core:compileTestKotlin", ":core:check", "lawSuites"]]);
-    expect(text).toContain("; scope: no legs; gradle: compile of 1 module(s), check of :core, lawSuites; PublicSourceNamesNoHostToolTest in lawSuites");
+    expect(calls).toEqual([[":core:check", "lawSuites"]]);
+    expect(text).toContain("; scope: no legs; gradle: check of :core, lawSuites; PublicSourceNamesNoHostToolTest in lawSuites");
   });
 
   test("a Kotlin push requests lawSuites after its checks, and gradle decides which suite runs", async () => {
@@ -514,7 +514,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const calls: string[][] = [];
     const { result } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(0);
-    expect(calls).toEqual([[":core:compileKotlin", ":core:compileTestKotlin", ":core:check", "lawSuites"]]);
+    expect(calls).toEqual([[":core:check", "lawSuites"]]);
   });
 
   test("a docs push starts no gradle and says so in the verdict", async () => {

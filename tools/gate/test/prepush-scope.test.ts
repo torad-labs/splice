@@ -27,23 +27,21 @@ const checks = (gradle: readonly string[]) => gradle.filter((task) => task.endsW
 const EVERY_PUSH = [LAW_SUITES_TASK];
 
 describe("a pushed diff scopes the gate to what it touches", () => {
-  test("a one-module diff checks that module and its dependents (the unrestricted :app among them), compiles every module, and runs the rows that read it", () => {
+  test("a one-module diff checks that module and its dependents (the unrestricted :app among them), and runs the rows that read it", () => {
     const s = scope(["features/turns/src/main/kotlin/splice/head/HeadDeps.kt"]);
     expect(checks(s.gradle)).toEqual([":app:check", ":features-turns:check"]);
-    expect(s.gradle).toContain(":core:compileKotlin");
-    expect(s.gradle).toContain(":features-events:compileTestKotlin");
-    expect(s.legs.map((leg) => leg.task)).toEqual(["census", "oracleReplay"]);
-    expect(s.gradle).toContain(":oracleReplay");
+    expect(s.gradle).not.toContain(":core:compileKotlin");
+    expect(s.gradle).not.toContain(":features-events:check");
+    expect(s.legs.map((leg) => leg.task)).toEqual(["census"]);
+    expect(s.gradle).not.toContain(":oracleReplay");
     expect(s.gradle).not.toContain(":gateTests");
     expect(s.direct.map((leg) => leg.task)).toEqual(["census"]);
   });
 
-  test("a core diff checks core and every module that depends on it, and every module still compiles", () => {
+  test("a core diff checks core and every module that depends on it", () => {
     const s = scope(["core/src/main/kotlin/splice/core/config/Knob.kt"]);
     expect(checks(s.gradle)).toContain(":core:check");
     expect(checks(s.gradle)).toContain(":integrations-http:check");
-    expect(s.gradle).toContain(":integrations-http:compileKotlin");
-    expect(s.gradle).toContain(":integrations-http:compileTestKotlin");
   });
 
   test("a leaf module's diff checks that module and nothing that does not depend on it", () => {
@@ -109,7 +107,7 @@ describe("a pushed diff scopes the gate to what it touches", () => {
     const s = scope(["LICENSE"], [LEGS[1]!]);
     expect(s.legs).toEqual([]);
     expect(s.gradle).toEqual(EVERY_PUSH);
-    expect(s.summary).toContain("no legs; gradle: no compile, check of no module, lawSuites");
+    expect(s.summary).toContain("no legs; gradle: check of no module, lawSuites");
   });
 });
 
@@ -120,12 +118,13 @@ describe("the law suites and the jar legs are requested on every push, and gradl
     }
   });
 
-  test("every ladder row that depends on the jar runs on a push that is not docs-only, so gradle can judge the jar's inputs", () => {
+  test("a jar leg runs when its own inputs change and not on a Kotlin push", () => {
     const ladder = JSON.parse(readFileSync(`${repoRoot}/tools/gate/config/ladder.json`, "utf8")) as { legs: Leg[] };
     const jarLegs = ladder.legs.filter((leg) => leg.dependsOn?.includes(JAR_TASK) === true).map((leg) => leg.task);
     expect(jarLegs.length).toBeGreaterThan(0);
-    const s = scope(["README.md"], ladder.legs);
-    for (const task of jarLegs) expect(s.gradle, task).toContain(`:${task}`);
+    for (const task of jarLegs) expect(scope(["features/turns/src/main/kotlin/x.kt"], ladder.legs).gradle, task).not.toContain(`:${task}`);
+    const e2e = scope(["tools/e2e/src/commands/code-mode.ts"], ladder.legs);
+    for (const task of jarLegs) expect(e2e.gradle, task).toContain(`:${task}`);
   });
 
   test("the jar's own inputs are not copied into the rows: a jar leg declares only the paths it reads itself", () => {

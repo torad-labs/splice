@@ -358,7 +358,7 @@ export function slotRunner(lay: Layout, label: string, echo: boolean): GateRunne
     const jdk = resolveJdk21();
     if ("error" in jdk) throw new Error(jdk.error);
     const proc = Bun.spawn(
-      [process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"), "slot", label, "--", ...tasks],
+      [process.execPath, join(lay.repoRoot, "tools", "gate", "index.ts"), "slot", label, "--", ...(label === "pre-push" ? ["--parallel"] : []), ...tasks],
       { cwd: lay.repoRoot, env: spawnEnv({ JAVA_HOME: jdk.javaHome }), stdout: "pipe", stderr: "pipe" },
     );
     let output = "";

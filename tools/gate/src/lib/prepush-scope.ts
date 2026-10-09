@@ -2,15 +2,14 @@
 // the module list, and this file decides. Nothing here starts a process.
 //
 // THE SCOPE IS THE PUSHED DIFF, NOT THE TREE. A ladder row runs when a changed path matches one of its `inputs`, the
-// path globs the leg actually reads. A Kotlin or gradle change compiles every module (a caller in another module still
-// refuses the push) and runs `check` for each module the diff changes. A module the diff does not touch gets no tests.
-// Every push requests the law suites (`lawSuites`) and the jar legs: gradle's up-to-date check decides what runs, because
-// the suites and the jar declare their inputs in gradle, the one place those reads are known. `lawSuites` runs each module's
-// lawTest, the laws that read outside their module, so PublicSourceNamesNoHostToolTest runs on every push too. The unit
-// suites are not requested here: a module's check runs them, and each reruns only when its own classpath changes. The full suite stays in CI, which runs
-// gateOfRecord on the pushed sha.
+// path globs the leg actually reads. The selector (selector.ts) names the modules the diff affects: each changed module
+// and every module that depends on one, so a break a change makes in a dependent is found where it lands, and `check`
+// runs for those modules only, in parallel, each building and testing on its own. A module the diff cannot reach is not
+// built. `lawSuites` is requested on every push that is not docs-only: gradle's up-to-date check skips each suite whose
+// declared inputs did not change, and PublicSourceNamesNoHostToolTest rides in it. The jar legs run when their own inputs
+// change. The whole ladder, the jar proofs and the release rehearsal belong to a push to main.
 
-import { isDocsOnly, type ModuleGraph, select } from "./selector.ts";
+import { type ModuleGraph, select } from "./selector.ts";
 
 /** A ladder row as pre-push reads it. `inputs` is required: the path globs the leg reads. */
 export interface Leg {
@@ -25,8 +24,6 @@ export interface Leg {
   readonly owns?: string;
 }
 
-/** A change a gradle run must judge: Kotlin, Java, a gradle script, the catalog, or the wrapper. */
-const GRADLE_INPUT = /\.(kts?|java)$|^gradle\/|^gradle\.properties$|^gradlew(\.bat)?$|^build-logic\//;
 
 /** The gradle task that runs every law suite. Gradle holds the list of suites and the inputs each one declares, so pre-push
  *  requests this one task and gradle's up-to-date check skips each suite whose declared inputs did not change. */
@@ -93,14 +90,9 @@ export interface ScopeInput {
   readonly graph?: ModuleGraph;
 }
 
-/** A leg that depends on the fat jar. Pre-push requests it on every push, and gradle decides whether it runs. */
-const runsOnJar = (leg: Leg): boolean => leg.dependsOn?.includes(JAR_TASK) === true;
-
-const docsOnlyDiff = (changed: readonly string[]): boolean => changed.length > 0 && changed.every(isDocsOnly);
-
 export function prePushScope(input: ScopeInput): PrePushScope {
   const { changed } = input;
-  const inScope = input.legs.filter((leg) => (!docsOnlyDiff(changed) && runsOnJar(leg)) || changed.some((path) => matchesAny(leg.inputs ?? [], path)));
+  const inScope = input.legs.filter((leg) => changed.some((path) => matchesAny(leg.inputs ?? [], path)));
   const legList = inScope.length === 0 ? "no legs" : `legs ${inScope.map((leg) => leg.task).join(", ")}`;
 
   // The selector decides which modules are checked: the changed ones plus every module that depends on one, or all of them
@@ -113,9 +105,7 @@ export function prePushScope(input: ScopeInput): PrePushScope {
   // owns). Every other in-scope leg runs directly, in parallel with gradle, and never waits for the slot.
   const gradleLegs = inScope.filter(needsGradle);
   const directLegs = inScope.filter((leg) => !gradleLegs.includes(leg));
-  const gradleInput = !docsOnly && changed.some((path) => GRADLE_INPUT.test(path));
   const gradle: string[] = [];
-  if (gradleInput) for (const module of input.modules) gradle.push(`${module}:compileKotlin`, `${module}:compileTestKotlin`);
   for (const module of modules) gradle.push(`${module}:check`);
   // lawSuites runs :app:lawTest, not :app:test. A --tests filter on :app:test would narrow the module's unit run too: gradle
   // keeps one instance of a task however many tasks depend on it, so the public-source test rides in lawSuites instead.
@@ -123,10 +113,9 @@ export function prePushScope(input: ScopeInput): PrePushScope {
   if (changed.some((path) => path.startsWith("build-logic/"))) gradle.push("build-logic:test", "build-logic:detekt");
   for (const leg of gradleLegs) gradle.push(`:${leg.task}`);
 
-  const compile = gradleInput ? `compile of ${input.modules.length} module(s)` : "no compile";
   const check = `check of ${modules.length === 0 ? "no module" : modules.join(", ")}`;
   const publicSource = `${PUBLIC_SOURCE_TEST} in ${LAW_SUITES_TASK}`;
-  const gradleClause = docsOnly ? "gradle: none (docs only)" : `gradle: ${compile}, ${check}, ${LAW_SUITES_TASK}; ${publicSource}`;
+  const gradleClause = docsOnly ? "gradle: none (docs only)" : `gradle: ${check}, ${LAW_SUITES_TASK}; ${publicSource}`;
   return {
     legs: inScope,
     gradle,

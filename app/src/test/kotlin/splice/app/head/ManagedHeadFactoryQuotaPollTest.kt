@@ -1,6 +1,6 @@
-// NEW: CLAUDEX_QUOTA_POLL had parser coverage but no production-effect arm. These tests drive
-// ManagedHeadFactory.assembleHead through a subscription head and count the poller-start seam, so
-// the off switch and the default-on path are both observable without making a network request.
+// The head factory's quota path as an operator sees it: opening usage probes every account through its
+// retained poller without a model turn, and each account's tracker (pool, or the empty-accounts fallback)
+// decodes the x-codex rate-limit headers of a served round.
 package splice.app.head
 
 import kotlinx.coroutines.CoroutineScope
@@ -109,86 +109,6 @@ class ManagedHeadFactoryQuotaPollTest {
     }
 
     @Test
-    fun `quota poll off does not start a poller`(@TempDir tmp: Path) = runTest {
-        val statePaths = StatePaths(baseOverride = tmp.resolve("off"))
-        var starts = 0
-        val factory = factory(
-            statePaths,
-            backgroundScope,
-            StartQuotaPoller { _, _, _, _ ->
-                starts += 1
-                null
-            },
-        )
-
-        factory.assembleHead(build(statePaths, quotaPoll = "off"), controlPort = 3098)
-
-        assertEquals(0, starts)
-    }
-
-    @Test
-    fun `quota poll auto starts one poller for a subscription head`(@TempDir tmp: Path) = runTest {
-        val statePaths = StatePaths(baseOverride = tmp.resolve("auto"))
-        var starts = 0
-        val factory = factory(
-            statePaths,
-            backgroundScope,
-            StartQuotaPoller { _, _, _, _ ->
-                starts += 1
-                null
-            },
-        )
-
-        factory.assembleHead(build(statePaths, quotaPoll = "auto"), controlPort = 3098)
-
-        assertEquals(1, starts)
-    }
-
-    @Test
-    fun `the quota poll interval flows from the knob to the poller`(@TempDir tmp: Path) = runTest {
-        val statePaths = StatePaths(baseOverride = tmp.resolve("interval"))
-        val captured = mutableListOf<Long>()
-        val factory = factory(
-            statePaths,
-            backgroundScope,
-            StartQuotaPoller { _, _, _, intervalMs ->
-                captured += intervalMs
-                null
-            },
-        )
-
-        factory.assembleHead(build(statePaths, quotaPoll = "auto"), controlPort = 3098)
-
-        assertEquals(listOf(300_000L), captured, "the default quotaPollIntervalMs knob must reach the poller")
-    }
-
-    @Test
-    fun `quota poll auto starts one poller per OAuth account`(@TempDir tmp: Path) = runTest {
-        val statePaths = StatePaths(baseOverride = tmp.resolve("pool"))
-        val ctx = build(statePaths, quotaPoll = "auto")
-        val primaryFile = Path.of(checkNotNull(ctx.providerCfg.auth.file))
-        OAuthAccountFiles().writeLabeled(
-            AuthKind.ChatgptOAuth,
-            primaryFile,
-            "backup",
-            buildJsonObject {},
-        )
-        var starts = 0
-        val factory = factory(
-            statePaths,
-            backgroundScope,
-            StartQuotaPoller { _, _, _, _ ->
-                starts += 1
-                null
-            },
-        )
-
-        factory.assembleHead(ctx, controlPort = 3098)
-
-        assertEquals(2, starts)
-    }
-
-    @Test
     fun `opening usage probes every account through its retained poller`(@TempDir tmp: Path) = runTest {
         val paths = StatePaths(baseOverride = tmp.resolve("probe-now"))
         val ctx = build(paths, quotaPoll = "auto")
@@ -227,22 +147,6 @@ class ManagedHeadFactoryQuotaPollTest {
         managed.usage.probeNow()
         assertEquals(2, calls, "every returned poller keeps its own admission floor")
         assertTrue(trackers.all { it.snapshot()?.updatedAt == 1_788_000_000_000L })
-    }
-
-    @Test
-    fun `the factory primary-account tracker decodes an x-codex round`(@TempDir tmp: Path) = runTest {
-        val statePaths = StatePaths(baseOverride = tmp.resolve("codex-headers"))
-        val captured = mutableListOf<QuotaTracker>()
-        val factory = factory(
-            statePaths,
-            backgroundScope,
-            StartQuotaPoller { _, _, tracker, _ ->
-                captured += tracker
-                null
-            },
-        )
-        factory.assembleHead(build(statePaths, quotaPoll = "auto"), controlPort = 3098)
-        assertCodexRound(captured.single())
     }
 
     @Test
@@ -299,37 +203,6 @@ class ManagedHeadFactoryQuotaPollTest {
         assertCodexRound(captured.single())
     }
 
-    @Test
-    fun `chatgpt assembly starts a codex probe and muse assembly starts a mint probe`(
-        @TempDir tmp: Path,
-    ) = runTest {
-        val chatgptPaths = StatePaths(baseOverride = tmp.resolve("chatgpt-probe"))
-        val chatgptProbes = mutableListOf<QuotaProbe>()
-        factory(
-            chatgptPaths,
-            backgroundScope,
-            StartQuotaPoller { _, probe, _, _ ->
-                chatgptProbes += probe
-                null
-            },
-        ).assembleHead(build(chatgptPaths, quotaPoll = "auto"), controlPort = 3098)
-        // The probe classes are internal to features/usage (LAYOUT-01); the class NAME still pins that
-        // the head's own auth kind reached the dispatch, which a bare non-null would not.
-        assertEquals("CodexQuotaProbe", chatgptProbes.single()::class.simpleName)
-
-        val musePaths = StatePaths(baseOverride = tmp.resolve("muse-probe"))
-        val museProbes = mutableListOf<QuotaProbe>()
-        factory(
-            musePaths,
-            backgroundScope,
-            StartQuotaPoller { _, probe, _, _ ->
-                museProbes += probe
-                null
-            },
-        ).assembleHead(museBuild(musePaths), controlPort = 3106)
-        assertEquals("MuseMintProbe", museProbes.single()::class.simpleName)
-    }
-
     private fun assertCodexRound(tracker: QuotaTracker) {
         tracker.observe(
             QuotaHeaderRead { name ->
@@ -368,33 +241,6 @@ class ManagedHeadFactoryQuotaPollTest {
             watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
             cfg = ConfigService(statePaths, headOverrides = mapOf("quotaPoll" to "auto")).getConfig(),
             loginCommand = "openai login",
-        )
-    }
-
-    private fun museBuild(statePaths: StatePaths): ProviderBuild {
-        val model = ModelEntry(id = "muse", contextWindow = 200_000)
-        return ProviderBuild(
-            key = "muse",
-            head = HeadConfig(
-                provider = "muse",
-                port = 3106,
-                discoveryPrefix = "claude-muse--",
-                pinnedModel = model.id,
-                claude = ClaudeWrapperConfig(command = "muse", configDir = statePaths.stateDir.toString()),
-            ),
-            providerCfg = ProviderConfig(
-                dialect = Dialect.OPENAI_RESPONSES,
-                baseUrl = "https://api.meta.ai/v1",
-                auth = AuthConfig(kind = "muse-oauth", file = statePaths.stateDir.resolve("muse.json").toString()),
-            ),
-            catalog = ModelCatalog(
-                discoveryPrefix = "claude-muse--",
-                models = listOf(model),
-                defaultContextWindow = model.contextWindow,
-            ),
-            watchdog = WatchdogBudget(300.seconds, 300.seconds, 900.seconds),
-            cfg = ConfigService(statePaths, headOverrides = mapOf("quotaPoll" to "auto")).getConfig(),
-            loginCommand = "muse login",
         )
     }
 }

@@ -40,7 +40,7 @@ import splice.upstream.retry.RateLimitCooldown
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
-class AccountPoolWiringTest {
+class HeadAccountPoolsTest {
     @Test
     fun `each head gets isolated pool state for the same accounts and session`(@TempDir tmp: Path) {
         val wired = wired(tmp)

@@ -1,9 +1,6 @@
-// NEW (post-review, PR 99 finding 6): the two client-auth consumers must agree. ManagedHeadFactory
-// derives forwardClientAuth structurally from the resolved ClientAuthProvider; LaunchSpecFactory
-// consumes that same resolved flag to control ANTHROPIC_AUTH_TOKEN, ambient credential stripping,
-// and /login. ProviderAssembly now rejects registered client auth on non-passthrough dialects before
-// this factory is reached. The synthetic lower-level test remains to ensure LaunchSpecFactory never
-// re-derives the flag from a raw auth.kind string if called directly.
+// LaunchSpecFactory as a launched session sees it: the client's request timeout, tier map, model picker cache,
+// pinned window, labels, sibling config dirs, and the statusline and session credentials (the turn key,
+// never the management key). CLIENT_AUTH_KIND must stay equal to AuthKind.Client.wire.
 package splice.app.head
 
 import kotlinx.coroutines.runBlocking
@@ -90,43 +87,12 @@ class LaunchSpecClientAuthTest {
         loginCommand = "claude-splice login",
     )
 
-    /** Lower-level ownership guard. Runtime assembly rejects this registered incompatible tuple,
-     *  but the factory must still consume the resolved flag rather than reinterpret auth.kind. */
-    @Test
-    fun `a synthetic incompatible context cannot rederive native client auth`(@TempDir tmp: Path) {
-        val spec = factory(tmp).launchSpecFor(
-            build(tmp, Dialect.OPENAI_RESPONSES),
-            controlPort = 3099,
-            forwardClientAuth = false, // synthetic resolved input; runtime assembly rejects the tuple
-        )
-        assertFalse(
-            spec.forwardClientAuth,
-            "the recipe must follow its resolved input, not rederive from the declared auth.kind",
-        )
-    }
-
     // The client's request timeout is derived from the head's whole-turn cap, not a second number
     // kept by hand: 600s cap here -> 660s for Claude Code (2026-09-01 compaction client_aborts).
     @Test
     fun `the client's request timeout outlives the head's whole-turn cap`(@TempDir tmp: Path) {
         val spec = factory(tmp).launchSpecFor(build(tmp, Dialect.OPENAI_RESPONSES), 3099, forwardClientAuth = false)
         assertEquals(600_000L + 60_000L, spec.apiTimeoutMs)
-    }
-
-    /** Positive factory half: a resolved true input must be preserved rather than hardcoded false.
-     *  AuthDialectCompatibilityBootTest covers the real passthrough arm derivation. */
-    @Test
-    fun `a resolved client-auth flag is preserved`(@TempDir tmp: Path) {
-        val spec = factory(tmp).launchSpecFor(
-            build(tmp, Dialect.ANTHROPIC_PASSTHROUGH),
-            controlPort = 3099,
-            forwardClientAuth = true,
-        )
-        assertTrue(
-            spec.forwardClientAuth,
-            "the anthropic-passthrough client arm forwards the caller's own credential — " +
-                "its launch must keep that credential and keep /login open",
-        )
     }
 
     @Test

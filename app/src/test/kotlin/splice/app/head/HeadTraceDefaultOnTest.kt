@@ -1,4 +1,4 @@
-package splice.app.head.v4387
+package splice.app.head
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.head.HeadTraceStores
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.perf.PerfSnapshot
@@ -28,7 +27,7 @@ import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
 
-class DefaultHeadTraceTest {
+class HeadTraceDefaultOnTest {
     private fun clientBody(dir: Path): String? {
         val output = StringBuilder()
         val command = TraceCommand(

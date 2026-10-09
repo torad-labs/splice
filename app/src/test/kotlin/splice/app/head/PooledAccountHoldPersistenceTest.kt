@@ -1,11 +1,9 @@
-package splice.app.head.v4412
+package splice.app.head
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.head.HeadAccountPools
-import splice.app.head.ProviderHoldFiles
 import splice.app.provider.Wired
 import splice.app.provider.WiredAccount
 import splice.core.auth.AuthDescription
@@ -32,11 +30,11 @@ private const val SIX_DAYS_MS = 6L * 24 * 3_600 * 1_000
 
 /** V4-412: a pooled head's accounts each keep their own provider hold, named by head and label, so a
  *  restart that rebuilds the pool still reads out of quota once every account is refusing. */
-class PoolHoldWiringTest {
+class PooledAccountHoldPersistenceTest {
     private val quiet = LogSink { }
 
     private fun wired(tmp: Path): Wired {
-        val primary = TestAuth()
+        val primary = PooledTestAuth()
         val catalog = ModelCatalog(
             discoveryPrefix = "claude-test--",
             models = listOf(ModelEntry("model", "Model", contextWindow = 200_000)),
@@ -60,7 +58,7 @@ class PoolHoldWiringTest {
             primary,
             listOf(
                 WiredAccount("primary", true, primary, tmp.resolve("primary-quota.json")),
-                WiredAccount("backup", false, TestAuth(), tmp.resolve("backup-quota.json")),
+                WiredAccount("backup", false, PooledTestAuth(), tmp.resolve("backup-quota.json")),
             ),
         )
     }
@@ -98,7 +96,7 @@ class PoolHoldWiringTest {
     }
 }
 
-private class TestAuth : RefreshableAuthProvider {
+private class PooledTestAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("token")
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "test")

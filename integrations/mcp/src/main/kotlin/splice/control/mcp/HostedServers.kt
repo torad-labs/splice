@@ -59,26 +59,32 @@ internal class HostedServers(
 
     /** The process for [name]'s current tuple, RESERVED against eviction until [release]: shared with
      *  every alias, replaced when the tuple changed. */
-    fun acquire(name: String): HostedServer {
-        val spec = sharing.hostedSpec(global(), name) ?: throw McpHostException("'$name' is not a hosted MCP server")
+    fun acquire(name: String): McpResult<HostedServer> {
+        val spec = sharing.hostedSpec(global(), name)
+            ?: return McpResult.Refused("'$name' is not a hosted MCP server")
         val id = McpIdentity(spec.command, spec.args, spec.env)
         val closing = Closing()
-        val server = synchronized(lock) {
-            if (closed) throw McpHostException("MCP host is stopping")
-            val bound = bindings[name]
-            if (bound != null && bound != id) unbind(name, "configuration changed", closing)
-            val server = servers[id] ?: register(id, spec, closing)
-            bindings[name] = id
-            reserved[id] = (reserved[id] ?: 0) + 1
-            server
+        val acquired = synchronized(lock) {
+            if (closed) {
+                McpResult.Refused("MCP host is stopping")
+            } else {
+                val bound = bindings[name]
+                if (bound != null && bound != id) unbind(name, "configuration changed", closing)
+                val registered = servers[id]?.let { McpResult.Served(it) } ?: register(id, spec, closing)
+                if (registered is McpResult.Served) {
+                    bindings[name] = id
+                    reserved[id] = (reserved[id] ?: 0) + 1
+                }
+                registered
+            }
         }
         closing.run()
-        return server
+        return acquired
     }
 
     /** A new server for [id], evicting one first at capacity. Caller holds [lock]. */
-    private fun register(id: McpIdentity, spec: McpServerSpec, closing: Closing): HostedServer {
-        if (servers.size >= config.maxServers) evictOne(closing)
+    private fun register(id: McpIdentity, spec: McpServerSpec, closing: Closing): McpResult<HostedServer> {
+        if (servers.size >= config.maxServers) evictOne(closing)?.let { return it }
         val sink = object : NotificationSink {
             override fun onNotification(msg: JsonObject) {
                 namesOf(id).forEach { alias -> sessions.fanOut(alias, codec.encode(msg)) }
@@ -88,7 +94,7 @@ internal class HostedServers(
                 namesOf(id).forEach { alias -> sessions.deliver(alias, sessionId, codec.encode(msg)) }
             }
         }
-        return HostedServer(spec, config, launcher, codec, log, sink).also { servers[id] = it }
+        return McpResult.Served(HostedServer(spec, config, launcher, codec, log, sink).also { servers[id] = it })
     }
 
     /** Ends the reservation [acquire] took; true when [server] is still bound to [name] and alive. */
@@ -146,14 +152,18 @@ internal class HostedServers(
         }
     }
 
-    private fun evictOne(closing: Closing) {
+    /** Null once a victim is gone; the refusal when every server is reserved or streaming. */
+    private fun evictOne(closing: Closing): McpResult.Refused? {
         val victim = servers.keys
             .filterNot { id -> (reserved[id] ?: 0) > 0 || namesOf(id).any(sessions::streaming) }
             .minByOrNull { id -> namesOf(id).maxOfOrNull(sessions::lastActivity) ?: 0L }
-            ?: throw McpHostException("MCP host at capacity (${config.maxServers} servers, all streaming or starting)")
+            ?: return McpResult.Refused(
+                "MCP host at capacity (${config.maxServers} servers, all streaming or starting)",
+            )
         val last = namesOf(victim).maxOfOrNull(sessions::lastActivity) ?: 0L
         val idle = (config.clock.millis() - last) / MILLIS_PER_MINUTE
         namesOf(victim).forEach { unbind(it, "evicted after $idle min idle to host a newer server", closing) }
         servers.remove(victim)?.let { closing.add(it, "evicted (no names bound)") }
+        return null
     }
 }

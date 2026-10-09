@@ -376,7 +376,6 @@
     ],
     "COPY MILLIS_PER_SECOND": [
       "features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/UpgradeProcess.kt",
-      "integrations/mcp/src/main/kotlin/splice/control/mcp/HostedServer.kt",
       "features/turns/src/main/kotlin/splice/head/admission/HeadAdmission.kt"
     ],
     "COPY MINIMAL": [

@@ -65,6 +65,12 @@ internal class McpStderr(private val log: LogSink) {
     }
 }
 
-internal class McpHostException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+/** What a host operation answers: the value, or the words the client is told. A refusal is an answer, never an exception; callers
+ *  match both arms. */
+internal sealed class McpResult<out T> {
+    data class Served<out T>(val value: T) : McpResult<T>()
+
+    data class Refused(val reason: String) : McpResult<Nothing>()
+}
 
 private const val STDERR_BUFFER = 512

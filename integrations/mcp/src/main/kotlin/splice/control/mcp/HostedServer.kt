@@ -30,19 +30,6 @@ import java.util.concurrent.atomic.AtomicLong
 
 private const val EXIT_WAIT_MS = 1_000L
 
-/** A child that lived shorter than this is a crash, and two in a row are a crash loop. */
-private const val CRASH_LOOP_MS = 30_000L
-
-// V4-122: MCP_-prefixed because this is the MCP hosted-server's child-restart backoff, and the
-// name BACKOFF_BASE_MS was ALSO carried by UpstreamTransport.kt for the retry curve at 200ms — one
-// name over two unrelated budgets, which the checker held as a scar because whoever greps the name
-// finds the wrong one and tunes the wrong retry. These are two different policies, so the fix is to
-// say WHICH one this is, not to make them agree.
-private const val MCP_BACKOFF_BASE_MS = 5_000L
-private const val MCP_BACKOFF_MAX_MS = 60_000L
-private const val BACKOFF_MAX_SHIFT = 4
-private const val MILLIS_PER_SECOND = 1_000L
-
 internal class HostedServer(
     private val spec: McpServerSpec,
     private val config: McpHostConfig,
@@ -57,10 +44,7 @@ internal class HostedServer(
     private val stops = McpProcessStop()
     private val stderr = McpStderr(log)
 
-    /** Consecutive short-lived children; the second and later wait before respawning. */
-    @Volatile private var crashes = 0
-
-    @Volatile private var exitedAt = 0L
+    private val history = McpChildHistory(config.clock, spec.name)
     private val writeLock = Any()
 
     /** Single-flight spawn: N sessions initializing at once must share ONE child, not race N up
@@ -82,11 +66,8 @@ internal class HostedServer(
     @Volatile var lastError: String? = null
         private set
 
-    @Volatile var startedAt: Long = 0L
-        private set
-
-    @Volatile var restarts: Int = 0
-        private set
+    val startedAt: Long get() = history.startedAt
+    val restarts: Int get() = history.restarts
 
     val alive: Boolean get() = process?.isAlive == true && initResult != null
 
@@ -95,9 +76,12 @@ internal class HostedServer(
     val pid: Long? get() = process?.takeIf { it.isAlive }?.pid()
 
     /** The child's initialize result, spawning and handshaking first when the child is not up. */
-    suspend fun ensureStarted(): JsonObject = started ?: spawnLock.withLock {
-        if (closed) throw McpHostException("hosted MCP server '${spec.name}' was closed")
-        started ?: spawn()
+    suspend fun ensureStarted(): McpResult<JsonObject> = started?.let { McpResult.Served(it) } ?: spawnLock.withLock {
+        if (closed) {
+            McpResult.Refused("hosted MCP server '${spec.name}' was closed")
+        } else {
+            started?.let { McpResult.Served(it) } ?: spawn()
+        }
     }
 
     private val started: JsonObject?
@@ -105,7 +89,10 @@ internal class HostedServer(
 
     /** Forward one request; the answer comes back under [clientId] no matter how the child numbered it. */
     suspend fun call(sessionId: String, clientId: JsonElement, request: JsonObject): JsonObject {
-        ensureStarted()
+        when (val up = ensureStarted()) {
+            is McpResult.Refused -> return codec.error(clientId, RPC_SERVER_ERROR, up.reason)
+            is McpResult.Served -> Unit
+        }
         val hostId = ids.getAndIncrement()
         val (out, token) = progress.outbound(request, hostId)
         val slot = Pending(sessionId, clientId, token)
@@ -126,9 +113,12 @@ internal class HostedServer(
     /** Forward a client notification: initialized is the host's own (swallowed), cancelled is remapped
      *  to the host id of THAT session's request and dropped when it names none — a cancel must never
      *  reach the child under another session's id. False when the child could not be written. */
-    suspend fun notify(sessionId: String, msg: JsonObject): Boolean {
-        if (codec.method(msg) == "notifications/initialized") return true
-        ensureStarted()
+    suspend fun notify(sessionId: String, msg: JsonObject): McpResult<Boolean> {
+        if (codec.method(msg) == "notifications/initialized") return McpResult.Served(true)
+        when (val up = ensureStarted()) {
+            is McpResult.Refused -> return up
+            is McpResult.Served -> Unit
+        }
         val out = if (codec.method(msg) != "notifications/cancelled") {
             msg
         } else {
@@ -137,7 +127,7 @@ internal class HostedServer(
                 .firstOrNull { it.value.sessionId == sessionId && it.value.clientId == clientId }
                 ?.let { codec.withCancelledRequestId(msg, JsonPrimitive(it.key)) }
         }
-        return out == null || send(out)
+        return McpResult.Served(out == null || send(out))
     }
 
     /** Permanent: the registry replaced or evicted this server; a spawn racing this call tears down. */
@@ -163,26 +153,15 @@ internal class HostedServer(
         return p
     }
 
-    private suspend fun spawn(): JsonObject {
+    private suspend fun spawn(): McpResult<JsonObject> {
         if (process != null) failPending("hosted MCP server '${spec.name}' exited")
-        // A crash loop (the last child died young, and so did the one before) waits before the next
-        // spawn: 5 s, 10 s, ... 60 s; calls in between fail in words instead of respawning at once.
-        // One crash still respawns immediately: a single failure is not a loop (review 2026-09-14).
-        val loop = if (exitedAt > 0L && exitedAt - startedAt < CRASH_LOOP_MS) crashes + 1 else 0
-        val sinceExit = config.clock.millis() - exitedAt
-        // Bound the exponent before shifting: bounding the shifted result cannot undo Long overflow.
-        val shift = (loop - 2).coerceIn(0, BACKOFF_MAX_SHIFT)
-        val wait = if (loop > 1) minOf(MCP_BACKOFF_BASE_MS shl shift, MCP_BACKOFF_MAX_MS) - sinceExit else 0L
-        if (wait > 0L) {
-            val seconds = wait / MILLIS_PER_SECOND + 1
-            val message = "hosted MCP server '${spec.name}' keeps crashing ($loop times); next restart in $seconds s"
-            throw McpHostException(message)
+        history.admit()?.let { return it }
+        val p = when (val launched = launch()) {
+            is McpResult.Refused -> return launched
+            is McpResult.Served -> launched.value
         }
-        crashes = loop
-        if (startedAt > 0L) restarts += 1
-        val p = launch()
         stderr.watch(spec.name, p)
-        startedAt = config.clock.millis()
+        history.started()
         Executors.defaultThreadFactory().newThread { pump(p) }.apply {
             name = "mcp-host-${spec.name}"
             isDaemon = true
@@ -196,25 +175,28 @@ internal class HostedServer(
     }
 
     /** The child, adopted under [stateLock] — or torn down at once when close() won the race. */
-    private fun launch(): Process {
+    private fun launch(): McpResult<Process> {
         val p = try {
             launcher(spec)
         } catch (e: IOException) {
             lastError = "spawn failed: ${e.message}"
-            throw McpHostException("cannot start '${spec.name}': ${e.message}", e)
+            return McpResult.Refused("cannot start '${spec.name}': ${e.message}")
         }
-        synchronized(stateLock) {
+        val adopted = synchronized(stateLock) {
             if (closed) {
                 p.destroyForcibly()
-                throw McpHostException("hosted MCP server '${spec.name}' was closed while starting")
+                false
+            } else {
+                process = p
+                writer = p.outputStream.bufferedWriter()
+                true
             }
-            process = p
-            writer = p.outputStream.bufferedWriter()
         }
-        return p
+        if (adopted) return McpResult.Served(p)
+        return McpResult.Refused("hosted MCP server '${spec.name}' was closed while starting")
     }
 
-    private suspend fun handshake(p: Process): JsonObject {
+    private suspend fun handshake(p: Process): McpResult<JsonObject> {
         val hostId = ids.getAndIncrement()
         val slot = Pending("host", JsonPrimitive(hostId))
         pending[hostId] = slot
@@ -223,16 +205,16 @@ internal class HostedServer(
         if (answer == null) {
             pending.remove(hostId)
             tearDown("no initialize answer")
-            throw McpHostException("'${spec.name}' did not complete the MCP handshake")
+            return McpResult.Refused("'${spec.name}' did not complete the MCP handshake")
         }
         val result = answer["result"] as? JsonObject
         if (result == null || !publish(p, result)) {
             tearDown("handshake failed")
-            throw McpHostException("'${spec.name}' rejected the MCP handshake (server detail withheld)")
+            return McpResult.Refused("'${spec.name}' rejected the MCP handshake (server detail withheld)")
         }
         lastError = null
         log("[mcp-host] ${spec.name}: hosted as pid ${p.pid()}\n")
-        return result
+        return McpResult.Served(result)
     }
 
     /** The child is operational only once it has been told `initialized`: send that FIRST, then
@@ -285,7 +267,7 @@ internal class HostedServer(
             }
         }
         if (!mine) return
-        exitedAt = config.clock.millis()
+        history.exited()
         lastError = lastError ?: "exited with code $code"
         log("[mcp-host] ${spec.name}: pid ${p.pid()} exited ($lastError)\n")
         failPending("hosted MCP server '${spec.name}' exited")

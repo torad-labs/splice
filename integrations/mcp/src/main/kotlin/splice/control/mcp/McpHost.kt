@@ -23,6 +23,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.client.mcp.McpInventory
 import splice.client.mcp.McpSharing
 import splice.core.util.Cancellables
+import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.core.wire.HttpStatus
 import java.util.concurrent.Executors
@@ -31,7 +32,7 @@ import java.util.concurrent.TimeUnit
 
 private const val RPC_INVALID = -32600
 private const val RPC_UNKNOWN_SESSION = -32001
-private const val RPC_SERVER_ERROR = -32000
+internal const val RPC_SERVER_ERROR = -32000
 
 // HTTP_OK and HTTP_ACCEPTED stay local: HttpStatus declares no 2xx constant, and the wall is silent
 // on them. The three ERROR statuses read HttpStatus now.
@@ -210,11 +211,12 @@ public class McpHost(
         session: McpSession,
         msg: JsonObject,
     ): McpReply {
-        val delivered = try {
-            server.notify(session.id, msg)
-        } catch (e: McpHostException) {
-            log("[mcp-host] $name: notify failed (${e.message})\n")
-            false
+        val delivered = when (val sent = server.notify(session.id, msg)) {
+            is McpResult.Served -> sent.value
+            is McpResult.Refused -> {
+                log("[mcp-host] ${LogSafe.str(name)}: notify failed (${LogSafe.str(sent.reason)})\n")
+                false
+            }
         }
         return if (delivered) {
             McpReply(HTTP_ACCEPTED, null)
@@ -230,11 +232,7 @@ public class McpHost(
 
     private suspend fun forward(server: HostedServer, session: McpSession, msg: JsonObject): McpReply {
         val id = msg.getValue("id")
-        val answer = try {
-            server.call(session.id, id, msg)
-        } catch (e: McpHostException) {
-            codec.error(id, RPC_SERVER_ERROR, e.message.orEmpty())
-        }
+        val answer = server.call(session.id, id, msg)
         sessions.touch(session)
         return McpReply(HTTP_OK, codec.encode(answer), session.id)
     }

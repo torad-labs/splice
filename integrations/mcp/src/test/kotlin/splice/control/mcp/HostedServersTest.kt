@@ -5,7 +5,6 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertSame
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.client.mcp.DirectoryProbe
@@ -34,36 +33,50 @@ class HostedServersTest {
         )
     }
 
+    private fun served(servers: HostedServers, name: String): HostedServer =
+        (servers.acquire(name) as McpResult.Served).value
+
+    @Test
+    fun `a name that is not hosted and a stopped registry are refused in words, not thrown`() {
+        val servers = registry()
+        assertEquals(McpResult.Refused("'nope' is not a hosted MCP server"), servers.acquire("nope"))
+        servers.closeAll("test")
+        assertEquals(McpResult.Refused("MCP host is stopping"), servers.acquire("a"))
+    }
+
     @Test
     fun `a tuple replaced between acquire and release still ends its reservation`() {
         val servers = registry()
         val original = global
-        val a = servers.acquire("a")
+        val a = served(servers, "a")
         global = Json.parseToJsonElement("""{"a":{"command":"srv-replacement"}}""").jsonObject
-        val replacement = servers.acquire("a")
+        val replacement = served(servers, "a")
         assertTrue(!servers.release("a", a), "old tuple no longer bound")
         assertTrue(!servers.release("a", replacement), "replacement never launched")
         assertTrue(!servers.reserved("a"))
         global = original
-        val again = servers.acquire("a")
+        val again = served(servers, "a")
         assertTrue(servers.reserved("a"))
         assertTrue(!servers.release("a", again), "never launched, so not alive")
         // With the leak, a's ghost reservation would exclude it from eviction and capacity would refuse b.
-        servers.acquire("b")
+        served(servers, "b")
     }
 
     @Test
     fun `a reserved server is not evicted at capacity, a released one is`() {
         val servers = registry()
-        val a = servers.acquire("a")
-        val atCapacity = assertThrows(McpHostException::class.java) { servers.acquire("b") }
-        assertTrue(atCapacity.message.orEmpty().contains("capacity"), atCapacity.message)
+        val a = served(servers, "a")
+        val atCapacity = servers.acquire("b")
+        assertEquals(
+            McpResult.Refused("MCP host at capacity (1 servers, all streaming or starting)"),
+            atCapacity,
+        )
         assertSame(a, servers.get("a"))
         // release() answers "bound AND alive"; this registry never launched a child, so it is false
         // here while the binding itself stays until eviction.
         assertTrue(!servers.release("a", a), "a was never started, so it is not live")
         assertSame(a, servers.get("a"), "still bound after release")
-        val b = servers.acquire("b")
+        val b = served(servers, "b")
         assertNotSame(a, b)
         assertEquals(listOf("b"), servers.names(), "a was evicted once unreserved")
         assertTrue(!servers.release("a", a), "a is no longer bound")

@@ -26,19 +26,19 @@ internal class SessionMinting(
         // acquire() reserves the server against eviction until release(); the handshake happens inside
         // that window and the session is registered only if the server is still bound when it ends —
         // so no session is ever created that must then be un-created.
-        val server = try {
-            servers.acquire(name)
-        } catch (e: McpHostException) {
-            return Minted(null, e.message.orEmpty())
+        val server = when (val acquired = servers.acquire(name)) {
+            is McpResult.Refused -> return Minted(null, acquired.reason)
+            is McpResult.Served -> acquired.value
         }
         var initResult: kotlinx.serialization.json.JsonObject? = null
         var failure = ""
         // The reservation ends in a finally: a client that cancels mid-handshake (review 4) must not
         // leave the server marked "starting" forever, or capacity would refuse every newcomer.
         try {
-            initResult = server.ensureStarted()
-        } catch (e: McpHostException) {
-            failure = e.message.orEmpty()
+            when (val started = server.ensureStarted()) {
+                is McpResult.Served -> initResult = started.value
+                is McpResult.Refused -> failure = started.reason
+            }
         } finally {
             if (!servers.release(name, server)) {
                 failure = failure.ifEmpty { "hosted MCP server '$name' was replaced while starting" }

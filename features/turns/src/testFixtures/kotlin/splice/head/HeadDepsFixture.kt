@@ -42,7 +42,6 @@ import java.nio.file.Path
 public fun headStores(
     tmp: Path,
     economics: EconomicsStore? = null,
-    clientWindows: ClientWindows = ClientWindows(),
     suffix: String = "",
     /** V4-173: off unless a cell turns it on — the production default, not a convenience. */
     wireTap: WireTap? = null,
@@ -53,7 +52,7 @@ public fun headStores(
     economicsStore = economics,
     compactStats = CompactStats(tmp.resolve("compact$suffix.jsonl")),
     shadow = ShadowClassifier(log = { }),
-    clientWindows = clientWindows,
+    clientWindows = ClientWindows(),
     wireTap = wireTap,
     trace = trace,
     compactionRecordings = FileCompactionRecordings(tmp.resolve("compactions$suffix"), log = { }),
@@ -75,20 +74,19 @@ public fun quotaFor(
 /**
  * Head deps for a test. Every parameter is defaulted so a site names only what it overrides.
  *
- * SEVEN PARAMETERS IS THE CEILING, and it forced one real choice: `stores` is NOT a parameter. It is
- * always [headStores]`(tmp)`, because that is what all but a couple of sites want, and the couple
- * that want economics pass `.copy(stores = headStores(tmp, economics = store))` — HeadDeps is a data
- * class, so composition costs one clause at the rare site instead of a parameter at every one. The
- * seven that ARE here are the ones the tree actually overrides: a custom gate (26 sites), a custom
- * upstream timeout, a log sink, a real pool, a policy tweak, and the seams.
+ * FIVE PARAMETERS IS THE CEILING (a function is flagged at six, defaults counted), and it forced real
+ * choices: `stores`, `quota` and `policy` are NOT parameters. Each is a fixed default (`headStores(tmp)`,
+ * [noQuota], an empty [HeadDeps.HeadPolicy]) because most sites want exactly that, and the sites that do not
+ * pass `.copy(stores = headStores(tmp, economics = store))`, `.copy(quotaBundle = quotaFor(...))` or
+ * `.copy(policy = ...)` — HeadDeps is a data class, so composition costs one clause at the rare site instead
+ * of a parameter at every one. The five that ARE here are the ones the tree overrides most: a custom
+ * upstream, a log sink, a gate, and the seams.
  */
 public fun headDeps(
     tmp: Path,
     upstream: UpstreamClient = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 2),
     log: LogSink = { },
     gate: InflightGate = InflightGate({ 0 }),
-    quota: HeadDeps.HeadQuota = noQuota(),
-    policy: HeadDeps.HeadPolicy = HeadDeps.HeadPolicy(),
     seams: HeadDeps.HeadSeams = HeadDeps.HeadSeams(),
 ): HeadDeps = HeadDeps(
     upstream = upstream,
@@ -100,7 +98,7 @@ public fun headDeps(
     liveTurns = LiveTurns(),
     log = log,
     stores = headStores(tmp),
-    quotaBundle = quota,
-    policy = policy,
+    quotaBundle = noQuota(),
+    policy = HeadDeps.HeadPolicy(),
     seams = seams,
 )

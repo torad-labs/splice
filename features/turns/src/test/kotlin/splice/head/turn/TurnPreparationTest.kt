@@ -190,13 +190,14 @@ class TurnPreparationTest {
             tmp = tmp,
             upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
             gate = InflightGate({ 1 }),
-            policy = HeadDeps.HeadPolicy(systemPrompt = layers),
             seams = HeadDeps.HeadSeams(
                 sessionProject = SessionProjectLookup { session ->
                     lookups.incrementAndGet()
                     if (session == SESSION) cwd else null
                 },
             ),
+        ).copy(
+            policy = HeadDeps.HeadPolicy(systemPrompt = layers),
         )
         val preparation = TurnPreparation(
             provider(),

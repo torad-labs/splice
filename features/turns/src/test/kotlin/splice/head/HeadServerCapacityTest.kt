@@ -436,16 +436,16 @@ class HeadServerCapacityTest {
                 upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
                 gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 }),
                 log = {},
+            ).copy(
                 // V4-80: a tracker, because the defect is only observable through one — without a
                 // QuotaTracker the head emits no unified family at all and `allowed` vs `rejected`
                 // is not a question the response answers. Empty on purpose: a head that has tracked
                 // no window must still STATE the refusal (V4-51's deliberate divergence), so this
                 // pins the refusal path rather than a snapshot's window members.
-                quota = quotaFor(
+                quotaBundle = quotaFor(
                     QuotaTracker(tmp.resolve("pooled-quota.json"), log = LogSink { }),
                     AccountPool(listOf(account), WallClock(System::currentTimeMillis)),
                 ),
-            ).copy(
                 // The second rig writes its OWN store files: two heads in one test sharing a usage
                 // file would read each other's rows, and it would compile either way.
                 stores = headStores(tmp, suffix = "-pooled"),

@@ -95,7 +95,7 @@ class SpentReadingResetTest {
             reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
         ),
         listenPort = 0,
-        deps = headDeps(tmp = tmp, quota = quota),
+        deps = headDeps(tmp = tmp).copy(quotaBundle = quota),
     )
 
     private fun single(tmp: Path, snapshot: QuotaSnapshot, tag: String = "") =

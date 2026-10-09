@@ -181,7 +181,7 @@ private class OpenFieldsRig(directory: Path) {
             PassthroughQuirks(providerTag = "open"),
         ),
         listenPort = 0,
-        deps = headDeps(tmp = directory, policy = HeadDeps.HeadPolicy(forwardClientAuth = true)),
+        deps = headDeps(tmp = directory).copy(policy = HeadDeps.HeadPolicy(forwardClientAuth = true)),
     )
 
     suspend fun turn(stream: Boolean): Pair<HttpStatusCode, String> {

@@ -127,13 +127,14 @@ class SlotPromptTurnTest {
             tmp = tmp,
             upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
             gate = InflightGate({ 1 }),
+            seams = HeadDeps.HeadSeams(slotInstructions = slots),
+        ).copy(
             policy = HeadDeps.HeadPolicy(
                 systemPrompt = SystemPromptLayers(
                     HeadSystemPrompt(text = "N", mode = headMode, source = "head:kimi"),
                     headKey = "kimi",
                 ),
             ),
-            seams = HeadDeps.HeadSeams(slotInstructions = slots),
         )
         val preparation = TurnPreparation(
             provider(),

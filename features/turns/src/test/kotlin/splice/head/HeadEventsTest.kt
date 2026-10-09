@@ -247,8 +247,9 @@ private class Rig(root: Path) {
         deps = headDeps(
             tmp = tmp,
             upstream = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 2),
-            quota = quotaFor(primaryQuota, pool, mapOf("primary" to primaryQuota, "backup" to backupQuota)),
             seams = HeadDeps.HeadSeams(events = events),
+        ).copy(
+            quotaBundle = quotaFor(primaryQuota, pool, mapOf("primary" to primaryQuota, "backup" to backupQuota)),
         ).copy(stores = headStores(tmp).copy(perfStats = PerfStats(perfFile))),
     )
     private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }

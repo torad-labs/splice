@@ -397,8 +397,9 @@ class TurnPreparationSystemPromptTest {
             upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
             gate = InflightGate({ 1 }),
             log = {},
-            policy = HeadDeps.HeadPolicy(systemPrompt = layers),
             seams = HeadDeps.HeadSeams(sessionProject = SessionProjectLookup { cwd }),
+        ).copy(
+            policy = HeadDeps.HeadPolicy(systemPrompt = layers),
         )
         return TurnPreparation(
             provider,

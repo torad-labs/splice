@@ -22,6 +22,7 @@ import splice.core.memory.HeapReservations
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.storage.ActivityDays
+import splice.core.storage.DayBodyBudget
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.AsyncFileIo
@@ -80,13 +81,14 @@ class TurnTraceTest {
     private fun store(
         maxBodyChars: Int = 1 shl 20,
         heap: HeapReservations = HeapBudget(Long.MAX_VALUE),
-    ): TraceStore = splice.head.syntheticTraceStore(
+    ): TraceStore = TraceStore(
         ActivityDays(tmp.resolve("trace"), "kimi", retentionDays = 7, clock = WallClock { DAY_ONE }, ownerOnly = true),
         head = "kimi",
         maxBodyChars = maxBodyChars,
         now = WallClock { DAY_ONE },
         ids = TurnIdMint { "turn-0001" },
         heap = heap,
+        bodyBudget = DayBodyBudget(minFreeBytes = 0, clock = WallClock { DAY_ONE }),
     )
 
     private fun lines(): List<JsonObject> {

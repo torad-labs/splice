@@ -130,7 +130,7 @@ private class BudgetRig(root: Path, val budget: RecordingBudget) {
     private val head = HeadServer(
         provider = provider(),
         listenPort = 0,
-        deps = headDeps(tmp = tmp, quota = quotaFor(null, null, budget = budget)),
+        deps = headDeps(tmp = tmp).copy(quotaBundle = quotaFor(null, null, budget = budget)),
     )
     private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
 

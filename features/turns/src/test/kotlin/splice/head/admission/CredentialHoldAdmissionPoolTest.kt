@@ -123,8 +123,7 @@ class CredentialHoldAdmissionPoolTest {
         private val deps = headDeps(
             dir,
             upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 0, client = providerClient),
-            quota = quotaFor(null, pool),
-        )
+        ).copy(quotaBundle = quotaFor(null, pool))
         private val holds = CredentialHoldAdmission(
             provider,
             deps,

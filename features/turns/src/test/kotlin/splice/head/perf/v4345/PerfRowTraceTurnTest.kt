@@ -141,7 +141,8 @@ class PerfRowTraceTurnTest {
                 tmp = tmp,
                 upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
                 gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
-                quota = quotaFor(null, null, budget = budget),
+            ).copy(
+                quotaBundle = quotaFor(null, null, budget = budget),
             ).copy(stores = headStores(tmp, suffix = "-$id", trace = trace)),
         )
         runBlocking { server.start() }

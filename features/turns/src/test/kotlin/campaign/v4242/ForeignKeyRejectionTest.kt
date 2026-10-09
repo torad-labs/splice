@@ -102,7 +102,8 @@ private class PoolRig(root: Path, val upstream: RejectingUpstream) {
         deps = headDeps(
             tmp = tmp,
             upstream = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 2),
-            quota = quotaFor(primaryQuota, pool, mapOf("primary" to primaryQuota, "backup" to backupQuota)),
+        ).copy(
+            quotaBundle = quotaFor(primaryQuota, pool, mapOf("primary" to primaryQuota, "backup" to backupQuota)),
         ),
     )
     private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }

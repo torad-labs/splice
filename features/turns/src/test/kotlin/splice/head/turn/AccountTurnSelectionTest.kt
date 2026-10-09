@@ -397,8 +397,9 @@ private class AccountTurnRig(root: Path, private val credentialPresent: Boolean 
             tmp = tmp,
             upstream = UpstreamClient(totalTimeoutMs = 30_000L, maxRetries = 2),
             log = logs::add,
+        ).copy(
             policy = HeadDeps.HeadPolicy(maxRequestBytes = 2_048),
-            quota = quotaFor(primaryQuota, pool, mapOf("primary" to primaryQuota, "backup" to backupQuota)),
+            quotaBundle = quotaFor(primaryQuota, pool, mapOf("primary" to primaryQuota, "backup" to backupQuota)),
         ).copy(stores = headStores(tmp).copy(perfStats = perfStats)),
     )
     private val client = HttpClient(CIO) {

@@ -136,6 +136,7 @@ class HeadWireTapTest {
                 upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
                 gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
                 log = {},
+            ).copy(
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = forwardClientAuth),
             ).copy(
                 inferenceToken = TURN_KEY,

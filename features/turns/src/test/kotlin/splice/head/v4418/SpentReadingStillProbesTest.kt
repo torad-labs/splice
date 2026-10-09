@@ -88,7 +88,7 @@ class SpentReadingStillProbesTest {
                 reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
             ),
             listenPort = 0,
-            deps = headDeps(tmp = tmp, quota = quotaFor(quota, null)),
+            deps = headDeps(tmp = tmp).copy(quotaBundle = quotaFor(quota, null)),
         )
         head.start()
         awaitListening(head.port)

@@ -156,6 +156,7 @@ class HeadServerFailureBranchTest {
                 tmp = tmp,
                 upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
                 log = { logs.add(it) },
+            ).copy(
                 policy = HeadDeps.HeadPolicy(requestReadTimeoutMs = readTimeoutMs),
             ).copy(
                 // This rig keys its store files per head AND captures the shadow classifier's own log

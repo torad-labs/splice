@@ -357,8 +357,9 @@ private class LimitRig(
             upstream = upstream,
             gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
             log = {},
+        ).copy(
             policy = HeadDeps.HeadPolicy(forwardClientAuth = true),
-            quota = noQuota().copy(credentialAccountNames = names),
+            quotaBundle = noQuota().copy(credentialAccountNames = names),
         ),
     )
 

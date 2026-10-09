@@ -217,6 +217,7 @@ class ClientIdentityHeadersTest {
                 tmp = tmp,
                 upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
                 gate = InflightGate({ 1 }),
+            ).copy(
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = clientAuth),
             ).copy(inferenceToken = TURN_KEY, operatorToken = MANAGEMENT_KEY),
         )

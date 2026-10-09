@@ -276,7 +276,8 @@ private class FailoverRig(
             tmp = directory,
             upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 4, client = providerClient),
             gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
-            quota = quotaFor(null, if (pooled) pool else null),
+        ).copy(
+            quotaBundle = quotaFor(null, if (pooled) pool else null),
             policy = HeadDeps.HeadPolicy(forwardClientAuth = true),
         ).copy(stores = headStores(directory).copy(perfStats = PerfStats(perfFile))),
     )

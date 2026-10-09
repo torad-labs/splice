@@ -145,6 +145,7 @@ class HeadServerClientAuthTest {
                 upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 1),
                 gate = InflightGate(maxInflight = { 4 }, maxQueued = { 4 }),
                 log = log,
+            ).copy(
                 policy = HeadDeps.HeadPolicy(forwardClientAuth = forwardClientAuth),
             ).copy(
                 // This rig carries its OWN bearers and its own store files, keyed by the head's index

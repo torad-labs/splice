@@ -88,6 +88,7 @@ class BuiltTurnEndTest {
             tmp = tmp,
             upstream = UpstreamClient(totalTimeoutMs = 1_000, maxRetries = 1),
             gate = InflightGate({ 1 }),
+        ).copy(
             policy = HeadDeps.HeadPolicy(
                 systemPrompt = SystemPromptLayers(HeadSystemPrompt(text = "N", source = "head:kimi"), headKey = "kimi"),
             ),

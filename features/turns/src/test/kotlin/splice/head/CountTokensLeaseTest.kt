@@ -47,12 +47,13 @@ class CountTokensLeaseTest {
         )
         val deps = headDeps(
             tmp,
-            policy = HeadDeps.HeadPolicy(maxRequestBytes = BODY_BYTES),
             seams = HeadDeps.HeadSeams(
                 requestMaterializationGate = RequestMaterializationGate(
                     heap = HeapBudget(JvmHeap.limitBytes, BODY_BYTES * 13L / 2L),
                 ),
             ),
+        ).copy(
+            policy = HeadDeps.HeadPolicy(maxRequestBytes = BODY_BYTES),
         )
         val handler = handler(deps)
         val publicationProbes = mutableListOf<Int>()

@@ -248,17 +248,6 @@ below instead of excusing the entire core module.
 """
 
 [[exclusion]]
-rule = "kt-no-silent-result-collapse"
-modules = ["quality-compiler-plugin"]
-sourceSets = ["main"]
-date = "2026-09-24"
-reason = """
-:quality-compiler-plugin is a compiler plugin with no Result path. Every other module is selected:
-:core, :integrations-claude-code and :providers-muse joined on 2026-09-24 (LAYOUT-01 review), and the
-three dialects the same day (v0.4.0 release) at zero findings (the rule's WIDENED 2026-09-24 notes).
-"""
-
-[[exclusion]]
 rule = "kt-no-stream-options-request"
 modules = ["integrations-dialects-openai-chat"]
 sourceSets = ["main"]

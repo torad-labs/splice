@@ -23,8 +23,13 @@
 package splice.head.wire
 
 import kotlinx.coroutines.channels.Channel
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 
 /** One release step per frame tick, about sixty a second. */
 internal const val PACE_TICK_MS = 16L
@@ -38,12 +43,9 @@ private const val PACE_FLOOR_PER_TICK = 4
 
 private const val DELTA_EVENT = "event: content_block_delta\n"
 
-// why: a native source keeps its own key order, so the delta's type can sit after its payload. A quote inside a JSON
-// string value is always escaped, so these marks can only be the delta's own fields.
-private const val TEXT_DELTA_MARK = "\"type\":\"text_delta\""
-private const val THINKING_DELTA_MARK = "\"type\":\"thinking_delta\""
-private const val EMPTY_TEXT_MARK = "\"text\":\"\""
-private const val EMPTY_THINKING_MARK = "\"thinking\":\"\""
+private const val TEXT_DELTA = "text_delta"
+private const val THINKING_DELTA = "thinking_delta"
+private val VISIBLE_TYPES = setOf(TEXT_DELTA, THINKING_DELTA)
 
 /** Holds the frames a burst queues and decides which leave each tick. Every member except
  *  [awaitSignal] and [finish] runs under the channel's writeMutex, which is what makes the queue safe. */
@@ -148,10 +150,29 @@ internal class DeltaPacer(
         return maxOf(floorPerTick, spread)
     }
 
-    fun isVisibleDelta(frame: String): Boolean =
-        frame.startsWith(DELTA_EVENT) && (frame.contains(TEXT_DELTA_MARK) || frame.contains(THINKING_DELTA_MARK))
+    /** A text or thinking delta. Read from the frame's own `delta` object, so a native source's key order and
+     *  whatever else the frame carries cannot change the answer. */
+    fun isVisibleDelta(frame: String): Boolean = DeltaFields.visible(frame) != null
 
     /** A visible delta that carries characters: the client has nothing new to read from an empty one. */
-    fun isArrivingDelta(frame: String): Boolean =
-        isVisibleDelta(frame) && !frame.contains(EMPTY_TEXT_MARK) && !frame.contains(EMPTY_THINKING_MARK)
+    fun isArrivingDelta(frame: String): Boolean {
+        val delta = DeltaFields.visible(frame) ?: return false
+        val field = if (JsonScalars.str(delta, "type") == TEXT_DELTA) "text" else "thinking"
+        return !JsonScalars.str(delta, field).isNullOrEmpty()
+    }
+}
+
+/** Reads a frame's `delta` object. */
+private object DeltaFields {
+    /** The frame's `delta` object when it is a text or thinking delta, read from the object itself. */
+    fun visible(frame: String): JsonObject? {
+        val data = if (frame.startsWith(DELTA_EVENT)) frame.substringAfter("data:", "") else ""
+        if (data.isBlank()) return null
+        return parsed(data)?.takeIf { JsonScalars.str(it, "type") in VISIBLE_TYPES }
+    }
+
+    // ast-grep-ignore: kt-no-silent-result-collapse -- a frame whose data is not JSON is not a delta; pacing never fails a turn over what it cannot read
+    private fun parsed(data: String): JsonObject? = Cancellables.runCatchingCancellable {
+        Json.parseToJsonElement(data).jsonObject["delta"] as? JsonObject
+    }.getOrNull()
 }

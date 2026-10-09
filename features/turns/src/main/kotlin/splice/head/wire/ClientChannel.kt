@@ -64,6 +64,12 @@ internal fun interface Heartbeat {
     suspend operator fun invoke()
 }
 
+/** The HTTP status gate in front of a streaming turn's response. [open] answers 200 now, for a turn whose
+ *  upstream round is already live, so there is no upstream status left to wait for. */
+internal interface StatusGate {
+    fun open()
+}
+
 // HEAD-008: 10s left a dead-without-FIN client (and the paid upstream stream + inflight
 // slot behind it) undetected for up to 10s; tightened to 2s. Same mechanism, smaller tick.
 private const val CLIENT_PING_INTERVAL_MS = 2_000L
@@ -105,6 +111,8 @@ internal class ClientChannel(
     val trace: TurnTrace? = null,
     /** Flipped once for good by [detachIfRecording]: writes are recorded, none reach the socket. */
     val detached: AtomicBoolean = AtomicBoolean(false),
+    /** The HTTP status gate this channel sits behind; null for a channel whose status is already committed. */
+    val statusGate: StatusGate? = null,
 ) {
     /** Frames that reached the socket: the pinger's silence gauge (unchanged tick after tick =
      *  a silent wire, time for a heartbeat). */

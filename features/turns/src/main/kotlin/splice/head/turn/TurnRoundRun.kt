@@ -29,7 +29,10 @@ internal class TurnRoundRun(
 
     suspend fun run(drive: TurnDrive, self: CoroutineScope, turnJob: Job) {
         // No upstream POST opens an adopted source step. Open it here so signed live progress can flow.
-        if (drive.roundInterceptor?.resumesSource() == true) drive.emitter.ensureStarted()
+        if (drive.roundInterceptor?.resumesSource() == true) {
+            drive.channel.statusGate?.open()
+            drive.emitter.ensureStarted()
+        }
         // Folding is null for sol / every non-codex head → the single-round path is
         // byte-for-byte the pre-fold behaviour (drive straight to the real emitter,
         // finish once). A fold-eligible turn hands the loop to FoldRunner. Which runner

@@ -10,6 +10,7 @@ import splice.core.util.ElapsedClock
 import splice.head.wire.ClientChannel
 import splice.head.wire.FrameRecording
 import splice.head.wire.ImmediateSseWriter
+import splice.head.wire.StatusGate
 import splice.head.wire.TurnTrace
 import java.io.IOException
 import java.io.Writer
@@ -56,6 +57,11 @@ internal class PendingSseWriter(
         clientGone = AtomicBoolean(false),
         recording = recording,
         trace = trace,
+        statusGate = object : StatusGate {
+            override fun open() {
+                choice.complete(PendingSse.Decision.Stream)
+            }
+        },
     )
 
     fun stageModel(frame: String): Boolean = stage(frame, Kind.MODEL)

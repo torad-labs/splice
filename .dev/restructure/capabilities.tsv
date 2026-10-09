@@ -3955,3 +3955,4 @@ features/turns/src/main/kotlin/splice/head/wire/ArrivalBursts.kt	created		V4-456
 tools/gate/src/lib/no-python-shell.ts	created		Reads shell by structure: ast-grep bash command nodes, shell words, the wrapper chain, sh -c and eval, to find the commands that run the interpreter.
 tools/gate/src/lib/no-python-sources.ts	created		Reads process spawns in TypeScript (compiler API, import-resolved), Kotlin and Java (ast-grep) and launcher entries, by structure.
 tools/gate/test/fixtures/no-python-shapes.json	created		The independent reviewer probe of the no-python wall: files that must be refused and files that must pass, graded by the wall and the guard.
+app/src/test/kotlin/splice/app/provider/CodeModeLiveScriptTest.kt	created		V4-456: a GPT code-mode script streams to the client as it is written, before the dispatch and after the resumed step opens

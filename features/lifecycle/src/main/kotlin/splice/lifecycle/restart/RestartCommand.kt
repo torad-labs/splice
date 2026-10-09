@@ -15,6 +15,7 @@ import splice.daemonclient.DaemonProbe
 import splice.daemonclient.DaemonSettings
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
+import splice.daemonclient.Reading
 import splice.lifecycle.start.DaemonColdStart
 import splice.lifecycle.upgrade.CompactionWait
 import splice.lifecycle.upgrade.JdkUpgradeInflight
@@ -120,7 +121,12 @@ public class RestartCommand(
         val running = DaemonProbe.healthVersion(port) ?: return true
         val key = stopKeyOrExplain() ?: return false
         if (waitForCompactions) CompactionWait(output, JdkUpgradeInflight(env, port)).await()
-        val scope = stopScope(DaemonProbe.headPorts(port, key), tomlPorts)
+        val live = when (val read = DaemonProbe.headPorts(port, key)) {
+            is Reading.Answered -> read.value
+            // Either way the daemon's own list is unavailable, and the toml's ports stand alone (stopScope).
+            Reading.Refused, Reading.Malformed -> null
+        }
+        val scope = stopScope(live, tomlPorts)
         if (scope.degraded) {
             output.line(
                 "splice: WARNING: could not enumerate this daemon's head ports (config unreadable and " +

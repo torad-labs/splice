@@ -42,8 +42,10 @@ public class DaemonSettings(private val errors: TerminalOutput) {
      *  an empty unit name. */
     public fun supervisorUnit(envReader: EnvReader): String {
         // An unreadable TOML means "no TOML layer" here: the state and env layers below decide the answer.
-        val topology = Unanswered.orNull {
-            TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(envReader))
+        val loaded = Unanswered.read { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(envReader)) }
+        val topology = when (loaded) {
+            is Reading.Answered -> loaded.value
+            Reading.Refused, Reading.Malformed -> null
         }
         val unit = ConfigService(
             TopologyStatePaths(envReader).of(topology),

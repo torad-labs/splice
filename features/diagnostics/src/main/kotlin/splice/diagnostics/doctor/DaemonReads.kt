@@ -16,6 +16,7 @@ import splice.daemonclient.ControlPlaneClient
 import splice.daemonclient.DaemonProbe
 import splice.daemonclient.MgmtKeyFile
 import splice.daemonclient.MgmtKeyRead
+import splice.daemonclient.Reading
 import splice.daemonclient.TraceConfigProbe
 import splice.diagnostics.doctor.accounts.AccountRosterProjection
 import java.nio.file.Path
@@ -100,8 +101,12 @@ internal class LoopbackDaemon(private val pools: AccountPoolRead) : DaemonReads 
             is MgmtKeyRead.Unreadable -> DaemonRead.KeyUnreadable(key.reason)
         }
 
-    private fun <T> answered(value: T?): DaemonRead<T> =
-        value?.let { DaemonRead.Answered(it) } ?: DaemonRead.Unreachable
+    /** Doctor words a refused connection and an unreadable answer the same way ("gave no answer"); the two stay
+     *  separate readings down to here, and this is the one place they meet. */
+    private fun <T> answered(reading: Reading<T>): DaemonRead<T> = when (reading) {
+        is Reading.Answered -> DaemonRead.Answered(reading.value)
+        Reading.Refused, Reading.Malformed -> DaemonRead.Unreachable
+    }
 }
 
 /** The daemon's own reads: the answers it gave itself in process, so its doctor never waits on the

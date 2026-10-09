@@ -166,9 +166,10 @@ public object DaemonProbe {
 
     public fun healthVersion(port: Int): String? = healthView(port)?.version
 
-    public fun headsRuntime(port: Int, bearer: String): List<HeadRuntime>? = Unanswered.orNull {
-        request("http://127.0.0.1:$port/api/heads", bearer = bearer) { parseHeadsRuntime(body(it)) }
-    }
+    public fun headsRuntime(port: Int, bearer: String): Reading<List<HeadRuntime>> =
+        Unanswered.readOrRefused {
+            request("http://127.0.0.1:$port/api/heads", bearer = bearer) { parseHeadsRuntime(body(it)) }
+        }
 
     /** An /api/heads body's per-head counters: a head without a key or a health object is skipped. */
     public fun parseHeadsRuntime(body: String): List<HeadRuntime> {
@@ -192,7 +193,7 @@ public object DaemonProbe {
         }
     }
 
-    /** The head ports the RUNNING daemon actually holds, or null when /api/heads is unreachable.
+    /** The head ports the RUNNING daemon actually holds, or [Reading.Refused] when /api/heads is unreachable, [Reading.Malformed] when it answered nonsense.
      *
      *  The running daemon — not splice.toml — is authoritative for what is BOUND, and the two
      *  disagree in exactly the case `splice restart` exists to serve: an operator edits the file
@@ -200,8 +201,8 @@ public object DaemonProbe {
      *  file would then check the NEW port while the old daemon still holds the OLD one, so the stop
      *  reports success against a port nothing ever bound. It also survives a malformed TOML, which
      *  no file-sourced list can. */
-    public fun headPorts(port: Int, bearer: String): List<Int>? =
-        Unanswered.orNull {
+    public fun headPorts(port: Int, bearer: String): Reading<List<Int>> =
+        Unanswered.readOrRefused {
             request("http://127.0.0.1:$port/api/heads", bearer = bearer) { connection ->
                 val obj = json.parseToJsonElement(body(connection)).jsonObject
                 (obj["heads"] as? JsonArray).orEmpty().mapNotNull { JsonScalars.int(it as? JsonObject, "port") }
@@ -213,11 +214,11 @@ public object DaemonProbe {
      *  (sent none), and [CredentialVerdict.Unverified] for one this build cannot read (V4-293). */
     public data class HeadAuthSeen(public val present: Boolean, public val verdict: CredentialVerdict)
 
-    /** Per-head credential state as the DAEMON sees it (`/api/auth`), or null when unreachable.
+    /** Per-head credential state as the DAEMON sees it (`/api/auth`): [Reading.Refused] when unreachable, [Reading.Malformed] when the body is unreadable.
      *  Doctor compares presence against the shell's to catch the exported-after-boot trap, and reads
      *  a client head's verdict because only the daemon sees upstream's answers. */
-    public fun authSeen(port: Int, key: String): Map<String, HeadAuthSeen>? =
-        Unanswered.orNull {
+    public fun authSeen(port: Int, key: String): Reading<Map<String, HeadAuthSeen>> =
+        Unanswered.readOrRefused {
             request("http://127.0.0.1:$port/api/auth", bearer = key) { parseAuthSeen(body(it)) }
         }
 

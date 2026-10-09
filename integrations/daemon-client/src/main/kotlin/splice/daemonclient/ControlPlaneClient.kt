@@ -25,16 +25,22 @@ public object ControlPlaneClient {
         method: String,
         bearer: String?,
         readTimeoutMs: Int = STATUS_TIMEOUT_MS,
-    ): Int? = Unanswered.orNull {
-        val connection = URI(url).toURL().openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = method
-            bearer?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
-            connection.connectTimeout = PROBE_TIMEOUT_MS
-            connection.readTimeout = readTimeoutMs
-            connection.responseCode
-        } finally {
-            connection.disconnect()
+    ): Int? {
+        val read = Unanswered.read {
+            val connection = URI(url).toURL().openConnection() as HttpURLConnection
+            try {
+                connection.requestMethod = method
+                bearer?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+                connection.connectTimeout = PROBE_TIMEOUT_MS
+                connection.readTimeout = readTimeoutMs
+                connection.responseCode
+            } finally {
+                connection.disconnect()
+            }
+        }
+        return when (read) {
+            is Reading.Answered -> read.value
+            Reading.Refused, Reading.Malformed -> null
         }
     }
 
@@ -48,20 +54,26 @@ public object ControlPlaneClient {
         method: String,
         bearer: String?,
         readTimeoutMs: Int = STATUS_TIMEOUT_MS,
-    ): ControlReply? = Unanswered.orNull {
-        val connection = URI(url).toURL().openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = method
-            bearer?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
-            connection.connectTimeout = PROBE_TIMEOUT_MS
-            connection.readTimeout = readTimeoutMs
-            val status = connection.responseCode
-            // A non-2xx puts the body on the ERROR stream and leaves inputStream throwing, which is
-            // exactly the half that carries the reason.
-            val stream = if (status in OK_RANGE) connection.inputStream else connection.errorStream
-            ControlReply(status, stream?.readBytes()?.decodeToString().orEmpty())
-        } finally {
-            connection.disconnect()
+    ): ControlReply? {
+        val read = Unanswered.read {
+            val connection = URI(url).toURL().openConnection() as HttpURLConnection
+            try {
+                connection.requestMethod = method
+                bearer?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+                connection.connectTimeout = PROBE_TIMEOUT_MS
+                connection.readTimeout = readTimeoutMs
+                val status = connection.responseCode
+                // A non-2xx puts the body on the ERROR stream and leaves inputStream throwing, which is
+                // exactly the half that carries the reason.
+                val stream = if (status in OK_RANGE) connection.inputStream else connection.errorStream
+                ControlReply(status, stream?.readBytes()?.decodeToString().orEmpty())
+            } finally {
+                connection.disconnect()
+            }
+        }
+        return when (read) {
+            is Reading.Answered -> read.value
+            Reading.Refused, Reading.Malformed -> null
         }
     }
 

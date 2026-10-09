@@ -84,11 +84,14 @@ internal class StatuslineRenderer(
             switchReason?.let { "${selected.label} ${dim("← $it")}" } ?: selected.label
         }
         val modelId = blob.str(blob.obj(root, MODEL_FIELD)?.get("id"))
-        val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(now())
+        // One read of the clock per tick: the spend segment's session start and the limit and warn judgments
+        // all hang off this instant, so which segment is built first cannot change what any of them sees.
+        val nowMs = now()
+        val nowSeconds = TimeUnit.MILLISECONDS.toSeconds(nowMs)
         val segments = listOfNotNull(
             modelSegment(root),
             accountText,
-            spend.segment(bars, root, sessionId, modelId, blob.sessionStartMs(root, now())),
+            spend.segment(bars, root, sessionId, modelId, blob.sessionStartMs(root, nowMs)),
         ) +
             bars.limitSegments(root, selectedQuota ?: snapshot?.quota, selectedQuota != null, nowSeconds) +
             listOfNotNull(

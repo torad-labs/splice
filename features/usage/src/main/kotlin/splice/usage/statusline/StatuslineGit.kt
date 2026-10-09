@@ -4,9 +4,10 @@
 // trusted root — lives in one place with its own tests.
 package splice.usage.statusline
 
-import splice.core.util.Cancellables
 import splice.core.util.WallClock
+import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
@@ -30,13 +31,7 @@ internal class StatuslineGit(
 
     // Operator-trusted roots beyond the home and /tmp for the git-branch lookup (statuslineGitRoots
     // knob / CLAUDEX_STATUSLINE_GIT_ROOTS) — devcontainer /workspace, /srv layouts. Normalized once.
-    private val extraRoots: List<Path> = extraRoots.mapNotNull { root ->
-        // A configured root that is not a usable path is simply not a trusted root. The statusline
-        // has no sink and Claude Code renders on every tick, so a line per render would be noise on
-        // the hottest cosmetic path in splice.
-        // ast-grep-ignore: kt-no-silent-result-collapse -- an unusable configured root is not a failure, it is just not a trusted root
-        Cancellables.runCatchingCancellable { Paths.get(root).toAbsolutePath().normalize() }.getOrNull()
-    }
+    private val extraRoots: List<Path> = extraRoots.mapNotNull(::normalizedRoot)
 
     // Real (symlink-resolved) trusted roots for safeCwd's containment check — resolved ONCE here
     // since the root set (the home, /tmp, extraRoots) is process-invariant, unlike the per-request
@@ -47,8 +42,7 @@ internal class StatuslineGit(
     private val trustedRoots: List<Path> = (
         listOfNotNull(home, Paths.get("/tmp")) +
             this.extraRoots
-        // ast-grep-ignore: kt-no-silent-result-collapse -- an absent optional root proves absence, not failure
-        ).mapNotNull { root -> Cancellables.runCatchingCancellable { root.toRealPath() }.getOrNull() }
+        ).mapNotNull(::realPath)
 
     private val cacheLock = Any()
     private val cache = LinkedHashMap<String, CachedBranch>(GIT_CACHE_INITIAL_CAPACITY, GIT_CACHE_LOAD_FACTOR, true)
@@ -67,9 +61,7 @@ internal class StatuslineGit(
         // null IS this function's answer for an untrusted cwd: "could not be resolved" and "outside
         // every trusted root" are deliberately the same outcome, both meaning the git probe must
         // not run.
-        // ast-grep-ignore: kt-no-silent-result-collapse -- null is this function's ANSWER for an untrusted cwd, not a swallowed failure
-        val real = Cancellables.runCatchingCancellable { Paths.get(cwd).toRealPath() }.getOrNull()
-            ?: return null
+        val real = pathOf(cwd)?.let(::realPath) ?: return null
         return real.takeIf { p -> Files.isDirectory(p) && trustedRoots.any { p.startsWith(it) } }
     }
 
@@ -102,20 +94,42 @@ internal class StatuslineGit(
         return branch
     }
 
-    // Any git failure means no branch segment, which is the designed empty-string fallback: a
-    // statusline must not fail because a repository is odd, and git is not installed at all on
-    // some hosts.
-    // ast-grep-ignore: kt-no-silent-result-collapse -- every git failure means the same designed outcome: no branch segment
-    private fun gitBranch(cwd: String): String = Cancellables.runCatchingCancellable {
+    // A git that cannot run (not installed on some hosts, or the directory unreadable) means no branch
+    // segment, which is the designed empty-string fallback: a statusline must not fail because a
+    // repository is odd. Only the I/O failure of starting or reading the process is that answer.
+    private fun gitBranch(cwd: String): String = try {
         val process = ProcessBuilder("git", "-C", cwd, "branch", "--show-current")
             .redirectErrorStream(false)
             .start()
-        if (!process.waitFor(GIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+        if (process.waitFor(GIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            process.inputStream.readBytes().decodeToString().trim()
+        } else {
             process.destroyForcibly()
-            return ""
+            ""
         }
-        process.inputStream.readBytes().decodeToString().trim()
-    }.getOrDefault("")
+    } catch (_: IOException) {
+        ""
+    }
+
+    // A configured root that is not a usable path is simply not a trusted root. The statusline has no
+    // sink and Claude Code renders on every tick, so a line per render would be noise on the hottest
+    // cosmetic path in splice.
+    private fun normalizedRoot(root: String): Path? = pathOf(root)?.toAbsolutePath()?.normalize()
+
+    private fun pathOf(text: String): Path? = try {
+        Paths.get(text)
+    } catch (_: InvalidPathException) {
+        null
+    }
+
+    // toRealPath resolves symlinks AND requires existence: null is the answer for a path that does not
+    // exist, which is how an absent optional root (/workspace, /srv) and an untrusted cwd both read, and
+    // both mean the same thing here: not a place git may run.
+    private fun realPath(path: Path): Path? = try {
+        path.toRealPath()
+    } catch (_: IOException) {
+        null
+    }
 }
 
 private data class CachedBranch(val branch: String, val expiresAtMs: Long)

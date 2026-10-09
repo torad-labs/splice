@@ -23,8 +23,8 @@
 # \u escape), the code point in hex anywhere (`0x2014`: RetryMatrix built its NO_LAYER cell from
 # `const val NO_LAYER_CODE_POINT = 0x2014`, which a Char(...) matcher alone never sees), and the code
 # point in decimal where it becomes a Char (`Char(8212)`, `8212.toChar()`; a bare 8212 is any number).
-# RetryMatrix.kt is the one ignore: its table renders only into AGENTS.md's generated block (agent
-# docs, RetryMatrixTableTest), never a frame. Text splice relays from upstream is not a literal at
+# RetryMatrix's docs table once spelled its empty cell by code point; it prints the word `none` now, so
+# the wall binds every main source with no ignore. Text splice relays from upstream is not a literal at
 # all: FailureRenderer rewrites its em dashes as it presents them.
 id: kt-no-emdash-cli-text
 language: kotlin
@@ -35,9 +35,6 @@ note: |
 files:
   - "**/src/main/**/*.kt"
   - "**/src/main/**/*.kts"
-ignores:
-  # The docs table's empty cell, rendered only into AGENTS.md (see V4-235 above).
-  - integrations/upstream/src/main/kotlin/splice/upstream/retry/RetryMatrix.kt
 rule:
   any:
     - kind: string_content

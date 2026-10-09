@@ -46,6 +46,7 @@ import java.net.Socket
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -57,6 +58,9 @@ import kotlin.time.Duration.Companion.seconds
 // Real time is the observable: virtual time cannot measure another connection's socket-delivery gap.
 private const val BLOCK_MS = 2_000L
 private const val GAP_LIMIT_MS = 100L
+
+// The share of its pace a stream must keep while a sibling blocks: half, where a held stream keeps none.
+private const val MIN_PACE = 0.5
 private const val CLIENT_TIMEOUT_MS = 15_000
 private const val UPSTREAM_INTERVAL_MS = 10L
 private const val UPSTREAM_DELTAS = 350
@@ -209,7 +213,11 @@ class HeadEngineDispatchTest {
             reporter.publishEntry("sibling_block_ms", blocker.elapsedMs.toString())
             reporter.publishEntry("sibling_on_netty_thread", blocker.onNetty.toString())
             assertTrue(blocker.elapsedMs >= BLOCK_MS, "the injected block must actually run")
-            assertTrue(gapMs < GAP_LIMIT_MS, "${kind}_stream_gap_ms=$gapMs; limit=$GAP_LIMIT_MS")
+            // A held stream delivers nothing across the block, so its pace there is near zero. One late delta on a busy
+            // host costs the pace a few deltas, so the pace tells a stall from load where a single gap cannot.
+            val pace = stream.paceWithin(blocker.window)
+            reporter.publishEntry("${kind}_stream_pace_in_block", "%.2f".format(pace))
+            assertTrue(pace >= MIN_PACE, "${kind}_stream_pace_in_block=$pace; floor=$MIN_PACE; max gap $gapMs ms")
             assertTrue(startedMs < GAP_LIMIT_MS, "${kind}_next_turn_start_ms=$startedMs; limit=$GAP_LIMIT_MS")
             assertTrue(!blocker.onNetty, "request work must not occupy a Netty call thread")
         }
@@ -259,11 +267,17 @@ private class DispatchBlocker(val collectWait: Boolean, private val sessions: In
     val release = CountDownLatch(1)
     private val elapsed = AtomicLong()
     private val netty = AtomicBoolean()
+    private val startedAt = AtomicLong()
+    private val endedAt = AtomicLong()
+
+    /** The block's span on the System.nanoTime clock, which the stream stamps its deltas with. */
+    val window: LongRange get() = startedAt.get()..endedAt.get()
     val elapsedMs: Long get() = elapsed.get()
     val onNetty: Boolean get() = netty.get()
 
     fun block() {
         val started = System.nanoTime()
+        startedAt.compareAndSet(0L, started)
         if (Thread.currentThread() is FastThreadLocalThread) netty.set(true)
         entered.countDown()
         if (sessions > 1) {
@@ -274,6 +288,7 @@ private class DispatchBlocker(val collectWait: Boolean, private val sessions: In
             val until = started + TimeUnit.MILLISECONDS.toNanos(BLOCK_MS)
             while (System.nanoTime() < until) Thread.onSpinWait()
         }
+        endedAt.accumulateAndGet(System.nanoTime(), ::maxOf)
         elapsed.accumulateAndGet(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), ::maxOf)
         finished.countDown()
     }
@@ -361,6 +376,16 @@ private class DispatchStream(private val port: Int) : AutoCloseable {
     val warm = CountDownLatch(1)
     val finished = CompletableFuture<String>()
     val maxGapNs = AtomicLong()
+    private val stamps = CopyOnWriteArrayList<Long>()
+
+    /** How much of the stream's deltas arrived inside [window], against the share of the stream's time the window
+     *  covers: 1.0 is a stream that kept its pace through the window, 0.0 one that was held across it. */
+    fun paceWithin(window: LongRange): Double {
+        val at = stamps.toList()
+        val span = at.last() - at.first()
+        val expected = (window.last - window.first).toDouble() / span
+        return (at.count { it in window }.toDouble() / at.size) / expected
+    }
 
     fun start() {
         writePost(socket, port, "steady")
@@ -374,6 +399,7 @@ private class DispatchStream(private val port: Int) : AutoCloseable {
                         text.appendLine(line)
                         if (line.startsWith("event: content_block_delta")) {
                             val now = System.nanoTime()
+                            stamps += now
                             if (previous != 0L) maxGapNs.accumulateAndGet(now - previous, ::maxOf)
                             previous = now
                             deltas += 1

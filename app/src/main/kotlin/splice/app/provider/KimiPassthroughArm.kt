@@ -32,15 +32,15 @@ internal class KimiPassthroughArm(
     internal fun kimiOauthProvider(ctx: ProviderBuild, label: String): Wired {
         val accounts = kimiOAuth.kimiOauthAccounts(ctx)
         val default = kimiOAuth.providerAccount(accounts)
+        val headers = PassthroughHeaders(KIMI_BASE_HEADERS, IdentityHeaders(default.identity::headers))
         val provider = passthroughAssembly.passthroughProviderFor(
             ctx = ctx,
             label = label,
             auth = default.auth,
             base = KimiQuirks().kimi(ctx.key),
-            baseHeaders = KIMI_BASE_HEADERS,
-            identityHeaders = IdentityHeaders(default.identity::headers),
+            headers = headers,
         )
-        val staticHeaders = KIMI_BASE_HEADERS + ctx.providerCfg.staticHeaders
+        val staticHeaders = headers.staticFor(ctx.providerCfg)
         val wiredAccounts = accounts.map { account ->
             WiredAccount(
                 label = account.label,
@@ -71,8 +71,7 @@ internal class KimiPassthroughArm(
                 label = label,
                 auth = auth,
                 base = KimiQuirks().kimi(key),
-                baseHeaders = KIMI_BASE_HEADERS,
-                identityHeaders = IdentityHeaders(identity::headers),
+                headers = PassthroughHeaders(KIMI_BASE_HEADERS, IdentityHeaders(identity::headers)),
             ),
             auth,
         )

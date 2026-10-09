@@ -4,11 +4,24 @@
 package splice.app.provider
 
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.topology.ProviderConfig
 import splice.dialect.anthropic.IdentityHeaders
 import splice.dialect.anthropic.PassthroughProvider
 import splice.dialect.anthropic.PassthroughQuirks
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
+
+/** The headers a passthrough head presents: the provider's defaults [base] (overridden by an operator's TOML) and,
+ *  for Kimi only, the runtime device [identity]. */
+internal class PassthroughHeaders(
+    private val base: Map<String, String> = emptyMap(),
+    val identity: IdentityHeaders = IdentityHeaders { emptyMap() },
+) {
+    /** Base FIRST so an operator's TOML overrides it, and absent TOML keeps the head serving: these headers used to
+     *  be hardcoded in the provider, so a splice.toml written before extra_headers existed would otherwise lose
+     *  kimi's UA, which its /coding endpoint 403s on. */
+    fun staticFor(providerCfg: ProviderConfig): Map<String, String> = base + providerCfg.staticHeaders
+}
 
 /**
  * The anthropic-passthrough construction site: the dialect's ONE provider fed effective quirks and
@@ -24,8 +37,7 @@ internal class PassthroughAssembly {
         label: String,
         auth: RefreshableAuthProvider,
         base: PassthroughQuirks,
-        baseHeaders: Map<String, String> = emptyMap(),
-        identityHeaders: IdentityHeaders = IdentityHeaders { emptyMap() },
+        headers: PassthroughHeaders = PassthroughHeaders(),
     ): Provider = PassthroughProvider(
         tuning = ProviderTuning(
             key = ctx.key,
@@ -38,11 +50,8 @@ internal class PassthroughAssembly {
             loginCommand = ctx.loginCommand,
         ),
         quirks = quirksOverlay.passthroughQuirks(ctx.providerCfg, base),
-        // Base FIRST so an operator's TOML overrides it, and absent TOML keeps the head serving: these
-        // headers used to be hardcoded in the provider, so a splice.toml written before extra_headers
-        // existed would otherwise lose kimi's UA — which its /coding endpoint 403s on.
-        staticHeaders = baseHeaders + ctx.providerCfg.staticHeaders,
-        identityHeaders = identityHeaders,
+        staticHeaders = headers.staticFor(ctx.providerCfg),
+        identityHeaders = headers.identity,
         // PT-002/v27: same session-stable effort proxy ResponsesProvider threads as configEffort.
         configEffort = ctx.cfg.effort,
     )

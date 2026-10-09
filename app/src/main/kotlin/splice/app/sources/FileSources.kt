@@ -94,10 +94,9 @@ public class EconomicsStoreSource(
 
     override fun read(): EconomicsRead {
         val held = store.read()
-        val kept = try {
-            probes?.withoutProbes(held) ?: held
-        } catch (unreconciled: UnreconciledEconomics) {
-            return EconomicsRead.Unavailable(unreconciled.gap.sentence)
+        val kept = when (val deduction = probes?.withoutProbes(held) ?: ProbeDeduction.Done(held)) {
+            is ProbeDeduction.Unavailable -> return EconomicsRead.Unavailable(deduction.gap.sentence)
+            is ProbeDeduction.Done -> deduction.buckets
         }
         return EconomicsRead.Rows(kept.map { row(it) })
     }

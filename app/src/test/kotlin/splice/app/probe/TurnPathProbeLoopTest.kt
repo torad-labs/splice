@@ -72,7 +72,7 @@ class TurnPathProbeLoopTest {
     }
 
     private fun probe(port: Int, stalled: ConcurrentHashMap<String, Boolean>) =
-        TurnPathProbeLoop("t", port, stalled, { logs.add(it) }, intervalMs = 10, timeoutMs = 300)
+        TurnPathProbeLoop("t", TurnPathProbe(port, timeoutMs = 300), stalled, { logs.add(it) }, intervalMs = 10)
 
     @Test
     fun `the loop marks its POST as non-dispatching without carrying credentials`() {
@@ -158,7 +158,13 @@ class TurnPathProbeLoopTest {
         // An hour between ticks, so the cancel below is the only thing that happens to this loop. At 1 ms
         // the loop's own ticks raced it: two refused probes on port 1 flip stalled[t] to true before
         // cancel() lands, and the assertion blamed the cancel (CI run 36282792630, 2026-09-26).
-        val loop = TurnPathProbeLoop("t", port = 1, stalled = stalled, log = { logs += it }, intervalMs = 3_600_000)
+        val loop = TurnPathProbeLoop(
+            "t",
+            TurnPathProbe(port = 1),
+            stalled = stalled,
+            log = { logs += it },
+            intervalMs = 3_600_000,
+        )
         val job = loop.start(scope)
         job.cancel() // clean shutdown first: cancellation must NOT page
         job.join()

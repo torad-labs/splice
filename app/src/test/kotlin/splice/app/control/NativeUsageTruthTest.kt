@@ -231,11 +231,21 @@ class NativeUsageTruthTest {
         },
     )
 
+    /** The head a case runs against: its auth kind, the family it is declared with, and the usage it answers. */
+    private inner class SyntheticHead(
+        private val kind: String = "client",
+        private val family: String? = null,
+        private val usageSource: HeadUsageSource? = null,
+    ) {
+        fun managed(): ManagedHead =
+            managed(kind).let { head -> if (usageSource == null) head else head.copy(usage = usageSource) }
+
+        fun declared(): DeclaredHead = DeclaredHead("synthetic-provider", null, family)
+    }
+
     private fun serve(
         port: ClaudeLoginPlaces?,
-        kind: String = "client",
-        usageSource: HeadUsageSource? = null,
-        family: String? = null,
+        head: SyntheticHead = SyntheticHead(),
         sessions: SessionSource? = null,
         check: suspend (suspend (String, Boolean) -> JsonObject) -> Unit,
     ) = runBlocking {
@@ -243,18 +253,14 @@ class NativeUsageTruthTest {
             val key = MgmtKey(paths)
             val server = controlServerFor(
                 port = 0,
-                heads = mapOf(
-                    HEAD to managed(kind).let { head ->
-                        if (usageSource == null) head else head.copy(usage = usageSource)
-                    },
-                ),
+                heads = mapOf(HEAD to head.managed()),
                 config = ConfigService(paths),
                 runtime = ControlRuntime(sessions = sessions),
                 auth = ControlAuth(mgmtKey = key, log = {}),
             )
             // Late binding is intentional: UsageMount must not capture the construction-time null.
             server.ports.claudeLogins = port
-            server.ports.declaredHeads = DeclaredHeads { mapOf(HEAD to DeclaredHead("synthetic-provider", null, family)) }
+            server.ports.declaredHeads = DeclaredHeads { mapOf(HEAD to head.declared()) }
             HttpClient(CIO).use { client ->
                 try {
                     server.start()
@@ -285,7 +291,7 @@ class NativeUsageTruthTest {
         val kinds = AuthKindRegistry.knownKinds().map { it.wire to "unpriced_plan_requests" } +
             (API_KEY_WIRE to "unpriced_local_requests")
         kinds.forEach { (kind, cause) ->
-            serve(null, kind, noPlan, if (kind == API_KEY_WIRE) "local" else null) { read ->
+            serve(null, SyntheticHead(kind, if (kind == API_KEY_WIRE) "local" else null, noPlan)) { read ->
                 val block = read("/api/perf/turns?head=$HEAD&since=0", false)
                     .getValue("heads").jsonArray.single().jsonObject
                 val totals = block.getValue("usage").jsonObject.getValue("totals").jsonObject
@@ -293,7 +299,7 @@ class NativeUsageTruthTest {
                 assertEquals("0", totals.getValue("unpriced_undeclared_requests").jsonPrimitive.content, kind)
             }
         }
-        serve(null, API_KEY_WIRE, noPlan, "openai") { read ->
+        serve(null, SyntheticHead(API_KEY_WIRE, "openai", noPlan)) { read ->
             val block = read("/api/perf/turns?head=$HEAD&since=0", false)
                 .getValue("heads").jsonArray.single().jsonObject
             val totals = block.getValue("usage").jsonObject.getValue("totals").jsonObject
@@ -463,7 +469,7 @@ class NativeUsageTruthTest {
 
     @Test
     fun `the same label on a nonnative provider stays an account label`() {
-        serve(null, kind = "chatgpt-oauth") { read ->
+        serve(null, SyntheticHead(kind = "chatgpt-oauth")) { read ->
             val block = read("/api/perf/turns?head=$HEAD&since=0&local=0", false)
                 .getValue("heads").jsonArray.single().jsonObject
             assertEquals(3, block.getValue("usage").jsonObject.getValue("accounts").jsonArray.size)
@@ -558,7 +564,7 @@ class NativeUsageTruthTest {
          *  under; the console names it from the head plus that label. */
         @Test
         fun `a single-login OAuth head's sessions read the login's stable label, never a sentence`() {
-            serve(null, kind = "chatgpt-oauth", sessions = registry(sessionIds.take(1))) { read ->
+            serve(null, SyntheticHead(kind = "chatgpt-oauth"), sessions = registry(sessionIds.take(1))) { read ->
                 assertEquals(mapOf(sessionIds.first() to "primary"), accounts(read))
             }
         }

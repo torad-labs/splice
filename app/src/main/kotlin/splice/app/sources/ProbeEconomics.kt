@@ -27,8 +27,19 @@ internal enum class ProbeGap(val sentence: String) {
     EXCEEDS("Hourly history is not shown because the request log holds more probe requests than the history counted."),
 }
 
-/** Thrown inside [ProbeEconomics] and caught by its one caller, which answers this head as unavailable. */
-internal class UnreconciledEconomics(val gap: ProbeGap) : IllegalStateException(gap.sentence)
+/** What [ProbeEconomics] answers: the buckets without the probes, or the one gap that makes this head's view unavailable. */
+internal sealed class ProbeDeduction {
+    class Done(val buckets: List<EconomicsBucket>) : ProbeDeduction()
+
+    class Unavailable(val gap: ProbeGap) : ProbeDeduction()
+}
+
+/** What reading the probe evidence gave: the deduction per hour, or the gap that stops it. */
+private sealed class ProbeRead {
+    class Deductions(val byHour: Map<Long, EconomicsBucket>) : ProbeRead()
+
+    class Gapped(val gap: ProbeGap) : ProbeRead()
+}
 
 /** A deduction must reconcile with the complete retained rollup and its affected hour.
  *  Perf and economics sampled different clocks: a boundary crossing cannot be guessed.
@@ -37,38 +48,44 @@ internal class UnreconciledEconomics(val gap: ProbeGap) : IllegalStateException(
 internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
     private var deductions: Map<Long, EconomicsBucket>? = null
 
-    fun withoutProbes(buckets: List<EconomicsBucket>): List<EconomicsBucket> = synchronized(this) {
-        if (buckets.isEmpty()) return@synchronized buckets
-        val held = deductions ?: read(buckets).also { deductions = it }
-        buckets.map { bucket -> held[bucket.hour]?.let { subtract(bucket, it) } ?: bucket }
-            .filter { it.turns != 0L || it.localSteps != 0L }
+    fun withoutProbes(buckets: List<EconomicsBucket>): ProbeDeduction = synchronized(this) {
+        if (buckets.isEmpty()) return@synchronized ProbeDeduction.Done(buckets)
+        val held = deductions ?: when (val read = read(buckets)) {
+            is ProbeRead.Gapped -> return@synchronized ProbeDeduction.Unavailable(read.gap)
+            is ProbeRead.Deductions -> read.byHour.also { deductions = it }
+        }
+        val kept = buckets.map { bucket ->
+            val probes = held[bucket.hour] ?: return@map bucket
+            if (!fits(bucket, probes)) return@synchronized ProbeDeduction.Unavailable(ProbeGap.EXCEEDS)
+            subtract(bucket, probes)
+        }
+        ProbeDeduction.Done(kept.filter { it.turns != 0L || it.localSteps != 0L })
     }
 
-    private fun read(buckets: List<EconomicsBucket>): Map<Long, EconomicsBucket> {
+    private fun read(buckets: List<EconomicsBucket>): ProbeRead {
         val evidence = perf.economicsEvidence(buckets.minOf { it.hour })
-        hold(evidence.work.readError == null && evidence.work.skipped == 0, ProbeGap.UNREADABLE)
+        if (evidence.work.readError != null || evidence.work.skipped != 0) return ProbeRead.Gapped(ProbeGap.UNREADABLE)
         // TurnTelemetry.recordLocalRefusal writes perf, but never EconomicsStore.record.
         val work = evidence.work.rows.filterNot {
             it.outcome in LOCAL_ECONOMICS_REFUSALS && it.fields[PerfKeys.ATTEMPTS] == 0L
         }
         val all = summarize(work + evidence.probes)
         val probes = summarize(evidence.probes)
-        reconcile(buckets, all, probes)
+        if (!reconciles(buckets, all, probes)) return ProbeRead.Gapped(ProbeGap.UNRECONCILED)
         val recorded = buckets.associateBy { it.hour }
-        probes.keys.forEach { hour ->
-            val assigned = recorded[hour]?.let { signature(listOf(it)) } == all[hour]?.let { signature(listOf(it)) }
-            hold(assigned, ProbeGap.SPLIT_HOUR)
+        val split = probes.keys.any { hour ->
+            recorded[hour]?.let { signature(listOf(it)) } != all[hour]?.let { signature(listOf(it)) }
         }
-        return probes
+        return if (split) ProbeRead.Gapped(ProbeGap.SPLIT_HOUR) else ProbeRead.Deductions(probes)
     }
 
-    private fun reconcile(
+    private fun reconciles(
         buckets: List<EconomicsBucket>,
         all: Map<Long, EconomicsBucket>,
         probes: Map<Long, EconomicsBucket>,
-    ) {
+    ): Boolean {
         val latestProbe = probes.keys.maxOrNull()
-        val matches = if (latestProbe == null) {
+        return if (latestProbe == null) {
             // Perf is recorded before economics: a live tail may be ahead of the sampled rollup.
             signature(buckets).zip(signature(all.values)).all { (recorded, observed) -> recorded <= observed }
         } else {
@@ -76,7 +93,6 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
             signature(buckets.filter { it.hour <= latestProbe }) ==
                 signature(all.filterKeys { it <= latestProbe }.values)
         }
-        hold(matches, ProbeGap.UNRECONCILED)
     }
 
     private fun summarize(rows: List<PerfRow>): Map<Long, EconomicsBucket> =
@@ -119,27 +135,27 @@ internal class ProbeEconomics(private val perf: PerfRowsFileSource) {
         buckets.sumOf { it.deferralTurns },
     )
 
+    /** True when the probes never exceed what the bucket counted, field by field. */
+    private fun fits(bucket: EconomicsBucket, probes: EconomicsBucket): Boolean = listOf(
+        bucket.turns to probes.turns,
+        bucket.reqBytes to probes.reqBytes,
+        bucket.upstreamBytes to probes.upstreamBytes,
+        bucket.toolsEager to probes.toolsEager,
+        bucket.toolsDeferred to probes.toolsDeferred,
+        bucket.deferralTurns to probes.deferralTurns,
+    ).all { (total, probe) -> probe in 0..total } &&
+        (unpricedHour(bucket) || probes.unpricedTurns in 0..bucket.unpricedTurns)
+
+    // Old unpriced hours have no count to subtract; their cost remains unknown.
+    private fun unpricedHour(bucket: EconomicsBucket): Boolean = bucket.costUsd == null && bucket.unpricedTurns == 0L
+
     private fun subtract(bucket: EconomicsBucket, probes: EconomicsBucket): EconomicsBucket = bucket.copy(
-        counts = bucket.counts.copy(turns = remaining(bucket.turns, probes.turns)),
-        reqBytes = remaining(bucket.reqBytes, probes.reqBytes),
-        upstreamBytes = remaining(bucket.upstreamBytes, probes.upstreamBytes),
-        toolsEager = remaining(bucket.toolsEager, probes.toolsEager),
-        toolsDeferred = remaining(bucket.toolsDeferred, probes.toolsDeferred),
-        deferralTurns = remaining(bucket.deferralTurns, probes.deferralTurns),
-        // Old unpriced hours have no count to subtract; their cost remains unknown.
-        unpricedTurns = if (bucket.costUsd == null && bucket.unpricedTurns == 0L) {
-            0
-        } else {
-            remaining(bucket.unpricedTurns, probes.unpricedTurns)
-        },
+        counts = bucket.counts.copy(turns = bucket.turns - probes.turns),
+        reqBytes = bucket.reqBytes - probes.reqBytes,
+        upstreamBytes = bucket.upstreamBytes - probes.upstreamBytes,
+        toolsEager = bucket.toolsEager - probes.toolsEager,
+        toolsDeferred = bucket.toolsDeferred - probes.toolsDeferred,
+        deferralTurns = bucket.deferralTurns - probes.deferralTurns,
+        unpricedTurns = if (unpricedHour(bucket)) 0 else bucket.unpricedTurns - probes.unpricedTurns,
     )
-
-    private fun remaining(total: Long, probes: Long): Long {
-        hold(probes in 0..total, ProbeGap.EXCEEDS)
-        return total - probes
-    }
-
-    private fun hold(holds: Boolean, gap: ProbeGap) {
-        if (!holds) throw UnreconciledEconomics(gap)
-    }
 }

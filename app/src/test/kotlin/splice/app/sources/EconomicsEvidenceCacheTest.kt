@@ -3,7 +3,6 @@ package splice.app.sources
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.head.usage.EconomicsBucket
@@ -42,10 +41,8 @@ class EconomicsEvidenceCacheTest {
         source.window(0)
         for (cutoff in listOf(1L, 2L)) {
             assertEquals(1, source.economicsEvidence(cutoff).work.skipped)
-            val failure = assertThrows(UnreconciledEconomics::class.java) {
-                ProbeEconomics(source).withoutProbes(listOf(EconomicsBucket(cutoff)))
-            }
-            assertEquals(ProbeGap.UNREADABLE, failure.gap)
+            val failure = ProbeEconomics(source).withoutProbes(listOf(EconomicsBucket(cutoff)))
+            assertEquals(ProbeGap.UNREADABLE, (failure as ProbeDeduction.Unavailable).gap)
         }
     }
 

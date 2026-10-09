@@ -105,9 +105,9 @@ class ProbeEconomicsTest {
             .copy(outputTokens = 3)
         val store = store(dir)
         store.record(turn("", 0, 30, 15, 2L to 1L))
-        store.record(turn("synthetic", 5, 100, 50, 3L to 2L, script))
+        store.record(absorbing(script))
         val control = store(dir.resolve("control"))
-        control.record(turn("synthetic", 5, 100, 50, 3L to 2L, script))
+        control.record(absorbing(script))
 
         val buckets = EconomicsStoreSource(store, PerfRowsFileSource(file)).rows()
         assertEquals(EconomicsStoreSource(control).rows(), buckets)
@@ -301,7 +301,6 @@ class ProbeEconomicsTest {
         request: Long,
         upstream: Long,
         tools: Pair<Long, Long>,
-        absorbed: AbsorbedRounds = AbsorbedRounds(),
     ) = TurnEconomics(
         model,
         input,
@@ -313,6 +312,9 @@ class ProbeEconomicsTest {
         tools.first,
         tools.second,
         rateLimited = input > 0,
-        history = UsageHistory(absorbed = absorbed),
+        history = UsageHistory(),
     )
+
+    private fun absorbing(script: AbsorbedRounds): TurnEconomics =
+        turn("synthetic", 5, 100, 50, 3L to 2L).copy(history = UsageHistory(absorbed = script))
 }

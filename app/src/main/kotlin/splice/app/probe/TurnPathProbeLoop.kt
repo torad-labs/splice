@@ -46,13 +46,40 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 
+/** One head's loopback probe: a non-dispatching POST to its own port, answered or not within [timeoutMs]. */
+public class TurnPathProbe(private val port: Int, public val timeoutMs: Int = PROBE_TIMEOUT_MS) {
+    /** ANY HTTP status is life; only a hang/timeout is death.
+     *
+     *  disconnect() is in a `finally` because the FAILURE path is the long-lived one by
+     *  construction: a stalled head keeps failing every 30s, and disconnecting only on success
+     *  abandoned one connection per failed probe — ~2,880/day/head, leaked by the very component
+     *  that exists to protect uptime. */
+    public fun alive(): Boolean {
+        val conn = URI("http://127.0.0.1:$port/v1/messages").toURL().openConnection() as HttpURLConnection
+        return try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = timeoutMs
+            conn.readTimeout = timeoutMs
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty(LivenessProbe.PROBE_HEADER_NAME, LivenessProbe.PROBE_HEADER_VALUE)
+            conn.outputStream.use { it.write(PROBE_BODY) }
+            conn.responseCode // blocks up to readTimeout; a wedge never answers
+            true
+        } catch (ignored: java.io.IOException) {
+            false
+        } finally {
+            conn.disconnect()
+        }
+    }
+}
+
 public class TurnPathProbeLoop(
     private val key: String,
-    private val port: Int,
+    private val probe: TurnPathProbe,
     private val stalled: ConcurrentHashMap<String, Boolean>,
     private val log: LogSink,
     private val intervalMs: Long = PROBE_INTERVAL_MS,
-    private val timeoutMs: Int = PROBE_TIMEOUT_MS,
     // HD-19: the two runtime reaches this loop used to make directly. [dispatcher] is where the
     // blocking HttpURLConnection probe runs (was a hardcoded Dispatchers.IO); [ticker] is the tick
     // cadence (was a bare delay). Both default to the exact prior values.
@@ -100,7 +127,7 @@ public class TurnPathProbeLoop(
 
     /** One probe. Exposed for tests, which drive ticks directly instead of waiting on the loop. */
     public fun tick() {
-        val alive = probeOnce()
+        val alive = probe.alive()
         if (alive) {
             if (stalled[key] == true) log("[$key] turn path RECOVERED; resuming\n")
             consecutiveFailures = 0
@@ -111,35 +138,10 @@ public class TurnPathProbeLoop(
                 stalled[key] = true
                 log(
                     "[$key] TURN PATH STALLED: $consecutiveFailures consecutive loopback probes " +
-                        "got no response in ${timeoutMs}ms; /health now reports ok:false. " +
+                        "got no response in ${probe.timeoutMs}ms; /health now reports ok:false. " +
                         "This is the accepted-but-never-dispatched wedge signature.\n",
                 )
             }
-        }
-    }
-
-    /** ANY HTTP status is life; only a hang/timeout is death.
-     *
-     *  disconnect() is in a `finally` because the FAILURE path is the long-lived one by
-     *  construction: a stalled head keeps failing every 30s, and disconnecting only on success
-     *  abandoned one connection per failed probe — ~2,880/day/head, leaked by the very component
-     *  that exists to protect uptime. */
-    private fun probeOnce(): Boolean {
-        val conn = URI("http://127.0.0.1:$port/v1/messages").toURL().openConnection() as HttpURLConnection
-        return try {
-            conn.requestMethod = "POST"
-            conn.connectTimeout = timeoutMs
-            conn.readTimeout = timeoutMs
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.setRequestProperty(LivenessProbe.PROBE_HEADER_NAME, LivenessProbe.PROBE_HEADER_VALUE)
-            conn.outputStream.use { it.write(PROBE_BODY) }
-            conn.responseCode // blocks up to readTimeout; a wedge never answers
-            true
-        } catch (ignored: java.io.IOException) {
-            false
-        } finally {
-            conn.disconnect()
         }
     }
 }

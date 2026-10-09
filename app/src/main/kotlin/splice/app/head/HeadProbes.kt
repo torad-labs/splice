@@ -12,6 +12,7 @@ import splice.app.DaemonBoundary
 import splice.app.auth.AuthProbeLoop
 import splice.app.control.ManagedHead
 import splice.app.probe.LocalRuntimeWatch
+import splice.app.probe.TurnPathProbe
 import splice.app.probe.TurnPathProbeLoop
 import splice.core.auth.AuthProvider
 import splice.core.auth.RefreshableAuthProvider
@@ -65,7 +66,7 @@ internal class HeadProbes : HeadProbeReadings {
                     log("[$key][boot] failed to start: ${it.message}\n")
                 }
                 startAuthProbeIfRefreshable(key, managed.auth, probeScope, log)
-                TurnPathProbeLoop(key, managed.head.port, turnPathStalled, log).start(probeScope)
+                TurnPathProbeLoop(key, TurnPathProbe(managed.head.port), turnPathStalled, log).start(probeScope)
                 true
             }
             if (!admitted) return

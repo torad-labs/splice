@@ -106,24 +106,6 @@ class ConsoleActivityPublishTest {
         )
     }
 
-    /** Registers [session] under [name] on [pid] in the Claude Code registry of the home [paths] lives
-     *  under, where ConsoleWiring reads it. */
-    private fun register(
-        paths: StatePaths,
-        session: String,
-        name: String,
-        pid: Long,
-        socket: String? = null,
-        updatedAt: Long = System.currentTimeMillis(),
-    ) {
-        val dir = Files.createDirectories(checkNotNull(paths.rootDir.parent).resolve(".claude/sessions"))
-        val at = socket?.let { ""","messagingSocketPath":"$it"""" }.orEmpty()
-        Files.writeString(
-            dir.resolve("$session.json"),
-            """{"pid":$pid,"sessionId":"$session","name":"$name","updatedAt":$updatedAt$at}""",
-        )
-    }
-
     /** One session's availability as GET /api/sessions serves it. */
     private fun availability(port: Int, key: String, session: String): String {
         val ask = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/api/sessions"))
@@ -142,15 +124,15 @@ class ConsoleActivityPublishTest {
         val names = ConsoleWiring.nameHolders(paths)
         val codex = ConsoleEventPublisher(stores, WallClock { NOW }, names = names).forHead("codex")
         val live = ProcessHandle.current().pid()
-        register(paths, "s-gpt-a", "gpt", live)
-        register(paths, "s-twin-1", "twin", live)
-        register(paths, "s-twin-2", "twin", live)
+        ClaudeSessionFiles(paths).register("s-gpt-a", "gpt", live)
+        ClaudeSessionFiles(paths).register("s-twin-1", "twin", live)
+        ClaudeSessionFiles(paths).register("s-twin-2", "twin", live)
         codex.messageSent("s-lead", "gpt", "toolu_1")
         codex.messageSent("s-lead", "twin", "toolu_2")
         codex.messageSent("s-lead", "nobody", "toolu_3")
         codex.messageSent("s-lead", "uds:/run/peer.sock", "toolu_4")
-        register(paths, "s-gpt-a", "gpt", NO_PID)
-        register(paths, "s-gpt-b", "gpt", live)
+        ClaudeSessionFiles(paths).register("s-gpt-a", "gpt", NO_PID)
+        ClaudeSessionFiles(paths).register("s-gpt-b", "gpt", live)
         codex.messageSent("s-lead", "gpt", "toolu_5")
         assertEquals(
             listOf("s-gpt-a", null, null, null, "s-gpt-b"),
@@ -166,10 +148,10 @@ class ConsoleActivityPublishTest {
         val names = ConsoleWiring.nameHolders(paths)
         val codex = ConsoleEventPublisher(stores, WallClock { NOW }, names = names).forHead("codex")
         val live = ProcessHandle.current().pid()
-        register(paths, "s-one", "one", live, socket = "/run/cc-socks/1.sock")
-        register(paths, "s-two-a", "twin-a", live, socket = "/run/cc-socks/2.sock")
-        register(paths, "s-two-b", "twin-b", live, socket = "/run/cc-socks/2.sock")
-        register(paths, "s-gone", "gone", NO_PID, socket = "/run/cc-socks/4.sock")
+        ClaudeSessionFiles(paths).register("s-one", "one", live, socket = "/run/cc-socks/1.sock")
+        ClaudeSessionFiles(paths).register("s-two-a", "twin-a", live, socket = "/run/cc-socks/2.sock")
+        ClaudeSessionFiles(paths).register("s-two-b", "twin-b", live, socket = "/run/cc-socks/2.sock")
+        ClaudeSessionFiles(paths).register("s-gone", "gone", NO_PID, socket = "/run/cc-socks/4.sock")
         for ((n, socket) in listOf(1, 2, 3, 4).withIndex()) {
             codex.messageSent("s-lead", "uds:/run/cc-socks/$socket.sock", "toolu_$n")
         }
@@ -196,7 +178,7 @@ class ConsoleActivityPublishTest {
         val names = ConsoleWiring.nameHolders(paths)
         val codex = ConsoleEventPublisher(stores, WallClock { NOW }, names = names).forHead("codex")
         val live = ProcessHandle.current().pid()
-        register(paths, "s-lead", "lead", live, socket = "/run/cc-socks/1.sock")
+        ClaudeSessionFiles(paths).register("s-lead", "lead", live, socket = "/run/cc-socks/1.sock")
         codex.messageSent("s-builder", "uds:/run/cc-socks/1.sock", "toolu_1")
         assertEquals(1, await({ stores.edges.edges() }, 1).size)
 
@@ -235,7 +217,7 @@ class ConsoleActivityPublishTest {
     @Test
     fun `the control plane's publisher resolves a name against the daemon's own registry`() {
         val paths = StatePaths(baseOverride = tmp.resolve("home/.splice/state"))
-        register(paths, "s-gpt", "gpt", ProcessHandle.current().pid())
+        ClaudeSessionFiles(paths).register("s-gpt", "gpt", ProcessHandle.current().pid())
         val plane = ControlPlane(
             DaemonEnvironment(paths, ConfigService(paths), MgmtKey(paths), { }),
             { },
@@ -256,7 +238,7 @@ class ConsoleActivityPublishTest {
     fun `the control plane's sessions read a turn its heads served as hearing from that session`() {
         val paths = StatePaths(baseOverride = tmp.resolve("heard/.splice/state"))
         val old = System.currentTimeMillis() - 12 * 3_600_000L
-        register(paths, "s-busy", "builder", ProcessHandle.current().pid(), updatedAt = old)
+        ClaudeSessionFiles(paths).register("s-busy", "builder", ProcessHandle.current().pid(), updatedAt = old)
         val plane = ControlPlane(
             DaemonEnvironment(paths, ConfigService(paths), MgmtKey(paths), { }),
             { },
@@ -374,6 +356,25 @@ class ConsoleActivityPublishTest {
                 tmp.resolve("grok-cfg/projects"),
             ),
             factory.headProjectsTrees(),
+        )
+    }
+}
+
+/** The Claude Code session registry of the home [paths] lives under, where ConsoleWiring reads it. */
+private class ClaudeSessionFiles(private val paths: StatePaths) {
+    /** Registers [session] under [name] on [pid]. */
+    fun register(
+        session: String,
+        name: String,
+        pid: Long,
+        socket: String? = null,
+        updatedAt: Long = System.currentTimeMillis(),
+    ) {
+        val dir = Files.createDirectories(checkNotNull(paths.rootDir.parent).resolve(".claude/sessions"))
+        val at = socket?.let { ""","messagingSocketPath":"$it"""" }.orEmpty()
+        Files.writeString(
+            dir.resolve("$session.json"),
+            """{"pid":$pid,"sessionId":"$session","name":"$name","updatedAt":$updatedAt$at}""",
         )
     }
 }

@@ -44,7 +44,7 @@ class UpstreamClientDeadlineTest {
         totalTimeoutMs = totalTimeoutMs,
         maxRetries = maxRetries,
         client = HttpClient(engine),
-        backoff = { _, _ -> },
+        pacing = RetryPacing(backoff = { _, _ -> }),
         clock = clock,
     )
 
@@ -118,11 +118,8 @@ class UpstreamClientDeadlineTest {
             totalTimeoutMs = 1_000,
             maxRetries = 3,
             client = HttpClient(engine),
-            backoffBaseMs = 800,
-            backoffCapMs = 800,
-            backoffJitterPct = 0,
             clock = clock,
-            waiter = waiter,
+            pacing = RetryPacing(curve = BackoffCurve(baseMs = 800, capMs = 800, jitterPct = 0), waiter = waiter),
         )
 
     @Test

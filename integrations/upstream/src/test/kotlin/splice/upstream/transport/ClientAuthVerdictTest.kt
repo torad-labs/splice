@@ -36,7 +36,7 @@ class ClientAuthVerdictTest {
                 }
             },
         ),
-        backoff = { _, _ -> error("a client head's auth answer is never retried") },
+        pacing = RetryPacing(backoff = { _, _ -> error("a client head's auth answer is never retried") }),
     )
 
     private suspend fun forward(client: UpstreamClient, auth: RefreshableAuthProvider): String =

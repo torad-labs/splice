@@ -21,6 +21,7 @@ import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
 import splice.upstream.retry.MAX_RATE_LIMIT_COOLDOWN_MS
 import splice.upstream.transport.PostContext
+import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
 import splice.upstream.transport.posted
@@ -65,7 +66,7 @@ class BodyPlanLimitTransportTest {
         totalTimeoutMs = 900_000L,
         maxRetries = 4,
         client = HttpClient(engine),
-        backoff = { _, _ -> },
+        pacing = RetryPacing(backoff = { _, _ -> }),
         clock = clock,
     )
 

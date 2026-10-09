@@ -87,7 +87,7 @@ class UpstreamClientThreadRefusalTest {
         totalTimeoutMs = 5_000,
         maxRetries = 3,
         client = HttpClient(engine),
-        waiter = RecordingWaiter(),
+        pacing = RetryPacing(waiter = RecordingWaiter()),
     )
 
     private fun ctx(retries: MutableList<String>) =
@@ -160,7 +160,7 @@ class UpstreamClientThreadRefusalTest {
                     requestWriteTimeoutMs = REFUSAL_TOTAL_MS,
                     sockets = UpstreamSockets(factory = FirstReadRefused()),
                 ),
-                waiter = RecordingWaiter(),
+                pacing = RetryPacing(waiter = RecordingWaiter()),
             )
 
             val answer = runBlocking { client.posted(upstream.context(retries), "{}") { "ok" } }
@@ -215,7 +215,7 @@ class RefusedConnectionReuseMutationTest {
                     requestWriteTimeoutMs = REFUSAL_TOTAL_MS,
                     sockets = UpstreamSockets(factory = sockets),
                 ),
-                waiter = RecordingWaiter(),
+                pacing = RetryPacing(waiter = RecordingWaiter()),
                 clock = ElapsedClock { 0L },
             )
             val retries = CopyOnWriteArrayList<String>()
@@ -311,7 +311,7 @@ class OkioTimeoutsRefusedTest {
                 totalTimeoutMs = CAP_MS,
                 maxRetries = 1,
                 client = UpstreamTransport().defaultClient(CAP_MS),
-                waiter = RecordingWaiter(),
+                pacing = RetryPacing(waiter = RecordingWaiter()),
             )
 
             val ending = runCatching { runBlocking { client.posted(upstream.context(), "{}") { "ok" } } }
@@ -327,7 +327,7 @@ private fun refusalClient(clock: ElapsedClock = ProcessElapsedNow()) = UpstreamC
     totalTimeoutMs = REFUSAL_TOTAL_MS,
     maxRetries = 2,
     client = UpstreamTransport().defaultClient(REFUSAL_TOTAL_MS),
-    waiter = RecordingWaiter(),
+    pacing = RetryPacing(waiter = RecordingWaiter()),
     clock = clock,
 )
 

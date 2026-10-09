@@ -40,13 +40,9 @@ import splice.core.auth.Credentials
 import splice.core.usage.PlanLimit
 import splice.core.util.ERR_SNIPPET
 import splice.core.util.ElapsedClock
-import splice.upstream.DnsBackoff
-import splice.upstream.RetryBackoff
 import splice.upstream.RoundBody
 import splice.upstream.UpstreamHandler
-import splice.upstream.Waiter
 import splice.upstream.codemode.ProcessElapsedNow
-import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.retry.CredentialCooldowns
 import splice.upstream.retry.MAX_STREAM_REISSUES
 import splice.upstream.retry.ProviderHoldStore
@@ -66,28 +62,9 @@ public class UpstreamClient(
      *  exists because xAI 400d on a compressed body and broke grok live on 2026-07-18. */
     zstdRequestBody: Boolean = false,
     client: HttpClient = UpstreamTransport().defaultClient(totalTimeoutMs),
-    // HD-19: the seam both backoff curves below sleep through. Declared BEFORE them so their default
-    // values can close over it (a Kotlin default may reference an earlier parameter), which is what
-    // lets a test replace the WAIT without also having to re-author the CURVE it is measuring —
-    // wire a recording waiter and the 200/400/800ms schedule becomes an assertion on a list instead
-    // of 1.4 seconds of real sleeping.
-    waiter: Waiter = ProcessWaiter(),
-    // V4-110 retry-curve knobs: the generic bounded curve's base/cap/jitter. V4-100: the defaults
-    // READ UpstreamTransport's public curve constants rather than this file's own copies of them, so
-    // the ceiling this class budgets against and the schedule `backoff` actually sleeps cannot drift.
-    // Read from the head config by the factory; the defaults here are for direct construction (tests,
-    // embedders). Known errors keep their specific plans (DNS 1s/2s/4s, 429 Retry-After); this is the
-    // bounded floor everything unpredicted falls on.
-    private val backoffBaseMs: Long = defaultBackoffBaseMs,
-    private val backoffCapMs: Long = defaultBackoffCapMs,
-    private val backoffJitterPct: Int = defaultJitterPct,
-    private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(
-        waiter,
-        baseMs = backoffBaseMs,
-        capMs = backoffCapMs,
-        jitterPct = backoffJitterPct,
-    ),
-    private val dnsBackoff: DnsBackoff = UpstreamTransport().defaultDnsBackoff(waiter, jitterPct = backoffJitterPct),
+    /** How attempts are spaced: the curve this client budgets against and the two sleeps that follow it
+     *  (HD-19, V4-110; [RetryPacing] has the reasoning). */
+    private val pacing: RetryPacing = RetryPacing(),
     // Default is monotonic — a wall-clock jump must not abort a healthy retry loop (forward) or
     // extend its deadline (backward). Same base as TurnWatchdog/InflightGate: two authorities
     // enforce cfg.upstreamTimeoutMs and MUST NOT split-brain across clock bases (review 2026-07-22).
@@ -400,11 +377,11 @@ public class UpstreamClient(
             )
             retryRules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry)
         }
-        val plannedDelayMs = maxOf(plan.minDelayMs, retryBackoffCeilingMs(state.attempt))
+        val plannedDelayMs = pacing.ordinaryDelayMs(state.attempt, plan.minDelayMs)
         if (!backoffFits(ctx, t0, plannedDelayMs)) {
             retryRules.giveUp(state.lastErr, state.cooldown, state.attempt, ctx.onRetry)
         }
-        ctx.timedBackoff { backoff(state.attempt, plan.minDelayMs) }
+        ctx.timedBackoff { pacing.pause(state.attempt, plan.minDelayMs) }
         state.pendingRetry = RetryKind.ORDINARY
         state.attempt += 1
         return LoopStep.Continue
@@ -412,13 +389,10 @@ public class UpstreamClient(
 
     /** Both transport paths budget the curve before sleeping and preserve the original failure. */
     private suspend fun applyTransportBackoff(e: Throwable, ctx: PostContext, attempt: Int, t0: Long) {
-        val plannedDelayMs = if (transportFailures.isDnsFailureTransport(e)) {
-            retryBackoffCeilingMs(attempt, DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS)
-        } else {
-            retryBackoffCeilingMs(attempt)
-        }
+        val dns = transportFailures.isDnsFailureTransport(e)
+        val plannedDelayMs = pacing.transportDelayMs(attempt, dns)
         if (!backoffFits(ctx, t0, plannedDelayMs)) throw e
-        ctx.timedBackoff { transportFailures.backoffTransportError(e, attempt, dnsBackoff, backoff) }
+        ctx.timedBackoff { pacing.pauseAfterTransportError(attempt, dns) }
     }
 
     private fun backoffFits(ctx: PostContext, t0: Long, plannedDelayMs: Long): Boolean {
@@ -442,19 +416,6 @@ public class UpstreamClient(
     private fun remainingBudgetMs(ctx: PostContext, t0: Long): Long {
         return ctx.remainingTurnWait?.invoke()?.coerceAtLeast(0L)
             ?: (totalTimeoutMs - (clock() - t0)).coerceAtLeast(0L)
-    }
-
-    /** Conservative ceiling of the shipped generic or DNS jittered curve. */
-    private fun retryBackoffCeilingMs(
-        attempt: Int,
-        baseMs: Long = backoffBaseMs,
-        maxMs: Long = backoffCapMs,
-    ): Long {
-        var currentMs = baseMs
-        repeat(attempt.coerceAtLeast(0)) {
-            currentMs = if (currentMs > maxMs / 2) maxMs else currentMs * 2
-        }
-        return currentMs * (100 + backoffJitterPct) / 100
     }
 
     /** RC-4 companion move (function-budget): the retry-plan tail of a failed attempt. */

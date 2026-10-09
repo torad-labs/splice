@@ -35,8 +35,7 @@ internal class TearAwareEvents(
         frameEmittedThisRound: ClientFrameEmitted,
         postedAtMs: Long? = null,
     ): Flow<JsonObject> {
-        val events = SseReader().sseJsonEvents(
-            body,
+        val events = SseReader(
             onBytes = { chunkBytes ->
                 // Bytes TOUCH the slot (liveness) and stamp FIRST_BYTE; they do not pick the
                 // watchdog tier. A Responses handshake (response.created) is bytes with no output,
@@ -63,7 +62,7 @@ internal class TearAwareEvents(
                 drive.trace?.responseText(text)
                 captureWants || drive.trace != null
             },
-        )
+        ).sseJsonEvents(body)
         return UpstreamEventTiming(drive.perf, postedAtMs).observe(events).onEach { event ->
             UpstreamProgress.observe(event, drive.watchdog)
             capture.sawEvent = true

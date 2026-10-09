@@ -57,9 +57,12 @@ class UpstreamWriteTimingTest {
         check(config is OkHttpConfig)
         config.addNetworkInterceptor(ScriptedWireDelay(now))
         try {
-            val upstream = UpstreamClient(10_000, maxRetries = 2, client = client, backoff = { _, _ ->
-                now.addAndGet(500)
-            })
+            val upstream = UpstreamClient(
+                10_000,
+                maxRetries = 2,
+                client = client,
+                pacing = RetryPacing(backoff = { _, _ -> now.addAndGet(500) }),
+            )
             val context = PostContext(
                 "http://127.0.0.1:${server.address.port}/",
                 TimingAuth(),

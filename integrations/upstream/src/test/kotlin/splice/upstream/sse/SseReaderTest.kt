@@ -40,7 +40,7 @@ class SseReaderTest {
                 }
                 channel.close(null)
             }
-            texts = SseReader().sseJsonEvents(channel, onBytes = { touches++ }, onMalformed = { malformed.add(it) })
+            texts = SseReader(onBytes = { touches++ }, onMalformed = { malformed.add(it) }).sseJsonEvents(channel)
                 .toList()
                 .map { it["v"]?.jsonPrimitive?.content ?: it.toString() }
         }
@@ -140,10 +140,10 @@ class SseReaderTest {
             channel.flush()
             channel.close(null)
         }
-        SseReader().sseJsonEvents(channel, onRawText = {
+        SseReader(onRawText = {
             captured.append(it)
             true
-        }).toList()
+        }).sseJsonEvents(channel).toList()
         assertEquals("<html><body>Unauthorized</body></html>", captured.toString())
     }
 
@@ -158,10 +158,10 @@ class SseReaderTest {
             }
             channel.close(null)
         }
-        SseReader().sseJsonEvents(channel, onRawText = {
+        SseReader(onRawText = {
             calls++
             false
-        }).toList()
+        }).sseJsonEvents(channel).toList()
         assertEquals(1, calls)
     }
 
@@ -169,7 +169,7 @@ class SseReaderTest {
     fun `unterminated line is rejected at the configured safety limit`() = runTest {
         val channel = ByteReadChannel("x".repeat(64))
         assertThrows<SseFrameTooLargeException> {
-            SseReader().sseJsonEvents(channel, maxLineChars = 16).toList()
+            SseReader(maxLineChars = 16).sseJsonEvents(channel).toList()
         }
     }
 
@@ -177,7 +177,7 @@ class SseReaderTest {
     fun `multi-line event is rejected at the configured safety limit`() = runTest {
         val channel = ByteReadChannel("data: 12345678\ndata: 90\n\n")
         assertThrows<SseFrameTooLargeException> {
-            SseReader().sseJsonEvents(channel, maxLineChars = 64, maxEventChars = 8).toList()
+            SseReader(maxLineChars = 64, maxEventChars = 8).sseJsonEvents(channel).toList()
         }
     }
 

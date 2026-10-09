@@ -26,23 +26,23 @@ import splice.upstream.failure.SseFrameTooLargeException
 // leading-ws trim in processLine absorbs the space when present.
 private const val DATA_PREFIX = "data:"
 
-/** The SSE line/event reader. Stateless — every buffer it needs is per-[sseJsonEvents] local state,
- *  so callers construct one wherever they used to call the top-level function. */
-public class SseReader {
+/** The SSE line/event reader for ONE stream. The observers and limits are what differs per stream, so they
+ *  are the reader's own; every buffer it needs is per-[sseJsonEvents] local state, so a reader holds no
+ *  stream state and callers construct one wherever they read a stream. */
+public class SseReader(
+    private val onBytes: BytesRead = BytesRead {},
+    private val onMalformed: MalformedLine = MalformedLine {},
+    private val onRawText: RawTextObserver? = null,
+    private val maxLineChars: Int = MAX_SSE_LINE_CHARS,
+    private val maxEventChars: Int = MAX_SSE_EVENT_CHARS,
+) {
 
     // the chunk/line/skip walk is the literal port; malformed frames must never crash the stream.
     // onRawText (opt-in, null for every hot-path caller) exposes the FULL decoded body text as it
     // arrives — not just `data:`-prefixed lines — so a zero-event terminal can classify a non-SSE
     // dead-head body (HTML/JSON login page). Null-callback matches the `perf: TurnPerf? = null` idiom:
     // when null the added cost is one null check per chunk, preserving the no-per-chunk-alloc invariant.
-    public fun sseJsonEvents(
-        channel: ByteReadChannel,
-        onBytes: BytesRead = BytesRead {},
-        onMalformed: MalformedLine = MalformedLine {},
-        onRawText: RawTextObserver? = null,
-        maxLineChars: Int = MAX_SSE_LINE_CHARS,
-        maxEventChars: Int = MAX_SSE_EVENT_CHARS,
-    ): Flow<JsonObject> = flow {
+    public fun sseJsonEvents(channel: ByteReadChannel): Flow<JsonObject> = flow {
         val scratch = DecodeScratch()
         val lineBuffer = StringBuilder(SSE_READ_BUFFER_BYTES)
         val assembler = SseEventAssembler(onMalformed, maxEventChars)

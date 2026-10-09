@@ -249,7 +249,7 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
             totalTimeoutMs = totalMs,
             maxRetries = attempts,
             client = UpstreamTransport().client(totalMs, LogSink {}, AtomicBoolean(true), WRITE_TIMEOUT_MS, sockets),
-            waiter = RecordingWaiter(),
+            pacing = RetryPacing(waiter = RecordingWaiter()),
         )
 
     private fun context(upstream: Upstream, retries: MutableList<String> = mutableListOf(), tls: Boolean = false) =

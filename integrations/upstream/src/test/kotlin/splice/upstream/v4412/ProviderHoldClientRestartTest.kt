@@ -25,6 +25,7 @@ import splice.upstream.retry.FileProviderHoldStore
 import splice.upstream.retry.ProviderHold
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.transport.PostContext
+import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
 import splice.upstream.transport.posted
@@ -50,7 +51,7 @@ class ProviderHoldClientRestartTest {
         totalTimeoutMs = 900_000L,
         maxRetries = 4,
         client = HttpClient(engine),
-        backoff = { _, _ -> },
+        pacing = RetryPacing(backoff = { _, _ -> }),
         clock = clock,
         holdStore = FileProviderHoldStore(dir.resolve("hold.json"), LogSink { }),
     )

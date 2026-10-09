@@ -68,14 +68,12 @@ class UpstreamClientTransportTest {
     private fun clientOver(
         engine: MockEngine,
         // no real sleep in tests by default
-        backoff: suspend (Int, Long) -> Unit = { _, _ -> },
-        dnsBackoff: suspend (Int) -> Unit = { _ -> },
+        pacing: RetryPacing = RetryPacing(backoff = { _, _ -> }, dnsBackoff = { _ -> }),
     ) = UpstreamClient(
         totalTimeoutMs = 5_000,
         maxRetries = 3,
         client = HttpClient(engine),
-        backoff = backoff,
-        dnsBackoff = dnsBackoff,
+        pacing = pacing,
     )
 
     @Test
@@ -136,8 +134,10 @@ class UpstreamClientTransportTest {
         val dnsAttempts = mutableListOf<Int>()
         val out = clientOver(
             engine,
-            backoff = { a, _ -> genericAttempts.add(a) },
-            dnsBackoff = { a -> dnsAttempts.add(a) },
+            pacing = RetryPacing(
+                backoff = { a, _ -> genericAttempts.add(a) },
+                dnsBackoff = { a -> dnsAttempts.add(a) },
+            ),
         ).posted(
             ctx(),
             "{}",
@@ -158,8 +158,10 @@ class UpstreamClientTransportTest {
         val dnsAttempts = mutableListOf<Int>()
         val out = clientOver(
             engine,
-            backoff = { a, _ -> genericAttempts.add(a) },
-            dnsBackoff = { a -> dnsAttempts.add(a) },
+            pacing = RetryPacing(
+                backoff = { a, _ -> genericAttempts.add(a) },
+                dnsBackoff = { a -> dnsAttempts.add(a) },
+            ),
         ).posted(
             ctx(),
             "{}",
@@ -180,8 +182,10 @@ class UpstreamClientTransportTest {
         val dnsAttempts = mutableListOf<Int>()
         val out = clientOver(
             engine,
-            backoff = { a, _ -> genericAttempts.add(a) },
-            dnsBackoff = { a -> dnsAttempts.add(a) },
+            pacing = RetryPacing(
+                backoff = { a, _ -> genericAttempts.add(a) },
+                dnsBackoff = { a -> dnsAttempts.add(a) },
+            ),
         ).posted(
             ctx(),
             "{}",
@@ -325,7 +329,7 @@ class UpstreamClientTransportTest {
             totalTimeoutMs = 1_000,
             maxRetries = 3,
             client = HttpClient(engine),
-            backoff = { _, _ -> backoffCalls.incrementAndGet() },
+            pacing = RetryPacing(backoff = { _, _ -> backoffCalls.incrementAndGet() }),
             clock = { now },
         )
         assertThrows<ConnectException> {

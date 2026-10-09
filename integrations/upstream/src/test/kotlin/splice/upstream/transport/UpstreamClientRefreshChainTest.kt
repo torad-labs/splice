@@ -78,7 +78,7 @@ class UpstreamClientRefreshChainTest {
         totalTimeoutMs = 5_000,
         maxRetries = 1,
         client = HttpClient(engine),
-        backoff = { _, _ -> error("the refresh path must never reach the backoff curve") },
+        pacing = RetryPacing(backoff = { _, _ -> error("the refresh path must never reach the backoff curve") }),
     )
 
     private suspend fun postOnce(client: UpstreamClient, auth: RefreshableAuthProvider, perf: TurnPerf): String =

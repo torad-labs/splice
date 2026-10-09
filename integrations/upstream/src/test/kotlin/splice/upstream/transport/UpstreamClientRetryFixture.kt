@@ -42,7 +42,7 @@ internal fun clientOver(
     totalTimeoutMs = 5_000,
     maxRetries = 3,
     client = HttpClient(engine),
-    backoff = { _, minDelayMs -> capture.minDelays.add(minDelayMs) },
+    pacing = RetryPacing(backoff = { _, minDelayMs -> capture.minDelays.add(minDelayMs) }),
     clock = clock,
 )
 

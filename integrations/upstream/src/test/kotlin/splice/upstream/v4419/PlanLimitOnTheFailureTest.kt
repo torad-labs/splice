@@ -23,6 +23,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.upstream.transport.PostContext
+import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
 import splice.upstream.transport.posted
@@ -63,7 +64,7 @@ class PlanLimitOnTheFailureTest {
         totalTimeoutMs = 900_000L,
         maxRetries = 4,
         client = HttpClient(engine),
-        backoff = { _, _ -> },
+        pacing = RetryPacing(backoff = { _, _ -> }),
         clock = ElapsedClock { 0L },
     )
 

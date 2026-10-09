@@ -325,7 +325,7 @@ class UpstreamClientBackoffTest {
         totalTimeoutMs = 60_000,
         maxRetries = 3,
         client = HttpClient(engine),
-        waiter = waiter,
+        pacing = RetryPacing(waiter = waiter),
     )
 
     private enum class FailureKind(val ceilingMs: Long, val noticeLabel: String = "transport ") {
@@ -377,11 +377,13 @@ class UpstreamClientBackoffTest {
             totalTimeoutMs = totalTimeoutMs,
             maxRetries = 3,
             client = HttpClient(engine),
-            waiter = Waiter { ms ->
-                waits.add(ms)
-                elapsed += ms
-                afterWait()
-            },
+            pacing = RetryPacing(
+                waiter = Waiter { ms ->
+                    waits.add(ms)
+                    elapsed += ms
+                    afterWait()
+                },
+            ),
             clock = ElapsedClock { elapsed },
         )
         private val context = PostContext(

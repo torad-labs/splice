@@ -23,6 +23,8 @@ package splice.upstream.transport
 import splice.core.util.Cancellables
 import splice.upstream.DnsBackoff
 import splice.upstream.RetryBackoff
+import splice.upstream.Waiter
+import splice.upstream.codemode.ProcessWaiter
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -115,22 +117,6 @@ internal class TransportFailures {
         t is java.nio.channels.UnresolvedAddressException || t is java.net.UnknownHostException
     }
 
-    /** Transport-error backoff (G14): DNS-class failures run the dedicated 1s/2s/4s schedule
-     *  instead of the generic curve. The caller times this (PostContext.timedBackoff) so this
-     *  file never names TurnPerf. */
-    internal suspend fun backoffTransportError(
-        error: Throwable,
-        attempt: Int,
-        dnsBackoff: DnsBackoff,
-        backoff: RetryBackoff,
-    ) {
-        if (isDnsFailureTransport(error)) {
-            dnsBackoff(attempt)
-        } else {
-            backoff(attempt, 0L)
-        }
-    }
-
     /** A transport error thrown BEFORE stream handoff retries; once handed off, past the
      *  deadline, or on the last attempt, rethrow. [deadlineHit] folds stream-handoff and the
      *  loop's own deadlineExceeded — this file does not own the clock, and that fold is what
@@ -177,3 +163,57 @@ internal class TransportFailures {
 }
 
 internal const val MAX_CAUSE_DEPTH = 8
+// How a client paces its retries (default-parameter width flip, 2026-10-09): the curve its deadline check
+// budgets against and the two sleeps that follow it. It sits with the transport failures it paces, and
+// it answers the two questions the client asks: how long may this wait run, and sleep it.
+/** The generic retry curve: a doubling delay from [baseMs] capped at [capMs], widened by [jitterPct]. The defaults READ
+ *  UpstreamTransport's public curve constants, so the ceiling a client budgets against and the schedule
+ *  [UpstreamTransport.defaultBackoff] sleeps cannot drift. */
+public data class BackoffCurve(
+    val baseMs: Long = defaultBackoffBaseMs,
+    val capMs: Long = defaultBackoffCapMs,
+    val jitterPct: Int = defaultJitterPct,
+) {
+    /** Conservative ceiling of the shipped generic or DNS jittered curve after [attempt] doublings. */
+    internal fun ceilingMs(attempt: Int, fromMs: Long = baseMs, toMs: Long = capMs): Long {
+        var currentMs = fromMs
+        repeat(attempt.coerceAtLeast(0)) {
+            currentMs = if (currentMs > toMs / 2) toMs else currentMs * 2
+        }
+        return currentMs * (100 + jitterPct) / 100
+    }
+}
+
+/** How one client sleeps between attempts: the [curve] its deadline check budgets against, and the two sleeps that
+ *  follow it. HD-19: both sleeps go through [waiter], so a test replaces the WAIT without re-authoring the CURVE it
+ *  is measuring, and a recording waiter turns the 200/400/800ms schedule into an assertion on a list. Known errors
+ *  keep their specific plans (DNS 1s/2s/4s, 429 Retry-After); this is the bounded floor everything
+ *  unpredicted falls on. */
+public class RetryPacing(
+    private val curve: BackoffCurve = BackoffCurve(),
+    waiter: Waiter = ProcessWaiter(),
+    private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(
+        waiter,
+        baseMs = curve.baseMs,
+        capMs = curve.capMs,
+        jitterPct = curve.jitterPct,
+    ),
+    private val dnsBackoff: DnsBackoff = UpstreamTransport().defaultDnsBackoff(waiter, jitterPct = curve.jitterPct),
+) {
+    /** The longest an ordinary retry can sleep: the curve ceiling, or the server minimum when that is larger. */
+    internal fun ordinaryDelayMs(attempt: Int, serverMinMs: Long): Long = maxOf(serverMinMs, curve.ceilingMs(attempt))
+
+    /** The longest a transport failure can sleep: DNS failures follow their own 1s/2s/4s plan, the rest the curve. */
+    internal fun transportDelayMs(attempt: Int, dns: Boolean): Long =
+        if (dns) curve.ceilingMs(attempt, DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS) else curve.ceilingMs(attempt)
+
+    /** Sleeps the ordinary retry delay: the curve for [attempt], or the server's own minimum when it asks for more. */
+    internal suspend fun pause(attempt: Int, serverMinMs: Long) {
+        backoff(attempt, serverMinMs)
+    }
+
+    /** Sleeps after a transport failure (G14): DNS-class failures run the dedicated 1s/2s/4s schedule, the rest the curve. */
+    internal suspend fun pauseAfterTransportError(attempt: Int, dns: Boolean) {
+        if (dns) dnsBackoff(attempt) else backoff(attempt, 0L)
+    }
+}

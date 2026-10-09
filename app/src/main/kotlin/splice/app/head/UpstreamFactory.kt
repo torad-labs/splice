@@ -8,6 +8,8 @@ import splice.core.config.Knob
 import splice.core.config.SpliceConfig
 import splice.core.util.LogSink
 import splice.upstream.retry.ProviderHoldStore
+import splice.upstream.transport.BackoffCurve
+import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamTransport
 
@@ -37,9 +39,13 @@ internal class UpstreamFactory {
         // V4-110 retry curve: read per head from the merged+normalized map (seeded with the Knob
         // defaults, so absent config keeps the generic 200ms/10s/±10% curve). The map is always
         // seeded, so `as Long` is safe.
-        backoffBaseMs = cfg.asMap()[Knob.RETRY_BACKOFF_BASE_MS.key] as Long,
-        backoffCapMs = cfg.asMap()[Knob.RETRY_BACKOFF_CAP_MS.key] as Long,
-        backoffJitterPct = (cfg.asMap()[Knob.RETRY_BACKOFF_JITTER_PCT.key] as Long).toInt(),
+        pacing = RetryPacing(
+            BackoffCurve(
+                baseMs = cfg.asMap()[Knob.RETRY_BACKOFF_BASE_MS.key] as Long,
+                capMs = cfg.asMap()[Knob.RETRY_BACKOFF_CAP_MS.key] as Long,
+                jitterPct = (cfg.asMap()[Knob.RETRY_BACKOFF_JITTER_PCT.key] as Long).toInt(),
+            ),
+        ),
         holdStore = providerHold,
     )
 }

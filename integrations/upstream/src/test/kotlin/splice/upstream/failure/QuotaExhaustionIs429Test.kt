@@ -26,6 +26,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.wire.HttpStatus
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.transport.PostContext
+import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
 import splice.upstream.transport.posted
@@ -66,8 +67,7 @@ class QuotaExhaustionIs429Test {
         totalTimeoutMs = 5_000,
         maxRetries = 1,
         client = HttpClient(engine),
-        backoff = { _, _ -> },
-        dnsBackoff = { _ -> },
+        pacing = RetryPacing(backoff = { _, _ -> }, dnsBackoff = { _ -> }),
     )
 
     private fun engineReturning(status: Int) = MockEngine {

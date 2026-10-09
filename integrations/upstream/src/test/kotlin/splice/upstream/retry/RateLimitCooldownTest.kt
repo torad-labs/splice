@@ -27,6 +27,7 @@ import splice.upstream.Waiter
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.RecordingWaiter
 import splice.upstream.transport.RemainingTurnWait
+import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
 import splice.upstream.transport.UpstreamPost
@@ -504,7 +505,7 @@ class RateLimitCooldownBudgetTest {
             totalTimeoutMs = 60_000L,
             maxRetries = 3,
             client = HttpClient(engine),
-            waiter = waiter,
+            pacing = RetryPacing(waiter = waiter),
             clock = ElapsedClock { 0L },
         )
         val context = PostContext(
@@ -539,7 +540,7 @@ class RateLimitCooldownBudgetTest {
             totalTimeoutMs = 60_000L,
             maxRetries = 3,
             client = HttpClient(engine),
-            waiter = waiter,
+            pacing = RetryPacing(waiter = waiter),
             clock = ElapsedClock { 0L },
         )
         val context = PostContext(
@@ -578,7 +579,7 @@ class RateLimitCooldownBudgetTest {
             totalTimeoutMs = 60_000L,
             maxRetries = 3,
             client = HttpClient(engine),
-            waiter = waiter,
+            pacing = RetryPacing(waiter = waiter),
             clock = ElapsedClock { 0L },
         )
         val context = PostContext(
@@ -644,7 +645,7 @@ class RateLimitCooldownBudgetTest {
                 totalTimeoutMs = 60_000L,
                 maxRetries = 3,
                 client = HttpClient(engine),
-                waiter = waiter,
+                pacing = RetryPacing(waiter = waiter),
                 clock = ElapsedClock { 0L },
             )
             val context = PostContext(
@@ -787,7 +788,7 @@ class RateLimitCooldownOuterTurnTest {
             totalTimeoutMs = 60_000L,
             maxRetries = 3,
             client = HttpClient(engine),
-            backoff = { _, _ -> remaining = 0L },
+            pacing = RetryPacing(backoff = { _, _ -> remaining = 0L }),
             clock = ElapsedClock { 0L },
         )
         val context = PostContext(

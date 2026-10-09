@@ -112,7 +112,7 @@ class NativeRateLimitHeadersTest {
             totalTimeoutMs = 30_000L,
             maxRetries = 4,
             client = HttpClient(engine),
-            backoff = { _, _ -> error("native retry belongs to the client") },
+            pacing = RetryPacing(backoff = { _, _ -> error("native retry belongs to the client") }),
             clock = ElapsedClock { 0L },
         )
         fun context() = PostContext(
@@ -263,7 +263,7 @@ class UpstreamClientRateLimitTest {
             totalTimeoutMs = 90_000L,
             maxRetries = 2,
             client = HttpClient(engine),
-            backoff = { _, delay -> elapsed += delay },
+            pacing = RetryPacing(backoff = { _, delay -> elapsed += delay }),
             clock = ElapsedClock { elapsed },
         )
         assertEquals("ok", postOnce(client))
@@ -284,7 +284,7 @@ class UpstreamClientRateLimitTest {
             totalTimeoutMs = 90_000L,
             maxRetries = 2,
             client = HttpClient(engine),
-            backoff = { _, delay -> elapsed += delay },
+            pacing = RetryPacing(backoff = { _, delay -> elapsed += delay }),
             clock = ElapsedClock { elapsed },
         )
         val observer = assertThrows<UpstreamFailed> { postOnce(client) }
@@ -309,7 +309,7 @@ class UpstreamClientRateLimitTest {
             totalTimeoutMs = 900_000L,
             maxRetries = 3,
             client = HttpClient(engine),
-            backoff = { _, minDelayMs -> capture.minDelays.add(minDelayMs) },
+            pacing = RetryPacing(backoff = { _, minDelayMs -> capture.minDelays.add(minDelayMs) }),
             clock = ElapsedClock { 0L },
         )
         assertThrows<UpstreamFailed> { postOnce(client) }
@@ -334,7 +334,7 @@ class UpstreamClientRateLimitTest {
             totalTimeoutMs = 5_000L,
             maxRetries = 3,
             client = HttpClient(engine),
-            waiter = waiter,
+            pacing = RetryPacing(waiter = waiter),
             clock = ElapsedClock { 0L },
         )
         fun context() = PostContext(

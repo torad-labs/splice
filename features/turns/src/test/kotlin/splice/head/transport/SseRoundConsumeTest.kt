@@ -82,6 +82,7 @@ import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.sse.WireSink
+import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.StreamTornBeforeClient
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamResponse
@@ -364,7 +365,7 @@ class SseRoundConsumeTest {
             totalTimeoutMs = 30_000,
             maxRetries = 1,
             client = client,
-            backoff = RetryBackoff { _, _ -> now += 200 },
+            pacing = RetryPacing(backoff = RetryBackoff { _, _ -> now += 200 }),
             clock = ElapsedClock { now },
         )
         val post = SseRoundPost(

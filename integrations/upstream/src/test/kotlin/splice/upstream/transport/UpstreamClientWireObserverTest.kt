@@ -35,7 +35,7 @@ class UpstreamClientWireObserverTest {
         totalTimeoutMs = 5_000,
         maxRetries = maxRetries,
         client = HttpClient(engine),
-        backoff = { _, _ -> },
+        pacing = RetryPacing(backoff = { _, _ -> }),
     )
 
     private fun context(wire: WireObserver, amend: BodyAmendment = BodyAmendment { _, _, _ -> null }) = PostContext(

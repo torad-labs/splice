@@ -35,7 +35,7 @@ class UpstreamClientAmendTest {
         totalTimeoutMs = 5_000,
         maxRetries = maxRetries,
         client = HttpClient(engine),
-        backoff = { _, _ -> },
+        pacing = RetryPacing(backoff = { _, _ -> }),
     )
 
     private fun bodyOf(request: HttpRequestData): String =

@@ -20,10 +20,11 @@ import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.state.CodeModeTurnIdentity
+import splice.upstream.RoundResult
 import splice.upstream.TurnEnd
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
-import splice.upstream.transport.UpstreamFailed
+import splice.upstream.transport.UpstreamEnding
 import java.io.IOException
 
 internal class CodeModeLiveRound(
@@ -76,6 +77,9 @@ internal class CodeModeLiveRound(
     @Volatile var localFailure: TurnOutcome.Failure? = null
         private set
 
+    /** The ending the upstream gave the source post, when it gave no outcome. Set once, before the reader completes. */
+    @Volatile private var ending: UpstreamEnding? = null
+
     /** The round lost the record and closed its cell without a transport tear: its terminal did not certify the
      *  admitted source, or its reader failed on splice's own non-IO fault. Only the step that was advancing that cell
      *  reads it; a later step continues on the client's history. */
@@ -96,12 +100,7 @@ internal class CodeModeLiveRound(
         finished = scope.async(start = CoroutineStart.UNDISPATCHED) {
             switching.ownedBy(this)
             try {
-                val outcome = post.into(body, switching)
-                upstreamEnded = true
-                val ended = finish(outcome)
-                beforeSettle?.run()
-                billing.settle(readerEnd = false, clientCut = cut.client)
-                ended
+                settleRead(post.into(body, switching))
             } catch (error: CancellationException) {
                 cancelled(error)
                 throw error
@@ -113,8 +112,6 @@ internal class CodeModeLiveRound(
                 failed(error)
             } catch (error: IllegalArgumentException) {
                 failed(error)
-            } catch (error: UpstreamFailed) {
-                refused(error)
             } finally {
                 if (!ready.isCompleted) ready.complete(null)
             }
@@ -123,12 +120,24 @@ internal class CodeModeLiveRound(
         }
     }
 
+    /** What the reader's post gave: an outcome the source finishes on, or an upstream ending the turn ends on. */
+    private suspend fun settleRead(posted: RoundResult): TurnOutcome = when (posted) {
+        is RoundResult.Ended -> ended(posted.ending)
+        is RoundResult.Outcome -> {
+            upstreamEnded = true
+            val result = finish(posted.outcome)
+            beforeSettle?.run()
+            billing.settle(readerEnd = false, clientCut = cut.client)
+            result
+        }
+    }
+
     /** The reader ended on a throwable none of [start]'s catches names (Oct 2: a ConcurrentModificationException
      *  out of the record's save). Its source had no terminal, so the cell reading it waited forever and nothing
      *  was logged. The source fails, the record is lost as [failed] loses it, and the throwable's class is named. */
     private fun died(cause: Throwable?) {
         val unnamed = cause?.takeUnless {
-            it is CancellationException || it is CodeModePersistenceException || it is UpstreamFailed
+            it is CancellationException || it is CodeModePersistenceException
         } ?: return
         upstreamEnded = true
         unexpectedDeath = true
@@ -208,19 +217,21 @@ internal class CodeModeLiveRound(
         )
     }
 
-    /** The upstream refused the source post and the retry loop gave up on it. That refusal is the client turn's
-     *  ending, classified where a plain turn's is, so it leaves through [outcome] as itself. Oct 4: it reached
-     *  [died] as an unnamed throwable, ended the round as an internal fault, and Claude Code retried a refused
-     *  request as an overload for 36 minutes. */
-    private fun refused(error: UpstreamFailed): TurnOutcome.Failure = synchronized(lifecycle) {
+    /** The upstream ended the source post without an outcome (the retry loop gave up on it, it had no credentials, it
+     *  tore, or sent a frame over the limit). That ending is the client turn's ending, classified where a plain turn's
+     *  is, so [outcome] hands it to whichever turn reads this round. Oct 4: a refusal reached [died] as an unnamed
+     *  throwable, ended the round as an internal fault, and Claude Code retried a refused request as an overload for
+     *  36 minutes. */
+    private fun ended(ending: UpstreamEnding): TurnOutcome.Failure = synchronized(lifecycle) {
         upstreamEnded = true
         source.fail(SOURCE_REFUSED)
-        if (stoppedByHead) throw CancellationException(HEAD_STOPPED, error)
+        if (stoppedByHead) throw CancellationException(HEAD_STOPPED)
         localFailure?.let { return@synchronized it }
         // A record's next client step reads the source's outcome, as a torn source's does.
         sourceInterrupted = record != null
         record?.takeUnless(CodeModeRecord::terminal)?.let { registry.lose(it, SOURCE_REFUSED) }
-        throw error
+        this.ending = ending
+        CodeModeEndings.placeholder()
     }
 
     fun owns(turn: CodexCodeModeBridge.Turn): Boolean = synchronized(lifecycle) {
@@ -241,8 +252,10 @@ internal class CodeModeLiveRound(
         val awaited = Cancellables.runCatchingBestEffort { reader.await() }
         // Deferred completion precedes died()'s registry write. Never continue before that cleanup settles.
         settled.await()
+        // The reading turn, not the reader, is the one the ending ends: its slot is in this call's context.
+        ending?.let { CodeModeEndings.settle(it) }
         val failure = awaited.exceptionOrNull() ?: return awaited.getOrThrow()
-        if (failure is CodeModePersistenceException || failure is UpstreamFailed) throw failure
+        if (failure is CodeModePersistenceException) throw failure
         return TurnOutcome.Failure(SOURCE_FAILED, cause = FailureCause.INTERNAL, phase = FailurePhase.MID_OUTPUT)
     }
 
@@ -257,7 +270,6 @@ internal class CodeModeLiveRound(
     }
 
     /** A cut can be consumed by one client step only, even after the record's execution lease was removed. */
-    fun takeCut(): Boolean = cut.take()
 
     /** A cancelled first client step owns its cut, unless head replacement already ended this source. */
     fun stopClientStep() {

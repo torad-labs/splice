@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.usage.PlanLimit
@@ -27,6 +26,7 @@ import splice.upstream.transport.PostContext
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
+import splice.upstream.transport.assertEnds
 import splice.upstream.transport.fakeAuth
 import splice.upstream.transport.posted
 import java.util.concurrent.atomic.AtomicBoolean
@@ -74,7 +74,7 @@ class UpstreamClientPlanLimitTest {
         val notices = mutableListOf<String>()
         val client = client(engine)
 
-        val failure = assertThrows<UpstreamFailed> { client.posted(ctx(forwarded, notices), "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> { client.posted(ctx(forwarded, notices), "{}") { "unreachable" } }
 
         assertEquals(1, calls.get(), "a spent plan window is not re-sent before the reset it named")
         assertEquals(429, failure.status)
@@ -102,7 +102,7 @@ class UpstreamClientPlanLimitTest {
             }
             val client = client(engine)
 
-            val failure = assertThrows<UpstreamFailed> {
+            val failure = assertEnds<UpstreamFailed> {
                 client.posted(ctx(fakeAuth, mutableListOf()), "{}") { "unreachable" }
             }
 
@@ -129,7 +129,7 @@ class UpstreamClientPlanLimitTest {
             }
             val client = client(engine)
 
-            val failure = assertThrows<UpstreamFailed> {
+            val failure = assertEnds<UpstreamFailed> {
                 client.posted(ctx(forwarded, mutableListOf()), "{}") { "unreachable" }
             }
 
@@ -154,9 +154,9 @@ class UpstreamClientPlanLimitTest {
         }
         val notices = mutableListOf<String>()
         val client = client(engine, ElapsedClock { now.get() })
-        assertThrows<UpstreamFailed> { client.posted(ctx(forwarded, notices), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(ctx(forwarded, notices), "{}") { "unreachable" } }
 
-        val follower = assertThrows<UpstreamFailed> {
+        val follower = assertEnds<UpstreamFailed> {
             client.posted(ctx(forwarded, notices), "{}") { "unreachable" }
         }
         assertEquals(1, calls.get(), "a follower inside the horizon never reaches upstream")
@@ -176,7 +176,7 @@ class UpstreamClientPlanLimitTest {
     fun `a restart clears the horizon but the provider's plan hold outlives it (V4-412)`() = runTest {
         val engine = MockEngine { respond(PLAN_BODY, HttpStatusCode.TooManyRequests, planHeaders(resetInAnHour())) }
         val client = client(engine)
-        assertThrows<UpstreamFailed> { client.posted(ctx(forwarded, mutableListOf()), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(ctx(forwarded, mutableListOf()), "{}") { "unreachable" } }
         assertTrue(client.planHoldForMs > 0L, "precondition: the hold is live")
 
         client.clearRateLimitCooldown()

@@ -66,10 +66,10 @@ import splice.head.wire.ImmediateSseWriter
 import splice.head.wire.TurnTerminal
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
-import splice.upstream.failure.SseFrameTooLargeException
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.TurnWatchdog
+import splice.upstream.transport.SseFrameTooLarge
 import splice.upstream.transport.StreamTornBeforeClient
 import java.nio.file.Files
 import java.nio.file.Path
@@ -209,18 +209,26 @@ class TurnConnEndTest {
 
     /** Drives the oversized-event arm with [contentFrames] frames already counted for the turn. */
     private fun emitOversized(tag: String, contentFrames: Long): ConnEndRecordingTerminal =
-        emitFor(tag, SseFrameTooLargeException("data", 1), contentFrames)
+        emitWith(tag, contentFrames) { rig, drive -> rig.connEnd.emitOversized(drive, SseFrameTooLarge("data", 1)) }
 
     /** Drives [failure] through the surface with [contentFrames] frames already counted for the turn. */
-    private fun emitFor(tag: String, failure: Throwable, contentFrames: Long = 0): ConnEndRecordingTerminal {
+    private fun emitFor(tag: String, failure: Throwable, contentFrames: Long = 0): ConnEndRecordingTerminal =
+        emitWith(tag, contentFrames) { rig, drive ->
+            assertEquals(true, rig.connEnd.tryEmit(drive, failure), "TurnConnEnd owns this failure class")
+        }
+
+    private fun emitWith(
+        tag: String,
+        contentFrames: Long,
+        emit: suspend (Rig, TurnDrive) -> Unit,
+    ): ConnEndRecordingTerminal {
         val rig = Rig(tag)
         return runBlocking {
             val drive = rig.drive()
             try {
                 // The SAME counter production reads: ClientChannel adds to it per content frame.
                 drive.perf.add(PerfKeys.CONTENT_FRAMES_OUT, contentFrames)
-                val owned = rig.connEnd.tryEmit(drive, failure)
-                assertEquals(true, owned, "TurnConnEnd owns this failure class")
+                emit(rig, drive)
             } finally {
                 drive.slot.release()
                 AsyncFileIo.drain() // perf rows append asynchronously; drain before the dir is swept
@@ -324,7 +332,7 @@ class TurnConnEndTest {
         val drive = rig.drive()
         try {
             val cause = java.io.IOException("upstream closed").apply { addSuppressed(CodeModeDivergenceMarker()) }
-            assertEquals(true, rig.connEnd.tryEmit(drive, StreamTornBeforeClient(cause)))
+            rig.connEnd.emitTorn(drive, StreamTornBeforeClient(cause))
         } finally {
             drive.slot.release()
             assertEquals(true, AsyncFileIo.drain())
@@ -359,7 +367,7 @@ class TurnConnEndTest {
             localHold = held,
         )
         try {
-            assertEquals(true, ending.tryEmit(drive, failure))
+            ending.emitFailed(drive, failure)
             assertEquals(providerTurns, rig.health.rateLimitSnapshot().providerTurns)
             assertEquals(heldTurns, rig.health.rateLimitSnapshot().heldTurns)
         } finally {
@@ -373,8 +381,7 @@ class TurnConnEndTest {
         val rig = Rig("failure-sentence", traceEnabled = true)
         val drive = rig.drive()
         try {
-            val error = StreamTornBeforeClient(ClosedWriteChannelException())
-            assertEquals(true, rig.connEnd.tryEmit(drive, error))
+            rig.connEnd.emitTorn(drive, StreamTornBeforeClient(ClosedWriteChannelException()))
         } finally {
             drive.slot.release()
             assertEquals(true, AsyncFileIo.drain())

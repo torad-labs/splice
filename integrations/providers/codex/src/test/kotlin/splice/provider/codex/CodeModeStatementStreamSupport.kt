@@ -21,6 +21,7 @@ import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -114,19 +115,21 @@ abstract class CodeModeStatementStreamSupport : CodeModeBridgeTestSupport() {
         var continuation = ""
         private val fragments = listOf("await tools.Read({});\n", "await tools.Edit({});\n", "await tools.Read({});\n")
 
-        override suspend fun invoke(bodyJson: String): TurnOutcome = into(bodyJson, initialSink)
+        override suspend fun invoke(bodyJson: String): RoundResult = into(bodyJson, initialSink)
 
-        override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+        override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
             posts++
             if (posts > 1) {
                 continuation = bodyJson
-                if (repeatOuter) return generate(sink)
-                return completedOutcome().copy(
-                    usage = Usage(inputTokens = 150, outputTokens = 5, reasoningTokens = 2, cacheWriteTokens = 4),
+                if (repeatOuter) return RoundResult.Outcome(generate(sink))
+                return RoundResult.Outcome(
+                    completedOutcome().copy(
+                        usage = Usage(inputTokens = 150, outputTokens = 5, reasoningTokens = 2, cacheWriteTokens = 4),
+                    ),
                 )
             }
             return try {
-                generate(sink)
+                RoundResult.Outcome(generate(sink))
             } finally {
                 stopped.complete(Unit)
             }

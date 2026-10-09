@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshableAuthProvider
 
@@ -50,7 +49,7 @@ class ClientAuthVerdictTest {
     fun `a client head whose forwarded turn got a 401 reads rejected, not present`() = runTest {
         val auth = ClientAuthProvider("claude-splice")
 
-        val failure = assertThrows<UpstreamFailed> { forward(answering(HttpStatusCode.Unauthorized), auth) }
+        val failure = assertEnds<UpstreamFailed> { forward(answering(HttpStatusCode.Unauthorized), auth) }
 
         assertEquals(401, failure.status)
         assertFalse(auth.describe().present, "upstream rejected the forwarded login")
@@ -60,7 +59,7 @@ class ClientAuthVerdictTest {
     fun `a 403 is a refused resource, never a rejected login`() = runTest {
         val auth = ClientAuthProvider("claude-splice")
 
-        assertThrows<UpstreamFailed> { forward(answering(HttpStatusCode.Forbidden), auth) }
+        assertEnds<UpstreamFailed> { forward(answering(HttpStatusCode.Forbidden), auth) }
 
         assertTrue(auth.describe().present, "a 403 must not send the operator to /login")
     }
@@ -68,7 +67,7 @@ class ClientAuthVerdictTest {
     @Test
     fun `a login accepted after a rejection reads present again`() = runTest {
         val auth = ClientAuthProvider("claude-splice")
-        assertThrows<UpstreamFailed> { forward(answering(HttpStatusCode.Unauthorized), auth) }
+        assertEnds<UpstreamFailed> { forward(answering(HttpStatusCode.Unauthorized), auth) }
 
         assertEquals("ok", forward(answering(HttpStatusCode.OK), auth))
 

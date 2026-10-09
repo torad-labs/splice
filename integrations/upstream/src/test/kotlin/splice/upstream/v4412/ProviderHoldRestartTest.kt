@@ -42,11 +42,10 @@ class ProviderHoldRestartTest {
 
     private fun RateLimitCooldown.refused(body: String) = rateLimitedPlan(
         pushbackMs = null,
-        turn = RateLimitTurn(this, pooledAccount = false),
+        turn = RateLimitTurn(this, pooledAccount = false, body = body),
         canRetry = false,
         onRetry = RetryNotice {},
         nextRefreshed = false,
-        body = body,
     )
 
     @Test
@@ -72,7 +71,7 @@ class ProviderHoldRestartTest {
         assertEquals(limit, restarted.planHold.live())
         assertEquals(limit.resetEpochSeconds * MS - wall, restarted.planHold.forMs())
         val notices = mutableListOf<String>()
-        restarted.failFastIfArmed(RetryNotice(notices::add))
+        restarted.heldFailure(RetryNotice(notices::add))
         assertTrue(notices.single().startsWith("plan hold: probing upstream"), notices.toString())
     }
 

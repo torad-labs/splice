@@ -18,7 +18,9 @@ import splice.upstream.ReanchorPolicy
 import splice.upstream.RoundBody
 import splice.upstream.RoundBodyInterceptor
 import splice.upstream.RoundInterceptor
+import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
+import splice.upstream.transport.UpstreamEnding
 
 /** Receives terminal outcomes from raw code-mode posts before the interceptor can expand them. */
 internal fun interface RawRoundObserver {
@@ -40,22 +42,22 @@ internal class RoundStrategy(
     private val postRound: PostRound,
     private val interception: RoundInterception = RoundInterception(),
 ) {
-    suspend fun run(requestBody: JsonObject, fold: FoldPolicy?, reanchor: ReanchorPolicy?) {
+    suspend fun run(requestBody: JsonObject, fold: FoldPolicy?, reanchor: ReanchorPolicy?): UpstreamEnding? =
         run(requestBody, fold, reanchor, null)
-    }
 
+    /** Null when the turn finished; the ending of a round that never had an outcome, for the turn's boundary. */
     suspend fun run(
         requestBody: JsonObject,
         fold: FoldPolicy?,
         reanchor: ReanchorPolicy?,
         perf: TurnPerf?,
-    ) {
+    ): UpstreamEnding? {
         val recovery = observedReanchor(reanchor)
         val interceptedPost = PostRound { body -> intercept(body, emitter, postRound, perf) }
         val interceptedPostToSink = PostRoundToSink { body, sink ->
             intercept(body, sink, PostRound { posted -> postRoundToSink(posted, sink) }, perf)
         }
-        if (fold != null) {
+        return if (fold != null) {
             runners.fold(emitter, interceptedPostToSink, recovery).run(requestBody, fold, perf)
         } else if (reanchor == null && !runners.searchesTools()) {
             runners.finishAlone(interceptedPost(RoundBody.Tree(requestBody)))
@@ -88,7 +90,7 @@ internal class RoundStrategy(
         sink: WireSink,
         direct: PostRound,
         perf: TurnPerf?,
-    ): TurnOutcome {
+    ): RoundResult {
         val interceptor = interception.interceptor ?: return refusingCustomCalls(direct(body))
         val observed = observedPost(direct, perf)
         return if (interceptor is RoundBodyInterceptor) {
@@ -100,14 +102,17 @@ internal class RoundStrategy(
 
     /** The direct path cannot execute a custom tool call, so a round that returns one ends the turn.
      *  An interceptor owns its own custom calls and never reaches this. */
-    private fun refusingCustomCalls(outcome: TurnOutcome): TurnOutcome {
-        if (outcome !is TurnOutcome.Success || outcome.customCalls.isEmpty()) return outcome
+    private fun refusingCustomCalls(result: RoundResult): RoundResult {
+        val outcome = (result as? RoundResult.Outcome)?.outcome
+        if (outcome !is TurnOutcome.Success || outcome.customCalls.isEmpty()) return result
         val name = outcome.customCalls.first().name.ifEmpty { "<unnamed>" }
-        return TurnOutcome.Failure(
-            "upstream returned an unsupported custom tool call: $name",
-            partial = TurnOutcome.PartialRound(usage = outcome.usage),
-            cause = FailureCause.DIALECT_UNSUPPORTED,
-            phase = FailurePhase.MID_OUTPUT,
+        return RoundResult.Outcome(
+            TurnOutcome.Failure(
+                "upstream returned an unsupported custom tool call: $name",
+                partial = TurnOutcome.PartialRound(usage = outcome.usage),
+                cause = FailureCause.DIALECT_UNSUPPORTED,
+                phase = FailurePhase.MID_OUTPUT,
+            ),
         )
     }
 }

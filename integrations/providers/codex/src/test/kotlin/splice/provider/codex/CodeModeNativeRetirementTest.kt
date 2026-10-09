@@ -18,6 +18,7 @@ import splice.provider.codex.state.diagnostics.CodeModeNativeBranch
 import splice.provider.codex.state.diagnostics.CodeModeNativeRejection
 import splice.provider.codex.stream.CodeModeSourceState
 import splice.provider.codex.stream.CodeModeSourceUsage
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 
 internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
@@ -33,7 +34,7 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
             fixture.manager.interceptor(turn(), null, disableParallel = false)
                 .intercept(nativeRequest(restored), RecordingSink()) { request ->
                     posted = request
-                    completedOutcome()
+                    RoundResult.Outcome(completedOutcome())
                 }
             val actual = Json.parseToJsonElement(posted).jsonObject.getValue("input").jsonArray
             assertTrue(
@@ -67,7 +68,7 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
             fixture.manager.interceptor(turn(), null, disableParallel = false)
                 .intercept(nativeRequest(nativeResult(fixture.readId) + unrelated), RecordingSink()) { request ->
                     posted = request
-                    completedOutcome()
+                    RoundResult.Outcome(completedOutcome())
                 }
             val actual = Json.parseToJsonElement(posted).jsonObject.getValue("input").jsonArray
             assertTrue(
@@ -153,7 +154,7 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
         val fixture = completedNative()
         try {
             fixture.manager.interceptor(turn(), null, disableParallel = false)
-                .intercept(nativeRequest(emptyList()), RecordingSink()) { completedOutcome() }
+                .intercept(nativeRequest(emptyList()), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
             assertEquals(listOf(fixture.record), fixture.registry.completed(fixture.record.key))
             assertTrue(fixture.record.nativeSegments.isNotEmpty())
             assertEquals(null, fixture.record.error)
@@ -290,10 +291,10 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val sink = RecordingSink()
         manager.interceptor(turn(), null, disableParallel = false)
-            .intercept(baselineWithNativeSearch(), sink) { outerOutcome() }
+            .intercept(baselineWithNativeSearch(), sink) { RoundResult.Outcome(outerOutcome()) }
         val readId = sink.tools.single().id
         manager.interceptor(turn(readId, "A"), null, disableParallel = false)
-            .intercept(nativeRequest(nativeResult(readId)), RecordingSink()) { completedOutcome() }
+            .intercept(nativeRequest(nativeResult(readId)), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         val registry = registry(manager)
         val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
         val record = registry.recordsFor(key).single()
@@ -314,7 +315,7 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
         fixture.manager.interceptor(turn(), null, disableParallel = false)
             .intercept(nativeRequest(changed), RecordingSink()) { request ->
                 posted = request
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
         assertTrue(
             logLines.any { "history rewrite skipped record" in it && "native_branch=payload" in it },

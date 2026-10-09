@@ -9,6 +9,7 @@ import splice.core.turn.ErrorType
 import splice.core.turn.GatewayCustomCall
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
 
 class UnsupportedCustomCallTest {
@@ -26,11 +27,13 @@ class UnsupportedCustomCallTest {
             ),
             postRoundToSink = { _, _ -> error("single round must not buffer") },
             postRound = {
-                TurnOutcome.Success(
-                    hasToolUse = false,
-                    incomplete = false,
-                    usage = billed,
-                    customCalls = listOf(GatewayCustomCall("custom-1", "unknown", "", JsonObject(emptyMap()))),
+                RoundResult.Outcome(
+                    TurnOutcome.Success(
+                        hasToolUse = false,
+                        incomplete = false,
+                        usage = billed,
+                        customCalls = listOf(GatewayCustomCall("custom-1", "unknown", "", JsonObject(emptyMap()))),
+                    ),
                 )
             },
         ).run(JsonObject(emptyMap()), fold = null, reanchor = null)

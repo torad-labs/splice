@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.state.CodeModeStateJournal
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -46,7 +47,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
             override fun close() = Unit
         }
         val outcome = bridge(runtime).interceptor(turn(), outer(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome()) }.turn()
         assertTrue(outcome is TurnOutcome.Failure)
         val message = (outcome as TurnOutcome.Failure).message
         assertTrue(message.contains("IllegalStateException: worker pool exhausted"), message)
@@ -59,7 +60,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
             turn(sessionId = "other-session"),
             outer("other-call"),
             disableParallel = false,
-        ).intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("other-call") }
+        ).intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("other-call")) }.turn()
         assertTrue(privateOutcome is TurnOutcome.Failure)
         val privateMessage = (privateOutcome as TurnOutcome.Failure).message
         assertTrue("IllegalStateException: message withheld" in privateMessage, privateMessage)
@@ -77,7 +78,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val failedSink = RecordingSink()
         val failed = manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, failedSink) { outerOutcome() }
+            .intercept(BASE_REQUEST, failedSink) { RoundResult.Outcome(outerOutcome()) }
         assertPersistenceFailure(failed)
         assertTrue(failedSink.tools.isEmpty())
         assertEquals(1, runtime.starts)
@@ -87,7 +88,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         stateFiles.unblock()
         val retriedSink = RecordingSink()
         val retried = manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, retriedSink) { error("retry must not post upstream") }
+            .intercept(BASE_REQUEST, retriedSink) { error("retry must not post upstream") }.turn()
         assertTrue(retried is TurnOutcome.Success)
         assertTrue((retried as TurnOutcome.Success).hasToolUse)
         assertEquals("Read", retriedSink.tools.single().name)
@@ -103,7 +104,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         val runtime = FailingSaveRuntime(stateFiles, listOf(CodeModeStep.Completed(output)), failAt = 1)
         val manager = bridge(runtime)
         val failed = manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome()) }
         assertPersistenceFailure(failed)
         assertEquals(1, runtime.starts)
         assertEquals(listOf(emptyList<CodeModeResult>()), runtime.cell.results)
@@ -117,8 +118,8 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
             .intercept(BASE_REQUEST, retriedSink) {
                 posts++
                 upstreamBody = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(retried is TurnOutcome.Success)
         assertFalse((retried as TurnOutcome.Success).hasToolUse)
         assertTrue(retriedSink.tools.isEmpty())
@@ -150,7 +151,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val firstSink = RecordingSink()
         manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, firstSink) { outerOutcome() }
+            .intercept(BASE_REQUEST, firstSink) { RoundResult.Outcome(outerOutcome()) }
         val firstId = firstSink.tools.single().id
         val failedSink = RecordingSink()
         val failed = manager.interceptor(turn(firstId, "original result"), disableParallel = false)
@@ -164,7 +165,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         stateFiles.unblock()
         val retriedSink = RecordingSink()
         val retried = manager.interceptor(turn(firstId, "original result"), disableParallel = false)
-            .intercept(requestWithResult(firstId, "original result"), retriedSink) { error("must not post") }
+            .intercept(requestWithResult(firstId, "original result"), retriedSink) { error("must not post") }.turn()
         assertTrue(retried is TurnOutcome.Success)
         assertTrue((retried as TurnOutcome.Success).hasToolUse)
         assertEquals("Edit", retriedSink.tools.single().name)
@@ -180,7 +181,7 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Calls(listOf(call("read", "Read"))))))
         val manager = bridge(runtime)
         manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome()) }
         val config = CodeModeBridgeConfig(
             { runtime },
             stateLocation(),
@@ -334,7 +335,8 @@ class CodexCodeModeTransitionPersistenceTest : CodeModeBridgeTestSupport() {
         assertEquals(Thread.State.WAITING, thread.state, "acceptCalls must wait for the source reader's key")
     }
 
-    private fun assertPersistenceFailure(outcome: TurnOutcome) {
+    private fun assertPersistenceFailure(round: RoundResult) {
+        val outcome = round.turn()
         assertTrue(outcome is TurnOutcome.Failure)
         assertTrue((outcome as TurnOutcome.Failure).message.contains("could not be saved"), outcome.message)
     }

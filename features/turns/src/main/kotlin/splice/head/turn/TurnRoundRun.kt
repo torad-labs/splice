@@ -15,6 +15,7 @@ import splice.head.transport.SseRoundDriver
 import splice.head.wire.WireTap
 import splice.upstream.Provider
 import splice.upstream.RoundBody
+import splice.upstream.transport.UpstreamEnding
 
 internal class TurnRoundRun(
     private val provider: Provider,
@@ -27,7 +28,8 @@ internal class TurnRoundRun(
 ) {
     private val sourceRound = IndependentSourcePost(sseRoundDriver, usageStamp)
 
-    suspend fun run(drive: TurnDrive, self: CoroutineScope, turnJob: Job) {
+    /** Null when the turn finished; the ending of a round that never had an outcome, written after the turn unwinds. */
+    suspend fun run(drive: TurnDrive, self: CoroutineScope, turnJob: Job): UpstreamEnding? {
         // No upstream POST opens an adopted source step. Open it here so signed live progress can flow.
         if (drive.roundInterceptor?.resumesSource() == true) {
             drive.channel.statusGate?.open()
@@ -39,7 +41,7 @@ internal class TurnRoundRun(
         // drives this turn is [RoundStrategy]'s decision (HD-24).
         val fold = provider.foldPolicy(drive.meta)
         val reanchor = provider.reanchorPolicy(drive.meta)
-        RoundStrategy(
+        return RoundStrategy(
             emitter = drive.emitter,
             runners = RoundRunners(
                 key = provider.key,

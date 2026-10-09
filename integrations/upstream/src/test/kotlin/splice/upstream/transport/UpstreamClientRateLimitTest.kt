@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.ElapsedClock
@@ -61,7 +60,7 @@ class NativeRateLimitHeadersTest {
                 val older = async { client.posted(context(), "{}") { "ok" } }
                 posted.await()
                 elapsed += advance
-                assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+                assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
                 val horizon = cooldown.remainingMs()
                 val selection = cooldown.unavailableForMs()
                 val reset = cooldown.providerUnavailableForMs()
@@ -72,7 +71,7 @@ class NativeRateLimitHeadersTest {
                 assertEquals(horizon, cooldown.remainingMs(), "late headers cannot erase the newer refusal")
                 assertEquals(selection, cooldown.unavailableForMs())
                 assertEquals(reset, cooldown.providerUnavailableForMs())
-                val follower = assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+                val follower = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
                 assertTrue(follower.localHold && follower.status == 429, "the follower stays local")
                 assertEquals(2, requests)
                 elapsed += horizon
@@ -120,8 +119,8 @@ class NativeRateLimitHeadersTest {
             auth = fakeAuth,
             extraHeaders = { emptyMap() },
         ).also { it.relayRateLimitReplies = true }
-        val observer = assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
-        val follower = assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+        val observer = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+        val follower = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
         for (failure in listOf(observer, follower)) {
             assertEquals(429, failure.status)
             assertEquals(native, failure.body)
@@ -147,7 +146,7 @@ class UpstreamClientRateLimitTest {
         val context = PostContext("https://api.example.test/v1", fakeAuth, { emptyMap() }).also {
             it.providerAnswerObserver = ProviderAnswerObserver { status, at -> answers += status to at }
         }
-        val failure = assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
         assertEquals(403, failure.status)
         assertTrue(answers.isNotEmpty())
         assertTrue(answers.all { it.first == 403 && it.second > 0L })
@@ -190,10 +189,10 @@ class UpstreamClientRateLimitTest {
         }
         accepted.await()
         assertEquals(listOf(200), answers.map { it.first }, "header acceptance is visible while its body is held")
-        assertThrows<UpstreamFailed> { client.posted(observedContext(), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(observedContext(), "{}") { "unreachable" } }
         release.complete(Unit)
         assertEquals("ok", older.await())
-        val follower = assertThrows<UpstreamFailed> { client.posted(observedContext(), "{}") { "unreachable" } }
+        val follower = assertEnds<UpstreamFailed> { client.posted(observedContext(), "{}") { "unreachable" } }
         assertEquals(listOf(200, 429), answers.map { it.first }, "completion and local holds are not provider answers")
         assertTrue(answers.all { it.second > 0L })
         assertTrue(answers[1].second >= answers[0].second)
@@ -232,10 +231,10 @@ class UpstreamClientRateLimitTest {
                 emptyMap()
             },
         ).also { context -> context.upstreamAccepted = StreamStart { accepted += key } }
-        assertThrows<UpstreamFailed> { client.posted(context("synthetic-refused"), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(context("synthetic-refused"), "{}") { "unreachable" } }
         assertEquals("ok", client.posted(context("synthetic-healthy"), "{}") { "ok" })
         assertEquals("ok", client.posted(context("synthetic-new"), "{}") { "ok" })
-        val follower = assertThrows<UpstreamFailed> {
+        val follower = assertEnds<UpstreamFailed> {
             client.posted(context("synthetic-refused"), "{}") { "unreachable" }
         }
         assertTrue(follower.localHold)
@@ -287,12 +286,12 @@ class UpstreamClientRateLimitTest {
             pacing = RetryPacing(backoff = { _, delay -> elapsed += delay }),
             clock = ElapsedClock { elapsed },
         )
-        val observer = assertThrows<UpstreamFailed> { postOnce(client) }
+        val observer = assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(503, observer.status)
         assertEquals("server busy", observer.body)
         assertEquals(2, calls.get())
         assertEquals(60_000L, client.rateLimitedForMs)
-        val follower = assertThrows<UpstreamFailed> { postOnce(client) }
+        val follower = assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(429, follower.status)
         assertEquals(2, calls.get(), "the follower is held without an upstream request")
     }
@@ -312,11 +311,11 @@ class UpstreamClientRateLimitTest {
             pacing = RetryPacing(backoff = { _, minDelayMs -> capture.minDelays.add(minDelayMs) }),
             clock = ElapsedClock { 0L },
         )
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(3, calls.get(), "every attempt in the budget is spent before the turn fails")
         assertEquals(listOf(15_000L, 15_000L), capture.minDelays, "the floor is 15s on every retry of a bare 429")
         assertTrue(client.rateLimitedForMs > 0L, "exhaustion arms the horizon")
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(3, calls.get(), "a follower inside the armed horizon must not reach upstream")
     }
 
@@ -346,7 +345,7 @@ class UpstreamClientRateLimitTest {
             remainingTurnWait = RemainingTurnWait { 5_000L },
         )
 
-        val observer = assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+        val observer = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
         assertEquals(429, observer.status)
         assertEquals("slow down", observer.body)
         // V4-48: a pushback at or under the 15s ceiling is WAITED OUT and retried, not surrendered.
@@ -354,7 +353,7 @@ class UpstreamClientRateLimitTest {
         assertTrue(waiter.waits.isNotEmpty(), "the pushback is waited out rather than skipped")
 
         val waitsAfterObserver = waiter.waits.size
-        val follower = assertThrows<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
+        val follower = assertEnds<UpstreamFailed> { client.posted(context(), "{}") { "unreachable" } }
         assertEquals(3, calls.get(), "a follower must fail fast without reaching upstream")
         // V4-46: STRICTER than the word it replaced. The follower body must identify the GATEWAY as
         // the holder of the interval — that is the property the row guarantees — where the old
@@ -372,7 +371,7 @@ class UpstreamClientRateLimitTest {
             calls.incrementAndGet()
             respond("come back tomorrow", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "86400"))
         }
-        assertThrows<UpstreamFailed> { postOnce(clientOver(engine)) }
+        assertEnds<UpstreamFailed> { postOnce(clientOver(engine)) }
         assertEquals(1, calls.get())
     }
 
@@ -390,14 +389,14 @@ class UpstreamClientRateLimitTest {
             respond("busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "9223372036854775808"))
         }
         val client = clientOver(engine, capture, clock = { elapsed })
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get(), "saturated pushback must give up, not retry on a wrapped-negative floor")
         assertTrue(capture.minDelays.isEmpty())
         assertEquals(120_000L, client.rateLimitedForMs)
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get(), "a retryable 5xx pushback must protect followers")
         elapsed += 121_000L
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(2, calls.get(), "the bounded follower protection must expire")
     }
 
@@ -430,13 +429,13 @@ class UpstreamClientRateLimitTest {
             respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", httpDate))
         }
         val client = clientOver(engine, clock = { now })
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get()) // V4-61: 15s retry does not fit the 5s harness budget; gives up armed
         now += 20_000 // past the 20s no-header default but inside the served ~30s
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get(), "a date-form pushback must arm its horizon, not the 20s guess")
         now += 20_000 // comfortably past the served horizon (margin for test wall-clock drift)
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(2, calls.get())
     }
 
@@ -458,9 +457,9 @@ class UpstreamClientRateLimitTest {
         // V4-48: a zero-length pushback is still a pushback, so the turn spends its retry budget on
         // it — but a past date must still ARM NOTHING, which is NF-04's actual claim and is what the
         // second turn proves: nothing carried over, so it reaches upstream again.
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(3, calls.get(), "a zero-length backoff spends the retry budget, not the exit")
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(6, calls.get(), "a past date clamps to 0 — no cooldown, no 20s fallback")
     }
 
@@ -477,17 +476,17 @@ class UpstreamClientRateLimitTest {
         }
         val client = clientOver(engine, clock = { now })
         // V4-61: a 15s retry cannot fit the 5s harness budget, so the observer exits at once, ARMED
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get())
         // a follower during the cooldown fails fast: 429 body names the GATEWAY as the holder of the
         // interval, no upstream call
-        val e = assertThrows<UpstreamFailed> { postOnce(client) }
+        val e = assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get())
         assertEquals(429, e.status)
         assertTrue(e.body.contains("this gateway is holding retries"), e.body)
         // default cooldown (no Retry-After) expires after 20s — traffic is attempted again
         now += 21_000
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(2, calls.get())
     }
 
@@ -502,13 +501,13 @@ class UpstreamClientRateLimitTest {
             respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "30"))
         }
         val client = clientOver(engine, clock = { now })
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get()) // V4-61: 15s retry does not fit the 5s harness budget; gives up ARMED
         now += 25_000 // past the 20s default but inside the served 30s
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get()) // still cooling — no upstream call
         now += 6_000 // past the 30s Retry-After
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(2, calls.get()) // attempted again
     }
 
@@ -529,14 +528,14 @@ class UpstreamClientRateLimitTest {
             )
         }
         val client = clientOver(engine, clock = { now })
-        val armed = assertThrows<UpstreamFailed> { postOnce(client) }
+        val armed = assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get())
         assertTrue(armed.body.contains("86400"), "true pushback surfaces in the upstream body: ${armed.body}")
         now += 119_000 // inside the 120s ceiling — still failing fast
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get())
         now += 2_000 // 121s: the clamp has expired — traffic is attempted again, not in 24h
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(2, calls.get())
     }
 
@@ -551,11 +550,11 @@ class UpstreamClientRateLimitTest {
             respond("forbidden", HttpStatusCode.Forbidden, headersOf("Retry-After", "30"))
         }
         val client = clientOver(engine, clock = { 0L })
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get())
         assertEquals(0L, client.rateLimitedForMs, "a 403 must never arm the shared rate-limit cooldown")
         // proven not-wedged: the very next call reaches upstream immediately, no fail-fast
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(2, calls.get())
     }
 
@@ -569,12 +568,12 @@ class UpstreamClientRateLimitTest {
             respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "60"))
         }
         val client = clientOver(engine, clock = { now })
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(1, calls.get())
         assertTrue(client.rateLimitedForMs > 0L)
         client.clearRateLimitCooldown()
         assertEquals(0L, client.rateLimitedForMs)
-        assertThrows<UpstreamFailed> { postOnce(client) } // straight to upstream, no fail-fast
+        assertEnds<UpstreamFailed> { postOnce(client) } // straight to upstream, no fail-fast
         assertEquals(2, calls.get())
     }
 

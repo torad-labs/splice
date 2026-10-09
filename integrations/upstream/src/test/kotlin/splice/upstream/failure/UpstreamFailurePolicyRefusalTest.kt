@@ -33,7 +33,7 @@ class UpstreamFailurePolicyRefusalTest {
         assertTrue(r.message.contains("rephrasing"), "the vendor's remedy text must survive: $r")
     }
 
-    // The Responses API's own error enum (openai-python ResponseError.code) names the other
+    // The Responses API's own error enum (the vendor SDK's ResponseError.code) names the other
     // prompt-level refusals; they are the same deterministic class and must land the same way.
     @Test
     fun `every documented prompt-refusal code is a terminal invalid_request`() {

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime
@@ -21,9 +22,9 @@ class CodeModeSessionOwnershipTest : CodeModeBridgeTestSupport() {
         val runtime = AddressedRuntime()
         val manager = bridge(runtime)
         manager.interceptor(turn(sessionId = "fixture-a"), outer("outer-a"), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-a") }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-a")) }
         manager.interceptor(turn(sessionId = "fixture-b"), outer("outer-b"), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-b") }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-b")) }
         val keys = stateFiles.records().map { it.getValue("key").jsonPrimitive.content }.toSet()
         assertEquals(keys, runtime.starts.toSet())
         assertEquals(2, keys.size)
@@ -37,7 +38,7 @@ class CodeModeSessionOwnershipTest : CodeModeBridgeTestSupport() {
         val runtime = AddressedRuntime()
         val manager = bridge(runtime, ttl = 1.hours, clock = clock)
         manager.interceptor(turn(), outer(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome()) }
         val key = runtime.starts.single()
         clock.now += 2.hours.inWholeMilliseconds
         sweepOwnHistory(manager)
@@ -51,9 +52,9 @@ class CodeModeSessionOwnershipTest : CodeModeBridgeTestSupport() {
         val runtime = AddressedRuntime()
         val manager = bridge(runtime)
         manager.interceptor(turn(sessionId = "session-a"), outer("outer-a"), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-a") }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-a")) }
         manager.interceptor(turn(sessionId = "session-b"), outer("outer-b"), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-b") }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-b")) }
         deadSessions += "session-a"
         reapIdleCell(manager)
         assertEquals(listOf(runtime.starts.first()), runtime.ended)
@@ -79,8 +80,8 @@ class CodeModeSessionOwnershipTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(turn(), null, disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { body ->
                 posted = body
-                if (posts++ == 0) outerOutcome() else completedOutcome()
-            }
+                RoundResult.Outcome(if (posts++ == 0) outerOutcome() else completedOutcome())
+            }.turn()
         assertTrue(outcome is splice.core.turn.TurnOutcome.Success)
         assertTrue("24576 MiB" in posted)
         assertTrue("quirks.code_mode_memory_mb" in posted)

@@ -18,6 +18,7 @@ import splice.provider.codex.state.CodeModeHistoryAnchor
 import splice.provider.codex.state.CodeModeReplayAnchors
 import splice.provider.codex.state.CodeModeStateDelta
 import splice.provider.codex.state.CodeModeStateJournal
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import java.nio.file.Files
@@ -33,12 +34,14 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         )
         val manager = bridge(runtime)
         val first = RecordingSink()
-        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, first) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, first) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val id = first.tools.single().id
         stateFiles.block()
         val failedSink = RecordingSink()
         val failed = manager.interceptor(turn(id, "A"), disableParallel = false)
-            .intercept(requestWithResult(id, "A"), failedSink) { error("must not post") }
+            .intercept(requestWithResult(id, "A"), failedSink) { error("must not post") }.turn()
         assertTrue(failed is TurnOutcome.Failure)
         assertTrue((failed as TurnOutcome.Failure).message.contains("could not be saved"))
         assertTrue(failedSink.tools.isEmpty(), "a failed batch cannot expose new client calls")
@@ -46,7 +49,7 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         stateFiles.unblock()
         val retrySink = RecordingSink()
         val retried = manager.interceptor(turn(id, "A"), disableParallel = false)
-            .intercept(requestWithResult(id, "A"), retrySink) { completedOutcome() }
+            .intercept(requestWithResult(id, "A"), retrySink) { RoundResult.Outcome(completedOutcome()) }.turn()
         assertTrue(retried is TurnOutcome.Success)
         assertFalse((retried as TurnOutcome.Success).hasToolUse)
         assertTrue(retrySink.tools.isEmpty())
@@ -63,11 +66,13 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         )
         val manager = bridge(runtime)
         val first = RecordingSink()
-        manager.interceptor(turn(), disableParallel = true).intercept(BASE_REQUEST, first) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = true).intercept(BASE_REQUEST, first) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val firstId = first.tools.single().id
         stateFiles.block()
         val failed = manager.interceptor(turn(firstId, "A"), disableParallel = true)
-            .intercept(requestWithResult(firstId, "A"), RecordingSink()) { error("must not post") }
+            .intercept(requestWithResult(firstId, "A"), RecordingSink()) { error("must not post") }.turn()
         assertTrue(failed is TurnOutcome.Failure)
         stateFiles.unblock()
         val next = RecordingSink()
@@ -77,7 +82,9 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         assertEquals("Edit", next.tools.single().name)
         val results = listOf(CodeModeResult(firstId, "A"), CodeModeResult(secondId, "B"))
         manager.interceptor(turn(results = results), disableParallel = true)
-            .intercept(requestWithTwoResults(firstId, secondId), RecordingSink()) { completedOutcome() }
+            .intercept(requestWithTwoResults(firstId, secondId), RecordingSink()) {
+                RoundResult.Outcome(completedOutcome())
+            }
         assertEquals(listOf(CodeModeResult("read", "A"), CodeModeResult("edit", "B")), runtime.cell.results.last())
         assertEquals(2, runtime.cell.advances)
         assertEquals(1, runtime.starts)
@@ -91,7 +98,9 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         )
         val manager = bridge(runtime)
         val sink = RecordingSink()
-        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val id = sink.tools.single().id
         val value = "evidence with \"quotes\"\nand Unicode é"
         val body = siblingBody(id, value)
@@ -100,8 +109,8 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         val result = manager.interceptor(returned, disableParallel = false)
             .intercept(body, RecordingSink()) {
                 upstream = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(result is TurnOutcome.Success)
         assertEvidence(upstream, id, value)
         assertTrue("new user instruction" in upstream)
@@ -113,7 +122,9 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         val runtime = scripted(CodeModeStep.Calls(listOf(call("read", "Read"))))
         val manager = bridge(runtime)
         val sink = RecordingSink()
-        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val id = sink.tools.single().id
         manager.onHeadStop()
         val replacement = ScriptedRuntime(ArrayDeque())
@@ -124,8 +135,8 @@ class CodexCodeModeRecoveryTest : CodeModeBridgeTestSupport() {
         val result = restored.interceptor(returned, disableParallel = false)
             .intercept(siblingBody(id, value), RecordingSink()) {
                 upstream = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(result is TurnOutcome.Success)
         assertEvidence(upstream, id, value)
         assertTrue("new user instruction" in upstream)

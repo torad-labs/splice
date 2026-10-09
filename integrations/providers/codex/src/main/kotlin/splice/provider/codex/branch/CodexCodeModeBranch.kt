@@ -10,8 +10,8 @@ import splice.provider.codex.CodexCodeModeDriver
 import splice.provider.codex.CodexCodeModeMachine
 import splice.provider.codex.CodexCodeModeRegistry
 import splice.provider.codex.CodexCodeModeValidation
+import splice.provider.codex.stream.CodeModeEndings
 import splice.upstream.codemode.CodeModeResult
-import splice.upstream.transport.StreamTornBeforeClient
 import java.io.IOException
 
 /** A byte-identical input replays its issued callback; a changed accepted result never feeds
@@ -44,11 +44,11 @@ internal class CodexCodeModeBranch(
     suspend fun sendOwnHistory(context: CodeModeRunContext, ownHistory: CodeModeBody): TurnOutcome {
         log("[code-mode] observable-divergence: accepted callback changed; sending this history upstream")
         return try {
-            mark(driver.drive(context, null, ownHistory, context.post(ownHistory)))
+            mark(driver.drive(context, null, ownHistory, context.post(ownHistory))).also {
+                // A tear the upstream ended this history on is the divergence's too (TurnConnEnd counts it).
+                CodeModeEndings.tornCause()?.addSuppressed(CodeModeDivergenceMarker())
+            }
         } catch (error: IOException) {
-            error.addSuppressed(CodeModeDivergenceMarker())
-            throw error
-        } catch (error: StreamTornBeforeClient) {
             error.addSuppressed(CodeModeDivergenceMarker())
             throw error
         }

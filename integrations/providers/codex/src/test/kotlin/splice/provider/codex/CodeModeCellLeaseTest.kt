@@ -20,6 +20,7 @@ import splice.provider.codex.state.CodeModeRegistryAccess
 import splice.provider.codex.state.CodeModeSessionEnd
 import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.upstream.InterceptedRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
@@ -197,11 +198,15 @@ class CodeModeResumeLeaseTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime, clock = clock)
         try {
             val sink = RecordingSink()
-            manager.interceptor(turn(), outer(), false).intercept(BASE_REQUEST, sink) { outerOutcome() }
+            manager.interceptor(turn(), outer(), false).intercept(BASE_REQUEST, sink) {
+                RoundResult.Outcome(outerOutcome())
+            }
             clock.now += 31.minutes.inWholeMilliseconds
             val id = sink.tools.single().id
             val outcome = manager.interceptor(turn(id, "A"), null, false)
-                .intercept(requestWithResult(id, "A"), RecordingSink()) { completedOutcome() }
+                .intercept(requestWithResult(id, "A"), RecordingSink()) {
+                    RoundResult.Outcome(completedOutcome())
+                }.turn()
             assertTrue(outcome is TurnOutcome.Success && !outcome.hasToolUse)
             assertEquals(2, runtime.cell.advances, "lookup must not kill the callback's own cell")
         } finally {
@@ -216,7 +221,9 @@ class CodeModeResumeLeaseTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime, clock = clock)
         try {
             val sink = RecordingSink()
-            manager.interceptor(turn(), outer(), false).intercept(BASE_REQUEST, sink) { outerOutcome() }
+            manager.interceptor(turn(), outer(), false).intercept(BASE_REQUEST, sink) {
+                RoundResult.Outcome(outerOutcome())
+            }
             val registry = registry(manager)
             val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
             val record = registry.recordsFor(key).single()
@@ -231,7 +238,7 @@ class CodeModeResumeLeaseTest : CodeModeBridgeTestSupport() {
                 record.key,
                 "callback",
                 RecordingSink(),
-                upstreamPost(InterceptedRoundPost { completedOutcome() }),
+                upstreamPost(InterceptedRoundPost { RoundResult.Outcome(completedOutcome()) }),
             )
             val outcome = resume(manager).active(record, context, codeModeBody(requestWithResult(id, "A")))
             assertTrue(outcome is TurnOutcome.Success && !outcome.hasToolUse, outcome.toString())
@@ -251,7 +258,9 @@ class CodeModeResumeLeaseTest : CodeModeBridgeTestSupport() {
         val release = CountDownLatch(1)
         try {
             val sink = RecordingSink()
-            manager.interceptor(turn(), outer(), false).intercept(BASE_REQUEST, sink) { outerOutcome() }
+            manager.interceptor(turn(), outer(), false).intercept(BASE_REQUEST, sink) {
+                RoundResult.Outcome(outerOutcome())
+            }
             val registry = registry(manager)
             val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
             val record = registry.recordsFor(key).single()
@@ -265,13 +274,14 @@ class CodeModeResumeLeaseTest : CodeModeBridgeTestSupport() {
                     return CodeModeResult(id, "A")
                 }
             }
+            val post = upstreamPost(InterceptedRoundPost { RoundResult.Outcome(completedOutcome()) })
             val context = CodeModeRunContext(
                 turn(id, "A").copy(toolResults = results),
                 false,
                 record.key,
                 "callback",
                 RecordingSink(),
-                upstreamPost(InterceptedRoundPost { completedOutcome() }),
+                post,
             )
             val request = async(Dispatchers.Default) {
                 resume(manager).active(record, context, codeModeBody(requestWithResult(id, "A")))
@@ -280,10 +290,7 @@ class CodeModeResumeLeaseTest : CodeModeBridgeTestSupport() {
             deadSessions += record.sessionId.orEmpty()
             clock.now += 31.minutes.inWholeMilliseconds
             try {
-                assertNull(
-                    registry.evictIdleCell(),
-                    "the selected owner is borrowed until callback application finishes",
-                )
+                assertNull(registry.evictIdleCell(), "the owner is borrowed until callback application finishes")
                 assertFalse(runtime.cell.closed)
             } finally {
                 release.countDown()

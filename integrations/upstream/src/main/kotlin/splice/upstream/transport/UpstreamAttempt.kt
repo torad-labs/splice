@@ -25,6 +25,7 @@ import splice.upstream.BodyAmendment
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.CredentialHeaders
 import splice.upstream.RetryNotice
+import splice.upstream.StreamRead
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.sse.WireObserver
 
@@ -108,8 +109,8 @@ public data class PostContext(
     internal suspend fun <T> timedBackoff(block: TimedWork<T>): T =
         TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS, block)
 
-    internal suspend fun requireAuth(): Credentials =
-        timedAuth { auth.credentials() } ?: throw UpstreamAuthMissing()
+    /** The credentials to send, or null when there are none locally: the call ends with [UpstreamAuthMissing]. */
+    internal suspend fun requireAuth(): Credentials? = timedAuth { auth.credentials() }
 }
 
 /** Credentials and their resolved headers are captured together once, before selecting their hold. */
@@ -124,7 +125,7 @@ internal data class AttemptCredentials(
  *  response body channel dies at that block's close, so status, body text and Retry-After are all
  *  read there — and then lives on in the loop's `lastErr` as the failure the turn gives up with. */
 internal sealed class RetryOutcome<out T> {
-    data class Done<T>(val value: T) : RetryOutcome<T>()
+    data class Done<T>(val read: StreamRead<T>) : RetryOutcome<T>()
     data class Failed(
         val status: Int,
         val text: String,

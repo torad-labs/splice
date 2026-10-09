@@ -126,7 +126,7 @@ class UpstreamClientWireObserverTest {
         val engine = MockEngine { respond("no", HttpStatusCode.ServiceUnavailable) }
         val wire = Recording()
 
-        assertThrows<UpstreamFailed> {
+        assertEnds<UpstreamFailed> {
             runBlocking { client(engine, maxRetries = 2).posted(context(wire), "{}") { "never" } }
         }
 

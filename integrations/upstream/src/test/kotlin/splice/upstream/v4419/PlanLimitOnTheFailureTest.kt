@@ -1,6 +1,6 @@
 // NEW: V4-419 at the transport. A failure caused by a spent PLAN window carries that window, so the turn's ending can
-// record a plan-limit outcome and speak the reset: the exception is the only thing that crosses from the retry loop
-// to the ending (RetryPolicy.giveUp throws it for the turn that met the 429, RateLimitCooldown.failFastIfArmed for
+// record a plan-limit outcome and speak the reset: the ending is the only thing that crosses from the retry loop
+// to the turn (RetryPolicy.giveUp returns it for the turn that met the 429, RateLimitCooldown.heldFailure for
 // the followers held behind it). Before this the window was dropped into the body text and the turn ended
 // error:upstream-failed, "wait a moment and retry", for a plan spent until a day six days out (Marlin, f7f1e9308;
 // daemon.log:39520). A burst 429 that names no reset carries nothing, so it keeps every path it had.
@@ -15,7 +15,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.Credentials
@@ -26,6 +25,7 @@ import splice.upstream.transport.PostContext
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
+import splice.upstream.transport.assertEnds
 import splice.upstream.transport.posted
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -75,7 +75,7 @@ class PlanLimitOnTheFailureTest {
         val reset = secondsNow() + SIX_DAYS_S
         val engine = MockEngine { respond(usageLimitBody(reset), HttpStatusCode.TooManyRequests, headersOf()) }
 
-        val failure = assertThrows<UpstreamFailed> { client(engine).posted(ctx(bodyReader), "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> { client(engine).posted(ctx(bodyReader), "{}") { "unreachable" } }
 
         assertEquals(429, failure.status)
         assertEquals(PlanLimit("seven_day", reset), failure.planLimit)
@@ -90,9 +90,9 @@ class PlanLimitOnTheFailureTest {
             respond(usageLimitBody(reset), HttpStatusCode.TooManyRequests, headersOf())
         }
         val client = client(engine)
-        val first = assertThrows<UpstreamFailed> { client.posted(ctx(bodyReader), "{}") { "unreachable" } }
+        val first = assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader), "{}") { "unreachable" } }
 
-        val follower = assertThrows<UpstreamFailed> { client.posted(ctx(bodyReader), "{}") { "unreachable" } }
+        val follower = assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader), "{}") { "unreachable" } }
 
         assertEquals(1, calls.get(), "the follower never reached upstream")
         assertEquals(429, follower.status)
@@ -115,7 +115,7 @@ class PlanLimitOnTheFailureTest {
             )
         }
 
-        val failure = assertThrows<UpstreamFailed> {
+        val failure = assertEnds<UpstreamFailed> {
             client(engine).posted(ctx(ClientAuthProvider("claude-splice")), "{}") { "unreachable" }
         }
 
@@ -131,9 +131,9 @@ class PlanLimitOnTheFailureTest {
         }
         val client = client(engine)
 
-        val first = assertThrows<UpstreamFailed> { client.posted(ctx(bodyReader), "{}") { "unreachable" } }
+        val first = assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader), "{}") { "unreachable" } }
         val attempts = calls.get()
-        val follower = assertThrows<UpstreamFailed> { client.posted(ctx(bodyReader), "{}") { "unreachable" } }
+        val follower = assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader), "{}") { "unreachable" } }
 
         assertEquals(4, attempts, "V4-61's schedule is untouched")
         assertEquals(attempts, calls.get(), "the follower failed fast, upstream unreached")

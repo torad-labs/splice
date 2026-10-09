@@ -11,6 +11,11 @@ import splice.core.perf.OutcomeTag
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
+import splice.upstream.transport.SseFrameTooLarge
+import splice.upstream.transport.StreamTornBeforeClient
+import splice.upstream.transport.UpstreamAuthMissing
+import splice.upstream.transport.UpstreamEnding
+import splice.upstream.transport.UpstreamFailed
 
 internal class TurnEnding(
     private val log: LogSink,
@@ -19,11 +24,21 @@ internal class TurnEnding(
     private val connEnd: TurnConnEnd,
     private val knownEnd: TurnKnownEnd,
 ) {
+    /** The one terminal for a round that never had an outcome: one surface per ending, and the compiler checks the
+     *  list. */
+    suspend fun emitEnding(drive: TurnDrive, ending: UpstreamEnding) {
+        when (ending) {
+            is UpstreamAuthMissing -> knownEnd.emitAuthMissing(drive)
+            is UpstreamFailed -> knownEnd.emitFailed(drive, ending)
+            is StreamTornBeforeClient -> connEnd.emitTorn(drive, ending)
+            is SseFrameTooLarge -> connEnd.emitOversized(drive, ending)
+        }
+    }
+
     /** One honest error frame per failure class; anything that is not a known turn failure and
      *  not a RuntimeException (i.e. an Error) rethrows — never swallowed. */
     suspend fun emitFailure(drive: TurnDrive, e: Throwable) {
         if (connEnd.tryEmit(drive, e)) return
-        if (knownEnd.tryEmit(drive, e)) return
         when (e) {
             is RuntimeException -> {
                 // e.g. a URL-parse error from a bad base_url, an IllegalState out of Ktor

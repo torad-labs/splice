@@ -5,9 +5,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -23,11 +23,11 @@ class CodexCodeModeCancellationPersistenceTest : CodeModeBridgeTestSupport() {
         var caught: CancellationException? = null
         try {
             manager.interceptor(turn(), disableParallel = false)
-                .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() }
+                .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome()) }
         } catch (error: CancellationException) {
             caught = error
         }
-        assertSame(cancellation, caught)
+        assertTrue(sameFailure(cancellation, caught), "the original cancellation survives: $caught")
         assertTrue(runtime.startupCleaned)
         assertEquals(1, runtime.starts)
         assertEquals(0, runtime.cell.advances)
@@ -41,11 +41,11 @@ class CodexCodeModeCancellationPersistenceTest : CodeModeBridgeTestSupport() {
         var caught: CancellationException? = null
         try {
             manager.interceptor(turn(), disableParallel = false)
-                .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() }
+                .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome()) }
         } catch (error: CancellationException) {
             caught = error
         }
-        assertSame(cancellation, caught)
+        assertTrue(sameFailure(cancellation, caught), "the original cancellation survives: $caught")
         assertTrue(runtime.cell.closed)
         assertEquals(1, runtime.cell.advances)
     }
@@ -57,7 +57,7 @@ class CodexCodeModeCancellationPersistenceTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val sink = RecordingSink()
         manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, sink) { outerOutcome() }
+            .intercept(BASE_REQUEST, sink) { RoundResult.Outcome(outerOutcome()) }
         val id = sink.tools.single().id
         var caught: CancellationException? = null
         try {
@@ -66,7 +66,7 @@ class CodexCodeModeCancellationPersistenceTest : CodeModeBridgeTestSupport() {
         } catch (error: CancellationException) {
             caught = error
         }
-        assertSame(cancellation, caught)
+        assertTrue(sameFailure(cancellation, caught), "the original cancellation survives: $caught")
         assertTrue(runtime.cell.closed)
         assertEquals(2, runtime.cell.advances)
         assertEquals(1, runtime.starts)

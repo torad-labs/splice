@@ -29,10 +29,12 @@ package splice.head.round
 import splice.core.turn.TurnOutcome
 import splice.upstream.ClientGone
 import splice.upstream.RoundBody
+import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
 
 /**
- * POSTs one round of the turn and returns its honest outcome — the FoldRunner variant, which also
+ * POSTs one round of the turn and returns its honest outcome, or the ending it never had — the FoldRunner
+ * variant, which also
  * hands over the sink the round's frames go to.
  *
  * Fold buffers: a truncated round's output is DISCARDED and the next round is re-POSTed with its
@@ -42,7 +44,7 @@ import splice.upstream.sse.WireSink
  * re-anchor runner's sinkless sibling, which splices rounds onto a LIVE emitter instead.
  */
 internal fun interface PostRoundToSink {
-    suspend operator fun invoke(body: RoundBody, sink: WireSink): TurnOutcome
+    suspend operator fun invoke(body: RoundBody, sink: WireSink): RoundResult
 }
 
 /**
@@ -53,7 +55,7 @@ internal fun interface PostRoundToSink {
  * message. Nothing to redirect, so nothing to pass.
  */
 internal fun interface PostRound {
-    suspend operator fun invoke(body: RoundBody): TurnOutcome
+    suspend operator fun invoke(body: RoundBody): RoundResult
 }
 
 /**

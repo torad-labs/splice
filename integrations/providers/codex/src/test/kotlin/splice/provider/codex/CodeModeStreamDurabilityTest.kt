@@ -31,6 +31,7 @@ import splice.provider.codex.stream.CodeModeSourceRecords
 import splice.provider.codex.stream.CodeModeSourceState
 import splice.provider.codex.stream.CodeModeStreamAdmission
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.sse.CustomToolSource
 import splice.upstream.sse.WireSink
@@ -112,12 +113,12 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
                 stateFiles.unblock()
             }
             val recovered = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                .intercept(history(listOf(first)), StepSink(), post) as TurnOutcome.Success
+                .intercept(history(listOf(first)), StepSink(), post).turn() as TurnOutcome.Success
             assertBilling(recovered.usage)
             assertTrue(record.sourceState?.consumed == true)
             assertFinalIdentity(post, recovered)
             val repeated = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                .intercept(history(listOf(first)), StepSink(), post) as TurnOutcome.Success
+                .intercept(history(listOf(first)), StepSink(), post).turn() as TurnOutcome.Success
             assertEquals(5L, repeated.usage.outputTokens, "terminal usage is claimed once")
             assertEquals(1, runtime.starts)
             assertEquals(3, post.posts, "only the initial source and two ordinary continuations were posted")
@@ -145,9 +146,9 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
         }
         val upstream = GatedPost(calls).apply { complete.complete(Unit) }
         val observed = object : RedirectableRoundPost by upstream {
-            override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+            override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
                 val raw = upstream.into(bodyJson, sink)
-                rawUsage.complete((raw as TurnOutcome.Success).usage)
+                rawUsage.complete(((raw as RoundResult.Outcome).outcome as TurnOutcome.Success).usage)
                 return raw
             }
         }
@@ -158,7 +159,7 @@ class CodeModeStreamDurabilityTest : CodeModeStatementStreamSupport() {
             withTimeout(1_500) { runtime.firstRead.await() }
             assertTrue(runtime.firstReads.single() is CodeModeSourcePart.Delta)
             upstream.gates.drop(1).forEach { it.complete(Unit) }
-            val outcome = pending.await() as TurnOutcome.Success
+            val outcome = pending.await().turn() as TurnOutcome.Success
             assertTrue(calls.callback.isCompleted, "the script's client call already left")
             assertTrue(blocked, "refusal starts only after durable client-call issuance")
             assertEquals(100L, rawUsage.await().inputTokens, "the posting round's independent witness survives")

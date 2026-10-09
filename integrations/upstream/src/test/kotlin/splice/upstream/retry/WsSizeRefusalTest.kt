@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.turn.ErrorType
@@ -19,6 +18,7 @@ import splice.upstream.failure.FailureSource
 import splice.upstream.failure.UpstreamFailureClassifier
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.UpstreamFailed
+import splice.upstream.transport.assertEnds
 import splice.upstream.transport.clientOver
 import splice.upstream.transport.fakeAuth
 import splice.upstream.transport.posted
@@ -47,7 +47,7 @@ class WsSizeRefusalTest {
         }
         val ctx = PostContext(url = "https://api.example.test/v1", auth = fakeAuth, extraHeaders = { emptyMap() })
         ctx.bodyRefusedAsTooLarge = sizeRefused
-        val failure = assertThrows<UpstreamFailed> { clientOver(engine).posted(ctx, "{}") { "ok" } }
+        val failure = assertEnds<UpstreamFailed> { clientOver(engine).posted(ctx, "{}") { "ok" } }
         return Sent(calls.get(), failure)
     }
 

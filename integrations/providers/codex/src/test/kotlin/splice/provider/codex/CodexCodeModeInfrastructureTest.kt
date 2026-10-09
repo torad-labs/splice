@@ -9,6 +9,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.turn.FailureCause
 import splice.core.turn.TurnOutcome
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -45,8 +46,8 @@ class CodexCodeModeInfrastructureTest : CodeModeBridgeTestSupport() {
         var posts = 0
         val result = manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
             posts++
-            outerOutcome()
-        }
+            RoundResult.Outcome(outerOutcome())
+        }.turn()
         assertTrue(result is TurnOutcome.Failure)
         if (atStartup) {
             assertEquals(FailureCause.INTERNAL, (result as TurnOutcome.Failure).cause)
@@ -68,7 +69,7 @@ class CodexCodeModeInfrastructureTest : CodeModeBridgeTestSupport() {
         manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) { body ->
             posts++
             retryPost = body
-            outerOutcome()
+            RoundResult.Outcome(outerOutcome())
         }
         // The retry of the same request cannot resume a lost cell: it completes the record with
         // the fault as its visible output and goes upstream once; the source is never rerun.

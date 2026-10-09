@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.TurnOutcome
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 
 class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
@@ -36,8 +37,8 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(turn, null, disableParallel = false)
             .intercept(history(turn, id to "shot"), RecordingSink()) {
                 upstream = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
         // The script RESUMED with the result (not interrupted), and read a marker that says where
         // the pixels went — never the base64.
@@ -68,7 +69,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         manager.interceptor(turn, null, disableParallel = false)
             .intercept(history(turn, id to "shot"), RecordingSink()) {
                 live = it
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
 
         // A fresh bridge over the same state file: the next turn carries the client's own history
@@ -78,8 +79,8 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         val next = reloaded.interceptor(turn, null, disableParallel = false)
             .intercept(history(turn, id to "shot", tail = ANSWER_AND_NEXT), RecordingSink()) {
                 replay = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(next is TurnOutcome.Success, next.toString())
         val liveItems = input(live)
         val replayItems = input(replay)
@@ -96,18 +97,22 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         val runtime = ScriptedRuntime(ArrayDeque(listOf(calls("r1", "r2"), CodeModeStep.Completed("done"))))
         val manager = bridge(runtime)
         val sink = RecordingSink()
-        manager.interceptor(turn(), outer(), disableParallel = false).intercept(BASE_REQUEST, sink) { outerOutcome() }
+        manager.interceptor(turn(), outer(), disableParallel = false).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val (first, second) = sink.tools.map { it.id }
         val turn = turnWithResults(manager, first to IMAGE_A, second to IMAGE_B)
         manager.interceptor(turn, null, disableParallel = false)
-            .intercept(history(turn, first to "one", second to "two"), RecordingSink()) { completedOutcome() }
+            .intercept(history(turn, first to "one", second to "two"), RecordingSink()) {
+                RoundResult.Outcome(completedOutcome())
+            }
 
         val reloaded = bridge(ScriptedRuntime(ArrayDeque()))
         var replay = ""
         reloaded.interceptor(turn, null, disableParallel = false)
             .intercept(history(turn, first to "one", second to "two", tail = ANSWER_AND_NEXT), RecordingSink()) {
                 replay = it
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
         val images = imageMessages(input(replay))
         assertEquals(2, images.size)
@@ -134,8 +139,8 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(replayed, null, disableParallel = false)
             .intercept(clientHistory, RecordingSink()) {
                 posted = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
         assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
         assertEquals(input(clientHistory), input(posted), "B's result and pixels stay exactly B's")
@@ -158,8 +163,8 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(turn, null, disableParallel = false)
             .intercept(history(turn, id to "text", tail = listOf(stray)), RecordingSink()) {
                 upstream = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
         assertEquals(1, runtime.cell.advances, "interrupted: the script did not resume")
         val items = input(upstream)
@@ -175,7 +180,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         val id = start(manager, runtime)
         val turn = turnWithResults(manager, id to IMAGE_A)
         manager.interceptor(turn, null, disableParallel = false)
-            .intercept(history(turn, id to "shot"), RecordingSink()) { completedOutcome() }
+            .intercept(history(turn, id to "shot"), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
 
         // The same file a v3 daemon would have written: no `media` key on any result. Nothing else moves.
         rewriteSavedResults { result -> JsonObject(result.filterKeys { it != "media" }) }
@@ -185,8 +190,8 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         val next = reloaded.interceptor(turn, null, disableParallel = false)
             .intercept(history(turn, id to "shot", tail = ANSWER_AND_NEXT), RecordingSink()) {
                 replay = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(next is TurnOutcome.Success, next.toString())
         val items = input(replay)
         // Placed (canonical pair present, no omission), and the image the client carries survives
@@ -210,8 +215,8 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
             .intercept(history(turn, id to "shot"), RecordingSink()) { body ->
                 posted += body
                 // Upstream answers A's canonical history with a second script, B, at once.
-                if (posted.size == 1) outerOutcome("outer-2") else completedOutcome()
-            }
+                RoundResult.Outcome(if (posted.size == 1) outerOutcome("outer-2") else completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
         assertEquals(2, posted.size)
         val first = input(posted[0])
@@ -235,7 +240,9 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         }
         val replay = turnWithResults(reloaded, first to IMAGE_A, second to null)
         val outcome = reloaded.interceptor(replay, null, disableParallel = false)
-            .intercept(history(replay, first to "shot", second to "next"), RecordingSink()) { completedOutcome() }
+            .intercept(history(replay, first to "shot", second to "next"), RecordingSink()) {
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
     }
 
@@ -246,7 +253,9 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         }
         val replay = turnWithBlocks(reloaded, first to DOCUMENT, second to TEXT_ONLY)
         val outcome = reloaded.interceptor(replay, null, disableParallel = false)
-            .intercept(history(replay, first to "doc", second to "next"), RecordingSink()) { completedOutcome() }
+            .intercept(history(replay, first to "doc", second to "next"), RecordingSink()) {
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
     }
 
@@ -263,8 +272,8 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         val outcome = reloaded.interceptor(replay, null, disableParallel = false)
             .intercept(clientHistory, RecordingSink()) {
                 posted = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
         assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
         assertEquals(input(clientHistory), input(posted), "changed legacy text and its media stay client-owned")
@@ -282,8 +291,8 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(replay, null, disableParallel = false)
             .intercept(history(replay, id to "shot", tail = ANSWER_AND_NEXT), RecordingSink()) {
                 posted = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
         assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
         val items = input(posted)
@@ -304,7 +313,7 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         manager.interceptor(replay, null, disableParallel = false)
             .intercept(history(replay, id to "t", tail = ANSWER_AND_NEXT), RecordingSink()) {
                 posted = it
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
         val items = input(posted)
         assertEquals(0, items.count { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") })
@@ -320,14 +329,16 @@ class CodexCodeModeMediaTest : CodeModeBridgeTestSupport() {
         val id = start(manager, runtime)
         val turn = turnWithResults(manager, id to image)
         val outcome = manager.interceptor(turn, null, disableParallel = false)
-            .intercept(history(turn, id to "t"), RecordingSink()) { completedOutcome() }
+            .intercept(history(turn, id to "t"), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
         return manager to id
     }
 
     private suspend fun start(manager: CodexCodeModeBridge, runtime: ScriptedRuntime): String {
         val sink = RecordingSink()
-        manager.interceptor(turn(), outer(), disableParallel = false).intercept(BASE_REQUEST, sink) { outerOutcome() }
+        manager.interceptor(turn(), outer(), disableParallel = false).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         assertEquals(1, runtime.starts)
         return sink.tools.single().id
     }

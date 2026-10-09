@@ -24,7 +24,6 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -114,7 +113,7 @@ class UpstreamClientRefreshChainTest {
         val perf = TurnPerf()
         val engine = engineAnswering(HttpStatusCode.Unauthorized)
 
-        val failure = assertThrows<UpstreamFailed> { postOnce(clientOver(engine), auth, perf) }
+        val failure = assertEnds<UpstreamFailed> { postOnce(clientOver(engine), auth, perf) }
 
         assertEquals(401, failure.status)
         assertEquals(listOf("Bearer tok-old", "Bearer tok-new"), seenAuth.toList())
@@ -128,7 +127,7 @@ class UpstreamClientRefreshChainTest {
         val perf = TurnPerf()
         val engine = engineAnswering(HttpStatusCode.Unauthorized)
 
-        val failure = assertThrows<UpstreamFailed> { postOnce(clientOver(engine), auth, perf) }
+        val failure = assertEnds<UpstreamFailed> { postOnce(clientOver(engine), auth, perf) }
 
         assertEquals(401, failure.status)
         assertEquals(listOf("Bearer tok-old"), seenAuth.toList(), "nothing to reissue with: no second call")

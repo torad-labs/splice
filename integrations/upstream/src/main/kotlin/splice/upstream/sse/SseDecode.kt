@@ -9,8 +9,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.Cancellables
-import splice.upstream.failure.SseFrameTooLargeException
 import splice.upstream.transport.ChannelReads
+import splice.upstream.transport.SseFrameTooLarge
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.CharsetDecoder
@@ -102,10 +102,15 @@ internal class SseEventAssembler(
     // empty-only buffer fails `parseToJsonElement("")` identically either way (no emitted event).
     val dataBuffer = StringBuilder()
 
+    /** Set when an event grew past [maxEventChars]; the reader stops there rather than throw. */
+    var tooLarge: SseFrameTooLarge? = null
+        private set
+
     fun append(buf: StringBuilder, start: Int, end: Int) {
         val separator = if (dataBuffer.isEmpty()) 0 else 1
         if (dataBuffer.length + separator + (end - start) > maxEventChars) {
-            throw SseFrameTooLargeException("SSE event", maxEventChars)
+            tooLarge = SseFrameTooLarge("SSE event", maxEventChars)
+            return
         }
         if (separator == 1) dataBuffer.append('\n')
         dataBuffer.append(buf, start, end)

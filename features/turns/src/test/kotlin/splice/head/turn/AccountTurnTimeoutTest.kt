@@ -53,6 +53,7 @@ import splice.upstream.ClientFrameEmitted
 import splice.upstream.ProviderTuning
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
+import splice.upstream.RoundResult
 import splice.upstream.TurnSignals
 import splice.upstream.WsRound
 import splice.upstream.WsRoundRunner
@@ -85,13 +86,13 @@ class AccountTurnTimeoutTest {
                 ClientFrameEmitted { false },
                 0L,
             )
-            assertTrue(rig.post.post(inputs) is TurnOutcome.Success)
+            assertTrue(rig.post.outcome(inputs) is TurnOutcome.Success)
             assertEquals(0L, drive.perf.snapshot().marks[PerfKeys.STREAM_END])
             // The prior POST completed; this next POST has attempt zero but no whole-turn budget left.
             rig.expire()
             val callsBeforeContinuation = rig.calls
             val attemptsBeforeContinuation = drive.perf.snapshot().counters[PerfKeys.ATTEMPTS]
-            val actual = rig.post.post(inputs) as TurnOutcome.Failure
+            val actual = rig.post.outcome(inputs) as TurnOutcome.Failure
             val expectedTerminal = rig.newTerminal()
             val expected = rig.provider.streamTranslator(
                 drive.meta,
@@ -129,13 +130,13 @@ class AccountTurnTimeoutTest {
         val turnJob = Job()
         try {
             val first = rig.inputs(drive, this, turnJob)
-            val known = rig.post.post(first) as TurnOutcome.Success
+            val known = rig.post.outcome(first) as TurnOutcome.Success
             drive.recordRawRound(known)
             val expected = TurnBill.counters(known.usage)
             rig.expire()
             val continuation = rig.inputs(drive, this, turnJob)
             val before = drive.perf.snapshot().counters[PerfKeys.TRANSPORT_ATTEMPT_STARTS]
-            val ended = rig.post.post(continuation)
+            val ended = rig.post.outcome(continuation)
             drive.recordRawRound(ended)
             assertEquals(1, rig.calls, "the expired continuation never reached HTTP")
             assertEquals(before, drive.perf.snapshot().counters[PerfKeys.TRANSPORT_ATTEMPT_STARTS])
@@ -157,7 +158,7 @@ class AccountTurnTimeoutTest {
         val turnJob = Job()
         try {
             val first = rig.inputs(drive, this, turnJob)
-            val known = rig.post.post(first) as TurnOutcome.Success
+            val known = rig.post.outcome(first) as TurnOutcome.Success
             drive.recordRawRound(known)
             rig.expire()
             val continuation = rig.inputs(drive, this, turnJob)
@@ -178,7 +179,7 @@ class AccountTurnTimeoutTest {
                 override fun roundBypassed(meta: TurnMeta) = Unit
             }
             runner.attempt("{}", drive.meta, emptyMap(), Credentials.Bearer("synthetic"), drive.perf)
-            val ended = rig.post.post(continuation)
+            val ended = rig.post.outcome(continuation)
             assertEquals(1, websocketCalls, "the WebSocket attempt began before its HTTP fallback was skipped")
             drive.recordRawRound(ended)
             val total = checkNotNull(drive.rawRoundUsage())
@@ -301,3 +302,6 @@ class AccountTurnTimeoutTest {
         )
     }
 }
+
+private suspend fun SseRoundPost.outcome(inputs: WsRoundInputs): TurnOutcome =
+    (post(inputs) as RoundResult.Outcome).outcome

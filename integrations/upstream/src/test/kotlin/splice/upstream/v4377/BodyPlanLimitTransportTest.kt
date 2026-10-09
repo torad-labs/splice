@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.Credentials
@@ -24,6 +23,7 @@ import splice.upstream.transport.PostContext
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
+import splice.upstream.transport.assertEnds
 import splice.upstream.transport.posted
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -83,7 +83,7 @@ class BodyPlanLimitTransportTest {
         val notices = mutableListOf<String>()
         val client = client(engine)
 
-        val failure = assertThrows<UpstreamFailed> { client.posted(ctx(bodyReader, notices), "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader, notices), "{}") { "unreachable" } }
 
         assertEquals(1, calls.get(), "today this is 4 attempts and about 45 s of holds")
         assertEquals(429, failure.status)
@@ -109,7 +109,7 @@ class BodyPlanLimitTransportTest {
         }
         val client = client(engine)
 
-        val failure = assertThrows<UpstreamFailed> {
+        val failure = assertEnds<UpstreamFailed> {
             client.posted(ctx(bodyReader, mutableListOf()), "{}") { "unreachable" }
         }
 
@@ -135,9 +135,9 @@ class BodyPlanLimitTransportTest {
         }
         val notices = mutableListOf<String>()
         val client = client(engine, ElapsedClock { now.get() })
-        assertThrows<UpstreamFailed> { client.posted(ctx(bodyReader, notices), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader, notices), "{}") { "unreachable" } }
 
-        assertThrows<UpstreamFailed> { client.posted(ctx(bodyReader, notices), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(ctx(bodyReader, notices), "{}") { "unreachable" } }
         assertEquals(1, calls.get(), "a follower inside the horizon never reaches upstream")
 
         now.set(MAX_RATE_LIMIT_COOLDOWN_MS + 1)
@@ -167,7 +167,7 @@ class BodyPlanLimitTransportTest {
         }
         val client = client(engine)
 
-        assertThrows<UpstreamFailed> {
+        assertEnds<UpstreamFailed> {
             client.posted(ctx(ClientAuthProvider("claude-splice"), mutableListOf()), "{}") { "unreachable" }
         }
 

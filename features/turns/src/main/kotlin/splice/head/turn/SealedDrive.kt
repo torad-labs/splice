@@ -17,6 +17,7 @@ package splice.head.turn
 import io.ktor.http.HttpStatusCode
 import splice.upstream.failure.ForeignCredential
 import splice.upstream.transport.UpstreamAuthMissing
+import splice.upstream.transport.UpstreamEnding
 import splice.upstream.transport.UpstreamFailed
 import java.util.concurrent.CancellationException
 
@@ -34,10 +35,13 @@ internal class SealedDrive(
     ) {
         try {
             failures.catchingTurnFailure { oneDrive.driveOneTurn(drive, pingClient) }
-                .onFailure { e ->
-                    recordCredentialFailure(drive, e)
-                    ending.emitFailure(drive, e)
+                .onSuccess { ended ->
+                    if (ended != null) {
+                        recordCredentialFailure(drive, ended)
+                        ending.emitEnding(drive, ended)
+                    }
                 }
+                .onFailure { e -> ending.emitFailure(drive, e) }
         } catch (e: CancellationException) {
             cancellationSeal.stampAndSeal(drive, seal, e)
             // A head-owned cut cancelled only the child turn. Collect may still send its buffered 529 reply.
@@ -49,7 +53,7 @@ internal class SealedDrive(
         }
     }
 
-    private suspend fun recordCredentialFailure(drive: TurnDrive, failure: Throwable) {
+    private suspend fun recordCredentialFailure(drive: TurnDrive, failure: UpstreamEnding) {
         val account = drive.account ?: return
         when {
             failure is UpstreamAuthMissing -> account.markCredentialMissing()

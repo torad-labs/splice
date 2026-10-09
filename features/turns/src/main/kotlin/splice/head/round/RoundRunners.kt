@@ -3,12 +3,13 @@
 // once instead of beside the emitter and both post shapes, and the runners are built here.
 package splice.head.round
 
-import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryNotice
+import splice.upstream.RoundResult
 import splice.upstream.ToolSearchPolicy
 import splice.upstream.sse.WireSink
+import splice.upstream.transport.UpstreamEnding
 
 /** The turn-scoped collaborators every runner shares: the head tag, its log, the signals the runners
  *  read, [finish] for the one terminal outcome, and the tool-search policy when the head has one. */
@@ -38,5 +39,11 @@ internal class RoundRunners(
      *  salvagedUsage, so the tokens the vendor billed went unrecorded. There are no absorbed rounds
      *  here, so the accumulator is empty by construction and a Success or a clean abandonment passes
      *  through untouched. */
-    suspend fun finishAlone(outcome: TurnOutcome) = finish(rounds.withFailureSalvage(outcome, RoundUsage()))
+    suspend fun finishAlone(result: RoundResult): UpstreamEnding? = when (result) {
+        is RoundResult.Outcome -> {
+            finish(rounds.withFailureSalvage(result.outcome, RoundUsage()))
+            null
+        }
+        is RoundResult.Ended -> result.ending
+    }
 }

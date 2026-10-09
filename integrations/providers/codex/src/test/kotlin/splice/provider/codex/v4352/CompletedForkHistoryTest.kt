@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.turn
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 
@@ -39,11 +41,11 @@ internal class CompletedForkHistoryTest : CodeModeBridgeTestSupport() {
         val first = RecordingSink()
         val initial = listOf("""{"role":"developer","content":"s"}""", """{"role":"user","content":"start"}""")
         manager.interceptor(turn(), disableParallel = false)
-            .intercept(body(initial), first) { outerOutcome("original-outer") }
+            .intercept(body(initial), first) { RoundResult.Outcome(outerOutcome("original-outer")) }
         val originalId = first.tools.single().id
         val original = initial + read(originalId) + output(originalId, "X")
         manager.interceptor(turn(originalId, "X"), disableParallel = false)
-            .intercept(body(original), RecordingSink()) { completedOutcome() }
+            .intercept(body(original), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
 
         val fork = initial + read(originalId) + output(originalId, "Y")
         val forkSink = RecordingSink()
@@ -52,13 +54,15 @@ internal class CompletedForkHistoryTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(turn(originalId, "Y"), disableParallel = false)
             .intercept(body(fork), forkSink) { posted ->
                 posts++
-                if (posts == 1) {
-                    outerOutcome("fork-outer")
-                } else {
-                    continued = posted
-                    completedOutcome()
-                }
-            }
+                RoundResult.Outcome(
+                    if (posts == 1) {
+                        outerOutcome("fork-outer")
+                    } else {
+                        continued = posted
+                        completedOutcome()
+                    },
+                )
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success)
         if (forkSink.tools.isNotEmpty()) {
             val forkId = forkSink.tools.single().id
@@ -67,14 +71,12 @@ internal class CompletedForkHistoryTest : CodeModeBridgeTestSupport() {
                 disableParallel = false,
             ).intercept(body(fork + read(forkId) + output(forkId, "fork result")), RecordingSink()) { posted ->
                 continued = posted
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
         }
         val items = logical(continued)
-        assertTrue(
-            Json.parseToJsonElement(output(originalId, "Y")) in items,
-            "the fork's changed output stays ordinary",
-        )
+        val forkOutput = Json.parseToJsonElement(output(originalId, "Y"))
+        assertTrue(forkOutput in items, "the fork's changed output stays ordinary")
         assertTrue(items.none { (it as? JsonObject)?.get("call_id")?.jsonPrimitive?.content == "original-outer" })
         assertTrue(items.any { (it as? JsonObject)?.get("call_id")?.jsonPrimitive?.content == "fork-outer" })
         assertEquals(2, runtime.cells[0].advances, "the original record remains untouched")

@@ -8,9 +8,9 @@ import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialKey
@@ -28,6 +28,7 @@ import splice.upstream.transport.PostContext
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
+import splice.upstream.transport.assertEnds
 import splice.upstream.transport.posted
 import java.nio.file.Files
 import java.nio.file.Path
@@ -80,7 +81,7 @@ class ProviderHoldClientRestartTest {
             respond(native, HttpStatusCode.TooManyRequests, headersOf("x-should-retry", listOf("true", "false")))
         }
         val original = client(dir, refusing)
-        val observer = assertThrows<UpstreamFailed> { original.posted(context("synthetic-a"), "{}") { "unreachable" } }
+        val observer = assertEnds<UpstreamFailed> { original.posted(context("synthetic-a"), "{}") { "unreachable" } }
         assertEquals(1, refusing.requestHistory.size, "a native refusal is never retried by splice")
         val key = requireNotNull(CredentialKey.fromHeaders(mapOf("x-api-key" to "synthetic-a")))
         assertTrue(Files.exists(dir.resolve("hold-$key.json")))
@@ -94,7 +95,7 @@ class ProviderHoldClientRestartTest {
         val restarted = client(dir, recovered, ElapsedClock { elapsed })
         restarted.clearRateLimitCooldown()
 
-        val follower = assertThrows<UpstreamFailed> {
+        val follower = assertEnds<UpstreamFailed> {
             restarted.posted(context("synthetic-a"), "{}") { "unreachable" }
         }
         assertTrue(follower.localHold)
@@ -106,7 +107,7 @@ class ProviderHoldClientRestartTest {
         assertEquals(listOf("synthetic-b"), attempts, "another login on the same head is unaffected")
 
         elapsed = 119_999L
-        assertThrows<UpstreamFailed> { restarted.posted(context("synthetic-a"), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { restarted.posted(context("synthetic-a"), "{}") { "unreachable" } }
         assertEquals(listOf("synthetic-b"), attempts)
         elapsed = 120_001L
         assertEquals("ok", restarted.posted(context("synthetic-a"), "{}") { "ok" })
@@ -127,11 +128,11 @@ class ProviderHoldClientRestartTest {
         val cooldown = RateLimitCooldown(ElapsedClock { elapsed }, WallClock { wall }, store)
         cooldown.clear()
         assertEquals(1_000L, cooldown.remainingMs())
-        assertThrows<UpstreamFailed> { cooldown.failFastIfArmed {} }
+        checkNotNull(cooldown.heldFailure {})
         elapsed = 1_001L
         wall = 101_001L
         assertEquals(0L, cooldown.remainingMs())
-        cooldown.failFastIfArmed {}
+        assertNull(cooldown.heldFailure {})
         val expired = RateLimitCooldown(ElapsedClock { elapsed }, WallClock { wall }, store)
         expired.clear()
         assertEquals(0L, expired.remainingMs())
@@ -164,7 +165,7 @@ class ProviderHoldClientRestartTest {
                 headersOf(),
             )
         }
-        assertThrows<UpstreamFailed> { client(dir, refusing).posted(ctx(mutableListOf()), "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client(dir, refusing).posted(ctx(mutableListOf()), "{}") { "unreachable" } }
 
         val calls = AtomicInteger()
         val recovered = MockEngine {

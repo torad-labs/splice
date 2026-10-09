@@ -1,6 +1,7 @@
 // NEW: wire projection preserves the transport's redirected-round capability.
 package splice.provider.codex.stream
 
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
@@ -21,6 +22,7 @@ import splice.upstream.RoundBody
 import splice.upstream.RoundBodyInterceptor
 import splice.upstream.RoundBodyPost
 import splice.upstream.RoundInterceptor
+import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
 
 internal class CodeModeRoundInterceptor(
@@ -43,14 +45,22 @@ internal class CodeModeRoundInterceptor(
     }
 
     /** The round as the head holds it: a tree is read as that tree, so nothing renders or reparses it here. */
-    override suspend fun intercept(body: RoundBody, sink: WireSink, postRound: InterceptedRoundPost): TurnOutcome {
+    override suspend fun intercept(body: RoundBody, sink: WireSink, postRound: InterceptedRoundPost): RoundResult {
         val upstream = CodeModeUpstreamPosts.of(postRound, wire)
-        return controller.run(
-            CodeModeRunInput(turn, initialOuter, disableParallel, wire.body(body), sink, upstream, recovery),
-        )
+        val slot = CodeModeEndingSlot()
+        val outcome = withContext(slot) {
+            controller.run(
+                CodeModeRunInput(turn, initialOuter, disableParallel, wire.body(body), sink, upstream, recovery),
+            )
+        }
+        val ending = slot.ending ?: return RoundResult.Outcome(outcome)
+        // The turn ends on the ending, but the cut it made is still its own: the step's bill carried it.
+        val cuts = (outcome as? TurnOutcome.Failure)?.salvagedUsage?.cutRounds ?: 0L
+        if (cuts > 0) postRound.perf?.add(PerfKeys.CUT_SOURCE_ROUNDS, cuts)
+        return RoundResult.Ended(ending)
     }
 
-    override suspend fun intercept(bodyJson: String, sink: WireSink, postRound: InterceptedRoundPost): TurnOutcome =
+    override suspend fun intercept(bodyJson: String, sink: WireSink, postRound: InterceptedRoundPost): RoundResult =
         intercept(RoundBody.Text(bodyJson), sink, postRound)
 }
 
@@ -80,7 +90,10 @@ internal open class CodeModeUpstreamPost(
 
     suspend operator fun invoke(body: CodeModeBody): TurnOutcome {
         val posted = wire.upstream(body)
-        return if (target is RoundBodyPost) target.post(posted) else target(posted.text)
+        return when (val result = if (target is RoundBodyPost) target.post(posted) else target(posted.text)) {
+            is RoundResult.Outcome -> result.outcome
+            is RoundResult.Ended -> CodeModeEndings.settle(result.ending)
+        }
     }
 }
 
@@ -92,7 +105,7 @@ internal class CodeModeRedirectablePost(
     /** The posting turn's row, for a round still streaming when that turn returns. */
     val postingRow: PostingTurnRow? get() = target.postingRow
 
-    suspend fun into(body: CodeModeBody, sink: WireSink): TurnOutcome {
+    suspend fun into(body: CodeModeBody, sink: WireSink): RoundResult {
         val posted = wire.upstream(body)
         return if (target is RoundBodyPost) target.postInto(posted, sink) else target.into(posted.text, sink)
     }

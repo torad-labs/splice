@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test
 import splice.core.reasoning.ReasoningReplay
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeBridge
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 
 private const val DEVELOPER = """{"role":"developer","content":"s"}"""
@@ -53,14 +54,14 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
             val opening = listOf(DEVELOPER, user("Find the reader and use it."), reasoning("rs_a"), SEARCH, FOUND)
             val first = RecordingSink()
             manager.interceptor(turn(), disableParallel = false).intercept(body(opening), first) {
-                outerOutcome("outer-1").copy(reasoningEnvelopes = listOf(envelope("rs_b")))
+                RoundResult.Outcome(outerOutcome("outer-1").copy(reasoningEnvelopes = listOf(envelope("rs_b"))))
             }
             val read1 = first.tools.single().id
 
             val second = RecordingSink()
             val answered1 = listOf(DEVELOPER, user("Find the reader and use it."), read(read1), output(read1, "A"))
             manager.interceptor(turn(read1, "A"), disableParallel = false).intercept(body(answered1), second) {
-                outerOutcome("outer-2")
+                RoundResult.Outcome(outerOutcome("outer-2"))
             }
             val read2 = second.tools.single().id
 
@@ -68,7 +69,7 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
             manager.interceptor(turn(read2, "B"), disableParallel = false)
                 .intercept(body(answered1 + read(read2) + output(read2, "B")), RecordingSink()) {
                     posted = it
-                    completedOutcome()
+                    RoundResult.Outcome(completedOutcome())
                 }
 
             assertTrue(logLines.none { ABANDONED in it }, logLines.joinToString("\n"))
@@ -98,14 +99,14 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
             val read1 = startFirst(manager)
             val second = RecordingSink()
             manager.interceptor(turn(read1, "A"), disableParallel = false)
-                .intercept(body(abandoning(read1)), second) { outerOutcome("outer-2") }
+                .intercept(body(abandoning(read1)), second) { RoundResult.Outcome(outerOutcome("outer-2")) }
             val read2 = second.tools.single().id
 
             var posted = ""
             manager.interceptor(turn(read2, "B"), disableParallel = false)
                 .intercept(body(history(read1) + read(read2) + output(read2, "B")), RecordingSink()) {
                     posted = it
-                    completedOutcome()
+                    RoundResult.Outcome(completedOutcome())
                 }
 
             assertEquals(1, logLines.count { ABANDONED in it }, "only the first record: ${logLines.joinToString("\n")}")
@@ -119,7 +120,7 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
         val manager = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Calls(listOf(call("r", "Read")))))))
         val read1 = startFirst(manager)
         manager.interceptor(turn(read1, "A"), disableParallel = false)
-            .intercept(body(abandoning(read1)), RecordingSink()) { completedOutcome() }
+            .intercept(body(abandoning(read1)), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         val stored = stateFiles.text()
         assertTrue("code-mode history no longer places the running script" in stored, "the store keeps the detail")
 
@@ -128,7 +129,7 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
         restored.interceptor(turn(), disableParallel = false)
             .intercept(body(history(read1) + user("Next.")), RecordingSink()) {
                 posted = it
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
 
         assertTrue(read1 in posted, "the abandoned record's callback stays the client's")
@@ -139,7 +140,7 @@ class CodeModeHistoryPlacementTest : CodeModeBridgeTestSupport() {
     private suspend fun startFirst(manager: CodexCodeModeBridge): String {
         val sink = RecordingSink()
         manager.interceptor(turn(), disableParallel = false).intercept(body(conversation()), sink) {
-            outerOutcome("outer-1")
+            RoundResult.Outcome(outerOutcome("outer-1"))
         }
         return sink.tools.single().id
     }

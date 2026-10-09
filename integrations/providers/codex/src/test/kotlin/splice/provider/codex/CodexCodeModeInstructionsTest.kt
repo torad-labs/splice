@@ -21,6 +21,7 @@ import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.buildResponsesTestRequest
 import splice.dialect.responses.request.ResponsesCodeModeProjection
 import splice.upstream.BuiltTurn
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 
 class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
@@ -185,7 +186,9 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         val (initialBody, initial) = request("Caller")
         val first = builder.prepare(initialBody, "session", initial)
         val readSink = RecordingSink()
-        checkNotNull(first.roundInterceptor).intercept(first.requestBody.toString(), readSink) { outerOutcome() }
+        checkNotNull(first.roundInterceptor).intercept(first.requestBody.toString(), readSink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val readId = readSink.tools.single().id
         val readMessages = INITIAL_MESSAGES + callback(readId, "Read", "A")
         val (readBody, readBuilt) = request("Caller", messages = readMessages)
@@ -193,7 +196,7 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         val editSink = RecordingSink()
         val waiting = checkNotNull(second.roundInterceptor).intercept(second.requestBody.toString(), editSink) {
             error("a dependent local resumption must not call the model")
-        }
+        }.turn()
         assertTrue((waiting as TurnOutcome.Success).hasToolUse)
         val editId = editSink.tools.single().id
         val (editBody, editBuilt) = request("Caller", messages = readMessages + callback(editId, "Edit", "B"))
@@ -201,8 +204,8 @@ class CodexCodeModeInstructionsTest : CodeModeBridgeTestSupport() {
         var finalBody = ""
         val result = checkNotNull(third.roundInterceptor).intercept(third.requestBody.toString(), RecordingSink()) {
             finalBody = it
-            completedOutcome()
-        }
+            RoundResult.Outcome(completedOutcome())
+        }.turn()
         assertTrue(result is TurnOutcome.Success)
         val finalRequest = Json.parseToJsonElement(finalBody).jsonObject
         assertEquals(instructions(first.requestBody), instructions(finalRequest))

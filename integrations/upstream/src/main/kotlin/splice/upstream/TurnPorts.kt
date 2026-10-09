@@ -111,7 +111,7 @@ public fun interface BodyAmendment {
  * here, and cancelling the calling coroutine aborts the in-flight body (the lock-safe kill).
  */
 public fun interface UpstreamHandler<T> {
-    public suspend operator fun invoke(response: UpstreamResponse): T
+    public suspend operator fun invoke(response: UpstreamResponse): StreamRead<T>
 }
 
 /**

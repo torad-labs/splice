@@ -20,6 +20,7 @@ import splice.provider.codex.stream.CodeModeStreamAdmission
 import splice.upstream.LifecycleScope
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundBody
+import splice.upstream.RoundResult
 import splice.upstream.TurnEnd
 import splice.upstream.sse.WireSink
 import kotlin.time.Duration.Companion.hours
@@ -42,8 +43,8 @@ class CodeModeCompletionCallbackTest : CodeModeStatementStreamSupport() {
         val scope = LifecycleScope(StandardTestDispatcher(testScheduler))
         val terminal = TurnOutcome.Success(false, false, Usage())
         val post = object : RedirectableRoundPost {
-            override suspend fun invoke(bodyJson: String): TurnOutcome = terminal
-            override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome = terminal
+            override suspend fun invoke(bodyJson: String): RoundResult = RoundResult.Outcome(terminal)
+            override suspend fun into(bodyJson: String, sink: WireSink): RoundResult = RoundResult.Outcome(terminal)
         }
         var endings = 0
         try {

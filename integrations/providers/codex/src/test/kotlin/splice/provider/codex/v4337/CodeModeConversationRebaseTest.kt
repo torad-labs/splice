@@ -16,6 +16,8 @@ import splice.provider.codex.BASE_REQUEST
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodeModeRetention
 import splice.provider.codex.CodexCodeModeBridge
+import splice.provider.codex.turn
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 
@@ -58,21 +60,23 @@ class CodeModeConversationRebaseTest : CodeModeBridgeTestSupport() {
             val started = bridge.interceptor(results(ids), null, disableParallel = false)
                 .intercept(if (n == 0) BASE_REQUEST else history(items), sink) { body ->
                     starts += body
-                    TurnOutcome.Success(false, false, Usage(), customCalls = listOf(outer("outer-$n", source)))
-                }
+                    RoundResult.Outcome(
+                        TurnOutcome.Success(false, false, Usage(), customCalls = listOf(outer("outer-$n", source))),
+                    )
+                }.turn()
             assertTrue((started as TurnOutcome.Success).hasToolUse, "script $n never reached its Read: $started")
             ids += sink.tools.single().id
             items += read(ids.last())
             val done = bridge.interceptor(results(ids), null, disableParallel = false)
-                .intercept(history(items), RecordingSink()) { completedOutcome() }
+                .intercept(history(items), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }.turn()
             assertTrue(done is TurnOutcome.Success, "script $n did not complete: $done")
         }
         var finalPost = ""
         val last = bridge.interceptor(results(ids), null, disableParallel = false)
             .intercept(history(items + said("thanks")), RecordingSink()) { body ->
                 finalPost = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(last is TurnOutcome.Success, "the turn after the third script failed: $last")
         return Run(starts, finalPost, ids)
     }

@@ -40,6 +40,7 @@ import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
 import splice.upstream.ReanchorRound
 import splice.upstream.RoundBody
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -173,7 +174,7 @@ class CodexCodeModeReanchorTest {
             bridge.interceptor(answering, disableParallel = false)
                 .intercept(next.toString(), sink) {
                     nextPosted = event(it)
-                    TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                    RoundResult.Outcome(TurnOutcome.Success(false, false, Usage(), messageClosed = true))
                 }
             val abandons = lines.filter { "logical history does not match its persisted baseline" in it }
             if (changedBaseline) {
@@ -238,7 +239,7 @@ class CodexCodeModeReanchorTest {
             bridge.interceptor(answering, disableParallel = false)
                 .intercept(recovery.nextRequest(received, false).toString(), sink) {
                     posted = event(it)
-                    TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+                    RoundResult.Outcome(TurnOutcome.Success(false, false, Usage(), messageClosed = true))
                 }
             assertTrue(lines.none { "abandoned record" in it || "interrupted extra=STEERING" in it }, lines.toString())
             assertEquals(3, runtime.advances)
@@ -265,7 +266,7 @@ class CodexCodeModeReanchorTest {
             signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),
             finish = { finish(it) },
         ),
-        postRoundToSink = { request, target -> recovery.post(request, target) },
+        postRoundToSink = { request, target -> RoundResult.Outcome(recovery.post(request, target)) },
         postRound = { error("redirectable post expected") },
         interception = RoundInterception(interceptor = bridge.interceptor(turn, disableParallel = false)),
     )
@@ -451,8 +452,8 @@ class CodexCodeModeReanchorTest {
                 signals = RunnerSignals(watchdogFired = { false }, clientGone = { false }),
                 finish = { finish(it) },
             ),
-            postRoundToSink = { request, _ -> post(request.text) },
-            postRound = { post(it.text) },
+            postRoundToSink = { request, _ -> RoundResult.Outcome(post(request.text)) },
+            postRound = { RoundResult.Outcome(post(it.text)) },
             interception = RoundInterception(interceptor = bridge.interceptor(turn, disableParallel = false)),
         )
     }

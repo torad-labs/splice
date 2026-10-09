@@ -19,6 +19,7 @@ import splice.core.turn.Usage
 import splice.core.util.JsonScalars
 import splice.provider.codex.stream.CodeModeSourceBuffer
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -59,7 +60,7 @@ class CodeModeSourceBufferedCertificationTest : CodeModeStatementStreamSupport()
                 assertEquals(1, runtime.reads, "the worker already holds Edit and must not request more source")
                 assertFalse(next.callback.isCompleted, "certification, not a cursor read, must block buffered Edit")
                 post.terminal.complete(Unit)
-                val outcome = withTimeout(5_000) { callback.await() }
+                val outcome = withTimeout(5_000) { callback.await() }.turn()
                 assertTrue(outcome is TurnOutcome.Failure, outcome.toString())
                 assertFalse(next.callback.isCompleted, "a rejected or stopped terminal never publishes buffered Edit")
                 assertEquals(1, runtime.starts)
@@ -98,9 +99,9 @@ private class BufferedPost(
     val terminal = kotlinx.coroutines.CompletableDeferred<Unit>()
     var stopAtMalformedTerminal: CodexCodeModeBridge? = null
 
-    override suspend fun invoke(bodyJson: String): TurnOutcome = into(bodyJson, initial)
+    override suspend fun invoke(bodyJson: String): RoundResult = into(bodyJson, initial)
 
-    override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+    override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
         sink.customToolSource(CustomToolSource.Started(call.copy(input = "")))
         sink.customToolSource(CustomToolSource.Delta(call.callId, call.input))
         firstIssued.await()
@@ -119,7 +120,7 @@ private class BufferedPost(
                 }
             }
         }
-        return TurnOutcome.Success(false, stopper == null, Usage(), customCalls = calls)
+        return RoundResult.Outcome(TurnOutcome.Success(false, stopper == null, Usage(), customCalls = calls))
     }
 }
 

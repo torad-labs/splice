@@ -63,12 +63,13 @@ import splice.upstream.credentials.AccountPool
 import splice.upstream.credentials.AccountQuotaSource
 import splice.upstream.credentials.PoolAccount
 import splice.upstream.credentials.Selection
-import splice.upstream.failure.SseFrameTooLargeException
 import splice.upstream.retry.InflightGate
 import splice.upstream.retry.LiveLimit
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.TurnWatchdog
+import splice.upstream.transport.SseFrameTooLarge
 import splice.upstream.transport.UpstreamAuthMissing
+import splice.upstream.transport.UpstreamEnding
 import splice.upstream.transport.UpstreamFailed
 import java.io.IOException
 import java.nio.file.Files
@@ -373,7 +374,7 @@ class TurnEndingAccountingTest {
     @Test
     fun `oversized-frame records perf + provider health despite a dead client - DR-128`() {
         val rig = EndingRig("dr128-frame")
-        emitExpectingDeadClient(rig, SseFrameTooLargeException("data", 1))
+        emitExpectingDeadClient(rig, SseFrameTooLarge("data", 1))
         rig.assertRecorded("error:upstream-frame-too-large")
         assertEquals(1L, rig.health.snapshot().providerError)
     }
@@ -671,7 +672,7 @@ class TurnFailurePermanenceTest {
     @Test
     fun `an oversized response frame retains its retryable decision despite a dead client`() {
         val rig = EndingRig("frame-permanence", tmp, accountingProvider())
-        emitExpectingDeadClient(rig, SseFrameTooLargeException("data", 1))
+        emitExpectingDeadClient(rig, SseFrameTooLarge("data", 1))
         AsyncFileIo.drain()
         val row = Files.readAllLines(rig.perfFile).single()
         assertTrue(row.contains("\"outcome\":\"error:upstream-frame-too-large\""), row)
@@ -723,6 +724,17 @@ private fun accountingProvider(): Provider = TestResponsesProvider(
     ),
     reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
 )
+
+private fun emitExpectingDeadClient(rig: EndingRig, ending: UpstreamEnding) = runBlocking {
+    val drive = rig.drive()
+    try {
+        assertThrows<IOException>("the dead-client write still propagates (status quo at the driver)") {
+            runBlocking { rig.ending.emitEnding(drive, ending) }
+        }
+    } finally {
+        drive.slot.release()
+    }
+}
 
 private fun emitExpectingDeadClient(rig: EndingRig, e: Throwable) = runBlocking {
     val drive = rig.drive()

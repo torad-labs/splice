@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 
 /**
@@ -36,15 +37,17 @@ class CodexCodeModeEnvironmentTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val sink = RecordingSink()
         manager.interceptor(turn(), null, disableParallel = false)
-            .intercept(liteBody(tools = listOf("Read"), instructions = "s"), sink) { outerOutcome() }
+            .intercept(liteBody(tools = listOf("Read"), instructions = "s"), sink) {
+                RoundResult.Outcome(outerOutcome())
+            }
         val readId = sink.tools.single().id
 
         var posted = ""
         val outcome = manager.interceptor(turn(readId, "A"), null, disableParallel = false)
             .intercept(liteBody(listOf("Read", "Edit"), "s", callback(readId)), RecordingSink()) { body ->
                 posted = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         assertTrue(outcome is TurnOutcome.Success)
         // A grown tool list is a RESUME, not an interruption: the cell received the result.
@@ -70,14 +73,14 @@ class CodexCodeModeEnvironmentTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val sink = RecordingSink()
         manager.interceptor(turn(), null, disableParallel = false)
-            .intercept(liteBody(listOf("Read"), "first prompt"), sink) { outerOutcome() }
+            .intercept(liteBody(listOf("Read"), "first prompt"), sink) { RoundResult.Outcome(outerOutcome()) }
         val readId = sink.tools.single().id
 
         var posted = ""
         manager.interceptor(turn(readId, "A"), null, disableParallel = false)
             .intercept(liteBody(listOf("Read"), "second prompt", callback(readId)), RecordingSink()) { body ->
                 posted = body
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
 
         val items = Json.parseToJsonElement(posted).jsonObject.getValue("input").jsonArray
@@ -99,10 +102,12 @@ class CodexCodeModeEnvironmentTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val sink = RecordingSink()
         manager.interceptor(turn(), null, disableParallel = false)
-            .intercept(liteBody(listOf("Read"), "s"), sink) { outerOutcome() }
+            .intercept(liteBody(listOf("Read"), "s"), sink) { RoundResult.Outcome(outerOutcome()) }
         val readId = sink.tools.single().id
         manager.interceptor(turn(readId, "A"), null, disableParallel = false)
-            .intercept(liteBody(listOf("Read"), "s", callback(readId)), RecordingSink()) { completedOutcome() }
+            .intercept(liteBody(listOf("Read"), "s", callback(readId)), RecordingSink()) {
+                RoundResult.Outcome(completedOutcome())
+            }
         stateFiles.rewriteRecords { record -> JsonObject(record + ("metadataVersion" to JsonPrimitive(2))) }
 
         val restored = bridge(ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("must not run")))))
@@ -110,8 +115,8 @@ class CodexCodeModeEnvironmentTest : CodeModeBridgeTestSupport() {
         val outcome = restored.interceptor(turn(readId, "A"), null, disableParallel = false)
             .intercept(liteBody(listOf("Read"), "s", callback(readId)), RecordingSink()) { body ->
                 posted = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         assertTrue(outcome is TurnOutcome.Success)
         assertTrue(readId in posted)
@@ -125,15 +130,15 @@ class CodexCodeModeEnvironmentTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val sink = RecordingSink()
         manager.interceptor(turn(), null, disableParallel = false)
-            .intercept(liteBody(listOf("Read"), "s"), sink) { outerOutcome() }
+            .intercept(liteBody(listOf("Read"), "s"), sink) { RoundResult.Outcome(outerOutcome()) }
         val readId = sink.tools.single().id
 
         var posted = ""
         val outcome = manager.interceptor(turn(readId, "A", model = "gpt-6-sol"), null, disableParallel = false)
             .intercept(liteBody(listOf("Read"), "s", callback(readId)), RecordingSink()) { body ->
                 posted = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         assertTrue(outcome is TurnOutcome.Success)
         assertTrue(readId in posted)

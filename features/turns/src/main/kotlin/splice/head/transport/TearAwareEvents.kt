@@ -7,6 +7,7 @@ package splice.head.transport
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
@@ -16,26 +17,25 @@ import splice.head.turn.TurnDrive
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.Provider
 import splice.upstream.sse.SseReader
-import splice.upstream.transport.StreamTornBeforeClient
 import java.io.IOException
 
 internal class TearAwareEvents(
     private val provider: Provider,
     private val log: LogSink,
 ) {
-    /** The upstream SSE event flow with instrumentation + the G5 pre-frame tear rethrow: a
-     *  transport tear BEFORE any client frame must reach the reissue machinery in UpstreamClient.
-     *  The translators swallow IOException into the honest terminal — right for every post-frame
-     *  case, but it made the pre-frame reissue unreachable (review 2026-07-19). Rethrown as
-     *  [StreamTornBeforeClient] (plain RuntimeException) so no translator catch matches. */
+    /** The upstream SSE event flow with instrumentation + the G5 pre-frame tear: a transport tear BEFORE any
+     *  client frame must reach the reissue machinery in UpstreamClient. The translators swallow IOException into the
+     *  honest terminal — right for every post-frame case, but it made the pre-frame reissue unreachable (review
+     *  2026-07-19). So the tear is recorded in [end] and the flow completes, and an oversized frame the reader
+     *  stopped at is recorded there too; [SseRoundConsume] reads [end] after the translator returns. */
     fun run(
         drive: TurnDrive,
         body: ByteReadChannel,
         capture: ZeroEventCapture,
         frameEmittedThisRound: ClientFrameEmitted,
-        postedAtMs: Long? = null,
+        end: RoundEnd = RoundEnd(),
     ): Flow<JsonObject> {
-        val events = SseReader(
+        val reader = SseReader(
             onBytes = { chunkBytes ->
                 // Bytes TOUCH the slot (liveness) and stamp FIRST_BYTE; they do not pick the
                 // watchdog tier. A Responses handshake (response.created) is bytes with no output,
@@ -62,8 +62,9 @@ internal class TearAwareEvents(
                 drive.trace?.responseText(text)
                 captureWants || drive.trace != null
             },
-        ).sseJsonEvents(body)
-        return UpstreamEventTiming(drive.perf, postedAtMs).observe(events).onEach { event ->
+        )
+        val events = reader.sseJsonEvents(body)
+        return UpstreamEventTiming(drive.perf, end.postedAtMs).observe(events).onEach { event ->
             UpstreamProgress.observe(event, drive.watchdog)
             capture.sawEvent = true
             drive.perf.add(PerfKeys.EVENTS_IN, 1)
@@ -77,15 +78,13 @@ internal class TearAwareEvents(
             // reissue path and silently re-POST, racing the salvage-and-continue decision the
             // terminal outcome is about to make. A stall is not a tear: the socket was fine, the
             // backend went quiet, and the round has an outcome to report.
-            if (reissuable(e, drive, frameEmittedThisRound)) {
-                throw StreamTornBeforeClient(e)
-            }
-            throw e
-        }
+            if (e !is IOException || !reissuable(drive, frameEmittedThisRound)) throw e
+            end.torn = e
+        }.onCompletion { end.oversized = reader.exceeded }
     }
 
-    /** Whether a thrown [e] is a transport tear this round may silently re-POST: an I/O failure,
-     *  before any client frame, that the watchdog did NOT cause. */
-    private fun reissuable(e: Throwable, drive: TurnDrive, frameEmittedThisRound: ClientFrameEmitted): Boolean =
-        e is IOException && !frameEmittedThisRound() && drive.watchdog.fired == null
+    /** Whether an I/O tear is one this round may silently re-POST: before any client frame, and not caused by
+     *  the watchdog. */
+    private fun reissuable(drive: TurnDrive, frameEmittedThisRound: ClientFrameEmitted): Boolean =
+        !frameEmittedThisRound() && drive.watchdog.fired == null
 }

@@ -105,7 +105,7 @@ internal class CodeModeNativeAbandonBillingTest : CodeModeStatementStreamSupport
         )
         try {
             val first = manager.interceptor(turn(), disableParallel = false)
-                .intercept(body(baseline), sink, posting) as TurnOutcome.Success
+                .intercept(body(baseline), sink, posting).turn() as TurnOutcome.Success
             val callback = withTimeout(1_500) { sink.callback.await() }
             assertEmptyStep(first, source)
             val registry = member(manager, "registry") as CodexCodeModeRegistry
@@ -120,7 +120,7 @@ internal class CodeModeNativeAbandonBillingTest : CodeModeStatementStreamSupport
             } + latest + callbacks(callback)
             val changed = body(replayed)
             val next = manager.interceptor(turn(callback.id, "result-0"), disableParallel = false)
-                .intercept(changed, RecordingSink(), source) as TurnOutcome.Success
+                .intercept(changed, RecordingSink(), source).turn() as TurnOutcome.Success
             withTimeout(1_500) { source.stopped.await() }
             assertTrue(
                 logLines.any { "abandoned record" in it && "native_branch=${branch.wire}" in it },
@@ -181,9 +181,9 @@ internal class CodeModeNativeAbandonBillingTest : CodeModeStatementStreamSupport
     ) {
         val ordinary = replayed + item("""{"role":"user","content":"a different ordinary continuation"}""")
         val later = manager.interceptor(turn(), disableParallel = false)
-            .intercept(body(ordinary), RecordingSink(), source) as TurnOutcome.Success
+            .intercept(body(ordinary), RecordingSink(), source).turn() as TurnOutcome.Success
         val repeated = manager.interceptor(turn(callback.id, "result-0"), disableParallel = false)
-            .intercept(body(replayed), RecordingSink(), source) as TurnOutcome.Success
+            .intercept(body(replayed), RecordingSink(), source).turn() as TurnOutcome.Success
         for (step in listOf(later, repeated)) {
             assertEquals(0L, step.usage.absorbed.rounds)
             assertEquals(0L, step.usage.cutRounds)

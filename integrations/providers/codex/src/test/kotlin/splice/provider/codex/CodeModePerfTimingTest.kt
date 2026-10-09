@@ -25,6 +25,7 @@ import splice.core.util.WallClock
 import splice.provider.codex.stream.CodeModeUpstreamPost
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.RoundBody
+import splice.upstream.RoundResult
 
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class CodeModePerfTimingTest : CodeModeBridgeTestSupport() {
@@ -60,14 +61,14 @@ internal class CodeModePerfTimingTest : CodeModeBridgeTestSupport() {
                 .intercept(BASE_REQUEST, RecordingSink()) {
                     entered.complete(Unit)
                     release.await()
-                    completedOutcome()
+                    RoundResult.Outcome(completedOutcome())
                 }
         }
         entered.await()
         val queued = async {
             val post = object : InterceptedRoundPost {
                 override val perf: TurnPerf = perf
-                override suspend fun invoke(bodyJson: String) = completedOutcome()
+                override suspend fun invoke(bodyJson: String) = RoundResult.Outcome(completedOutcome())
             }
             manager.interceptor(turn(sessionId = "synthetic-perf-session"), disableParallel = false)
                 .intercept(BASE_REQUEST, RecordingSink(), post)

@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -23,6 +22,7 @@ import splice.core.util.WallClock
 import splice.core.wire.RateLimitReply
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
+import splice.upstream.StreamRead
 import splice.upstream.Waiter
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.RecordingWaiter
@@ -31,6 +31,7 @@ import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
 import splice.upstream.transport.UpstreamPost
+import splice.upstream.transport.assertEnds
 import splice.upstream.transport.fakeAuth
 import splice.upstream.transport.posted
 import java.time.Instant
@@ -279,7 +280,7 @@ class RateLimitCooldownTest {
         cooldown.arm(19_000L)
         elapsed += 1_000L
 
-        val failure = assertThrows<UpstreamFailed> { cooldown.failFastIfArmed(RetryNotice { }) }
+        val failure = checkNotNull(cooldown.heldFailure(RetryNotice { }))
 
         assertEquals(429, failure.status)
         assertTrue(failure.localHold, "the same client error retains its local-hold provenance")
@@ -317,7 +318,7 @@ class RateLimitCooldownTest {
         val bodies = mutableListOf<String>()
         listOf(32_000L, 34_000L, 39_000L).forEach { gap ->
             elapsed += gap
-            bodies += assertThrows<UpstreamFailed> { cooldown.failFastIfArmed(RetryNotice { }) }.body
+            bodies += checkNotNull(cooldown.heldFailure(RetryNotice { })).body
         }
 
         // The countdown shrinks across the episode, which is what made it read as a schedule.
@@ -350,11 +351,10 @@ class RateLimitCooldownTest {
 
         cooldown.rateLimitedPlan(
             pushbackMs = 5_301_000L,
-            turn = RateLimitTurn(cooldown, pooledAccount = false),
+            turn = RateLimitTurn(cooldown, pooledAccount = false, body = body),
             canRetry = false,
             onRetry = RetryNotice {},
             nextRefreshed = false,
-            body = body,
         )
 
         assertEquals(MAX_RATE_LIMIT_COOLDOWN_MS, cooldown.remainingMs(), "the ARMED horizon still clamps at 120s")
@@ -362,7 +362,7 @@ class RateLimitCooldownTest {
 
         // No clock advance before reading the body: the cooldown is armed to 120s, so the
         // remaining is still 120s and the provider instant is exactly the one the body named.
-        val failure = assertThrows<UpstreamFailed> { cooldown.failFastIfArmed(RetryNotice { }) }
+        val failure = checkNotNull(cooldown.heldFailure(RetryNotice { }))
 
         assertTrue(failure.body.contains("this gateway is holding retries"), failure.body)
         assertTrue(failure.body.contains("holding retries for 120s"), failure.body)
@@ -388,11 +388,14 @@ class RateLimitCooldownTest {
 
         cooldown.rateLimitedPlan(
             pushbackMs = 5_301_000L,
-            turn = RateLimitTurn(cooldown, pooledAccount = false),
+            turn = RateLimitTurn(
+                cooldown,
+                pooledAccount = false,
+                body = """{"error":{"message":"resets at 2026-09-16T20:02:52Z"}}""",
+            ),
             canRetry = false,
             onRetry = RetryNotice {},
             nextRefreshed = false,
-            body = """{"error":{"message":"resets at 2026-09-16T20:02:52Z"}}""",
         )
 
         assertEquals(0L, cooldown.unavailableForMs(), "a single-account head is never evicted")
@@ -407,11 +410,10 @@ class RateLimitCooldownTest {
             val cooldown = RateLimitCooldown(ElapsedClock { 0L }, WallClock { wall })
             cooldown.rateLimitedPlan(
                 pushbackMs = 5_301_000L,
-                turn = RateLimitTurn(cooldown, pooledAccount = false),
+                turn = RateLimitTurn(cooldown, pooledAccount = false, body = body),
                 canRetry = false,
                 onRetry = RetryNotice {},
                 nextRefreshed = false,
-                body = body,
             )
             return cooldown.providerUnavailableForMs()
         }
@@ -427,15 +429,14 @@ class RateLimitCooldownTest {
         val cooldown = RateLimitCooldown(ElapsedClock { 0L }, WallClock { 0L })
         cooldown.rateLimitedPlan(
             pushbackMs = 5_301_000L,
-            turn = RateLimitTurn(cooldown, pooledAccount = false),
+            turn = RateLimitTurn(cooldown, pooledAccount = false, body = """{"detail":"Rate limit exceeded"}"""),
             canRetry = false,
             onRetry = RetryNotice {},
             nextRefreshed = false,
-            body = """{"detail":"Rate limit exceeded"}""",
         )
         assertEquals(0L, cooldown.providerUnavailableForMs())
 
-        val failure = assertThrows<UpstreamFailed> { cooldown.failFastIfArmed(RetryNotice { }) }
+        val failure = checkNotNull(cooldown.heldFailure(RetryNotice { }))
 
         assertTrue(failure.body.contains("this gateway is holding retries"), failure.body)
         assertFalse(failure.body.contains("provider"), "no provider horizon is known: ${failure.body}")
@@ -484,7 +485,7 @@ class RateLimitCooldownBudgetTest {
         // UpstreamTurnWaitExhausted), and a Delivered here fails the assertEquals instead of
         // arriving as an exception any broad catch on the turn path would have taken for a bug.
         val round = RoundBody.Text("{}")
-        assertEquals(UpstreamPost.TurnWaitExhausted, client.post(context, round) { "unreachable" })
+        assertEquals(UpstreamPost.TurnWaitExhausted, client.post(context, round) { StreamRead.Read("unreachable") })
 
         assertEquals(0, calls.get())
         // The operator-visible line is unchanged; the class that used to carry it is gone.
@@ -517,7 +518,7 @@ class RateLimitCooldownBudgetTest {
             remainingTurnWait = RemainingTurnWait { 100L },
         )
 
-        assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
 
         assertEquals(1, calls.get())
         assertTrue(waiter.waits.isEmpty())
@@ -550,7 +551,7 @@ class RateLimitCooldownBudgetTest {
             remainingTurnWait = RemainingTurnWait { 60_000L },
         )
 
-        assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
 
         assertEquals(3, calls.get(), "every attempt in the budget is spent before the client sees a 429")
         assertEquals(listOf(15_000L, 15_000L), waiter.waits, "the schedule is the 15s floor, not the 5301s header")
@@ -590,7 +591,7 @@ class RateLimitCooldownBudgetTest {
             remainingTurnWait = RemainingTurnWait { 20_000L },
         )
 
-        assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+        assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
 
         assertEquals(3, calls.get(), "a short 429 now spends the retry budget it always had")
         // The WAITS do not arm; the FINAL give-up does, exactly as the 5xx branch arms only in its
@@ -622,11 +623,11 @@ class RateLimitCooldownBudgetTest {
                 remainingTurnWait = RemainingTurnWait { 5_000L },
             )
 
-            assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+            assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
             assertEquals(1, calls.get())
             assertEquals(30_000L, cooldown.remainingMs(), "$status must protect followers")
             assertEquals(0L, cooldown.unavailableForMs(), "$status must not remove the account from selection")
-            assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+            assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
             assertEquals(1, calls.get(), "the next $status post must fail fast without reaching upstream")
         }
     }
@@ -656,7 +657,7 @@ class RateLimitCooldownBudgetTest {
                 remainingTurnWait = RemainingTurnWait { 100L },
             )
 
-            assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+            assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
             assertEquals(1, calls.get(), "Retry-After $retryAfter must not outlive the turn budget")
             assertTrue(waiter.waits.isEmpty(), "Retry-After $retryAfter must not start the shipped backoff")
             assertEquals(0L, cooldown.unavailableForMs())
@@ -760,7 +761,9 @@ class RateLimitCooldownOuterTurnTest {
             rateLimitCooldown = cooldown,
         ).also { it.relayRateLimitReplies = true }
         try {
-            val refusal = client.post(context, RoundBody.Text("{}")) { "unreachable" } as UpstreamPost.Refused
+            val refusal = client.post(context, RoundBody.Text("{}")) {
+                StreamRead.Read("unreachable")
+            } as UpstreamPost.Refused
             assertEquals(reply, refusal.failure.rateLimitReply)
             assertTrue(refusal.failure.localHold)
             assertEquals(0, calls.get(), "the raced native hold must reach the handoff caller without an upstream send")
@@ -799,7 +802,7 @@ class RateLimitCooldownOuterTurnTest {
             onRetry = RetryNotice(notices::add),
         )
 
-        val failure = assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+        val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
 
         assertEquals(503, failure.status)
         assertEquals("provider-specific failure", failure.body)
@@ -838,10 +841,13 @@ class RateLimitCooldownOuterTurnTest {
             if (leftAfterFirstRound == 0L) {
                 // V4-114 PIN: same value, on the second round of a spent turn cap.
                 val round = RoundBody.Text("{}")
-                assertEquals(UpstreamPost.TurnWaitExhausted, client.post(context, round) { "unreachable" })
+                assertEquals(
+                    UpstreamPost.TurnWaitExhausted,
+                    client.post(context, round) { StreamRead.Read("unreachable") },
+                )
                 assertEquals(1, calls.get(), "round two must make zero calls after the turn cap is spent")
             } else {
-                val failure = assertThrows<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
+                val failure = assertEnds<UpstreamFailed> { client.posted(context, "{}") { "unreachable" } }
                 assertEquals(2, calls.get(), "round two may attempt once but cannot spend a new retry budget")
                 assertEquals(503, failure.status)
                 assertEquals("round two unavailable", failure.body)

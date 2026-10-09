@@ -40,7 +40,7 @@ class CodeModeSourceDispatchTearTest : CodeModeStatementStreamSupport() {
             post.gates[1].complete(Unit)
             val next = StepSink()
             val outcome = manager.interceptor(continuation.copy(tools = tools), disableParallel = false)
-                .intercept(history(listOf(first)), next, post) as TurnOutcome.Failure
+                .intercept(history(listOf(first)), next, post).turn() as TurnOutcome.Failure
             assertEquals(FailureCause.UPSTREAM_CONN_RESET, outcome.cause)
             assertFalse(next.callback.isCompleted)
             assertEquals(1, runtime.starts)

@@ -16,6 +16,7 @@ import splice.head.wire.LostClient
 import splice.upstream.Provider
 import splice.upstream.Ticker
 import splice.upstream.codemode.ProcessTicker
+import splice.upstream.transport.UpstreamEnding
 
 internal class TurnOneDrive(
     private val provider: Provider,
@@ -52,7 +53,9 @@ internal class TurnOneDrive(
     // the PARENT call and propagates DOWN into the turn — a parentless Job() severed that, so
     // Esc'd turns kept streaming upstream and pinning gate slots until the watchdog cap
     // (the audit's top concurrency finding, 2026-07-18).
-    suspend fun driveOneTurn(drive: TurnDrive, pingClient: Boolean = true) {
+    /** Null when the turn ran to its own terminal; otherwise the ending its last round had, for the caller to write
+     *  once the pinger, the pacer and the cap poller below have stopped (the order an exception took before). */
+    suspend fun driveOneTurn(drive: TurnDrive, pingClient: Boolean = true): UpstreamEnding? {
         // CompletableJob completed in finally: a plain child Job never completes on its own and
         // would park the PARENT call forever after the turn returns.
         val owner = synchronized(lifecycle) { stopSignal }
@@ -62,7 +65,7 @@ internal class TurnOneDrive(
         // Per TURN: the line remembers whether it has spoken, so the first one explains itself, and
         // counts the heartbeats of the current quiet stretch to thin its lines out.
         val progress = TurnProgressLine()
-        try {
+        return try {
             withContext(turnJob + owner) {
                 val self = this
                 // Whole-turn client-liveness pinger (2026-07-19 storm): launched BEFORE the first
@@ -107,8 +110,9 @@ internal class TurnOneDrive(
                 val pacing = if (pingClient) launchPacing(drive, self, turnJob) else null
                 val capPoller = drive.watchdog.launchTotalCap(self, turnJob)
                 try {
-                    roundRun.run(drive, self, turnJob)
-                    pacing?.let { drive.channel.finishPacing(it, deps.seams.clock) }
+                    roundRun.run(drive, self, turnJob).also {
+                        pacing?.let { drive.channel.finishPacing(it, deps.seams.clock) }
+                    }
                 } finally {
                     pacing?.cancel()
                     pinger?.cancel()

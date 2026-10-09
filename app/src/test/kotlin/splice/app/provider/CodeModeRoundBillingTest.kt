@@ -1414,7 +1414,7 @@ private class HeadGenerationBillingFixture(tmp: Path) {
         }
     }
 
-    fun <R : Any> takeCut(round: R): Boolean = invoke(round, "takeCut") as Boolean
+    fun <R : Any> takeCut(round: R): Boolean = invoke(billingField(round, "cut"), "take") as Boolean
 
     private fun <O : Any> invoke(owner: O, method: String): Any? =
         owner.javaClass.getDeclaredMethod(method).apply { isAccessible = true }.invoke(owner)

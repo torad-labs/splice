@@ -54,6 +54,7 @@ import splice.upstream.BuiltTurn
 import splice.upstream.LifecycleScope
 import splice.upstream.ProviderTuning
 import splice.upstream.RoundInterceptor
+import splice.upstream.RoundResult
 import splice.upstream.TurnEnd
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.retry.InflightGate
@@ -376,13 +377,15 @@ class TurnStreamerCleanupTest {
                     val index = sink.openText()
                     sink.textDelta(index, "synthetic complete answer")
                     sink.closeBlock(index)
-                    TurnOutcome.Success(
-                        hasToolUse = false,
-                        incomplete = false,
-                        emittedText = true,
-                        usage = Usage(),
-                        bodyText = "synthetic complete answer",
-                        messageClosed = true,
+                    RoundResult.Outcome(
+                        TurnOutcome.Success(
+                            hasToolUse = false,
+                            incomplete = false,
+                            emittedText = true,
+                            usage = Usage(),
+                            bodyText = "synthetic complete answer",
+                            messageClosed = true,
+                        ),
                     )
                 },
             ),

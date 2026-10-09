@@ -33,6 +33,7 @@ import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeWire
 import splice.provider.codex.CodexQuirks
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 
@@ -82,7 +83,7 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
         var posts = 0
         manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
             posts++
-            if (posts == 1) preface() else answer()
+            RoundResult.Outcome(if (posts == 1) preface() else answer())
         }
         val history = replayOf("""{"type":"text","text":"$PREFACE"},{"type":"text","text":"$ANSWER"}""")
         assertEquals(listOf("final_answer", "final_answer"), history.map { it.getValue("phase").toString().trim('"') })
@@ -98,7 +99,9 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
             val runtime = runtime()
             val manager = bridge(runtime)
             val sink = RecordingSink()
-            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) { preface() }
+            manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) {
+                RoundResult.Outcome(preface())
+            }
             val read = sink.tools.single().id
             val asAnswer = JsonObject(clientReplay() + ("phase" to JsonPrimitive("final_answer")))
 
@@ -106,7 +109,7 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
             manager.interceptor(turn(results = listOf(CodeModeResult(read, "A"))), disableParallel = false)
                 .intercept(answered(read, asAnswer), RecordingSink()) {
                     upstream = it
-                    completedOutcome()
+                    RoundResult.Outcome(completedOutcome())
                 }
 
             assertEquals(2, runtime.cell.advances, "the script got its result")
@@ -121,10 +124,12 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
     /** The model says [PREFACE] and starts the script; the client answers its Read. The Read's id. */
     private suspend fun finish(manager: CodexCodeModeBridge): String {
         val sink = RecordingSink()
-        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) { preface() }
+        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(preface())
+        }
         val read = sink.tools.single().id
         manager.interceptor(turn(results = listOf(CodeModeResult(read, "A"))), disableParallel = false)
-            .intercept(answered(read), RecordingSink()) { completedOutcome() }
+            .intercept(answered(read), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         return read
     }
 
@@ -139,7 +144,7 @@ class CodeModeContinuityPhaseTest : CodeModeBridgeTestSupport() {
         manager.interceptor(turn(), disableParallel = false)
             .intercept(JsonObject(body + ("input" to JsonArray(input))).toString(), RecordingSink()) {
                 upstream = it
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
         return upstream
     }

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.perf.InputDigest
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 
 internal class CodeModeAnchoredHistoryTest : CodeModeBridgeTestSupport() {
@@ -26,19 +27,21 @@ internal class CodeModeAnchoredHistoryTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val initial = """{"role":"user","content":"start"}"""
         val first = RecordingSink()
-        manager.interceptor(turn(), disableParallel = false).intercept(body(initial), first) { outerOutcome("outer-1") }
+        manager.interceptor(turn(), disableParallel = false).intercept(body(initial), first) {
+            RoundResult.Outcome(outerOutcome("outer-1"))
+        }
         val firstId = first.tools.single().id
         val firstHistory = "$initial,${callback(firstId, "A")}"
         manager.interceptor(turn(firstId, "A"), disableParallel = false)
-            .intercept(body(firstHistory), RecordingSink()) { completedOutcome() }
+            .intercept(body(firstHistory), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         val secondHistory = "$firstHistory," + """{"role":"user","content":"second"}"""
         val second = RecordingSink()
         manager.interceptor(turn(), disableParallel = false)
-            .intercept(body(secondHistory), second) { outerOutcome("outer-2") }
+            .intercept(body(secondHistory), second) { RoundResult.Outcome(outerOutcome("outer-2")) }
         val secondId = second.tools.single().id
         val history = body("$secondHistory,${callback(secondId, "B")}")
         manager.interceptor(turn(secondId, "B"), disableParallel = false)
-            .intercept(history, RecordingSink()) { completedOutcome() }
+            .intercept(history, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
 
         val newer = Json.decodeFromJsonElement<CodeModeRecordSnapshot>(stateFiles.records().last()).restore()
         val rewrite = CodexCodeModeHistory(Json).canonicalize(history, listOf(newer))
@@ -56,7 +59,7 @@ internal class CodeModeAnchoredHistoryTest : CodeModeBridgeTestSupport() {
         var posts = 0
         val input = body("""{"role":"user","content":"start"}""")
         manager.interceptor(turn(), disableParallel = false).intercept(input, RecordingSink()) {
-            if (posts++ == 0) outerOutcome() else completedOutcome()
+            RoundResult.Outcome(if (posts++ == 0) outerOutcome() else completedOutcome())
         }
         val stored = stateFiles.records().single()
         assertEquals(5, stored.getValue("metadataVersion").jsonPrimitive.content.toInt())
@@ -68,11 +71,13 @@ internal class CodeModeAnchoredHistoryTest : CodeModeBridgeTestSupport() {
     fun `v4 records retain digest replay compatibility while v5 records are created`() = runTest {
         val manager = bridge(ScriptedRuntime(steps("legacy")))
         val first = RecordingSink()
-        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, first) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, first) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val id = first.tools.single().id
         val history = requestWithResult(id, "A")
         manager.interceptor(turn(id, "A"), disableParallel = false)
-            .intercept(history, RecordingSink()) { completedOutcome() }
+            .intercept(history, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         val saved = Json.decodeFromJsonElement<CodeModeRecordSnapshot>(stateFiles.records().single())
         val legacy = saved.copy(
             metadataVersion = CODE_MODE_LEGACY_METADATA_VERSION,

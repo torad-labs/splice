@@ -8,7 +8,6 @@ package splice.upstream.v4428
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import splice.core.usage.PlanLimit
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
@@ -16,7 +15,6 @@ import splice.core.util.WallClock
 import splice.upstream.RetryNotice
 import splice.upstream.retry.RateLimitCooldown
 import splice.upstream.retry.RateLimitTurn
-import splice.upstream.transport.UpstreamFailed
 import java.time.Instant
 import java.time.ZoneId
 import java.util.TimeZone
@@ -60,17 +58,16 @@ class BurstResetZoneTest {
     private fun armedBy(body: String, cooldown: RateLimitCooldown = fresh()): RateLimitCooldown {
         cooldown.rateLimitedPlan(
             pushbackMs = 5_301_000L,
-            turn = RateLimitTurn(cooldown, pooledAccount = false),
+            turn = RateLimitTurn(cooldown, pooledAccount = false, body = body),
             canRetry = false,
             onRetry = RetryNotice {},
             nextRefreshed = false,
-            body = body,
         )
         return cooldown
     }
 
     private fun failFast(cooldown: RateLimitCooldown): String =
-        assertThrows<UpstreamFailed> { cooldown.failFastIfArmed(RetryNotice {}) }.body
+        checkNotNull(cooldown.heldFailure(RetryNotice {})).body
 
     @Test
     fun `a burst that names its reset says it in the machine's hour and zone, not as an ISO instant`() {

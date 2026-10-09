@@ -26,6 +26,7 @@ import splice.core.turn.Usage
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.provider.codex.stream.CodeModeRoundInterceptor
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -85,13 +86,13 @@ class CodeModeStatementForceCostTest {
                     val sink = ClientSink(post, index, forces, timings)
                     val body = request(results)
                     val before = bean.getThreadAllocatedBytes(Thread.currentThread().threadId())
-                    val outcome = manager.interceptor(turn(results)).intercept(body, sink, post)
+                    val outcome = manager.interceptor(turn(results)).intercept(body, sink, post).turn()
                     allocations += bean.getThreadAllocatedBytes(Thread.currentThread().threadId()) - before
                     assertTrue(outcome is TurnOutcome.Success, outcome.toString())
                     assertEquals(1, sink.ids.size)
                     results += CodeModeResult(sink.ids.single(), "synthetic result $index")
                 }
-                val completed = manager.interceptor(turn(results)).intercept(request(results), QuietSink(), post)
+                val completed = manager.interceptor(turn(results)).intercept(request(results), QuietSink(), post).turn()
                 assertTrue(completed is TurnOutcome.Success, completed.toString())
                 report(reporter, forces, post, timings, allocations)
                 assertEquals(post.gates.size, timings.size)
@@ -145,7 +146,7 @@ class CodeModeStatementForceCostTest {
         val manager = CodexCodeModeBridge(CodeModeBridgeConfig({ runtime }, location))
         try {
             manager.interceptor(crashTurn(), crashOuter(), disableParallel = false)
-                .intercept(CRASH_BODY, QuietSink()) { crashOutcome() }
+                .intercept(CRASH_BODY, QuietSink()) { RoundResult.Outcome(crashOutcome()) }
             assertEquals(0, starts, "dispatch without a client callback must still be durably no-rerun")
             assertTrue(Files.notExists(effect))
             assertEquals("DISPATCHED:2", dispatched, "both file and directory force must precede dispatch")
@@ -300,10 +301,12 @@ class CodeModeStatementForceCostTest {
         private var posts = 0
         private val source = STREAMED_STATEMENT.repeat(gates.size) + "text('measured');"
 
-        override suspend fun invoke(bodyJson: String): TurnOutcome = error("streaming sink is required")
+        override suspend fun invoke(bodyJson: String): RoundResult = error("streaming sink is required")
 
-        override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
-            if (posts++ > 0) return TurnOutcome.Success(false, false, Usage(), messageClosed = true)
+        override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
+            if (posts++ > 0) {
+                return RoundResult.Outcome(TurnOutcome.Success(false, false, Usage(), messageClosed = true))
+            }
             val call = GatewayCustomCall(
                 "synthetic-outer",
                 CODE_MODE_TOOL_NAME,
@@ -327,7 +330,9 @@ class CodeModeStatementForceCostTest {
             }
             val completed = call.copy(input = source, raw = JsonObject(call.raw + ("input" to JsonPrimitive(source))))
             sink.customToolSource(CustomToolSource.Completed(completed))
-            return TurnOutcome.Success(false, false, Usage(outputTokens = 1), customCalls = listOf(completed))
+            return RoundResult.Outcome(
+                TurnOutcome.Success(false, false, Usage(outputTokens = 1), customCalls = listOf(completed)),
+            )
         }
     }
 
@@ -386,7 +391,7 @@ class CodeModeStatementForceCostTest {
                     }
                 },
             )
-            manager.interceptor(crashTurn()).intercept(CRASH_BODY, QuietSink()) { crashOutcome() }
+            manager.interceptor(crashTurn()).intercept(CRASH_BODY, QuietSink()) { RoundResult.Outcome(crashOutcome()) }
         }
     }
 

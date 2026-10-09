@@ -40,6 +40,7 @@ import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderIdentity
 import splice.upstream.ProviderTuning
+import splice.upstream.RoundResult
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnSignals
 import splice.upstream.retry.InflightGate
@@ -178,7 +179,7 @@ private class SerializationRig(tmp: Path) {
                     finish = {},
                 ),
                 postRoundToSink = { _, _ -> error("the direct round must not fold") },
-                postRound = { success },
+                postRound = { RoundResult.Outcome(success) },
             ).run(drive.requestBody, null, null, drive.perf)
         } finally {
             drive.slot.release()
@@ -202,7 +203,7 @@ private class SerializationRig(tmp: Path) {
                 postRoundToSink = { _, _ -> error("the direct round must not fold") },
                 postRound = { wire ->
                     posted = wire.text
-                    success
+                    RoundResult.Outcome(success)
                 },
             ).run(drive.requestBody, null, null, drive.perf)
         } finally {

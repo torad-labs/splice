@@ -77,14 +77,6 @@ class TransportFailureReasonTest {
         )
     }
 
-    @Test
-    fun `splice's own tear wrapper is seen through to the socket's failure`() {
-        val text = reason(StreamTornBeforeClient(refused))
-
-        assertTrue(text.startsWith("connection refused by 127.0.0.1:8099"), text)
-        assertFalse(text.contains("stream torn"), text)
-    }
-
     // Mutant: test ConnectException before the timeout arm. Ktor's ConnectTimeoutException IS a
     // ConnectException, so a timeout would read as a refusal — the opposite remedy.
     @Test

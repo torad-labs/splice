@@ -10,9 +10,9 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
-import org.junit.jupiter.api.assertThrows
 import splice.core.turn.TurnOutcome
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.UpstreamFailed
@@ -34,10 +34,13 @@ class CodeModeUpstreamRefusalTest : CodeModeStatementStreamSupport() {
         val manager = bridge(IncrementalRuntime())
         val post = Refusing(GatedPost(StepSink()), refuseFrom = 1)
         try {
-            val thrown = assertThrows<UpstreamFailed> {
-                manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, StepSink(), post)
-            }
-            assertSame(post.refusal, thrown, "the turn ends on the upstream's own refusal, status and layers intact")
+            val ended = manager.interceptor(turn(), disableParallel = false)
+                .intercept(BASE_REQUEST, StepSink(), post)
+            assertSame(
+                post.refusal,
+                (ended as RoundResult.Ended).ending,
+                "the turn ends on the upstream's own refusal, status and layers intact",
+            )
             assertEquals(1, post.refused, "the refused source is posted once")
         } finally {
             manager.onHeadStop()
@@ -63,11 +66,11 @@ class CodeModeUpstreamRefusalTest : CodeModeStatementStreamSupport() {
                 }
                 if (step > 0) gated.gates[step].complete(Unit)
                 callbacks += withTimeout(1_500) { sinks[step].callback.await() }
-                val outcome = withTimeout(1_500) { request.await() }
+                val outcome = withTimeout(1_500) { request.await() }.turn()
                 assertTrue(outcome is TurnOutcome.Success, "step $step: $outcome")
             }
             val final = async {
-                runCatching {
+                run {
                     manager.interceptor(
                         turn(
                             results = callbacks.mapIndexed { index, call -> CodeModeResult(call.id, "result-$index") },
@@ -79,7 +82,7 @@ class CodeModeUpstreamRefusalTest : CodeModeStatementStreamSupport() {
             itemCompletion.complete(Unit)
             gated.complete.complete(Unit)
             val ended = withTimeout(5_000) { final.await() }
-            assertSame(post.refusal, ended.exceptionOrNull(), "ended=$ended")
+            assertSame(post.refusal, (ended as RoundResult.Ended).ending, "ended=$ended")
             assertEquals(1, post.refused, "the refused continuation is posted once")
         } finally {
             manager.onHeadStop()
@@ -93,13 +96,13 @@ class CodeModeUpstreamRefusalTest : CodeModeStatementStreamSupport() {
         var refused = 0
         private var posts = 0
 
-        override suspend fun invoke(bodyJson: String): TurnOutcome = into(bodyJson, StepSink())
+        override suspend fun invoke(bodyJson: String): RoundResult = into(bodyJson, StepSink())
 
-        override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+        override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
             posts++
             if (posts < refuseFrom) return first.into(bodyJson, sink)
             refused++
-            throw refusal
+            return RoundResult.Ended(refusal)
         }
     }
 }

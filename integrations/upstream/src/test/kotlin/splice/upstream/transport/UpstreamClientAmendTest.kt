@@ -17,7 +17,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -93,7 +92,7 @@ class UpstreamClientAmendTest {
                 headersOf(),
             )
         }
-        assertThrows<UpstreamFailed> {
+        assertEnds<UpstreamFailed> {
             post(clientOver(engine)) { _, _, _ ->
                 amends += 1
                 """{"input":"amended-$amends"}"""
@@ -111,7 +110,7 @@ class UpstreamClientAmendTest {
             bodies += bodyOf(request)
             respond("""{"error":{"message":"bad request"}}""", HttpStatusCode.BadRequest, headersOf())
         }
-        assertThrows<UpstreamFailed> { post(clientOver(engine)) { _, _, _ -> null } }
+        assertEnds<UpstreamFailed> { post(clientOver(engine)) { _, _, _ -> null } }
         assertTrue(bodies.all { it == """{"input":"original"}""" }, "no body swap without an amendment")
     }
 }

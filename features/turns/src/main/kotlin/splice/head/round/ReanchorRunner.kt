@@ -20,8 +20,10 @@ import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryBackoff
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
+import splice.upstream.RoundResult
 import splice.upstream.ToolSearchPolicy
 import splice.upstream.codemode.ProcessWaiter
+import splice.upstream.transport.UpstreamEnding
 import splice.upstream.transport.UpstreamTransport
 
 internal class ReanchorRunner(
@@ -39,11 +41,11 @@ internal class ReanchorRunner(
     // [reanchor] is nullable — a turn may reach this runner with search-only continuation (no
     // ReanchorPolicy at all): driveOneTurn routes here whenever EITHER exists, so the seam is
     // total rather than resting on an undocumented cross-object invariant.
-    suspend fun run(initialBody: JsonObject, reanchor: ReanchorPolicy?) {
+    suspend fun run(initialBody: JsonObject, reanchor: ReanchorPolicy?): UpstreamEnding? =
         run(initialBody, reanchor, null)
-    }
 
-    suspend fun run(initialBody: JsonObject, reanchor: ReanchorPolicy?, perf: TurnPerf?) {
+    /** Null when the turn finished; the ending of a round that had no outcome, which the turn's boundary writes. */
+    suspend fun run(initialBody: JsonObject, reanchor: ReanchorPolicy?, perf: TurnPerf?): UpstreamEnding? {
         var body = initialBody
         var attempt = 0
         var searchIndex = 0
@@ -51,15 +53,18 @@ internal class ReanchorRunner(
         val salvaged = mutableListOf<TurnOutcome.PartialRound>()
         val absorbedFailures = mutableListOf<TurnOutcome.Failure>()
         while (true) {
-            val outcome = postRound(RoundBody.Tree(body))
+            val outcome = when (val posted = postRound(RoundBody.Tree(body))) {
+                is RoundResult.Outcome -> posted.outcome
+                is RoundResult.Ended -> return posted.ending
+            }
             val cont = continuation.continuationForFailure(reanchor, outcome, body, attempt)
             if (cont == null) {
                 // A search round is inserted HERE — after the failure-continuation is computed and
                 // found null, so it never competes with re-anchor for a retryable failure, and
                 // only ever fires on a Success (searchContinuation's own type guard).
-                val searchNext = continuation.searchContinuation(outcome, body, searchIndex)
-                val searched = outcome as? TurnOutcome.Success
-                if (searchNext != null && searched != null) {
+                val search = searchRound(outcome, body, searchIndex)
+                if (search != null) {
+                    val (searched, searchNext) = search
                     salvaged.add(rounds.searchPartial(searched, buffered = false))
                     acc = acc.plusRound(searched.usage)
                     body = searchNext
@@ -74,13 +79,8 @@ internal class ReanchorRunner(
                 // rescued turn must not report a degraded provider as healthy, and (DR-125) a
                 // ClientAbandoned ending is attributed nowhere else at all: pre-fix a degraded
                 // provider grinding retries while clients hung up kept head health clean.
-                if (finishOnToolCut(outcome, salvaged, acc, absorbedFailures)) return
-                attributedAbsorbed(outcome, absorbedFailures, signals)
-                // V4-116 (4): [attempt] is how many times this turn was already re-anchored, so the
-                // ending can say what splice did instead of reporting one round's stall as the
-                // turn's verdict.
-                finish(rounds.withFailureSalvage(continuation.finalOutcome(outcome, salvaged, acc, attempt), acc))
-                return
+                endTurn(outcome, salvaged, acc, absorbedFailures, attempt)
+                return null
             }
             val failure = cont.failure
             absorbedFailures.add(failure)
@@ -105,6 +105,32 @@ internal class ReanchorRunner(
             body = cont.body
             attempt++
         }
+    }
+
+    /** The next request of a search round this Success asks for, with the Success it answers; null when none. */
+    private fun searchRound(
+        outcome: TurnOutcome,
+        body: JsonObject,
+        searchIndex: Int,
+    ): Pair<TurnOutcome.Success, JsonObject>? {
+        val next = continuation.searchContinuation(outcome, body, searchIndex) ?: return null
+        val searched = outcome as? TurnOutcome.Success ?: return null
+        return searched to next
+    }
+
+    /** The turn's last step once no round follows: a tool-cut salvage ends it clean, any other outcome is finished
+     *  with the absorbed rounds attributed. V4-116 (4): [attempt] is how many times this turn was already
+     *  re-anchored, so the ending can say what splice did instead of reporting one round's stall as the verdict. */
+    private suspend fun endTurn(
+        outcome: TurnOutcome,
+        salvaged: List<TurnOutcome.PartialRound>,
+        acc: RoundUsage,
+        absorbedFailures: List<TurnOutcome.Failure>,
+        attempt: Int,
+    ) {
+        if (finishOnToolCut(outcome, salvaged, acc, absorbedFailures)) return
+        attributedAbsorbed(outcome, absorbedFailures, signals)
+        finish(rounds.withFailureSalvage(continuation.finalOutcome(outcome, salvaged, acc, attempt), acc))
     }
 
     /** V4-76: BEFORE the failure is finalized, ask whether the cut came AFTER a COMPLETED tool call.

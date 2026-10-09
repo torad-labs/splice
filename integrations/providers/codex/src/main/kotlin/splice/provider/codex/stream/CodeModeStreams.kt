@@ -141,7 +141,7 @@ internal class CodeModeStreams(
         return when (raw) {
             is TurnOutcome.Success -> raw.copy(usage = usage ?: noRequestUsage)
             null -> usage?.let { TurnOutcome.Success(false, false, it) }
-            else -> raw
+            is TurnOutcome.Failure, is TurnOutcome.ClientAbandoned -> raw
         }
     }
 
@@ -150,9 +150,9 @@ internal class CodeModeStreams(
 
     /** Only the client step that cancelled an actual posted reader consumes its cut, once. */
     fun takeCuts(watched: Map<String, CodeModeLiveRound>, posted: List<CodeModeLiveRound>): Long {
-        val cut = watched.filterValues(CodeModeLiveRound::takeCut)
+        val cut = watched.filterValues { it.cut.take() }
         cut.forEach { (id, round) -> rounds.remove(id, round) }
-        return cut.size.toLong() + posted.count(CodeModeLiveRound::takeCut)
+        return cut.size.toLong() + posted.count { it.cut.take() }
     }
 
     fun billCuts(

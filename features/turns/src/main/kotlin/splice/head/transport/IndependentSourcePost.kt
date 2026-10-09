@@ -3,10 +3,10 @@ package splice.head.transport
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import splice.core.turn.TurnOutcome
 import splice.head.turn.TurnDrive
 import splice.head.turn.TurnUsageStamp
 import splice.upstream.RoundBody
+import splice.upstream.RoundResult
 import splice.upstream.sse.IndependentRoundSink
 import splice.upstream.sse.WireSink
 
@@ -20,7 +20,7 @@ internal class IndependentSourcePost(
         sink: WireSink,
         clientScope: CoroutineScope,
         clientJob: Job,
-    ): TurnOutcome {
+    ): RoundResult {
         val independent = sink as? IndependentRoundSink
         val owner = independent?.ownerScope ?: clientScope
         val job = owner.coroutineContext[Job] ?: clientJob
@@ -28,8 +28,12 @@ internal class IndependentSourcePost(
         val cap = independent?.let { drive.watchdog.launchTotalCap(owner, job) }
         if (independent != null) drive.sourceRoundStarted?.started(job)
         return try {
-            val outcome = driver.postRound(drive, body, sink, owner, job)
-            if (independent == null) outcome else usageStamp.stampIndependent(outcome)
+            val posted = driver.postRound(drive, body, sink, owner, job)
+            if (independent == null || posted !is RoundResult.Outcome) {
+                posted
+            } else {
+                RoundResult.Outcome(usageStamp.stampIndependent(posted.outcome))
+            }
         } finally {
             cap?.cancel()
             lease?.release()

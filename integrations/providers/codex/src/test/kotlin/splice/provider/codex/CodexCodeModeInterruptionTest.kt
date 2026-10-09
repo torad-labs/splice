@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 
@@ -28,15 +29,17 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         val runtime = ScriptedRuntime(ArrayDeque(steps))
         val manager = bridge(runtime)
         val sink = RecordingSink()
-        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val results = sink.tools.map { CodeModeResult(it.id, "é".repeat(20_000), true) }
         val returned = turn(results = results)
         var upstream = ""
         val outcome = manager.interceptor(returned, disableParallel = false)
             .intercept(siblingResults(results), RecordingSink()) {
                 upstream = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
         val items = Json.parseToJsonElement(upstream).jsonObject.getValue("input").jsonArray
         val output = items.single { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") }
@@ -60,15 +63,17 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         val runtime = ScriptedRuntime(ArrayDeque(listOf(batch)))
         val manager = bridge(runtime)
         val sink = RecordingSink()
-        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         manager.onHeadStop()
         val result = CodeModeResult(sink.tools.first().id, "finished", true)
         var upstream = ""
         val outcome = manager.interceptor(turn(results = listOf(result)), disableParallel = false)
             .intercept(siblingResults(listOf(result)), RecordingSink()) {
                 upstream = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success)
         val items = Json.parseToJsonElement(upstream).jsonObject.getValue("input").jsonArray
         val output = items.single { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") }
@@ -88,14 +93,18 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         val runtime = ScriptedRuntime(ArrayDeque(listOf(batch)))
         val manager = bridge(runtime)
         val sink = RecordingSink()
-        manager.interceptor(turn(), disableParallel = true).intercept(BASE_REQUEST, sink) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = true).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         manager.onHeadStop()
         val state = stateFiles.text()
         val pending = stateFiles.records().single()
             .getValue("pending").jsonArray.last().jsonObject.getValue("clientId").jsonPrimitive.content
         val result = CodeModeResult(pending, "never executed")
         val outcome = manager.interceptor(turn(results = listOf(result)), disableParallel = true)
-            .intercept(siblingResults(listOf(result)), RecordingSink()) { error("must not post fabricated evidence") }
+            .intercept(siblingResults(listOf(result)), RecordingSink()) {
+                error("must not post fabricated evidence")
+            }.turn()
         assertTrue(outcome is TurnOutcome.Failure)
         assertTrue((outcome as TurnOutcome.Failure).message.contains("not exposed"))
         assertTrue(outcome.deterministic, "a bridge verdict is the same on every retry")
@@ -109,7 +118,9 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         val runtime = ScriptedRuntime(ArrayDeque(listOf(batch)))
         val manager = bridge(runtime)
         val first = RecordingSink()
-        manager.interceptor(turn(), disableParallel = true).intercept(BASE_REQUEST, first) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = true).intercept(BASE_REQUEST, first) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val id = first.tools.single().id
         manager.interceptor(turn(id, "original"), disableParallel = true)
             .intercept(requestWithResult(id, "original"), RecordingSink()) { error("must not post") }
@@ -121,8 +132,8 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(turn(results = listOf(changed)), disableParallel = true)
             .intercept(clientHistory, RecordingSink()) {
                 posted = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success)
         assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
         assertEquals(Json.parseToJsonElement(clientHistory), Json.parseToJsonElement(posted))
@@ -138,15 +149,17 @@ class CodexCodeModeInterruptionTest : CodeModeBridgeTestSupport() {
         val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Calls(listOf(call("read", "Read"))))))
         val manager = bridge(runtime)
         val sink = RecordingSink()
-        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val result = CodeModeResult(sink.tools.single().id, "completed before catalog changed", true)
         val changed = turn(results = listOf(result)).copy(tools = setOf("Edit"))
         var upstream = ""
         val outcome = manager.interceptor(changed, disableParallel = false)
             .intercept(siblingResults(listOf(result)), RecordingSink()) {
                 upstream = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success)
         val items = Json.parseToJsonElement(upstream).jsonObject.getValue("input").jsonArray
         val output = items.single { it.jsonObject["type"] == JsonPrimitive("custom_tool_call_output") }

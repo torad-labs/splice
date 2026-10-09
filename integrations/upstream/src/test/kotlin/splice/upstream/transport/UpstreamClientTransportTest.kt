@@ -35,6 +35,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.RetryNotice
+import splice.upstream.StreamRead
 import splice.upstream.Waiter
 import splice.upstream.retry.ReissueRules
 import java.io.IOException
@@ -268,12 +269,11 @@ class UpstreamClientTransportTest {
         assertTrue(retries.any { it.contains("reissue") })
     }
 
-    // Review 2026-07-19 (G5 reachability): in production the tear reaches post() wrapped as
-    // StreamTornBeforeClient — a plain RuntimeException thrown THROUGH the translator by the turn
-    // driver (the translators swallow raw IOException). It must drive the same reissue machinery
-    // via its IOException cause, not blow through post() uncaught.
+    // Review 2026-07-19 (G5 reachability): the translators swallow a raw IOException into their terminal, so the
+    // turn records a tear before the client's first frame and the handler answers StreamRead.Torn (2026-10-09; it was
+    // a StreamTornBeforeClient thrown THROUGH the translator). It must drive the same reissue machinery.
     @Test
-    fun `StreamTornBeforeClient thrown through the translator drives the reissue machinery`() = runTest {
+    fun `a handler's torn read drives the reissue machinery`() = runTest {
         val engineCalls = AtomicInteger()
         val blockCalls = AtomicInteger()
         val engine = MockEngine {
@@ -281,14 +281,15 @@ class UpstreamClientTransportTest {
             respond("ok-body", HttpStatusCode.OK, headersOf())
         }
         val retries = mutableListOf<String>()
-        val out = clientOver(engine).posted(
+        val out = clientOver(engine).postedRead(
             ctx(onRetry = { retries.add(it) }, clientFrameEmitted = { false }),
             "{}",
         ) {
             if (blockCalls.incrementAndGet() <= 2) {
-                throw StreamTornBeforeClient(ConnectException("torn before first frame"))
+                StreamRead.Torn(ConnectException("torn before first frame"))
+            } else {
+                StreamRead.Read("sentinel")
             }
-            "sentinel"
         }
         assertEquals("sentinel", out)
         assertEquals(3, blockCalls.get())

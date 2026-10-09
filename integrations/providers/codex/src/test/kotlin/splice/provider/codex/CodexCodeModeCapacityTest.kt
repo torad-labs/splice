@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -53,8 +54,8 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
             val incoming = RecordingSink()
             val outcome = manager.interceptor(turn(sessionId = "fifth"), null, false)
                 .intercept(BASE_REQUEST, incoming) {
-                    if (posts++ == 0) outerOutcome("outer-fifth") else completedOutcome()
-                }
+                    RoundResult.Outcome(if (posts++ == 0) outerOutcome("outer-fifth") else completedOutcome())
+                }.turn()
             assertTrue(outcome is TurnOutcome.Success && outcome.hasToolUse, "pool-full refusal: $outcome; $logLines")
             assertEquals(listOf(false, true, false, false, false), runtime.cells.map { it.closed })
             assertEquals(4, runtime.open)
@@ -70,8 +71,8 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
                 false,
             ).intercept(requestWithResult(id, "A"), RecordingSink()) { body ->
                 posted = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
             assertTrue(late is TurnOutcome.Success && !late.hasToolUse)
             assertTrue("source was not rerun" in interruptionOutput(posted))
             assertEquals(5, runtime.starts, "a late callback never restarts the evicted source")
@@ -91,13 +92,13 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
                 turn(sessionId = "session-$index").copy(conversationKey = "original-$index"),
                 outer("outer-$index"),
                 false,
-            ).intercept(BASE_REQUEST, sinks[index]) { outerOutcome("outer-$index") }
+            ).intercept(BASE_REQUEST, sinks[index]) { RoundResult.Outcome(outerOutcome("outer-$index")) }
             val detached = """{"input":[{"role":"user","content":"detached-$index"}]}"""
             manager.interceptor(
                 turn(sessionId = "session-$index").copy(conversationKey = "detached-$index"),
                 null,
                 false,
-            ).intercept(detached, RecordingSink()) { completedOutcome() }
+            ).intercept(detached, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         }
         return sinks
     }
@@ -121,13 +122,13 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         try {
             repeat(2) { index ->
                 manager.interceptor(turn(sessionId = "parked-$index"), outer("outer-$index"), false)
-                    .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-$index") }
+                    .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-$index")) }
             }
             var posts = 0
             val admitted = manager.interceptor(turn(sessionId = "incoming"), null, false)
                 .intercept(BASE_REQUEST, RecordingSink()) {
-                    if (posts++ == 0) outerOutcome("outer-incoming") else completedOutcome()
-                }
+                    RoundResult.Outcome(if (posts++ == 0) outerOutcome("outer-incoming") else completedOutcome())
+                }.turn()
             assertTrue(admitted is TurnOutcome.Success && admitted.hasToolUse)
             assertEquals(listOf(true, true, false), runtime.cells.map { it.closed })
             assertEquals(3, runtime.starts, "capacity refusals never dispatch the incoming source")
@@ -142,14 +143,14 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         val runtime = BoundedRuntime(capacity = 1)
         val manager = bridge(runtime, clock = clock)
         manager.interceptor(turn(sessionId = "session-a"), outer("outer-a"), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-a") }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-a")) }
         val parked = runtime.cells.single()
         clock.now += 3.minutes.inWholeMilliseconds
         deadSessions += "session-a"
 
         val sink = RecordingSink()
         val outcome = manager.interceptor(turn(sessionId = "session-b"), outer("outer-b"), disableParallel = false)
-            .intercept(BASE_REQUEST, sink) { outerOutcome("outer-b") }
+            .intercept(BASE_REQUEST, sink) { RoundResult.Outcome(outerOutcome("outer-b")) }.turn()
 
         assertTrue(outcome is TurnOutcome.Success)
         assertTrue((outcome as TurnOutcome.Success).hasToolUse)
@@ -166,7 +167,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         val runtime = BoundedRuntime(capacity = 4)
         val manager = bridge(runtime, clock = clock)
         manager.interceptor(turn(sessionId = "session-a"), outer("outer-a"), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-a") }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-a")) }
         val parked = runtime.cells.single()
         clock.now += 31.minutes.inWholeMilliseconds
         deadSessions += "session-a"
@@ -185,7 +186,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime, clock = clock)
         val sink = RecordingSink()
         manager.interceptor(turn(sessionId = "session-a"), outer("outer-a"), disableParallel = false)
-            .intercept(BASE_REQUEST, sink) { outerOutcome("outer-a") }
+            .intercept(BASE_REQUEST, sink) { RoundResult.Outcome(outerOutcome("outer-a")) }
         val readId = sink.tools.single().id
         clock.now += 31.minutes.inWholeMilliseconds
         deadSessions += "session-a"
@@ -196,8 +197,8 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(turn(readId, "A"), null, disableParallel = false)
             .intercept(requestWithResult(readId, "A"), RecordingSink()) { body ->
                 posted = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
         assertEquals("COMPLETED", phaseOf("outer-a"))
@@ -258,7 +259,7 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
     ): Pair<String, List<String>> {
         val sink = RecordingSink()
         manager.interceptor(turn(sessionId = "session-a"), outer("outer-a"), disableParallel = false)
-            .intercept(BASE_REQUEST, sink) { outerOutcome("outer-a") }
+            .intercept(BASE_REQUEST, sink) { RoundResult.Outcome(outerOutcome("outer-a")) }
         val ids = sink.tools.map { it.id }
         clock.now += 31.minutes.inWholeMilliseconds
         deadSessions += "session-a"
@@ -270,8 +271,8 @@ class CodexCodeModeCapacityTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(turn(results = results), null, disableParallel = false)
             .intercept(requestWithResults(results), RecordingSink()) { body ->
                 posted = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
         return posted to ids
     }
@@ -341,11 +342,11 @@ class CodeModeUnknownCapacityTest : CodeModeBridgeTestSupport() {
         val runtime = BoundedRuntime(capacity = 2)
         val manager = bridge(runtime, clock = clock)
         manager.interceptor(turn(sessionId = "newer"), outer("outer-newer"), false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-newer") }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-newer")) }
         clock.now = 1_000
         val olderSink = RecordingSink()
         manager.interceptor(turn(sessionId = "older"), outer("outer-older"), false)
-            .intercept(BASE_REQUEST, olderSink) { outerOutcome("outer-older") }
+            .intercept(BASE_REQUEST, olderSink) { RoundResult.Outcome(outerOutcome("outer-older")) }
         clock.now = 1_000 + 30.minutes.inWholeMilliseconds
         try {
             val sink = RecordingSink()
@@ -363,7 +364,9 @@ class CodeModeUnknownCapacityTest : CodeModeBridgeTestSupport() {
             val callback = olderSink.tools.single().id
             val resumedSink = RecordingSink()
             val resumed = manager.interceptor(turn(callback, "A", sessionId = "older"), null, false)
-                .intercept(requestWithResult(callback, "A"), resumedSink) { completedOutcome() }
+                .intercept(requestWithResult(callback, "A"), resumedSink) {
+                    RoundResult.Outcome(completedOutcome())
+                }.turn()
             assertTrue(resumed is TurnOutcome.Success && !resumed.hasToolUse)
             assertTrue(resumedSink.tools.isEmpty())
             assertEquals(3, runtime.starts, "the reclaimed source is never restarted")
@@ -388,10 +391,10 @@ class CodeModeUnknownCapacityTest : CodeModeBridgeTestSupport() {
         )
         try {
             manager.interceptor(turn(sessionId = "alive"), outer("outer-alive"), false)
-                .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-alive") }
+                .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-alive")) }
             clock.now += 29.minutes.inWholeMilliseconds
             manager.interceptor(turn(sessionId = "unknown"), outer("outer-unknown"), false)
-                .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-unknown") }
+                .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-unknown")) }
             val admitted = incoming(manager)
             assertTrue(admitted is TurnOutcome.Success && admitted.hasToolUse)
             assertTrue(runtime.cells[0].closed)
@@ -430,11 +433,11 @@ class CodeModeUnknownCapacityTest : CodeModeBridgeTestSupport() {
         val manager = bridge(gated, clock = clock)
         val sink = RecordingSink()
         manager.interceptor(turn(), outer("outer-running"), false)
-            .intercept(BASE_REQUEST, sink) { outerOutcome("outer-running") }
+            .intercept(BASE_REQUEST, sink) { RoundResult.Outcome(outerOutcome("outer-running")) }
         val id = sink.tools.single().id
         val request = async {
             manager.interceptor(turn(id, "A"), null, false)
-                .intercept(requestWithResult(id, "A"), RecordingSink()) { completedOutcome() }
+                .intercept(requestWithResult(id, "A"), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         }
         advancing.await()
         clock.now += 31.minutes.inWholeMilliseconds
@@ -454,8 +457,8 @@ class CodeModeUnknownCapacityTest : CodeModeBridgeTestSupport() {
         var posts = 0
         return manager.interceptor(turn(sessionId = "incoming"), null, false)
             .intercept(BASE_REQUEST, sink) {
-                if (posts++ == 0) outerOutcome("outer-incoming") else completedOutcome()
-            }
+                RoundResult.Outcome(if (posts++ == 0) outerOutcome("outer-incoming") else completedOutcome())
+            }.turn()
     }
 }
 

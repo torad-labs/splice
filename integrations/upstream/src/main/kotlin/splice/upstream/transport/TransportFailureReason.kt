@@ -37,8 +37,7 @@ public object TransportFailureReason {
 
     /** [upstreamUrl] contributes host and port only — never a path or query, which can carry keys. */
     public fun of(e: Throwable, upstreamUrl: String?): String {
-        // StreamTornBeforeClient is splice's own wrapper; its text says where, not what.
-        val root = if (e is StreamTornBeforeClient) e.cause ?: e else e
+        val root = e
         val chain = FailureChain.links(root).toList()
         // V4-307: named before anything else; the IOException OkHttp wraps it in says only "canceled".
         chain.firstOrNull(FailureChain::refusedThreadStart)?.let { return refusal(it) }

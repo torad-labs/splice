@@ -2,13 +2,12 @@
 package splice.upstream
 
 import splice.core.perf.TurnPerf
-import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.upstream.sse.WireSink
 
 /** One upstream dispatch; an interceptor may invoke it again for a bounded local continuation. */
 public fun interface InterceptedRoundPost {
-    public suspend operator fun invoke(bodyJson: String): TurnOutcome
+    public suspend operator fun invoke(bodyJson: String): RoundResult
 
     /** The turn's perf record, so an interceptor's own local work counts on the turn it serves. Null
      *  where no turn record exists: a bare post built by a test or a caller outside a turn. */
@@ -17,7 +16,7 @@ public fun interface InterceptedRoundPost {
 
 /** A dispatch that can send an independently owned upstream round into its current client sink. */
 public interface RedirectableRoundPost : InterceptedRoundPost {
-    public suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome
+    public suspend fun into(bodyJson: String, sink: WireSink): RoundResult
 
     /** The perf row of the turn this post serves, for a round that outlives it. Null where no turn row exists. */
     public val postingRow: PostingTurnRow? get() = null
@@ -48,9 +47,9 @@ public fun interface RowRelease {
  * on the body form without a word. A wrapper declares this only when it wraps both.
  */
 public interface RoundBodyPost {
-    public suspend fun post(body: RoundBody): TurnOutcome
+    public suspend fun post(body: RoundBody): RoundResult
 
-    public suspend fun postInto(body: RoundBody, sink: WireSink): TurnOutcome
+    public suspend fun postInto(body: RoundBody, sink: WireSink): RoundResult
 }
 
 /** Optional per-turn wrapper around one upstream round. Null means the established direct path. */
@@ -66,12 +65,12 @@ public fun interface RoundInterceptor {
         bodyJson: String,
         sink: WireSink,
         postRound: InterceptedRoundPost,
-    ): TurnOutcome
+    ): RoundResult
 }
 
 /** An interceptor that reads the round as the head holds it, so a tree is read as that tree and never
  *  rendered and parsed back. One without it is handed text. Separate from [RoundInterceptor] for the
  *  reason [RoundBodyPost] is. */
 public interface RoundBodyInterceptor {
-    public suspend fun intercept(body: RoundBody, sink: WireSink, postRound: InterceptedRoundPost): TurnOutcome
+    public suspend fun intercept(body: RoundBody, sink: WireSink, postRound: InterceptedRoundPost): RoundResult
 }

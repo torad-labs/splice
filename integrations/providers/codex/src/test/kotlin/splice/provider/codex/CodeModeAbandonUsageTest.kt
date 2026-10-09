@@ -28,7 +28,9 @@ import splice.core.util.WallClock
 import splice.provider.codex.stream.CodeModeStreams
 import splice.upstream.PostingTurnRow
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.RowRelease
+import splice.upstream.transport.UpstreamEnding
 import splice.upstream.transport.UpstreamFailed
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -74,10 +76,11 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
     @Test
     @Timeout(20)
     fun `cancellation after abandonment still counts the cut on the cancelled client step`() = runBlocking {
-        cutWithFailedContinuation(CancellationException("synthetic client cancellation"))
+        cutWithFailedContinuation(null)
     }
 
-    private suspend fun cutWithFailedContinuation(refusal: RuntimeException) {
+    /** The continuation's post is refused with [refusal], or cancelled when it is null. */
+    private suspend fun cutWithFailedContinuation(refusal: UpstreamEnding?) {
         val runtime = IncrementalRuntime()
         val manager = bridge(runtime)
         val sink = StepSink()
@@ -88,7 +91,8 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
         val perf = TurnPerf(clock = ElapsedClock { 0 }, wallClock = WallClock { 0 })
         val refusing = object : RedirectableRoundPost by source {
             override val perf = perf
-            override suspend fun into(bodyJson: String, sink: splice.upstream.sse.WireSink): TurnOutcome = throw refusal
+            override suspend fun into(bodyJson: String, sink: splice.upstream.sse.WireSink): RoundResult =
+                refusal?.let { RoundResult.Ended(it) } ?: throw CancellationException("synthetic client cancellation")
         }
         try {
             manager.interceptor(turn(), disableParallel = false)
@@ -98,13 +102,16 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
                 .getValue("input").jsonArray.drop(1)
             val items = changedHistory(input, callbacks, SourceDisposition.NATIVE)
             val changed = JsonObject(mapOf("input" to JsonArray(items)))
-            val failure = assertThrows(refusal::class.java) {
-                runBlocking {
-                    manager.interceptor(turn(callback.id, "result-0"), disableParallel = false)
-                        .intercept(changed.toString(), RecordingSink(), refusing)
-                }
+            val continuation = suspend {
+                manager.interceptor(turn(callback.id, "result-0"), disableParallel = false)
+                    .intercept(changed.toString(), RecordingSink(), refusing)
             }
-            if (refusal is UpstreamFailed) assertTrue(failure === refusal, "the upstream refusal propagates unchanged")
+            if (refusal == null) {
+                assertThrows(CancellationException::class.java) { val _ = runBlocking { continuation() } }
+            } else {
+                val ended = continuation() as RoundResult.Ended
+                assertTrue(ended.ending === refusal, "the upstream refusal propagates unchanged")
+            }
             withTimeout(1_500) { source.stopped.await() }
             row.assertOriginal(reported = false)
             val cuts = perf.snapshot().counters[PerfKeys.CUT_SOURCE_ROUNDS]
@@ -162,7 +169,7 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
             val next = withTimeout(1_500) {
                 manager.interceptor(answering, disableParallel = false)
                     .intercept(changed.toString(), RecordingSink(), source)
-            } as TurnOutcome.Success
+            }.turn() as TurnOutcome.Success
             withTimeout(1_500) { source.stopped.await() }
             assertDisposition(disposition)
             row.assertOriginal(reportedBeforeDispose)
@@ -172,7 +179,7 @@ internal class CodeModeAbandonUsageTest : CodeModeStatementStreamSupport() {
             assertEquals(1, runtime.delivered.size, "no remaining statement may execute")
             assertEquals(2, source.posts)
             val retry = manager.interceptor(answering, disableParallel = false)
-                .intercept(changed.toString(), RecordingSink(), source) as TurnOutcome.Success
+                .intercept(changed.toString(), RecordingSink(), source).turn() as TurnOutcome.Success
             assertCut(retry, 0)
         } finally {
             manager.onHeadStop()
@@ -273,14 +280,14 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
             val round = (field(manager, "driver") as CodexCodeModeDriver).streams.find(record)
             val lease = checkNotNull(record.sourceEnd)
             lease.claimClient()
-            assertFalse(checkNotNull(round).takeCut(), "declaring ownership does not cut a reader")
+            assertFalse(checkNotNull(round).cut.take(), "declaring ownership does not cut a reader")
             val reader = field(round, "finished") as kotlinx.coroutines.Deferred<*>
             reader.cancel(CancellationException("synthetic source ended without a client cutting its reader"))
             withTimeout(1_500) { reader.join() }
             withTimeout(1_500) { source.stopped.await() }
             assertRetirementBill(withTimeout(1_500) { held.released.await() }, clientCuts = 0L, client = false)
             lease.ended()
-            assertFalse(round.takeCut(), "a retired ended reader was never cut by this declaration")
+            assertFalse(round.cut.take(), "a retired ended reader was never cut by this declaration")
             assertEquals(1, held.releases.get(), "an ended source releases its held posting row exactly once")
         } finally {
             manager.onHeadStop()
@@ -308,7 +315,7 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
         val input = Json.parseToJsonElement(BASE_REQUEST).jsonObject.getValue("input").jsonArray + user
         try {
             val first = manager.interceptor(turn(), disableParallel = false)
-                .intercept(JsonObject(mapOf("input" to JsonArray(input))).toString(), sink, held)
+                .intercept(JsonObject(mapOf("input" to JsonArray(input))).toString(), sink, held).turn()
                 as TurnOutcome.Success
             val callback = withTimeout(1_500) { sink.callback.await() }
             assertEquals(0L, first.usage.inputTokens)
@@ -397,7 +404,7 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
     ) {
         repeat(2) {
             val next = manager.interceptor(turn(callback.id, "result-0"), disableParallel = false)
-                .intercept(changed.toString(), RecordingSink(), source) as TurnOutcome.Success
+                .intercept(changed.toString(), RecordingSink(), source).turn() as TurnOutcome.Success
             assertEquals(150L, next.usage.inputTokens, "the continuation bills only its own round")
             assertEquals(5L, next.usage.outputTokens)
             assertEquals(0L, next.usage.absorbed.rounds)
@@ -500,7 +507,7 @@ internal class CodeModeFirstClaimBillingTest : CodeModeStatementStreamSupport() 
                 }
             } else {
                 val first = bridge.interceptor(turn(), disableParallel = false)
-                    .intercept(BASE_REQUEST, sink, posting) as TurnOutcome.Success
+                    .intercept(BASE_REQUEST, sink, posting).turn() as TurnOutcome.Success
                 assertEquals(0L, first.usage.cutRounds, "retirement is not the first client's cut")
             }
             withTimeout(1_500) { evicted.await() }

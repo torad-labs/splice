@@ -36,14 +36,16 @@
 #   integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamErrors.kt:26     UpstreamFailed : RuntimeException
 #   integrations/upstream/src/main/kotlin/splice/upstream/retry/InflightGate.kt:192      GatewayAtCapacityException : RuntimeException
 #   integrations/upstream/src/main/kotlin/splice/upstream/transport/UpstreamResponse.kt:72   UpstreamBodyLimitException : RuntimeException
-#   integrations/upstream/src/main/kotlin/splice/upstream/failure/SseExceptions.kt:8       SseFrameTooLargeException : RuntimeException
+#   integrations/upstream/src/main/kotlin/splice/upstream/failure/SseSpuriousWakeupException.kt  SseSpuriousWakeupException : RuntimeException
 #   integrations/upstream/src/main/kotlin/splice/upstream/WsRoundRunner.kt:111     WsRoundNeedsSse : RuntimeException
 # core/src/main: ZERO — and that zero is a real reading, not an unrun check: the same
 # matcher over the same glob reports the nine above, so :core's emptiness is measured against a
 # denominator that demonstrably produces findings ("empty" and "empty in X" are different
 # sentences, §24).
 #
-# Six of the nine are caught or dispatched BY NAME from :features-turns main sources, which is the proof
+# (Census as measured 2026-09-17; every entry is a value since 2026-10-09, see the dispositions below.)
+#
+# Six of the nine were caught or dispatched BY NAME from :features-turns main sources, which is the proof
 # that they are control flow and not invariant breaks: HeadAdmission.kt:233 (AllAccountsExhausted),
 # TurnFailures.kt:26 / TurnKnownEnd.kt:31 / TurnDriver.kt:149 (UpstreamAuthMissing),
 # SseRoundPost.kt:62 (UpstreamTurnWaitExhausted), AdmissionGate.kt:37 (GatewayAtCapacityException),
@@ -57,20 +59,17 @@
 # fails CLOSED on the second, which is correct, because a RuntimeException subclass nobody catches
 # by name has no reason to be a distinct type at all.
 #
-# THE EXEMPTION CHANNEL — a failure, not a refusal. A class that a caller can only REPORT takes the
-# repo's existing reviewed-exception channel at its declaration, where the next reader of that class
-# sees the reasoning:
-#   // ast-grep-ignore: kt-no-exception-as-outcome -- YYYY-MM-DD: <why no caller can recover>
-# Honored identically by `ast-grep scan` itself, by the PreToolUse hook, and by `gate:rules`
-# (orchestrator.py:28); the directive must be the LAST comment line before the declaration, with the
-# reasoning above it (measured 2026-09-17: a directive followed by four lines of prose suppresses
-# nothing, because ast-grep reads only the line immediately above the match).
+# NO EXEMPTION STANDS (2026-10-09). The rule used to carry four dated `ast-grep-ignore` exemptions, on the argument that
+# a caller which can only REPORT a failure is not branching on it. That argument was wrong in every case: the retry
+# loop caught a torn stream by name and re-issued the request, the round driver caught it by name and re-anchored, and
+# the turn's boundary dispatched on the other three by class. They are sealed values now, and a genuine invariant
+# break is spelled check()/require()/error(), never given a catchable name. Nothing here takes a directive.
 #
 # THE DISPOSITIONS (V4-114, 2026-09-17). All nine census entries above are now dispositioned, and
 # the split is one test applied to the CATCH SITE, not to the class's name: after catching, does the
 # caller produce a DIFFERENT CONTINUATION (a refusal value, a substitute outcome, another transport),
-# or does the turn end in a failure the client is told about? The first is control flow and becomes a
-# sealed outcome; the second is a failure and stays an exception.
+# or does the turn end in a failure the client is told about? The first became a sealed outcome at once. The
+# second was left an exception, and 2026-10-09 retired that half: every one of them was caught by name and branched on.
 #
 #   SEALED OUTCOMES (4 — the refusal now rides the return type of the call that decided it):
 #     AccountSelection.kt:144  AllAccountsExhausted      -> V4-99: AccountPool.select returns a
@@ -94,30 +93,14 @@
 #                              between two adjacent statements (a suspend `collect` has no other way
 #                              to stop early), which is why the SPI class is gone rather than moved.
 #
-#   EXEMPTED (4, dated inline at each declaration — every catch site either logs and propagates a
-#   client-visible failure terminal, or treats the throwable as the transport failure it already is):
-#
-#   CORRECTED 2026-10-09: this header used to claim "NO catch site continues or retries the turn",
-#   and that was false of StreamTornBeforeClient. UpstreamClient.kt:305 catches it, folds it into
-#   `Result.failure(e)`, and hands it to onTransportError.kt:345, whose first act is
-#   reissueRules.canReissueStream(...) — so that catch site can RE-ISSUE the stream and the turn can
-#   still succeed. The exemption survives the correction for a different reason, the one the entry
-#   below already gives: it shares its arm with a raw IOException, so it is retried as a transport
-#   failure and not as a decision this side made. The claim was simply not the one holding it up.
-#     UpstreamErrors.kt:13   UpstreamAuthMissing   TurnFailures.kt:26 (the per-turn error boundary,
-#       in the same catch chain as IOException/IllegalStateException), TurnKnownEnd.kt:31 ->
-#       emitError(AUTHENTICATION) + login hint, TurnDriver.kt:149 -> markCredentialMissing() and the
-#       turn still fails. No alternative outcome exists anywhere.
-#     UpstreamErrors.kt:23   StreamTornBeforeClient  TurnFailures.kt:30, TurnConnEnd.kt:26 — folded
-#       into the SAME conn-reset arm as a raw IOException (`is StreamTornBeforeClient, is IOException`).
-#       Sharing an arm with the JDK's own transport failure IS the proof. Its plain-RuntimeException
-#       spelling is load-bearing (G5): the translators' IOException catches must not swallow it.
-#     UpstreamErrors.kt:26   UpstreamFailed   the upstream HOST's HTTP refusal after retries, not a
-#       decision this side made. TurnFailures.kt:28, TurnKnownEnd.kt:44 -> classify status/body and
-#       emit an error terminal.
-#     SseExceptions.kt:8     SseFrameTooLargeException   an upstream protocol violation of our own
-#       safety limit, thrown mid-walk by SseReader.kt:59 / SseDecode.kt:106 where no return channel
-#       exists. TurnFailures.kt:35, TurnConnEnd.kt:30 -> emitError(API_ERROR).
+#   SEALED OUTCOMES, SECOND HALF (4, 2026-10-09 — the four once exempted, now the vocabulary of UpstreamEnding):
+#     UpstreamErrors.kt  UpstreamAuthMissing, UpstreamFailed, StreamTornBeforeClient, and SseFrameTooLarge (the old
+#       SseFrameTooLargeException) are subtypes of `sealed class UpstreamEnding`. UpstreamClient.post answers
+#       `UpstreamPost.Ended(ending)`; the response handler answers `StreamRead { Read | Torn | Oversized }`; every round
+#       port answers `RoundResult { Outcome | Ended }`; TurnEnding.emitEnding is an exhaustive `when` over the four.
+#       The two thrown from inside the SSE flow (the tear and the oversized frame) are recorded in a per-attempt latch
+#       (RoundEnd) while the flow completes, and the translator's closing write is gated off the client, the way the
+#       websocket path already re-served a round (SseReserve).
 #
 #   FIXED BY DELETION (1, and it was in neither bucket): UpstreamResponse.kt:72
 #     UpstreamBodyLimitException was `private`, caught by NOBODY, and only ever handed to
@@ -133,9 +116,8 @@ note: >
   the exhausted case becomes one more subtype carrying its reset hint and the catch site becomes an
   exhaustive `when`. TurnOutcome is the in-tree example of the shape. These subclasses are worse than a plain outcome because
   they extend RuntimeException/IllegalStateException: they slip through runCatching, Result, and any
-  catch written for a real invariant break, making a refusal and a bug indistinguishable. A class
-  that genuinely IS an invariant break takes
-  `// ast-grep-ignore: kt-no-exception-as-outcome -- YYYY-MM-DD: <why no caller can recover>`.
+  catch written for a real invariant break, making a refusal and a bug indistinguishable. A genuine
+  invariant break is spelled check()/require()/error() and never given a name; no directive exempts a class.
 # NO `files:` LIST (2026-10-09). It used to name six roots, which made the law a property of where
 # a class happened to live: features/turns declared RequestBodyTooLarge and the rule never looked.
 # A denominator taken from the list being checked cannot fail for what the list omits, so the rule

@@ -55,6 +55,7 @@ import splice.upstream.Provider
 import splice.upstream.ProviderTuning
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundInterceptor
+import splice.upstream.RoundResult
 import splice.upstream.WsRound
 import splice.upstream.WsRoundAbort
 import splice.upstream.WsRoundRunner
@@ -107,7 +108,7 @@ class IndependentSourceRoundTest {
                 "request heap/provider cleanup must not run at a local tool step",
             )
             upstream.release.countDown()
-            val raw = withTimeout(5_000) { checkNotNull(interceptor.reading).await() }
+            val raw = withTimeout(5_000) { checkNotNull(interceptor.reading).await() }.turn()
             assertTrue(
                 raw is TurnOutcome.Success,
                 "first-client loss must not abandon the live reader: $raw",
@@ -161,7 +162,7 @@ class IndependentSourceRoundTest {
                 assertTrue(interceptor.completionFailures.isEmpty(), interceptor.completionFailures.toString())
             } else {
                 runner.release.complete(Unit)
-                val outcome = withTimeout(5_000) { reading.await() }
+                val outcome = withTimeout(5_000) { reading.await() }.turn()
                 assertTrue(outcome is TurnOutcome.Success, outcome.toString())
                 assertEquals(7L, (outcome as TurnOutcome.Success).usage.outputTokens)
             }
@@ -427,15 +428,17 @@ class IndependentSourceRoundTest {
         private val first = CompletableDeferred<Unit>()
         val entered = CompletableDeferred<Unit>()
         val observed: CompletableDeferred<Unit> get() = first
-        var reading: Deferred<TurnOutcome>? = null
+        var reading: Deferred<RoundResult>? = null
         override fun resumesSource(): Boolean = first.isCompleted && reading?.isActive == true
         override suspend fun intercept(
             bodyJson: String,
             sink: WireSink,
             postRound: InterceptedRoundPost,
-        ): TurnOutcome {
+        ): RoundResult {
             if (first.isCompleted) {
-                return TurnOutcome.Success(false, false, Usage(localStep = true), messageClosed = true)
+                return RoundResult.Outcome(
+                    TurnOutcome.Success(false, false, Usage(localStep = true), messageClosed = true),
+                )
             }
             entered.complete(Unit)
             val redirected = postRound as RedirectableRoundPost
@@ -448,7 +451,7 @@ class IndependentSourceRoundTest {
             val tool = sink.openTool("test-client-call", "Read")
             sink.inputJsonDelta(tool, "{}")
             sink.closeBlock(tool)
-            return TurnOutcome.Success(true, false, Usage(localStep = true))
+            return RoundResult.Outcome(TurnOutcome.Success(true, false, Usage(localStep = true)))
         }
         fun stop() {
             scope.coroutineContext.cancelChildren()
@@ -513,3 +516,5 @@ class IndependentSourceRoundTest {
         }
     }
 }
+
+private fun RoundResult.turn(): TurnOutcome = (this as RoundResult.Outcome).outcome

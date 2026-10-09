@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import splice.core.turn.TurnOutcome
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 
@@ -29,7 +30,9 @@ class CodexCodeModeActiveInterruptionTest : CodeModeBridgeTestSupport() {
             )
             val manager = bridge(runtime)
             val sink = RecordingSink()
-            manager.interceptor(turn(), disableParallel = sequential).intercept(BASE_REQUEST, sink) { outerOutcome() }
+            manager.interceptor(turn(), disableParallel = sequential).intercept(BASE_REQUEST, sink) {
+                RoundResult.Outcome(outerOutcome())
+            }
             val id = sink.tools.first().id
             val results = if (partial) listOf(CodeModeResult(id, "evidence", true)) else emptyList()
             val original = Json.parseToJsonElement(requestWithSiblingBeforeResult(id, "new instruction")).jsonObject
@@ -46,8 +49,8 @@ class CodexCodeModeActiveInterruptionTest : CodeModeBridgeTestSupport() {
             val outcome = manager.interceptor(turn(results = results), disableParallel = sequential)
                 .intercept(body, RecordingSink()) {
                     upstream = it
-                    completedOutcome()
-                }
+                    RoundResult.Outcome(completedOutcome())
+                }.turn()
             assertTrue(outcome is TurnOutcome.Success, outcome.toString())
             assertEquals(1, runtime.cell.advances, "interruption must not advance JavaScript")
             assertTrue(runtime.cell.closed)

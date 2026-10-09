@@ -23,6 +23,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
+import splice.upstream.StreamRead
 import splice.upstream.Waiter
 import java.net.ConnectException
 import java.util.concurrent.atomic.AtomicInteger
@@ -66,7 +67,7 @@ class UpstreamClientDeadlineTest {
         }
         val client = budgetBackoffClient(engine, ElapsedClock { now }, Waiter { waits.add(it) })
 
-        val failure = assertThrows<UpstreamFailed> {
+        val failure = assertEnds<UpstreamFailed> {
             client.posted(
                 PostContext("https://api.example.test/v1", fakeAuth, { emptyMap() }, perf = perf),
                 "{}",
@@ -100,7 +101,7 @@ class UpstreamClientDeadlineTest {
             },
         )
 
-        assertThrows<UpstreamFailed> {
+        assertEnds<UpstreamFailed> {
             client.posted(
                 PostContext("https://api.example.test/v1", fakeAuth, { emptyMap() }, perf = perf),
                 "{}",
@@ -132,7 +133,7 @@ class UpstreamClientDeadlineTest {
             respond("boom", HttpStatusCode.ServiceUnavailable, headersOf())
         }
         val client = clientOver(engine, totalTimeoutMs = 5_000, maxRetries = 10) { now }
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertTrue(calls.get() < 10, "deadline should cut the loop short, not exhaust attempts (${calls.get()})")
     }
 
@@ -167,12 +168,13 @@ class UpstreamClientDeadlineTest {
             clientFrameEmitted = { false },
         )
         var deliveries = 0
-        val result = client.posted(context, "{}") {
+        val result = client.postedRead(context, "{}") {
             if (deliveries++ == 0) {
                 now = 2_000
-                throw StreamTornBeforeClient(java.net.SocketException("synthetic pre-content tear after reasoning"))
+                StreamRead.Torn(java.net.SocketException("synthetic pre-content tear after reasoning"))
+            } else {
+                StreamRead.Read("ok")
             }
-            "ok"
         }
         assertEquals("ok", result, "the still-renewed owner, not a second wall clock, decides the retry budget")
         assertEquals(2, calls.get())
@@ -201,7 +203,7 @@ class UpstreamClientDeadlineTest {
             respond("fine", HttpStatusCode.OK, headersOf())
         }
         val client = clientOver(engine, totalTimeoutMs = 0, maxRetries = 3) { 0L }
-        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEnds<UpstreamFailed> { postOnce(client) }
         assertEquals(0, calls.get())
     }
 }

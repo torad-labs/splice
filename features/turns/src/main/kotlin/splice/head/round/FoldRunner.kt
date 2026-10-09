@@ -17,8 +17,10 @@ import splice.head.wire.BufferingWireSink
 import splice.upstream.FoldPolicy
 import splice.upstream.RetryBackoff
 import splice.upstream.RoundBody
+import splice.upstream.RoundResult
 import splice.upstream.codemode.ProcessWaiter
 import splice.upstream.sse.WireSink
+import splice.upstream.transport.UpstreamEnding
 import splice.upstream.transport.UpstreamTransport
 
 internal class FoldRunner(
@@ -28,11 +30,10 @@ internal class FoldRunner(
     private val foldRounds: FoldRounds,
     private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(ProcessWaiter()),
 ) {
-    suspend fun run(initialBody: JsonObject, fold: FoldPolicy) {
-        run(initialBody, fold, null)
-    }
+    suspend fun run(initialBody: JsonObject, fold: FoldPolicy): UpstreamEnding? = run(initialBody, fold, null)
 
-    suspend fun run(initialBody: JsonObject, fold: FoldPolicy, perf: TurnPerf?) {
+    /** Null when the turn finished; the ending of a round that had no outcome, which the turn's boundary writes. */
+    suspend fun run(initialBody: JsonObject, fold: FoldPolicy, perf: TurnPerf?): UpstreamEnding? {
         var body = initialBody
         var acc = RoundUsage()
         var roundIndex = 0
@@ -42,9 +43,11 @@ internal class FoldRunner(
         val absorbedFailures = mutableListOf<TurnOutcome.Failure>()
         while (true) {
             val buffer = BufferingWireSink(emitter)
-            val outcome = postRound(RoundBody.Tree(body), buffer)
-            val success = outcome as? TurnOutcome.Success
-            if (success != null) acc = acc.plusRound(success.usage)
+            val outcome = when (val posted = postRound(RoundBody.Tree(body), buffer)) {
+                is RoundResult.Outcome -> posted.outcome
+                is RoundResult.Ended -> return posted.ending
+            }
+            acc = withRound(acc, outcome)
 
             // Fold-continuation and search are two of this loop's three continuation triggers,
             // tried in that fixed precedence (a truncated round re-runs and re-emits its own
@@ -72,11 +75,8 @@ internal class FoldRunner(
             // invariant ever breaks, this takes the honest null path instead of throwing a
             // ClassCastException on the turn path, which is the whole point of the wall.
             if (retry == null || outcome !is TurnOutcome.Failure) {
-                // health for absorbed rounds unless the final outcome is itself a Failure
-                // (attributed once by finishTurn) — see ReanchorRunner; DR-125 added abandoned.
-                if (outcome !is TurnOutcome.Failure) foldRounds.reportAbsorbed(absorbedFailures)
-                foldRounds.finalize(foldRounds.withFailureSalvage(outcome, acc), buffer, salvaged, acc.toUsage())
-                return
+                endTurn(outcome, absorbedFailures, acc, buffer, salvaged)
+                return null
             }
             val failure = outcome
             absorbedFailures.add(failure)
@@ -96,5 +96,22 @@ internal class FoldRunner(
             body = retry
             reanchorAttempt++
         }
+    }
+
+    /** [acc] with a finished round's usage added; only a Success carries usage here. */
+    private fun withRound(acc: RoundUsage, outcome: TurnOutcome): RoundUsage =
+        if (outcome is TurnOutcome.Success) acc.plusRound(outcome.usage) else acc
+
+    /** The turn's last step once no round follows. Health for absorbed rounds is reported unless the final outcome
+     *  is itself a Failure (attributed once by finishTurn) — see ReanchorRunner; DR-125 added abandoned. */
+    private suspend fun endTurn(
+        outcome: TurnOutcome,
+        absorbedFailures: List<TurnOutcome.Failure>,
+        acc: RoundUsage,
+        buffer: BufferingWireSink,
+        salvaged: List<TurnOutcome.PartialRound>,
+    ) {
+        if (outcome !is TurnOutcome.Failure) foldRounds.reportAbsorbed(absorbedFailures)
+        foldRounds.finalize(foldRounds.withFailureSalvage(outcome, acc), buffer, salvaged, acc.toUsage())
     }
 }

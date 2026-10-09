@@ -16,13 +16,13 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestReporter
 import splice.core.perf.InputDigest
-import splice.core.turn.TurnOutcome
 import splice.core.util.JsonWire
 import splice.provider.codex.state.CodeModeTurnIdentity
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.RoundBody
 import splice.upstream.RoundBodyInterceptor
 import splice.upstream.RoundBodyPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.sse.WireSink
 import java.lang.management.ManagementFactory
@@ -79,9 +79,10 @@ internal class CodeModeRoundAllocationTest : CodeModeBridgeTestSupport() {
 
     /** The turn's post as the head builds it: a tree goes on as a tree, so the post renders nothing. */
     private val discarding = object : InterceptedRoundPost, RoundBodyPost {
-        override suspend fun invoke(bodyJson: String): TurnOutcome = completedOutcome()
-        override suspend fun post(body: RoundBody): TurnOutcome = completedOutcome()
-        override suspend fun postInto(body: RoundBody, sink: WireSink): TurnOutcome = completedOutcome()
+        override suspend fun invoke(bodyJson: String): RoundResult = RoundResult.Outcome(completedOutcome())
+        override suspend fun post(body: RoundBody): RoundResult = RoundResult.Outcome(completedOutcome())
+        override suspend fun postInto(body: RoundBody, sink: WireSink): RoundResult =
+            RoundResult.Outcome(completedOutcome())
     }
 
     private inline fun stage(name: String, reporter: TestReporter, budget: Long, action: () -> Unit) {
@@ -216,11 +217,11 @@ internal class CodeModeRoundAllocationTest : CodeModeBridgeTestSupport() {
     private suspend fun completeOneScript(manager: CodexCodeModeBridge): String {
         val first = RecordingSink()
         manager.interceptor(turn(), disableParallel = false)
-            .intercept(body(START), first) { outerOutcome("outer-1") }
+            .intercept(body(START), first) { RoundResult.Outcome(outerOutcome("outer-1")) }
         val id = first.tools.single().id
         val done = "$START,${callback(id, "A")}"
         manager.interceptor(turn(id, "A"), disableParallel = false)
-            .intercept(body(done), RecordingSink()) { completedOutcome() }
+            .intercept(body(done), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         return body("$done," + """{"role":"user","content":"next"}""")
     }
 

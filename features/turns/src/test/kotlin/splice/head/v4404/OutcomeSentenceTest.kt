@@ -531,7 +531,7 @@ class OutcomeSentenceTest {
         val drive = rig.drive()
         try {
             val failure = UpstreamFailed("""{"error":{"message":"boom"}}""", status = 502, layers = 3)
-            assertTrue(knownEnd.tryEmit(drive, failure), "TurnKnownEnd owns an upstream failure")
+            knownEnd.emitFailed(drive, failure)
         } finally {
             drive.slot.release()
         }

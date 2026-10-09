@@ -21,6 +21,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.ElapsedClock
 import splice.upstream.RoundBody
+import splice.upstream.StreamRead
 import splice.upstream.Waiter
 import splice.upstream.retry.RateLimitCooldown
 import java.io.IOException
@@ -74,7 +75,7 @@ class UpstreamClientBackoffTest {
     fun `the shipped backoff curve doubles from 200ms inside its jitter band`() = runTest {
         val waiter = RecordingWaiter()
         val engine = MockEngine { respond("busy", HttpStatusCode.ServiceUnavailable, headersOf()) }
-        assertThrows<UpstreamFailed> { postOnce(realCurveClientOver(engine, waiter)) }
+        assertEnds<UpstreamFailed> { postOnce(realCurveClientOver(engine, waiter)) }
         assertTrue(waiter.waits.size >= 2, "expected the retry loop to back off at least twice: ${waiter.waits}")
         waiter.waits.forEachIndexed { attempt, waited ->
             val base = minOf(200L shl attempt, 10_000L)
@@ -293,7 +294,7 @@ class UpstreamClientBackoffTest {
             val fixture = Fixture(kind)
             fixture.afterWait = { fixture.credentialsAvailable = false }
 
-            assertThrows<UpstreamAuthMissing> { fixture.post() }
+            assertEnds<UpstreamAuthMissing> { fixture.post() }
 
             assertEquals(1, fixture.calls.get())
             assertEquals(1, fixture.waits.size)
@@ -310,7 +311,7 @@ class UpstreamClientBackoffTest {
             val hold = RateLimitCooldown(ElapsedClock { fixture.elapsed })
             fixture.afterWait = { hold.arm(60_000L) }
 
-            val failure = assertThrows<UpstreamFailed> { fixture.postWithHold(hold) }
+            val failure = assertEnds<UpstreamFailed> { fixture.postWithHold(hold) }
 
             assertEquals(429, failure.status)
             assertEquals(1, fixture.calls.get())
@@ -408,7 +409,8 @@ class UpstreamClientBackoffTest {
             client.posted(context.copy(rateLimitCooldown = hold), "{}") { "ok" }
 
         /** The un-narrowed answer, for the one test whose subject IS the refusal (V4-114). */
-        suspend fun postRaw(): UpstreamPost<String> = client.post(context, RoundBody.Text("{}")) { "ok" }
+        suspend fun postRaw(): UpstreamPost<String> =
+            client.post(context, RoundBody.Text("{}")) { StreamRead.Read("ok") }
 
         suspend fun postWithTornStream(): String {
             var torn = true

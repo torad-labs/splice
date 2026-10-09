@@ -44,10 +44,8 @@ import splice.dialect.responses.reasoning.ResponsesReasoningFold
 import splice.dialect.responses.reasoning.ResponsesReasoningReplay
 import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
-import splice.upstream.failure.SseFrameTooLargeException
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.BufferCapacity
-import splice.upstream.transport.StreamTornBeforeClient
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -152,7 +150,7 @@ internal class ResponsesStreamTranslator(
             // pre-content throw would starve every one of them, and would also lose the
             // conn-reset provenance SseRoundDriver.tearOutcome and TurnConnEnd exist to carry —
             // which is what a first pass at this arm did, and what its tests caught.
-            if (isSpiTransportSignal(ignored) || !clientSawContent(state)) throw ignored
+            if (!clientSawContent(state)) throw ignored
             unexpected = ignored
         } finally {
             // Sign and close the live script block even when the upstream omits item-done or the turn aborts.
@@ -226,17 +224,11 @@ internal class ResponsesStreamTranslator(
      *
      *  Two guard clauses rather than one joined condition: each names a single way the sentence must
      *  be left alone, which is also what keeps the condition under the complexity wall. */
-    /** The SPI failures that already have a turn-boundary owner, so the generic catch must pass
-     *  them through untouched (see that arm for why each one is in the set). ONE definition per
-     *  dialect so the set cannot be widened in one arm and forgotten in the next. */
     /** V4-116: has the client already been shown content this round? The generic catch is
      *  mid-stream-only, so this is the gate that decides whether a failure is OURS to
      *  salvage or the upper layers' to retry. Mirrors what the partial carries. */
     private fun clientSawContent(state: ResponsesTurnState): Boolean =
         state.emittedText || state.emittedThinking
-
-    private fun isSpiTransportSignal(e: RuntimeException): Boolean =
-        e is StreamTornBeforeClient || e is SseFrameTooLargeException
 
     private fun relabelUnrecognised(outcome: TurnOutcome): TurnOutcome {
         val failure = outcome as? TurnOutcome.Failure ?: return outcome

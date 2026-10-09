@@ -22,6 +22,7 @@ import org.junit.jupiter.params.provider.ValueSource
 import splice.core.turn.SpliceNotice
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -50,7 +51,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
                 if (step > 0) post.gates[step].complete(Unit)
                 val callback = withTimeout(1_500) { sinks[step].callback.await() }
                 callbacks += callback
-                val outcome = withTimeout(1_500) { request.await() } as TurnOutcome.Success
+                val outcome = withTimeout(1_500) { request.await() }.turn() as TurnOutcome.Success
                 assertTrue(outcome.hasToolUse)
                 assertEquals(0L, outcome.usage.outputTokens)
                 assertFalse(post.itemDone.isCompleted, "streaming callbacks must precede item completion")
@@ -69,7 +70,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             }
             itemCompletion.complete(Unit)
             post.complete.complete(Unit)
-            val outcome = withTimeout(1_500) { final.await() } as TurnOutcome.Success
+            val outcome = withTimeout(1_500) { final.await() }.turn() as TurnOutcome.Success
             assertEquals(2, post.posts, "only script completion permits a continuation POST")
             assertBilling(outcome.usage)
             assertEquals(
@@ -114,11 +115,13 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
         val firstSink = StepSink()
         val post = GatedPost(firstSink)
         try {
-            val failed = manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, firstSink, post)
+            val failed = manager.interceptor(turn(), disableParallel = false)
+                .intercept(BASE_REQUEST, firstSink, post).turn()
             assertTrue(failed is TurnOutcome.Failure)
             assertEquals("STARTING", stateFiles.records().single().getValue("phase").jsonPrimitive.content)
             val secondSink = StepSink()
-            val retried = manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, secondSink, post)
+            val retried = manager.interceptor(turn(), disableParallel = false)
+                .intercept(BASE_REQUEST, secondSink, post).turn()
             assertTrue(retried is TurnOutcome.Success, retried.toString())
             assertTrue((retried as TurnOutcome.Success).hasToolUse)
             assertEquals("Read", secondSink.callback.await().name)
@@ -146,7 +149,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             restored.interceptor(turn(callback.id, "result-0"), disableParallel = false)
                 .intercept(history(listOf(callback)), RecordingSink()) {
                     continued = it
-                    completedOutcome()
+                    RoundResult.Outcome(completedOutcome())
                 }
             assertEquals(1, runtime.starts)
             assertTrue(continued.contains("source was not rerun"))
@@ -172,7 +175,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             // Buffered producer bytes need not write; keep disk blocked through the executable read boundary.
             val next = StepSink()
             val outcome = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                .intercept(history(listOf(first)), next, post)
+                .intercept(history(listOf(first)), next, post).turn()
             assertTrue(outcome is TurnOutcome.Failure, outcome.toString())
             assertFalse(next.callback.isCompleted, "uncommitted source must never issue its Edit call")
             assertEquals(1, runtime.starts)
@@ -191,13 +194,13 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
         val sink = StepSink()
         val post = GatedPost(sink)
         try {
-            val failed = manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
+            val failed = manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post).turn()
             assertTrue(failed is TurnOutcome.Failure)
             assertFalse(sink.callback.isCompleted)
             stateFiles.unblock()
             val retriedSink = StepSink()
             val retried = manager.interceptor(turn(), disableParallel = false)
-                .intercept(BASE_REQUEST, retriedSink, post)
+                .intercept(BASE_REQUEST, retriedSink, post).turn()
             assertTrue(retried is TurnOutcome.Success, retried.toString())
             assertTrue(retriedSink.callback.isCompleted)
             assertEquals(1, runtime.starts)
@@ -222,13 +225,13 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             post.gates[1].complete(Unit)
             val failedSink = StepSink()
             val failed = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                .intercept(history(listOf(first)), failedSink, post)
+                .intercept(history(listOf(first)), failedSink, post).turn()
             assertTrue(failed is TurnOutcome.Failure)
             assertFalse(failedSink.callback.isCompleted, "no callback can escape a failed batch commit")
             assertEquals(listOf("result-0"), runtime.delivered.flatten().map(CodeModeResult::output))
             stateFiles.unblock()
             val resumed = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                .intercept(history(listOf(first)), StepSink(), post)
+                .intercept(history(listOf(first)), StepSink(), post).turn()
             assertTrue(resumed is TurnOutcome.Success, resumed.toString())
             assertEquals(listOf("result-0"), runtime.delivered.flatten().map(CodeModeResult::output))
             assertEquals(1, post.posts)
@@ -288,7 +291,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
                     .intercept(history(listOf(first)), next, post)
             }
             death.afterResume(afterLoss)
-            val outcome = withTimeout(5_000) { resumed.await() }
+            val outcome = withTimeout(5_000) { resumed.await() }.turn()
             assertTrue(outcome is TurnOutcome.Success, "outcome=$outcome")
             assertEquals(2, post.posts)
             assertTrue(post.continuation.contains("source was not rerun"))
@@ -376,7 +379,7 @@ class CodexCodeModeStatementStreamTest : CodeModeStatementStreamSupport() {
             val outcome = withTimeout(1_500) {
                 manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
                     .intercept(JsonObject(mapOf("input" to JsonArray(input))).toString(), StepSink(), post)
-            }
+            }.turn()
             assertTrue(outcome is TurnOutcome.Success, outcome.toString())
             withTimeout(1_500) { post.stopped.await() }
             assertFalse(post.sent[1].isCompleted, "steering generates no unread source")

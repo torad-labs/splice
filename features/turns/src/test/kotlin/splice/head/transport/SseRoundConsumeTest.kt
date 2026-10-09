@@ -75,6 +75,8 @@ import splice.upstream.ProviderTuning
 import splice.upstream.RetryBackoff
 import splice.upstream.RetryNotice
 import splice.upstream.RoundBody
+import splice.upstream.RoundResult
+import splice.upstream.StreamRead
 import splice.upstream.StreamTranslator
 import splice.upstream.TurnSignals
 import splice.upstream.retry.InflightGate
@@ -83,7 +85,6 @@ import splice.upstream.retry.TurnWatchdog
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.RetryPacing
-import splice.upstream.transport.StreamTornBeforeClient
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamResponse
 import java.net.SocketException
@@ -180,6 +181,10 @@ class SseRoundConsumeTest {
         ),
         toolSearch = null,
     )
+
+    /** One consume's outcome: these arms read the round's answer, so an early ending fails them loudly. */
+    private suspend fun SseRoundConsume.read(inputs: WsRoundInputs, resp: UpstreamResponse): TurnOutcome =
+        (consume(inputs, resp) as StreamRead.Read).value
 
     private suspend fun fetch(scenario: String): UpstreamResponse =
         UpstreamResponse(
@@ -355,7 +360,7 @@ class SseRoundConsumeTest {
                 return StreamTranslator { events, sink ->
                     if (++consumes == 1) {
                         events.first()
-                        throw StreamTornBeforeClient(SocketException("synthetic pre-content reset"))
+                        throw SocketException("synthetic pre-content reset")
                     }
                     normal.driveTurn(events, sink)
                 }
@@ -392,7 +397,7 @@ class SseRoundConsumeTest {
             0,
         )
         try {
-            assertTrue(post.post(inputs) is TurnOutcome.Success)
+            assertTrue((post.post(inputs) as RoundResult.Outcome).outcome is TurnOutcome.Success)
             assertEquals(2, consumes)
             assertEquals(200L, perf.snapshot().counters[PerfKeys.BACKOFF_MS])
             assertEquals(1_000L, perf.snapshot().counters[PerfKeys.UP_GAP_MAX_MS])
@@ -443,12 +448,12 @@ class SseRoundConsumeTest {
         try {
             // Attempt 1: events flow, then the stream ends without a terminal — the shape that
             // precedes a G5 reissue. Its outcome is not under test; its EVENTS_IN pollution is.
-            val first = consume.consume(inputs, fetch("truncated"))
+            val first = consume.read(inputs, fetch("truncated"))
             assertTrue(drive.perfCounter(PerfKeys.EVENTS_IN) > 0, "attempt 1 must have parsed events")
             // Attempt 2 (the reissue, same inputs per the UpstreamClient contract): an HTML login
             // page with ZERO events. Pre-fix the round-scoped baseline counted attempt 1's events
             // and the G2 auth diagnosis was skipped — an undiagnosable generic error instead.
-            val second = consume.consume(inputs, fetch("zero_event_auth"))
+            val second = consume.read(inputs, fetch("zero_event_auth"))
             val failure = second as TurnOutcome.Failure
             assertEquals(ErrorType.AUTHENTICATION, failure.type, "zero-event auth body must classify: $failure")
             assertTrue(failure.message.contains("claudex login"), "login hint expected: ${failure.message}")
@@ -466,8 +471,8 @@ class SseRoundConsumeTest {
     // reaped round from a transport tear: the watchdog fires before any client frame.
     //
     // Reaping now aborts the body channel, which surfaces as exactly the IOException a real tear
-    // does. Without the watchdog test in TearAwareEvents.reissuable, this round would be rethrown
-    // as StreamTornBeforeClient and silently re-POSTed by the reissue machinery — racing the
+    // does. Without the watchdog test in TearAwareEvents.reissuable, this round would be recorded
+    // as a tear and silently re-POSTed by the reissue machinery — racing the
     // salvage-and-continue decision the terminal outcome is about to make, and spending an upstream
     // request on a backend that has just been observed to be stalled rather than broken.
     // Dispatchers.Default deliberately: the watchdog poller is a SIBLING coroutine that must sample
@@ -530,7 +535,7 @@ class SseRoundConsumeTest {
         // roundJob's completion handler — the same path a real total-cap ending takes.
         drive.watchdog.launchTotalCap(this, turnJob)
         try {
-            // The assertion is that this RETURNS. A StreamTornBeforeClient thrown from here is the
+            // The assertion is that this RETURNS. A tear thrown from here is the
             // regression, and it would fail this test by propagating rather than by an assertEquals.
             // preparePost/execute, NOT the buffered post the DR-90 arm uses: a buffered request
             // reads the WHOLE response before consume ever runs, so the round would be handed an
@@ -540,9 +545,9 @@ class SseRoundConsumeTest {
                 setBody("""{"instructions":"SCENARIO:idlepre"}""")
             }.execute { raw ->
                 val t0 = System.currentTimeMillis()
-                // The assertion is that this RETURNS. A StreamTornBeforeClient thrown from here is
+                // The assertion is that this RETURNS. A tear thrown from here is
                 // the regression, and it fails this test by propagating rather than by an assert.
-                val outcome = consume.consume(inputs, UpstreamResponse(raw))
+                val outcome = consume.read(inputs, UpstreamResponse(raw))
                 val tookMs = System.currentTimeMillis() - t0
                 assertTrue(outcome is TurnOutcome.Failure, "a reaped round must report an outcome: $outcome")
                 val fired = drive.watchdog.fired

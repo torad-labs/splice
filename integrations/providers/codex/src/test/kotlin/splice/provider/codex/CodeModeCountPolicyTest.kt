@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertTimeoutPreemptively
 import splice.core.turn.TurnOutcome
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 import java.time.Clock
 import java.time.Instant
@@ -131,8 +132,8 @@ class CodeModeCountPolicyTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(turn(), null, disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) {
                 posts++
-                if (posts <= 40) outerOutcome("outer-$posts") else completedOutcome()
-            }
+                RoundResult.Outcome(if (posts <= 40) outerOutcome("outer-$posts") else completedOutcome())
+            }.turn()
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
         assertEquals(40, runtime.starts)
     }

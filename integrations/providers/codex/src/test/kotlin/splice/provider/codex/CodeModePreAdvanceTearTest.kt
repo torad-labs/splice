@@ -19,6 +19,7 @@ import org.junit.jupiter.params.provider.ValueSource
 import splice.core.turn.FailureCause
 import splice.core.turn.TurnOutcome
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.CodeModeSource
@@ -121,7 +122,7 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
         manager = bridge(gated, clock = clock)
         try {
             val outcome = manager.interceptor(turn(), disableParallel = false)
-                .intercept(BASE_REQUEST, initial, post) as TurnOutcome.Failure
+                .intercept(BASE_REQUEST, initial, post).turn() as TurnOutcome.Failure
             assertEquals(FailureCause.UPSTREAM_CONN_RESET, outcome.cause)
             assertFalse(outcome.deterministic)
             assertNull(outcome.partial)
@@ -143,16 +144,16 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
         val initial = StepSink()
         var posts = 0
         val post = object : RedirectableRoundPost {
-            override suspend fun invoke(bodyJson: String): TurnOutcome = into(bodyJson, initial)
+            override suspend fun invoke(bodyJson: String): RoundResult = into(bodyJson, initial)
 
-            override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+            override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
                 posts++
                 throw IOException("synthetic transport failure before script admission")
             }
         }
         try {
             val outcome = manager.interceptor(turn(), disableParallel = false)
-                .intercept(BASE_REQUEST, initial, post) as TurnOutcome.Failure
+                .intercept(BASE_REQUEST, initial, post).turn() as TurnOutcome.Failure
             assertEquals(FailureCause.INTERNAL, outcome.cause)
             assertFalse(outcome.deterministic)
             assertNull(outcome.partial)
@@ -175,7 +176,7 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
         assertEquals(CodeModePhase.LOST, record.phase)
         val retry = StepSink()
         val outcome = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-            .intercept(history(listOf(first)), retry, post)
+            .intercept(history(listOf(first)), retry, post).turn()
         assertTrue(outcome is TurnOutcome.Success, "the second attempt must heal through lost-record recovery")
         assertEquals(CodeModePhase.COMPLETED, record.phase)
         assertFalse(retry.callback.isCompleted)

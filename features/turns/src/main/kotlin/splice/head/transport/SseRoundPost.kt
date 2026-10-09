@@ -14,6 +14,7 @@ import splice.head.usage.TurnProviderAnswers
 import splice.head.usage.UsageStore
 import splice.upstream.Provider
 import splice.upstream.RetryNotice
+import splice.upstream.RoundResult
 import splice.upstream.TurnSignals
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.transport.AuthRefreshObserver
@@ -40,15 +41,21 @@ internal class SseRoundPost(
         }
     }
 
-    suspend fun post(inputs: WsRoundInputs): TurnOutcome {
+    suspend fun post(inputs: WsRoundInputs): RoundResult {
         while (true) {
-            when (val posted = postAccount(inputs)) {
-                is UpstreamPost.Delivered -> return posted.value
-                is UpstreamPost.Refused -> {
-                    if (inputs.drive.accountHandoff?.move(inputs.drive) != true) throw posted.failure
-                }
-                UpstreamPost.TurnWaitExhausted -> return waitExhausted(inputs)
+            val result = when (val posted = postAccount(inputs)) {
+                is UpstreamPost.Delivered -> RoundResult.Outcome(posted.value)
+                // A refusal the account handoff can answer posts again, on the account it moved to.
+                is UpstreamPost.Refused ->
+                    if (inputs.drive.accountHandoff?.move(inputs.drive) == true) {
+                        null
+                    } else {
+                        RoundResult.Ended(posted.failure)
+                    }
+                is UpstreamPost.Ended -> RoundResult.Ended(posted.ending)
+                UpstreamPost.TurnWaitExhausted -> RoundResult.Outcome(waitExhausted(inputs))
             }
+            if (result != null) return result
         }
     }
 

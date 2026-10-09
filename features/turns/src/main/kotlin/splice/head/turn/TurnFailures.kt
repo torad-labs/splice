@@ -5,36 +5,21 @@ package splice.head.turn
 
 import kotlinx.coroutines.CancellationException
 import splice.upstream.Provider
-import splice.upstream.failure.SseFrameTooLargeException
-import splice.upstream.transport.StreamTornBeforeClient
 import splice.upstream.transport.TransportFailureReason
-import splice.upstream.transport.UpstreamAuthMissing
-import splice.upstream.transport.UpstreamFailed
 import java.io.IOException
 
 /** The per-turn error boundary and the failure-message shaping around it. */
 internal class TurnFailures(
     private val provider: Provider,
 ) {
-    /** Captures exactly the failure classes [TurnEnding.emitFailure] dispatches on: the custom
-     *  transport signals, I/O, and the two documented gateway-bug classes (IllegalArgument/
+    /** Captures exactly the failure classes [TurnEnding.emitFailure] dispatches on: I/O and the two documented
+     *  gateway-bug classes (IllegalArgument/
      *  IllegalState — a bad base_url parse, a Ktor internal state error), which previously escaped
      *  as a truncated 200 with no error frame (review 2026-07-19). The stream and collect entries
      *  share ONE boundary. */
     inline fun <R> catchingTurnFailure(block: () -> R): Result<R> =
         try {
             Result.success(block())
-        } catch (e: UpstreamAuthMissing) {
-            Result.failure(e)
-        } catch (e: UpstreamFailed) {
-            Result.failure(e)
-        } catch (e: StreamTornBeforeClient) {
-            // Plain RuntimeException (so translators don't swallow it into a terminal). After
-            // UpstreamClient exhausts MAX_STREAM_REISSUES it rethrows here — must become emitConnReset,
-            // not escape respondTextWriter as a truncated HTTP 200 SSE.
-            Result.failure(e)
-        } catch (e: SseFrameTooLargeException) {
-            Result.failure(e)
         } catch (e: IOException) {
             Result.failure(e)
         } catch (e: CancellationException) {

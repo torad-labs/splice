@@ -22,6 +22,8 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeBridge
+import splice.provider.codex.turn
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 
@@ -158,7 +160,7 @@ class CodeModeReasoningHistoryTest : CodeModeBridgeTestSupport() {
         firstTurn: TurnOutcome = outerOutcome(),
     ): Pair<String, String> {
         val sink = RecordingSink()
-        manager.interceptor(turn(), disableParallel = false).intercept(OPENING, sink) { firstTurn }
+        manager.interceptor(turn(), disableParallel = false).intercept(OPENING, sink) { RoundResult.Outcome(firstTurn) }
         val (read, edit) = sink.tools.map { it.id }
         return read to edit
     }
@@ -175,7 +177,7 @@ class CodeModeReasoningHistoryTest : CodeModeBridgeTestSupport() {
 
     private suspend fun resume(manager: CodexCodeModeBridge, body: String, vararg results: CodeModeResult) =
         manager.interceptor(turn(results = results.toList()), disableParallel = false)
-            .intercept(body, RecordingSink()) { completedOutcome() }
+            .intercept(body, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }.turn()
 
     /** [opening], then both calls, each with its output where [outputs] has one. */
     private fun history(

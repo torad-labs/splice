@@ -19,6 +19,7 @@ import splice.upstream.InterceptedRoundPost
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundBody
 import splice.upstream.RoundBodyPost
+import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
 
 internal class CodeModeUpstreamPostTest : CodeModeBridgeTestSupport() {
@@ -31,10 +32,12 @@ internal class CodeModeUpstreamPostTest : CodeModeBridgeTestSupport() {
     private inner class TreePost : RedirectableRoundPost, RoundBodyPost {
         val seen = mutableListOf<Any>()
         override val perf: TurnPerf = record
-        override suspend fun invoke(bodyJson: String): TurnOutcome = done.also { seen += bodyJson }
-        override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome = done.also { seen += bodyJson }
-        override suspend fun post(body: RoundBody): TurnOutcome = done.also { seen += body }
-        override suspend fun postInto(body: RoundBody, sink: WireSink): TurnOutcome = done.also { seen += body }
+        override suspend fun invoke(bodyJson: String): RoundResult = RoundResult.Outcome(done.also { seen += bodyJson })
+        override suspend fun into(bodyJson: String, sink: WireSink): RoundResult =
+            RoundResult.Outcome(done.also { seen += bodyJson })
+        override suspend fun post(body: RoundBody): RoundResult = RoundResult.Outcome(done.also { seen += body })
+        override suspend fun postInto(body: RoundBody, sink: WireSink): RoundResult =
+            RoundResult.Outcome(done.also { seen += body })
     }
 
     @Test
@@ -49,7 +52,7 @@ internal class CodeModeUpstreamPostTest : CodeModeBridgeTestSupport() {
     fun `a plain round post keeps its perf record and gains no redirect`() {
         val post = object : InterceptedRoundPost {
             override val perf: TurnPerf = record
-            override suspend fun invoke(bodyJson: String): TurnOutcome = done
+            override suspend fun invoke(bodyJson: String): RoundResult = RoundResult.Outcome(done)
         }
         val wrapped = CodeModeUpstreamPosts.of(post, wire)
 
@@ -76,11 +79,11 @@ internal class CodeModeUpstreamPostTest : CodeModeBridgeTestSupport() {
         val inner = TreePost()
         val ending = TurnOutcome.Success(false, false, Usage(outputTokens = 7))
         val wrapper = object : RedirectableRoundPost by inner {
-            override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome = ending
+            override suspend fun into(bodyJson: String, sink: WireSink): RoundResult = RoundResult.Outcome(ending)
         }
         val wrapped = CodeModeUpstreamPosts.of(wrapper, wire) as CodeModeRedirectablePost
 
-        assertSame(ending, wrapped.into(wire.body(RoundBody.Tree(tree)), RecordingSink()))
+        assertEquals(RoundResult.Outcome(ending), wrapped.into(wire.body(RoundBody.Tree(tree)), RecordingSink()))
         assertTrue(inner.seen.isEmpty(), "the wrapper's own override answered: ${inner.seen}")
     }
 }

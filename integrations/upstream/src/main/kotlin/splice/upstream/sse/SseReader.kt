@@ -12,7 +12,7 @@
 // never after downstream write; a slow client must not fake idleness). Hot-path shape: one reused
 // decode scratch + one event assembler per stream (no per-chunk buffer allocs) and index-scanned
 // lines (no per-line StringBuilder churn). Decode/assemble live in SseDecode.kt; the public seams
-// live in SseObservers.kt; the two transport failures live in SseExceptions.kt.
+// live in SseObservers.kt; the two transport failures live in SseSpuriousWakeupException.kt.
 package splice.upstream.sse
 
 import io.ktor.utils.io.ByteReadChannel
@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonObject
-import splice.upstream.failure.SseFrameTooLargeException
+import splice.upstream.transport.SseFrameTooLarge
 
 // no space: SSE field syntax is `data:` + optional single space + value (WHATWG spec); the
 // leading-ws trim in processLine absorbs the space when present.
@@ -28,7 +28,9 @@ private const val DATA_PREFIX = "data:"
 
 /** The SSE line/event reader for ONE stream. The observers and limits are what differs per stream, so they
  *  are the reader's own; every buffer it needs is per-[sseJsonEvents] local state, so a reader holds no
- *  stream state and callers construct one wherever they read a stream. */
+ *  stream state and callers construct one wherever they read a stream. The one fact it keeps is how its read
+ *  ENDED early: [exceeded] names the safety limit a frame crossed, and the flow completes there instead of
+ *  throwing, so the frames before it have all been delivered and the caller reads the verdict after collecting. */
 public class SseReader(
     private val onBytes: BytesRead = BytesRead {},
     private val onMalformed: MalformedLine = MalformedLine {},
@@ -36,6 +38,11 @@ public class SseReader(
     private val maxLineChars: Int = MAX_SSE_LINE_CHARS,
     private val maxEventChars: Int = MAX_SSE_EVENT_CHARS,
 ) {
+
+    /** The limit the read stopped at, or null while it has not. Read it after the flow completes. */
+    @Volatile
+    public var exceeded: SseFrameTooLarge? = null
+        private set
 
     // the chunk/line/skip walk is the literal port; malformed frames must never crash the stream.
     // onRawText (opt-in, null for every hot-path caller) exposes the FULL decoded body text as it
@@ -57,9 +64,14 @@ public class SseReader(
             // that decodes to zero chars — all bytes still UTF-8 carry — must not falsely mark the
             // check done); never re-checked mid-stream (a later U+FEFF is an ordinary character).
             if (!bomChecked) bomChecked = stripLeadingBomWhenReady(lineBuffer)
-            if (lineBuffer.length > maxLineChars) throw SseFrameTooLargeException("SSE line", maxLineChars)
+            if (lineBuffer.length > maxLineChars) {
+                exceeded = SseFrameTooLarge("SSE line", maxLineChars)
+                return@flow
+            }
             rawObserver = notifyRawObserver(rawObserver, lineBuffer, before)
             emitCompleteLines(this, lineBuffer, assembler)
+            exceeded = assembler.tooLarge
+            if (exceeded != null) return@flow
             n = scratch.readChunk(channel)
         }
     }
@@ -108,6 +120,7 @@ public class SseReader(
             }
             if (c == '\n' || c == '\r') {
                 processLine(collector, lineBuffer, start, i, assembler)
+                if (assembler.tooLarge != null) return
                 assembler.pendingCR = c == '\r' // a lone CR may still be the CR of a CRLF split next
                 i++
                 start = i
@@ -115,8 +128,13 @@ public class SseReader(
                 i++
             }
         }
-        if (start == 0) return
-        if (start >= end) lineBuffer.setLength(0) else lineBuffer.delete(0, start)
+        dropConsumed(lineBuffer, start)
+    }
+
+    /** Drop the [consumed] leading characters of complete lines, keeping the unterminated trailing partial. */
+    private fun dropConsumed(lineBuffer: StringBuilder, consumed: Int) {
+        if (consumed == 0) return
+        if (consumed >= lineBuffer.length) lineBuffer.setLength(0) else lineBuffer.delete(0, consumed)
     }
 
     /**

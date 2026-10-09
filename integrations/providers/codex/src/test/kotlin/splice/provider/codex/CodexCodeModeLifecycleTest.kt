@@ -14,6 +14,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import kotlin.time.Duration.Companion.hours
@@ -27,16 +28,18 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val failed = first.interceptor(turn(), null, disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) {
                 posts++
-                if (posts == 1) {
-                    outerOutcome()
-                } else {
-                    TurnOutcome.Failure(
-                        "down",
-                        cause = FailureCause.CODE_MODE_PROTOCOL,
-                        phase = FailurePhase.MID_OUTPUT,
-                    )
-                }
-            }
+                RoundResult.Outcome(
+                    if (posts == 1) {
+                        outerOutcome()
+                    } else {
+                        TurnOutcome.Failure(
+                            "down",
+                            cause = FailureCause.CODE_MODE_PROTOCOL,
+                            phase = FailurePhase.MID_OUTPUT,
+                        )
+                    },
+                )
+            }.turn()
         assertTrue(failed is TurnOutcome.Failure)
 
         val replacement = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("must not run"))))
@@ -44,8 +47,8 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val retried = bridge(replacement).interceptor(turn(), null, disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { body ->
                 replayed = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         assertTrue(retried is TurnOutcome.Success)
         assertEquals(0, replacement.starts)
@@ -68,16 +71,18 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val failed = bridge(runtime).interceptor(turn(), null, disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) {
                 posts++
-                when (posts) {
-                    1 -> outerOutcome("outer-1")
-                    2 -> outerOutcome("outer-2")
-                    else -> TurnOutcome.Failure(
-                        "down",
-                        cause = FailureCause.CODE_MODE_PROTOCOL,
-                        phase = FailurePhase.MID_OUTPUT,
-                    )
-                }
-            }
+                RoundResult.Outcome(
+                    when (posts) {
+                        1 -> outerOutcome("outer-1")
+                        2 -> outerOutcome("outer-2")
+                        else -> TurnOutcome.Failure(
+                            "down",
+                            cause = FailureCause.CODE_MODE_PROTOCOL,
+                            phase = FailurePhase.MID_OUTPUT,
+                        )
+                    },
+                )
+            }.turn()
         assertTrue(failed is TurnOutcome.Failure)
 
         val replacement = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("must not run"))))
@@ -85,8 +90,8 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val retried = bridge(replacement).interceptor(turn(), null, disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { body ->
                 replayed = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         assertTrue(retried is TurnOutcome.Success)
         assertEquals(0, replacement.starts)
@@ -110,10 +115,10 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime, retention = CodeModeRetention(records = 1))
         val firstSink = RecordingSink()
         manager.interceptor(turn(sessionId = "session-a"), outer("outer-a"), disableParallel = false)
-            .intercept(BASE_REQUEST, firstSink) { outerOutcome("outer-a") }
+            .intercept(BASE_REQUEST, firstSink) { RoundResult.Outcome(outerOutcome("outer-a")) }
 
         val second = manager.interceptor(turn(sessionId = "session-b"), outer("outer-b"), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-b") }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-b")) }.turn()
 
         assertTrue(second is TurnOutcome.Failure)
         assertEquals(1, runtime.starts)
@@ -136,13 +141,15 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(turn(), null, disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) {
                 posts++
-                TurnOutcome.Success(
-                    false,
-                    false,
-                    Usage(),
-                    customCalls = listOf(outer("outer-$posts", "source-$posts")),
+                RoundResult.Outcome(
+                    TurnOutcome.Success(
+                        false,
+                        false,
+                        Usage(),
+                        customCalls = listOf(outer("outer-$posts", "source-$posts")),
+                    ),
                 )
-            }
+            }.turn()
 
         assertTrue(outcome is TurnOutcome.Failure)
         assertEquals(2, runtime.starts)
@@ -156,7 +163,7 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime, ttl = 1.hours, clock = clock)
         val sink = RecordingSink()
         manager.interceptor(turn(), outer(), disableParallel = false)
-            .intercept(BASE_REQUEST, sink) { outerOutcome() }
+            .intercept(BASE_REQUEST, sink) { RoundResult.Outcome(outerOutcome()) }
         val resultId = sink.tools.single().id
         clock.now += 2.hours.inWholeMilliseconds
 
@@ -169,8 +176,8 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val outcome = restored.interceptor(turn(resultId, "A"), null, disableParallel = false)
             .intercept(requestWithResult(resultId, "A"), RecordingSink()) { body ->
                 posted = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         // The record is gone, so nothing can be rewritten: the client's own history goes upstream
         // untouched (its callback is an ordinary tool call there) and the turn is not refused.
@@ -192,17 +199,17 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val sink = RecordingSink()
         manager.interceptor(turn(), outer(), disableParallel = false)
-            .intercept(BASE_REQUEST, sink) { outerOutcome() }
+            .intercept(BASE_REQUEST, sink) { RoundResult.Outcome(outerOutcome()) }
         val id = sink.tools.single().id
 
         val rejected = manager.interceptor(turn(), null, disableParallel = false)
-            .intercept(requestWithCall(id), RecordingSink()) { error("upstream must not run") }
+            .intercept(requestWithCall(id), RecordingSink()) { error("upstream must not run") }.turn()
         assertTrue(rejected is TurnOutcome.Failure)
         assertEquals(1, runtime.cell.advances)
         assertFalse(runtime.cell.closed)
 
         val corrected = manager.interceptor(turn(id, "A"), null, disableParallel = false)
-            .intercept(requestWithResult(id, "A"), RecordingSink()) { completedOutcome() }
+            .intercept(requestWithResult(id, "A"), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }.turn()
         assertTrue(corrected is TurnOutcome.Success)
         assertEquals(2, runtime.cell.advances)
     }
@@ -220,18 +227,18 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val sink = RecordingSink()
         manager.interceptor(turn(), outer(), disableParallel = false)
-            .intercept(BASE_REQUEST, sink) { outerOutcome() }
+            .intercept(BASE_REQUEST, sink) { RoundResult.Outcome(outerOutcome()) }
         val id = sink.tools.single().id
         val duplicateTurn = turn(results = listOf(CodeModeResult(id, "A"), CodeModeResult(id, "B")))
 
         val rejected = manager.interceptor(duplicateTurn, null, disableParallel = false)
-            .intercept(requestWithResult(id, "A"), RecordingSink()) { error("upstream must not run") }
+            .intercept(requestWithResult(id, "A"), RecordingSink()) { error("upstream must not run") }.turn()
         assertTrue(rejected is TurnOutcome.Failure)
         assertEquals(1, runtime.cell.advances)
         assertFalse(runtime.cell.closed)
 
         manager.interceptor(turn(id, "A"), null, disableParallel = false)
-            .intercept(requestWithResult(id, "A"), RecordingSink()) { completedOutcome() }
+            .intercept(requestWithResult(id, "A"), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         assertEquals(2, runtime.cell.advances)
     }
 
@@ -249,7 +256,7 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val firstSink = RecordingSink()
         manager.interceptor(turn(), outer(), disableParallel = false)
-            .intercept(BASE_REQUEST, firstSink) { outerOutcome() }
+            .intercept(BASE_REQUEST, firstSink) { RoundResult.Outcome(outerOutcome()) }
         val firstId = firstSink.tools.single().id
         val secondSink = RecordingSink()
         manager.interceptor(turn(firstId, "A"), null, disableParallel = false)
@@ -267,8 +274,8 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val served = manager.interceptor(conflicting, null, disableParallel = false)
             .intercept(divergentHistory, RecordingSink()) {
                 posted = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(served is TurnOutcome.Success)
         assertTrue((served as TurnOutcome.Success).usage.codeModeDiverged)
         assertEquals(Json.parseToJsonElement(divergentHistory), Json.parseToJsonElement(posted))
@@ -281,7 +288,9 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
 
         val corrected = turn(results = listOf(CodeModeResult(firstId, "A"), CodeModeResult(secondId, "B")))
         manager.interceptor(corrected, null, disableParallel = false)
-            .intercept(requestWithTwoResults(firstId, secondId), RecordingSink()) { completedOutcome() }
+            .intercept(requestWithTwoResults(firstId, secondId), RecordingSink()) {
+                RoundResult.Outcome(completedOutcome())
+            }
         assertEquals(3, runtime.cell.advances)
     }
 
@@ -292,7 +301,7 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val sink = RecordingSink()
         val running = async {
             manager.interceptor(turn(), outer(), disableParallel = false)
-                .intercept(BASE_REQUEST, sink) { outerOutcome() }
+                .intercept(BASE_REQUEST, sink) { RoundResult.Outcome(outerOutcome()) }
         }
         runtime.started.await()
 
@@ -302,7 +311,7 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
                 runtime.cell = it
             },
         )
-        val outcome = running.await()
+        val outcome = running.await().turn()
 
         assertTrue(outcome is TurnOutcome.Failure)
         assertTrue(checkNotNull(runtime.cell).closed)
@@ -313,8 +322,8 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         val retry = restored.interceptor(turn(), null, disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { body ->
                 posted = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         // The lost record can never resume, so the retry completes it with its evidence and goes
         // upstream; the source is not rerun (no new start) and the model sees why.
         assertTrue(retry is TurnOutcome.Success)
@@ -334,15 +343,15 @@ class CodexCodeModeLifecycleTest : CodeModeBridgeTestSupport() {
         )
         val manager = bridge(runtime)
         manager.interceptor(turn(sessionId = "session-a"), outer("outer-a"), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-a") }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-a")) }
         manager.onHeadStop()
 
         var posts = 0
         val fresh = manager.interceptor(turn(sessionId = "session-b"), null, disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) {
                 posts++
-                if (posts == 1) outerOutcome("outer-b") else completedOutcome()
-            }
+                RoundResult.Outcome(if (posts == 1) outerOutcome("outer-b") else completedOutcome())
+            }.turn()
 
         assertTrue(fresh is TurnOutcome.Success)
         assertEquals(2, runtime.starts)

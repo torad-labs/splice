@@ -22,6 +22,7 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -78,7 +79,7 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
                 assertFalse(next.callback.isCompleted)
                 return@runBlocking
             }
-            val outcome = withTimeout(5_000) { request.await() } as TurnOutcome.Failure
+            val outcome = withTimeout(5_000) { request.await() }.turn() as TurnOutcome.Failure
             // A reader that failed on splice's own fault ("local") closes the cell under this step as an uncertified
             // source does: retryable, never invalid_request.
             assertEquals(cellExit == "infrastructure", outcome.deterministic, outcome.toString())
@@ -148,14 +149,15 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
             withTimeout(1_500) { runtime.advancing.await() }
             if (ending == null) post.terminalProblem = "incomplete"
             endRound(post)
-            val outcome = withTimeout(5_000) { request.await() }
+            val round = withTimeout(5_000) { request.await() }
+            val outcome = round.turn()
             if (ending?.permanent == true) {
                 val failure = outcome as TurnOutcome.Failure
                 assertEquals(ending.cause, failure.cause, failure.toString())
                 assertTrue(failure.permanent, "a permanent upstream verdict reaches the client as it is: $failure")
                 assertEquals(ending.message, failure.message)
             } else {
-                assertSourceTear(outcome)
+                assertSourceTear(round)
             }
             assertFalse(sink.callback.isCompleted, "no statement after the round's terminal may execute")
             assertEquals(1, runtime.starts)
@@ -200,9 +202,9 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
     /** The round [post] streams, ended by [ending] in place of its own terminal. */
     private fun endingWith(post: GatedPost, ending: TurnOutcome.Failure): RedirectableRoundPost =
         object : RedirectableRoundPost by post {
-            override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+            override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
                 val outcome = post.into(bodyJson, sink)
-                return if (post.posts == 1) ending else outcome
+                return if (post.posts == 1) RoundResult.Outcome(ending) else outcome
             }
         }
 
@@ -340,7 +342,7 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
             withTimeout(1_500) { runtime.advancing.await() }
             post.tearAfterFirst = true
             post.gates[1].complete(Unit)
-            val outcome = withTimeout(5_000) { request.await() }
+            val outcome = withTimeout(5_000) { request.await() }.turn()
             assertTrue(outcome is TurnOutcome.Success, outcome.toString())
             assertTrue(post.continuation.contains("source was not rerun"))
             assertTrue(post.continuation.contains("result-0"))
@@ -366,7 +368,8 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
         post.complete.complete(Unit)
     }
 
-    private fun assertSourceTear(outcome: TurnOutcome) {
+    private fun assertSourceTear(round: RoundResult) {
+        val outcome = round.turn()
         assertTrue(outcome is TurnOutcome.Failure, outcome.toString())
         val failure = outcome as TurnOutcome.Failure
         assertFalse(failure.deterministic, "a splice-local closed cell is retryable, never invalid_request: $failure")
@@ -382,7 +385,7 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
         runtime: ClosingRuntime,
     ) {
         val recovered = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-            .intercept(history(listOf(first)), StepSink(), post)
+            .intercept(history(listOf(first)), StepSink(), post).turn()
         assertTrue(recovered is TurnOutcome.Success, recovered.toString())
         assertTrue(post.continuation.contains("source was not rerun"))
         assertTrue(post.continuation.contains("result-0"))
@@ -421,7 +424,7 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
                 while (JsonScalars.str(stateFiles.records().single()["error"]) == null) kotlinx.coroutines.yield()
             }
             runtime.release.complete(Unit)
-            val outcome = withTimeout(5_000) { request.await() } as TurnOutcome.Failure
+            val outcome = withTimeout(5_000) { request.await() }.turn() as TurnOutcome.Failure
             assertEquals(
                 if (sourceFailure == "local") FailureCause.INTERNAL else FailureCause.UPSTREAM_CONN_RESET,
                 outcome.cause,
@@ -472,7 +475,7 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
         beforeFailure: suspend () -> Unit = {},
     ): RedirectableRoundPost =
         object : RedirectableRoundPost by post {
-            override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome = try {
+            override suspend fun into(bodyJson: String, sink: WireSink): RoundResult = try {
                 post.into(bodyJson, sink)
             } catch (error: IOException) {
                 beforeFailure()
@@ -480,10 +483,12 @@ class CodexCodeModeSourceTearTest : CodeModeStatementStreamSupport() {
                 if (failure == "local") error("synthetic private protocol bytes")
                 // Oct 2: the record's save raced and killed the reader with a throwable none of its catches names.
                 if (failure == "died") throw ConcurrentModificationException("synthetic record snapshot raced")
-                TurnOutcome.Failure(
-                    "synthetic source transport failure",
-                    cause = FailureCause.valueOf(failure),
-                    phase = FailurePhase.MID_OUTPUT,
+                RoundResult.Outcome(
+                    TurnOutcome.Failure(
+                        "synthetic source transport failure",
+                        cause = FailureCause.valueOf(failure),
+                        phase = FailurePhase.MID_OUTPUT,
+                    ),
                 )
             }
         }

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import java.lang.management.ManagementFactory
@@ -40,17 +41,17 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val first = RecordingSink()
         manager.interceptor(turn(), outer(), disableParallel = false)
-            .intercept(BASE_REQUEST, first) { outerOutcome() }
+            .intercept(BASE_REQUEST, first) { RoundResult.Outcome(outerOutcome()) }
         val id = first.tools.single().id
         manager.interceptor(turn(id, "X"), disableParallel = false)
-            .intercept(requestWithResult(id, "X"), RecordingSink()) { completedOutcome() }
+            .intercept(requestWithResult(id, "X"), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         val different = requestWithResult(id, "Y")
         var posted = ""
         val outcome = manager.interceptor(turn(id, "Y"), disableParallel = false)
             .intercept(different, RecordingSink()) { body ->
                 posted = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         assertTrue(outcome is TurnOutcome.Success)
         assertEquals(Json.parseToJsonElement(different), Json.parseToJsonElement(posted))
@@ -74,13 +75,13 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
         val initialBody = nativeSearchBody(searchId)
         val readSink = RecordingSink()
         val started = manager.interceptor(turn(), null, disableParallel = false)
-            .intercept(initialBody, readSink) { outerOutcome() }
+            .intercept(initialBody, readSink) { RoundResult.Outcome(outerOutcome()) }.turn()
         assertTrue((started as TurnOutcome.Success).hasToolUse)
 
         val readId = readSink.tools.single().id
         val editSink = RecordingSink()
         val resumed = manager.interceptor(turn(readId, "A"), null, disableParallel = false)
-            .intercept(requestWithResult(readId, "A"), editSink) { error("upstream must not run") }
+            .intercept(requestWithResult(readId, "A"), editSink) { error("upstream must not run") }.turn()
         assertTrue((resumed as TurnOutcome.Success).hasToolUse)
         assertEquals(listOf("Edit"), editSink.tools.map { it.name })
 
@@ -92,7 +93,7 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
         manager.interceptor(finalTurn, null, disableParallel = false)
             .intercept(requestWithTwoResults(readId, editId), RecordingSink()) { body ->
                 finalPost = body
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
 
         val items = Json.parseToJsonElement(finalPost).jsonObject.getValue("input").jsonArray
@@ -120,15 +121,15 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val readSink = RecordingSink()
         manager.interceptor(turn(), null, disableParallel = false)
-            .intercept(baselineWithNativeSearch(), readSink) { outerOutcome() }
+            .intercept(baselineWithNativeSearch(), readSink) { RoundResult.Outcome(outerOutcome()) }
         val readId = readSink.tools.single().id
         var upstreamCalls = 0
 
         val outcome = manager.interceptor(turn(readId, "A"), null, disableParallel = false)
             .intercept(callbackWithUnexpectedSearch(readId), RecordingSink()) {
                 upstreamCalls++
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         // The running cell is closed without rerunning its source, and the turn goes upstream on
         // the client's history rather than failing the conversation.
@@ -157,15 +158,15 @@ class CodexCodeModeHistoryTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val readSink = RecordingSink()
         manager.interceptor(turn(), null, disableParallel = false)
-            .intercept(baselineWithNativeSearch(), readSink) { outerOutcome() }
+            .intercept(baselineWithNativeSearch(), readSink) { RoundResult.Outcome(outerOutcome()) }
         val readId = readSink.tools.single().id
         var upstreamCalls = 0
         repeat(3) {
             val outcome = manager.interceptor(turn(readId, "A"), null, disableParallel = false)
                 .intercept(callbackWithUnexpectedSearch(readId), RecordingSink()) {
                     upstreamCalls++
-                    completedOutcome()
-                }
+                    RoundResult.Outcome(completedOutcome())
+                }.turn()
             assertTrue(outcome is TurnOutcome.Success)
         }
         // 2026-09-20: one LOST record was re-found by its client ids and re-abandoned on 82 turns.

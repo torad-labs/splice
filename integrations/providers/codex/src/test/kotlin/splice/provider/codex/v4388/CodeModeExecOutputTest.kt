@@ -12,6 +12,8 @@ import splice.core.turn.TurnOutcome
 import splice.provider.codex.BASE_REQUEST
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodeModeExecOutput
+import splice.provider.codex.turn
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeLimits
 import splice.upstream.codemode.CodeModeStep
 
@@ -65,7 +67,7 @@ class CodeModeExecOutputTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime, clock = clock)
         val sink = RecordingSink()
         manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, sink) { outerOutcome() }
+            .intercept(BASE_REQUEST, sink) { RoundResult.Outcome(outerOutcome()) }
         val resultId = sink.tools.single().id
         clock.now += 1_200
 
@@ -73,8 +75,8 @@ class CodeModeExecOutputTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(turn(resultId, "read answer"), disableParallel = false)
             .intercept(requestWithResult(resultId, "read answer"), RecordingSink()) {
                 upstream = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         assertTrue(outcome is TurnOutcome.Success)
         val output = Json.parseToJsonElement(upstream).jsonObject.getValue("input").jsonArray

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeLimits
 import splice.upstream.codemode.CodeModeStep
 import java.nio.file.Path
@@ -15,8 +16,8 @@ class CodexCodeModeLimitsTest : CodeModeBridgeTestSupport() {
         val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("done"))))
         val outcome = bridge(runtime).interceptor(turn(), disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) {
-                outerOutcome().copy(customCalls = listOf(outer(source = "é".repeat(32_769))))
-            }
+                RoundResult.Outcome(outerOutcome().copy(customCalls = listOf(outer(source = "é".repeat(32_769)))))
+            }.turn()
         assertTrue(outcome is TurnOutcome.Failure)
         assertEquals(0, runtime.starts)
         assertEquals(emptyList<Path>(), stateFiles.files(), "an oversized script left nothing on disk")
@@ -28,11 +29,15 @@ class CodexCodeModeLimitsTest : CodeModeBridgeTestSupport() {
         val runtime = ScriptedRuntime(ArrayDeque(steps))
         val manager = bridge(runtime)
         val sink = RecordingSink()
-        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val id = sink.tools.single().id
         val oversized = "é".repeat(35_840) // 70 KiB: the Read output Claude Code cannot shrink on request
         val completed = manager.interceptor(turn(id, oversized), disableParallel = false)
-            .intercept(requestWithResult(id, oversized), RecordingSink()) { completedOutcome() }
+            .intercept(requestWithResult(id, oversized), RecordingSink()) {
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(completed is TurnOutcome.Success, completed.toString())
         val admitted = runtime.cell.results.last().single().output
         assertTrue(admitted.encodeToByteArray().size <= CodeModeLimits.MAX_TEXT_BYTES)
@@ -47,11 +52,15 @@ class CodexCodeModeLimitsTest : CodeModeBridgeTestSupport() {
         val runtime = ScriptedRuntime(ArrayDeque(steps))
         val manager = bridge(runtime)
         val sink = RecordingSink()
-        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val id = sink.tools.single().id
         val boundary = "é".repeat(32_768)
         val completed = manager.interceptor(turn(id, boundary), disableParallel = false)
-            .intercept(requestWithResult(id, boundary), RecordingSink()) { completedOutcome() }
+            .intercept(requestWithResult(id, boundary), RecordingSink()) {
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(completed is TurnOutcome.Success)
         assertEquals(boundary, runtime.cell.results.last().single().output)
     }

@@ -29,6 +29,8 @@ import splice.provider.codex.BASE_REQUEST
 import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.terminatedEvidence
+import splice.provider.codex.turn
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 
@@ -115,7 +117,9 @@ class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
         val runtime = runtime()
         val manager = bridge(runtime)
         val sink = RecordingSink()
-        manager.interceptor(turn(), disableParallel = true).intercept(BASE_REQUEST, sink) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = true).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val read = sink.tools.single().id
         val body = appended(requestWithResult(read, "A"), message("system", LATE))
 
@@ -123,8 +127,8 @@ class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(turn(results = listOf(CodeModeResult(read, "A"))), disableParallel = true)
             .intercept(body, RecordingSink()) {
                 upstream = it
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         assertTrue(outcome is TurnOutcome.Success, outcome.toString())
         assertEquals(1, runtime.cell.advances, "the Edit the batch still holds was never scheduled")
@@ -168,7 +172,9 @@ class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
     /** The outer call starts the script on [body]; the two client call ids it exposed. */
     private suspend fun start(manager: CodexCodeModeBridge, body: String = BASE_REQUEST): Pair<String, String> {
         val sink = RecordingSink()
-        manager.interceptor(turn(), disableParallel = false).intercept(body, sink) { outerOutcome() }
+        manager.interceptor(turn(), disableParallel = false).intercept(body, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         val (read, edit) = sink.tools.map { it.id }
         return read to edit
     }
@@ -183,9 +189,9 @@ class CodeModeLateContentTest : CodeModeBridgeTestSupport() {
         val outcome = manager.interceptor(turn(results = results.toList()), disableParallel = false)
             .intercept(body, RecordingSink()) {
                 upstream = it
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
-        return outcome to upstream
+        return outcome.turn() to upstream
     }
 
     /** The interruption evidence's unresolved call ids; the output must be an interruption. */

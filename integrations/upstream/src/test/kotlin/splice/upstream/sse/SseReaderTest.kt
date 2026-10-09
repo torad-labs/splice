@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.Buffer
 import kotlinx.io.Source
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -22,7 +23,6 @@ import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
-import splice.upstream.failure.SseFrameTooLargeException
 import splice.upstream.failure.SseSpuriousWakeupException
 
 class SseReaderTest {
@@ -168,17 +168,17 @@ class SseReaderTest {
     @Test
     fun `unterminated line is rejected at the configured safety limit`() = runTest {
         val channel = ByteReadChannel("x".repeat(64))
-        assertThrows<SseFrameTooLargeException> {
-            SseReader(maxLineChars = 16).sseJsonEvents(channel).toList()
-        }
+        val reader = SseReader(maxLineChars = 16)
+        assertEquals(emptyList<JsonObject>(), reader.sseJsonEvents(channel).toList())
+        assertEquals(16, reader.exceeded?.limit)
     }
 
     @Test
     fun `multi-line event is rejected at the configured safety limit`() = runTest {
         val channel = ByteReadChannel("data: 12345678\ndata: 90\n\n")
-        assertThrows<SseFrameTooLargeException> {
-            SseReader(maxLineChars = 64, maxEventChars = 8).sseJsonEvents(channel).toList()
-        }
+        val reader = SseReader(maxLineChars = 64, maxEventChars = 8)
+        assertEquals(emptyList<JsonObject>(), reader.sseJsonEvents(channel).toList())
+        assertEquals("SSE event", reader.exceeded?.kind)
     }
 
     // REGRESSION (600%-CPU incident, 2026-07-18): a torn/half-closed upstream where readAvailable

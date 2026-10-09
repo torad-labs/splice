@@ -11,7 +11,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -56,7 +55,7 @@ class UpstreamClientStatusTest {
                 calls.incrementAndGet()
                 respond("nope", status, headersOf())
             }
-            assertThrows<UpstreamFailed> { postOnce(clientOver(engine)) }
+            assertEnds<UpstreamFailed> { postOnce(clientOver(engine)) }
             assertTrue(calls.get() > 1, "status $status must be retried before giving up, saw ${calls.get()}")
         }
     }
@@ -100,7 +99,7 @@ class UpstreamClientStatusTest {
         val engine = MockEngine {
             respond("x".repeat(100_000), HttpStatusCode.BadRequest, headersOf())
         }
-        val failure = assertThrows<UpstreamFailed> { postOnce(clientOver(engine)) }
+        val failure = assertEnds<UpstreamFailed> { postOnce(clientOver(engine)) }
         assertTrue(failure.body.length < 70_000)
         assertTrue(failure.body.endsWith("[… omitted …]"))
     }

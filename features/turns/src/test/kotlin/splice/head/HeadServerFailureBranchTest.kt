@@ -1,6 +1,6 @@
 // NEW: the last uncovered arms of TurnDriver.emitFailure, plus the inbound body-read timeout —
 // the honest-error fallbacks nothing ever reached. The other four emitFailure arms (UpstreamFailed,
-// StreamTornBeforeClient/IOException, SseFrameTooLargeException, and the classified zero-event path)
+// StreamTornBeforeClient/IOException, SseFrameTooLarge, and the classified zero-event path)
 // are pinned by HeadServerIntegrationTest and HeadServerReviewTest; these are the two that were not,
 // and a fallback that has never run is exactly the one that escapes as a truncated HTTP 200 the day
 // it is finally needed.

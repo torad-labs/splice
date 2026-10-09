@@ -70,6 +70,7 @@ import splice.head.wire.UsagePayloadBuilder
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryBackoff
+import splice.upstream.RoundResult
 import splice.upstream.Ticker
 import splice.upstream.Waiter
 import splice.upstream.retry.InflightGate
@@ -308,7 +309,7 @@ class TurnPerfRowTest {
                     throw SocketException("synthetic reset")
                 }
             }
-            try {
+            val outcome = try {
                 UpstreamEventTiming(drive.perf, startedAtMs).observe(events).collect {
                     drive.channel.writeMutex.withLock {
                         drive.channel.timedClientWrite(
@@ -327,6 +328,7 @@ class TurnPerfRowTest {
                     phase = FailurePhase.MID_OUTPUT,
                 )
             }
+            RoundResult.Outcome(outcome)
         }
     }
 

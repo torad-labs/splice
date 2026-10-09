@@ -20,6 +20,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.dialect.responses.buildResponsesTestRequest
 import splice.provider.codex.stream.CodeModeSourceState
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 
 class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {
@@ -36,7 +37,9 @@ class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val readSink = RecordingSink()
         val started = manager.interceptor(turn(), null, disableParallel = false)
-            .intercept(responsesBody(INITIAL_MESSAGES), readSink) { textOuterOutcome("outer-a") }
+            .intercept(responsesBody(INITIAL_MESSAGES), readSink) {
+                RoundResult.Outcome(textOuterOutcome("outer-a"))
+            }.turn()
         assertTrue((started as TurnOutcome.Success).hasToolUse)
 
         val readId = readSink.tools.single().id
@@ -45,7 +48,7 @@ class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {
             .intercept(
                 responsesBody(callbackMessages(readId, includeReasoning = false)),
                 editSink,
-            ) { error("upstream must not run") }
+            ) { error("upstream must not run") }.turn()
 
         assertTrue((resumed as TurnOutcome.Success).hasToolUse)
         assertEquals(listOf("Edit"), editSink.tools.map { it.name })
@@ -73,8 +76,8 @@ class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {
         val started = manager.interceptor(turn(), null, disableParallel = false)
             .intercept(responsesBody(INITIAL_MESSAGES), readSink) {
                 posts++
-                if (posts == 1) continuityOuterOutcome("outer-a") else outerOutcome("outer-b")
-            }
+                RoundResult.Outcome(if (posts == 1) continuityOuterOutcome("outer-a") else outerOutcome("outer-b"))
+            }.turn()
         assertTrue((started as TurnOutcome.Success).hasToolUse)
         assertEquals(2, posts)
 
@@ -86,8 +89,8 @@ class CodexCodeModeContinuityTest : CodeModeBridgeTestSupport() {
                 RecordingSink(),
             ) { body ->
                 finalPost = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         assertTrue(resumed is TurnOutcome.Success)
         assertContinuityOrder(finalPost)

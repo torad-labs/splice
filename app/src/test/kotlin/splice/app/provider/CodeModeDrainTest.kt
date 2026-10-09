@@ -56,6 +56,7 @@ import splice.upstream.BuiltTurn
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
 import splice.upstream.RoundInterceptor
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -204,7 +205,7 @@ internal class CodeModeDrainTest {
                     bridge.interceptor(turn, disableParallel = false).intercept(input, sink) { rewritten ->
                         if (first) {
                             first = false
-                            outer()
+                            RoundResult.Outcome(outer())
                         } else {
                             post(rewritten)
                         }

@@ -1,40 +1,32 @@
 // PORT-OF: splice/spi/UpstreamClient.kt (UpstreamAuthMissing, StreamTornBeforeClient, UpstreamFailed) @ 3879c4c — invariants unchanged: same package, so every `import splice.upstream.transport.UpstreamFailed` in the tree resolves untouched.
 //
-// The upstream call's THROWN vocabulary — the transport, authentication and HTTP FAILURES shared
-// by the retry loop and the turn driver. Each one is dispositioned below against
-// kt-no-exception-as-outcome: a failure the caller can only report, never a refusal it branches on.
+// How an upstream call ENDS without delivering a round, as VALUES (kt-no-exception-as-outcome, 2026-10-09).
 //
-// Here rather than beside the loop because after the HD-25 split no single file owns them any
-// more: [UpstreamFailed] is thrown by RetryPolicy.kt's give-up AND by RateLimitCooldown.kt's
-// fail-fast, [StreamTornBeforeClient] is thrown by WsRoundRunner.kt and by :daemon-head's turn driver,
-// while [UpstreamAuthMissing] is raised by UpstreamClient.kt itself. The whole-turn exhaustion
-// signal is NOT here any more: V4-114 made it UpstreamPost.TurnWaitExhausted, a value on post()'s
-// return type, because it is the one ending this loop DECIDES rather than suffers.
-// Same package, so every existing `import splice.upstream.transport.UpstreamFailed` resolves unchanged.
+// These four were exceptions: thrown by the retry loop, the SSE reader and the translators, and caught at the
+// turn's boundary. They are returned now. [UpstreamEnding] is what [UpstreamPost.Ended] and
+// [splice.upstream.StreamRead.Ended] carry, and [splice.upstream.RoundResult.Ended] carries it up the round ports to
+// the turn, where one end handler per variant writes the terminal. A caller that forgets one fails to compile.
+// Same package, so every `import splice.upstream.transport.UpstreamFailed` resolves unchanged.
 package splice.upstream.transport
 
 import splice.core.usage.PlanLimit
 import splice.core.wire.RateLimitReply
 
-// V4-114 disposition: no caller recovers. Every catch site ends the turn in an error terminal —
-// TurnFailures.kt:26 (the per-turn boundary, same chain as IOException), TurnKnownEnd.kt:31
-// (emitError AUTHENTICATION + login hint), TurnDriver.kt:149 (marks the credential missing, then
-// still fails the turn). No alternative outcome exists.
-// ast-grep-ignore: kt-no-exception-as-outcome -- 2026-09-17: a local credential failure, never a branch
-public class UpstreamAuthMissing : RuntimeException("no upstream credentials")
+/** The sealed vocabulary of an upstream call's endings that are neither a delivered round nor a decision the
+ *  loop makes (the whole-turn wait is [UpstreamPost.TurnWaitExhausted]). */
+public sealed class UpstreamEnding
 
-/** G5 reachability (review 2026-07-19): a transport tear BEFORE any client frame, rethrown by the
- *  turn driver THROUGH the translators (whose catch lists deliberately swallow IOException into
- *  the honest terminal — correct post-frame, but it made the reissue unreachable). Plain
- *  RuntimeException so no translator catch matches; the original tear rides as [cause] so
- *  isRetryableTransport's cause-chain walk classifies it. */
-// V4-114 disposition: a transport tear. Deliberately a plain RuntimeException so the translators'
-// IOException catches cannot swallow it, and TurnFailures.kt:30 / TurnConnEnd.kt:26 then fold it
-// into the SAME conn-reset error terminal as a raw IOException — that shared arm IS the proof it is
-// a failure and not a branch.
-// ast-grep-ignore: kt-no-exception-as-outcome -- 2026-09-17: a transport tear, never a branch
-public class StreamTornBeforeClient(cause: Throwable) :
-    RuntimeException("stream torn before first client frame", cause)
+/** No local credentials to send. Never retried; the turn ends in an authentication error with the login hint. */
+public class UpstreamAuthMissing : UpstreamEnding()
+
+/** G5: a transport tear BEFORE any client frame, which the retry loop may re-issue. The original tear rides as [cause]
+ *  so the transport classifiers walk it exactly as they walk a raw IOException. */
+public class StreamTornBeforeClient(public val cause: java.io.IOException) : UpstreamEnding()
+
+/** The upstream sent a frame over our own safety limit: [kind] says which of the two limits, [limit] its size. */
+public class SseFrameTooLarge(public val kind: String, public val limit: Int) : UpstreamEnding() {
+    public val text: String get() = "$kind exceeds the $limit-character safety limit"
+}
 
 /** V4-272: the upstream took no more of the request for [stalledMs], the head's firstByteTimeout, while
  *  bytes of it were still unacknowledged (V4-289: RequestWriteBound's watch reads the kernel's send queue;
@@ -50,10 +42,7 @@ internal class RequestWriteStalled(public val stalledMs: Long, cause: Throwable)
     }
 }
 
-// V4-114 disposition: the upstream host's own HTTP failure after retries — not a decision this side
-// made. TurnFailures.kt:28 / TurnKnownEnd.kt:44 classify [status]/[body] and emit an error terminal;
-// no caller continues the turn.
-// ast-grep-ignore: kt-no-exception-as-outcome -- 2026-09-17: the upstream host's failure, never a branch
+/** The upstream host's own HTTP failure once retries are spent, or a local hold standing in for one. */
 public class UpstreamFailed(
     public val body: String,
     public val status: Int? = null,
@@ -65,13 +54,13 @@ public class UpstreamFailed(
     public val layers: Int = 0,
     /** V4-419: the spent PLAN window this failure is about, when the upstream named one and its reset is
      *  still ahead: the 429 that met it (RetryRules.giveUp) and the followers held behind it
-     *  (RateLimitCooldown.failFastIfArmed). Stamped here because the exception is the only thing that
+     *  (RateLimitCooldown.heldFailure). Stamped here because the ending is the only thing that
      *  crosses to the turn's ending, which records a plan-limit outcome and speaks the reset. Null for
      *  every other failure, a burst 429 with no named reset included. */
     public val planLimit: PlanLimit? = null,
     /** A synthetic cooldown refusal, not a response sent by the provider. */
     public val localHold: Boolean = false,
-) : RuntimeException("upstream failed after retries (status=$status)") {
+) : UpstreamEnding() {
     public var rateLimitReply: RateLimitReply? = null
         internal set
 }

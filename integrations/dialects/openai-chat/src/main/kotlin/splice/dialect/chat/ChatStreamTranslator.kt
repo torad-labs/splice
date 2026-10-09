@@ -20,7 +20,6 @@ import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.upstream.StreamTranslator
-import splice.upstream.failure.SseFrameTooLargeException
 import splice.upstream.failure.TerminalStates
 import splice.upstream.retry.FIRST_OUTPUT_TIER
 import splice.upstream.retry.MID_OUTPUT_TIER
@@ -28,7 +27,6 @@ import splice.upstream.retry.MS_PER_S
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.BufferCapacity
-import splice.upstream.transport.StreamTornBeforeClient
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -88,7 +86,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             // pre-content throw would starve every one of them, and would also lose the
             // conn-reset provenance SseRoundDriver.tearOutcome and TurnConnEnd exist to carry —
             // which is what a first pass at this arm did, and what its tests caught.
-            if (isSpiTransportSignal(ignored) || !clientSawContent()) throw ignored
+            if (!clientSawContent()) throw ignored
             unexpected = ignored
         }
         toolCalls.flushPendingTools(sink)
@@ -153,16 +151,10 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             )
         }
 
-    /** The SPI failures that already have a turn-boundary owner, so the generic catch must pass
-     *  them through untouched (see that arm for why each one is in the set). ONE definition per
-     *  dialect so the set cannot be widened in one arm and forgotten in the next. */
     /** V4-116: has the client already been shown content this round? The generic catch is
      *  mid-stream-only, so this is the gate that decides whether a failure is OURS to
      *  salvage or the upper layers' to retry. Mirrors what the partial carries. */
     private fun clientSawContent(): Boolean = channels.emittedText || channels.emittedThinking
-
-    private fun isSpiTransportSignal(e: RuntimeException): Boolean =
-        e is StreamTornBeforeClient || e is SseFrameTooLargeException
 
     private fun stallDetail(fired: WatchdogFired.Idle): String =
         "splice idle watchdog fired after ${fired.idleMs / MS_PER_S}s past the ${fired.limitMs / MS_PER_S}s " +

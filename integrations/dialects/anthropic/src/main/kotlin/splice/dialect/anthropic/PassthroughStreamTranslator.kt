@@ -31,7 +31,6 @@ import splice.core.turn.FailurePhase
 import splice.core.turn.TurnOutcome
 import splice.upstream.StreamTranslator
 import splice.upstream.ToolNameShortener
-import splice.upstream.failure.SseFrameTooLargeException
 import splice.upstream.failure.TerminalStates
 import splice.upstream.retry.FIRST_OUTPUT_TIER
 import splice.upstream.retry.MID_OUTPUT_TIER
@@ -39,7 +38,6 @@ import splice.upstream.retry.MS_PER_S
 import splice.upstream.retry.WatchdogFired
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.BufferCapacity
-import splice.upstream.transport.StreamTornBeforeClient
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -108,13 +106,6 @@ public class PassthroughStreamTranslator(
             // providerReported keeps its default false — the same local attribution this failure
             // had when it escaped.
             //
-            // AND IT DOES NOT EAT THE SPI'S OWN SIGNALS, which is the half of "generic" that is
-            // easy to get wrong. StreamTornBeforeClient is a plain RuntimeException ON PURPOSE so
-            // that "no translator catch matches" (UpstreamErrors.kt) and the pre-content tear stays
-            // reachable by G5; SseFrameTooLargeException likewise has an owner at the turn boundary
-            // (TurnConnEnd's UPSTREAM_FRAME_TOO_LARGE arm). Swallowing either reclassifies a named
-            // condition as an anonymous truncation and starves the surface that already knows what
-            // to do with it. Specific cells stay specific; this arm is for everything else.
             // AND IT ONLY APPLIES MID-STREAM. Before the client has seen content there is nothing
             // to salvage, and an escaping throwable already gets MORE retry than this arm can give
             // it: the G5 reissue budget, the WS overlay's NeedsSse fallback and the connect-phase
@@ -122,7 +113,7 @@ public class PassthroughStreamTranslator(
             // pre-content throw would starve every one of them, and would also lose the
             // conn-reset provenance SseRoundDriver.tearOutcome and TurnConnEnd exist to carry —
             // which is what a first pass at this arm did, and what its tests caught.
-            if (isSpiTransportSignal(ignored) || !clientSawContent()) throw ignored
+            if (!clientSawContent()) throw ignored
             unexpected = ignored
         }
         sink.closeAll()
@@ -170,16 +161,10 @@ public class PassthroughStreamTranslator(
      *  reading a lie, which is the same defect the responses twin already fixed for its own two
      *  tiers. [WatchdogFired.TotalCap] is the whole-turn wall and names its own elapsed figure —
      *  it reaches here only when no round-level verdict won the precedence. */
-    /** The SPI failures that already have a turn-boundary owner, so the generic catch must pass
-     *  them through untouched (see that arm for why each one is in the set). ONE definition per
-     *  dialect so the set cannot be widened in one arm and forgotten in the next. */
     /** V4-116: has the client already been shown content this round? The generic catch is
      *  mid-stream-only, so this is the gate that decides whether a failure is OURS to
      *  salvage or the upper layers' to retry. Mirrors what the partial carries. */
     private fun clientSawContent(): Boolean = channels.emittedText || channels.emittedThinking
-
-    private fun isSpiTransportSignal(e: RuntimeException): Boolean =
-        e is StreamTornBeforeClient || e is SseFrameTooLargeException
 
     private fun stallDetail(fired: WatchdogFired.Idle): String =
         "splice idle watchdog fired after ${fired.idleMs / MS_PER_S}s past the ${fired.limitMs / MS_PER_S}s " +

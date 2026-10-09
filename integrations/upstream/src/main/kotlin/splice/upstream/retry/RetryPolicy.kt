@@ -42,6 +42,10 @@ internal enum class RetryDecision { RETRY, BACKOFF, GIVE_UP }
 internal data class RateLimitTurn(
     val cooldown: RateLimitCooldown,
     val pooledAccount: Boolean,
+    /** V4-47: the 429 body. The provider's own reset lives here ("resets at <ISO8601>", resets_at,
+     *  resets_in_seconds) and a fail-fast turn never reaches upstream, so arm time is the only point
+     *  where that fact and the cooldown are both in scope. */
+    val body: String? = null,
 )
 
 internal class RetryRules(private val maxRetries: Int) {
@@ -64,14 +68,17 @@ internal class RetryRules(private val maxRetries: Int) {
      *  reset, never by the upstream's words, so the body the client gets is our sentence naming the
      *  reset. The upstream's own words are already in the log (planRetry's notice). With no reset
      *  named, the upstream's text passes through unchanged: waiting cannot fix a spend limit. */
-    fun giveUp(last: RetryOutcome.Failed?, cooldown: RateLimitCooldown, layers: Int, onRetry: RetryNotice): Nothing {
-        if (last?.status == HttpStatus.TOO_MANY_REQUESTS) {
-            throw rateLimitFailure(last, cooldown, layers, onRetry)
-        }
+    fun giveUp(
+        last: RetryOutcome.Failed?,
+        cooldown: RateLimitCooldown,
+        layers: Int,
+        onRetry: RetryNotice,
+    ): UpstreamFailed {
+        if (last?.status == HttpStatus.TOO_MANY_REQUESTS) return rateLimitFailure(last, cooldown, layers, onRetry)
         protectFollowers(last, cooldown)
         // V4-117: [layers] is the loop's own attempt count at the moment it gave up — passed IN
         // rather than counted here, because this file decides and never counts (see the header).
-        throw UpstreamFailed(last?.text.orEmpty(), last?.status, layers)
+        return UpstreamFailed(last?.text.orEmpty(), last?.status, layers)
     }
 
     /** Native passthrough replies retain their wire; translated providers retain the plan presentation. */
@@ -89,12 +96,6 @@ internal class RetryRules(private val maxRetries: Int) {
         val body = reply?.body ?: limit?.let(cooldown.planHold::clientBody) ?: last.text
         return UpstreamFailed(body, last.status, layers, planLimit = limit).also { it.rateLimitReply = reply }
     }
-
-    /** A single hold observation routes native pooled refusals as values; terminal holds still throw. */
-    internal fun nativeHold(ctx: PostContext, cooldown: RateLimitCooldown): UpstreamFailed? =
-        cooldown.heldFailure(ctx.onRetry)?.let { failure ->
-            if (ctx.nativePool && failure.rateLimitReply != null) failure else throw failure
-        }
 
     /** A long non-429 pushback protects followers only after this observer finishes its retry budget.
      *  Arming before its backoff made the observer's next attempt fail locally with a synthetic 429. */
@@ -213,17 +214,13 @@ internal class RetryRules(private val maxRetries: Int) {
         }
         if (failed.status == HttpStatus.TOO_MANY_REQUESTS) {
             val canRetry = attempt < maxRetries - 1
+            // V4-47: the failure TEXT rides the turn, because the provider's own reset lives in the 429 body.
             return rateLimit.cooldown.rateLimitedPlan(
                 failed.retryAfterMs,
-                rateLimit,
+                rateLimit.copy(body = failed.text),
                 canRetry,
                 ctx.onRetry,
                 nextRefreshed,
-                // V4-47: the failure TEXT, because the provider's own reset lives in the 429 body
-                // ("resets at <ISO8601>" / resets_at) and a fail-fast turn never reaches upstream to
-                // learn it. ARM TIME is the only point where that fact and the cooldown are both in
-                // scope, so it is captured here or nowhere.
-                body = failed.text,
             )
         }
         // V4-62, operator law: "we would retry on any error, no matter what, with different levels

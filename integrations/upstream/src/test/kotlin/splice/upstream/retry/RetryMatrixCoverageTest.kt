@@ -27,7 +27,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
 import splice.core.turn.FailurePhase
@@ -35,6 +34,7 @@ import splice.core.turn.TurnOutcome
 import splice.upstream.failure.FailureSource
 import splice.upstream.failure.UpstreamFailureClassifier
 import splice.upstream.transport.UpstreamFailed
+import splice.upstream.transport.assertEnds
 import splice.upstream.transport.clientOver
 import splice.upstream.transport.postOnce
 import java.util.concurrent.atomic.AtomicInteger
@@ -68,7 +68,7 @@ class RetryMatrixCoverageTest {
                 calls.incrementAndGet()
                 respond(body, HttpStatusCode.fromValue(status), headersOf())
             }
-            assertThrows<UpstreamFailed> { postOnce(clientOver(engine)) }
+            assertEnds<UpstreamFailed> { postOnce(clientOver(engine)) }
             val cause = UpstreamFailureClassifier.classify(FailureSource.HTTP, body, status).cause
             val entitled = RetryLayer.L1_TRANSPORT in RetryMatrix.of(cause, FailurePhase.CONNECT).layers
             val retried = calls.get() > 1

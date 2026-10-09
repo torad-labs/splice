@@ -24,6 +24,8 @@ import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodeModeRetention
 import splice.provider.codex.CodexCodeModeBridge
 import splice.provider.codex.CodexCodeModeHistoryCodec
+import splice.provider.codex.turn
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import java.io.IOException
@@ -51,7 +53,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
             parked.manager.interceptor(turn(), disableParallel = false)
                 .intercept(body(side), RecordingSink()) { posted ->
                     canonicalSide = posted
-                    completedOutcome()
+                    RoundResult.Outcome(completedOutcome())
                 }
             val expected = logical(parked.baseline)
             val actual = logical(canonicalSide)
@@ -74,7 +76,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
             val side = parked.prefix.dropLast(1) + user("another branch")
             val thirdSink = RecordingSink()
             parked.manager.interceptor(turn(), disableParallel = false)
-                .intercept(body(side), thirdSink) { outerOutcome("outer-third") }
+                .intercept(body(side), thirdSink) { RoundResult.Outcome(outerOutcome("outer-third")) }
             val thirdId = thirdSink.tools.single().id
             assertEquals(1, parked.runtime.cells[1].advances, "the second script stays parked")
             assertEquals(1, parked.runtime.cells[2].advances, "the side branch has its own script")
@@ -83,7 +85,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
             assertEquals(2, parked.runtime.cells[1].advances, "the original callback chooses the second script")
             parked.manager.interceptor(turn(thirdId, "C"), disableParallel = false)
                 .intercept(body(side + read(thirdId) + output(thirdId, "C")), RecordingSink()) {
-                    completedOutcome()
+                    RoundResult.Outcome(completedOutcome())
                 }
             assertEquals(2, parked.runtime.cells[2].advances, "the side branch callback chooses its own script")
             assertTrue(logLines.none { "abandoned record" in it }, logLines.joinToString("\n"))
@@ -96,7 +98,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val firstSink = RecordingSink()
         manager.interceptor(turn(), outer(), disableParallel = false)
-            .intercept(body(listOf(DEVELOPER, user("start"))), firstSink) { outerOutcome() }
+            .intercept(body(listOf(DEVELOPER, user("start"))), firstSink) { RoundResult.Outcome(outerOutcome()) }
         val firstId = firstSink.tools.single().id
         val secondSink = RecordingSink()
         manager.interceptor(turn(firstId, "X"), disableParallel = false)
@@ -126,7 +128,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
             ),
         )
         val completed = manager.interceptor(turn(stepTwoId, "Y"), disableParallel = false)
-            .intercept(completeInput, RecordingSink()) { completedOutcome() }
+            .intercept(completeInput, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }.turn()
         assertTrue(completed is TurnOutcome.Success)
         assertEquals(3, runtime.cells.single().advances, "ordinary second result still completes")
     }
@@ -137,7 +139,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         val input = body(listOf(DEVELOPER, user("start")))
         val original = RecordingSink()
         bridge(runtime).interceptor(turn(), outer(), disableParallel = false)
-            .intercept(input, original) { outerOutcome() }
+            .intercept(input, original) { RoundResult.Outcome(outerOutcome()) }
         val snapshot = stateFiles.records().single()
         val issued = snapshot["issued"]!!.jsonArray
         assertEquals(1, issued.size, "callback id must be durable before serving")
@@ -167,11 +169,11 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         val input = body(listOf(DEVELOPER, user("start")))
         val first = RecordingSink()
         manager.interceptor(turn(), outer(), disableParallel = false)
-            .intercept(input, first) { outerOutcome() }
+            .intercept(input, first) { RoundResult.Outcome(outerOutcome()) }
         val id = first.tools.single().id
         manager.interceptor(turn(id, "X"), disableParallel = false)
             .intercept(body(listOf(DEVELOPER, user("start"), read(id), output(id, "X"))), RecordingSink()) {
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
         val immediate = RecordingSink()
         manager.interceptor(turn(), disableParallel = false)
@@ -193,7 +195,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         val initial = body(listOf(DEVELOPER, user("start")))
         val firstSink = RecordingSink()
         manager.interceptor(turn(), outer(), disableParallel = false)
-            .intercept(initial, firstSink) { outerOutcome() }
+            .intercept(initial, firstSink) { RoundResult.Outcome(outerOutcome()) }
         val firstId = firstSink.tools.single().id
         val x = body(listOf(DEVELOPER, user("start"), read(firstId), output(firstId, "X")))
         val secondSink = RecordingSink()
@@ -204,8 +206,8 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         val side = manager.interceptor(turn(firstId, "Y"), disableParallel = false)
             .intercept(y, RecordingSink()) {
                 upstreamSends++
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
         assertTrue(side is TurnOutcome.Success)
         assertTrue((side as TurnOutcome.Success).usage.codeModeDiverged, "the upstream fallback is marked")
         assertEquals(1, upstreamSends, "the divergent fork sends its own history upstream")
@@ -222,7 +224,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
             ),
         )
         manager.interceptor(turn(secondId, "Z"), disableParallel = false)
-            .intercept(originalInput, RecordingSink()) { completedOutcome() }
+            .intercept(originalInput, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         assertEquals(3, runtime.cells.single().advances, "A's ordinary chain stays live")
     }
 
@@ -245,7 +247,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         val first = RecordingSink()
         val initial = body(listOf(DEVELOPER, user("start")))
         manager.interceptor(turn(), outer(), disableParallel = false)
-            .intercept(initial, first) { outerOutcome() }
+            .intercept(initial, first) { RoundResult.Outcome(outerOutcome()) }
         val id = first.tools.single().id
         val a = body(listOf(DEVELOPER, user("start"), read(id), output(id, "X")))
         val second = RecordingSink()
@@ -254,7 +256,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         val b = body(listOf(DEVELOPER, user("start"), read(id), output(id, "Y")))
         val bSink = RecordingSink()
         val outcome = manager.interceptor(turn(id, "Y"), disableParallel = false)
-            .intercept(b, bSink) { outerOutcome("B-outer") }
+            .intercept(b, bSink) { RoundResult.Outcome(outerOutcome("B-outer")) }.turn()
         assertTrue(outcome is TurnOutcome.Success)
         assertTrue((outcome as TurnOutcome.Success).usage.codeModeDiverged)
         assertEquals(2, runtime.starts, "B's new exec must start its own worker")
@@ -278,7 +280,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         val first = RecordingSink()
         val input = body(listOf(DEVELOPER, user("start")))
         manager.interceptor(turn(), outer(), disableParallel = false)
-            .intercept(input, first) { outerOutcome() }
+            .intercept(input, first) { RoundResult.Outcome(outerOutcome()) }
         val firstId = first.tools.single().id
         val accepted = body(listOf(DEVELOPER, user("start"), read(firstId), output(firstId, "X")))
         manager.interceptor(turn(firstId, "X"), disableParallel = false)
@@ -292,7 +294,10 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         } catch (error: IOException) {
             error
         }
-        assertTrue(caught === tear, "the original upstream transport error still propagates")
+        assertTrue(
+            splice.provider.codex.sameFailure(tear, caught),
+            "the original upstream transport error still propagates",
+        )
         assertTrue(
             tear.suppressed.any { it is CodeModeDivergenceMarker },
             "connection-reset telemetry needs provenance",
@@ -307,13 +312,13 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
             val side = parked.prefix.dropLast(1) + user("another branch")
             val thirdSink = RecordingSink()
             parked.manager.interceptor(turn(), disableParallel = false)
-                .intercept(body(side), thirdSink) { outerOutcome("outer-third") }
+                .intercept(body(side), thirdSink) { RoundResult.Outcome(outerOutcome("outer-third")) }
             assertEquals(1, parked.runtime.cells[2].advances, "the side script is parked too")
 
             val incomplete = parked.manager.interceptor(turn(), disableParallel = false)
                 .intercept(body(parked.prefix + read(parked.secondId)), RecordingSink()) {
                     error("upstream must not run for an owned call with a missing result")
-                }
+                }.turn()
             assertTrue(incomplete is TurnOutcome.Failure)
             assertEquals(1, parked.runtime.cells[1].advances, "missing result cannot advance the cell")
             assertFalse(parked.runtime.cells[1].closed, "missing result cannot close the cell")
@@ -371,12 +376,14 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         val firstSink = RecordingSink()
         manager.interceptor(turn(), disableParallel = false)
             .intercept(body(listOf(DEVELOPER, user("start"))), firstSink) {
-                outerOutcome("outer-first").copy(reasoningEnvelopes = listOf(reasoningEnvelope("first-reasoning")))
+                RoundResult.Outcome(
+                    outerOutcome("outer-first").copy(reasoningEnvelopes = listOf(reasoningEnvelope("first-reasoning"))),
+                )
             }
         val firstId = firstSink.tools.single().id
         val earlierHistory = listOf(DEVELOPER, user("start"), read(firstId), output(firstId, "A"))
         manager.interceptor(turn(firstId, "A"), disableParallel = false)
-            .intercept(body(earlierHistory), RecordingSink()) { completedOutcome() }
+            .intercept(body(earlierHistory), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         assertEquals(2, runtime.cells[0].advances, "the first record is completed before the second starts")
 
         val prefix = earlierHistory + user("start second")
@@ -385,7 +392,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
         manager.interceptor(turn(), disableParallel = false)
             .intercept(body(prefix), secondSink) { posted ->
                 baseline = posted
-                outerOutcome("outer-second")
+                RoundResult.Outcome(outerOutcome("outer-second"))
             }
         assertEquals(1, runtime.cells[1].advances, "the second record is parked with a client call")
         return Parked(manager, runtime, prefix, baseline, secondSink.tools.single().id)
@@ -394,7 +401,7 @@ class ActiveOwnerSideRequestTest : CodeModeBridgeTestSupport() {
     private suspend fun resumeSecond(parked: Parked) {
         parked.manager.interceptor(turn(parked.secondId, "B"), disableParallel = false)
             .intercept(body(parked.prefix + read(parked.secondId) + output(parked.secondId, "B")), RecordingSink()) {
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
     }
 
@@ -433,14 +440,14 @@ class NativeAncestorPlacementTest : CodeModeBridgeTestSupport() {
         var before = ""
         manager.interceptor(turn(), disableParallel = false).intercept(body(missing), current) {
             before = it
-            outerOutcome("outer-current")
+            RoundResult.Outcome(outerOutcome("outer-current"))
         }
         val activeId = current.tools.single().id
         var after = ""
         val outcome = manager.interceptor(turn(activeId, "last"), disableParallel = false)
             .intercept(body(history + read(activeId) + output(activeId, "last")), RecordingSink()) {
                 after = it
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
         assertTrue(logLines.none { "abandoned record" in it }, logLines.joinToString("\n"))
         assertEquals(2, runtime.cells.last().advances, "the original later script consumes its own callback: $outcome")
@@ -465,17 +472,19 @@ class NativeAncestorPlacementTest : CodeModeBridgeTestSupport() {
         history += user("start-$n")
         val sink = RecordingSink()
         manager.interceptor(turn(), disableParallel = false).intercept(body(history), sink) {
-            outerOutcome("outer-$n").copy(
-                emittedText = true,
-                bodyText = "prose-$n",
-                reasoningEnvelopes = listOf(reasoningEnvelope("ancestor-reason-$n")),
+            RoundResult.Outcome(
+                outerOutcome("outer-$n").copy(
+                    emittedText = true,
+                    bodyText = "prose-$n",
+                    reasoningEnvelopes = listOf(reasoningEnvelope("ancestor-reason-$n")),
+                ),
             )
         }
         val id = sink.tools.single().id
         history += read(id)
         history += output(id, "done-$n")
         manager.interceptor(turn(id, "done-$n"), disableParallel = false)
-            .intercept(body(history), RecordingSink()) { completedOutcome() }
+            .intercept(body(history), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         return id
     }
 

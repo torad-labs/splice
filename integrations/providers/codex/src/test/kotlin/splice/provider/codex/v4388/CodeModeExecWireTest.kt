@@ -18,6 +18,7 @@ import splice.provider.codex.CodeModeBridgeTestSupport
 import splice.provider.codex.CodexCodeModeTurnBuilder
 import splice.provider.codex.CodexCodeModeValidation
 import splice.provider.codex.backendCodeModeOnly
+import splice.upstream.RoundResult
 
 /** V4-388: what rides beside exec, when the manual says tools were withheld, and which outer names are ours. */
 class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
@@ -82,7 +83,7 @@ class CodeModeExecWireTest : CodeModeBridgeTestSupport() {
             bridge(ScriptedRuntime(ArrayDeque())).interceptor(turn(), disableParallel = false)
                 .intercept(body, RecordingSink()) {
                     posted += it
-                    completedOutcome()
+                    RoundResult.Outcome(completedOutcome())
                 }
         }
         val input = Json.parseToJsonElement(posted[0]).jsonObject.getValue("input").jsonArray.map { it.jsonObject }

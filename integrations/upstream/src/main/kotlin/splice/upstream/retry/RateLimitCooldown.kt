@@ -218,7 +218,7 @@ public class RateLimitCooldown public constructor(
     }
 
     /** The cooldown's fail-fast exit: a synthesized 429 (classifier parity with the real one)
-     *  thrown BEFORE credentials/attempt work — an armed cooldown costs microseconds, not an
+     *  returned BEFORE credentials/attempt work — an armed cooldown costs microseconds, not an
      *  upstream request. The remaining wait rides in the message for the operator's grep.
      *
      *  V4-46: the body names the GATEWAY's interval and stops there, deliberately. This turn never
@@ -227,12 +227,7 @@ public class RateLimitCooldown public constructor(
      *  succeed while crowding out the real cause (a weekly quota wall resets in days, not seconds).
      *  Two quantities had one sentence. Carrying the provider reset forward is a separate change —
      *  it must be captured at ARM time, the only place both the 429 body and this cooldown are in
-     *  scope — so this message claims nothing it cannot support. */
-    public fun failFastIfArmed(onRetry: RetryNotice) {
-        heldFailure(onRetry)?.let { throw it }
-    }
-
-    /** One hold decision. Pooled native callers may route this value without catching an exception. */
+     *  scope — so this message claims nothing it cannot support. Null when no cooldown is armed. */
     public fun heldFailure(onRetry: RetryNotice): UpstreamFailed? {
         val at = clock()
         val remainingMs = rateLimitedUntilMs.get() - at
@@ -302,10 +297,6 @@ public class RateLimitCooldown public constructor(
         canRetry: Boolean,
         onRetry: RetryNotice,
         nextRefreshed: Boolean,
-        /** V4-47: the 429 body. The provider's own reset lives here ("resets at <ISO8601>",
-         *  resets_at, resets_in_seconds) and a fail-fast turn never reaches upstream, so this is
-         *  the ONLY point where that fact and this cooldown are both in scope. */
-        body: String? = null,
     ): RetryPlan {
         // V4-47: capture BEFORE the plan is built, and NOT gated on pooledAccount. markUnavailable
         // below is the only other writer and it fires only for pooled turns over the 15s ceiling,
@@ -314,7 +305,7 @@ public class RateLimitCooldown public constructor(
         // Kept as ONE call rather than inlined: rateLimitedPlan is at detekt's complexity ceiling, and
         // this class is near its function budget, so the capture shares the parser rather than
         // adding a second member.
-        captureProviderReset(body)
+        captureProviderReset(turn.body)
 
         // V4-61: a pooled account facing a wait past the interactive ceiling is EVICTED rather than
         // retried — a healthy backup beats three more attempts on a spent account, and the client's

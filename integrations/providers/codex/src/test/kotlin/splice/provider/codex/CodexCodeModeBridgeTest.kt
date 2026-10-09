@@ -12,6 +12,7 @@ import splice.core.turn.AbsorbedRounds
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.UsageHistory
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -70,8 +71,8 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
     private suspend fun runScript(bridge: CodexCodeModeBridge, callId: String): TurnOutcome {
         var posts = 0
         return bridge.interceptor(turn(), null, disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
-            if (++posts == 1) outerOutcome(callId) else completedOutcome()
-        }
+            RoundResult.Outcome(if (++posts == 1) outerOutcome(callId) else completedOutcome())
+        }.turn()
     }
 
     @Test
@@ -82,13 +83,15 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val outcome = bridge.interceptor(turn(), null, disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { body ->
                 upstreamCalls++
-                if (upstreamCalls == 1) {
-                    TurnOutcome.Success(false, false, Usage(10, 2, 3, 1), customCalls = listOf(outer()))
-                } else {
-                    rewritten = body
-                    TurnOutcome.Success(false, false, Usage(20, 4, 5, 2), bodyText = "final", messageClosed = true)
-                }
-            } as TurnOutcome.Success
+                RoundResult.Outcome(
+                    if (upstreamCalls == 1) {
+                        TurnOutcome.Success(false, false, Usage(10, 2, 3, 1), customCalls = listOf(outer()))
+                    } else {
+                        rewritten = body
+                        TurnOutcome.Success(false, false, Usage(20, 4, 5, 2), bodyText = "final", messageClosed = true)
+                    },
+                )
+            }.turn() as TurnOutcome.Success
 
         assertEquals(2, upstreamCalls)
         assertTrue("custom_tool_call" in rewritten)
@@ -116,25 +119,27 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val outcome = bridge.interceptor(turn(), null, disableParallel = false)
             .intercept(BASE_REQUEST, RecordingSink()) { body ->
                 calls++
-                when (calls) {
-                    1 -> TurnOutcome.Success(
-                        false,
-                        false,
-                        Usage(1, 1),
-                        customCalls = listOf(outer("outer-1", "first")),
-                    )
-                    2 -> TurnOutcome.Success(
-                        false,
-                        false,
-                        Usage(2, 1),
-                        customCalls = listOf(outer("outer-2", "second")),
-                    )
-                    else -> {
-                        finalBody = body
-                        completedOutcome()
-                    }
-                }
-            }
+                RoundResult.Outcome(
+                    when (calls) {
+                        1 -> TurnOutcome.Success(
+                            false,
+                            false,
+                            Usage(1, 1),
+                            customCalls = listOf(outer("outer-1", "first")),
+                        )
+                        2 -> TurnOutcome.Success(
+                            false,
+                            false,
+                            Usage(2, 1),
+                            customCalls = listOf(outer("outer-2", "second")),
+                        )
+                        else -> {
+                            finalBody = body
+                            completedOutcome()
+                        }
+                    },
+                )
+            }.turn()
 
         assertTrue(outcome is TurnOutcome.Success)
         assertEquals(3, calls)
@@ -145,40 +150,36 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
 
     @Test
     fun `dependent calls cross client requests without an intervening upstream call`() = runTest {
-        val runtime = ScriptedRuntime(
-            ArrayDeque(
-                listOf(
-                    CodeModeStep.Calls(listOf(call("runtime-1", "Read", "path" to "a"))),
-                    CodeModeStep.Calls(listOf(call("runtime-2", "Edit", "file" to "b"))),
-                    CodeModeStep.Completed("done"),
-                ),
-            ),
+        val steps = listOf(
+            CodeModeStep.Calls(listOf(call("runtime-1", "Read", "path" to "a"))),
+            CodeModeStep.Calls(listOf(call("runtime-2", "Edit", "file" to "b"))),
+            CodeModeStep.Completed("done"),
         )
+        val runtime = ScriptedRuntime(ArrayDeque(steps))
         val bridge = bridge(runtime)
         val sink1 = RecordingSink()
         val first = bridge.interceptor(turn(), outer(), disableParallel = false)
         var upstreamCalls = 0
-
         val firstOutcome = first.intercept(BASE_REQUEST, sink1) {
             upstreamCalls++
-            TurnOutcome.Success(false, false, Usage(inputTokens = 100), customCalls = listOf(outer()))
-        }
+            RoundResult.Outcome(
+                TurnOutcome.Success(false, false, Usage(inputTokens = 100), customCalls = listOf(outer())),
+            )
+        }.turn()
         assertTrue((firstOutcome as TurnOutcome.Success).hasToolUse)
         assertEquals(100, firstOutcome.usage.inputTokens)
         assertEquals(listOf("Read"), sink1.tools.map { it.name })
         assertEquals(1, upstreamCalls)
-
         val readId = sink1.tools.single().id
         val sink2 = RecordingSink()
         val second = bridge.interceptor(turn(resultId = readId, result = "A"), null, disableParallel = false)
         val secondOutcome = second.intercept(requestWithResult(readId, "A"), sink2) {
             upstreamCalls++
-            completedOutcome()
-        }
+            RoundResult.Outcome(completedOutcome())
+        }.turn()
         assertTrue((secondOutcome as TurnOutcome.Success).hasToolUse)
         assertEquals(listOf("Edit"), sink2.tools.map { it.name })
         assertEquals(1, upstreamCalls, "resuming the cell must not call the model")
-
         val editId = sink2.tools.single().id
         val sink3 = RecordingSink()
         val third = bridge.interceptor(turn(resultId = editId, result = "B"), null, disableParallel = false)
@@ -189,8 +190,8 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
             assertTrue("custom_tool_call_output" in input)
             assertFalse(readId in input)
             assertFalse(editId in input)
-            completedOutcome()
-        }
+            RoundResult.Outcome(completedOutcome())
+        }.turn()
         assertFalse((thirdOutcome as TurnOutcome.Success).hasToolUse)
         assertEquals(true to false, secondOutcome.usage.localStep to thirdOutcome.usage.localStep)
         assertEquals(2, upstreamCalls)
@@ -219,15 +220,15 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val first = manager.interceptor(turn(), null, disableParallel = false)
             .intercept(BASE_REQUEST, readSink) {
                 initialPosts++
-                if (initialPosts == 1) outerOutcome("outer-a") else outerOutcome("outer-b")
-            }
+                RoundResult.Outcome(if (initialPosts == 1) outerOutcome("outer-a") else outerOutcome("outer-b"))
+            }.turn()
         assertTrue((first as TurnOutcome.Success).hasToolUse)
         assertEquals(2, initialPosts)
 
         val readId = readSink.tools.single().id
         val editSink = RecordingSink()
         val second = manager.interceptor(turn(readId, "A"), null, disableParallel = false)
-            .intercept(requestWithResult(readId, "A"), editSink) { error("upstream must not run") }
+            .intercept(requestWithResult(readId, "A"), editSink) { error("upstream must not run") }.turn()
         assertTrue((second as TurnOutcome.Success).hasToolUse)
         assertEquals(listOf("Edit"), editSink.tools.map { it.name })
         assertEquals(2, initialPosts)
@@ -240,8 +241,8 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val third = manager.interceptor(finalTurn, null, disableParallel = false)
             .intercept(requestWithTwoResults(readId, editId), RecordingSink()) { body ->
                 finalPost = body
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         assertTrue(third is TurnOutcome.Success)
         assertTrue("outer-a" in finalPost)
@@ -256,10 +257,10 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val aSink = RecordingSink()
         manager.interceptor(turn(), null, disableParallel = false)
-            .intercept(BASE_REQUEST, aSink) { outerOutcome("outer-a") }
+            .intercept(BASE_REQUEST, aSink) { RoundResult.Outcome(outerOutcome("outer-a")) }
         val aReadId = aSink.tools.single().id
         manager.interceptor(turn(aReadId, "A"), null, disableParallel = false)
-            .intercept(requestWithResult(aReadId, "A"), RecordingSink()) { completedOutcome() }
+            .intercept(requestWithResult(aReadId, "A"), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
 
         val userMessage = "start the second cell"
         val startBBody =
@@ -270,7 +271,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
             .intercept(startBBody, bReadSink) { rewritten ->
                 assertTrue(rewritten.indexOf("outer-a") < rewritten.indexOf(userMessage))
                 assertFalse(aReadId in rewritten)
-                outerOutcome("outer-b")
+                RoundResult.Outcome(outerOutcome("outer-b"))
             }
         val bReadId = bReadSink.tools.single().id
 
@@ -282,7 +283,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
             turn(results = listOf(aResult, bReadResult)),
             null,
             disableParallel = false,
-        ).intercept(resumeBBody, bEditSink) { error("upstream must not run") }
+        ).intercept(resumeBBody, bEditSink) { error("upstream must not run") }.turn()
         assertTrue((resumed as TurnOutcome.Success).hasToolUse)
         assertEquals(listOf("Edit"), bEditSink.tools.map { it.name })
 
@@ -296,7 +297,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         manager.interceptor(finalTurn, null, disableParallel = false)
             .intercept(finalBody, RecordingSink()) { body ->
                 finalPost = body
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
 
         assertFalse(aReadId in finalPost)
@@ -322,7 +323,9 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         )
         val bridge = bridge(runtime)
         val sink = RecordingSink()
-        bridge.interceptor(turn(), outer(), disableParallel = true).intercept(BASE_REQUEST, sink) { outerOutcome() }
+        bridge.interceptor(turn(), outer(), disableParallel = true).intercept(BASE_REQUEST, sink) {
+            RoundResult.Outcome(outerOutcome())
+        }
         assertEquals(1, sink.tools.size)
 
         val firstId = sink.tools.single().id
@@ -346,7 +349,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val bridge = bridge(runtime)
         val firstSink = RecordingSink()
         bridge.interceptor(turn(), outer(), disableParallel = false)
-            .intercept(BASE_REQUEST, firstSink) { outerOutcome() }
+            .intercept(BASE_REQUEST, firstSink) { RoundResult.Outcome(outerOutcome()) }
         val readId = firstSink.tools.single().id
         val sibling = "Background job probe-job completed: 7 times 8 = 56."
         var forwarded = ""
@@ -354,8 +357,8 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
         val outcome = bridge.interceptor(turn(resultId = readId, result = "A"), null, disableParallel = false)
             .intercept(requestWithSiblingBeforeResult(readId, sibling), RecordingSink()) { rewritten ->
                 forwarded = rewritten
-                completedOutcome()
-            }
+                RoundResult.Outcome(completedOutcome())
+            }.turn()
 
         assertFalse((outcome as TurnOutcome.Success).hasToolUse)
         assertTrue(sibling in forwarded)
@@ -438,7 +441,7 @@ class CodexCodeModeBridgeTest : CodeModeBridgeTestSupport() {
     fun `unknown current tool is refused before runtime receives results`() = runTest {
         val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Calls(listOf(call("r1", "Gone"))))))
         val outcome = bridge(runtime).interceptor(turn(), outer(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome()) }.turn()
         assertTrue(outcome is TurnOutcome.Failure)
         assertTrue((outcome as TurnOutcome.Failure).message.contains("not in the current tool catalog"))
         assertEquals(1, runtime.cell.advances)

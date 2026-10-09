@@ -31,6 +31,7 @@ import splice.head.wire.TurnWiring
 import splice.provider.codex.CodeModeBridgeConfig
 import splice.provider.codex.CodeModeStateLocation
 import splice.provider.codex.CodexCodeModeBridge
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeManual
@@ -74,8 +75,8 @@ class CodeModeStepContextTest {
                         pipeline.finishStream(emitter, finished, meta, 0)
                     },
                 ),
-                postRoundToSink = { _, _ -> post() },
-                postRound = { post() },
+                postRoundToSink = { _, _ -> RoundResult.Outcome(post()) },
+                postRound = { RoundResult.Outcome(post()) },
                 interception = RoundInterception(interceptor = bridge.interceptor(turn, disableParallel = false)),
             ).run(body, null, null)
         }

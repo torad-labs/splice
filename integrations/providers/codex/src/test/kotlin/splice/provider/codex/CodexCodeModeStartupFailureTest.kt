@@ -15,6 +15,7 @@ import splice.core.turn.FailureCause
 import splice.core.turn.TurnOutcome
 import splice.provider.codex.state.CodeModeStateJournal
 import splice.upstream.InterceptedRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -72,12 +73,14 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
         val runtime = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Calls(listOf(call("bad", "Unknown"))))))
         val manager = bridge(runtime)
         val failed = manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() } as TurnOutcome.Failure
+            .intercept(BASE_REQUEST, RecordingSink()) {
+                RoundResult.Outcome(outerOutcome())
+            }.turn() as TurnOutcome.Failure
         assertTrue(failed.deterministic)
         assertEquals(FailureCause.CODE_MODE_PROTOCOL, failed.cause)
         assertEquals(ErrorType.INVALID_REQUEST, failed.type)
         manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         assertEquals(1, runtime.starts)
     }
 
@@ -86,12 +89,14 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
         val runtime = FailingStartRuntime(IllegalArgumentException("invalid script input"))
         val manager = bridge(runtime)
         val failed = manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() } as TurnOutcome.Failure
+            .intercept(BASE_REQUEST, RecordingSink()) {
+                RoundResult.Outcome(outerOutcome())
+            }.turn() as TurnOutcome.Failure
         assertTrue(failed.deterministic)
         assertEquals(ErrorType.INVALID_REQUEST, failed.type)
         assertEquals("LOST", stateFiles.records().single().getValue("phase").jsonPrimitive.content)
         manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         assertTrue(runtime.executed.isEmpty())
         assertEquals(1, runtime.attempts)
     }
@@ -101,22 +106,22 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
         val runtime = FailingStartRuntime(EOFException("worker spawn ended"))
         val manager = bridge(runtime)
         manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome()) }
         runtime.release = CompletableDeferred()
         val first = async {
             manager.interceptor(turn(), disableParallel = false)
-                .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+                .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         }
         runtime.entered.await()
         val second = async {
             manager.interceptor(turn(), disableParallel = false)
-                .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+                .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         }
         yield()
         assertEquals(2, runtime.attempts)
         runtime.release.complete(Unit)
-        assertTrue(first.await() is TurnOutcome.Success)
-        assertTrue(second.await() is TurnOutcome.Success)
+        assertTrue(first.await().turn() is TurnOutcome.Success)
+        assertTrue(second.await().turn() is TurnOutcome.Success)
         assertEquals(listOf("source"), runtime.executed)
         assertEquals(2, runtime.attempts)
     }
@@ -137,13 +142,15 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
         }
         val manager = bridge(runtime)
         val failed = manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() } as TurnOutcome.Failure
+            .intercept(BASE_REQUEST, RecordingSink()) {
+                RoundResult.Outcome(outerOutcome())
+            }.turn() as TurnOutcome.Failure
         assertEquals(ErrorType.OVERLOADED, failed.type)
         assertFalse(failed.deterministic)
         assertEquals("LOST", stateFiles.records().single().getValue("phase").jsonPrimitive.content)
         val restored = bridge(runtime)
         restored.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         assertEquals(1, starts)
     }
 
@@ -152,18 +159,18 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
         val runtime = FailingStartRuntime(EOFException("host boot failed"))
         val manager = bridge(runtime)
         manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome()) }
         runtime.release = CompletableDeferred()
         val starting = async {
             manager.interceptor(turn(), disableParallel = false)
-                .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+                .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         }
         runtime.entered.await()
         assertEquals("LOST", stateFiles.records().single().getValue("phase").jsonPrimitive.content)
         val replacement = ScriptedRuntime(ArrayDeque(listOf(CodeModeStep.Completed("must not run"))))
         val restored = bridge(replacement)
         restored.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         assertEquals(0, replacement.starts)
         runtime.release.complete(Unit)
         starting.await()
@@ -174,15 +181,15 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
         val runtime = FailingStartRuntime(EOFException("host boot failed"))
         val manager = bridge(runtime)
         manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome()) }
         stateFiles.block()
         val blocked = manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }.turn()
         assertTrue(blocked is TurnOutcome.Failure)
         assertEquals(1, runtime.attempts)
         stateFiles.unblock()
         manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         assertEquals(listOf("source"), runtime.executed)
         assertEquals(2, runtime.attempts)
     }
@@ -201,11 +208,13 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
             ),
         )
         val failed = manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome() } as TurnOutcome.Failure
+            .intercept(BASE_REQUEST, RecordingSink()) {
+                RoundResult.Outcome(outerOutcome())
+            }.turn() as TurnOutcome.Failure
         assertEquals(ErrorType.OVERLOADED, failed.type)
         assertFalse(failed.deterministic)
         val retry = manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }.turn()
         assertTrue(retry is TurnOutcome.Success)
         assertEquals(2, opens)
         assertEquals(1, runtime.starts)
@@ -241,7 +250,7 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
             "conversation",
             "digest",
             sink,
-            upstreamPost(InterceptedRoundPost { completedOutcome() }),
+            upstreamPost(InterceptedRoundPost { RoundResult.Outcome(completedOutcome()) }),
         )
         val outcome = driver.drive(context, outer(), codeModeBody(BASE_REQUEST), outerOutcome())
         assertTrue(outcome is TurnOutcome.Failure)
@@ -257,7 +266,7 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         val first = RecordingSink()
         val failed = manager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, first) { outerOutcome() } as TurnOutcome.Failure
+            .intercept(BASE_REQUEST, first) { RoundResult.Outcome(outerOutcome()) }.turn() as TurnOutcome.Failure
         assertEquals(ErrorType.OVERLOADED, failed.type)
         assertEquals(FailureCause.INTERNAL, failed.cause)
         assertFalse(failed.deterministic)
@@ -274,7 +283,7 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
             manager
         }
         val retried = retryManager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }.turn()
         assertTrue(retried is TurnOutcome.Success)
         assertEquals(listOf("source"), runtime.executed)
         assertEquals(2, runtime.attempts)
@@ -282,7 +291,7 @@ class CodexCodeModeStartupFailureTest : CodeModeBridgeTestSupport() {
         assertEquals(id, completed.getValue("id").jsonPrimitive.content)
         assertEquals("COMPLETED", completed.getValue("phase").jsonPrimitive.content)
         retryManager.interceptor(turn(), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         assertEquals(listOf("source"), runtime.executed)
         assertEquals(2, runtime.attempts)
     }

@@ -27,6 +27,7 @@ import splice.upstream.FoldPolicy
 import splice.upstream.ReanchorPolicy
 import splice.upstream.RetryBackoff
 import splice.upstream.RoundInterceptor
+import splice.upstream.RoundResult
 import splice.upstream.ToolSearchPolicy
 import splice.upstream.sse.WireSink
 
@@ -126,7 +127,7 @@ class ReanchorRunnerTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { rounds.removeFirst().invoke() },
+            postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
             finish = { h.finish(it) },
             signals = h.signals(),
         ).run(continuationBody(), ReanchorPolicy { continuationBody() })
@@ -154,7 +155,7 @@ class ReanchorRunnerTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { rounds.removeFirst().invoke() },
+            postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
             finish = { h.finish(it) },
             signals = h.signals(),
         ).run(continuationBody(), ReanchorPolicy { continuationBody() })
@@ -179,7 +180,7 @@ class ReanchorRunnerTest {
                 val i = h.emitter.openText()
                 h.emitter.textDelta(i, "chunk $posts")
                 h.emitter.closeBlock(i)
-                retryableFailure()
+                RoundResult.Outcome(retryableFailure())
             },
             finish = { h.finish(it) },
             signals = h.signals(),
@@ -210,7 +211,7 @@ class ReanchorRunnerTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { retryableFailure() },
+            postRound = { RoundResult.Outcome(retryableFailure()) },
             finish = { h.finish(it) },
             signals = h.signals(watchdog = true),
         ).run(
@@ -232,7 +233,7 @@ class ReanchorRunnerTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { retryableFailure() },
+            postRound = { RoundResult.Outcome(retryableFailure()) },
             finish = { h.finish(it) },
             signals = h.signals(gone = true),
         ).run(
@@ -266,7 +267,7 @@ class ReanchorRunnerTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { rounds.removeFirst().invoke() },
+            postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
             finish = { h.finish(it) },
             signals = h.signals(),
         ).run(continuationBody(), ReanchorPolicy { null }) // NO continuation is available
@@ -296,7 +297,7 @@ class ReanchorRunnerTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { rounds.removeFirst().invoke() },
+            postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
             finish = { h.finish(it) },
             signals = h.signals(),
         ).run(continuationBody(), ReanchorPolicy { null })
@@ -314,7 +315,7 @@ class ReanchorRunnerTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { retryableFailure() },
+            postRound = { RoundResult.Outcome(retryableFailure()) },
             finish = { h.finish(it) },
             signals = h.signals(),
         ).run(continuationBody(), ReanchorPolicy { null })
@@ -343,7 +344,7 @@ class FoldRunnerReanchorTest {
         }
         FoldRunner(
             emitter = h.emitter,
-            postRound = { _, _ -> rounds.removeFirst().invoke() },
+            postRound = { _, _ -> RoundResult.Outcome(rounds.removeFirst().invoke()) },
             foldRounds = FoldRounds(
                 key = "t",
                 log = { },
@@ -388,7 +389,7 @@ class FoldRunnerReanchorTest {
         }
         FoldRunner(
             emitter = h.emitter,
-            postRound = { _, _ -> rounds.removeFirst().invoke() },
+            postRound = { _, _ -> RoundResult.Outcome(rounds.removeFirst().invoke()) },
             foldRounds = FoldRounds(
                 key = "t",
                 log = { },
@@ -412,7 +413,7 @@ class FoldRunnerReanchorTest {
             log = { },
             postRound = {
                 posts++
-                retryableFailure(outputTokens = 4)
+                RoundResult.Outcome(retryableFailure(outputTokens = 4))
             },
             finish = { h.finish(it) },
             signals = h.signals(),
@@ -448,7 +449,7 @@ class FoldRunnerReanchorTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { rounds.removeFirst().invoke() },
+            postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
             finish = { h.finish(it) },
             signals = h.signals(),
         ).run(continuationBody(), ReanchorPolicy { continuationBody() })
@@ -463,7 +464,7 @@ class FoldRunnerReanchorTest {
         var asks = 0
         FoldRunner(
             emitter = h.emitter,
-            postRound = { _, _ -> retryableFailure() },
+            postRound = { _, _ -> RoundResult.Outcome(retryableFailure()) },
             foldRounds = FoldRounds(
                 key = "t",
                 log = { },
@@ -503,7 +504,7 @@ class FoldRunnerReanchorTest {
         rounds.add { _ -> TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }
         FoldRunner(
             emitter = h.emitter,
-            postRound = { _, sink -> rounds.removeFirst().invoke(sink) },
+            postRound = { _, sink -> RoundResult.Outcome(rounds.removeFirst().invoke(sink)) },
             foldRounds = FoldRounds(
                 key = "t",
                 log = { },
@@ -549,7 +550,7 @@ class ReanchorRunnerSearchTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { rounds.removeFirst().invoke() },
+            postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
             finish = { h.finish(it) },
             signals = h.signals(),
             toolSearch = search,
@@ -581,7 +582,7 @@ class ReanchorRunnerSearchTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { rounds.removeFirst().invoke() },
+            postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
             finish = { h.finish(it) },
             signals = h.signals(),
             toolSearch = search,
@@ -605,7 +606,7 @@ class ReanchorRunnerSearchTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { searchSuccess(hasToolUse = true) },
+            postRound = { RoundResult.Outcome(searchSuccess(hasToolUse = true)) },
             finish = { h.finish(it) },
             signals = h.signals(),
             toolSearch = search,
@@ -630,7 +631,7 @@ class ReanchorRunnerSearchTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { searchSuccess() },
+            postRound = { RoundResult.Outcome(searchSuccess()) },
             finish = { h.finish(it) },
             signals = h.signals(watchdog = true),
             toolSearch = search,
@@ -650,7 +651,7 @@ class ReanchorRunnerSearchTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { searchSuccess() },
+            postRound = { RoundResult.Outcome(searchSuccess()) },
             finish = { h.finish(it) },
             signals = h.signals(gone = true),
             toolSearch = search,
@@ -673,7 +674,7 @@ class ReanchorRunnerSearchTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { rounds.removeFirst().invoke() },
+            postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
             finish = { h.finish(it) },
             signals = h.signals(),
             toolSearch = search,
@@ -701,7 +702,7 @@ class ReanchorRunnerSearchTest {
         ReanchorRunner(
             key = "t",
             log = { },
-            postRound = { rounds.removeFirst().invoke() },
+            postRound = { RoundResult.Outcome(rounds.removeFirst().invoke()) },
             finish = { h.finish(it) },
             signals = h.signals(),
             toolSearch = search,
@@ -725,7 +726,7 @@ class FoldRunnerAbandonTest {
         rounds.add { TurnOutcome.ClientAbandoned() }
         FoldRunner(
             emitter = h.emitter,
-            postRound = { _, _ -> rounds.removeFirst().invoke() },
+            postRound = { _, _ -> RoundResult.Outcome(rounds.removeFirst().invoke()) },
             foldRounds = FoldRounds(
                 key = "t",
                 log = { },
@@ -771,7 +772,7 @@ class FoldRunnerSearchTest {
         }
         FoldRunner(
             emitter = h.emitter,
-            postRound = { _, sink -> rounds.removeFirst().invoke(sink) },
+            postRound = { _, sink -> RoundResult.Outcome(rounds.removeFirst().invoke(sink)) },
             foldRounds = FoldRounds(
                 key = "t",
                 log = { },
@@ -810,7 +811,7 @@ class FoldRunnerSearchTest {
         rounds.add { _ -> TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }
         FoldRunner(
             emitter = h.emitter,
-            postRound = { _, sink -> rounds.removeFirst().invoke(sink) },
+            postRound = { _, sink -> RoundResult.Outcome(rounds.removeFirst().invoke(sink)) },
             foldRounds = FoldRounds(
                 key = "t",
                 log = { },
@@ -848,7 +849,7 @@ class RoundStrategySingleRoundTest {
                 toolSearch = null,
             ),
             postRoundToSink = { _, _ -> error("the single-round path must not buffer") },
-            postRound = { retryableFailure(outputTokens = 11) },
+            postRound = { RoundResult.Outcome(retryableFailure(outputTokens = 11)) },
         ).run(continuationBody(), fold = null, reanchor = null)
         val failure = h.finished as TurnOutcome.Failure
         assertEquals(
@@ -863,12 +864,17 @@ class RoundStrategySingleRoundTest {
  *  completed raw rounds, not a final expanded accumulator or an interrupted hidden post. */
 class RoundStrategyUsageObservationTest {
 
+    private fun rawRound(toolUse: Boolean, usage: Usage) =
+        RoundResult.Outcome(TurnOutcome.Success(hasToolUse = toolUse, incomplete = false, usage = usage))
+
     @Test
     fun `code mode observes two completed raw rounds but never the cancelled hidden post`() = runTest {
         val h = Harness()
         val observed = mutableListOf<TurnOutcome>()
         val cancellation = kotlinx.coroutines.CancellationException("hidden post cancelled")
         var posts = 0
+        val first = Usage(inputTokens = 100, outputTokens = 3, cachedTokens = 10, reasoningTokens = 1)
+        val second = Usage(inputTokens = 200, outputTokens = 5, cachedTokens = 20, reasoningTokens = 2)
 
         val thrown = try {
             RoundStrategy(
@@ -882,16 +888,8 @@ class RoundStrategyUsageObservationTest {
                 postRoundToSink = { _, _ -> error("the direct code-mode path must not buffer") },
                 postRound = {
                     when (++posts) {
-                        1 -> TurnOutcome.Success(
-                            hasToolUse = true,
-                            incomplete = false,
-                            usage = Usage(inputTokens = 100, outputTokens = 3, cachedTokens = 10, reasoningTokens = 1),
-                        )
-                        2 -> TurnOutcome.Success(
-                            hasToolUse = false,
-                            incomplete = false,
-                            usage = Usage(inputTokens = 200, outputTokens = 5, cachedTokens = 20, reasoningTokens = 2),
-                        )
+                        1 -> rawRound(toolUse = true, first)
+                        2 -> rawRound(toolUse = false, second)
                         else -> throw cancellation
                     }
                 },
@@ -931,7 +929,7 @@ class RoundStrategyUsageObservationTest {
                 finish = { h.finish(it) },
             ),
             postRoundToSink = { _, _ -> error("the direct code-mode path must not buffer") },
-            postRound = { TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage()) },
+            postRound = { rawRound(toolUse = false, Usage()) },
             interception = RoundInterception(
                 interceptor = RoundInterceptor { _, _, post ->
                     seen = post.perf
@@ -957,10 +955,12 @@ class RoundStrategyUsageObservationTest {
             ),
             postRoundToSink = { _, _ -> error("the direct path must not buffer") },
             postRound = {
-                TurnOutcome.Success(
-                    hasToolUse = false,
-                    incomplete = false,
-                    usage = Usage(outputTokens = 3),
+                RoundResult.Outcome(
+                    TurnOutcome.Success(
+                        hasToolUse = false,
+                        incomplete = false,
+                        usage = Usage(outputTokens = 3),
+                    ),
                 )
             },
             interception = RoundInterception(rawRoundObserved = { observed += it }),
@@ -1006,7 +1006,7 @@ class RoundRoutingEquivalenceTest {
                 toolSearch = null,
             ),
             postRoundToSink = { _, _ -> error("neither branch may buffer on this path") },
-            postRound = { success },
+            postRound = { RoundResult.Outcome(success) },
         ).run(continuationBody(), fold = null, reanchor = null)
 
         val wired = Harness()
@@ -1020,7 +1020,7 @@ class RoundRoutingEquivalenceTest {
                 toolSearch = null,
             ),
             postRoundToSink = { _, _ -> error("neither branch may buffer on this path") },
-            postRound = { success },
+            postRound = { RoundResult.Outcome(success) },
         ).run(continuationBody(), fold = null, reanchor = controller)
 
         assertEquals(plain.frames, wired.frames, "the client must see identical SSE bytes on a first-round Success")

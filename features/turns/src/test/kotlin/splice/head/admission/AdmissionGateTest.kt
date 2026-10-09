@@ -47,7 +47,6 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
-import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
@@ -72,6 +71,7 @@ import splice.upstream.InterceptedRoundPost
 import splice.upstream.Provider
 import splice.upstream.ProviderTuning
 import splice.upstream.RoundInterceptor
+import splice.upstream.RoundResult
 import splice.upstream.TurnEnd
 import splice.upstream.failure.SseSpuriousWakeupException
 import splice.upstream.memory.JvmHeap
@@ -615,7 +615,7 @@ class AdmissionGateTest {
                             bodyJson: String,
                             sink: WireSink,
                             postRound: InterceptedRoundPost,
-                        ): TurnOutcome = error("a refused request must not drive its source")
+                        ): RoundResult = error("a refused request must not drive its source")
                     },
                 )
         }

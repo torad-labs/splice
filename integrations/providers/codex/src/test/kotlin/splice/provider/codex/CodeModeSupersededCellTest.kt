@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.provider.codex.state.CodeModeSessionEnd
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 import kotlin.time.Duration.Companion.hours
 
@@ -22,10 +23,14 @@ class CodeModeSupersededCellTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         try {
             val first = RecordingSink()
-            manager.interceptor(turn(), outer(), false).intercept(BASE_REQUEST, first) { outerOutcome() }
+            manager.interceptor(turn(), outer(), false).intercept(BASE_REQUEST, first) {
+                RoundResult.Outcome(outerOutcome())
+            }
             val original = stateFiles.records().single()
             val next = """{"input":[{"role":"developer","content":"s"},{"role":"user","content":"next task"}]}"""
-            manager.interceptor(turn(), null, false).intercept(next, RecordingSink()) { completedOutcome() }
+            manager.interceptor(turn(), null, false).intercept(next, RecordingSink()) {
+                RoundResult.Outcome(completedOutcome())
+            }
             assertTrue(runtime.cell.closed, "the next history cannot deliver this outer call's result")
             assertEquals(1, runtime.cell.advances, "supersession never reruns or advances source")
             val lost = stateFiles.records().single()
@@ -45,10 +50,12 @@ class CodeModeSupersededCellTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         try {
             val first = RecordingSink()
-            manager.interceptor(turn(), outer(), false).intercept(BASE_REQUEST, first) { outerOutcome() }
+            manager.interceptor(turn(), outer(), false).intercept(BASE_REQUEST, first) {
+                RoundResult.Outcome(outerOutcome())
+            }
             val id = first.tools.single().id
             manager.interceptor(turn(), null, false).intercept(requestWithCall(id), RecordingSink()) {
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
             assertFalse(runtime.cell.closed)
             assertEquals(1, runtime.cell.advances)
@@ -143,10 +150,10 @@ class CodeModeSupersededCellTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         try {
             manager.interceptor(turn(), outer("outer-a"), false).intercept(BASE_REQUEST, RecordingSink()) {
-                outerOutcome("outer-a")
+                RoundResult.Outcome(outerOutcome("outer-a"))
             }
             manager.interceptor(turn(model = "gpt-6-sol"), outer("outer-b"), false)
-                .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-b") }
+                .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-b")) }
             assertEquals(2, runtime.starts)
             assertTrue(runtime.cells.first().closed, "one session cannot accumulate model-keyed engines")
             assertFalse(runtime.cells.last().closed)

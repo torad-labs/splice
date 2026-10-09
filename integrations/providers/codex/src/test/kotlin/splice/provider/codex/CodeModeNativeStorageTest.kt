@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import splice.core.reasoning.ReasoningReplay
 import splice.provider.codex.state.CodeModeNativeChain
 import splice.provider.codex.stream.CodeModeSourceState
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 import java.time.Clock
 import java.time.Instant
@@ -32,11 +33,13 @@ class CodeModeNativeStorageTest : CodeModeBridgeTestSupport() {
         var posts = 0
         manager.interceptor(turn(), null, disableParallel = false).intercept(opening, RecordingSink()) {
             posts++
-            if (posts <= 20) {
-                outerOutcome("outer-$posts").copy(reasoningEnvelopes = listOf(reasoning(posts)))
-            } else {
-                completedOutcome()
-            }
+            RoundResult.Outcome(
+                if (posts <= 20) {
+                    outerOutcome("outer-$posts").copy(reasoningEnvelopes = listOf(reasoning(posts)))
+                } else {
+                    completedOutcome()
+                },
+            )
         }
         val records = stateFiles.records()
         assertEquals(20, records.size)
@@ -50,11 +53,13 @@ class CodeModeNativeStorageTest : CodeModeBridgeTestSupport() {
         var posts = 0
         manager(runtime).interceptor(turn(), null, disableParallel = false).intercept(opening, RecordingSink()) {
             posts++
-            if (posts <= 4) {
-                outerOutcome("outer-$posts").copy(reasoningEnvelopes = listOf(reasoning(posts)))
-            } else {
-                completedOutcome()
-            }
+            RoundResult.Outcome(
+                if (posts <= 4) {
+                    outerOutcome("outer-$posts").copy(reasoningEnvelopes = listOf(reasoning(posts)))
+                } else {
+                    completedOutcome()
+                },
+            )
         }
         val restored = manager(QueuedRuntime(ArrayDeque()))
         var posted = ""
@@ -64,7 +69,7 @@ class CodeModeNativeStorageTest : CodeModeBridgeTestSupport() {
                 RecordingSink(),
             ) {
                 posted = it
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
         val items = Json.parseToJsonElement(posted).jsonObject.getValue("input") as JsonArray
         val reasoningIds = items.map { it.jsonObject }.filter { it["type"]?.toString() == "\"reasoning\"" }
@@ -80,7 +85,7 @@ class CodeModeNativeStorageTest : CodeModeBridgeTestSupport() {
         var posts = 0
         manager.interceptor(turn(), disableParallel = false).intercept(opening, RecordingSink()) {
             posts++
-            if (posts <= 2) outerOutcome("outer-$posts") else completedOutcome()
+            RoundResult.Outcome(if (posts <= 2) outerOutcome("outer-$posts") else completedOutcome())
         }
         val store = CodexCodeModeStore(stateLocation(), Json, {})
         val records = store.load().records.map { it.restore() }
@@ -96,7 +101,7 @@ class CodeModeNativeStorageTest : CodeModeBridgeTestSupport() {
         var posted = ""
         restored.interceptor(turn(), disableParallel = false).intercept(history, RecordingSink()) {
             posted = it
-            completedOutcome()
+            RoundResult.Outcome(completedOutcome())
         }
         val items = Json.parseToJsonElement(posted).jsonObject.getValue("input") as JsonArray
         assertEquals(1, items.count { it.jsonObject["id"]?.toString() == "\"native-root\"" })

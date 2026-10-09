@@ -33,6 +33,7 @@ import splice.upstream.LifecycleScope
 import splice.upstream.PostingTurnRow
 import splice.upstream.RedirectableRoundPost
 import splice.upstream.RoundBody
+import splice.upstream.RoundResult
 import splice.upstream.RowRelease
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -92,10 +93,10 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
         val terminal = CompletableDeferred<TurnOutcome>()
         val reader = AtomicReference<Thread?>()
         val post = object : RedirectableRoundPost {
-            override suspend fun invoke(bodyJson: String): TurnOutcome = error("redirected post required")
-            override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+            override suspend fun invoke(bodyJson: String): RoundResult = error("redirected post required")
+            override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
                 sink.customToolSource(CustomToolSource.Started(outer(state.record.outerCallId, source = "")))
-                return terminal.await().also { reader.set(Thread.currentThread()) }
+                return RoundResult.Outcome(terminal.await().also { reader.set(Thread.currentThread()) })
             }
         }
         Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { dispatcher ->
@@ -175,10 +176,10 @@ class CodeModeDisposedSourceTest : CodeModeBridgeTestSupport() {
                     released.complete(it)
                 }
             }
-            override suspend fun invoke(bodyJson: String): TurnOutcome = error("redirected post required")
-            override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+            override suspend fun invoke(bodyJson: String): RoundResult = error("redirected post required")
+            override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
                 sink.customToolSource(CustomToolSource.Started(outer(state.record.outerCallId, source = "")))
-                return terminal.await()
+                return RoundResult.Outcome(terminal.await())
             }
         }
         val scope = LifecycleScope(StandardTestDispatcher(testScheduler))

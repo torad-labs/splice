@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.util.LogSink
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 import java.lang.ref.Reference
 import java.lang.ref.WeakReference
@@ -196,13 +197,13 @@ class CodexCodeModeRetentionTest : CodeModeBridgeTestSupport() {
 
     private suspend fun startScript(bridge: CodexCodeModeBridge) {
         bridge.interceptor(turn(), outer("outer-kept", SOURCE), disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("outer-kept") }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("outer-kept")) }
     }
 
     /** This conversation's turn sweeps only its own key; unrelated-key housekeeping runs on the timer. */
     private suspend fun touch(bridge: CodexCodeModeBridge) {
         bridge.interceptor(turn(sessionId = "session-a"), null, disableParallel = false)
-            .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+            .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
     }
 
     /** Polls [done] with a deadline, never a sleep for a duration (kt-tests-no-wall-clock). */

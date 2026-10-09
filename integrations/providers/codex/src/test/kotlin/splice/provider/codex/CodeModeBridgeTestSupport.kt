@@ -23,6 +23,7 @@ import splice.provider.codex.stream.CodeModeUpstreamPosts
 import splice.upstream.BuiltTurn
 import splice.upstream.InterceptedRoundPost
 import splice.upstream.RoundBody
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -41,6 +42,16 @@ import kotlin.time.Duration.Companion.hours
 internal val backendCodeModeOnly: CodeModeOnlyModels = CodeModeOnlyModels {
     listOf("gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna")
 }
+
+/** The turn outcome of a round that ran to one; a round that ended instead fails the test by its ending. */
+internal fun RoundResult.turn(): TurnOutcome = when (this) {
+    is RoundResult.Outcome -> outcome
+    is RoundResult.Ended -> error("the round ended instead of producing an outcome: $ending")
+}
+
+/** Whether [actual] is [expected] itself, or the copy coroutine stack-trace recovery makes of it crossing a context. */
+internal fun sameFailure(expected: Throwable, actual: Throwable?): Boolean =
+    actual === expected || actual?.cause === expected
 
 internal const val BASE_REQUEST: String = """{"input":[{"role":"developer","content":"s"}]}"""
 

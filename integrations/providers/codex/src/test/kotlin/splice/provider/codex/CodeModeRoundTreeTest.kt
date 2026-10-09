@@ -22,6 +22,7 @@ import splice.upstream.InterceptedRoundPost
 import splice.upstream.RoundBody
 import splice.upstream.RoundBodyInterceptor
 import splice.upstream.RoundBodyPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.sse.WireSink
 import java.security.MessageDigest
@@ -48,14 +49,14 @@ internal class CodeModeRoundTreeTest : CodeModeBridgeTestSupport() {
     private inner class CapturingPost(private val outcome: () -> TurnOutcome) : InterceptedRoundPost, RoundBodyPost {
         val posted = mutableListOf<RoundBody>()
 
-        override suspend fun invoke(bodyJson: String): TurnOutcome = post(RoundBody.Text(bodyJson))
+        override suspend fun invoke(bodyJson: String): RoundResult = post(RoundBody.Text(bodyJson))
 
-        override suspend fun post(body: RoundBody): TurnOutcome {
+        override suspend fun post(body: RoundBody): RoundResult {
             posted += body
-            return outcome()
+            return RoundResult.Outcome(outcome())
         }
 
-        override suspend fun postInto(body: RoundBody, sink: WireSink): TurnOutcome = post(body)
+        override suspend fun postInto(body: RoundBody, sink: WireSink): RoundResult = post(body)
     }
 
     /** The bridge's interceptor through the entry the head uses for a round it holds as a tree. */
@@ -87,7 +88,9 @@ internal class CodeModeRoundTreeTest : CodeModeBridgeTestSupport() {
         val firstText = JsonWire.string(first)
         val issued = RecordingSink()
         try {
-            writer.interceptor(turn(), disableParallel = false).intercept(firstText, issued) { outerOutcome("outer-1") }
+            writer.interceptor(turn(), disableParallel = false).intercept(firstText, issued) {
+                RoundResult.Outcome(outerOutcome("outer-1"))
+            }
         } finally {
             writer.onHeadStop()
         }
@@ -141,11 +144,11 @@ internal class CodeModeRoundTreeTest : CodeModeBridgeTestSupport() {
         try {
             val issued = RecordingSink()
             manager.interceptor(turn(), disableParallel = false)
-                .intercept(JsonWire.string(request(start)), issued) { outerOutcome("outer-1") }
+                .intercept(JsonWire.string(request(start)), issued) { RoundResult.Outcome(outerOutcome("outer-1")) }
             val id = issued.tools.single().id
             val done = "$start,${callback(id)}"
             manager.interceptor(turn(id, "A"), disableParallel = false)
-                .intercept(JsonWire.string(request(done)), RecordingSink()) { completedOutcome() }
+                .intercept(JsonWire.string(request(done)), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
             val next = request("$done," + """{"role":"user","content":"next"}""")
 
             val textPost = CapturingPost { completedOutcome() }

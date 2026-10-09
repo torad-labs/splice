@@ -10,6 +10,7 @@ import splice.head.turn.TurnDrive
 import splice.head.turn.TurnTelemetry
 import splice.upstream.NEVER_PINGED_MS
 import splice.upstream.Provider
+import splice.upstream.StreamRead
 import splice.upstream.TurnSignals
 import splice.upstream.WsPathPulse
 import splice.upstream.retry.PathEvidence
@@ -35,7 +36,7 @@ internal class SseRoundConsume(
         }
     }
 
-    suspend fun consume(inputs: WsRoundInputs, resp: UpstreamResponse): TurnOutcome {
+    suspend fun consume(inputs: WsRoundInputs, resp: UpstreamResponse): StreamRead<TurnOutcome> {
         val drive = inputs.drive
         drive.slot.touch()
         // Upstream answered 2xx and the stream is ours — open the turn on the wire immediately
@@ -118,15 +119,20 @@ internal class SseRoundConsume(
             // stays for the WS overlay, which runs at most once per round and always FIRST.
             val eventsBase = drive.perfCounter(PerfKeys.EVENTS_IN)
             val capture = ZeroEventCapture()
-            val events = tearAwareEvents.run(drive, body, capture, inputs.frameEmittedThisRound, postedAtMs)
-            val rawOutcome = translator.driveTurn(events, inputs.sink)
+            val end = RoundEnd(postedAtMs)
+            val events = tearAwareEvents.run(drive, body, capture, inputs.frameEmittedThisRound, end)
+            val rawOutcome = translator.driveTurn(events, end.gate(inputs.sink))
+            // An attempt that ended early has no outcome of its own to mark, classify or report.
+            end.early()?.let { return it }
             drive.perf.mark(PerfKeys.STREAM_END)
-            return zeroEvent.classify(
-                drive,
-                rawOutcome,
-                capture.snippet.toString(),
-                drive.perfCounter(PerfKeys.EVENTS_IN) - eventsBase,
-                telemetry,
+            return StreamRead.Read(
+                zeroEvent.classify(
+                    drive,
+                    rawOutcome,
+                    capture.snippet.toString(),
+                    drive.perfCounter(PerfKeys.EVENTS_IN) - eventsBase,
+                    telemetry,
+                ),
             )
         } finally {
             poller.cancel()

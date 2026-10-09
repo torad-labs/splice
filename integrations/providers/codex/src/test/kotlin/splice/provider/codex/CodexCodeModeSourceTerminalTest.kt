@@ -18,6 +18,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.util.JsonScalars
 import splice.provider.codex.stream.CodeModeRejection
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeRuntime
 import splice.upstream.codemode.CodeModeSource
@@ -51,9 +52,10 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
         val terminalReached = CompletableDeferred<Unit>()
         val releaseTerminal = CompletableDeferred<Unit>()
         val sourcePost = object : RedirectableRoundPost by post {
-            override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+            override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
                 val outcome = post.into(bodyJson, sink)
-                if (outcome is TurnOutcome.Success && outcome.incomplete) {
+                val ran = (outcome as? RoundResult.Outcome)?.outcome
+                if (ran is TurnOutcome.Success && ran.incomplete) {
                     terminalReached.complete(Unit)
                     releaseTerminal.await()
                 }
@@ -76,7 +78,7 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
             }
             val next = StepSink()
             val outcome = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                .intercept(history(listOf(first)), next, sourcePost)
+                .intercept(history(listOf(first)), next, sourcePost).turn()
             assertFalse(next.callback.isCompleted, "invalid terminal source must not execute a later Edit")
             assertEquals(1, runtime.delivered.size, "terminal rejection must prevent another runtime advance")
             assertTrue(outcome is TurnOutcome.Success || outcome is TurnOutcome.Failure)
@@ -181,7 +183,7 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
             assertFalse(request.isCompleted)
             assertFalse(sink.callback.isCompleted)
             post.complete.complete(Unit)
-            val outcome = withTimeout(1_500) { request.await() } as TurnOutcome.Success
+            val outcome = withTimeout(1_500) { request.await() }.turn() as TurnOutcome.Success
             assertBilling(outcome.usage)
             assertEquals(1, runtime.starts)
             assertEquals(2, post.posts)
@@ -208,8 +210,8 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
                 }
             }
             val post = object : RedirectableRoundPost {
-                override suspend fun invoke(bodyJson: String): TurnOutcome = error("redirect required")
-                override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+                override suspend fun invoke(bodyJson: String): RoundResult = error("redirect required")
+                override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
                     try {
                         sink.customToolSource(CustomToolSource.Started(outer(source = "")))
                         if (mode == "blocked-write") sink.textDelta(sink.openText(), "synthetic blocked write")
@@ -258,9 +260,9 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
             val manager = bridge(runtime)
             var escaped = 0
             val post = object : RedirectableRoundPost {
-                override suspend fun invoke(bodyJson: String): TurnOutcome = error("redirect required")
+                override suspend fun invoke(bodyJson: String): RoundResult = error("redirect required")
 
-                override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+                override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
                     try {
                         val started = when (problem) {
                             "blank-id" -> outer(callId = "", source = "")
@@ -274,12 +276,12 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
                     } catch (_: IllegalArgumentException) {
                         escaped++
                     }
-                    return outerOutcome()
+                    return RoundResult.Outcome(outerOutcome())
                 }
             }
             try {
                 val outcome = manager.interceptor(turn(), disableParallel = false)
-                    .intercept(BASE_REQUEST, RecordingSink(), post)
+                    .intercept(BASE_REQUEST, RecordingSink(), post).turn()
                 assertEquals(0, escaped, "splice-local source validation must not become transport failure")
                 assertTrue(outcome is TurnOutcome.Failure, outcome.toString())
                 assertEquals(FailureCause.CODE_MODE_PROTOCOL, (outcome as TurnOutcome.Failure).cause)
@@ -319,11 +321,11 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
         val post = GatedPost(sink).also { it.terminalProblem = "changed-id" }
         var escaped = 0
         val sourcePost = object : RedirectableRoundPost by post {
-            override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome = try {
+            override suspend fun into(bodyJson: String, sink: WireSink): RoundResult = try {
                 post.into(bodyJson, sink)
             } catch (_: IllegalStateException) {
                 escaped++
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
         }
         try {
@@ -357,7 +359,8 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
         post.repeatOuter = true
         post.complete.complete(Unit)
         try {
-            val outcome = manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
+            val outcome = manager.interceptor(turn(), disableParallel = false)
+                .intercept(BASE_REQUEST, sink, post).turn()
             assertTrue(outcome is TurnOutcome.Failure, outcome.toString())
             assertEquals(1, runtime.starts, "a duplicate outer cannot dispatch a second runtime")
             assertEquals(2, post.posts)
@@ -399,7 +402,7 @@ class CodexCodeModeSourceTerminalTest : CodeModeStatementStreamSupport() {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, post)
             val first = sink.callback.await()
             val outcome = manager.interceptor(turn(first.id, "result-0"), disableParallel = false)
-                .intercept(history(listOf(first)), StepSink(), post)
+                .intercept(history(listOf(first)), StepSink(), post).turn()
             assertTrue(outcome is TurnOutcome.Failure)
             withTimeout(1_500) { post.stopped.await() }
             assertFalse(post.sent[1].isCompleted, "poisoning generates no unread source")

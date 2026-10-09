@@ -12,13 +12,13 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
-import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.ElapsedClock
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.PostingTurnRow
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.RowRelease
 import splice.upstream.Ticker
 import splice.upstream.retry.InflightGate
@@ -66,7 +66,7 @@ internal class CodeModeReaderWatchdogTest : CodeModeStatementStreamSupport() {
             }
         }
 
-        override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+        override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
             val slot = (gate.acquire() as InflightGate.Admission.Acquired).slot
             val context = currentCoroutineContext()
             val watchdog = dog.launchIn(CoroutineScope(context), slot, context.job, ClientFrameEmitted { true })

@@ -25,6 +25,7 @@ import splice.core.turn.TurnOutcome
 import splice.provider.codex.stream.CodeModeSourceBuffer
 import splice.provider.codex.stream.CodeModeSourceCommit
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -56,7 +57,7 @@ class CodeModeSourceCertificationTest : CodeModeStatementStreamSupport() {
         val post = GatedPost(sink)
         if (ending == "incomplete") post.terminalProblem = "incomplete"
         val sourcePost = EndingPost(post, ending)
-        var request: Deferred<TurnOutcome>? = null
+        var request: Deferred<RoundResult>? = null
         try {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, sourcePost)
             val first = sink.callback.await()
@@ -82,7 +83,7 @@ class CodeModeSourceCertificationTest : CodeModeStatementStreamSupport() {
                 withTimeout(5_000) { callback.join() }
                 assertTrue(callback.isCancelled)
             } else {
-                val outcome = withTimeout(5_000) { callback.await() }
+                val outcome = withTimeout(5_000) { callback.await() }.turn()
                 assertEnding(ending, outcome, next)
             }
             assertEquals(1, runtime.starts)
@@ -106,14 +107,16 @@ private class EndingPost(
     private val post: RedirectableRoundPost,
     private val ending: String,
 ) : RedirectableRoundPost by post {
-    override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
+    override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
         val outcome = post.into(bodyJson, sink)
         return when (ending) {
             "tear" -> throw IOException("synthetic transport tear after item completion")
-            "stall" -> TurnOutcome.Failure(
-                "synthetic stalled response after item completion",
-                cause = FailureCause.UPSTREAM_STALLED,
-                phase = FailurePhase.MID_OUTPUT,
+            "stall" -> RoundResult.Outcome(
+                TurnOutcome.Failure(
+                    "synthetic stalled response after item completion",
+                    cause = FailureCause.UPSTREAM_STALLED,
+                    phase = FailurePhase.MID_OUTPUT,
+                ),
             )
             else -> outcome
         }

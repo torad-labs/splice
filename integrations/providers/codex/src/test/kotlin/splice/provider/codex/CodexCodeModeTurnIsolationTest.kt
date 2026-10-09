@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.TurnOutcome
 import splice.upstream.RedirectableRoundPost
+import splice.upstream.RoundResult
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
@@ -34,13 +35,13 @@ internal class CodexCodeModeTurnIsolationTest : CodeModeBridgeTestSupport() {
                 .intercept(BASE_REQUEST, RecordingSink()) {
                     entered.complete(Unit)
                     release.await()
-                    completedOutcome()
+                    RoundResult.Outcome(completedOutcome())
                 }
         }
         entered.await()
         val second = async {
             manager.interceptor(turn(sessionId = "synthetic-session-6"), disableParallel = false)
-                .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+                .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         }
         runCurrent()
         val independent = second.isCompleted
@@ -60,13 +61,13 @@ internal class CodexCodeModeTurnIsolationTest : CodeModeBridgeTestSupport() {
                 .intercept(BASE_REQUEST, RecordingSink()) {
                     entered.complete(Unit)
                     release.await()
-                    completedOutcome()
+                    RoundResult.Outcome(completedOutcome())
                 }
         }
         entered.await()
         val second = async {
             manager.interceptor(turn(sessionId = "synthetic-session-1"), disableParallel = false)
-                .intercept(BASE_REQUEST, RecordingSink()) { completedOutcome() }
+                .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
         }
         runCurrent()
         val independent = second.isCompleted
@@ -105,7 +106,7 @@ internal class CodexCodeModeTurnIsolationTest : CodeModeBridgeTestSupport() {
             val second = withTimeout(10_000) {
                 manager.interceptor(other, disableParallel = false)
                     .intercept(BASE_REQUEST, RecordingSink(), streamed("synthetic-second"))
-            }
+            }.turn()
             assertTrue(second is TurnOutcome.Success, second.toString())
             assertEquals(2, runtime.starts, "both independent instances must dispatch once before the first releases")
             assertFalse(first.isCompleted, "the second must not terminate or serialize behind the first")
@@ -129,12 +130,12 @@ internal class CodexCodeModeTurnIsolationTest : CodeModeBridgeTestSupport() {
         val manager = bridge(runtime)
         try {
             manager.interceptor(turn(), outer("synthetic-first"), false)
-                .intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("synthetic-first") }
+                .intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("synthetic-first")) }
             val second = manager.interceptor(
                 turn().copy(conversationKey = "synthetic-sibling"),
                 outer("synthetic-second"),
                 false,
-            ).intercept(BASE_REQUEST, RecordingSink()) { outerOutcome("synthetic-second") }
+            ).intercept(BASE_REQUEST, RecordingSink()) { RoundResult.Outcome(outerOutcome("synthetic-second")) }.turn()
             assertTrue(second is TurnOutcome.Success && second.hasToolUse)
             assertEquals(2, runtime.starts)
             assertTrue(runtime.cells.none { it.closed }, "an independent instance does not prove supersession")
@@ -145,15 +146,15 @@ internal class CodexCodeModeTurnIsolationTest : CodeModeBridgeTestSupport() {
 
     private fun streamed(id: String): RedirectableRoundPost = object : RedirectableRoundPost {
         private var posted = false
-        override suspend fun invoke(bodyJson: String): TurnOutcome = error("redirected stream required")
+        override suspend fun invoke(bodyJson: String): RoundResult = error("redirected stream required")
 
-        override suspend fun into(bodyJson: String, sink: WireSink): TurnOutcome {
-            if (posted) return completedOutcome()
+        override suspend fun into(bodyJson: String, sink: WireSink): RoundResult {
+            if (posted) return RoundResult.Outcome(completedOutcome())
             posted = true
             val call = outer(id)
             sink.customToolSource(CustomToolSource.Started(call.copy(input = "")))
             sink.customToolSource(CustomToolSource.Completed(call))
-            return outerOutcome(id)
+            return RoundResult.Outcome(outerOutcome(id))
         }
     }
 
@@ -196,7 +197,7 @@ internal class CodexCodeModeTurnIsolationTest : CodeModeBridgeTestSupport() {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
                 entered.complete(Unit)
                 release.await()
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
         }
         entered.await()
@@ -209,7 +210,7 @@ internal class CodexCodeModeTurnIsolationTest : CodeModeBridgeTestSupport() {
         cancelled.cancelAndJoin()
         val next = async {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
         }
         runCurrent()
@@ -219,7 +220,7 @@ internal class CodexCodeModeTurnIsolationTest : CodeModeBridgeTestSupport() {
         next.await()
         val afterRelease = async {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, RecordingSink()) {
-                completedOutcome()
+                RoundResult.Outcome(completedOutcome())
             }
         }
         runCurrent()

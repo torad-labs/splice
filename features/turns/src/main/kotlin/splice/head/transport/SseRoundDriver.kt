@@ -14,6 +14,7 @@ import splice.core.turn.TurnOutcome
 import splice.head.turn.TurnDrive
 import splice.upstream.ClientFrameEmitted
 import splice.upstream.RoundBody
+import splice.upstream.RoundResult
 import splice.upstream.sse.WireSink
 import splice.upstream.transport.StreamTornBeforeClient
 import splice.upstream.transport.TransportFailureReason
@@ -33,7 +34,7 @@ internal class SseRoundDriver(
         sink: WireSink,
         self: CoroutineScope,
         turnJob: Job,
-    ): TurnOutcome {
+    ): RoundResult {
         // Per-ROUND baselines (code-review 2026-07-24): drive.perf is one cumulative TurnPerf
         // shared across re-anchor rounds — the global FIRST_FRAME mark and EVENTS_IN counter go
         // permanently stale after round 1, which (a) denied continuation rounds the safe
@@ -60,13 +61,17 @@ internal class SseRoundDriver(
         // single-flight 401 refresh and the shared 429 cooldown (L5). With the quirk off,
         // provider.wsRunner is null and not one line of this executes.
         val inputs = WsRoundInputs(drive, body, sink, self, turnJob, frameEmittedThisRound, eventsBase)
-        wsDriver.run(inputs)?.let { return it }
-        return try {
+        wsDriver.run(inputs)?.let { return RoundResult.Outcome(it) }
+        val posted = try {
             ssePost.post(inputs)
-        } catch (e: StreamTornBeforeClient) {
-            tearOutcome(e, drive, framesBase, bytesInBase) ?: throw e
         } catch (e: IOException) {
-            tearOutcome(e, drive, framesBase, bytesInBase) ?: throw e
+            tearOutcome(e, drive, framesBase, bytesInBase)?.let { RoundResult.Outcome(it) } ?: throw e
+        }
+        val torn = (posted as? RoundResult.Ended)?.ending as? StreamTornBeforeClient
+        return if (torn == null) {
+            posted
+        } else {
+            tearOutcome(torn.cause, drive, framesBase, bytesInBase)?.let { RoundResult.Outcome(it) } ?: posted
         }
     }
 
@@ -80,10 +85,10 @@ internal class SseRoundDriver(
      * WITH its partial (PassthroughStreamTranslator: `stream ended without a terminal event`), so
      * V4-41's salvage already covers the tear that happens once text is flowing — driven end to
      * end by MidStreamTearContinuesTest against unmodified code before this method existed. What
-     * has NO retry at all is the tear BEFORE the first content frame: TearAwareEvents rethrows it
-     * as [StreamTornBeforeClient] so no translator catch can see it, and then the G5 interlock
-     * declines to re-issue unless the throwable is in its six-name transport allowlist. A torn
-     * chunk stream is not in that set, so `rethrowUnlessRetryableTransport` rethrows with
+     * has NO retry at all is the tear BEFORE the first content frame: TearAwareEvents records it
+     * as a [StreamTornBeforeClient] ending so no translator catch can see it, and then the G5
+     * interlock declines to re-issue unless the cause is in its six-name transport allowlist. A
+     * torn chunk stream is not in that set, so the round is handed back with
      * `deadlineHit = streamHandedOff` and the turn dies at attempts=1 with every budget unspent.
      * That is the operator's own 2026-09-16 turn (claude-deepseek session 4b09e038: frames_out=3,
      * content_frames_out=1 — which is the error frame itself — attempts=1, and no reissue or
@@ -95,7 +100,7 @@ internal class SseRoundDriver(
      *    buffer (those live in the translator, one layer down), so the only continuation it can
      *    offer is the empty partial both controllers turn into a VERBATIM whole-stream restart —
      *    which duplicates nothing only while the client has been shown nothing. Once content is on
-     *    the wire the honest escape is the right answer and the throw is re-raised untouched.
+     *    the wire the honest escape is the right answer and the ending is handed back untouched.
      *  - BYTES READ THIS ROUND. A failure with no upstream body bytes never got a stream at all;
      *    it belongs to the connect phase, which has just spent its own four attempts on it.
      *    Converting that one would hand a dead upstream the re-anchor budget on top.
@@ -107,7 +112,7 @@ internal class SseRoundDriver(
      * quirk is ever read.
      *
      * CANCELLATION IS NOT A TEAR and cannot reach this method: CancellationException is an
-     * IllegalStateException, neither an [IOException] nor a [StreamTornBeforeClient], so it
+     * IllegalStateException, neither an [IOException] nor a [StreamTornBeforeClient] cause, so it
      * propagates past both catch clauses exactly as TurnFailures already orders it.
      */
     private fun tearOutcome(

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.assertThrows
 import splice.upstream.RetryNotice
 import splice.upstream.transport.PostContext
 import splice.upstream.transport.UpstreamFailed
+import splice.upstream.transport.assertEnds
 import splice.upstream.transport.clientOver
 import splice.upstream.transport.fakeAuth
 import splice.upstream.transport.postOnce
@@ -31,7 +32,7 @@ class OverflowNotRetriedTest {
             calls.incrementAndGet()
             respond(body, HttpStatusCode.BadRequest, headersOf())
         }
-        assertThrows<UpstreamFailed> { postOnce(clientOver(engine)) }
+        assertEnds<UpstreamFailed> { postOnce(clientOver(engine)) }
         return calls.get()
     }
 

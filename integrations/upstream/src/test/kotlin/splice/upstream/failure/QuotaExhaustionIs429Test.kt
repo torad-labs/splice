@@ -19,7 +19,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -29,6 +28,7 @@ import splice.upstream.transport.PostContext
 import splice.upstream.transport.RetryPacing
 import splice.upstream.transport.UpstreamClient
 import splice.upstream.transport.UpstreamFailed
+import splice.upstream.transport.assertEnds
 import splice.upstream.transport.posted
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -79,7 +79,7 @@ class QuotaExhaustionIs429Test {
         val refreshes = AtomicInteger()
         val notices = mutableListOf<String>()
         val client = clientOver(engineReturning(403))
-        val thrown = assertThrows<UpstreamFailed> {
+        val thrown = assertEnds<UpstreamFailed> {
             client.posted(ctx(QuotaAuth(declared = true, refreshes), notices), "{}") { "unreachable" }
         }
 
@@ -98,7 +98,7 @@ class QuotaExhaustionIs429Test {
         val notices = mutableListOf<String>()
         // NOT declared by the auth port: 402 is a protocol fact, not a vendor spelling.
         val client = clientOver(engineReturning(402))
-        val thrown = assertThrows<UpstreamFailed> {
+        val thrown = assertEnds<UpstreamFailed> {
             client.posted(ctx(QuotaAuth(declared = false, refreshes), notices), "{}") { "unreachable" }
         }
 
@@ -116,7 +116,7 @@ class QuotaExhaustionIs429Test {
         val refreshes = AtomicInteger()
         val notices = mutableListOf<String>()
         val client = clientOver(engineReturning(403))
-        val thrown = assertThrows<UpstreamFailed> {
+        val thrown = assertEnds<UpstreamFailed> {
             client.posted(ctx(QuotaAuth(declared = false, refreshes), notices), "{}") { "unreachable" }
         }
 

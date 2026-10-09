@@ -5,7 +5,9 @@ import splice.core.usage.QuotaSnapshot
 import splice.upstream.credentials.AccountQuotaSource
 
 public class TrackedAccountQuota(
-    public val tracker: QuotaTracker,
+    /** Internal on purpose: TurnQuota alone resolves which tracker a turn reads, so nothing outside this module can
+     *  take an account's tracker and rebuild the precedence by hand. */
+    internal val tracker: QuotaTracker,
     private val read: AccountQuotaSource? = null,
 ) : AccountQuotaSource {
     override val held: Boolean get() = read?.held == true

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.codemode.host.HostLaunch
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeSealedSource
@@ -263,7 +264,7 @@ class CodeModeStatementBoundaryTest {
         }
     }
 
-    private fun runtime(): JvmCodeModeRuntime = JvmCodeModeRuntime(workerClasspath = classpath)
+    private fun runtime(): JvmCodeModeRuntime = JvmCodeModeRuntime(launch = HostLaunch(classpath = classpath))
 
     private fun calls(step: CodeModeStep): List<CodeModeCall> {
         assertTrue(step is CodeModeStep.Calls, step.toString())

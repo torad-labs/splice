@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Timeout
 import splice.codemode.host.CodeModeHostDrains
 import splice.codemode.host.CodeModePoolAdmission
 import splice.codemode.host.CodeModePoolHost
+import splice.codemode.host.HostLaunch
+import splice.codemode.host.PoolLimits
 import splice.core.util.LogSink
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
@@ -29,9 +31,11 @@ class CodeModeHostControlTimeoutTest {
         val processes = ConcurrentLinkedQueue<SilentHostCloseProcess>()
         val messages = ConcurrentLinkedQueue<String>()
         JvmCodeModeRuntime(
-            maxWorkers = 1,
-            workerStartTimeoutMs = 300,
-            spawn = WorkerSpawn { SilentHostCloseProcess().also(processes::add) },
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(
+                startTimeoutMs = 300,
+                spawn = WorkerSpawn { SilentHostCloseProcess().also(processes::add) },
+            ),
         ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
             val cell = runtime.startSession("first", "return 'fixture';", emptySet())
             assertEquals("fixture", (cell.advance() as CodeModeStep.Completed).output)
@@ -51,14 +55,16 @@ class CodeModeHostControlTimeoutTest {
         val processes = ConcurrentLinkedQueue<SilentHostCloseProcess>()
         val messages = ConcurrentLinkedQueue<String>()
         JvmCodeModeRuntime(
-            maxWorkers = 1,
-            workerStartTimeoutMs = 300,
-            spawn = WorkerSpawn {
-                SilentHostCloseProcess().also { process ->
-                    process.holdEngineOpen = processes.isEmpty()
-                    processes.add(process)
-                }
-            },
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(
+                startTimeoutMs = 300,
+                spawn = WorkerSpawn {
+                    SilentHostCloseProcess().also { process ->
+                        process.holdEngineOpen = processes.isEmpty()
+                        processes.add(process)
+                    }
+                },
+            ),
         ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
             assertThrows(CodeModeStartException::class.java) {
                 runBlocking { runtime.startSession("hung", "return 'never';", emptySet()) }
@@ -104,9 +110,11 @@ class CodeModeHostControlTimeoutTest {
         val processes = ConcurrentLinkedQueue<SilentHostCloseProcess>()
         val messages = ConcurrentLinkedQueue<String>()
         JvmCodeModeRuntime(
-            maxWorkers = 1,
-            workerStartTimeoutMs = 300,
-            spawn = WorkerSpawn { SilentHostCloseProcess().also(processes::add) },
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(
+                startTimeoutMs = 300,
+                spawn = WorkerSpawn { SilentHostCloseProcess().also(processes::add) },
+            ),
         ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
             val first = runtime.startSession("first", "return 'fixture';", emptySet())
             assertTrue(first.advance() is CodeModeStep.Completed)
@@ -125,9 +133,11 @@ class CodeModeHostControlTimeoutTest {
         val processes = ConcurrentLinkedQueue<SilentHostCloseProcess>()
         val messages = ConcurrentLinkedQueue<String>()
         JvmCodeModeRuntime(
-            maxWorkers = 1,
-            workerStartTimeoutMs = 300,
-            spawn = WorkerSpawn { SilentHostCloseProcess().also(processes::add) },
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(
+                startTimeoutMs = 300,
+                spawn = WorkerSpawn { SilentHostCloseProcess().also(processes::add) },
+            ),
         ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
             val done = runtime.startSession("retiring", "return 'fixture';", emptySet())
             assertTrue(done.advance() is CodeModeStep.Completed)

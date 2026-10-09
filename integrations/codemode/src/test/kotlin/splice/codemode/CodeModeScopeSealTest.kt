@@ -7,6 +7,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.codemode.host.HostLaunch
 import splice.upstream.codemode.CodeModeProtocol
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeSealedSource
@@ -18,7 +19,7 @@ class CodeModeScopeSealTest {
 
     @Test
     fun `sealed primitive conversion dispatches before the source ends`(): Unit = runBlocking {
-        JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = classpath)).use { runtime ->
             runtime.start("return 'warm';", emptySet()).use { it.advance() }
             val input = Channel<CodeModeSourcePart>(Channel.UNLIMITED)
             val source = sealed(input)
@@ -36,7 +37,7 @@ class CodeModeScopeSealTest {
 
     @Test
     fun `awaited native tool batches dispatch before the source ends`(): Unit = runBlocking {
-        JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = classpath)).use { runtime ->
             runtime.start("return 'warm';", emptySet()).use { it.advance() }
             for (method in listOf("all", "allSettled")) {
                 val input = Channel<CodeModeSourcePart>(Channel.UNLIMITED)
@@ -67,7 +68,7 @@ class CodeModeScopeSealTest {
 
     @Test
     fun `late sealed declarations fail without rerunning an earlier permitted call`(): Unit = runBlocking {
-        JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = classpath)).use { runtime ->
             val input = Channel<CodeModeSourcePart>(Channel.UNLIMITED)
             input.send(CodeModeSourcePart.Delta("text(await tools.Read({path:String(1)}));\nlet "))
             val cell = runtime.startStreaming(sealed(input), setOf("Read"))
@@ -82,7 +83,7 @@ class CodeModeScopeSealTest {
 
     @Test
     fun `object conversions remain deferred despite their namespace seal`(): Unit = runBlocking {
-        JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = classpath)).use { runtime ->
             runtime.start("return 'warm';", emptySet()).use { it.advance() }
             val input = Channel<CodeModeSourcePart>(Channel.UNLIMITED)
             val waiting = kotlinx.coroutines.CompletableDeferred<Unit>()
@@ -115,7 +116,7 @@ class CodeModeScopeSealTest {
 
     @Test
     fun `unawaited and nonjoining batches still wait for complete source`(): Unit = runBlocking {
-        JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = classpath)).use { runtime ->
             runtime.start("return 'warm';", emptySet()).use { it.advance() }
             for (expression in listOf(
                 "Promise.all([tools.Read({path:'one'})])",
@@ -153,7 +154,7 @@ class CodeModeScopeSealTest {
 
     @Test
     fun `late Promise declaration fails without replaying an early batch`(): Unit = runBlocking {
-        JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = classpath)).use { runtime ->
             val input = Channel<CodeModeSourcePart>(Channel.UNLIMITED)
             val source = object : CodeModeSealedSource {
                 override val sealedGlobals = splice.upstream.codemode.CodeModeManual.streamingSealedGlobals

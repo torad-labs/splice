@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
+import splice.codemode.host.HostLaunch
 import splice.core.util.LogSink
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
@@ -37,7 +38,9 @@ class CodeModeWorkerBootTest {
     @Test
     @Timeout(60)
     fun `a worker that starts slower than the advance deadline still runs its script`() = runBlocking {
-        JvmCodeModeRuntime(workerClasspath = testClasspath, spawn = SlowStartSpawn(SLOW_START_MS)).use { runtime ->
+        JvmCodeModeRuntime(
+            launch = HostLaunch(classpath = testClasspath, spawn = SlowStartSpawn(SLOW_START_MS)),
+        ).use { runtime ->
             val cell = runtime.start("return 6 * 7;", emptySet())
             val completed = cell.advance() as? CodeModeStep.Completed
                 ?: error("the script should have completed in its first advance")
@@ -49,7 +52,7 @@ class CodeModeWorkerBootTest {
     @Test
     @Timeout(60)
     fun `a long execution is not killed by the former advance deadline`() = runBlocking {
-        JvmCodeModeRuntime(advanceTimeoutMs = 1, workerClasspath = testClasspath).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = testClasspath), advanceTimeoutMs = 1).use { runtime ->
             val cell = runtime.start(
                 "const until = Date.now() + 100; while (Date.now() < until) {} return 42;",
                 emptySet(),
@@ -65,15 +68,17 @@ class CodeModeWorkerBootTest {
         val failed = java.util.concurrent.CompletableFuture<Process>()
         val messages = java.util.concurrent.ConcurrentLinkedQueue<String>()
         JvmCodeModeRuntime(
-            workerClasspath = testClasspath,
-            spawn = WorkerSpawn { builder ->
-                if (attempts.incrementAndGet() == 1) {
-                    SlowStartSpawn(NEVER_STARTS_MS)(builder).also { failed.complete(it) }
-                } else {
-                    builder.start()
-                }
-            },
-            workerStartTimeoutMs = START_BUDGET_MS,
+            launch = HostLaunch(
+                classpath = testClasspath,
+                spawn = WorkerSpawn { builder ->
+                    if (attempts.incrementAndGet() == 1) {
+                        SlowStartSpawn(NEVER_STARTS_MS)(builder).also { failed.complete(it) }
+                    } else {
+                        builder.start()
+                    }
+                },
+                startTimeoutMs = START_BUDGET_MS,
+            ),
         ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
             val timeout = assertThrows(CodeModeStartException::class.java) {
                 runBlocking { runtime.start("return 1;", emptySet()) }
@@ -95,17 +100,19 @@ class CodeModeWorkerBootTest {
         val releaseReplacement = java.util.concurrent.CountDownLatch(1)
         val messages = java.util.concurrent.ConcurrentLinkedQueue<String>()
         JvmCodeModeRuntime(
-            workerClasspath = testClasspath,
-            workerStartTimeoutMs = START_BUDGET_MS,
-            spawn = WorkerSpawn { builder ->
-                if (attempts.incrementAndGet() == 1) {
-                    SlowStartSpawn(NEVER_STARTS_MS)(builder)
-                } else {
-                    replacementEntered.complete(Unit)
-                    check(releaseReplacement.await(10, java.util.concurrent.TimeUnit.SECONDS))
-                    builder.start()
-                }
-            },
+            launch = HostLaunch(
+                classpath = testClasspath,
+                startTimeoutMs = START_BUDGET_MS,
+                spawn = WorkerSpawn { builder ->
+                    if (attempts.incrementAndGet() == 1) {
+                        SlowStartSpawn(NEVER_STARTS_MS)(builder)
+                    } else {
+                        replacementEntered.complete(Unit)
+                        check(releaseReplacement.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                        builder.start()
+                    }
+                },
+            ),
         ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
             assertThrows(CodeModeStartException::class.java) {
                 runBlocking { runtime.start("return 1;", emptySet()) }
@@ -139,12 +146,14 @@ class CodeModeWorkerBootTest {
         val hashes = CopyOnWriteArrayList<String>()
         val originalHash = archive.hash(archive.jar)
         JvmCodeModeRuntime(
-            workerClasspath = archive.classpath,
-            spawn = WorkerSpawn { builder ->
-                val pinned = Path.of(builder.command()[3].substringBefore(File.pathSeparator))
-                hashes.add(archive.hash(pinned))
-                builder.redirectError(ProcessBuilder.Redirect.INHERIT).start().also { processes.add(it) }
-            },
+            launch = HostLaunch(
+                classpath = archive.classpath,
+                spawn = WorkerSpawn { builder ->
+                    val pinned = Path.of(builder.command()[3].substringBefore(File.pathSeparator))
+                    hashes.add(archive.hash(pinned))
+                    builder.redirectError(ProcessBuilder.Redirect.INHERIT).start().also { processes.add(it) }
+                },
+            ),
         ).use { runtime ->
             val parked = runtime.start("return await tools.call('Read', {});", setOf("Read"))
             assertTrue(parked.advance() is CodeModeStep.Calls)

@@ -18,6 +18,7 @@ import splice.app.head.HeadServerFactory
 import splice.app.head.HeadStores
 import splice.codemode.JvmCodeModeRuntime
 import splice.codemode.WorkerSpawn
+import splice.codemode.host.HostLaunch
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -72,8 +73,10 @@ internal class CodeModeDrainTest {
     fun `a draining stop keeps the real worker until its admitted turn completes`(@TempDir tmp: Path) = runBlocking {
         val process = CompletableDeferred<Process>()
         val real = JvmCodeModeRuntime(
-            workerClasspath = checkNotNull(System.getProperty("codeMode.testClasspath")),
-            spawn = WorkerSpawn { builder -> builder.start().also { process.complete(it) } },
+            launch = HostLaunch(
+                classpath = checkNotNull(System.getProperty("codeMode.testClasspath")),
+                spawn = WorkerSpawn { builder -> builder.start().also { process.complete(it) } },
+            ),
         )
         val runtime = HeldRuntime(real)
         val mock = MockChatGptUpstream()

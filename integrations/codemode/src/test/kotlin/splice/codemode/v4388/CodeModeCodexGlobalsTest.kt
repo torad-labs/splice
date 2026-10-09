@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.codemode.JvmCodeModeRuntime
 import splice.codemode.SCRIPT_DEADLINE_MS
+import splice.codemode.host.HostLaunch
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 
@@ -103,5 +104,5 @@ class CodeModeCodexGlobalsTest {
     }
 
     private fun runtime(): JvmCodeModeRuntime =
-        JvmCodeModeRuntime(advanceTimeoutMs = SCRIPT_DEADLINE_MS, workerClasspath = testClasspath)
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = testClasspath), advanceTimeoutMs = SCRIPT_DEADLINE_MS)
 }

@@ -26,6 +26,8 @@ import org.junit.jupiter.api.io.TempDir
 import splice.codemode.CodeModeWorkerReclamation
 import splice.codemode.JvmCodeModeRuntime
 import splice.codemode.SCRIPT_DEADLINE_MS
+import splice.codemode.host.HostLaunch
+import splice.codemode.host.PoolLimits
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
@@ -56,16 +58,18 @@ class CodeModeBridgeRuntimeTest {
     private val testClasspath = checkNotNull(System.getProperty("codeMode.testClasspath"))
     private val upstreamUsage = Usage(19, 7, 5, 3)
 
+    private fun hostLaunch(spawn: splice.codemode.WorkerSpawn) = HostLaunch(classpath = testClasspath, spawn = spawn)
+
     @Test
     fun `host boot deadline is retryable and preserves usage and unstarted source`() = runBlocking {
         val reclamation = CodeModeWorkerReclamation()
         JvmCodeModeRuntime(
-            workerClasspath = testClasspath,
-            workerStartTimeoutMs = 1_000,
-            spawn = splice.codemode.WorkerSpawn { builder ->
-                builder.command(listOf("/bin/sh", "-c", "/bin/sleep 8; exec \"\\$0\" \"\\$@\"") + builder.command())
-                reclamation(builder)
-            },
+            launch = hostLaunch(
+                splice.codemode.WorkerSpawn { builder ->
+                    builder.command(listOf("/bin/sh", "-c", "/bin/sleep 8; exec \"\\$0\" \"\\$@\"") + builder.command())
+                    reclamation(builder)
+                },
+            ).copy(startTimeoutMs = 1_000),
         ).use { runtime ->
             val outcome = bridge(runtime).interceptor(turn(), disableParallel = false)
                 .intercept(BRIDGE_BASE_REQUEST, Sink()) { outer("/* private source marker */ return 1;") }
@@ -97,12 +101,13 @@ class CodeModeBridgeRuntimeTest {
         val spawns = AtomicInteger()
         val spawned = java.util.concurrent.CompletableFuture<Process>()
         JvmCodeModeRuntime(
-            workerClasspath = testClasspath,
-            spawn = splice.codemode.WorkerSpawn { builder ->
-                val initial = spawns.incrementAndGet() == 1
-                if (initial) builder.command("/bin/sh", "-c", "exec /bin/sleep 60")
-                builder.start().also { if (initial) spawned.complete(it) }
-            },
+            launch = hostLaunch(
+                splice.codemode.WorkerSpawn { builder ->
+                    val initial = spawns.incrementAndGet() == 1
+                    if (initial) builder.command("/bin/sh", "-c", "exec /bin/sleep 60")
+                    builder.start().also { if (initial) spawned.complete(it) }
+                },
+            ),
         ).use { runtime ->
             val manager = bridge(runtime)
             val pending = async {
@@ -171,8 +176,9 @@ class CodeModeBridgeRuntimeTest {
     fun `parent cancellation through bridge stays cancellation and preserves the shared host`() = runBlocking {
         val spawned = java.util.concurrent.CompletableFuture<Process>()
         JvmCodeModeRuntime(
-            workerClasspath = testClasspath,
-            spawn = splice.codemode.WorkerSpawn { builder -> builder.start().also { spawned.complete(it) } },
+            launch = hostLaunch(
+                splice.codemode.WorkerSpawn { builder -> builder.start().also { spawned.complete(it) } },
+            ),
         ).use { runtime ->
             val bridge = bridge(runtime)
             val startup = async {
@@ -431,9 +437,9 @@ class CodeModeBridgeRuntimeTest {
     }
 
     private fun runtime(timeoutMs: Long = SCRIPT_DEADLINE_MS) = JvmCodeModeRuntime(
-        maxWorkers = 1,
+        limits = PoolLimits(maxWorkers = 1),
+        launch = HostLaunch(classpath = testClasspath),
         advanceTimeoutMs = timeoutMs,
-        workerClasspath = testClasspath,
     )
 
     private fun bridge(runtime: JvmCodeModeRuntime, filename: String = "bridge.json") =

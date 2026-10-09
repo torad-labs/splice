@@ -310,6 +310,7 @@ features/turns/src/test/kotlin/splice/head/transport/CodexTurnStateSseTest.kt	cr
 integrations/dialects/openai-responses/src/main/kotlin/splice/dialect/responses/websocket/ResponsesWsRequestMetadata.kt	created		Per-frame lite protocol metadata and WebSocket-only first-write-wins event routing without changing logical request identity
 integrations/providers/codex/src/main/kotlin/splice/provider/codex/state/CodeModeRecordChanges.kt	created		Script-driver changes to a live code-mode record run under its conversation key, so the source reader's save never iterates a list the driver is changing
 integrations/codemode/src/main/kotlin/splice/codemode/engine/HostWorkerSession.kt	created		Injectable native engine lifecycle and session-owned bounded execution until confirmed destruction
+integrations/codemode/src/main/kotlin/splice/codemode/host/HostOptions.kt	retain	integrations/codemode/src/main/kotlin/splice/codemode/host/HostOptions.kt	Reusable external adapters
 integrations/codemode/src/main/kotlin/splice/codemode/host/HostSessionSlots.kt	created		Lock-free reader lookup with reserved opening slots and per-session close tombstones
 integrations/codemode/src/main/kotlin/splice/codemode/host/HostWorkerControls.kt	created		Independent open close and control lanes with bounded source-free lifecycle failure frames
 integrations/codemode/src/main/kotlin/splice/codemode/host/CodeModeHostDrains.kt	created		Failed-control admission quarantine retains charges and replaces only drained hosts

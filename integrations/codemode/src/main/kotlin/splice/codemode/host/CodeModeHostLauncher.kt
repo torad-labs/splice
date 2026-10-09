@@ -8,7 +8,6 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.codemode.SharedWorkerChannel
 import splice.codemode.WorkerArtifacts
-import splice.codemode.WorkerSpawn
 import splice.upstream.LifecycleScope
 import splice.upstream.failure.CodeModeTimeoutException
 import java.lang.ProcessBuilder.Redirect
@@ -18,23 +17,19 @@ import java.util.concurrent.atomic.AtomicBoolean
 private const val WORKER_MAIN_CLASS: String = "splice.codemode.CodeModeWorker"
 
 internal class CodeModeHostLauncher(
-    workerClasspath: String,
-    private val javaExecutable: String,
-    private val heapMb: Int,
-    private val spawn: WorkerSpawn,
+    private val options: HostLaunch,
     private val scope: LifecycleScope,
     private val ioDispatcher: CoroutineDispatcher,
-    private val timeoutMs: Long,
 ) : AutoCloseable {
     private val closed = AtomicBoolean()
-    private val pinnedWorkerClasspath = WorkerArtifacts.pinClasspath(workerClasspath)
+    private val pinnedWorkerClasspath = WorkerArtifacts.pinClasspath(options.classpath)
     private val channels: MutableSet<SharedWorkerChannel> = ConcurrentHashMap.newKeySet()
 
     suspend fun open(): SharedWorkerChannel {
         val host = runInterruptible {
             val builder = ProcessBuilder(
-                javaExecutable,
-                "-Xmx${heapMb}m",
+                options.javaExecutable,
+                "-Xmx${options.heapMb}m",
                 "-cp",
                 pinnedWorkerClasspath,
                 WORKER_MAIN_CLASS,
@@ -42,7 +37,7 @@ internal class CodeModeHostLauncher(
             )
             builder.environment().clear()
             builder.redirectError(Redirect.DISCARD)
-            SharedWorkerChannel(spawn(builder), scope, ioDispatcher).also {
+            SharedWorkerChannel(options.spawn(builder), scope, ioDispatcher).also {
                 channels.add(it)
                 it.afterExit { channels.remove(it) }
                 if (closed.get()) it.close()
@@ -50,10 +45,10 @@ internal class CodeModeHostLauncher(
         }
         var initialized = false
         try {
-            withTimeoutOrNull(timeoutMs) {
+            withTimeoutOrNull(options.startTimeoutMs) {
                 host.awaitReady()
                 true
-            } ?: throw CodeModeTimeoutException(timeoutMs)
+            } ?: throw CodeModeTimeoutException(options.startTimeoutMs)
             initialized = true
             return host
         } finally {

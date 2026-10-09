@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import splice.codemode.host.HostLaunch
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeSource
@@ -28,7 +29,7 @@ class CodeModeStatementStreamingTest {
 
     @Test
     fun `a failed durable source read escapes unchanged and closes only its cell`(): Unit = runBlocking {
-        JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = classpath)).use { runtime ->
             runtime.start("return 'warm';", emptySet()).use { it.advance() }
             val fault = DurableSourceFailure(diskFull = true)
             var reads = 0
@@ -49,7 +50,7 @@ class CodeModeStatementStreamingTest {
     @Test
     fun `an infrastructure read failure stays a worker fault rather than an upstream source terminal`(): Unit =
         runBlocking {
-            JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+            JvmCodeModeRuntime(launch = HostLaunch(classpath = classpath)).use { runtime ->
                 runtime.start("return 'warm';", emptySet()).use { it.advance() }
                 val fault = CodeModeInfrastructureException(
                     CodeModeInfrastructureCategory.HOST,
@@ -70,7 +71,7 @@ class CodeModeStatementStreamingTest {
 
     @Test
     fun `a complete statement calls its tool before source completion`(): Unit = runBlocking {
-        JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = classpath)).use { runtime ->
             runtime.start("return 'warm';", emptySet()).use { it.advance() }
             val input = Channel<CodeModeSourcePart>(Channel.UNLIMITED)
             val first = async {
@@ -229,7 +230,7 @@ class CodeModeStatementStreamingTest {
     }
 
     private suspend fun parity(parts: List<String>) {
-        JvmCodeModeRuntime(workerClasspath = classpath).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = classpath)).use { runtime ->
             val script = parts.joinToString("")
             val whole = execute(runtime.start(script, setOf("Read")))
             val updates = java.util.ArrayDeque<CodeModeSourcePart>()

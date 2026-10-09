@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.codemode.JvmCodeModeRuntime
+import splice.codemode.host.HostLaunch
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.GatewayCustomCall
@@ -35,7 +36,7 @@ internal class CodeModeWorkerLossTest {
     @Test
     fun `a forced host close during a resumed turn is retryable and never reruns accepted calls`() = runBlocking {
         val classpath = checkNotNull(System.getProperty("codeMode.testClasspath"))
-        JvmCodeModeRuntime(workerClasspath = classpath).use { real ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = classpath)).use { real ->
             val runtime = HeldResumeRuntime(real)
             val manager = CodexCodeModeBridge(
                 CodeModeBridgeConfig(

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.codemode.host.HostLaunch
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
@@ -67,7 +68,9 @@ class HostReplyAddressTest {
     private fun assertAddressFailure(wrongRequest: Boolean) {
         assertThrows(IOException::class.java) {
             runBlocking {
-                JvmCodeModeRuntime(spawn = WorkerSpawn { WrongAddressProcess(wrongRequest) }).use { runtime ->
+                JvmCodeModeRuntime(
+                    launch = HostLaunch(spawn = WorkerSpawn { WrongAddressProcess(wrongRequest) }),
+                ).use { runtime ->
                     withTimeout(2_000) { runtime.start("return 'never';", emptySet()) }
                 }
             }

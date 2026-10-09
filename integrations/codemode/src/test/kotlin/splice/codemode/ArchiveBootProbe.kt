@@ -2,6 +2,7 @@
 package splice.codemode
 
 import kotlinx.coroutines.runBlocking
+import splice.codemode.host.HostLaunch
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -16,10 +17,12 @@ internal object ArchiveBootProbe {
         val spawned = AtomicInteger()
         try {
             JvmCodeModeRuntime(
-                spawn = WorkerSpawn { builder ->
-                    spawned.incrementAndGet()
-                    builder.start()
-                },
+                launch = HostLaunch(
+                    spawn = WorkerSpawn { builder ->
+                        spawned.incrementAndGet()
+                        builder.start()
+                    },
+                ),
             ).use { runtime ->
                 val result = runBlocking {
                     runtime.start("return 'original archive';", emptySet()).advance()

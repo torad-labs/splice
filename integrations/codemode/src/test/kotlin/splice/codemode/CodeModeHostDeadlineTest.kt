@@ -34,6 +34,8 @@ import splice.codemode.host.CodeModePoolHost
 import splice.codemode.host.CodeModePoolLease
 import splice.codemode.host.CodeModePoolSession
 import splice.codemode.host.CodeModePoolTimes
+import splice.codemode.host.HostLaunch
+import splice.codemode.host.PoolLimits
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.upstream.LifecycleScope
@@ -202,11 +204,13 @@ class CodeModeHostDeadlineTest {
         val attempts = AtomicInteger()
         val messages = java.util.concurrent.ConcurrentLinkedQueue<String>()
         JvmCodeModeRuntime(
-            maxWorkers = 1,
-            workerStartTimeoutMs = 300,
-            spawn = WorkerSpawn {
-                if (attempts.incrementAndGet() == 1) process else SilentHostCloseProcess()
-            },
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(
+                startTimeoutMs = 300,
+                spawn = WorkerSpawn {
+                    if (attempts.incrementAndGet() == 1) process else SilentHostCloseProcess()
+                },
+            ),
         ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
             try {
                 assertThrows(CodeModeStartException::class.java) {

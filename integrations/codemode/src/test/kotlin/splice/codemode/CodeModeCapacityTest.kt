@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import splice.codemode.host.HostLaunch
+import splice.codemode.host.PoolLimits
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 import splice.upstream.failure.CodeModeStartException
@@ -26,7 +28,10 @@ class CodeModeCapacityTest {
     @ValueSource(ints = [1, 2])
     @Timeout(60)
     fun `a parked script never queues a new script behind a legacy worker hint`(capacity: Int) = runBlocking {
-        JvmCodeModeRuntime(maxWorkers = capacity, workerClasspath = testClasspath).use { runtime ->
+        JvmCodeModeRuntime(
+            limits = PoolLimits(maxWorkers = capacity),
+            launch = HostLaunch(classpath = testClasspath),
+        ).use { runtime ->
             val held = List(capacity) { runtime.start("return await tools.call('Read', {});", setOf("Read")) }
             try {
                 held.forEach { assertTrue(it.advance() is CodeModeStep.Calls) }
@@ -45,7 +50,10 @@ class CodeModeCapacityTest {
     @Test
     @Timeout(60)
     fun `cancelling an active script leaves a parked sibling resumable`() = runBlocking {
-        JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath).use { runtime ->
+        JvmCodeModeRuntime(
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(classpath = testClasspath),
+        ).use { runtime ->
             val held = runtime.start("return await tools.call('Read', {});", setOf("Read"))
             val running = runtime.start("await tools.call('Read', {}); while (true) {}", setOf("Read"))
             assertTrue(held.advance() is CodeModeStep.Calls)
@@ -71,7 +79,7 @@ class CodeModeCapacityTest {
             java.util.concurrent.CountDownLatch(1).await()
             error("the cancelled spawn cannot finish")
         }
-        JvmCodeModeRuntime(workerClasspath = testClasspath, spawn = spawn).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = testClasspath, spawn = spawn)).use { runtime ->
             supervisorScope {
                 val starting = async(start = CoroutineStart.UNDISPATCHED) {
                     runtime.start("return 'never';", emptySet())
@@ -87,7 +95,10 @@ class CodeModeCapacityTest {
     @Test
     @Timeout(60)
     fun `closing the runtime closes parked cells and refuses new starts`() = runBlocking<Unit> {
-        val runtime = JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath)
+        val runtime = JvmCodeModeRuntime(
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(classpath = testClasspath),
+        )
         val held = runtime.start("await tools.call('Read', {});", setOf("Read"))
         assertTrue(held.advance() is CodeModeStep.Calls)
         runtime.close()

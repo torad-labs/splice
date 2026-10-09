@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.codemode.engine.WorkerSession
+import splice.codemode.host.HostLaunch
+import splice.codemode.host.PoolLimits
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
@@ -25,13 +27,15 @@ class CodeModeSharedHostTest {
     fun `a hundred parked scripts do not hold admission for the next script`() = runBlocking {
         val processes = AtomicInteger()
         JvmCodeModeRuntime(
-            maxWorkers = 1,
-            heapMb = 512,
-            workerClasspath = testClasspath,
-            spawn = WorkerSpawn { builder ->
-                processes.incrementAndGet()
-                builder.start()
-            },
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(
+                heapMb = 512,
+                classpath = testClasspath,
+                spawn = WorkerSpawn { builder ->
+                    processes.incrementAndGet()
+                    builder.start()
+                },
+            ),
         ).use { runtime ->
             val held = mutableListOf<CodeModeCell>()
             try {
@@ -155,11 +159,13 @@ class CodeModeSharedHostTest {
     fun `the second script reuses the booted host and measures its start cost`() = runBlocking {
         val processes = AtomicInteger()
         JvmCodeModeRuntime(
-            workerClasspath = testClasspath,
-            spawn = WorkerSpawn { builder ->
-                processes.incrementAndGet()
-                builder.start()
-            },
+            launch = HostLaunch(
+                classpath = testClasspath,
+                spawn = WorkerSpawn { builder ->
+                    processes.incrementAndGet()
+                    builder.start()
+                },
+            ),
         ).use { runtime ->
             val first = System.nanoTime()
             val firstCell = runtime.start("return \"first\";", emptySet())

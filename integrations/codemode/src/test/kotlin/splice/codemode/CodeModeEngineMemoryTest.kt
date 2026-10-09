@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.codemode.engine.WorkerSession
+import splice.codemode.host.HostLaunch
+import splice.codemode.host.PoolLimits
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeStep
 
@@ -41,9 +43,11 @@ class CodeModeEngineMemoryTest {
     fun `measure one host with every engine retaining a near cap guest heap`() = runBlocking {
         var host: Process? = null
         JvmCodeModeRuntime(
-            maxWorkers = 1,
-            workerClasspath = checkNotNull(System.getProperty("codeMode.testClasspath")),
-            spawn = WorkerSpawn { it.start().also { process -> host = process } },
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(
+                classpath = checkNotNull(System.getProperty("codeMode.testClasspath")),
+                spawn = WorkerSpawn { it.start().also { process -> host = process } },
+            ),
         ).use { runtime ->
             val cells = (0 until CodeModeHeap.maxEnginesPerHost).map { index ->
                 runtime.startSession(

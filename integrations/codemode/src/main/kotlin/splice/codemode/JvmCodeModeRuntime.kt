@@ -12,9 +12,9 @@ import splice.codemode.host.CodeModeCellStarts
 import splice.codemode.host.CodeModeHostLauncher
 import splice.codemode.host.CodeModeHostPool
 import splice.codemode.host.CodeModeHostStart
-import splice.codemode.host.CodeModePoolAdmission
 import splice.codemode.host.CodeModePoolLease
-import splice.codemode.host.CodeModePoolTimes
+import splice.codemode.host.HostLaunch
+import splice.codemode.host.PoolLimits
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
@@ -32,7 +32,6 @@ import splice.upstream.failure.CodeModeStartException
 import splice.upstream.failure.CodeModeTimeoutException
 import splice.upstream.failure.CodeModeWorkerLostException
 import java.io.IOException
-import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 
 // why: twice the operator's observed ten-session peak needs five four-engine hosts, plus recovery headroom.
@@ -51,27 +50,21 @@ public const val DEFAULT_HEAP_MB: Int = 512
 // Six hosts at 1152 MiB plus 21 engines at 832 MiB reserve 24384 MiB; the 22nd needs 25216 MiB.
 public const val DEFAULT_POOL_MEMORY_MB: Long = 24L * 1024
 
-private const val LEGACY_SESSION: String = "unaddressed-runtime"
-
 /** Starts a host at the OS boundary; injectable for ownership and boot measurements. */
 public fun interface WorkerSpawn {
     public operator fun invoke(builder: ProcessBuilder): Process
 }
 
+private const val LEGACY_SESSION: String = "unaddressed-runtime"
+
 /** Sessions own engines and remain pinned to the least-loaded host selected at their first cell. */
 public class JvmCodeModeRuntime(
-    maxWorkers: Int = DEFAULT_MAX_WORKERS,
+    limits: PoolLimits = PoolLimits(),
     advanceTimeoutMs: Long = DEFAULT_ADVANCE_TIMEOUT_MS,
-    private val heapMb: Int = DEFAULT_HEAP_MB,
+    private val launch: HostLaunch = HostLaunch(),
     private val ioDispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
-    private val javaExecutable: String = Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-    workerClasspath: String = WorkerArtifacts.runningClasspath(),
-    private val spawn: WorkerSpawn = WorkerSpawn(ProcessBuilder::start),
-    private val workerStartTimeoutMs: Long = DEFAULT_WORKER_START_TIMEOUT_MS,
-    idleTimeoutMs: Long = CodeModeHeap.idleTimeoutMs,
     now: ElapsedClock = ProcessElapsedNow(),
     ticker: Ticker = ProcessTicker(),
-    memoryBudgetMb: Long = DEFAULT_POOL_MEMORY_MB,
 ) : CodeModeRuntime {
     @Volatile private var hostLifecycleLog = LogSink {}
 
@@ -79,31 +72,17 @@ public class JvmCodeModeRuntime(
     private val scope = LifecycleScope(ioDispatcher)
 
     init {
-        require(maxWorkers > 0) { "Code-mode host count must be positive" }
         require(advanceTimeoutMs > 0) { "Code-mode advance hint must be positive" }
-        require(workerStartTimeoutMs > 0) { "Code-mode worker start timeout must be positive" }
-        require(heapMb > 0) { "Code-mode host heap must be positive" }
-        require(memoryBudgetMb > 0) { "Code-mode pool memory budget must be positive" }
-        require(idleTimeoutMs > 0) { "Code-mode session idle timeout must be positive" }
-        require(workerClasspath.isNotBlank()) { "Code-mode worker classpath is required" }
     }
 
-    private val launcher = CodeModeHostLauncher(
-        workerClasspath,
-        javaExecutable,
-        heapMb,
-        spawn,
-        scope,
-        ioDispatcher,
-        workerStartTimeoutMs,
-    )
+    private val launcher = CodeModeHostLauncher(launch, scope, ioDispatcher)
     private val pool = CodeModeHostPool(
-        CodeModePoolAdmission(maxWorkers, heapMb, memoryBudgetMb),
+        limits.admission(launch.heapMb),
         scope,
         CodeModeHostStart(launcher::open),
         now,
         ticker,
-        CodeModePoolTimes(idleTimeoutMs, workerStartTimeoutMs),
+        limits.times(launch.startTimeoutMs),
         LogSink { hostLifecycleLog(it) },
     )
     private val cells = CodeModeCellStarts(pool, closed)
@@ -168,8 +147,8 @@ public class JvmCodeModeRuntime(
     private suspend fun openCell(sessionKey: String): CodeModePoolLease = Cancellables.runCatchingBestEffort {
         require(sessionKey.isNotBlank()) { "Code-mode session key is required" }
         check(!closed.get()) { "Code-mode runtime is closed" }
-        withTimeoutOrNull(workerStartTimeoutMs) { openFromPool(sessionKey) }
-            ?: throw CodeModeTimeoutException(workerStartTimeoutMs)
+        withTimeoutOrNull(launch.startTimeoutMs) { openFromPool(sessionKey) }
+            ?: throw CodeModeTimeoutException(launch.startTimeoutMs)
     }.getOrElse { error ->
         when (error) {
             is IllegalArgumentException -> throw error

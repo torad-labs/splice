@@ -7,6 +7,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonPrimitive
 import splice.codemode.JvmCodeModeRuntime
+import splice.codemode.host.HostLaunch
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
@@ -128,7 +129,9 @@ internal class StatementGatewayRuntime(
     val starts = AtomicInteger()
     val calls = ConcurrentLinkedQueue<CodeModeCall>()
     private val runtime = JvmCodeModeRuntime(
-        workerClasspath = checkNotNull(System.getProperty("codeMode.testClasspath")),
+        launch = HostLaunch(
+            classpath = checkNotNull(System.getProperty("codeMode.testClasspath")),
+        ),
     )
 
     override suspend fun start(source: String, tools: Set<String>, descriptions: Map<String, String>): CodeModeCell =

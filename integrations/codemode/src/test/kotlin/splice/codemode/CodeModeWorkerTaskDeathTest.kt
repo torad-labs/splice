@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import splice.codemode.host.HostLaunch
 import splice.core.util.LogSink
 import splice.upstream.codemode.CodeModeSource
 import splice.upstream.codemode.CodeModeSourcePart
@@ -99,7 +100,11 @@ class CodeModeWorkerTaskDeathTest {
         runBlocking {
             val processes = ConcurrentLinkedQueue<SilentHostCloseProcess>()
             JvmCodeModeRuntime(
-                spawn = WorkerSpawn { SilentHostCloseProcess().also { it.startReply = died() }.also(processes::add) },
+                launch = HostLaunch(
+                    spawn = WorkerSpawn {
+                        SilentHostCloseProcess().also { it.startReply = died() }.also(processes::add)
+                    },
+                ),
             ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
                 val failure = withTimeout(ANSWER_BOUND_MS) {
                     runCatching { runtime.startSession("session", "return 1;", emptySet()) }
@@ -118,8 +123,10 @@ class CodeModeWorkerTaskDeathTest {
         }
 
     private fun runtime(): JvmCodeModeRuntime = JvmCodeModeRuntime(
-        workerClasspath = classpath,
-        spawn = WorkerSpawn { builder -> builder.start().also(spawned::add) },
+        launch = HostLaunch(
+            classpath = classpath,
+            spawn = WorkerSpawn { builder -> builder.start().also(spawned::add) },
+        ),
     ).also { it.observeHostLifecycle(LogSink(messages::add)) }
 
     /** Streams [first] as a part of its own, then completes the source with [last], and runs to the first step. */

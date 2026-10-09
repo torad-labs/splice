@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import splice.codemode.host.HostLaunch
+import splice.codemode.host.PoolLimits
 import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeSource
@@ -266,7 +268,10 @@ class CodeModeRuntimeTest {
 
     @Test
     fun `one host runs a second live cell while the first stays parked`() = runBlocking {
-        JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath).use { runtime ->
+        JvmCodeModeRuntime(
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(classpath = testClasspath),
+        ).use { runtime ->
             val first = runtime.start("return await tools.call('Read', {});", setOf("Read"))
             calls(first.advance())
             val second = withTimeout(5_000) { runtime.start("return 'second';", emptySet()) }
@@ -278,7 +283,7 @@ class CodeModeRuntimeTest {
     @Test
     @Timeout(30)
     fun `a long resumed step survives the former advance deadline`() = runBlocking {
-        JvmCodeModeRuntime(advanceTimeoutMs = 1, workerClasspath = testClasspath).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = testClasspath), advanceTimeoutMs = 1).use { runtime ->
             val cell = runtime.start(
                 "await tools.call('Read', {}); const until = Date.now() + 100; while (Date.now() < until) {} return 'done';",
                 setOf("Read"),
@@ -292,7 +297,7 @@ class CodeModeRuntimeTest {
     @Timeout(60)
     fun `cancelling startup closes only its context and reuses the same host`() = runBlocking {
         val spawn = HeldExitSpawn()
-        JvmCodeModeRuntime(workerClasspath = testClasspath, spawn = spawn).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = testClasspath, spawn = spawn)).use { runtime ->
             try {
                 val startup = async { runtime.start("while (true) {}", emptySet()) }
                 val worker = spawn.first.await()
@@ -310,7 +315,7 @@ class CodeModeRuntimeTest {
     @Test
     fun `runtime close reaps a worker still waiting for its initial reply`() = runBlocking {
         val spawn = HeldExitSpawn()
-        val runtime = JvmCodeModeRuntime(workerClasspath = testClasspath, spawn = spawn)
+        val runtime = JvmCodeModeRuntime(launch = HostLaunch(classpath = testClasspath, spawn = spawn))
         val startup = async {
             try {
                 runtime.start("while (true) {}", emptySet())
@@ -453,7 +458,7 @@ class CodeModeRuntimeTest {
     }
 
     private fun runtime(): JvmCodeModeRuntime =
-        JvmCodeModeRuntime(advanceTimeoutMs = SCRIPT_DEADLINE_MS, workerClasspath = testClasspath)
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = testClasspath), advanceTimeoutMs = SCRIPT_DEADLINE_MS)
 
     /** Whether [child], whose exit onExit() already reported, is gone from the process table. The
      *  handle came from children(), so its onExit can be a NON-reaping wait (waitid WEXITED|WNOWAIT,

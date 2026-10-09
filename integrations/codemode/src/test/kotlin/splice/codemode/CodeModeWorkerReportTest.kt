@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import splice.codemode.host.HostLaunch
 import splice.upstream.codemode.CodeModeLimits
 import splice.upstream.codemode.CodeModeStep
 
@@ -63,7 +64,7 @@ class CodeModeWorkerReportTest {
     }
 
     private fun runtime(): JvmCodeModeRuntime =
-        JvmCodeModeRuntime(advanceTimeoutMs = SCRIPT_DEADLINE_MS, workerClasspath = testClasspath)
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = testClasspath), advanceTimeoutMs = SCRIPT_DEADLINE_MS)
 
     private fun completed(step: CodeModeStep): CodeModeStep.Completed {
         assertTrue(step is CodeModeStep.Completed)

@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import splice.codemode.host.HostLaunch
+import splice.codemode.host.PoolLimits
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeSource
 import splice.upstream.codemode.CodeModeSourcePart
@@ -23,7 +25,10 @@ class CodeModeSessionIsolationTest {
 
     @Test
     fun `a session exhausting its guest heap cannot exhaust a concurrently parked sibling`() = runBlocking {
-        JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath).use { runtime ->
+        JvmCodeModeRuntime(
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(classpath = testClasspath),
+        ).use { runtime ->
             val offender = runtime.startSession(
                 "session-a",
                 """
@@ -65,7 +70,7 @@ class CodeModeSessionIsolationTest {
      *  session whose older program is parked and whose newer one was closed still starts its next program. */
     @Test
     fun `a program starts in a session whose older program is parked and whose newer one was closed`() = runBlocking {
-        JvmCodeModeRuntime(workerClasspath = testClasspath).use { runtime ->
+        JvmCodeModeRuntime(launch = HostLaunch(classpath = testClasspath)).use { runtime ->
             val older = runtime.startSession("session-a", "await tools.Write({}); return 'older';", setOf("Write"))
             assertTrue(older.advance() is CodeModeStep.Calls)
             val newer = runtime.startSession("session-a", "await tools.Write({}); return 'newer';", setOf("Write"))
@@ -84,7 +89,7 @@ class CodeModeSessionIsolationTest {
     @Test
     fun `a streamed program starts in a session whose older program is parked and whose newer one was closed`() =
         runBlocking {
-            JvmCodeModeRuntime(workerClasspath = testClasspath).use { runtime ->
+            JvmCodeModeRuntime(launch = HostLaunch(classpath = testClasspath)).use { runtime ->
                 val older = runtime.startStreamingSession("session-a", streamed("return 'older';"), setOf("Write"))
                 assertTrue(older.advance() is CodeModeStep.Calls)
                 val newer = runtime.startStreamingSession("session-a", streamed("return 'newer';"), setOf("Write"))
@@ -115,9 +120,11 @@ class CodeModeSessionIsolationTest {
     fun `two active sessions use two on-demand hosts when maxWorkers is two`() = runBlocking {
         val spawned = ConcurrentLinkedQueue<Process>()
         JvmCodeModeRuntime(
-            maxWorkers = 2,
-            workerClasspath = testClasspath,
-            spawn = WorkerSpawn { builder -> builder.start().also { spawned += it } },
+            limits = PoolLimits(maxWorkers = 2),
+            launch = HostLaunch(
+                classpath = testClasspath,
+                spawn = WorkerSpawn { builder -> builder.start().also { spawned += it } },
+            ),
         ).use { runtime ->
             assertEquals(0, spawned.size, "constructing a runtime must not eagerly start a host")
             val first = runtime.startSession("session-a", "return await tools.Read({});", setOf("Read"))

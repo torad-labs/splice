@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.codemode.host.CodeModePoolAdmission
+import splice.codemode.host.HostLaunch
+import splice.codemode.host.PoolLimits
 import splice.core.util.ElapsedClock
 import splice.upstream.Ticker
 import splice.upstream.codemode.CodeModeCell
@@ -34,7 +36,10 @@ class CodeModeHostPoolTest {
 
     @Test
     fun `a running program does not block another session and its timeout leaves that cell alive`() = runBlocking {
-        JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath).use { runtime ->
+        JvmCodeModeRuntime(
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(classpath = testClasspath),
+        ).use { runtime ->
             val first = runtime.startSession(
                 "session-a",
                 "await tools.Read({}); while (true) {}",
@@ -67,9 +72,11 @@ class CodeModeHostPoolTest {
     fun `host death loses only pinned sessions and their next cells share a fresh replacement host`() = runBlocking {
         val spawned = ConcurrentLinkedQueue<Process>()
         JvmCodeModeRuntime(
-            maxWorkers = 2,
-            workerClasspath = testClasspath,
-            spawn = WorkerSpawn { it.start().also(spawned::add) },
+            limits = PoolLimits(maxWorkers = 2),
+            launch = HostLaunch(
+                classpath = testClasspath,
+                spawn = WorkerSpawn { it.start().also(spawned::add) },
+            ),
         ).use { runtime ->
             val first = parked(runtime, "session-a")
             val sibling = parked(runtime, "session-b")
@@ -106,9 +113,11 @@ class CodeModeHostPoolTest {
         }
         try {
             JvmCodeModeRuntime(
-                maxWorkers = 1,
-                workerClasspath = testClasspath,
-                spawn = WorkerSpawn { it.start().also(spawned::add) },
+                limits = PoolLimits(maxWorkers = 1),
+                launch = HostLaunch(
+                    classpath = testClasspath,
+                    spawn = WorkerSpawn { it.start().also(spawned::add) },
+                ),
             ).use { runtime ->
                 val cell = runtime.startStreamingSession("source-fixture", source, emptySet())
                 val waiting = async {
@@ -134,7 +143,10 @@ class CodeModeHostPoolTest {
 
     @Test
     fun `closing a session remains live when every bounded guest lane is executing`() = runBlocking {
-        JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath).use { runtime ->
+        JvmCodeModeRuntime(
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(classpath = testClasspath),
+        ).use { runtime ->
             val cells = (0 until CodeModeHeap.maxExecutionsPerSession).map {
                 runtime.startSession("busy-shared", "await tools.Read({}); while (true) {}", setOf("Read"))
                     .also { assertTrue(it.advance() is CodeModeStep.Calls) }
@@ -164,9 +176,11 @@ class CodeModeHostPoolTest {
     fun `twenty expired sessions return the live engine count to zero without spawning twenty hosts`() = runBlocking {
         val spawned = ConcurrentLinkedQueue<Process>()
         JvmCodeModeRuntime(
-            maxWorkers = 1,
-            workerClasspath = testClasspath,
-            spawn = WorkerSpawn { it.start().also(spawned::add) },
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(
+                classpath = testClasspath,
+                spawn = WorkerSpawn { it.start().also(spawned::add) },
+            ),
         ).use { runtime ->
             repeat(20) { index ->
                 val key = "fixture-$index"
@@ -182,7 +196,10 @@ class CodeModeHostPoolTest {
 
     @Test
     fun `engine capacity never evicts parked cells and reclaims a completed idle session`() = runBlocking {
-        JvmCodeModeRuntime(maxWorkers = 1, workerClasspath = testClasspath).use { runtime ->
+        JvmCodeModeRuntime(
+            limits = PoolLimits(maxWorkers = 1),
+            launch = HostLaunch(classpath = testClasspath),
+        ).use { runtime ->
             val held = (0 until CodeModeHeap.maxEnginesPerHost).map { parked(runtime, "held-$it") }
             assertEquals(CodeModeHeap.maxEnginesPerHost, runtime.liveEngines())
             assertThrows(CodeModeCapacityException::class.java) {
@@ -201,7 +218,10 @@ class CodeModeHostPoolTest {
 
     @Test
     fun `a full head of empty engines evicts the oldest instead of refusing the next session`() = runBlocking {
-        JvmCodeModeRuntime(maxWorkers = 2, workerClasspath = testClasspath, memoryBudgetMb = 4096).use { runtime ->
+        JvmCodeModeRuntime(
+            limits = PoolLimits(maxWorkers = 2, memoryBudgetMb = 4096),
+            launch = HostLaunch(classpath = testClasspath),
+        ).use { runtime ->
             val first = runtime.startSession("idle-a", "return 'a';", emptySet())
             assertEquals("a", (first.advance() as CodeModeStep.Completed).output)
             withTimeout(5_000) { while (runtime.liveCells() != 0) yield() }
@@ -220,8 +240,10 @@ class CodeModeHostPoolTest {
         val spawned = ConcurrentLinkedQueue<Process>()
         val policy = CodeModePoolAdmission(DEFAULT_MAX_WORKERS, DEFAULT_HEAP_MB, DEFAULT_POOL_MEMORY_MB)
         JvmCodeModeRuntime(
-            workerClasspath = testClasspath,
-            spawn = WorkerSpawn { it.start().also(spawned::add) },
+            launch = HostLaunch(
+                classpath = testClasspath,
+                spawn = WorkerSpawn { it.start().also(spawned::add) },
+            ),
         ).use { runtime ->
             val held = (0 until 21).map { parked(runtime, "budget-$it") }
             assertEquals(DEFAULT_MAX_WORKERS, spawned.size)
@@ -249,9 +271,8 @@ class CodeModeHostPoolTest {
             true
         }
         JvmCodeModeRuntime(
-            maxWorkers = 1,
-            workerClasspath = testClasspath,
-            idleTimeoutMs = 200,
+            limits = PoolLimits(maxWorkers = 1, idleTimeoutMs = 200),
+            launch = HostLaunch(classpath = testClasspath),
             now = ElapsedClock(clock::get),
             ticker = ticker,
         ).use { runtime ->

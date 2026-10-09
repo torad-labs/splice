@@ -142,9 +142,10 @@ tasks.withType<Test>().configureEach {
     inputs.files(
         moduleDirectories.values.map { dir -> repoRoot.file("$dir/build.gradle.kts") },
         repoRoot.file("settings.gradle.kts"),
-        // V4-91 (2026-09-17): the Konsist map now READS the module law's own map out of
-        // build-logic, so an edit there must re-run the laws too, or a stale allowance could
-        // come back UP-TO-DATE-green.
+        // V4-91 (2026-09-17): the Konsist map now READS the module law out of the build, so an edit there
+        // must re-run the laws too, or a stale allowance could come back UP-TO-DATE-green. The map is the
+        // data file gradle/module-law.txt; the script beside it holds `nonLibrary` and `lawChecked`.
+        repoRoot.file("gradle/module-law.txt"),
         repoRoot.dir("build-logic/src/main/kotlin").asFileTree.matching { include("**/*.kts") },
     ).withPropertyName("scannedModuleBuildFiles")
     // Restructure PR 6: the documentation laws (quirk keys, knob keys, env vars) grade the operator

@@ -1,6 +1,14 @@
 // NEW: precompiled convention plugins (P1-GRADLE).
 plugins {
     `kotlin-dsl`
+    alias(libs.plugins.detekt)
+}
+
+// build-logic is held to the rules every module is: the same detekt.yml, no baseline and no exclusions. It is a separate
+// build, so it applies the plugin itself and reads the root config by path.
+detekt {
+    config.setFrom(layout.projectDirectory.file("../quality/detekt/detekt.yml"))
+    buildUponDefaultConfig = true
 }
 
 dependencies {
@@ -28,6 +36,9 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:${libs.versions.junit.get()}"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    // the detekt.yml carries a `formatting:` section (ktlint rules), which needs this plugin
+    detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:${libs.versions.detekt.get()}")
 }
 
 tasks.test {

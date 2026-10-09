@@ -35,9 +35,9 @@
 // partly read document would hide exactly the drift this exists to find.
 package splice.hygiene
 
+import org.w3c.dom.Element
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
-import org.w3c.dom.Element
 
 /** One `(group, name, version)` the metadata pins. */
 data class Component(val group: String, val name: String, val version: String)
@@ -85,28 +85,37 @@ object CatalogMetadata {
             setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
         }
         val document = factory.newDocumentBuilder().parse(xml.byteInputStream())
-        if (document.documentElement.namespaceURI != NAMESPACE) {
-            return MetadataRead.Unreadable("$where: no dependency-verification namespace declaration; unreadable metadata shape")
-        }
         val tags = document.getElementsByTagNameNS(NAMESPACE, "component")
-        if (tags.length == 0) {
-            return MetadataRead.Unreadable("$where: no <component> elements found; an unread metadata file must not read as empty")
-        }
         // A NodeList hands back Node, and the narrowing is total rather than asserted: every node
         // this list holds is accounted for, and a shortfall is named instead of silently dropped.
         val elements = (0 until tags.length).mapNotNull { index -> tags.item(index) as? Element }
-        if (elements.size != tags.length) {
-            return MetadataRead.Unreadable("$where: ${tags.length - elements.size} <component> node(s) are not elements; unreadable metadata shape")
+        val refusal = if (document.documentElement.namespaceURI != NAMESPACE) {
+            "no dependency-verification namespace declaration; unreadable metadata shape"
+        } else {
+            unreadableComponents(tags.length, elements)
         }
-        val attributes = listOf("group", "name", "version")
-        val bare = elements.firstOrNull { element -> attributes.any { !element.hasAttribute(it) } }
-        if (bare != null) {
-            return MetadataRead.Unreadable("$where: a <component> carries no group/name/version: <component ${describe(bare)}>")
-        }
-        return MetadataRead.Pinned(
-            elements.map { Component(it.getAttribute("group"), it.getAttribute("name"), it.getAttribute("version")) }.toSet(),
-        )
+        if (refusal != null) return MetadataRead.Unreadable("$where: $refusal")
+        return MetadataRead.Pinned(pinned(elements))
     }
+
+    /** Why the component elements cannot be trusted as the whole pin list, or null when they can. */
+    private fun unreadableComponents(declared: Int, elements: List<Element>): String? {
+        val bare = elements.firstOrNull { element -> !pinsAComponent(element) }
+        return when {
+            declared == 0 -> "no <component> elements found; an unread metadata file must not read as empty"
+            elements.size != declared ->
+                "${declared - elements.size} <component> node(s) are not elements; unreadable metadata shape"
+            bare != null -> "a <component> carries no group/name/version: <component ${describe(bare)}>"
+            else -> null
+        }
+    }
+
+    private fun pinsAComponent(element: Element): Boolean =
+        listOf("group", "name", "version").all(element::hasAttribute)
+
+    private fun pinned(elements: List<Element>): Set<Component> = elements.map {
+        Component(it.getAttribute("group"), it.getAttribute("name"), it.getAttribute("version"))
+    }.toSet()
 
     private fun describe(element: Element): String =
         (0 until element.attributes.length).joinToString(" ") { index ->
@@ -117,33 +126,51 @@ object CatalogMetadata {
     /** The catalog entries the metadata does not pin, one line each, sorted; empty is green. */
     fun problems(catalog: Catalog, components: Set<Component>): List<String> {
         val pinnedVersions = components.map { it.version }.toSet()
-        val missing = mutableListOf<String>()
-        for (library in catalog.libraries) {
+        val unpinned = unpinnedLibraries(catalog, components) + unpinnedPlugins(catalog, components, pinnedVersions)
+        return (unpinned + inertFloors(catalog, pinnedVersions)).sorted()
+    }
+
+    private fun unpinnedLibraries(catalog: Catalog, components: Set<Component>): List<String> =
+        catalog.libraries.mapNotNull { library ->
             // BOM rider: the version is supplied at resolution time, so there is nothing to pin.
-            val version = library.version ?: continue
-            if (Component(library.group, library.name, version) !in components) {
-                missing += "libraries.${library.alias}: ${library.group}:${library.name}:$version not pinned in metadata"
+            val version = library.version ?: return@mapNotNull null
+            if (Component(library.group, library.name, version) in components) {
+                null
+            } else {
+                "libraries.${library.alias}: ${library.group}:${library.name}:$version not pinned in metadata"
             }
         }
-        for (plugin in catalog.plugins) {
-            val version = plugin.version ?: continue
-            val marker = Component(plugin.id, "${plugin.id}.gradle.plugin", version)
-            // A plugin requested through the plugins DSL resolves its marker; one applied by bare id
-            // inside build-logic (implementation jar on that classpath) never does, so regeneration
-            // cannot pin a marker for it. Degrade to version presence — an unregenerated bump still
-            // has no component at the new version and stays red.
-            if (marker !in components && version !in pinnedVersions) {
-                missing += "plugins.${plugin.alias}: ${plugin.id}:${plugin.id}.gradle.plugin:$version (marker) not pinned, " +
-                    "and no component at $version"
+
+    private fun unpinnedPlugins(
+        catalog: Catalog,
+        components: Set<Component>,
+        pinnedVersions: Set<String>,
+    ): List<String> = catalog.plugins.mapNotNull { plugin ->
+        val version = plugin.version ?: return@mapNotNull null
+        val marker = Component(plugin.id, "${plugin.id}.gradle.plugin", version)
+        // A plugin requested through the plugins DSL resolves its marker; one applied by bare id
+        // inside build-logic (implementation jar on that classpath) never does, so regeneration
+        // cannot pin a marker for it. Degrade to version presence — an unregenerated bump still
+        // has no component at the new version and stays red.
+        if (marker in components || version in pinnedVersions) {
+            null
+        } else {
+            "plugins.${plugin.alias}: ${plugin.id}:${plugin.id}.gradle.plugin:$version " +
+                "(marker) not pinned, and no component at $version"
+        }
+    }
+
+    private fun inertFloors(catalog: Catalog, pinnedVersions: Set<String>): List<String> {
+        val resolvedTo =
+            (catalog.libraries.mapNotNull { it.version } + catalog.plugins.mapNotNull { it.version }).toSet()
+        return catalog.versions.mapNotNull { (key, version) ->
+            if (version in resolvedTo || version in pinnedVersions) {
+                null
+            } else {
+                "[versions] $key = \"$version\": floor version matches no pinned component " +
+                    "(unregenerated bump, or an inert floor to drop)"
             }
         }
-        val resolvedTo = (catalog.libraries.mapNotNull { it.version } + catalog.plugins.mapNotNull { it.version }).toSet()
-        for ((key, version) in catalog.versions) {
-            if (version in resolvedTo || version in pinnedVersions) continue
-            missing += "[versions] $key = \"$version\": floor version matches no pinned component " +
-                "(unregenerated bump, or an inert floor to drop)"
-        }
-        return missing.sorted()
     }
 
     /** The failure text: every problem indented, then the remedy — the checker's exact shape. */

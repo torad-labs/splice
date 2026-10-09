@@ -3,7 +3,7 @@
 // include()d project still names its directory explicitly below — that map is what the laws grade
 // through (quality/architecture/build.gradle.kts reads Gradle's own project model), and the
 // id-derivation law in ModuleLawsTest fails the build when an id and its directory disagree.
-// Module graph is LAW — see build-logic/src/main/kotlin/splice.module-law.gradle.kts.
+// Module graph is LAW — see gradle/module-law.txt and build-logic/src/main/kotlin/splice.module-law.gradle.kts.
 pluginManagement {
     includeBuild("build-logic")
     repositories {

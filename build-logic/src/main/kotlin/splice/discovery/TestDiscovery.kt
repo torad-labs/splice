@@ -26,7 +26,7 @@
 //
 // DENOMINATOR, FROM KOTLIN TEST SOURCES. For every .kt file under a subproject's own
 // src/test/kotlin (handed in by splice.test-discovery.gradle.kts, one directory per subproject —
-// see the module-key note on MODULE_DISPOSITIONS below), each class is found by a string- and
+// see the module-key note on silentModules below), each class is found by a string- and
 // comment-aware scan (mask/bodyRange/classesIn), and its test methods are counted at MEMBER depth
 // only (memberItems): a nested class's tests are its own, and a local function inside a test body
 // is nobody's. That is what makes the count comparable to a per-class XML row.
@@ -42,11 +42,11 @@
 // merely unfamiliar (see parseJUnitXml).
 //
 // SHAPES. XML count LOWER than the denominator fails BY NAME, naming the missing methods. THREE
-// shapes may legitimately report a HIGHER count. Two need a written reason in DISPOSITIONS below —
+// shapes may legitimately report a HIGHER count. Two need a written reason in classDispositions below —
 // never a bare allowlist entry: parameterized or repeated methods expand into N cases, and a class
 // may INHERIT test methods from a base class. The third is @TestFactory (decided here, restructure
 // PR 6, against ReleaseReadinessLawTest: one factory method, 47 DynamicTest children — 2 @Test + 47
-// = 49), and it does NOT go in DISPOSITIONS: unlike @ParameterizedTest, its expansion factor is not
+// = 49), and it does NOT go in classDispositions: unlike @ParameterizedTest, its expansion factor is not
 // a fixed number anyone could write down and re-earn — the factory returns one DynamicTest per
 // mutation in a list that is EXPECTED to grow, and a disposition pinned to today's count would red
 // the day after someone adds a mutation, for the healthiest possible reason (a disposition list
@@ -59,7 +59,7 @@
 // catch, and teaching the denominator about the annotation leaves that hazard undiminished. A class
 // with no XML at all also needs a written reason (a test task that is disabled by configuration is
 // a decision, not an accident — but it is a decision someone must WRITE DOWN) — see
-// MODULE_DISPOSITIONS.
+// silentModules.
 //
 // WHAT IT CANNOT SEE. A class that never compiles is not in any XML and not in this scan's
 // dispositions unless its module is dispositioned. A test source set outside a subproject's own
@@ -69,6 +69,7 @@
 // stale build output, not a hole in the suite.
 package splice.discovery
 
+import org.w3c.dom.Element
 import org.xml.sax.InputSource
 import java.io.File
 import java.io.StringReader
@@ -109,119 +110,163 @@ data class Disposition(val reason: String, val expectedCount: Int)
 // explained by inheritance — CodexCodeModeActiveInterruptionTest and
 // CodexCodeModeInfrastructureTest do extend CodeModeBridgeTestSupport, but that base declares no
 // tests, and their declared count matches their own annotations exactly.)
-val DISPOSITIONS: Map<String, Disposition> = mapOf(
+private const val ONE_PLAIN_TWO_CASES = "1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)"
+
+val classDispositions: Map<String, Disposition> = mapOf(
     // Completed and cancelled queue waits both charge the serving turn; canonical success/refusal is one plain test.
-    "CodeModePerfTimingTest" to Disposition("1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)", 3),
+    "CodeModePerfTimingTest" to
+        Disposition(ONE_PLAIN_TWO_CASES, expectedCount = 3),
     // Retryable share refusal runs with a fresh view and with retained output still occupying the domain.
-    "TraceHeapShareTest" to Disposition("1 @ParameterizedTest expands to 2 cases (6 @Test + 2 = 8)", 8),
+    "TraceHeapShareTest" to Disposition("1 @ParameterizedTest expands to 2 cases (6 @Test + 2 = 8)", expectedCount = 8),
     // The production-builder parity covers four providers; Responses input shape covers two of them.
     "PlaygroundTurnParityTest" to
-        Disposition("2 @ParameterizedTest methods expand to 4 provider bodies + 2 Responses input shapes", 6),
+        Disposition(
+            "2 @ParameterizedTest methods expand to 4 provider bodies + 2 Responses input shapes",
+            expectedCount = 6,
+        ),
     // Unnamed reader death resumes before source failure or after its persisted LOST record.
     "CodexCodeModeStatementStreamTest" to
-        Disposition("1 @ParameterizedTest expands to 2 forced orderings (9 @Test + 2 = 11)", 11),
+        Disposition("1 @ParameterizedTest expands to 2 forced orderings (9 @Test + 2 = 11)", expectedCount = 11),
     // Legacy capacity hints run at one and two while shared-host scripts remain independent.
-    "CodeModeCapacityTest" to Disposition("1 @ParameterizedTest expands to 2 cases (3 @Test + 2 = 5)", 5),
+    "CodeModeCapacityTest" to
+        Disposition("1 @ParameterizedTest expands to 2 cases (3 @Test + 2 = 5)", expectedCount = 5),
     "ResponsesWsRunnerTest" to
-        Disposition("3 @ParameterizedTest methods expand to 9 cases (15 @Test + 9 = 24)", 24),
+        Disposition("3 @ParameterizedTest methods expand to 9 cases (15 @Test + 9 = 24)", expectedCount = 24),
     // Source-slot adoption and retained WS cancellation each expand into two XML-observed cases.
-    "IndependentSourceRoundTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (4 @Test + 4 = 8)", 8),
+    "IndependentSourceRoundTest" to
+        Disposition("2 @ParameterizedTest methods expand to 4 cases (4 @Test + 4 = 8)", expectedCount = 8),
     // V4-447: reject changed source prefix, call ID, tool name, item ID and incomplete completion.
     // V4-457 (5ee8596ba, 27873c2b1): both local rejection kinds, both pre-attachment cancellation
     // points and three local source rejections join the five corruption cases.
     "CodexCodeModeSourceTerminalTest" to
-        Disposition("4 @ParameterizedTest methods expand to 12 cases (8 @Test + 12 = 20)", 20),
+        Disposition("4 @ParameterizedTest methods expand to 12 cases (8 @Test + 12 = 20)", expectedCount = 20),
     "CodeModeDisposedSourceTest" to
-        Disposition("3 @ParameterizedTest methods expand to 2 late-loss + 2 terminal + 3 billing cases (3 @Test + 7 = 10)", 10),
+        Disposition(
+            "3 @ParameterizedTest methods expand to 2 late-loss + 2 terminal + 3 billing cases (3 @Test + 7 = 10)",
+            expectedCount = 10,
+        ),
     // b40f250e8: client baselines across re-anchors add an 8-row CsvSource and two boolean sources.
     "CodexCodeModeReanchorTest" to
-        Disposition("5 @ParameterizedTest methods expand to 2 + 3 + 8 + 2 + 2 cases (1 @Test + 17 = 18)", 18),
+        Disposition(
+            "5 @ParameterizedTest methods expand to 2 + 3 + 8 + 2 + 2 cases (1 @Test + 17 = 18)",
+            expectedCount = 18,
+        ),
     // b5bfa0a11: an item-complete suffix waits for response certification over six endings, and the
     // incomplete ending repeats 50 times as a race cohort; each annotation declares one method.
     "CodeModeSourceCertificationTest" to
-        Disposition("1 @RepeatedTest(50) plus 1 @ParameterizedTest of 6 cases (50 + 6 = 56)", 56),
+        Disposition("1 @RepeatedTest(50) plus 1 @ParameterizedTest of 6 cases (50 + 6 = 56)", expectedCount = 56),
     // A sealed item rejects more bytes with and without a prefix, and a cursor never returns a pre-seal
     // snapshot after a failed or a completed commit. 89e98adab added the two startup @Test methods.
     "CodeModeSourceCursorCertificationTest" to
-        Disposition("2 @ParameterizedTest methods expand to 4 cases (2 @Test + 4 = 6)", 6),
+        Disposition("2 @ParameterizedTest methods expand to 4 cases (2 @Test + 4 = 6)", expectedCount = 6),
     // 59a0fe3f9: an already buffered suffix waits, and an incomplete or malformed stop releases the waiter.
     "CodeModeSourceBufferedCertificationTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),
+        Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", expectedCount = 2),
     // Transport cleanup plus first-event/client-opening timing each expand into two observed cases.
-    "WsRoundDriverTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (14 @Test + 4 = 18)", 18),
+    "WsRoundDriverTest" to
+        Disposition("2 @ParameterizedTest methods expand to 4 cases (14 @Test + 4 = 18)", expectedCount = 18),
     // 89e98adab: a completed burst and a clean EOF each run text and thinking, and a custom source
     // releases the WS turn on completion, EOF, a worker wait and a startup wait.
-    "WsCompletionTest" to Disposition("3 @ParameterizedTest methods expand to 8 cases (2 + 2 + 4); no plain @Test", 8),
+    "WsCompletionTest" to
+        Disposition("3 @ParameterizedTest methods expand to 8 cases (2 + 2 + 4); no plain @Test", expectedCount = 8),
     // Source transport, liveness, context and prose controls run the real head over both wire transports.
     "CodeModeRoundBillingTest" to
-        Disposition("3 @ParameterizedTest methods expand to 16 cases (5 @Test + 12 + 2 + 2 = 21)", 21),
+        Disposition("3 @ParameterizedTest methods expand to 16 cases (5 @Test + 12 + 2 + 2 = 21)", expectedCount = 21),
     "CodeModeHeadGenerationBillingTest" to
-        Disposition("1 @ParameterizedTest expands to 4 source-ending paths across old and new head generations", 4),
+        Disposition(
+            "1 @ParameterizedTest expands to 4 source-ending paths across old and new head generations",
+            expectedCount = 4,
+        ),
     "CodeModeSourceBoundaryTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)", 3),
+        Disposition(ONE_PLAIN_TWO_CASES, expectedCount = 3),
     "CodeModeNativeSourceTest" to
-        Disposition("2 @ParameterizedTest methods expand to 6 native lifetime/context + 2 altered envelope cases", 8),
+        Disposition(
+            "2 @ParameterizedTest methods expand to 6 native lifetime/context + 2 altered envelope cases",
+            expectedCount = 8,
+        ),
     "CodeModeCrossScriptSourceTest" to
-        Disposition("2 @ParameterizedTest methods expand to 8 callback/step/context + 2 diagnostic cases (2 @Test + 10 = 12)", 12),
+        Disposition(
+            "2 @ParameterizedTest methods expand to 8 callback/step/context + 2 diagnostic cases (2 @Test + 10 = 12)",
+            expectedCount = 12,
+        ),
     // Cell close runs with and without a late reply; cancellation and fatal ownership add four plain controls.
     "SharedWorkerChannelCellCloseTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases (4 @Test + 2 = 6)", 6),
+        Disposition("1 @ParameterizedTest expands to 2 cases (4 @Test + 2 = 6)", expectedCount = 6),
     // 8b438c6f0: a record that stored one native item many times loads it once, patched after its checkpoint or not.
-    "CodeModeNativeCopiesTest" to Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),
+    "CodeModeNativeCopiesTest" to
+        Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", expectedCount = 2),
     // 8b438c6f0: after a WebSocket size refusal, a 429 and a 500 each keep their own path.
-    "WsSizeRefusalTest" to Disposition("1 @ParameterizedTest expands to 2 cases (3 @Test + 2 = 5)", 5),
+    "WsSizeRefusalTest" to Disposition("1 @ParameterizedTest expands to 2 cases (3 @Test + 2 = 5)", expectedCount = 5),
     // 13d44f0b2: reasoning, text, ping, empty, metadata and rate-limit progress each renew the elapsed cap
     // on WS and on SSE, one case per transport and event (@ValueSource of 12 scenario strings).
-    "WatchdogProgressRoundTest" to Disposition("1 @ParameterizedTest expands to 12 cases; no plain @Test", 12),
+    "WatchdogProgressRoundTest" to
+        Disposition("1 @ParameterizedTest expands to 12 cases; no plain @Test", expectedCount = 12),
     // The paced row is read with both an active caller and an already-cancelled caller, and V4-457's
     // failed collect flush runs failed and cancelled.
-    "TurnPerfRowTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (4 @Test + 4 = 8)", 8),
+    "TurnPerfRowTest" to
+        Disposition("2 @ParameterizedTest methods expand to 4 cases (4 @Test + 4 = 8)", expectedCount = 8),
     // cd33d0fd1: final rate accounting excludes plan holds and absorbed diagnostic events, over the four
     // held/absorbed pairs. Its fully qualified annotation contributes one declared method.
     "TurnConnEndTest" to
-        Disposition("1 fully qualified @ParameterizedTest expands to 4 @CsvSource cases (7 @Test + 4 = 11)", 11),
+        Disposition(
+            "1 fully qualified @ParameterizedTest expands to 4 @CsvSource cases (7 @Test + 4 = 11)",
+            expectedCount = 11,
+        ),
     // V4-457: a failed or a cancelled attached flush records no first client byte.
-    "PendingSseTest" to Disposition("1 @ParameterizedTest expands to 2 cases (14 @Test + 2 = 16)", 16),
+    "PendingSseTest" to Disposition("1 @ParameterizedTest expands to 2 cases (14 @Test + 2 = 16)", expectedCount = 16),
     // Completed/torn/cancelled tails and zero/slow ping delivery expand the two timing methods.
-    "UpstreamEventTimingTest" to Disposition("2 @ParameterizedTest methods expand to 5 cases (7 @Test + 5 = 12)", 12),
-    "CodeModePreAdvanceTearTest" to Disposition("1 @ParameterizedTest expands to 2 cases (2 @Test + 2 = 4)", 4),
+    "UpstreamEventTimingTest" to
+        Disposition("2 @ParameterizedTest methods expand to 5 cases (7 @Test + 5 = 12)", expectedCount = 12),
+    "CodeModePreAdvanceTearTest" to
+        Disposition("1 @ParameterizedTest expands to 2 cases (2 @Test + 2 = 4)", expectedCount = 4),
     // 73aad1d4a, 14b6bc4b4 and f34d165fb: posting and result steps whose cell the round's lost source closed.
     "CodexCodeModeSourceTearTest" to
-        Disposition("2 @ParameterizedTest methods expand to 12 cases (9 + 3 startup tears); 10 @Test + 12 = 22", 22),
+        Disposition(
+            "2 @ParameterizedTest methods expand to 12 cases (9 + 3 startup tears); 10 @Test + 12 = 22",
+            expectedCount = 22,
+        ),
     // Control characters and non-ASCII must not reach HTTP echoes; empty and TAB remain valid.
-    "CodexTurnStateSseTest" to Disposition("2 @ParameterizedTest methods expand to 7 cases (2 @Test + 7 = 9)", 9),
-    "CodexAuthAbsenceTest" to Disposition("1 @ParameterizedTest expands to 4 cases (2 @Test + 4 = 6)", 6),
+    "CodexTurnStateSseTest" to
+        Disposition("2 @ParameterizedTest methods expand to 7 cases (2 @Test + 7 = 9)", expectedCount = 9),
+    "CodexAuthAbsenceTest" to
+        Disposition("1 @ParameterizedTest expands to 4 cases (2 @Test + 4 = 6)", expectedCount = 6),
     "CodexCodeModeActiveInterruptionTest" to
-        Disposition("1 @ParameterizedTest expands to 4 cases; no plain @Test", 4),
-    "CodexCodeModeInfrastructureTest" to Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", 2),
-    "SseReaderTest" to Disposition("1 @ParameterizedTest expands to 6 cases (11 @Test + 6 = 17)", 17),
+        Disposition("1 @ParameterizedTest expands to 4 cases; no plain @Test", expectedCount = 4),
+    "CodexCodeModeInfrastructureTest" to
+        Disposition("1 @ParameterizedTest expands to 2 cases; no plain @Test", expectedCount = 2),
+    "SseReaderTest" to Disposition("1 @ParameterizedTest expands to 6 cases (11 @Test + 6 = 17)", expectedCount = 17),
     // v0.4.0 review (PR #195): the resume hook is run with no ANTHROPIC_AUTH_TOKEN and with the
     // operator's own one in it, and must send the turn key from its header file either way.
-    "ResumeHookTest" to Disposition("1 @ParameterizedTest expands to 2 cases (5 @Test + 2 = 7)", 7),
+    "ResumeHookTest" to Disposition("1 @ParameterizedTest expands to 2 cases (5 @Test + 2 = 7)", expectedCount = 7),
     // V4-336: an unanswered callback stops the script whether the late content is a system or a user
     // message, one case per role (@ValueSource system, user).
-    "CodeModeLateContentTest" to Disposition("1 @ParameterizedTest expands to 2 cases (6 @Test + 2 = 8)", 8),
+    "CodeModeLateContentTest" to
+        Disposition("1 @ParameterizedTest expands to 2 cases (6 @Test + 2 = 8)", expectedCount = 8),
     // V4-254 (36dbee23d): every declared row is capped by the provider list whichever field the list
     // carries its window in, one case per field (@ValueSource context_length, context_window).
-    "AddChecksWordingTest" to Disposition("1 @ParameterizedTest expands to 2 cases (4 @Test + 2 = 6)", 6),
+    "AddChecksWordingTest" to
+        Disposition("1 @ParameterizedTest expands to 2 cases (4 @Test + 2 = 6)", expectedCount = 6),
     // V4-254 (4e7601053): yes to the live check keeps the saved head for every subscription and
     // client-auth profile, one case per profile (@ValueSource codex, grok, kimi, muse, claude).
-    "AddLiveCommandTest" to Disposition("1 @ParameterizedTest expands to 5 cases (1 @Test + 5 = 6)", 6),
+    "AddLiveCommandTest" to Disposition("1 @ParameterizedTest expands to 5 cases (1 @Test + 5 = 6)", expectedCount = 6),
     // Progress timeout and shutdown expand by transport; origin, diagnostic and cause coverage add six controls.
-    "OutcomeSentenceTest" to Disposition("2 @ParameterizedTest methods expand to 4 cases (12 @Test + 4 = 16)", 16),
+    "OutcomeSentenceTest" to
+        Disposition("2 @ParameterizedTest methods expand to 4 cases (12 @Test + 4 = 16)", expectedCount = 16),
     // V4-444: real connected stream and collect clients receive the restart retry before teardown.
-    "HeadServerStopDrainTest" to Disposition("1 @ParameterizedTest expands to 2 cases (2 @Test + 2 = 4)", 4),
+    "HeadServerStopDrainTest" to
+        Disposition("1 @ParameterizedTest expands to 2 cases (2 @Test + 2 = 4)", expectedCount = 4),
     // 9422e4392: one statement batch forces before client-visible state whether or not the post
     // suspends between chunks (@ValueSource suspendBetweenChunks false, true).
     "CodeModeStatementForceCostTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)", 3),
+        Disposition(ONE_PLAIN_TWO_CASES, expectedCount = 3),
     // V4-457 (5ee8596ba): a completed sibling cannot retire a key still starting or one borrowed
     // (@ValueSource borrowed false, true).
-    "CodeModeSupersededCellTest" to Disposition("1 @ParameterizedTest expands to 2 cases (4 @Test + 2 = 6)", 6),
+    "CodeModeSupersededCellTest" to
+        Disposition("1 @ParameterizedTest expands to 2 cases (4 @Test + 2 = 6)", expectedCount = 6),
     // V4-457 (5ee8596ba): conversation identity survives both store save paths, with and without a
     // changed cell (@ValueSource changedCell false, true).
     "CodeModeConversationIdentityTest" to
-        Disposition("1 @ParameterizedTest expands to 2 cases (1 @Test + 2 = 3)", 3),
+        Disposition(ONE_PLAIN_TWO_CASES, expectedCount = 3),
 )
 
 // Modules whose test task is disabled BY CONFIGURATION, so no XML can exist. The reason is the
@@ -230,7 +275,7 @@ val DISPOSITIONS: Map<String, Disposition> = mapOf(
 // (e.g. ":daemon-head") instead, since the denominator now comes from each subproject's own
 // src/test/kotlin directory rather than a MODULE_HOMES glob cut apart by path segment. Empty
 // today: every declared subproject with Kotlin tests runs them.
-val MODULE_DISPOSITIONS: Map<String, String> = emptyMap()
+val silentModules: Map<String, String> = emptyMap()
 
 // ── the scanner: mask, bodyRange, memberItems, classesIn — ported faithfully from the original ──
 /** The DENOMINATOR: what the Kotlin test sources DECLARE. A string- and comment-aware
@@ -256,6 +301,10 @@ object SourceScan {
     // The JVM binary name of a nested class joins outer and inner with a dollar sign (Outer$Inner).
     private const val NESTED_CLASS_JOIN = '$'
 
+    private const val RAW_QUOTE = "\"\"\""
+    private const val MASKED = 'x'
+    private const val BLANK = ' '
+
     // Where a declaration ENDS without a body: a blank line, or a line at COLUMN 0 that starts another
     // declaration. Column 0 is load-bearing — an indented `val`/`var` is a constructor parameter of
     // the very class being scanned, and treating it as a boundary would hide that class and its tests
@@ -265,14 +314,6 @@ object SourceScan {
     // spikes classes and no real one.)
     private val DECL_END_PATTERN: Pattern =
         Pattern.compile("""\n[ \t]*\n|\n(?:@|class|object|interface|fun|enum|val|var)\b""")
-
-    // JUnit's own discovery rule, which is what this wall is really asserting: a @Test method must be
-    // public and return void. Kotlin enforces neither, so the shape is a trap. Carried from the
-    // original, where it is DEFINED AND NOT USED; the DISPOSITIONS table above is what earns the
-    // inheritance case. Kept because a reader following that sentence will look here.
-    @Suppress("unused")
-    private val INHERIT_PATTERN: Pattern =
-        Pattern.compile("""\bclass\s+\w+[^{]*?:\s*([A-Za-z_][\w.]*)\s*(?:\(|\{|${'$'})""")
 
     /** Blank every comment and string BODY, preserving length and newlines.
      *
@@ -284,58 +325,56 @@ object SourceScan {
      *  address the original. */
     internal fun mask(source: String): String {
         val out = StringBuilder(source.length)
-        val n = source.length
-        fun plain(ch: Char) = if (ch == '\n') '\n' else ' '
-        fun xs(ch: Char) = if (ch == '\n') '\n' else 'x'
         var i = 0
-        while (i < n) {
-            val ch = source[i]
-            if (ch == '`') {
-                // Kotlin's backtick identifier — how the test names are spelled here. Its body is
-                // masked, NOT scanned for quotes: an apostrophe inside a backtick name ("the
-                // operator's servers...") read as a character literal would swallow the rest of the
-                // line, braces and all, which is what made class bodies close early and counts read
-                // as 1 in the original's own history.
-                val end = source.indexOf('`', i + 1)
-                val stop = if (end < 0) n else end + 1
-                for (idx in i until stop) out.append(xs(source[idx]))
-                i = stop
-                continue
+        while (i < source.length) {
+            val hidden = hiddenSpan(source, i)
+            if (hidden == null) {
+                out.append(source[i])
+                i += 1
+            } else {
+                hidden.appendTo(out, source, i)
+                i = hidden.stop
             }
-            if (ch == '/' && i + 1 < n && source[i + 1] == '/') {
-                val nl = source.indexOf('\n', i)
-                if (nl < 0) break
-                for (idx in i until nl) out.append(plain(source[idx]))
-                i = nl
-                continue
-            }
-            if (ch == '/' && i + 1 < n && source[i + 1] == '*') {
-                val end = source.indexOf("*/", i + 2)
-                val stop = if (end < 0) n else end + 2
-                for (idx in i until stop) out.append(plain(source[idx]))
-                i = stop
-                continue
-            }
-            if (source.startsWith("\"\"\"", i)) {
-                var end = source.indexOf("\"\"\"", i + 3)
-                // Kotlin closes a raw string on the LAST three quotes of a run: `""""a""""` holds `"a"`.
-                // Closing on the first three left a stray quote that opened a string and hid a brace.
-                while (end >= 0 && end + 3 < n && source[end + 3] == '"') end += 1
-                val stop = if (end < 0) n else end + 3
-                for (idx in i until stop) out.append(xs(source[idx]))
-                i = stop
-                continue
-            }
-            if (ch == '"' || ch == '\'') {
-                val stop = minOf(skipQuoted(source, i), n)
-                for (idx in i until stop) out.append(xs(source[idx]))
-                i = stop
-                continue
-            }
-            out.append(ch)
-            i += 1
         }
         return out.toString()
+    }
+
+    /** What [mask] hides from [at]: a backtick name, a comment, a raw string or a quoted literal. */
+    private fun hiddenSpan(source: String, at: Int): HiddenSpan? = when {
+        // Kotlin's backtick identifier — how the test names are spelled here. Its body is
+        // masked, NOT scanned for quotes: an apostrophe inside a backtick name ("the
+        // operator's servers...") read as a character literal would swallow the rest of the
+        // line, braces and all, which is what made class bodies close early and counts read
+        // as 1 in the original's own history.
+        source[at] == '`' -> HiddenSpan(closedBy(source, "`", at + 1), MASKED)
+        source.startsWith("//", at) -> HiddenSpan(source.indexOf('\n', at).takeIf { it >= 0 } ?: source.length, BLANK)
+        source.startsWith("/*", at) -> HiddenSpan(closedBy(source, "*/", at + 2), BLANK)
+        source.startsWith(RAW_QUOTE, at) -> HiddenSpan(rawStringEnd(source, at), MASKED)
+        source[at] == '"' || source[at] == '\'' -> HiddenSpan(minOf(skipQuoted(source, at), source.length), MASKED)
+        else -> null
+    }
+
+    /** The index after the first [closer] at or past [from], or the end of the source when it never closes. */
+    private fun closedBy(source: String, closer: String, from: Int): Int {
+        val end = source.indexOf(closer, from)
+        return if (end < 0) source.length else end + closer.length
+    }
+
+    /** Kotlin closes a raw string on the LAST three quotes of a run: `""""a""""` holds `"a"`.
+     *  Closing on the first three left a stray quote that opened a string and hid a brace. */
+    private fun rawStringEnd(source: String, start: Int): Int {
+        val open = source.indexOf(RAW_QUOTE, start + RAW_QUOTE.length)
+        if (open < 0) return source.length
+        var close = open
+        while (source.getOrNull(close + RAW_QUOTE.length) == '"') close += 1
+        return close + RAW_QUOTE.length
+    }
+
+    /** A stretch of source [mask] replaces up to [stop], with [fill] everywhere but the newlines. */
+    private class HiddenSpan(val stop: Int, private val fill: Char) {
+        fun appendTo(out: StringBuilder, source: String, from: Int) {
+            for (index in from until stop) out.append(if (source[index] == '\n') '\n' else fill)
+        }
     }
 
     /** The index right after the `"`- or `'`-delimited literal starting at [start] (`source[start]` is
@@ -361,37 +400,48 @@ object SourceScan {
      *  own boundary. Outside any interpolation the original's own newline-stops-the-scan safety net for
      *  a plain string is unchanged — a REAL unterminated string still stops at the next line. */
     private fun skipQuoted(source: String, start: Int): Int {
-        val n = source.length
         val quote = source[start]
         var i = start + 1
-        var templateDepth = 0
-        while (i < n) {
+        while (i < source.length) {
             val ch = source[i]
             when {
                 ch == '\\' -> i += 2
-                templateDepth == 0 && ch == quote -> return i + 1
-                templateDepth == 0 && ch == '\n' -> return i
-                quote == '"' && templateDepth == 0 && ch == '$' && i + 1 < n && source[i + 1] == '{' -> {
-                    templateDepth = 1
-                    i += 2
-                }
-                templateDepth > 0 && ch == '{' -> {
-                    templateDepth += 1
-                    i += 1
-                }
-                templateDepth > 0 && ch == '}' -> {
-                    templateDepth -= 1
-                    i += 1
-                }
-                templateDepth > 0 && source.startsWith("\"\"\"", i) -> {
-                    val end = source.indexOf("\"\"\"", i + 3)
-                    i = if (end < 0) n else end + 3
-                }
-                templateDepth > 0 && (ch == '"' || ch == '\'') -> i = skipQuoted(source, i)
+                ch == quote -> return i + 1
+                ch == '\n' -> return i
+                quote == '"' && source.startsWith("\${", i) -> i = skipInterpolation(source, i + 2)
                 else -> i += 1
             }
         }
-        return n
+        return source.length
+    }
+
+    /** The index after the `}` that closes a `${` whose body starts at [from], or the end when it never closes. */
+    private fun skipInterpolation(source: String, from: Int): Int {
+        var depth = 1
+        var i = from
+        while (i < source.length && depth > 0) {
+            val ch = source[i]
+            i = when {
+                ch == '\\' -> i + 2
+                ch == '{' -> {
+                    depth += 1
+                    i + 1
+                }
+                ch == '}' -> {
+                    depth -= 1
+                    i + 1
+                }
+                else -> nestedLiteralEnd(source, i) ?: (i + 1)
+            }
+        }
+        return if (depth == 0) i else source.length
+    }
+
+    /** The index after a raw string or quoted literal opening at [at], or null when none opens there. */
+    private fun nestedLiteralEnd(source: String, at: Int): Int? = when {
+        source.startsWith(RAW_QUOTE, at) -> closedBy(source, RAW_QUOTE, at + RAW_QUOTE.length)
+        source[at] == '"' || source[at] == '\'' -> skipQuoted(source, at)
+        else -> null
     }
 
     /** (open_brace_index, close_brace_index) of the declaration whose text starts at [start], or
@@ -441,60 +491,67 @@ object SourceScan {
      *  whole input — which would let `\bfun` match the "fun" inside an identifier like "myFunction"
      *  once the scan walks past its first letter. `useTransparentBounds(true)` restores the real
      *  surrounding characters for that check, matching what the sticky regex sees natively. */
-    internal fun memberItems(original: String, masked: String): List<Member> {
-        val items = mutableListOf<Member>()
-        var depth = 0
-        var i = 0
-        var pending = 0
-        var pendingFactory = false
-        val memberMatcher = MEMBER_ITEM_PATTERN.matcher(masked).apply { useTransparentBounds(true) }
-        val unmaskedMatcher = UNMASKED_FUN_PATTERN.matcher(original).apply { useTransparentBounds(true) }
-        while (i < masked.length) {
-            val ch = masked[i]
-            if (ch == '{') {
-                depth += 1
-                i += 1
-                continue
-            }
-            if (ch == '}') {
-                depth -= 1
-                i += 1
-                continue
-            }
-            if (depth > 0) {
-                // inside a nested class or a function body — its members are its own, and a local
-                // fun in a test body is nobody's. Only brace depth is tracked here.
-                i += 1
-                continue
-            }
-            memberMatcher.region(i, masked.length)
-            if (!memberMatcher.lookingAt()) {
-                i += 1
-                continue
-            }
-            if (memberMatcher.group(1) != null) {
-                pending += 1
-                // group(1) is the annotation NAME, which is the whole reason the pattern captures
-                // it: the factory answer is read here, not by a second pass over the same text.
-                if (memberMatcher.group(1) == FACTORY_ANNOTATION) pendingFactory = true
-            } else {
-                unmaskedMatcher.region(i, original.length)
-                // Both alternations of MEMBER_ITEM_PATTERN carry the name in a group and group(1) was
-                // null above, so group(2) participated: the elvis is the guard the compiler can carry,
-                // and it fails loudly rather than skipping — a nameless match here would mean the
-                // pattern changed under this scan, which is a missing denominator, not a missing name.
-                val raw = (if (unmaskedMatcher.lookingAt()) unmaskedMatcher.group(1) else memberMatcher.group(2))
-                    ?: error("member scan matched a declaration with no name at offset $i")
-                val name = raw.trim('`')
-                if (pending > 0) {
-                    items.add(Member(name, pendingFactory))
-                    pending = 0
-                    pendingFactory = false
+    internal fun memberItems(original: String, masked: String): List<Member> = MemberScan(original, masked).run()
+
+    /** One walk over a class body: brace depth decides what is a member, annotations arm the next `fun`. */
+    private class MemberScan(private val original: String, private val masked: String) {
+        private val items = mutableListOf<Member>()
+        private var pending = 0
+        private var pendingFactory = false
+        private val memberMatcher = MEMBER_ITEM_PATTERN.matcher(masked).apply { useTransparentBounds(true) }
+        private val unmaskedMatcher = UNMASKED_FUN_PATTERN.matcher(original).apply { useTransparentBounds(true) }
+
+        fun run(): List<Member> {
+            var depth = 0
+            var i = 0
+            while (i < masked.length) {
+                when (masked[i]) {
+                    '{' -> {
+                        depth += 1
+                        i += 1
+                    }
+                    '}' -> {
+                        depth -= 1
+                        i += 1
+                    }
+                    // inside a nested class or a function body — its members are its own, and a local
+                    // fun in a test body is nobody's. Only brace depth is tracked there.
+                    else -> i = if (depth > 0) i + 1 else step(i)
                 }
             }
-            i = memberMatcher.end()
+            return items
         }
-        return items
+
+        /** The offset the walk resumes from after probing for an annotation or a `fun` at [at]. */
+        private fun step(at: Int): Int {
+            memberMatcher.region(at, masked.length)
+            if (!memberMatcher.lookingAt()) return at + 1
+            // group(1) is the annotation NAME, which is the whole reason the pattern captures
+            // it: the factory answer is read here, not by a second pass over the same text.
+            val annotation = memberMatcher.group(1)
+            if (annotation != null) arm(annotation) else declare(at)
+            return memberMatcher.end()
+        }
+
+        private fun arm(annotation: String) {
+            pending += 1
+            if (annotation == FACTORY_ANNOTATION) pendingFactory = true
+        }
+
+        private fun declare(at: Int) {
+            unmaskedMatcher.region(at, original.length)
+            // Both alternations of MEMBER_ITEM_PATTERN carry the name in a group and group(1) was
+            // null above, so group(2) participated: the elvis is the guard the compiler can carry,
+            // and it fails loudly rather than skipping — a nameless match here would mean the
+            // pattern changed under this scan, which is a missing denominator, not a missing name.
+            val raw = (if (unmaskedMatcher.lookingAt()) unmaskedMatcher.group(1) else memberMatcher.group(2))
+                ?: error("member scan matched a declaration with no name at offset $at")
+            if (pending > 0) {
+                items.add(Member(raw.trim('`'), pendingFactory))
+                pending = 0
+                pendingFactory = false
+            }
+        }
     }
 
     /** Every class in [source] that declares test methods, NESTED classes included. [module] and
@@ -506,36 +563,43 @@ object SourceScan {
      *  SetupCommandTest, which ran as SetupCommandTest$Heads. */
     fun classesIn(source: String, module: String, path: String): List<TestClass> {
         val masked = mask(source)
-        val spans = mutableListOf<Triple<String, Int, Int>>() // (class name, open brace, close brace)
-        val classMatcher = CLASS_DECL_PATTERN.matcher(masked)
-        while (classMatcher.find()) {
-            val (openAt, closeAt) = bodyRange(masked, classMatcher.end()) ?: continue
-            spans.add(Triple(classMatcher.group(1), openAt, closeAt))
-        }
-        val found = mutableListOf<TestClass>()
-        for (span in spans) {
-            val (name, openAt, closeAt) = span
-            var outer: String? = null
-            for (other in spans) {
-                if (other === span) continue
-                val (otherName, otherOpen, otherClose) = other
-                if (otherOpen < openAt && closeAt < otherClose) outer = otherName
-            }
-            val qualified = if (outer != null) "$outer$NESTED_CLASS_JOIN$name" else name
-            val members = memberItems(source.substring(openAt + 1, closeAt), masked.substring(openAt + 1, closeAt))
-            if (members.isNotEmpty()) {
-                found.add(
-                    TestClass(
-                        module = module,
-                        name = qualified,
-                        path = path,
-                        methods = members.map { it.name },
-                        dynamicMethods = members.filter { it.dynamic }.map { it.name }.toSet(),
-                    ),
+        val spans = classSpans(masked)
+        return spans.mapNotNull { span ->
+            val body = (span.open + 1)..<span.close
+            val members = memberItems(source.substring(body), masked.substring(body))
+            if (members.isEmpty()) {
+                null
+            } else {
+                TestClass(
+                    module = module,
+                    name = qualifiedName(span, spans),
+                    path = path,
+                    methods = members.map { it.name },
+                    dynamicMethods = members.filter { it.dynamic }.map { it.name }.toSet(),
                 )
             }
         }
-        return found
+    }
+
+    /** A class declaration's name and the offsets of its body's braces. */
+    private class ClassSpan(val name: String, val open: Int, val close: Int) {
+        fun encloses(other: ClassSpan): Boolean = open < other.open && other.close < close
+    }
+
+    /** Every class declaration in [masked] that has a body. */
+    private fun classSpans(masked: String): List<ClassSpan> {
+        val matcher = CLASS_DECL_PATTERN.matcher(masked)
+        return generateSequence { if (matcher.find()) matcher else null }
+            .mapNotNull { found ->
+                bodyRange(masked, found.end())?.let { (open, close) -> ClassSpan(found.group(1), open, close) }
+            }
+            .toList()
+    }
+
+    /** [span]'s name, led by the innermost class around it when there is one (`Outer$Inner`). */
+    private fun qualifiedName(span: ClassSpan, spans: List<ClassSpan>): String {
+        val outer = spans.lastOrNull { it.encloses(span) }
+        return if (outer != null) "${outer.name}$NESTED_CLASS_JOIN${span.name}" else span.name
     }
 
     /** Every test class under [testSourceDir] (recursively), tagged with [module] — the I/O boundary
@@ -577,19 +641,15 @@ object JUnitXml {
      *  document that is merely unfamiliar. A document the parser itself cannot read throws its own
      *  SAXException/IOException, which is the same contract by construction. */
     fun parseJUnitXml(xml: String, sourceName: String): ParsedJUnitXml {
+        val missing = "$sourceName: JUnit XML root is missing name/tests; this reader dies loudly on a " +
+            "document it cannot trust rather than return an empty row for it"
         val root = DOCUMENT_BUILDER_FACTORY.newDocumentBuilder()
             .parse(InputSource(StringReader(xml)))
-            .documentElement
-        val name = root?.getAttribute("name")?.ifBlank { null }
-        val testsRaw = root?.getAttribute("tests")?.ifBlank { null }
-        if (root == null || name == null || testsRaw == null) {
-            throw IllegalStateException(
-                "$sourceName: JUnit XML root is missing name/tests; this reader dies loudly on a " +
-                    "document it cannot trust rather than return an empty row for it",
-            )
-        }
+            .documentElement ?: error(missing)
+        val name = attribute(root, "name") ?: error(missing)
+        val testsRaw = attribute(root, "tests") ?: error(missing)
         val tests = testsRaw.toIntOrNull()
-            ?: throw IllegalStateException("$sourceName: JUnit XML root's tests=\"$testsRaw\" is not an integer")
+            ?: error("$sourceName: JUnit XML root's tests=\"$testsRaw\" is not an integer")
         val testcaseNames = mutableListOf<String>()
         val nodes = root.getElementsByTagName("testcase")
         for (idx in 0 until nodes.length) {
@@ -602,6 +662,8 @@ object JUnitXml {
         }
         return ParsedJUnitXml(name, tests, testcaseNames)
     }
+
+    private fun attribute(element: Element, key: String): String? = element.getAttribute(key).ifBlank { null }
 
     /** [parseJUnitXml] over a real file — the I/O boundary. */
     fun parseJUnitXml(file: File): ParsedJUnitXml = parseJUnitXml(file.readText(), file.path)
@@ -645,6 +707,10 @@ object JUnitXml {
     }
 }
 
+private const val STATUS_WIDTH = 20
+private const val MODULE_WIDTH = 26
+private const val CLASS_WIDTH = 44
+
 // ── the comparison ──
 /** The COMPARISON: the denominator against the observation, as problems, as a census, and
  *  as the one line the task prints when it is green. */
@@ -652,96 +718,97 @@ object TestDiscovery {
 
     /** Every problem between [classes] (the denominator) and [xmlByModule] (the observation, module ->
      *  simple class name -> row), by name; empty means green. [dispositions] and [moduleDispositions]
-     *  default to the real [DISPOSITIONS]/[MODULE_DISPOSITIONS] tables above but are parameters —
-     *  never module-level mutable state the way the original's `let DISPOSITIONS` was — so a test can
+     *  default to the real [classDispositions]/[silentModules] tables above but are parameters —
+     *  never module-level mutable state the way the original's `let classDispositions` was — so a test can
      *  supply its own table without mutating the real one (see TestDiscoveryTest). */
     fun audit(
         classes: List<TestClass>,
         xmlByModule: Map<String, Map<String, XmlRow>>,
-        dispositions: Map<String, Disposition> = DISPOSITIONS,
-        moduleDispositions: Map<String, String> = MODULE_DISPOSITIONS,
+        dispositions: Map<String, Disposition> = classDispositions,
+        moduleDispositions: Map<String, String> = silentModules,
     ): List<String> {
-        if (classes.isEmpty()) {
-            return listOf(
-                "no test class with a @Test method was parsed from any subproject's src/test/kotlin; " +
-                    "refusing to pass vacuously, because a green over an empty denominator is the " +
-                    "very signal this wall exists to distrust",
+        vacuous(classes, xmlByModule)?.let { return listOf(it) }
+        return classes.flatMap { problemsOf(it, xmlByModule, dispositions, moduleDispositions) }
+    }
+
+    /** Why there is nothing to compare, or null when there is. */
+    private fun vacuous(classes: List<TestClass>, xmlByModule: Map<String, Map<String, XmlRow>>): String? = when {
+        classes.isEmpty() ->
+            "no test class with a @Test method was parsed from any subproject's src/test/kotlin; " +
+                "refusing to pass vacuously, because a green over an empty denominator is the " +
+                "very signal this wall exists to distrust"
+        xmlByModule.isEmpty() ->
+            "no JUnit XML found under any subproject's test-results directory; a checker " +
+                "reading an empty results directory is the bug it is hunting; verifyTestDiscovery " +
+                "depends on every Test task, so an empty read here means that dependency itself " +
+                "broke"
+        else -> null
+    }
+
+    private fun problemsOf(
+        testClass: TestClass,
+        xmlByModule: Map<String, Map<String, XmlRow>>,
+        dispositions: Map<String, Disposition>,
+        moduleDispositions: Map<String, String>,
+    ): List<String> {
+        val moduleRows = xmlByModule[testClass.module].orEmpty()
+        if (moduleRows.isEmpty()) return listOfNotNull(silentModule(testClass, moduleDispositions[testClass.module]))
+        val row = moduleRows[testClass.name]
+            ?: return listOf(
+                "${testClass.module}: ${testClass.name} declares ${testClass.count} test " +
+                    "method(s) and produced NO XML row: JUnit never ran the class",
             )
-        }
-        if (xmlByModule.isEmpty()) {
-            return listOf(
-                "no JUnit XML found under any subproject's test-results directory; a checker " +
-                    "reading an empty results directory is the bug it is hunting; verifyTestDiscovery " +
-                    "depends on every Test task, so an empty read here means that dependency itself " +
-                    "broke",
-            )
+        return listOfNotNull(countProblem(testClass, row, dispositions))
+    }
+
+    /** A module with no XML at all is a problem unless a disposition WRITES DOWN why its test task is silent. */
+    private fun silentModule(testClass: TestClass, reason: String?): String? = when {
+        reason == null ->
+            "${testClass.module}: ${testClass.name} declares ${testClass.count} test " +
+                "method(s) but the module produced NO XML at all: either its tests " +
+                "never ran or its test task is disabled; disposition the module with a reason"
+        reason.isBlank() ->
+            "${testClass.module}: module disposition carries NO reason; an " +
+                "undispositioned silence is exactly what this wall refuses"
+        else -> null
+    }
+
+    private fun countProblem(testClass: TestClass, row: XmlRow, dispositions: Map<String, Disposition>): String? =
+        when {
+            row.count < testClass.count -> notDiscovered(testClass, row)
+            // THE THIRD SHAPE (file header, SHAPES): a class holding a @TestFactory expands by
+            // a factor nobody can write down — the factory returns one DynamicTest per item in
+            // a list that is EXPECTED to grow — so any count AT OR ABOVE declared is its
+            // expected shape and it is never asked for a disposition. Measured 2026-09-21:
+            // ReleaseReadinessLawTest ran 49 the day this was decided and 56 two days later,
+            // for the healthiest possible reason. Observed BELOW declared still reds, in the
+            // branch above and unconditionally: the factory method never running, or its
+            // expansion collapsing to nothing, is exactly the hazard this wall exists to catch.
+            row.count > testClass.count && testClass.dynamicMethods.isEmpty() ->
+                higherCount(testClass, row.count, dispositions[testClass.name])
+            else -> null
         }
 
-        val problems = mutableListOf<String>()
-        for (testClass in classes) {
-            val moduleRows = xmlByModule[testClass.module] ?: emptyMap()
-            if (moduleRows.isEmpty()) {
-                val reason = moduleDispositions[testClass.module]
-                when {
-                    reason == null -> problems.add(
-                        "${testClass.module}: ${testClass.name} declares ${testClass.count} test " +
-                            "method(s) but the module produced NO XML at all: either its tests " +
-                            "never ran or its test task is disabled; disposition the module with a reason",
-                    )
-                    reason.isBlank() -> problems.add(
-                        "${testClass.module}: module disposition carries NO reason; an " +
-                            "undispositioned silence is exactly what this wall refuses",
-                    )
-                }
-                continue
-            }
-            val row = moduleRows[testClass.name]
-            if (row == null) {
-                problems.add(
-                    "${testClass.module}: ${testClass.name} declares ${testClass.count} test " +
-                        "method(s) and produced NO XML row: JUnit never ran the class",
-                )
-                continue
-            }
-            val observed = row.count
-            val missing = testClass.methods.filter { it !in row.names }
-            when {
-                observed < testClass.count -> problems.add(
-                    "NOT DISCOVERED: ${testClass.module}:${testClass.name} declares " +
-                        "${testClass.count} test method(s), the XML reports $observed" +
-                        (if (missing.isNotEmpty()) "; never ran: ${missing.joinToString(", ")}" else "") +
-                        " (${testClass.path})",
-                )
-                // THE THIRD SHAPE (file header, SHAPES): a class holding a @TestFactory expands by
-                // a factor nobody can write down — the factory returns one DynamicTest per item in
-                // a list that is EXPECTED to grow — so any count AT OR ABOVE declared is its
-                // expected shape and it is never asked for a disposition. Measured 2026-09-21:
-                // ReleaseReadinessLawTest ran 49 the day this was decided and 56 two days later,
-                // for the healthiest possible reason. Observed BELOW declared still reds, in the
-                // branch above and unconditionally: the factory method never running, or its
-                // expansion collapsing to nothing, is exactly the hazard this wall exists to catch.
-                observed > testClass.count && testClass.dynamicMethods.isEmpty() -> {
-                    val entry = dispositions[testClass.name]
-                    when {
-                        entry == null -> problems.add(
-                            "HIGHER COUNT, no disposition: ${testClass.module}:${testClass.name} " +
-                                "declares ${testClass.count} test method(s) but ran $observed; if " +
-                                "that expansion is legitimate, add it to DISPOSITIONS with a written reason",
-                        )
-                        entry.reason.isBlank() -> problems.add(
-                            "${testClass.module}:${testClass.name} carries a disposition with NO " +
-                                "reason; a blank reason is an absence wearing a label",
-                        )
-                        observed != entry.expectedCount -> problems.add(
-                            "${testClass.module}:${testClass.name} ran $observed cases, not the " +
-                                "${entry.expectedCount} its disposition was written for; the " +
-                                "expansion moved, so the disposition is stale and must be re-earned",
-                        )
-                    }
-                }
-            }
-        }
-        return problems
+    private fun notDiscovered(testClass: TestClass, row: XmlRow): String {
+        val missing = testClass.methods.filter { it !in row.names }
+        val neverRan = if (missing.isNotEmpty()) "; never ran: ${missing.joinToString(", ")}" else ""
+        return "NOT DISCOVERED: ${testClass.module}:${testClass.name} declares " +
+            "${testClass.count} test method(s), the XML reports ${row.count}$neverRan (${testClass.path})"
+    }
+
+    private fun higherCount(testClass: TestClass, observed: Int, entry: Disposition?): String? = when {
+        entry == null ->
+            "HIGHER COUNT, no disposition: ${testClass.module}:${testClass.name} " +
+                "declares ${testClass.count} test method(s) but ran $observed; if " +
+                "that expansion is legitimate, add it to classDispositions with a written reason"
+        entry.reason.isBlank() ->
+            "${testClass.module}:${testClass.name} carries a disposition with NO " +
+                "reason; a blank reason is an absence wearing a label"
+        observed != entry.expectedCount ->
+            "${testClass.module}:${testClass.name} ran $observed cases, not the " +
+                "${entry.expectedCount} its disposition was written for; the " +
+                "expansion moved, so the disposition is stale and must be re-earned"
+        else -> null
     }
 
     // ── the census (the --report verb, ported as a function instead of a CLI arm) ──
@@ -753,32 +820,39 @@ object TestDiscovery {
     fun census(
         classes: List<TestClass>,
         xmlByModule: Map<String, Map<String, XmlRow>>,
-        dispositions: Map<String, Disposition> = DISPOSITIONS,
+        dispositions: Map<String, Disposition> = classDispositions,
     ): String {
-        val out = StringBuilder()
-        out.append("tests-are-discovered: ${classes.size} test class(es) parsed from source\n")
-        for (testClass in classes.sortedWith(compareBy({ it.module }, { it.name }))) {
+        val lines = classes.sortedWith(compareBy({ it.module }, { it.name })).map { testClass ->
             val observed = xmlByModule[testClass.module]?.get(testClass.name)?.count
-            val mark = when {
-                observed == null -> "NO-XML"
-                observed < testClass.count -> "SHORT"
-                observed > testClass.count -> dispositions[testClass.name]?.reason
-                    ?: if (testClass.dynamicMethods.isEmpty()) "HIGHER-NO-REASON" else "DYNAMIC"
-                else -> "OK"
-            }
-            out.append(
-                "  ${mark.padEnd(20)} ${testClass.module.padEnd(26)} ${testClass.name.padEnd(44)} " +
-                    "declared=${testClass.count} xml=${observed?.toString() ?: "none"}\n",
+            censusRow(
+                censusMark(testClass, observed, dispositions),
+                testClass.module,
+                testClass.name,
+                "declared=${testClass.count} xml=${observed?.toString() ?: "none"}",
             )
         }
+        return "tests-are-discovered: ${classes.size} test class(es) parsed from source\n" +
+            lines.joinToString("") + staleRows(classes, xmlByModule)
+    }
+
+    private fun censusMark(testClass: TestClass, observed: Int?, dispositions: Map<String, Disposition>): String =
+        when {
+            observed == null -> "NO-XML"
+            observed < testClass.count -> "SHORT"
+            observed > testClass.count -> dispositions[testClass.name]?.reason
+                ?: if (testClass.dynamicMethods.isEmpty()) "HIGHER-NO-REASON" else "DYNAMIC"
+            else -> "OK"
+        }
+
+    private fun censusRow(status: String, module: String, name: String, tail: String): String =
+        "  ${status.padEnd(STATUS_WIDTH)} ${module.padEnd(MODULE_WIDTH)} ${name.padEnd(CLASS_WIDTH)} $tail\n"
+
+    private fun staleRows(classes: List<TestClass>, xmlByModule: Map<String, Map<String, XmlRow>>): String {
         val known = classes.map { "${it.module} ${it.name}" }.toSet()
-        val stale = xmlByModule.flatMap { (module, entries) -> entries.keys.map { module to it } }
+        return xmlByModule.flatMap { (module, entries) -> entries.keys.map { module to it } }
             .filterNot { "${it.first} ${it.second}" in known }
             .sortedWith(compareBy({ it.first }, { it.second }))
-        for ((module, name) in stale) {
-            out.append("  STALE-XML            ${module.padEnd(26)} ${name.padEnd(44)} (no class in source)\n")
-        }
-        return out.toString()
+            .joinToString("") { (module, name) -> censusRow("STALE-XML", module, name, "(no class in source)") }
     }
 
     /** The one-line census verifyTestDiscovery prints on success: total classes scanned, total

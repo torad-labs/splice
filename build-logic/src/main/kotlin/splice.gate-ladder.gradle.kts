@@ -27,7 +27,6 @@
 import org.gradle.api.tasks.testing.Test
 import splice.ladder.LadderLeg
 import splice.ladder.LadderTable
-import splice.ladder.OwnedFile
 
 // The gate's Gradle-native checks, registered by their own plugins and depended on below: the
 // dependency hygiene of §4.2 (catalogMetadataSync) and build-logic's own test suite, which carries
@@ -49,7 +48,6 @@ val repository = layout.projectDirectory
 val legTasks = legs.map { leg ->
     val name = leg.task
     val dependsOnTasks = leg.dependsOn
-    val readsJar = ":app:shadowJar" in dependsOnTasks
     val stamp = layout.buildDirectory.file("gate/$name.stamp")
     tasks.register<Exec>(name) {
         group = "gate"
@@ -58,26 +56,28 @@ val legTasks = legs.map { leg ->
         commandLine(leg.command)
         dependsOnTasks.forEach { dependsOn(it) }
         if (leg.afterAllTests) dependsOn(everyTestTask)
-        if (readsJar) {
+        if (leg.readsJar()) {
             // The verdict reads the jar and the files the row's `inputs` globs name. Both are inputs, so an unchanged tree stays
             // UP-TO-DATE, and a rebuilt jar or an edited e2e file re-runs the leg. The stamp is the output gradle judges.
-            val e2eGlobs = leg.inputs
+            val e2eGlobs = leg.files.inputs
             require(e2eGlobs.isNotEmpty()) { "$name reads the jar and names no inputs in $ladderPath" }
             // The fat jar's task is looked up when the inputs are read, after every project is configured: :app is not
             // configured yet while this root plugin is applied, so a lookup here would fail the whole configuration.
             inputs.files(provider { project(":app").tasks.named("shadowJar").get() }).withPropertyName("fatJar")
             // The row's globs are expanded by git (tracked, plus untracked and not ignored), never by walking the tree: a walk reads
             // ignored directories and throws on a dangling link under them.
-            inputs.files(provider { splice.lawsuite.ReadSet.globbed(rootDir, e2eGlobs).map { rootDir.resolve(it) } }).withPropertyName("ladderInputs")
+            inputs.files(
+                provider { splice.lawsuite.ReadSet.globbed(rootDir, e2eGlobs).map { rootDir.resolve(it) } },
+            ).withPropertyName("ladderInputs")
             outputs.file(stamp)
             doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("$name\n") }
         } else {
             outputs.upToDateWhen { false }
         }
-        leg.creates?.let { dir -> doFirst { rootDir.resolve(dir).mkdirs() } }
         // The one file a leg writes and owns is removed as the leg starts: a rerun of the leg must not find its own
         // previous output. Only the file the row names is removed, never a directory, and a failed removal stops the leg.
-        leg.owns?.let { file -> doFirst { OwnedFile(rootDir.resolve(file).toPath()).release() } }
+        val files = leg.files
+        doFirst { files.prepare(rootDir) }
     }
 }
 
@@ -88,7 +88,9 @@ val legTasks = legs.map { leg ->
 // architecture module, whose whole `test` task is laws and so applies no tag.
 tasks.register("lawSuites") {
     group = "gate"
-    description = "Every law suite that reads outside its own sources. Pre-push requests this one task; gradle's up-to-date check skips each suite whose declared inputs did not change."
+    description =
+        "Every law suite that reads outside its own sources. Pre-push requests this one task; gradle's " +
+        "up-to-date check skips each suite whose declared inputs did not change."
     dependsOn(":quality-architecture:test")
 }
 
@@ -96,12 +98,13 @@ val gateOfRecord = tasks.register("gateOfRecord") {
     group = "gate"
     description =
         "The gate of record: every module's check and every leg of " +
-            "$ladderPath. Enter through `bun tools/gate run` (JDK 21, the slot, clean, no build cache)."
+        "$ladderPath. Enter through `bun tools/gate run` (JDK 21, the slot, clean, no build cache)."
     dependsOn(subprojects.map { "${it.path}:check" })
     dependsOn(legTasks)
     dependsOn("verifyLadder")
     dependsOn("catalogMetadataSync")
     dependsOn(gradle.includedBuild("build-logic").task(":test"))
+    dependsOn(gradle.includedBuild("build-logic").task(":detekt"))
 }
 
 // THE PROOF IS TAKEN WHEN THE GRAPH IS READY, NEVER DURING EXECUTION. The first cut walked
@@ -138,13 +141,19 @@ gradle.taskGraph.whenReady {
 
 tasks.register("verifyLadder") {
     group = "gate"
-    description = "Proves $ladderPath against the graph: every row is an Exec task with that argv that gateOfRecord depends on and this graph schedules. Meaningful only under gateOfRecord."
+    description =
+        "Proves $ladderPath against the graph: every row is an Exec task with that argv that gateOfRecord " +
+        "depends on and this graph schedules. Meaningful only under gateOfRecord."
     outputs.upToDateWhen { false }
     doLast {
         val problems = checkNotNull(ladderProblems) {
-            "verifyLadder proves the ladder under gateOfRecord, which is not in this build's graph: run `bun tools/gate run` (or gateOfRecord)"
+            "verifyLadder proves the ladder under gateOfRecord, which is not in this build's graph: " +
+                "run `bun tools/gate run` (or gateOfRecord)"
         }
         check(problems.isEmpty()) { "the gate ladder disagrees with $ladderPath:\n  " + problems.joinToString("\n  ") }
-        logger.lifecycle("verifyLadder: ${legs.size} leg(s) registered from $ladderPath, every one a dependency of gateOfRecord and scheduled in this graph")
+        logger.lifecycle(
+            "verifyLadder: ${legs.size} leg(s) registered from $ladderPath, " +
+                "every one a dependency of gateOfRecord and scheduled in this graph",
+        )
     }
 }

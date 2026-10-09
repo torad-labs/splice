@@ -10,7 +10,11 @@ object LadderTable {
     fun readAll(table: File): List<LadderLeg> {
         val root = JsonSlurper().parse(table) as? Map<*, *> ?: error("${table.path}: not a JSON object")
         val rows = root["legs"] as? List<*> ?: error("${table.path}: no legs array")
-        return rows.mapIndexed { index, row -> parse(row as? Map<*, *> ?: error("${table.path}: legs[$index] is not an object")) }
+        return rows.mapIndexed { index, row ->
+            parse(
+                row as? Map<*, *> ?: error("${table.path}: legs[$index] is not an object"),
+            )
+        }
     }
 
     internal fun parse(row: Map<*, *>): LadderLeg {
@@ -20,10 +24,12 @@ object LadderTable {
             command = texts(row, "command", task) ?: error("$task: no command"),
             why = text(row, "why", task),
             dependsOn = texts(row, "dependsOn", task).orEmpty(),
-            inputs = texts(row, "inputs", task).orEmpty(),
-            creates = optionalText(row, "creates", task),
-            owns = optionalText(row, "owns", task),
             afterAllTests = row["afterAllTests"] == true,
+            files = LegFiles(
+                inputs = texts(row, "inputs", task).orEmpty(),
+                creates = optionalText(row, "creates", task),
+                owns = optionalText(row, "owns", task),
+            ),
         )
     }
 

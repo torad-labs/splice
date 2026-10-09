@@ -308,22 +308,19 @@ private const val CORE_ESCAPE_RUNTIME_EXEC_EXPECTED = "core/W.kt:2 uses Runtime.
  *  fail for anything absent from that list. So the main plane is now graded against the GRADLE map
  *  (which is also what actually fails the build, at configuration time), the Konsist map is the
  *  TEST plane only, and [lawDriftViolations] fails when the two stop lining up. */
-private class ModuleLawFile(text: String) {
-    private val stripped = text
+private class ModuleLawFile(script: String, table: String) {
+    private val stripped = script
         .replace(Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL), "")
         .replace(Regex("//[^\n]*"), "")
 
-    /** project path -> allowed MAIN-configuration project dependencies. */
-    val mainLaw: Map<String, Set<String>> = Regex(
-        // Escaped rather than raw: a raw string whose first content character is a quote is a
-        // needlessly delicate lexing question, and this one starts with the key's opening quote.
-        "\"(:[A-Za-z0-9._\\-]+)\"\\s+to\\s+(?:emptySet\\(\\)|setOf\\(([^)]*)\\))",
-    ).findAll(mainLawBody(stripped)).associate { match ->
-        match.groupValues[1] to MODULE_PATH_IN_SET
-            .findAll(match.groupValues[2])
-            .map { it.groupValues[0] }
-            .toSet()
-    }
+    /** project path -> allowed MAIN-configuration project dependencies, one `module -> deps` line each. */
+    val mainLaw: Map<String, Set<String>> = table.lines()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("#") }
+        .associate { line ->
+            val (module, deps) = line.split("->", limit = 2)
+            module.trim() to MODULE_PATH_IN_SET.findAll(deps).map { it.value }.toSet()
+        }
 
     /** The modules the build exempts from explicitApi and from the law — Konsist's own
      *  UNRESTRICTED_MODULES comment already claims this is the same set, so drift is a defect. */
@@ -334,25 +331,6 @@ private class ModuleLawFile(text: String) {
     val lawChecked: Set<String> = namedStrings(stripped, "lawChecked")
 
     private companion object {
-        /** The `mapOf( ... )` body of `val moduleLaw`, by brace depth — a regex for the whole
-         *  literal would stop at the first `)` of `emptySet()`. */
-        fun mainLawBody(text: String): String {
-            val start = text.indexOf("val moduleLaw")
-            require(start >= 0) { "splice.module-law.gradle.kts declares no `val moduleLaw`" }
-            val open = text.indexOf('(', text.indexOf("mapOf", start))
-            var depth = 0
-            for (i in open until text.length) {
-                when (text[i]) {
-                    '(' -> depth++
-                    ')' -> {
-                        depth--
-                        if (depth == 0) return text.substring(open + 1, i)
-                    }
-                }
-            }
-            error("splice.module-law.gradle.kts: `val moduleLaw`'s mapOf( is never closed")
-        }
-
         /** Every `:module` path inside a `setOf(...)` body. */
         val MODULE_PATH_IN_SET = Regex(":[A-Za-z0-9._\\-]+")
 
@@ -522,10 +500,9 @@ private const val DRIFT_STRICTER_EXPECTED = ":spi: the Gradle main plane allows 
 /** P0: the synthetic build files the nested-module proof grades. Small enough to read, and
  *  independent of the live build's map — a proof that borrowed the real law would move with it. */
 
+private const val NESTED_MODULE_LAW_TABLE = ":provider-x -> :core"
+
 private val NESTED_MODULE_LAW_SOURCE = """
-    val moduleLaw: Map<String, Set<String>> = mapOf(
-        ":provider-x" to setOf(":core"),
-    )
     val nonLibrary = setOf(":app")
     val lawChecked = setOf("api", "implementation")
 """.trimIndent()
@@ -536,7 +513,7 @@ private val NESTED_MODULE_BUILD_FILE = """
     }
 """.trimIndent()
 
-private const val NESTED_EDGE_EXPECTED = ":provider-x may not depend on :daemon-head in a MAIN configuration (the build's map allows [:core]). This is also a configuration-time build error; the law repeats it so the failure names the edge. Change the map in build-logic/src/main/kotlin/splice.module-law.gradle.kts if the architecture moved."
+private const val NESTED_EDGE_EXPECTED = ":provider-x may not depend on :daemon-head in a MAIN configuration (the build's map allows [:core]). This is also a configuration-time build error; the law repeats it so the failure names the edge. Change the map in gradle/module-law.txt if the architecture moved."
 
 class ModuleLawsTest {
 
@@ -622,8 +599,7 @@ class ModuleLawsTest {
     // findings forever (.rules/kotlin did, for a month) — and so does an architecture diagram that
     // lives only in a doc. This makes the direction executable, and its exceptions countable.
     //
-    // V4-91: the MAIN plane is now graded against the BUILD's own map, parsed out of
-    // build-logic/src/main/kotlin/splice.module-law.gradle.kts, rather than against the hand copy
+    // V4-91: the MAIN plane is now graded against the BUILD's own map,     // gradle/module-law.txt (the file splice.module-law.gradle.kts enforces), rather than against the hand copy
     // MODULE_DEPENDENCY_LAW used to carry. The configurations that count as "main" are read from the
     // same file (`lawChecked`), so the split this test draws is the split the build enforces, and
     // MODULE_DEPENDENCY_LAW governs exactly what the build's plugin exempts: the test plane.
@@ -672,7 +648,7 @@ class ModuleLawsTest {
             listOf(NESTED_EDGE_EXPECTED),
             moduleDirectionViolations(
                 map = ProjectMap.parse(temp, ":provider-x=providers/x", fixtureNotSwept),
-                law = ModuleLawFile(NESTED_MODULE_LAW_SOURCE),
+                law = ModuleLawFile(NESTED_MODULE_LAW_SOURCE, NESTED_MODULE_LAW_TABLE),
                 testPlane = mapOf(":provider-x" to setOf(":core")),
                 unrestricted = emptySet(),
                 ratchet = emptySet(),
@@ -871,8 +847,10 @@ class ModuleLawsTest {
      *  tests are cheap, and a lazily-cached parse is a parse whose failure surfaces in whichever
      *  test happened to run first. build-logic is an included BUILD, not a subproject, so it is
      *  the one path here the project map does not carry. */
-    private fun moduleLaw(): ModuleLawFile =
-        ModuleLawFile(File(map.root, "build-logic/src/main/kotlin/splice.module-law.gradle.kts").readText())
+    private fun moduleLaw(): ModuleLawFile = ModuleLawFile(
+        script = File(map.root, "build-logic/src/main/kotlin/splice.module-law.gradle.kts").readText(),
+        table = File(map.root, "gradle/module-law.txt").readText(),
+    )
 
     /** V4-91: (configuration, project path) for every edge a module's build file declares. The
      *  configuration is what decides which PLANE the edge is graded on, so it travels with it.
@@ -954,7 +932,7 @@ class ModuleLawsTest {
         "$module may not depend on $dep in a MAIN configuration (the build's map " +
             "allows ${allowed.sorted()}). This is also a configuration-time build error; the " +
             "law repeats it so the failure names the edge. Change the map in " +
-            "build-logic/src/main/kotlin/splice.module-law.gradle.kts if the architecture moved."
+            "gradle/module-law.txt if the architecture moved."
     }
 
     private fun testPlaneEdgeViolations(

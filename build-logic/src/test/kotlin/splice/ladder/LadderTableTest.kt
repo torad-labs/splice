@@ -3,7 +3,6 @@
 package splice.ladder
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -17,8 +16,7 @@ class LadderTableTest {
         val leg = LadderTable.parse(row())
         assertEquals(listOf("bun", "x"), leg.command)
         assertEquals(emptyList<String>(), leg.dependsOn)
-        assertNull(leg.creates)
-        assertNull(leg.owns)
+        assertEquals(emptyList<String>(), leg.files.inputs)
     }
 
     @Test

@@ -64,14 +64,6 @@ class SampleTest {
 }
 """.trimIndent()
 
-private val SOURCE_EMPTY = """
-package head
-
-class NoTestsHere {
-    private fun helper() = 1
-}
-""".trimIndent()
-
 private const val XML_OK = """<?xml version="1.0" encoding="UTF-8"?>
 <testsuite name="SampleTest" tests="2" skipped="0" failures="0" errors="0">
   <testcase name="a discovered test()" classname="head.SampleTest"/>
@@ -172,7 +164,8 @@ class TestDiscoveryTest {
         val unreasoned = audit(declared, expanded, dispositions = emptyMap())
         assertTrue(unreasoned.any { "HIGHER COUNT" in it }, unreasoned.toString())
         val reasoned = audit(
-            declared, expanded,
+            declared,
+            expanded,
             dispositions = mapOf("AnnotationOnlyTest" to Disposition("synthetic annotation expands to three cases", 3)),
         )
         assertTrue(reasoned.isEmpty(), reasoned.toString())
@@ -191,8 +184,11 @@ class TestDiscoveryTest {
     @Test
     fun `annotation names and unrelated qualified annotations cannot invent tests`() {
         for (annotation in listOf(
-            "@TestExtra", "@ParameterizedTestExtra", "@RepeatedTestExtra",
-            "@org.junit.jupiter.params.ParameterizedTestExtra", "@other.framework.RepeatedTest",
+            "@TestExtra",
+            "@ParameterizedTestExtra",
+            "@RepeatedTestExtra",
+            "@org.junit.jupiter.params.ParameterizedTestExtra",
+            "@other.framework.RepeatedTest",
         )) {
             val source = """
                 class AnnotationOnlyTest {

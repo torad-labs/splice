@@ -1118,7 +1118,8 @@ class WsRoundDriverTest {
                 )
             }
         }
-        val inputs = coldFlowInputs(terminal, this).let { it.copy(drive = it.drive.let { d -> d.copy(inputs = d.inputs.copy(perf = perf)) }) }
+        val cold = coldFlowInputs(terminal, this)
+        val inputs = cold.copy(drive = cold.drive.copy(inputs = cold.drive.inputs.copy(perf = perf)))
         try {
             val result = WsRoundDriver(
                 provider(runner),

@@ -153,7 +153,8 @@ internal class ResponsesWsIdentity(
      *  the two-part key exists to close: with no session id, every conversation whose first message
      *  hashes the same shares one chain, and one conversation's server-side context answers another.
      *  A missing isolation value is not a weaker key, it is NO key. */
-    fun chainKey(meta: TurnMeta): String? = ResponsesConversationIdentity.chainKey(meta.scope.sessionId, meta.scope.conversationKey)
+    fun chainKey(meta: TurnMeta): String? =
+        ResponsesConversationIdentity.chainKey(meta.scope.sessionId, meta.scope.conversationKey)
 
     /** The chain key plus a DIGEST of the handshake header set. Headers must participate in
      *  identity (a turn needing a different set must not ride a socket opened without it), but they

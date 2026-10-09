@@ -94,7 +94,8 @@ class ChatUsageTest {
     @Test
     fun `cached tokens under the Responses input_tokens_details spelling are read, not reported as zero`() {
         val usage = ChatUsage()
-        usage.usage(ev("""{"usage":{"input_tokens":100,"output_tokens":5,"input_tokens_details":{"cached_tokens":80}}}"""))
+        val body = """{"usage":{"input_tokens":100,"output_tokens":5,"input_tokens_details":{"cached_tokens":80}}}"""
+        usage.usage(ev(body))
         assertEquals(80L, usage.toUsage().cachedTokens)
     }
 

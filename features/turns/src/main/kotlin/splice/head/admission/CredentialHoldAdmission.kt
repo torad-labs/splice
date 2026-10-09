@@ -122,7 +122,9 @@ internal class CredentialHoldAdmission(
             responses.respondProviderRateLimited(call, native)
         } else {
             val retryEpochSeconds = plan?.resetEpochSeconds ?: (now + armedMs) / MILLIS_PER_SECOND
-            deps.turnQuota.forSession(prepared.built.meta.scope.sessionId, null)?.clientHeadersRejected(retryEpochSeconds)
+            deps.turnQuota
+                .forSession(prepared.built.meta.scope.sessionId, null)
+                ?.clientHeadersRejected(retryEpochSeconds)
                 ?.forEach { (name, value) -> call.response.header(name, value) }
             val message = message(armedMs, reset, plan) + standby?.let { " $it" }.orEmpty()
             responses.respondRateLimited(call, message, retryEpochSeconds)

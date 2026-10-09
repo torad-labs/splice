@@ -81,7 +81,11 @@ internal class HeadAdmission(
             }
             is Preparation.Ready -> {
                 val meta = prepared.built.meta
-                admitted.slot.describe(meta.route.upstreamModel, meta.compact, meta.scope.sessionId?.take(SESSION_TAG_CHARS))
+                admitted.slot.describe(
+                    meta.route.upstreamModel,
+                    meta.compact,
+                    meta.scope.sessionId?.take(SESSION_TAG_CHARS),
+                )
                 // V4-165: the turn ends when its admission slot is released — here on a refusal or
                 // an attached drive, inside TurnStreamer for a detached one. One registration
                 // covers every exit, because the slot already has to be released on each of them.

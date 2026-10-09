@@ -444,8 +444,8 @@ class IndependentSourceRoundTest {
                         false,
                         false,
                         Usage(
-                        origin = UsageOrigin(localStep = true),
-                    ),
+                            origin = UsageOrigin(localStep = true),
+                        ),
                         shape = ResponseShape(messageClosed = true),
                     ),
                 )

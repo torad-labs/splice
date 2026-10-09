@@ -36,7 +36,10 @@ internal class ResponsesFailureAmend(
             responseText,
             quirks.tools.toolSurface?.mode ?: ToolSearchMode.CLIENT,
         ) ->
-            surfaceRecovery.dropToolSearchTool(bodyJson, quirks.tools.toolSurface?.mode ?: ToolSearchMode.CLIENT)?.also {
+            surfaceRecovery.dropToolSearchTool(
+                bodyJson,
+                quirks.tools.toolSurface?.mode ?: ToolSearchMode.CLIENT,
+            )?.also {
                 if (toolSurfaceLatch.close()) logToolSurfaceLatchClosed()
             }
         else -> null

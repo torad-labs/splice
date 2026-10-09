@@ -139,12 +139,14 @@ class PassthroughNativeWireTest {
     fun `dropped deltas and synthesized signatures do not inherit another frame scope`() = runTest {
         val writes = mutableListOf<String>()
         val sink = emitter(writes)
-        val translator = translator(PassthroughQuirks(
-            providerTag = "kimi",
-            thinking = PassthroughThinkingQuirks(
-                synthesizeSignatures = true,
+        val translator = translator(
+            PassthroughQuirks(
+                providerTag = "kimi",
+                thinking = PassthroughThinkingQuirks(
+                    synthesizeSignatures = true,
+                ),
             ),
-        ))
+        )
         val events = listOf(
             event("""{"type":"message_start"}"""),
             event("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),

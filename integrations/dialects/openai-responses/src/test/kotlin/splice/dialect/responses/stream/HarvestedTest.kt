@@ -90,7 +90,7 @@ class HarvestedTest {
         )
         assertEquals(
             "status=completed items=[reasoning(summary=0,enc=4) message(output_text:0) " +
-            "function_call(Bash) agent_message(author,recipient,content)]",
+                "function_call(Bash) agent_message(author,recipient,content)]",
             line,
         )
     }

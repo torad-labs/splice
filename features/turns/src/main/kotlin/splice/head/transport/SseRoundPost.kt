@@ -44,6 +44,25 @@ internal class SseRoundPost(
         }
     }
 
+    /** The account's headers ride ON TOP of the provider's, never instead of them. */
+    private suspend fun sendHeaders(
+        inputs: WsRoundInputs,
+        answers: TurnProviderAnswers,
+        creds: Credentials,
+    ): Map<String, String> {
+        val drive = inputs.drive
+        val headers = provider.extraHeaders(creds) +
+            drive.account?.account?.extraHeaders?.invoke(creds).orEmpty() +
+            CallerCredential.over(drive.turnHeaders, creds) + httpRoutingHeaders(inputs)
+        val key = CredentialKey.fromHeaders(
+            CredentialKey.headers(creds, headers),
+            (creds as? Credentials.ApiKey)?.header,
+        )
+        answers.sent(key)
+        drive.observeAccount(creds, headers)
+        return headers
+    }
+
     suspend fun post(inputs: WsRoundInputs): RoundResult {
         while (true) {
             val result = when (val posted = postAccount(inputs)) {
@@ -73,19 +92,7 @@ internal class SseRoundPost(
             PostContext(
                 url = provider.upstreamUrl,
                 auth = sender,
-                extraHeaders = { creds ->
-                    // The account's headers ride ON TOP of the provider's, never instead of them.
-                    val headers = provider.extraHeaders(creds) +
-                        account?.extraHeaders?.invoke(creds).orEmpty() +
-                        CallerCredential.over(drive.turnHeaders, creds) + httpRoutingHeaders(inputs)
-                    val key = CredentialKey.fromHeaders(
-                        CredentialKey.headers(creds, headers),
-                        (creds as? Credentials.ApiKey)?.header,
-                    )
-                    answers.sent(key)
-                    drive.observeAccount(creds, headers)
-                    headers
-                },
+                extraHeaders = { creds -> sendHeaders(inputs, answers, creds) },
                 onRetry = onRetry,
                 observers = PostObservers(
                     perf = drive.perf,

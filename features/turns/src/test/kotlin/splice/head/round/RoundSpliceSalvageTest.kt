@@ -57,8 +57,8 @@ class RoundSpliceSalvageTest {
                 reasoningTokens = 3,
                 origin = UsageOrigin(
                     history = UsageHistory(
-                    absorbed = AbsorbedRounds(rounds = 1, inputTokens = 100, cachedTokens = 20, outputTokens = 3),
-                ),
+                        absorbed = AbsorbedRounds(rounds = 1, inputTokens = 100, cachedTokens = 20, outputTokens = 3),
+                    ),
                 ),
                 reported = setOf(UsageField.INPUT, UsageField.OUTPUT),
             ),
@@ -71,16 +71,20 @@ class RoundSpliceSalvageTest {
     @Test
     fun `source rounds a turn cut accrue across its folded rounds and its dying one`() {
         val acc = RoundUsage()
-            .plusRound(Usage(
-                inputTokens = 100,
-                outputTokens = 3,
-                origin = UsageOrigin(history = UsageHistory(cutRounds = 1)),
-            ))
-            .plusRound(Usage(
-                inputTokens = 120,
-                outputTokens = 2,
-                origin = UsageOrigin(history = UsageHistory(cutRounds = 2)),
-            ))
+            .plusRound(
+                Usage(
+                    inputTokens = 100,
+                    outputTokens = 3,
+                    origin = UsageOrigin(history = UsageHistory(cutRounds = 1)),
+                ),
+            )
+            .plusRound(
+                Usage(
+                    inputTokens = 120,
+                    outputTokens = 2,
+                    origin = UsageOrigin(history = UsageHistory(cutRounds = 2)),
+                ),
+            )
         assertEquals(3L, acc.toUsage().cutRounds)
         val terminal = failure(Usage(outputTokens = 1, origin = UsageOrigin(history = UsageHistory(cutRounds = 1))))
         val out = rounds.withFailureSalvage(terminal, acc) as TurnOutcome.Failure
@@ -210,10 +214,12 @@ class RoundSpliceSalvageTest {
 
     @Test
     fun `known cut counts survive an unreported failure or abandonment without inventing tokens`() {
-        val acc = RoundUsage().plusRound(Usage(
-            origin = UsageOrigin(history = UsageHistory(cutRounds = 1)),
-            reported = emptySet(),
-        ))
+        val acc = RoundUsage().plusRound(
+            Usage(
+                origin = UsageOrigin(history = UsageHistory(cutRounds = 1)),
+                reported = emptySet(),
+            ),
+        )
         for (ending in listOf(failure(null), TurnOutcome.ClientAbandoned())) {
             val usage = when (val result = rounds.withFailureSalvage(ending, acc)) {
                 is TurnOutcome.Failure -> result.salvagedUsage

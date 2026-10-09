@@ -231,8 +231,12 @@ internal class CompactionPreflight(private val catalog: ModelCatalog, private va
     fun refusal(meta: TurnMeta, request: JsonObject, hasPriorExchange: Boolean): String? {
         val budget = CompactionBudgets.forRow(catalog, meta.route.originalModel) ?: return null
         val window = budget.serveWindow
-        val estimate = perf.measuredInputs.estimate(meta.scope.sessionId, meta.scope.conversationKey, meta.route.upstreamModel, request)
-            ?: return null
+        val estimate = perf.measuredInputs.estimate(
+            meta.scope.sessionId,
+            meta.scope.conversationKey,
+            meta.route.upstreamModel,
+            request,
+        ) ?: return null
         // An ordinary continuation may compact early, so use the conservative upper bound.
         // Compact and first-exchange refusals have no recovery behind them: only measured
         // input alone beyond W proves overflow. Generation p99 is not a required minimum.

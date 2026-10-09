@@ -882,9 +882,10 @@ class CodeModeZeroBillingTest {
         try {
             drive.perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, 123)
             drive.recordRawRound(TurnOutcome.Success(false, false, Usage()))
-            rig.stamp.stampSuccess(drive, TurnOutcome.Success(false, false, Usage(
-                origin = UsageOrigin(localStep = true),
-            )))
+            rig.stamp.stampSuccess(
+                drive,
+                TurnOutcome.Success(false, false, Usage(origin = UsageOrigin(localStep = true))),
+            )
             rig.telemetry.recordPerf(drive, "ok")
             assertTrue(AsyncFileIo.awaitFile(rig.perfFile))
             val row = Json.parseToJsonElement(Files.readString(rig.perfFile)).jsonObject

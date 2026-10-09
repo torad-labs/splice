@@ -6,8 +6,6 @@
 // anthropicUpstream + claudeCredentialsPath keys (nothing read them; claudithos leftovers).
 package splice.core.config
 
-import splice.core.topology.AuthKind
-
 // KnobKind + knobsByKey + restartRequiredKnobKeys live in KnobKind.kt
 // (concentration, 2026-08-19).
 
@@ -41,7 +39,7 @@ public enum class Knob(
         listOf("CODEX_AUTH_PATH"),
         // The registry's splice-owned default (AuthKind header, 2026-09-05) — referenced, not copied,
         // so the knob and the file `splice login` writes cannot drift apart (the DR-79 class).
-        KnobDefault.Text(AuthKind.ChatgptOAuth.authFile),
+        KnobDefault.ChatgptLoginFile,
         restartRequired = true,
     ),
     PINNED_MODEL(
@@ -345,7 +343,7 @@ public enum class Knob(
         // arm reads here, and the spike-era ~/.local/share/claude-grok path made a head omitting
         // auth.file 401 forever while doctor said signed-in (pinned by the registry-agreement arm).
         // Since 2026-09-05 the value IS the registry's, and it is splice's own file, not ~/.grok's.
-        KnobDefault.Text(AuthKind.GrokOAuth.authFile),
+        KnobDefault.GrokLoginFile,
         restartRequired = true,
     ),
     CONTROL_PORT(
@@ -595,7 +593,7 @@ public enum class Knob(
     public fun count(): Long = (typedDefault as? KnobDefault.Count)?.value ?: kindError("a count")
 
     /** The text this knob defaults to. A knob whose default is another kind fails here, by name. */
-    public fun text(): String = (typedDefault as? KnobDefault.Text)?.value ?: kindError("text")
+    public fun text(): String = typedDefault.raw() as? String ?: kindError("text")
 
     /** The flag this knob defaults to. A knob whose default is another kind fails here, by name. */
     public fun flag(): Boolean = (typedDefault as? KnobDefault.Flag)?.value ?: kindError("a flag")

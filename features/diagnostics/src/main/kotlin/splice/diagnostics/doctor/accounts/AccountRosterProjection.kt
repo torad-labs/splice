@@ -209,7 +209,7 @@ internal object AccountHealthChecks {
                     current?.let { "${login.head} is $it" },
                     "${login.place.command}'s login $standing",
                 ).joinToString(". "),
-                "Sign in again on ${login.place.command} in the console.",
+                "Sign in again: run ${login.place.command} and use /login.",
             )
         } + read.lastRefusals.mapNotNull { (head, answer) ->
             refusal(head, answer).takeUnless { authRefusals[head] == answer }

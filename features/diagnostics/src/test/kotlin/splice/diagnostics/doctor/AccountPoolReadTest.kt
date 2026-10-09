@@ -26,7 +26,8 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 
-private const val POOLED = """{"accounts":[{"heads":["codex"],"label":"work","selected":true,"credential_present":true}]}"""
+private const val POOLED =
+    """{"accounts":[{"heads":["codex"],"label":"work","selected":true,"credential_present":true}]}"""
 
 class AccountPoolReadTest {
 
@@ -132,7 +133,7 @@ class AccountPoolReadTest {
                "login_place":{"id":"claude-splice","command":"claude-splice"},"available":false,
                "carrying_request":false,"five_hour_used_percent":22.0,"five_hour_current":false,
                "seven_day_used_percent":59.0,"seven_day_current":false,
-               "refusal":"Access token expired. Sign in again on claude-splice in the console."}],
+               "refusal":"Access token expired. Sign in again: run claude-splice and use /login."}],
              "head_pools":{"claude-splice":{"account_pool":{"selected_label":"native:claude-splice",
                "accounts":[
                  {"label":"native:claude","available":true,"credential_present":true,
@@ -163,7 +164,7 @@ class AccountPoolReadTest {
         val expired = checks.single { it.detail.contains("claude-splice") && it.detail.contains("expired") }
         assertEquals(CheckStatus.WARN, expired.status)
         assertTrue(expired.detail.contains("cannot take over"), expired.detail)
-        assertEquals("Sign in again on claude-splice in the console.", expired.fix)
+        assertEquals("Sign in again: run claude-splice and use /login.", expired.fix)
         assertEquals(FixKind.ADVICE, expired.fixKind, "native login expiry is never a splice credential action")
         assertEquals(null, expired.fixId)
         assertTrue(checks.none { it.detail.contains("credential missing") }, checks.toString())
@@ -333,7 +334,7 @@ class AccountPoolReadTest {
            "login_place":{"id":"claude","command":"claude"},"credential_present":true,"available":true,"selected":true},
           {"heads":["claude-splice"],"kind":"client","label":"claude-splice","selector_key":"native:claude-splice",
            "login_place":{"id":"claude-splice","command":"claude-splice"},"credential_present":false,"available":false,
-           "refusal":"Access token expired. Sign in again on claude-splice in the console."}
+           "refusal":"Access token expired. Sign in again: run claude-splice and use /login."}
         ]}
     """.trimIndent()
 

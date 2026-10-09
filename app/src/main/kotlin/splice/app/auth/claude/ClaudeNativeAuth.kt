@@ -87,9 +87,9 @@ internal class ClaudeNativeAuth(
         }
         if (!present) {
             fields[REFUSAL_FIELD] = if (observed?.expiresAt?.let { it <= clock() } == true) {
-                "Access token expired. Sign in again on ${place.command} in the console."
+                "Access token expired. Sign in again: run ${place.command} and use /login."
             } else {
-                "No usable access token. Sign in again on ${place.command} in the console."
+                "No usable access token. Sign in again: run ${place.command} and use /login."
             }
         }
         return AuthDescription(present, CLAUDE_ACCOUNT_AUTH_KIND, fields)

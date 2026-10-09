@@ -1,7 +1,5 @@
-// NEW (SH-14): persistentLogger rotate pins. The logger previously tracked `written` in memory
-// only — one failed Files.move (external logrotate, read-only dir) left it >= the cap forever,
-// every later line re-threw before reaching newBufferedWriter, and daemon.log went silent for
-// the daemon's lifetime. Lines are drained through AsyncFileIo's single FIFO lane via a latch.
+// The daemon log rolls at its size cap and survives a failed roll (external logrotate, read-only
+// dir) without going silent. Lines are drained through AsyncFileIo's single FIFO lane via a latch.
 package splice.app
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -37,7 +35,7 @@ class MainTest {
     }
 
     @Test
-    fun `a failed rotate reconciles and the NEXT line is written - SH-14`(@TempDir tmp: Path) {
+    fun `a failed rotate reconciles and the NEXT line is written`(@TempDir tmp: Path) {
         val log = process.persistentLogger(tmp, maxBytes = 100)
         log("A".repeat(120))
         drain() // written is now past the cap
@@ -54,8 +52,6 @@ class MainTest {
         } finally {
             System.setErr(realErr)
         }
-        // Pre-fix: `written` stayed >= cap, every line re-threw in the rotate branch, and
-        // daemon.log never received another byte.
         val content = Files.readString(tmp.resolve("daemon.log"))
         assertTrue(content.contains("recovered"), "the logger must self-correct, got: $content")
         assertTrue(

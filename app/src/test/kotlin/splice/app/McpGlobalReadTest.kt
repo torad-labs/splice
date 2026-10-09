@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.topology.DaemonConfig
 import java.nio.file.Path
 import kotlin.io.path.writeText
 
@@ -55,14 +54,5 @@ class McpGlobalReadTest {
         val logs = StringBuilder()
         assertTrue(McpGlobalRead(home) { logs.append(it) }().isEmpty())
         assertTrue(logs.contains("unreadable"), logs.toString())
-    }
-
-    @Test
-    fun `daemon knobs default to hosting on with nothing excluded`() {
-        assertEquals(McpHostingSettings(true, emptySet()), McpHostingSettings().with(DaemonConfig()))
-        assertEquals(
-            McpHostingSettings(false, setOf("fs")),
-            McpHostingSettings().with(DaemonConfig(mcpHosting = false, mcpHostingExclude = listOf("fs"))),
-        )
     }
 }

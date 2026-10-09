@@ -1,8 +1,6 @@
-// NEW: V4-265 — a bound member's own turns reach its team's Activity. In a recorded four-member team
-// run, the members worked for five minutes and the board read "Nothing sampled today". Claude Code
-// 2.1.282 fires its "Describe your most recent action" side query only from its background-agent
-// runner (AgentSummary), never for a session's own loop, so no member ever sent one. This drives a REAL daemon: a team with a bound session, two ordinary turns from that
-// session after a tool call, and the team's Activity read over the control plane on the same UTC day.
+// A bound member's own turns reach its team's Activity. Drives a REAL daemon: a team with a bound session,
+// two ordinary turns from that session after a tool call, and the team's Activity read over the control
+// plane on the same UTC day.
 package splice.app
 
 import io.ktor.client.HttpClient

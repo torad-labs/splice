@@ -1,9 +1,7 @@
-// NEW: V4-444 — a session is heard from while this daemon serves its turn, however long the turn runs, and at the moment
-// the turn ends. e2016e627 heard a session only at its turn's START, so a request in flight past the 30-minute stale
-// window read STALE while it streamed, and a long turn read STALE the instant it ended. This holds a real turn open on a
-// real head (the codex provider ProviderAssembly builds, over the mock upstream's hold scenario), with the console's own
-// publisher as the head's events and the head's live turns in the publisher's registry, the way HeadServerFactory wires
-// both, and moves the publisher's wall clock past the window while the turn is live and after it ends.
+// A session is heard from while this daemon serves its turn, however long the turn runs, and at the
+// moment the turn ends. Holds a real turn open on a real codex head (over the mock upstream's hold
+// scenario) with the console's publisher as its events, and moves the publisher's wall clock past the
+// stale window while the turn is live and after it ends.
 package splice.app
 
 import io.ktor.client.HttpClient
@@ -46,7 +44,7 @@ import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
-private const val SESSION = "sess-heard-444"
+private const val SESSION = "sess-heard"
 private const val T0 = 1_791_000_000_000L
 private const val MINUTE_MS = 60_000L
 private const val WAIT_MS = 10_000L

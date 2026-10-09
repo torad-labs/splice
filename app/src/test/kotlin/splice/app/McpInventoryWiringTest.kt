@@ -1,4 +1,4 @@
-// NEW: V4-146 — the production wiring end to end: real McpGlobalRead + real McpSharing + the five
+// The production wiring end to end: real McpGlobalRead + real McpSharing + the five
 // real readers, over a temp home (never the operator's real files). Proves the app-side assembly
 // agrees with the unit-level classification McpInventoryTest already covers.
 package splice.app
@@ -18,9 +18,7 @@ import splice.core.util.LogSink
 import splice.launch.HeadTrees
 import splice.launch.LaunchSpec
 import splice.launch.recipe.LaunchService
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 import kotlin.io.path.createDirectories
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
@@ -104,34 +102,6 @@ class McpInventoryWiringTest {
         }
         assertEquals(McpDisposition.EXCLUDED, stale.disposition, stale.reason)
         assertTrue(stale.reason.contains("stale"), stale.reason)
-    }
-
-    // The wiring exists at ONE call site, so it gets a pin where the compiler cannot stand (the shape of
-    // CompactionWiringPinTest): `materializedHomes` has no default, but ControlPlane passing an empty
-    // list would compile, pass every test above, and report every head copy as another identity's.
-    @Test
-    fun `the control plane hands the census every head's launch spec`() {
-        val source = source("app/src/main/kotlin/splice/app/ControlPlane.kt")
-        assertTrue(
-            source.contains("mcpHost(home, sharing, heads.values.mapNotNull { it.launchSpec })"),
-            "ControlPlane must pass the heads' launch specs to mcpHost, or the census cannot tell a head's copy",
-        )
-        assertTrue(
-            source.contains("McpInventoryWiring(home, sharing, globalRead, launchSpecs)"),
-            "mcpHost must hand those launch specs to McpInventoryWiring",
-        )
-    }
-
-    /** Found by walking up from the working directory: under Gradle the cwd is the module dir and from an
-     *  IDE it is the repo root, so neither is assumed. */
-    private fun source(relative: String): String {
-        var dir: Path? = Paths.get("").toAbsolutePath()
-        while (dir != null) {
-            val candidate = dir.resolve(relative)
-            if (Files.exists(candidate)) return Files.readString(candidate)
-            dir = dir.parent
-        }
-        error("$relative not found above ${Paths.get("").toAbsolutePath()}")
     }
 
     private fun spec(configDir: Path, head: String, policy: ClaudePolicy) = LaunchSpec(

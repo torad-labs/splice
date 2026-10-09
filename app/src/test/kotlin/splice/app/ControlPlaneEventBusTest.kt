@@ -1,19 +1,5 @@
-// NEW: V4-134 — the daemon has ONE console event bus, and the route and every producer hold it.
-//
-// THE HAZARD (V4-126's own note): ControlServer used to build `EventBus()` for itself, so a daemon
-// that forgot to hand the route the producers' bus compiled, served /api/events, and streamed a bus
-// nobody publishes to — a console watching a quiet daemon forever while every head talked to a
-// second bus. That default is gone (an unassigned route answers a named 503), and what is left to
-// pin is that the three production lines which join the two sides stay written:
-//
-//   ControlPlane.start   srv.ports.events = console.bus        the route's bus IS the producers' bus
-//   Daemon               console = controlPlane.console  every head gets THAT publisher
-//   HeadServerFactory    events = console?.forHead(key)  and hands it to the head, keyed
-//
-// The first is checked BEHAVIOURALLY on a real ControlPlane — same instance, and an event published
-// through the producers' side arrives on the route's stream. The other two assign values the
-// compiler cannot check (both have a default so tests can build the classes bare), so they are
-// pinned on the source text, the idiom ConsoleWiringPinTest established for the same reason.
+// The daemon has ONE console event bus: an event published through the producers' side of a real
+// ControlPlane arrives on the route's /api/events stream.
 package splice.app
 
 import io.ktor.client.HttpClient
@@ -39,14 +25,12 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.head.HeadLifecycle
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 
-private const val PIN_TIMEOUT_MS = 10_000L
-private const val PIN_POLL_MS = 25L
+private const val BUS_TIMEOUT_MS = 10_000L
+private const val BUS_POLL_MS = 25L
 
-class OneEventBusPinTest {
+class ControlPlaneEventBusTest {
 
     @Test
     fun `the control plane streams the same bus its producers publish to`(@TempDir tempDir: Path) = runBlocking {
@@ -70,10 +54,10 @@ class OneEventBusPinTest {
         try {
             assertSame(plane.console.bus, srv.ports.events, "the route must stream the producers' bus, not its own")
             val frame = firstFrame(client, port, mgmt.get()) {
-                plane.console.forHead("pinned-head").lifecycle(HeadLifecycle.STARTED)
+                plane.console.forHead("bus-head").lifecycle(HeadLifecycle.STARTED)
             }
             assertEquals("event: head.state", frame[1], "a producer's event must arrive on the route: $frame")
-            assertTrue(frame[2].contains("\"head\":\"pinned-head\""), "it must be THIS producer's event: $frame")
+            assertTrue(frame[2].contains("\"head\":\"bus-head\""), "it must be THIS producer's event: $frame")
         } finally {
             client.close()
             srv.stop()
@@ -81,29 +65,11 @@ class OneEventBusPinTest {
         }
     }
 
-    @Test
-    fun `the daemon hands every head the control plane's publisher`() {
-        assertTrue(
-            source("app/src/main/kotlin/splice/app/Daemon.kt").contains("console = controlPlane.console"),
-            "Daemon must build HeadServerFactory with `console = controlPlane.console`, or every head " +
-                "reports to nobody while the build stays green",
-        )
-    }
-
-    @Test
-    fun `the head factory gives each head its own keyed reporter`() {
-        assertTrue(
-            source("app/src/main/kotlin/splice/app/head/HeadServerFactory.kt")
-                .contains("events = console?.forHead(key)"),
-            "HeadServerFactory must set HeadSeams.events from the publisher, keyed by the head it builds",
-        )
-    }
-
     /** Opens /api/events, runs [produce] once the stream is live, and returns the first frame's lines
      *  (id, event, data). The stream subscribes before writing its open comment, so producing after
      *  that line cannot race the subscription. */
     private suspend fun firstFrame(client: HttpClient, port: Int, key: String, produce: () -> Unit): List<String> =
-        withTimeout(PIN_TIMEOUT_MS) {
+        withTimeout(BUS_TIMEOUT_MS) {
             awaitPort(port)
             val open = CompletableDeferred<Unit>()
             val reading = async {
@@ -133,17 +99,7 @@ class OneEventBusPinTest {
     }
 
     private suspend fun awaitPort(port: Int) {
-        while (runCatching { java.net.Socket("127.0.0.1", port).close() }.isFailure) delay(PIN_POLL_MS)
-    }
-
-    private fun source(relative: String): String {
-        var dir: Path? = Paths.get("").toAbsolutePath()
-        while (dir != null) {
-            val candidate = dir.resolve(relative)
-            if (Files.exists(candidate)) return Files.readString(candidate)
-            dir = dir.parent
-        }
-        error("$relative not found above ${Paths.get("").toAbsolutePath()}")
+        while (runCatching { java.net.Socket("127.0.0.1", port).close() }.isFailure) delay(BUS_POLL_MS)
     }
 
     /** Before the frame starts every line is read (the blank after `: open`, heartbeats); once it

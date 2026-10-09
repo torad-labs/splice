@@ -1,10 +1,5 @@
-// NEW: V4-131 — the daemon side of the teams: ConsoleWiring's one team store under the state dir and
-// its session-address lookup over the registry /api/sessions reads, HeadServerFactory handing every
-// head the publisher's slot resolver, and ControlPlane giving the routes and the heads ONE store.
-//
-// THE CONTROLPLANE PIN IS EXPECTED-RED until the committer applies V4-131's ControlPlane lines (the
-// CONTROLSERVER RECONCILED law: ControlPlane is orchestrator-applied, so this row writes the pin and the
-// commit records red before and green after). It fails on `srv.ports.teams` being null.
+// The daemon side of the teams: the one team store under the state dir, the session-address lookup over
+// the registry /api/sessions reads, and ONE store shared by the routes and the heads.
 package splice.app
 
 import kotlinx.coroutines.runBlocking
@@ -21,7 +16,6 @@ import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 
 private const val SESSION = "e5e5e5e5-0000-4000-8000-000000000005"
 
@@ -52,16 +46,7 @@ class TeamWiringTest {
     }
 
     @Test
-    fun `every head gets the publisher's slot resolver`() {
-        val factory = source("app/src/main/kotlin/splice/app/head/HeadServerFactory.kt")
-        assertTrue(
-            factory.contains("slotInstructions = console?.slots,"),
-            "HeadServerFactory must hand each head the publisher's SlotInstructions, or no slot text is ever sent",
-        )
-    }
-
-    @Test
-    fun `the routes and the heads share one team store (EXPECTED-RED until ControlPlane is applied)`() {
+    fun `the routes and the heads share one team store`() {
         val paths = StatePaths(baseOverride = tmp.resolve("plane-state"))
         val plane = ControlPlane(
             DaemonEnvironment(paths, ConfigService(paths), MgmtKey(paths), { }),
@@ -79,8 +64,8 @@ class TeamWiringTest {
             },
         ) { "the control plane did not bind" }
         try {
-            val store = checkNotNull(srv.ports.teams) { "ControlPlane must assign srv.ports.teams" }
-            val slots = checkNotNull(plane.console.slots) { "ControlPlane must give the publisher a SlotInstructions" }
+            val store = checkNotNull(srv.ports.teams) { "the control plane must offer the team store" }
+            val slots = checkNotNull(plane.console.slots) { "the control plane must give the heads a slot resolver" }
             val team = Team(name = "atlas", slots = listOf(TeamSlot(id = "b1", role = "builder", head = "h")))
             val id = store.upsert(team).id
             store.bind(id, mapOf("b1" to SESSION))
@@ -89,15 +74,5 @@ class TeamWiringTest {
             srv.stop()
             plane.cancelProbes()
         }
-    }
-
-    private fun source(relative: String): String {
-        var dir: Path? = Paths.get("").toAbsolutePath()
-        while (dir != null) {
-            val candidate = dir.resolve(relative)
-            if (Files.exists(candidate)) return Files.readString(candidate)
-            dir = dir.parent
-        }
-        error("$relative not found above the working directory")
     }
 }

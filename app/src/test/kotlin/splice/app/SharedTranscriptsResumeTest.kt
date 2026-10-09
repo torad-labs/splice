@@ -1,29 +1,15 @@
-// NEW: cross-head resume, end to end through the REAL launch entry. The operator story: run out of
-// credits on one account, switch head, resume the same session. Claude Code finds a session by
-// listing $CLAUDE_CONFIG_DIR/projects/<encoded-cwd>/<id>.jsonl, so the join is filesystem IDENTITY:
-// head B's spelling of the transcript must resolve to the SAME real file head A wrote.
-//
-// V4-64/V4-65 (2026-09-16) built and proved that through one shared tree. V4-115 (2026-09-17) read
-// the config-isolation ruling as covering transcripts, gave every head a private tree, kept only an
-// explicit `-r SESSION_ID` copy, and rewrote this file around it. V4-168 (2026-09-19) puts the join
-// back after the operator named its removal a regression — and keeps V4-115's copy path for the
-// one policy that still wants it. So this file pins BOTH contracts, each under the policy that
-// selects it, all through LaunchService over one ClaudeConfigMaterializer (the object ControlPlane
-// wires):
-//   SHARED    (share names projects — the operator's own policy) two heads' projects/ ARE the global
-//             tree, a transcript written through A is the same file on B, a head whose projects/ was
-//             a real dir has it migrated in and linked, and SessionProject resolves the cwd from it;
+// Cross-head resume, end to end through the REAL launch entry. The operator story: run out of credits on
+// one account, switch head, resume the same session. Claude Code finds a session by listing
+// $CLAUDE_CONFIG_DIR/projects/<encoded-cwd>/<id>.jsonl, so the join is filesystem IDENTITY: head B's
+// spelling of the transcript must resolve to the SAME real file head A wrote. Both policies, through
+// LaunchService over one ClaudeConfigMaterializer:
+//   SHARED    (share names projects) two heads' projects/ ARE the global tree, a transcript written
+//             through A is the same file on B, a head whose projects/ was a real dir has it migrated in
+//             and linked, and SessionProject resolves the cwd from it;
 //   ISOLATED  (isolate names projects) a foreign session is INVISIBLE to this head's picker until an
 //             explicit `-r SESSION_ID` COPIES it in with the assistant rows rewritten to THIS head's
 //             model, and a `-r` naming an id no head holds copies nothing.
-//
-// The LINK is asserted BEFORE any transcript is written, on purpose: a change that stops sharing
-// projects must red on "projects is not a symlink" — the contract — and never on a missing file
-// further down, which would be the same red for a dozen unrelated causes (mutation duty, V4-65).
-//
-// LaunchSpecFactory needs the daemon's Topology/SignInPlanner/HeadBuildInputs wiring, so the
-// LaunchSpec is built here the way LaunchServiceTest builds it — with HeadTrees spelled explicitly,
-// exactly as LaunchSpecFactory derives them from the topology.
+// The LaunchSpec is built here with HeadTrees spelled explicitly, as LaunchSpecFactory derives them.
 package splice.app
 
 import kotlinx.serialization.json.Json

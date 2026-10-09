@@ -1,4 +1,4 @@
-// NEW (P6-TOML): the zero-code multi-provider proof. One daemon, providers defined purely in TOML —
+// The zero-code multi-provider proof. One daemon, providers defined purely in TOML —
 // codex (responses + chatgpt-oauth), grok (responses + api-key, session cache key), openrouter
 // (openai-chat + api-key), generic Anthropic passthrough (api-key), and Kimi's built-in API-key
 // compatibility path. Dialect selects the arm, auth kind selects credentials, and provider ID owns
@@ -301,7 +301,7 @@ class MultiProviderDaemonTest {
     // settings.json: armed launches install the paste-your-key advertiser hook, disarmed ones must
     // not (writeSettings rebuilds hooks per materialize, so the entry cannot linger).
     @Test
-    fun `launch rereads api-key presence from the live credential on every request - DR-81`() = runBlocking {
+    fun `launch rereads api-key presence from the live credential on every request`() = runBlocking {
         suspend fun launchThenSettings(): String {
             val r = client.post("http://127.0.0.1:$controlPort/launch/openrouter") {
                 header("Authorization", "Bearer $key")
@@ -310,7 +310,7 @@ class MultiProviderDaemonTest {
             return Files.readString(orCfgDir.resolve("settings.json"))
         }
         // Boot wrote the key: the first launch must NOT arm the capture advertiser (a compliant
-        // paste would overwrite the working credential — the DR-81 defect).
+        // paste would overwrite the working credential).
         assertFalse(
             launchThenSettings().contains("splice-keysetup-hook"),
             "key present must disarm the paste-your-key advertiser",

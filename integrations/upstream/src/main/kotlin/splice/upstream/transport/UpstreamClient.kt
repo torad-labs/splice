@@ -277,7 +277,13 @@ public class UpstreamClient(
         val attempted = try {
             transportFailures.catchCancellable {
                 state.markResend(ctx)
-                request.execute(ctx, body.bytes, auth, onStreamStart = { streamHandedOff = true }, block, recorder)
+                request.execute(
+                    ctx,
+                    AttemptWire(auth.credentials, auth.headers, body.bytes, recorder),
+                    auth,
+                    onStreamStart = { streamHandedOff = true },
+                    block,
+                )
             }
         } catch (e: StreamTornBeforeClient) {
             // thrown by the turn driver through the translator (G5 reachability); a transport

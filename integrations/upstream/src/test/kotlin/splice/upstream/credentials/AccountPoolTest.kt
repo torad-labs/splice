@@ -45,8 +45,8 @@ class AccountPoolTest {
     fun `quota exhaustion switches only the affected session to the lowest weekly account`() {
         val fixture = Fixture()
         val primary = fixture.account("primary", primary = true)
-        val busier = fixture.account("plus-b", weekly = 40.0)
-        val quieter = fixture.account("plus-a", weekly = 10.0)
+        val busier = fixture.account("plus-b", quota = fixture.quota(weekly = 40.0))
+        val quieter = fixture.account("plus-a", quota = fixture.quota(weekly = 10.0))
         val pool = fixture.pool(primary, busier, quieter)
 
         assertSame(primary, pool.chosen("session-a").account)
@@ -166,7 +166,7 @@ class AccountPoolTest {
     @Test
     fun `a missing primary selects the readable labeled credential`() {
         val fixture = Fixture()
-        val primary = fixture.account("primary", primary = true, credentialPresent = false)
+        val primary = fixture.account("primary", primary = true, credential = CredentialState.MISSING)
         val backup = fixture.account("work")
         val pool = fixture.pool(primary, backup)
 
@@ -192,7 +192,11 @@ class AccountPoolTest {
     @Test
     fun `sticky sessions keep their free backup after primary resets`() {
         val fixture = Fixture()
-        val primary = fixture.account("primary", primary = true, five = 100.0, reset = 2_000L)
+        val primary = fixture.account(
+            "primary",
+            primary = true,
+            quota = fixture.quota(five = 100.0, reset = 2_000L),
+        )
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
 
@@ -208,8 +212,17 @@ class AccountPoolTest {
     @Test
     fun `all exhausted reports the earliest account reset`() {
         val fixture = Fixture()
-        val primary = fixture.account("primary", primary = true, five = 100.0, reset = 3_000L, heldUntil = 3_000L)
-        val backup = fixture.account("plus-a", weekly = 100.0, reset = 2_000L, heldUntil = 2_000L)
+        val primary = fixture.account(
+            "primary",
+            primary = true,
+            quota = fixture.quota(five = 100.0, reset = 3_000L),
+            heldUntil = 3_000L,
+        )
+        val backup = fixture.account(
+            "plus-a",
+            quota = fixture.quota(weekly = 100.0, reset = 2_000L),
+            heldUntil = 2_000L,
+        )
         val pool = fixture.pool(primary, backup)
 
         val failure = pool.exhausted("session")
@@ -222,7 +235,11 @@ class AccountPoolTest {
     @Test
     fun `a stale full quota without a reset does not disable an account forever`() {
         val fixture = Fixture()
-        val primary = fixture.account("primary", primary = true, five = 100.0, reset = null)
+        val primary = fixture.account(
+            "primary",
+            primary = true,
+            quota = fixture.quota(five = 100.0, reset = null),
+        )
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
 
@@ -234,7 +251,7 @@ class AccountPoolTest {
     @Test
     fun `first turn starts cache cold when primary is already exhausted`() {
         val fixture = Fixture()
-        val primary = fixture.account("primary", primary = true, five = 100.0)
+        val primary = fixture.account("primary", primary = true, quota = fixture.quota(five = 100.0))
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
 
@@ -249,9 +266,9 @@ class AccountPoolTest {
     @Test
     fun `null sessions re-evaluate without repeating a switch or exposing another choice`() {
         val fixture = Fixture()
-        val primary = fixture.account("primary", primary = true, five = 100.0)
-        val first = fixture.account("plus-a", weekly = 10.0)
-        val second = fixture.account("plus-b", weekly = 20.0)
+        val primary = fixture.account("primary", primary = true, quota = fixture.quota(five = 100.0))
+        val first = fixture.account("plus-a", quota = fixture.quota(weekly = 10.0))
+        val second = fixture.account("plus-b", quota = fixture.quota(weekly = 20.0))
         val pool = fixture.pool(primary, first, second)
 
         val initial = pool.chosen(null)
@@ -301,7 +318,7 @@ class AccountPoolTest {
     @Test
     fun `concurrent selections preserve one sticky choice per session`() = runBlocking {
         val fixture = Fixture()
-        val primary = fixture.account("primary", primary = true, five = 100.0)
+        val primary = fixture.account("primary", primary = true, quota = fixture.quota(five = 100.0))
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
 
@@ -316,7 +333,7 @@ class AccountPoolTest {
     @Test
     fun `sticky session capacity evicts the least recently used without changing an issued turn`() {
         val fixture = Fixture()
-        val primary = fixture.account("primary", primary = true, five = 100.0)
+        val primary = fixture.account("primary", primary = true, quota = fixture.quota(five = 100.0))
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
         val issued = pool.chosen("session-1")
@@ -427,8 +444,12 @@ class AccountPoolTest {
     @Test
     fun `provider reset ignores credentialless backups but includes a newly logged in account`() {
         val fixture = Fixture()
-        val primary = fixture.account("primary", primary = true, five = 100.0, reset = 19000L)
-        val backup = fixture.account("backup", credentialPresent = false)
+        val primary = fixture.account(
+            "primary",
+            primary = true,
+            quota = fixture.quota(five = 100.0, reset = 19000L),
+        )
+        val backup = fixture.account("backup", credential = CredentialState.MISSING)
         primary.cooldown.markUnavailable(18000000L)
         val pool = fixture.pool(primary, backup)
         assertTrue(pool.select("blocked") is Selection.Exhausted)
@@ -447,7 +468,11 @@ class AccountPoolTest {
     fun `an authentication-held backup cannot hide the selector's next opening`() {
         for (reject in listOf(AccountSelection::markCredentialUnavailable, AccountSelection::markCredentialMissing)) {
             val fixture = Fixture()
-            val primary = fixture.account("primary", primary = true, five = 100.0, reset = 19000L)
+            val primary = fixture.account(
+                "primary",
+                primary = true,
+                quota = fixture.quota(five = 100.0, reset = 19000L),
+            )
             val backup = fixture.account("backup")
             primary.cooldown.markUnavailable(18000000L)
             val pool = fixture.pool(primary, backup)
@@ -473,14 +498,13 @@ class AccountPoolTest {
         fun account(
             label: String,
             primary: Boolean = false,
-            five: Double = 0.0,
-            weekly: Double = 0.0,
-            reset: Long? = 2_000L,
-            credentialPresent: Boolean = true,
-            credentialIdentityKnown: Boolean = true,
+            quota: QuotaSnapshot = quota(),
+            credential: CredentialState = CredentialState.PRESENT,
             heldUntil: Long? = null,
         ): PoolAccount {
-            val quota = AtomicReference(quota(five, weekly, reset))
+            val credentialPresent = credential != CredentialState.MISSING
+            val credentialIdentityKnown = credential == CredentialState.PRESENT
+            val quotaRef = AtomicReference(quota)
             val rev = revision++
             val identity = AtomicReference(
                 CredentialFileIdentity(rev, 100L, "digest-of-revision-$rev").takeIf {
@@ -507,13 +531,13 @@ class AccountPoolTest {
                 primary = primary,
                 auth = auth,
                 quota = object : AccountQuotaSource {
-                    override fun snapshot(): QuotaSnapshot = quota.get()
+                    override fun snapshot(): QuotaSnapshot = quotaRef.get()
                     override val held: Boolean get() = heldUntil?.let { it > now.get() / 1_000L } == true
                 },
                 cooldown = RateLimitCooldown(ElapsedClock { elapsed }),
                 credentialPresent = credentialPresent,
             ).also {
-                quotas[it] = quota
+                quotas[it] = quotaRef
                 identities[it] = identity
                 presences[it] = presence
             }
@@ -554,6 +578,9 @@ class AccountPoolTest {
     }
 }
 
+/** What a test account's credential file looks like: readable, absent, or present with an identity that cannot be read. */
+internal enum class CredentialState { PRESENT, MISSING, IDENTITY_UNKNOWN }
+
 class AccountPoolTestAuthOnly {
     @Test
     fun `provider-held horizons use only exhausted windows and wait for the last active reset`() {
@@ -583,12 +610,14 @@ class AccountPoolTestAuthOnly {
         val primary = fixture.account(
             "primary",
             primary = true,
-            five = 100.0,
-            weekly = 100.0,
-            reset = 5000L,
+            quota = fixture.quota(five = 100.0, weekly = 100.0, reset = 5000L),
             heldUntil = 5000L,
         )
-        val backup = fixture.account("backup", five = 100.0, reset = 2000L, heldUntil = 2000L)
+        val backup = fixture.account(
+            "backup",
+            quota = fixture.quota(five = 100.0, reset = 2000L),
+            heldUntil = 2000L,
+        )
         val pool = fixture.pool(primary, backup)
         val published = pool.view(null).blockedUntilEpochSecondsByLabel
         assertEquals(mapOf("primary" to 5000L, "backup" to 2000L), published)
@@ -598,12 +627,16 @@ class AccountPoolTestAuthOnly {
     @Test
     fun `credentialless accounts cannot shorten the published pool horizon`() {
         val fixture = AccountPoolTest.Fixture()
-        val primary = fixture.account("primary", primary = true, weekly = 100.0, reset = 433000L, heldUntil = 433000L)
+        val primary = fixture.account(
+            "primary",
+            primary = true,
+            quota = fixture.quota(weekly = 100.0, reset = 433000L),
+            heldUntil = 433000L,
+        )
         val backup = fixture.account(
             "backup",
-            five = 100.0,
-            reset = 8200L,
-            credentialPresent = false,
+            quota = fixture.quota(five = 100.0, reset = 8200L),
+            credential = CredentialState.MISSING,
             heldUntil = 8200L,
         )
         val pool = fixture.pool(primary, backup)
@@ -619,8 +652,11 @@ class AccountPoolTestAuthOnly {
     @Test
     fun `a usage-only full snapshot cannot exhaust a valid login beside an expired primary`() {
         val fixture = AccountPoolTest.Fixture()
-        val expired = fixture.account("primary", primary = true, credentialPresent = false)
-        val usable = fixture.account("plain", five = 100.0, weekly = 100.0, reset = 3_000L)
+        val expired = fixture.account("primary", primary = true, credential = CredentialState.MISSING)
+        val usable = fixture.account(
+            "plain",
+            quota = fixture.quota(five = 100.0, weekly = 100.0, reset = 3_000L),
+        )
         val pool = fixture.pool(expired, usable)
 
         val selected = (pool.select("synthetic-session") as Selection.Chosen).account

@@ -72,8 +72,10 @@ class WatchdogLivenessTest {
                 slot,
                 target,
                 ClientFrameEmitted { false },
-                openConnection(),
-                PathEvidence.OPEN_CONNECTION,
+                PathLiveness(
+                    openConnection(),
+                    PathEvidence.OPEN_CONNECTION,
+                ),
             )
             delay(POLLS_SETTLE_MS)
 
@@ -112,8 +114,10 @@ class WatchdogLivenessTest {
                 slot,
                 target,
                 ClientFrameEmitted { true },
-                openConnection(),
-                PathEvidence.OPEN_CONNECTION,
+                PathLiveness(
+                    openConnection(),
+                    PathEvidence.OPEN_CONNECTION,
+                ),
             )
             // Bounded, not a bare join: if the guard regresses, the failure should be an assertion
             // naming the cause rather than a ten-second hang inside a test that then reports nothing.
@@ -144,8 +148,10 @@ class WatchdogLivenessTest {
                 slot,
                 turn,
                 ClientFrameEmitted { false },
-                openConnection(),
-                PathEvidence.OPEN_CONNECTION,
+                PathLiveness(
+                    openConnection(),
+                    PathEvidence.OPEN_CONNECTION,
+                ),
             )
             val ended = withTimeoutOrNull(6.seconds) { turn.join() }
 
@@ -177,9 +183,11 @@ class WatchdogLivenessTest {
                 slot,
                 target,
                 ClientFrameEmitted { false },
-                openConnection(),
-                PathEvidence.OPEN_CONNECTION,
-                ProviderProbe { false },
+                PathLiveness(
+                    openConnection(),
+                    PathEvidence.OPEN_CONNECTION,
+                    ProviderProbe { false },
+                ),
             )
             val ended = withTimeoutOrNull(5.seconds) { target.join() }
 
@@ -203,14 +211,16 @@ class WatchdogLivenessTest {
                 slot,
                 target,
                 ClientFrameEmitted { false },
-                openConnection(),
-                PathEvidence.OPEN_CONNECTION,
-                // A probe that could not get an answer reports TRUE by contract, so this arm is
-                // indistinguishable from a reachable one BY DESIGN — that is the class the row
-                // refuses to let reap. It does not throw: [ProviderProbe] answers, and the
-                // production probe translates its own failures into this same answer where the
-                // specific exception types are known (see UpstreamTransport.reachabilityProbe).
-                ProviderProbe { true },
+                PathLiveness(
+                    openConnection(),
+                    PathEvidence.OPEN_CONNECTION,
+                    // A probe that could not get an answer reports TRUE by contract, so this arm is
+                    // indistinguishable from a reachable one BY DESIGN — that is the class the row
+                    // refuses to let reap. It does not throw: [ProviderProbe] answers, and the
+                    // production probe translates its own failures into this same answer where the
+                    // specific exception types are known (see UpstreamTransport.reachabilityProbe).
+                    ProviderProbe { true },
+                ),
             )
             delay(POLLS_SETTLE_MS)
 

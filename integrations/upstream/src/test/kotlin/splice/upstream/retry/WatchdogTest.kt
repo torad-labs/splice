@@ -303,7 +303,13 @@ class WatchdogTest {
             )
             val pingAgo = AtomicLong(8_000) // the last server ping is 8 s old: a live path
             val target = launch { delay(10.seconds) }
-            val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { false }, WsPathPulse { pingAgo.get() })
+            val poller = dog.launchIn(
+                this,
+                slot,
+                target,
+                ClientFrameEmitted { false },
+                PathLiveness(WsPathPulse { pingAgo.get() }),
+            )
             ticks.runTo(900) // silent 3x the first-output tier
             assertNull(dog.fired, "a round on a path the server still pings was reaped")
             assertTrue(target.isActive)

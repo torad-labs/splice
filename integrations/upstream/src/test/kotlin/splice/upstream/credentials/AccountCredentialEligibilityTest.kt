@@ -204,7 +204,7 @@ class AccountCredentialEligibilityTest {
     @Test
     fun `persistent unknown stat on a seeded credential still admits one timed probe`() {
         val fixture = AccountPoolTest.Fixture()
-        val primary = fixture.account("primary", primary = true, credentialIdentityKnown = false)
+        val primary = fixture.account("primary", primary = true, credential = CredentialState.IDENTITY_UNKNOWN)
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
         pool.chosen("failed").markCredentialUnavailable()
@@ -258,7 +258,7 @@ class AccountCredentialEligibilityTest {
     @Test
     fun `missing credentials stay unavailable until a recreated revision appears`() {
         val fixture = AccountPoolTest.Fixture()
-        val primary = fixture.account("primary", primary = true, credentialPresent = false)
+        val primary = fixture.account("primary", primary = true, credential = CredentialState.MISSING)
         val backup = fixture.account("plus-a")
         val pool = fixture.pool(primary, backup)
 

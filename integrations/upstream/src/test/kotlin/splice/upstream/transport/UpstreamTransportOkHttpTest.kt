@@ -163,7 +163,10 @@ class UpstreamTransportOkHttpTest {
         try {
             runBlocking {
                 UpstreamRequest(client, zstdRequestBody = false)
-                    .prepare("http://127.0.0.1:${server.localPort}/", Credentials.ClientForwarded, { provider }, BODY)
+                    .prepare(
+                        "http://127.0.0.1:${server.localPort}/",
+                        AttemptWire(Credentials.ClientForwarded, provider, BODY),
+                    )
                     .execute { it.bodyAsText() }
             }
         } finally {

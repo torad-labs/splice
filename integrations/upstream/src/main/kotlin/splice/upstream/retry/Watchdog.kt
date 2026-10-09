@@ -230,17 +230,7 @@ public class TurnWatchdog(
         slot: InflightGate.Slot,
         target: Job,
         clientFrame: ClientFrameEmitted,
-        pathPulse: WsPathPulse = WsPathPulse { NEVER_PINGED_MS },
-        /** V4-125: WHICH evidence [pathPulse] is reporting, so a hold can be logged and recorded
-         *  without claiming a server ping on a transport that has none. Defaults to
-         *  [PathEvidence.SERVER_PING] because that is what the WebSocket path passes and what every
-         *  caller meant before this parameter existed. */
-        evidence: PathEvidence = PathEvidence.SERVER_PING,
-        /** V4-125 fallback: asked ONLY when the pulse says the path is alive, and only for a tier that
-         *  is a verdict rather than a heal. It must AGREE before the round is held, so a probe that
-         *  refuses ends the round and a probe that is absent leaves the old behaviour untouched —
-         *  which is what the WebSocket path, whose pings are real evidence, keeps. */
-        probe: ProviderProbe? = null,
+        path: PathLiveness = PathLiveness(),
     ): Job =
         scope.launch {
             while (isActive) {
@@ -275,9 +265,9 @@ public class TurnWatchdog(
                     // fired is an ordinary idle one that the pulse does judge.
                     val stallTier = seen &&
                         budget.stallReanchor.inWholeMilliseconds <= budget.streamIdle.inWholeMilliseconds
-                    val pingAgo = pathPulse.lastPingAgoMs()
-                    if (holdOnLivePath(stallTier, pingAgo, probe)) {
-                        hold(idle, idleLimit, pingAgo, seen, evidence)
+                    val pingAgo = path.pingAgoMs()
+                    if (!stallTier && path.agrees(pingAgo, probeDispatcher)) {
+                        hold(idle, idleLimit, pingAgo, seen, path.evidence)
                         continue
                     }
                     firedRef.compareAndSet(null, WatchdogFired.Idle(idle, seen, idleLimit))
@@ -286,52 +276,6 @@ public class TurnWatchdog(
                 }
             }
         }
-
-    /**
-     * V4-125: should this breach HOLD the round rather than reap it?
-     *
-     * Three questions in order, and each one is a reason to stop asking: the stall tier never holds
-     * (it is a heal, not a verdict); a path whose socket reading is already stale is not alive; and
-     * the out-of-band probe must agree before the wait is extended.
-     *
-     * THE PROBE IS ASKED ONLY WHERE ITS ANSWER CAN CHANGE THE OUTCOME. It costs a real connection,
-     * and on the stall tier it cannot matter, so asking there would buy nothing and spend a connect
-     * on every poll. That is not theoretical: the first cut asked it unconditionally and two
-     * MidStreamTearContinuesTest arms went red, because the blocked poller perturbed the timing
-     * those V4-116 arms measure.
-     */
-    private suspend fun holdOnLivePath(stallTier: Boolean, pingAgoMs: Long, probe: ProviderProbe?): Boolean {
-        if (stallTier) return false
-        if (pingAgoMs > PATH_PING_GRACE_MS) return false
-        return probeAgrees(probe)
-    }
-
-    /**
-     * V4-125: does the out-of-band probe agree that the path is alive?
-     *
-     * A probe that is ABSENT agrees, which is what keeps the WebSocket path — whose server pings are
-     * real, dated evidence — byte-for-byte as it was. A probe that is present is asked, and the ONE
-     * failure mode that must not reap a round is the probe failing to run: a DNS hiccup, a timeout in
-     * the probe itself, a provider that rate-limits the probe but not the stream. Those are
-     * INCONCLUSIVE, not evidence of death, so they read as agreement. Only a definite refusal — the
-     * probe ran and the provider said no — ends the round, because only then is it true that no
-     * amount of waiting produces a token.
-     */
-    private suspend fun probeAgrees(probe: ProviderProbe?): Boolean {
-        if (probe == null) return true
-        // No catch here ON PURPOSE, and the reason is a pair of walls pulling opposite ways: the
-        // cancellation rule wants a rethrow inside a broad catch, and detekt refuses both the broad
-        // catch and the instanceof that would satisfy it. The way out is to not need one — by
-        // contract [ProviderProbe] ANSWERS (true when reachable OR when it could not tell), and the
-        // production probe translates its own failures into that answer where the specific exception
-        // types are known. A probe that breaks its side of the contract takes the poller down loudly
-        // rather than being swallowed here, and an exception that is NOT a probe failure — the
-        // cancellation that stops this poller — propagates for free, which is the whole point.
-        //
-        // Off the poller's own dispatcher: a probe is a socket connect with a timeout, and one that
-        // BLOCKS the poller delays every other sample the watchdog owes the round.
-        return withContext(probeDispatcher) { probe.reachable() }
-    }
 
     /** Record the hold once and say so once; every later poll that holds is the same fact. */
     private fun hold(idleMs: Long, limitMs: Long, pingAgoMs: Long, seen: Boolean, evidence: PathEvidence) {
@@ -418,3 +362,56 @@ public const val MID_OUTPUT_TIER: String = "mid-output"
 
 // why: milliseconds in a second — dividing a millisecond figure by it reads seconds
 public const val MS_PER_S: Long = 1000L
+
+/**
+ * What a round can say about its path being alive: the [pulse] the transport reads off its socket, WHICH
+ * [evidence] that pulse is, and the out-of-band [probe] asked when the socket itself cannot answer.
+ *
+ * V4-125: owns the question "should a breach HOLD the round rather than reap it?" so the watchdog asks
+ * [agrees] and does not carry the probe's contract. The pulse defaults to never pinged; the evidence defaults
+ * to [PathEvidence.SERVER_PING] because that is what the WebSocket path passes and what every caller meant
+ * before it was named. The probe is asked ONLY when the pulse says the path is alive and only for a tier that is
+ * a verdict rather than a heal; an absent probe leaves the old behaviour untouched.
+ */
+public class PathLiveness(
+    private val pulse: WsPathPulse = WsPathPulse { NEVER_PINGED_MS },
+    public val evidence: PathEvidence = PathEvidence.SERVER_PING,
+    private val probe: ProviderProbe? = null,
+) {
+    internal fun pingAgoMs(): Long = pulse.lastPingAgoMs()
+
+    /** Two questions in order, each a reason to stop asking: a path whose socket reading is stale is not alive,
+     *  and the probe must agree before the wait is extended. The probe costs a real connection, so the caller
+     *  never asks it on the stall tier, where its answer cannot change the outcome. */
+    internal suspend fun agrees(pingAgoMs: Long, probeDispatcher: CoroutineDispatcher): Boolean {
+        if (pingAgoMs > PATH_PING_GRACE_MS) return false
+        return probeAgrees(probeDispatcher)
+    }
+
+    /**
+     * V4-125: does the out-of-band probe agree that the path is alive?
+     *
+     * A probe that is ABSENT agrees, which is what keeps the WebSocket path — whose server pings are
+     * real, dated evidence — byte-for-byte as it was. A probe that is present is asked, and the ONE
+     * failure mode that must not reap a round is the probe failing to run: a DNS hiccup, a timeout in
+     * the probe itself, a provider that rate-limits the probe but not the stream. Those are
+     * INCONCLUSIVE, not evidence of death, so they read as agreement. Only a definite refusal — the
+     * probe ran and the provider said no — ends the round, because only then is it true that no
+     * amount of waiting produces a token.
+     */
+    private suspend fun probeAgrees(probeDispatcher: CoroutineDispatcher): Boolean {
+        if (probe == null) return true
+        // No catch here ON PURPOSE, and the reason is a pair of walls pulling opposite ways: the
+        // cancellation rule wants a rethrow inside a broad catch, and detekt refuses both the broad
+        // catch and the instanceof that would satisfy it. The way out is to not need one — by
+        // contract [ProviderProbe] ANSWERS (true when reachable OR when it could not tell), and the
+        // production probe translates its own failures into that answer where the specific exception
+        // types are known. A probe that breaks its side of the contract takes the poller down loudly
+        // rather than being swallowed here, and an exception that is NOT a probe failure — the
+        // cancellation that stops this poller — propagates for free, which is the whole point.
+        //
+        // Off the poller's own dispatcher: a probe is a socket connect with a timeout, and one that
+        // BLOCKS the poller delays every other sample the watchdog owes the round.
+        return withContext(probeDispatcher) { probe.reachable() }
+    }
+}

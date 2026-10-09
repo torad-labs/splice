@@ -13,6 +13,7 @@ import splice.upstream.Provider
 import splice.upstream.TurnSignals
 import splice.upstream.WsPathPulse
 import splice.upstream.retry.PathEvidence
+import splice.upstream.retry.PathLiveness
 import splice.upstream.transport.UpstreamResponse
 import splice.upstream.transport.UpstreamTransport
 import java.io.IOException
@@ -92,16 +93,18 @@ internal class SseRoundConsume(
             // the transport's TCP keepalive errors the socket out in about a minute and the read
             // failure tears the round, which the re-anchor machinery already owns and acts on at
             // once. The whole-turn cap remains the only wall.
-            WsPathPulse { if (body.isClosedForRead) NEVER_PINGED_MS else 0L },
-            PathEvidence.OPEN_CONNECTION,
-            // V4-125 fallback: the socket reading above says "still open", which is a claim about what
-            // the kernel has told us rather than about whether anyone is listening — a half-open
-            // connection reads exactly like an idle one. TCP keepalive would make the kernel find out
-            // and error the socket, but the engine that exposes a socket seam could not be resolved
-            // offline (V4-141 carries it), so the question is asked out of band instead. It can only
-            // ever SHORTEN a wait the socket alone would have held: a refusal ends the round, an
-            // inconclusive probe holds it.
-            UpstreamTransport().reachabilityProbe(provider.upstreamUrl),
+            PathLiveness(
+                WsPathPulse { if (body.isClosedForRead) NEVER_PINGED_MS else 0L },
+                PathEvidence.OPEN_CONNECTION,
+                // V4-125 fallback: the socket reading above says "still open", which is a claim about what
+                // the kernel has told us rather than about whether anyone is listening — a half-open
+                // connection reads exactly like an idle one. TCP keepalive would make the kernel find out
+                // and error the socket, but the engine that exposes a socket seam could not be resolved
+                // offline (V4-141 carries it), so the question is asked out of band instead. It can only
+                // ever SHORTEN a wait the socket alone would have held: a refusal ends the round, an
+                // inconclusive probe holds it.
+                UpstreamTransport().reachabilityProbe(provider.upstreamUrl),
+            ),
         )
         // Leak wall (review 2026-07-19): the attempt's poller dies on EVERY exit of this
         // block — a torn-then-reissued stream used to leak it into `self`, pinning the

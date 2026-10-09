@@ -31,7 +31,6 @@ import splice.core.perf.UpstreamAttemptTiming
 import splice.core.util.WallClock
 import splice.core.wire.HttpStatus
 import splice.core.wire.RateLimitReply
-import splice.upstream.CredentialHeaders
 import splice.upstream.RoundBody
 import splice.upstream.StreamStart
 import splice.upstream.UpstreamHandler
@@ -112,6 +111,21 @@ public object UpstreamHeaders {
         rules.dedupeCaseInsensitive(rules.authHeaders(creds) + extra + IDENTITY_RESPONSE)
 }
 
+/** What one attempt puts on the wire: the credential, the headers it adds, the body bytes, and the recorder that
+ *  sees the same map the wire gets. Owns composing them, so a sender names what it sends and not how it is merged. */
+internal class AttemptWire(
+    private val creds: Credentials,
+    private val extra: Map<String, String>,
+    private val bodyBytes: ByteArray,
+    val recorder: AttemptRecorder? = null,
+) {
+    /** V4-174: the recorder sees the SAME map the wire gets, after the dedupe — redacted on the way in
+     *  (AttemptRecorder.request), so the credential never leaves this assembly. */
+    fun headers(): Map<String, String> = UpstreamHeaders.compose(creds, extra).also { recorder?.request(it) }
+
+    fun content(): ByteArrayContent = ByteArrayContent(bodyBytes, ContentType.Application.Json)
+}
+
 internal class UpstreamRequest(
     private val client: HttpClient,
     private val zstdRequestBody: Boolean,
@@ -126,18 +140,8 @@ internal class UpstreamRequest(
 
     /** The prepared POST, up to but NOT including `execute` — [execute] owns the block because
      *  the response body channel only lives inside it. */
-    suspend fun prepare(
-        url: String,
-        creds: Credentials,
-        extraHeaders: CredentialHeaders,
-        bodyBytes: ByteArray,
-        recorder: AttemptRecorder? = null,
-        timingToken: String? = null,
-    ): HttpStatement {
-        val allHeaders = UpstreamHeaders.compose(creds, extraHeaders(creds))
-        // V4-174: the recorder sees the SAME map the wire gets, after the dedupe — redacted on the
-        // way in (AttemptRecorder.request), so the credential never leaves this assembly.
-        recorder?.request(allHeaders)
+    suspend fun prepare(url: String, wire: AttemptWire, timingToken: String? = null): HttpStatement {
+        val allHeaders = wire.headers()
         return client.preparePost(url) {
             contentType(ContentType.Application.Json)
             headers {
@@ -148,7 +152,7 @@ internal class UpstreamRequest(
                     append(UPSTREAM_TIMING_HEADER, timingToken)
                 }
             }
-            setBody(ByteArrayContent(bodyBytes, ContentType.Application.Json))
+            setBody(wire.content())
         }
     }
 
@@ -156,25 +160,17 @@ internal class UpstreamRequest(
      *  extracted INSIDE the execute block because the response body channel dies at its close. */
     suspend fun <T> execute(
         ctx: PostContext,
-        bodyBytes: ByteArray,
+        wire: AttemptWire,
         auth: AttemptCredentials,
         onStreamStart: StreamStart,
         block: UpstreamHandler<T>,
-        recorder: AttemptRecorder? = null,
     ): RetryOutcome<T> {
         val postedAtMs = auth.postedAtMs
         val timing = ctx.perf?.let(::UpstreamAttemptTiming)
         val bridge = client.attributes.getOrNull(upstreamTimingBridgeKey)
         val token = timing?.let { bridge?.register(it) }
         try {
-            val statement = prepare(
-                ctx.url,
-                auth.credentials,
-                CredentialHeaders { auth.headers },
-                bodyBytes,
-                recorder,
-                token,
-            )
+            val statement = prepare(ctx.url, wire, token)
             val handler = UpstreamHandler<T> { response ->
                 block(response.also { it.postedAtMs = postedAtMs })
             }
@@ -185,7 +181,7 @@ internal class UpstreamRequest(
             }
             return statement.execute { response ->
                 timing?.headersDelivered()
-                executeResponse(response, ctx, accepted, handler, recorder)
+                executeResponse(response, ctx, accepted, handler, wire.recorder)
             }
         } finally {
             token?.let { bridge?.release(it) }

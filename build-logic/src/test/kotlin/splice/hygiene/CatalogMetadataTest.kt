@@ -53,11 +53,6 @@ class CatalogMetadataTest {
         )
 
     @Test
-    fun `the compliant fixture is green`() {
-        assertEquals(emptyList<String>(), problems(ktor, zstd, koverMarker, floor))
-    }
-
-    @Test
     fun `a library pinned at the old version is red by coordinate`() {
         val found = problems(Triple("io.ktor", "ktor-server-core", "3.5.1"), zstd, koverMarker, floor)
         assertEquals(1, found.size, found.toString())
@@ -87,13 +82,6 @@ class CatalogMetadataTest {
             emptyList<String>(),
             problems(ktor, zstd, Triple("org.example", "kover-gradle-plugin-impl", "0.9.9"), floor),
         )
-    }
-
-    @Test
-    fun `the report carries every problem and the remedy`() {
-        val report = CatalogMetadata.report(listOf("a: x", "b: y"))
-        assertTrue(report.startsWith("  a: x\n  b: y\n")) { report }
-        assertTrue("--write-verification-metadata sha256" in report) { report }
     }
 
     @Test

@@ -57,11 +57,13 @@ describe("the launch shim", () => {
     }
   });
 
-  test("every arm passes against the shipped shim", async () => {
+  // The four whole rehearsals run side by side. Each has its own sandbox and its own mock daemon on OS-assigned ports, and
+  // the arms inside one rehearsal still run in order. One after another they took 69.5 s of the release suite's 74.6 s.
+  test.concurrent("every arm passes against the shipped shim", async () => {
     expect(await launcherRehearsal(shipped)).toBeNull();
   }, 180_000);
 
-  test("ambient selectors cannot escape the rehearsal sandbox", async () => {
+  test.concurrent("ambient selectors cannot escape the rehearsal sandbox", async () => {
     const dir = mkdtempSync(join(tmpdir(), "release-shim-ambient-"));
     workspaces.push(dir);
     const script =
@@ -96,7 +98,7 @@ describe("the launch shim", () => {
   // The unit-first law, mutated: the same shim, with the mock supervisor told there is no unit.
   // Every earlier arm sets a selector and takes the raw-spawn path, so the rehearsal reaches UF-01
   // and reds there — the arm is not carried by the arms before it.
-  test("a shim that never starts the unit reds on UF-01", async () => {
+  test.concurrent("a shim that never starts the unit reds on UF-01", async () => {
     // The wrapper carries the SHIPPED markers, not the placeholder ones: the mock daemon's version
     // is derived from the shim under test, so a fixture that lies about its version is a stale
     // daemon to the shim it delegates to, and the rehearsal reds on the handshake instead.
@@ -113,7 +115,7 @@ describe("the launch shim", () => {
     expect(await launcherRehearsal(wrapper)).toContain("UF-01");
   }, 180_000);
 
-  test("dropping owner selectors exposes the selected-port collision before health", async () => {
+  test.concurrent("dropping owner selectors exposes the selected-port collision before health", async () => {
     const source = readFileSync(shipped, "utf8");
     const assignment = "if (value) profile[name] = value;";
     expect(source).toContain(assignment);

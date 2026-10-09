@@ -44,7 +44,6 @@ class ClientAuthVerdictTest {
             "{}",
         ) { "ok" }
 
-
     @Test
     fun `a client head whose forwarded turn got a 401 reads rejected, not present`() = runTest {
         val auth = ClientAuthProvider("claude-splice")

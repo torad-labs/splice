@@ -52,4 +52,3 @@ class FeaturesDocumentLawTest {
         return blocks.single()
     }
 }
-

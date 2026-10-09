@@ -1,8 +1,8 @@
-// V4-407: /api/accounts says which windows are current, by the rule /api/usage applies (V4-396).
+// /api/accounts says which windows are current, by the rule /api/usage applies.
 // Marlin's walk on bb54736ea: a codex 7d 100% reading 4.5 h old, on a home with no ChatGPT sign-in,
 // was the console's nearest limit, because account rows carried every window with no age rule.
 // The figures still ship; only the current flags decide what the nearest limit may rank.
-package splice.accounts.v4407
+package splice.accounts.pool
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -14,11 +14,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.accounts.AccountHead
 import splice.accounts.HeadQuotaSource
-import splice.accounts.pool.AccountsRoute
-import splice.accounts.pool.HeadAccountAuthSource
-import splice.accounts.pool.HeadAccountPoolSource
-import splice.accounts.pool.HeadAccountPoolView
-import splice.accounts.pool.HeadAccountView
 import splice.accounts.signin.HeadRestart
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider

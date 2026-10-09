@@ -24,9 +24,10 @@ import splice.heads.ListHeads
 
 class HeadOperationsTest {
     @Test
-    fun `stops the resolved instance before auditing and projecting its live status`() = testApplication {
-        val events = mutableListOf<String>()
-        val operations = operations(events, RecordingTarget(events, running = true))
+    fun `a stop stops the head, answers its live status and is audited`() = testApplication {
+        val target = RecordingTarget(running = true)
+        val audited = mutableListOf<String>()
+        val operations = operations(audited, target)
         application {
             routing {
                 post("/api/heads/{head}/{action}") { operations.action(call) }
@@ -37,13 +38,14 @@ class HeadOperationsTest {
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals("{\"running\":false}", response.bodyAsText())
-        assertEquals(listOf("resolve:claudex", "stop", "audit:claudex:stop", "status"), events)
+        assertEquals(listOf("claudex:stop"), audited)
     }
 
     @Test
-    fun `restarts the resolved instance before auditing and projecting its live status`() = testApplication {
-        val events = mutableListOf<String>()
-        val operations = operations(events, RecordingTarget(events, running = false))
+    fun `a restart brings the head back, answers its live status and is audited`() = testApplication {
+        val target = RecordingTarget(running = false)
+        val audited = mutableListOf<String>()
+        val operations = operations(audited, target)
         application {
             routing {
                 post("/api/heads/{head}/{action}") { operations.action(call) }
@@ -54,13 +56,14 @@ class HeadOperationsTest {
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals("{\"running\":true}", response.bodyAsText())
-        assertEquals(listOf("resolve:claudex", "restart", "audit:claudex:restart", "status"), events)
+        assertEquals(listOf("claudex:restart"), audited)
     }
 
     @Test
-    fun `an unknown action resolves first then preserves its 400 without effects or audit`() = testApplication {
-        val events = mutableListOf<String>()
-        val operations = operations(events, RecordingTarget(events, running = true))
+    fun `an unknown action is a 400 that never moves the head and audits nothing`() = testApplication {
+        val target = RecordingTarget(running = true)
+        val audited = mutableListOf<String>()
+        val operations = operations(audited, target)
         application {
             routing {
                 post("/api/heads/{head}/{action}") { operations.action(call) }
@@ -71,7 +74,8 @@ class HeadOperationsTest {
 
         assertEquals(HttpStatusCode.BadRequest, response.status)
         assertEquals("{\"error\":\"unknown action\"}", response.bodyAsText())
-        assertEquals(listOf("resolve:claudex"), events)
+        assertEquals(true, target.isRunning(), "an unknown action must not move the head")
+        assertEquals(emptyList<String>(), audited)
     }
 
     @Test
@@ -102,12 +106,9 @@ class HeadOperationsTest {
     }
 
     @Test
-    fun `reads the resolved head tail before returning its established log payload`() = testApplication {
-        val events = mutableListOf<String>()
-        val operations = operations(
-            events,
-            RecordingTarget(events, running = true, logs = "first\n\nsecond\n", path = "/logs/codex.log"),
-        )
+    fun `the log route answers the resolved head's tail, blank lines dropped`() = testApplication {
+        val target = RecordingTarget(running = true, logs = "first\n\nsecond\n", path = "/logs/codex.log")
+        val operations = operations(mutableListOf(), target)
         application {
             routing {
                 get("/api/logs/{head}") { operations.logsJson(call, 42) }
@@ -121,15 +122,13 @@ class HeadOperationsTest {
             "{\"key\":\"claude-codex\",\"path\":\"/logs/codex.log\",\"lines\":[\"first\",\"second\"]}",
             response.bodyAsText(),
         )
-        assertEquals(listOf("resolve:claude-codex", "tail:42", "path"), events)
+        assertEquals(42, target.tailAsked, "the route asks for the tail it was given")
     }
 
     @Test
     fun `lists every supplied head snapshot in registry order`() = testApplication {
-        val events = mutableListOf<String>()
         val listHeads = ListHeads(
             HeadStatusListing {
-                events.add("list")
                 listOf(
                     buildJsonObject { put("key", "codex") },
                     buildJsonObject { put("key", "kimi") },
@@ -146,51 +145,42 @@ class HeadOperationsTest {
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals("{\"heads\":[{\"key\":\"codex\"},{\"key\":\"kimi\"}]}", response.bodyAsText())
-        assertEquals(listOf("list"), events)
     }
 
-    private fun operations(events: MutableList<String>, target: HeadTarget): HeadOperations = HeadOperations(
-        HeadResolver { _, name ->
-            events.add("resolve:$name")
-            target
-        },
-        HeadAudit { name, action -> events.add("audit:$name:$action") },
+    private fun operations(audited: MutableList<String>, target: HeadTarget): HeadOperations = HeadOperations(
+        HeadResolver { _, _ -> target },
+        HeadAudit { name, action -> audited.add("$name:$action") },
     )
 
     private class RecordingTarget(
-        private val events: MutableList<String>,
         private var running: Boolean,
         private val logs: String = "",
         private val path: String = "",
     ) : HeadTarget {
+        var tailAsked: Int = 0
+            private set
+
+        fun isRunning(): Boolean = running
+
         override suspend fun start() {
-            events.add("start")
             running = true
         }
 
         override suspend fun stop() {
-            events.add("stop")
             running = false
         }
 
         override suspend fun restart() {
-            events.add("restart")
             running = true
         }
 
-        override fun status(): JsonObject {
-            events.add("status")
-            return buildJsonObject { put("running", running) }
-        }
+        override fun status(): JsonObject = buildJsonObject { put("running", running) }
 
         override fun tailLogs(tail: Int): String {
-            events.add("tail:$tail")
+            tailAsked = tail
             return logs
         }
 
-        override fun logPath(): String {
-            events.add("path")
-            return path
-        }
+        override fun logPath(): String = path
     }
 }

@@ -1,10 +1,10 @@
-// NEW: V4-423 — the daemon refuses a switch to an account it cannot serve, and says why. Marlin's walk of V4-410
+// The daemon refuses a switch to an account it cannot serve, and says why. Marlin's walk
 // (ef86845f3): POST /api/auth/codex/switch {label: linked} answered ok:true and pinned a symlinked credential the
 // writer refuses, and the console said "Takes effect on the next turn"; an account with no credential file was
 // pinned the same way. A refusal is a 409 with the account's own sentence and pins nothing; a label the pool does
 // not have keeps its 400; an account that serves, even one cooling down, still switches. Driven through the
 // route itself, over a pool double that records every pin.
-package splice.accounts.v4423
+package splice.accounts.pool
 
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -23,12 +23,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.accounts.AccountHead
 import splice.accounts.AccountHeadResolver
-import splice.accounts.pool.HeadAccountAuthSource
-import splice.accounts.pool.HeadAccountPinSource
-import splice.accounts.pool.HeadAccountPoolSource
-import splice.accounts.pool.HeadAccountPoolView
-import splice.accounts.pool.HeadAccountView
-import splice.accounts.pool.SwitchRoute
 import splice.accounts.signin.HeadRestart
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider

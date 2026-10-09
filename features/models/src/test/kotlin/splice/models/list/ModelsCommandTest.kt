@@ -11,11 +11,11 @@ import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
 
 class ModelsCommandTest {
-    // V4-309: `splice models --help` dropped the flag and ran the whole report, a request to every
+    // `splice models --help` dropped the flag and ran the whole report, a request to every
     // provider. The verb takes [provider] and --all, once each; any other word prints the usage and
     // reads neither the configuration nor a credential.
     @Test
-    fun `a word models does not name prints usage and reaches no provider - V4-309`() {
+    fun `a word models does not name prints usage and reaches no provider`() {
         val refused = listOf(
             listOf("--help"),
             listOf("-h"),

@@ -1,8 +1,8 @@
-// NEW: V4-410 — a pool credential splice refuses (a symlinked <label>.json, V4-405) reaches /api/accounts as
+// A pool credential splice refuses (a symlinked <label>.json) reaches /api/accounts as
 // refused, in words, in its own field. Before this the files layer knew and nothing past it did, so the row
 // read credential_present false like an orphan and Needs you offered "Sign in again" for a label the writer
 // refuses. An orphan stays a plain missing credential: no refusal, so the console still offers the renewal.
-package splice.accounts.v4410
+package splice.accounts.pool
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -16,11 +16,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.accounts.AccountHead
-import splice.accounts.pool.AccountsRoute
-import splice.accounts.pool.HeadAccountAuthSource
-import splice.accounts.pool.HeadAccountPoolSource
-import splice.accounts.pool.HeadAccountPoolView
-import splice.accounts.pool.HeadAccountView
 import splice.accounts.signin.HeadRestart
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider

@@ -1,5 +1,4 @@
-// V4-213: HeadStatus wrote the gate's counters and live rows as literals (0 and []). This pins the
-// projection of what the head measured onto the console's GateSnapshot wire shape
+// HeadStatus projects what the head measured onto the console's GateSnapshot wire shape
 // (console/src/shared/api GateSnapshot and GateLive): field names, phase words, and order kept.
 package splice.heads
 

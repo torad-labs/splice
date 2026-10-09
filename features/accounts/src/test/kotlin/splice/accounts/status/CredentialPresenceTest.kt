@@ -28,7 +28,7 @@ class CredentialPresenceTest {
     )
 
     @Test
-    fun `an unreadable keys toml holding the head's key reads configured and says so - V4-299`(@TempDir tmp: Path) {
+    fun `an unreadable keys toml holding the head's key reads configured and says so`(@TempDir tmp: Path) {
         val keys = tmp.resolve("keys.toml")
         KeyStore(keys).write(KEY_ENV, "sk-or-kept")
         val lines = mutableListOf<String>()

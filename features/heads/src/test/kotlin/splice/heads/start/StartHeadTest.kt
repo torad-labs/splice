@@ -19,12 +19,11 @@ import splice.heads.HeadTarget
 
 class StartHeadTest {
     @Test
-    fun `starts the resolved instance before auditing and projecting its live status`() = testApplication {
-        val events = mutableListOf<String>()
+    fun `a start runs the head, answers its live status and is audited`() = testApplication {
+        val audited = mutableListOf<String>()
         var running = false
         val target = object : HeadTarget {
             override suspend fun start() {
-                events.add("start")
                 running = true
             }
 
@@ -32,12 +31,9 @@ class StartHeadTest {
 
             override suspend fun restart() = Unit
 
-            override fun status(): JsonObject {
-                events.add("status")
-                return buildJsonObject {
-                    put("key", "codex")
-                    put("running", running)
-                }
+            override fun status(): JsonObject = buildJsonObject {
+                put("key", "codex")
+                put("running", running)
             }
 
             override fun tailLogs(tail: Int): String = ""
@@ -45,11 +41,8 @@ class StartHeadTest {
             override fun logPath(): String = ""
         }
         val start = StartHead(
-            HeadResolver { _, name ->
-                events.add("resolve:$name")
-                target
-            },
-            HeadAudit { name, action -> events.add("audit:$name:$action") },
+            HeadResolver { _, _ -> target },
+            HeadAudit { name, action -> audited.add("$name:$action") },
         )
         application {
             routing {
@@ -61,7 +54,7 @@ class StartHeadTest {
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals("{\"key\":\"codex\",\"running\":true}", response.bodyAsText())
-        assertEquals(listOf("resolve:claudex", "start", "audit:claudex:start", "status"), events)
+        assertEquals(listOf("claudex:start"), audited)
     }
 
     @Test

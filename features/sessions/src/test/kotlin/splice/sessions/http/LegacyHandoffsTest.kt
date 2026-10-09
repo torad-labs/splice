@@ -57,7 +57,15 @@ class LegacyHandoffsTest {
                 ),
             ),
         ).id
-        return store.bind(id, mapOf("claude" to LEGACY_LEAD, "gpt" to LEGACY_REVIEWER, "grok" to LEGACY_BUILDER, "muse" to LEGACY_TESTER))
+        return store.bind(
+            id,
+            mapOf(
+                "claude" to LEGACY_LEAD,
+                "gpt" to LEGACY_REVIEWER,
+                "grok" to LEGACY_BUILDER,
+                "muse" to LEGACY_TESTER,
+            ),
+        )
     }
 
     /** One legacy row: no to_session key, the way rows were written before V4-252. */

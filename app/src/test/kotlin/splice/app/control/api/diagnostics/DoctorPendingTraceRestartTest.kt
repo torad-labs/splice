@@ -39,7 +39,9 @@ import java.nio.file.Path
 
 class DoctorPendingTraceRestartTest {
     @Test
-    fun `the doctor route reports a trace opt-out as pending restart while config still serves the booted value`(@TempDir tmp: Path) = runBlocking {
+    fun `the doctor route reports a trace opt-out as pending restart while config still serves the booted value`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
         val file = tmp.resolve("splice.toml")
         val initial = topology()
         Files.writeString(file, initial)

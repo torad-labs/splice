@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.function.ThrowingSupplier
 import splice.app.cli.status.LocalRuntimeReach
-import splice.app.probe.LocalRuntimeWatch
 import splice.core.topology.AuthConfig
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect

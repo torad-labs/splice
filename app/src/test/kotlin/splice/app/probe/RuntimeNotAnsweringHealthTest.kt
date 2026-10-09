@@ -21,7 +21,6 @@ import splice.app.control.RuntimeNotAnswering
 import splice.app.control.api.HeadResolver
 import splice.app.control.api.HeadSignals
 import splice.app.control.healthFor
-import splice.app.probe.LocalRuntimeWatch
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.topology.AuthConfig

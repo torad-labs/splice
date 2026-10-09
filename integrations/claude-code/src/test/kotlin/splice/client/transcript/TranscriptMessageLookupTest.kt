@@ -49,7 +49,8 @@ class TranscriptMessageLookupTest {
     fun `the selected reply is merged by its id, with only the conversation up to it`(@TempDir root: Path) {
         transcript(root)
 
-        val found = TranscriptMessageLookup().lookup(LOOKUP_SESSION, listOf(root), RESPONSE) as MessageConversation.Found
+        val found = TranscriptMessageLookup()
+            .lookup(LOOKUP_SESSION, listOf(root), RESPONSE) as MessageConversation.Found
 
         assertEquals(RESPONSE, found.responseId)
         assertEquals(
@@ -143,7 +144,8 @@ class TranscriptMessageLookupTest {
             Files.readString(file).replace("second answer", "Authorization: Bearer $PLANTED_CREDENTIAL"),
         )
 
-        val found = TranscriptMessageLookup().lookup(LOOKUP_SESSION, listOf(root), RESPONSE) as MessageConversation.Found
+        val found = TranscriptMessageLookup()
+            .lookup(LOOKUP_SESSION, listOf(root), RESPONSE) as MessageConversation.Found
         assertFalse(found.messages.any { it.text.contains(PLANTED_CREDENTIAL) })
         assertTrue(found.messages.any { it.text.contains("[redacted]") })
     }

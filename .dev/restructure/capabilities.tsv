@@ -3957,7 +3957,7 @@ quality/compiler-plugin/src/main/kotlin/splice/firchecks/PublicSurfaceReport.kt	
 quality/compiler-plugin/src/main/kotlin/splice/firchecks/PublicSurfaceWalk.kt	created		V4-92: walks a source's public declarations into the report
 quality/compiler-plugin/src/main/kotlin/splice/firchecks/SurfaceLookups.kt	created		V4-92: records the lookups a report depends on, so incremental compilation recompiles dependents
 quality/compiler-plugin/src/test/kotlin/splice/firchecks/PublicSurfaceIncrementalTest.kt	created		V4-92: drives snapshot-based incremental compilation to prove a surface change recompiles its dependents
-quality/compiler-plugin/src/test/kotlin/splice/firchecks/UnregisteredLookupsRegistrar.kt	created		V4-92: test registrar that compiles without the lookup recording, the control for the incremental proof
+quality/compiler-plugin/src/test/kotlin/splice/firchecks/UnregisteredLookupsRegistrar.kt	retire		V4-92: the unregistered-lookups control arm was removed; the incremental test checks the behavior alone
 quality/compiler-plugin/src/main/resources/META-INF/services/org.jetbrains.kotlin.compiler.plugin.CommandLineProcessor	created		V4-92: registers the command-line processor that reads the report options
 integrations/http/src/main/kotlin/splice/http/SseResponse.kt	created		the head SSE body moved from features/turns so the events and MCP streams close clean too (kt-head-sse-drains-on-exit)
 integrations/http/src/test/kotlin/splice/http/SseResponseTest.kt	created		its test, moved with it

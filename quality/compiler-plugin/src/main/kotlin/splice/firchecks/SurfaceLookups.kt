@@ -20,17 +20,12 @@ internal fun interface SurfaceLookups {
     operator fun invoke(classId: ClassId)
 }
 
-/** The [SurfaceLookups] of one compiled source. */
-internal fun interface SurfaceLookupsOf {
-    operator fun invoke(file: FirFile): SurfaceLookups
-}
-
 /** The compiler's lookup tracker, the one incremental compilation reads a source's dependencies from. A compile with
  *  no tracker is not incremental: it compiles every source, so there is nothing to record. With a tracker, a source
  *  element names the file the lookup belongs to, as Fir2IrPluginContext.recordLookup passes it; the position is
  *  null there too. recordClassLikeLookup skips a local class and a builtin one, neither of which can change. */
-internal object CompilerLookups : SurfaceLookupsOf {
-    override fun invoke(file: FirFile): SurfaceLookups {
+internal object CompilerLookups {
+    operator fun invoke(file: FirFile): SurfaceLookups {
         val tracker = file.moduleData.session.lookupTracker ?: return SurfaceLookups { }
         val fileSource = checkNotNull(file.source) {
             "${file.name}: no source element, so the classes its public-surface report reads cannot be recorded"

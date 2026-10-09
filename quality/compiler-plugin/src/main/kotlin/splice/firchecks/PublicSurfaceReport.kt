@@ -60,12 +60,11 @@ internal class FirChecksCommandLineProcessor : CommandLineProcessor {
  *  of them on a full build, the dirty ones on an incremental one. Each source gets its own report at
  *  `<reportDir>/<its path relative to sourceRoot>.json`, and that report depends on nothing but the source's text and
  *  what its signatures resolve to, so a source compiled alone writes the bytes a whole-module compile writes. Every
- *  class the walk reads is recorded as a lookup of that source through [lookupsOf], so incremental compilation
+ *  class the walk reads is recorded as a lookup of that source through [CompilerLookups], so incremental compilation
  *  recompiles the source, and rewrites its report, when one of them changes. */
 internal class PublicSurfaceReportExtension(
     private val reportDir: File,
     sourceRoot: File,
-    private val lookupsOf: SurfaceLookupsOf = CompilerLookups,
 ) : IrGenerationExtension {
     private val root = sourceRoot.absoluteFile.normalize()
 
@@ -78,7 +77,7 @@ internal class PublicSurfaceReportExtension(
             val key = source.relativeTo(root).invariantSeparatorsPath
             check(key != ".." && !key.startsWith("../")) { "$source is outside $root, so no report path can name it" }
             val ledger = SurfaceLedger()
-            PublicSurfaceWalk(fir.moduleData.session, ledger, lookupsOf(fir)).walk(fir)
+            PublicSurfaceWalk(fir.moduleData.session, ledger, CompilerLookups(fir)).walk(fir)
             val out = File(reportDir, "$key.json").absoluteFile
             out.parentFile.mkdirs()
             out.writeText(ledger.json(sha256(source.readBytes())), Charsets.UTF_8)

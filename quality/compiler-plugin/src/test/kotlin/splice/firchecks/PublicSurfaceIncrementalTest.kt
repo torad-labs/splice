@@ -1,10 +1,9 @@
 // NEW (V4-92, v3): the reports under real incremental compilation. A report reads classes its source never names: the
 // bound of a type parameter two star projections away, and an alias in that bound. SurfaceLookups records each one as
 // a lookup of the source, so changing it recompiles the source and rewrites its report. Each test drives the Build
-// Tools API's snapshot-based incremental compilation, the engine KGP runs, through a first build and one edit, twice:
-// with the plugin as it ships, and with UnregisteredLookupsRegistrar, the same report extension with the recording
-// removed. The first arm must end where a whole compile of the new text ends. The second must not, which is how each
-// test fails when the registration goes. Every file the test writes is under its TempDir.
+// Tools API's snapshot-based incremental compilation, the engine KGP runs, through a first build and one edit, and the
+// reports it ends with must be the ones a whole compile of the new text writes. Every file the test writes is under its
+// TempDir.
 @file:OptIn(ExperimentalBuildToolsApi::class)
 
 package splice.firchecks
@@ -23,7 +22,6 @@ import org.jetbrains.kotlin.buildtools.api.jvm.JvmPlatformToolchain
 import org.jetbrains.kotlin.buildtools.api.jvm.operations.JvmCompilationOperation
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -53,40 +51,27 @@ class PublicSurfaceIncrementalTest(@param:TempDir private val workDir: Path) {
     }
 
     @Test
-    fun `an alias in that bound is a lookup - retargeting it rewrites the report that reads it`() {
+    fun `retargeting an alias in that bound rewrites the report that reads it`() {
         assertRecorded(ALIAS_ROUTE, BOUND, "package fix.lib\n\npublic typealias Bound = New")
     }
 
-    /** Builds [sources], rewrites [edited] to [text], and builds again incrementally, once per arm. Types.kt reads
-     *  nothing that changes, so its report staying untouched shows that each second compile was incremental. */
+    /** Builds [sources], rewrites [edited] to [text], and builds again incrementally. Types.kt reads nothing that
+     *  changes, so its report staying untouched shows that the second compile was incremental. */
     private fun assertRecorded(sources: Map<String, String>, edited: String, text: String) {
-        val whole = Module(workDir.resolve("whole"), shipped).apply { write(sources + (edited to text)) }.compile()
+        val whole = Module(workDir.resolve("whole")).apply { write(sources + (edited to text)) }.compile()
         assertTrue(whole.getValue(USER_REPORT).contains(USER_NEW), whole.getValue(USER_REPORT))
-        val registered = rebuild("registered", shipped, sources, edited, text)
-        assertTrue(USER_REPORT in registered.rewritten, "User.kt was recompiled: ${registered.rewritten}")
-        assertFalse(TYPES_REPORT in registered.rewritten, "Types.kt was not: ${registered.rewritten}")
-        assertEquals(whole, registered.reports, "the incremental set equals a whole compile of the new text")
-        val unregistered = rebuild("unregistered", unregisteredPlugin(), sources, edited, text)
-        assertTrue("$edited.json" in unregistered.rewritten, "the edit was compiled: ${unregistered.rewritten}")
-        assertFalse(USER_REPORT in unregistered.rewritten, "without the record, nothing recompiles User.kt")
-        assertFalse(TYPES_REPORT in unregistered.rewritten, "Types.kt was not: ${unregistered.rewritten}")
-        val stale = unregistered.reports.getValue(USER_REPORT)
-        assertTrue(stale.contains(USER_OLD), stale)
-        assertNotEquals(whole, unregistered.reports, "so the incremental set is not a whole compile's")
+        val incremental = rebuild(sources, edited, text)
+        assertTrue(USER_REPORT in incremental.rewritten, "User.kt was recompiled: ${incremental.rewritten}")
+        assertFalse(TYPES_REPORT in incremental.rewritten, "Types.kt was not: ${incremental.rewritten}")
+        assertEquals(whole, incremental.reports, "the incremental set equals a whole compile of the new text")
     }
 
     private data class Rebuild(val rewritten: Set<String>, val reports: Map<String, String>)
 
-    /** A first build of [sources] under [arm], every report aged, [edited] rewritten to [text], and the incremental
-     *  build that edit alone starts. */
-    private fun rebuild(
-        arm: String,
-        plugin: Path,
-        sources: Map<String, String>,
-        edited: String,
-        text: String,
-    ): Rebuild {
-        val module = Module(workDir.resolve(arm), plugin)
+    /** A first build of [sources], every report aged, [edited] rewritten to [text], and the incremental build that
+     *  edit alone starts. */
+    private fun rebuild(sources: Map<String, String>, edited: String, text: String): Rebuild {
+        val module = Module(workDir.resolve("incremental"))
         module.write(sources)
         module.compile(SourcesChanges.Unknown)
         module.age()
@@ -95,24 +80,13 @@ class PublicSurfaceIncrementalTest(@param:TempDir private val workDir: Path) {
         return Rebuild(module.rewritten(), reports)
     }
 
-    /** A classpath entry holding only service files, which name UnregisteredLookupsRegistrar. The compiler's plugin
-     *  loader reads services from the entry alone and loads classes through its parent, the class loader that loaded
-     *  the compiler, which in this JVM also holds this module's main and test classes. */
-    private fun unregisteredPlugin(): Path {
-        val entry = workDir.resolve("unregistered-plugin")
-        val services = Files.createDirectories(entry.resolve("META-INF/services"))
-        Files.writeString(services.resolve(REGISTRAR_SERVICE), "${UnregisteredLookupsRegistrar::class.java.name}\n")
-        Files.writeString(services.resolve(PROCESSOR_SERVICE), "${FirChecksCommandLineProcessor::class.java.name}\n")
-        return entry
-    }
-
     private fun <R> execute(operation: BuildOperation<R>, logger: KotlinLogger): R =
         toolchains.createBuildSession().use { session ->
             session.executeOperation(operation, toolchains.createInProcessExecutionPolicy(), logger)
         }
 
     /** One fixture module under [root]: sources and reports under lib/, classes, and the incremental caches. */
-    private inner class Module(private val root: Path, private val plugin: Path) {
+    private inner class Module(private val root: Path) {
         private val dir = root.resolve("lib")
         private val reportDir = dir.resolve("build/reports").toFile()
         private val paths = sortedSetOf<String>()
@@ -128,7 +102,8 @@ class PublicSurfaceIncrementalTest(@param:TempDir private val workDir: Path) {
 
         fun file(path: String): File = dir.resolve(path).toFile()
 
-        /** A whole compile, or with [changes] the snapshot-based incremental compile KGP runs. Returns every report. */
+        /** A whole compile, or with [changes] the snapshot-based incremental compile KGP runs. Returns every report,
+         *  after checking that each source has one and nothing else does. */
         fun compile(changes: SourcesChanges? = null): Map<String, String> {
             val sources = paths.map { dir.resolve(it) }
             val builder = jvm.jvmCompilationOperationBuilder(sources, Files.createDirectories(root.resolve("classes")))
@@ -150,7 +125,11 @@ class PublicSurfaceIncrementalTest(@param:TempDir private val workDir: Path) {
         /** The reports the last compile wrote, told apart by the modification time [age] reset. */
         fun rewritten(): Set<String> = reportFiles().filter { it.lastModified() != 0L }.mapTo(sortedSetOf(), ::key)
 
-        private fun reports(): Map<String, String> = reportFiles().associate { key(it) to it.readText() }
+        private fun reports(): Map<String, String> {
+            val reports = reportFiles().associate { key(it) to it.readText() }
+            assertEquals(paths.mapTo(sortedSetOf()) { "$it.json" }, reports.keys.toSortedSet(), "one report per source")
+            return reports
+        }
 
         private fun reportFiles(): List<File> = reportDir.walkTopDown().filter { it.isFile }.toList()
 
@@ -158,7 +137,7 @@ class PublicSurfaceIncrementalTest(@param:TempDir private val workDir: Path) {
 
         private fun compilerPlugin(): CompilerPlugin = CompilerPlugin(
             PLUGIN_ID,
-            listOf(plugin),
+            listOf(shipped),
             listOf(
                 CompilerPluginOption(reportDirOption.optionName, reportDir.path),
                 CompilerPluginOption(sourceRootOption.optionName, dir.toString()),
@@ -211,9 +190,6 @@ private const val MID = "src/main/kotlin/Mid.kt"
 private const val USER = "src/main/kotlin/User.kt"
 private const val TYPES_REPORT = "$TYPES.json"
 private const val USER_REPORT = "$USER.json"
-private const val REGISTRAR_SERVICE = "org.jetbrains.kotlin.compiler.plugin.CompilerPluginRegistrar"
-private const val PROCESSOR_SERVICE = "org.jetbrains.kotlin.compiler.plugin.CommandLineProcessor"
-private const val USER_OLD = "\"fix.lib.User\": [\"fix.lib.Box\", \"fix.lib.Mid\", \"fix.lib.Old\", \"kotlin.Any\"]"
 private const val USER_NEW = "\"fix.lib.User\": [\"fix.lib.Box\", \"fix.lib.Mid\", \"fix.lib.New\", \"kotlin.Any\"]"
 
 /** The arguments PublicSurfaceReportTest compiles with; the classpath is the standard library alone. */

@@ -49,6 +49,10 @@ internal class NativeClaudeAuth(
     private val dispatcher: CoroutineDispatcher,
     private val start: NativeAuthStart = NativeAuthStart(ProcessBuilder::start),
 ) {
+    /** Why no sign-in may start now: the shim stands in for `claude` and the wrap record is unusable, so
+     *  [begin] would run bare `claude`, which is the shim again. Callers ask first and fail with this text. */
+    fun refusal(): String? = wrap.refusal()
+
     /** The sign-in that REPLACES one command's own login, in that command's own config dir. */
     fun begin(location: ClaudeLoginLocation): NativeClaudeAuthRun =
         begin(location.target.head.configDir.takeIf { location.id == ClaudeLoginPlaceId.SPLICE })

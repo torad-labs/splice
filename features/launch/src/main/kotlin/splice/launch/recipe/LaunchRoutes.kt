@@ -42,14 +42,7 @@ public class LaunchRoutes(
     public suspend fun launch(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
         val targets = heads.targets(key)
-        if (targets.size > 1) {
-            call.respondText(
-                LaunchReplies.errorJson(TopologyMessages.ambiguousHeadMessage(key, targets.map { it.head.key })),
-                ContentType.Application.Json,
-                HttpStatusCode.Conflict,
-            )
-            return
-        }
+        if (turnedAway(call, key, targets)) return
         val resolved = resolve(key, targets)
         val target = resolved?.head
         val spec = target?.spec
@@ -72,6 +65,16 @@ public class LaunchRoutes(
         }
         val request = receiveLaunchRequest(call)
         reply(call, key, resolved, request)
+    }
+
+    /** Answers a launch that must not run, and says so. A wrap record that cannot name the real claude comes
+     *  first: while the shim stands in for `claude`, every launch's argv[0] would be the shim itself. */
+    private suspend fun turnedAway(call: ApplicationCall, key: String, targets: List<LaunchHead>): Boolean {
+        val message = launchService?.wrapRefusal
+            ?: TopologyMessages.ambiguousHeadMessage(key, targets.map { it.head.key }).takeIf { targets.size > 1 }
+            ?: return false
+        call.respondText(LaunchReplies.errorJson(message), ContentType.Application.Json, HttpStatusCode.Conflict)
+        return true
     }
 
     private suspend fun reply(call: ApplicationCall, key: String, resolved: Resolved, request: LaunchRequest) {

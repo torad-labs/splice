@@ -53,6 +53,10 @@ public class LaunchService(
      *  cached — wrap/unwrap can flip between two requests. */
     private val wrapState: WrapStateRead = wrap,
 ) {
+    /** Why no launch may run now (see [WrapStateRead.refusal]), or null. Read per launch, with the same reader
+     *  [launch] plants argv[0] from. */
+    public val wrapRefusal: String? get() = wrapState.refusal()
+
     /** Assigned by the daemon's native login owner before routes serve requests. */
     public var loginGuard: LaunchLoginGuard? = null
 

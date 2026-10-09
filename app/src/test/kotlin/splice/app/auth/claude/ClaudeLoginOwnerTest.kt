@@ -74,10 +74,11 @@ class ClaudeLoginOwnerTest {
         start: NativeAuthStart,
         sessions: ClaudeLoginSessions = sessions(),
         places: List<ClaudeLoginLocation> = listOf(location),
+        wrap: WrapStateRead = WrapStateRead { "fixture-native" },
     ): ClaudeLoginOwner {
         val paths = StatePaths(baseOverride = home.resolve("state"))
         val auth = NativeClaudeAuth(
-            WrapStateRead { "fixture-native" },
+            wrap,
             emptyMap(),
             ProcessDispatchers().io(),
             start,
@@ -243,4 +244,25 @@ class ClaudeLoginOwnerTest {
             scope.coroutineContext[Job]!!.cancelAndJoin()
         }
     }
+
+    @Test
+    fun `a wrap that cannot name the real claude refuses the sign-in before any native process or save-back starts`() =
+        runBlocking {
+            val location = location()
+            live(location, "outgoing", "outgoing bytes")
+            val scope = CoroutineScope(SupervisorJob() + ProcessDispatchers().io())
+            val unusable = object : WrapStateRead {
+                override fun realBinaryPath(): String? = null
+                override fun refusal(): String = "claude is the splice launch shim and the wrap state /x is missing"
+            }
+            val owner = owner(location, scope, NativeAuthStart { error("must not spawn") }, wrap = unusable)
+            try {
+                val refused = owner.login(ClaudeLoginPlaceId.NATIVE, null)
+                assertEquals(LoginState.FAILED, refused.state)
+                assertFalse(Files.exists(location.storeDir), "nothing was saved back")
+                assertTrue(refused.failureReason.orEmpty().contains("wrap state /x is missing"))
+            } finally {
+                scope.coroutineContext[Job]!!.cancelAndJoin()
+            }
+        }
 }

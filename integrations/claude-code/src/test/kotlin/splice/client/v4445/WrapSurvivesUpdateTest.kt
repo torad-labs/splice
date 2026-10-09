@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.client.wrap.ReconcileResult
+import splice.client.wrap.StoredWrap
 import splice.client.wrap.UnwrapResult
 import splice.client.wrap.VanillaState
 import splice.client.wrap.WrapResult
@@ -88,7 +89,7 @@ class WrapSurvivesUpdateTest {
         assertTrue(Files.isExecutable(rig.realBinary), "the recorded version is still there")
 
         assertEquals(next.toString(), rig.head.realBinaryPath(), "a launch runs the newest installed version")
-        assertEquals(next.toString(), rig.stateStore.read()?.realBinaryPath, "and the record says so")
+        assertEquals(next.toString(), rig.stateStore.read().state?.realBinaryPath, "and the record says so")
         assertEquals(ReconcileResult.Intact, rig.head.reconcile())
     }
 
@@ -164,7 +165,7 @@ class WrapSurvivesUpdateTest {
 
         assertTrue(result is UnwrapResult.Ok, "$result")
         assertEquals(next.toRealPath(), rig.cmd.toRealPath())
-        assertEquals(null, rig.stateStore.read())
+        assertTrue(rig.stateStore.read() is StoredWrap.Absent, "the state is cleared")
         vanilla.assertUntouched()
     }
 
@@ -180,7 +181,7 @@ class WrapSurvivesUpdateTest {
 
         assertTrue(rig.head.unwrap() is UnwrapResult.Ok)
         assertEquals(next, rig.cmd.toRealPath())
-        assertEquals(null, rig.stateStore.read())
+        assertTrue(rig.stateStore.read() is StoredWrap.Absent, "the state is cleared")
         vanilla.assertUntouched()
     }
 

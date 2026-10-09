@@ -227,6 +227,38 @@ class ClaudeHeadRoutesWiringTest {
         }
     }
 
+    /** The self-exec hazard the wrap state exists to close: with the shim standing in for `claude`, a launch that
+     *  cannot read the record of the real binary must refuse, never plant bare `claude` (which is the shim). */
+    @Test
+    fun `a wrapped claude whose state file cannot be read refuses the launch and names the file`(
+        @TempDir home: Path,
+    ) {
+        val realBinary = home.resolve("real-claude").also { it.writeText("#!/bin/sh\n") }
+        serveWired(home, hermeticLaunchService(home, realBinary)) { port, key ->
+            val client = HttpClient(CIO) { expectSuccess = false }
+            try {
+                val url = "http://127.0.0.1:$port"
+                val wrapped = client.post("$url/api/claude-head/wrap") { header("Authorization", "Bearer $key") }
+                assertEquals(HttpStatusCode.OK, wrapped.status, wrapped.bodyAsText())
+                val stateFile = home.resolve("state/claude-head-wrap.json")
+
+                listOf("[]", "not json {{{").forEach { damaged ->
+                    stateFile.writeText(damaged)
+                    val launched = client.post("$url/launch/claude") {
+                        header("Authorization", "Bearer $key")
+                        setBody("{}")
+                    }
+                    val body = launched.bodyAsText()
+                    assertEquals(HttpStatusCode.Conflict, launched.status, body)
+                    assertTrue(body.contains(stateFile.toString()), "the refusal names the file: $body")
+                    assertFalse(body.contains("argv"), "no recipe leaves with a bare claude in it: $body")
+                }
+            } finally {
+                client.close()
+            }
+        }
+    }
+
     private fun assertWrappedRecipe(recipe: JsonObject, realBinary: Path) {
         assertEquals(
             realBinary.toRealPath().toString(),

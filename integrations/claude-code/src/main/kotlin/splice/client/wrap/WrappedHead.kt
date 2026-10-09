@@ -38,8 +38,12 @@ import splice.core.util.JsonScalars
 import splice.core.util.PathProbe
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
+import java.io.IOException
+import java.nio.charset.CharacterCodingException
+import java.nio.file.AccessDeniedException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
@@ -65,17 +69,33 @@ public class WrapStateStore(
         prettyPrint = true
     }
 
-    // unwrap() refuses on null, naming missing or unreadable state; status omits the path.
-    public fun read(): WrapState? {
-        val obj = PathProbe.text(file)?.let { JsonScalars.objectOrNull(json, it) } ?: return null
-        val realBinaryPath = JsonScalars.str(obj, "real_binary_path") ?: return null
-        return WrapState(
-            realBinaryPath = realBinaryPath,
-            shadowedSymlinkTarget = JsonScalars.strOrEmpty(obj["shadowed_symlink_target"]),
-            shimPath = JsonScalars.strOrEmpty(obj["shim_path"]),
-            settingsBackupPath = JsonScalars.strOrEmpty(obj["settings_backup_path"]),
-            claudeJsonBackupPath = JsonScalars.strOrEmpty(obj["claude_json_backup_path"]),
-            wrappedAtEpochMillis = JsonScalars.long(obj, "wrapped_at_epoch_millis") ?: 0L,
+    /** Absent only when the file is not there; a file that is there and cannot be used is [StoredWrap.Unreadable]. */
+    public fun read(): StoredWrap = try {
+        parse(Files.readString(file))
+    } catch (_: NoSuchFileException) {
+        StoredWrap.Absent(file)
+    } catch (_: AccessDeniedException) {
+        StoredWrap.Unreadable(file, "is not readable by this user")
+    } catch (_: CharacterCodingException) {
+        StoredWrap.Unreadable(file, "is not valid text")
+    } catch (_: IOException) {
+        StoredWrap.Unreadable(file, "could not be read")
+    }
+
+    private fun parse(text: String): StoredWrap {
+        val obj = JsonScalars.objectOrNull(json, text)
+            ?: return StoredWrap.Unreadable(file, "is not a JSON object")
+        val realBinaryPath = JsonScalars.str(obj, "real_binary_path")
+            ?: return StoredWrap.Unreadable(file, "names no real_binary_path")
+        return StoredWrap.Present(
+            WrapState(
+                realBinaryPath = realBinaryPath,
+                shadowedSymlinkTarget = JsonScalars.strOrEmpty(obj["shadowed_symlink_target"]),
+                shimPath = JsonScalars.strOrEmpty(obj["shim_path"]),
+                settingsBackupPath = JsonScalars.strOrEmpty(obj["settings_backup_path"]),
+                claudeJsonBackupPath = JsonScalars.strOrEmpty(obj["claude_json_backup_path"]),
+                wrappedAtEpochMillis = JsonScalars.long(obj, "wrapped_at_epoch_millis") ?: 0L,
+            ),
         )
     }
 
@@ -120,19 +140,31 @@ public class WrapStateStore(
         }
     }
 
-    /** Best-effort: an unreadable leftover already answers [read] as absent (proven-absence law), so
-     *  a failed delete here cannot make unwrap report the wrong mode — only leaves a stale file a
-     *  later wrap's write() will overwrite anyway. */
+    /** Best-effort: a failed delete only leaves a stale file a later wrap's write() will overwrite anyway. */
     public fun clear() {
         Cancellables.discard(
             Cancellables.runCatchingCancellable { Files.deleteIfExists(file) },
-            "wrap-state clear is best-effort, since an absent-or-unreadable file already reads as unwrapped",
+            "wrap-state clear is best-effort: a file left behind is overwritten by the next wrap",
         )
     }
 }
 
 // WrapState, WrapStateRead, ClaudeHeadStatus, WrapResult and UnwrapResult live in
 // WrappedHeadTypes.kt (concentration split, 2026-09-20) — same package, same FQCNs.
+
+/** Puts a pre-V4-445 wrap's backed-up operator files back. */
+private object WrapBackups {
+    fun restore(target: Path, backupFrom: Path) {
+        if (!Files.exists(backupFrom, NOFOLLOW_LINKS)) {
+            Cancellables.discard(
+                Cancellables.runCatchingCancellable { Files.deleteIfExists(target) },
+                "restoring to absence: the pre-wrap state genuinely had nothing here",
+            )
+            return
+        }
+        Files.move(backupFrom, target, REPLACE_EXISTING, ATOMIC_MOVE)
+    }
+}
 
 /** The pre-flight read [WrappedHead.wrap] needs before it writes anything — split out so neither
  *  function's return count trips the wall (Kotlin style law: ReturnCount <= 3). */
@@ -160,12 +192,25 @@ public class WrappedHead(
      *  the updater has since deleted, or one a newer installed version has passed, is put right first
      *  ([reconcile]), so a launch never execs a dead path or an old release. */
     override fun realBinaryPath(): String? {
-        val state = stateStore.read() ?: return null
+        val state = stateStore.read().state ?: return null
         val recorded = Paths.get(state.realBinaryPath)
         val current = Files.isExecutable(recorded) && WrapBinaryVersions.newerBeside(recorded) == null
         if (current) return state.realBinaryPath
         reconcile()
-        return stateStore.read()?.realBinaryPath
+        return stateStore.read().state?.realBinaryPath
+    }
+
+    /** A launch must not run while `claude` is the shim and the record of the real binary is missing or unusable:
+     *  [realBinaryPath] would answer null and the launch would plant bare `claude`, which is the shim again. */
+    override fun refusal(): String? {
+        val problem = stateStore.read().problem() ?: return null
+        return if (isWrapShim(commandPath, shimPath)) {
+            "claude is the splice launch shim and the $problem, so a launch cannot tell which claude to run " +
+                "(bare claude would run the shim again); restore the file, or point $commandPath at your real " +
+                "claude install by hand"
+        } else {
+            null
+        }
     }
 
     /** V4-129 review: the launch a `/launch/<[command]>` makes THROUGH the wrapped default command,
@@ -206,11 +251,12 @@ public class WrappedHead(
     public fun unwrap(): UnwrapResult = synchronized(WRAP_LOCK) {
         val cmd = commandPath
         val shim = shimPath
-        val state = stateStore.read()
+        val stored = stateStore.read()
+        val state = stored.state
         when {
             !isWrapShim(cmd, shim) -> UnwrapResult.Refused("claude is not currently wrapped")
             state == null -> UnwrapResult.Refused(
-                "wrap state is missing or unreadable, so splice cannot recover the previous '$cmd' target or " +
+                "the ${stored.problem()}, so splice cannot recover the previous '$cmd' target or " +
                     "the backed-up config; point $cmd at your real claude install by hand",
             )
             else -> performUnwrap(cmd, state)
@@ -226,10 +272,17 @@ public class WrappedHead(
      *  timer can both call it. It never invents a target: a `claude` that is missing, dangling or not a
      *  symlink is [ReconcileResult.Waiting], and left exactly as found. */
     public fun reconcile(): ReconcileResult = synchronized(WRAP_LOCK) {
-        val state = stateStore.read() ?: return@synchronized ReconcileResult.NotWrapped
+        when (val stored = stateStore.read()) {
+            is StoredWrap.Absent -> ReconcileResult.NotWrapped
+            is StoredWrap.Unreadable -> ReconcileResult.Waiting("the ${stored.problem()}, so it is left as found")
+            is StoredWrap.Present -> reconcileFrom(stored.state)
+        }
+    }
+
+    private fun reconcileFrom(state: WrapState): ReconcileResult {
         val cmd = commandPath
         val shim = shimPath
-        when {
+        return when {
             !Files.exists(shim, NOFOLLOW_LINKS) -> ReconcileResult.Waiting("launch shim not found at $shim")
             isWrapShim(cmd, shim) -> {
                 stateStore.recordLauncherOwner(home, shim, installPaths.launcherProfile)
@@ -295,10 +348,10 @@ public class WrappedHead(
         // A wrap made before V4-445 copied the operator's settings.json and .claude.json aside and rewrote
         // both; its backups go back. A wrap now records none.
         if (state.settingsBackupPath.isNotBlank()) {
-            restore(vanillaDir.resolve(Keys.SETTINGS), Paths.get(state.settingsBackupPath))
+            WrapBackups.restore(vanillaDir.resolve(Keys.SETTINGS), Paths.get(state.settingsBackupPath))
         }
         if (state.claudeJsonBackupPath.isNotBlank()) {
-            restore(vanillaDir.resolve(Keys.CLAUDE_JSON), Paths.get(state.claudeJsonBackupPath))
+            WrapBackups.restore(vanillaDir.resolve(Keys.CLAUDE_JSON), Paths.get(state.claudeJsonBackupPath))
         }
         stateStore.clear()
         return UnwrapResult.Ok(status())
@@ -347,17 +400,6 @@ public class WrappedHead(
         val cmdReal = PathProbe.resolved(cmd) ?: return false
         val shimReal = PathProbe.resolved(shim) ?: return false
         return cmdReal == shimReal
-    }
-
-    private fun restore(target: Path, backupFrom: Path) {
-        if (!Files.exists(backupFrom, NOFOLLOW_LINKS)) {
-            Cancellables.discard(
-                Cancellables.runCatchingCancellable { Files.deleteIfExists(target) },
-                "restoring to absence: the pre-wrap state genuinely had nothing here",
-            )
-            return
-        }
-        Files.move(backupFrom, target, REPLACE_EXISTING, ATOMIC_MOVE)
     }
 
     /** Stage + ATOMIC_MOVE (the same shape as ClaudeConfigMaterializer.replaceWithSymlink, not

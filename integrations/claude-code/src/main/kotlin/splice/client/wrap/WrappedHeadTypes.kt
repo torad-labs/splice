@@ -18,6 +18,36 @@ import java.nio.file.Paths
  *  resolved through PATH) is correct exactly when this returns null. */
 public fun interface WrapStateRead {
     public fun realBinaryPath(): String?
+
+    /** Why no launch may run now, or null. Non-null exactly when `claude` on PATH is the wrap shim and the state
+     *  file cannot say which real binary stands behind it: a null [realBinaryPath] would then plant bare
+     *  `claude`, which resolves to the shim itself. A caller that gets a message here refuses with it and
+     *  never falls back to bare `claude`. */
+    public fun refusal(): String? = null
+}
+
+/** What the wrap state file holds. Absent is a wrap never made (or already undone); [Unreadable] is a file that
+ *  is there and cannot be used. Only the first is "not wrapped": the second says nothing about whether the shim
+ *  stands in for `claude`, so it is never read as absence. */
+public sealed class StoredWrap {
+    public abstract val state: WrapState?
+
+    public data class Absent(val file: Path) : StoredWrap() {
+        override val state: WrapState? = null
+    }
+
+    public data class Unreadable(val file: Path, val why: String) : StoredWrap() {
+        override val state: WrapState? = null
+    }
+
+    public data class Present(override val state: WrapState) : StoredWrap()
+
+    /** The file and what is wrong with it, for a message; null when the wrap is present. */
+    public fun problem(): String? = when (this) {
+        is Absent -> "wrap state $file is missing"
+        is Unreadable -> "wrap state $file $why"
+        is Present -> null
+    }
 }
 
 /** The one fact [splice.launch.recipe.LaunchService] must read on every launch (see WrappedHead.kt's

@@ -120,7 +120,7 @@ internal class ClaudeLoginOwner(
             failed(cell, "native login place is not configured")
             return null
         }
-        val busy = refusal(location.target.head.configDir)
+        val busy = refusal(location.target.head.configDir) ?: auth.refusal()
         if (busy != null) {
             failed(cell, busy)
             return null

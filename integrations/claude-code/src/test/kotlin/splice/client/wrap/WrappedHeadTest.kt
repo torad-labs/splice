@@ -66,7 +66,7 @@ class WrappedHeadTest {
         assertEquals(rig.shim.toRealPath(), rig.cmd.toRealPath())
 
         // The shadowed target survived byte-for-byte in state, for unwrap to restore exactly.
-        val state = rig.stateStore.read()!!
+        val state = rig.stateStore.read().state!!
         assertEquals(rig.realBinary.toString(), state.shadowedSymlinkTarget)
         assertEquals(rig.realBinary.toString(), state.realBinaryPath)
         assertEquals(
@@ -190,7 +190,7 @@ class WrappedHeadTest {
         assertTrue(rig.cmd.isSymbolicLink())
         assertEquals(rig.realBinary, rig.cmd.readSymbolicLink())
         vanilla.assertUntouched()
-        assertEquals(null, rig.stateStore.read())
+        assertTrue(rig.stateStore.read() is StoredWrap.Absent, "the state is cleared")
     }
 
     @Test
@@ -213,7 +213,7 @@ class WrappedHeadTest {
         val backup = vanilla.resolve("settings.json.splice-wrap-backup-1")
         backup.writeText("""{"before":"wrap"}""")
         vanilla.resolve("settings.json").writeText("""{"rewritten":"by the old wrap"}""")
-        rig.stateStore.write(rig.stateStore.read()!!.copy(settingsBackupPath = backup.toString()))
+        rig.stateStore.write(rig.stateStore.read().state!!.copy(settingsBackupPath = backup.toString()))
 
         assertTrue(rig.head.unwrap() is UnwrapResult.Ok)
         assertEquals("""{"before":"wrap"}""", vanilla.resolve("settings.json").readText())
@@ -239,5 +239,55 @@ class WrappedHeadTest {
         val result = rig.head.unwrap()
         assertTrue(result is UnwrapResult.Refused, "$result")
         assertEquals("wrapped", rig.head.status().mode, "a refused unwrap must not have touched the live link")
+    }
+
+    @Test
+    fun `a state file that cannot be used while the shim stands in refuses every launch and unwrap, and never reads as unwrapped`(
+        @TempDir home: Path,
+    ) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        assertTrue(rig.head.wrap() is WrapResult.Ok)
+        val stateFile = home.resolve("state/claude-head-wrap.json")
+        listOf("[]", "not json {{{", "{}").forEach { body ->
+            stateFile.writeText(body)
+
+            assertEquals(null, rig.head.realBinaryPath(), "no binary can be named: $body")
+            val refusal = rig.head.refusal()
+            assertTrue(refusal.orEmpty().contains(stateFile.toString()), "the refusal names the file: $refusal")
+            val unwrap = rig.head.unwrap()
+            assertTrue(unwrap is UnwrapResult.Refused && unwrap.reason.contains(stateFile.toString()), "$unwrap")
+            val reconcile = rig.head.reconcile()
+            val named = reconcile is ReconcileResult.Waiting && reconcile.reason.contains(stateFile.toString())
+            assertTrue(named, "$reconcile")
+            assertEquals("wrapped", rig.head.status().mode, "nothing touched the live link: $body")
+        }
+    }
+
+    @Test
+    fun `a state file that is missing while the shim stands in refuses a launch too, since bare claude is the shim`(
+        @TempDir home: Path,
+    ) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        assertTrue(rig.head.wrap() is WrapResult.Ok)
+        Files.delete(home.resolve("state/claude-head-wrap.json"))
+
+        assertTrue(rig.head.refusal().orEmpty().contains("is missing"), "${rig.head.refusal()}")
+    }
+
+    @Test
+    fun `without the shim a bad or missing state file refuses nothing, since bare claude is the real one`(
+        @TempDir home: Path,
+    ) {
+        val rig = WrapRig(home)
+        rig.linkCmdToReal()
+        assertEquals(null, rig.head.refusal())
+
+        val stateFile = home.resolve("state/claude-head-wrap.json")
+        stateFile.parent.createDirectories()
+        stateFile.writeText("[]")
+        assertEquals(null, rig.head.refusal())
+        assertEquals(null, rig.head.realBinaryPath())
     }
 }

@@ -3,7 +3,7 @@
 package splice.client.wrap
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -25,8 +25,8 @@ class WrapStateStoreTest {
 
     @Test
     fun `a never-written store reads absent, never a crash`(@TempDir home: Path) {
-        val store = WrapStateStore(file = home.resolve("nested/claude-head-wrap.json"))
-        assertNull(store.read())
+        val file = home.resolve("nested/claude-head-wrap.json")
+        assertEquals(StoredWrap.Absent(file), WrapStateStore(file = file).read())
     }
 
     @Test
@@ -34,7 +34,7 @@ class WrapStateStoreTest {
         val file = home.resolve("claude-head-wrap.json")
         val store = WrapStateStore(file = file)
         store.write(state)
-        assertEquals(state, store.read())
+        assertEquals(StoredWrap.Present(state), store.read())
         val perms = Files.getPosixFilePermissions(file)
         assertEquals(setOf(OWNER_READ, OWNER_WRITE), perms)
     }
@@ -45,14 +45,20 @@ class WrapStateStoreTest {
         val store = WrapStateStore(file = file)
         store.write(state)
         store.clear()
-        assertNull(store.read())
+        assertEquals(StoredWrap.Absent(file), store.read())
     }
 
     @Test
-    fun `a corrupted file reads as absent rather than throwing`(@TempDir home: Path) {
+    fun `a file that is there and cannot be used is unreadable, never absent, and names itself`(@TempDir home: Path) {
         val file = home.resolve("claude-head-wrap.json")
-        file.writeText("not json at all {{{")
         val store = WrapStateStore(file = file)
-        assertNull(store.read())
+        listOf("not json at all {{{", "[]", "\"text\"", "{}", """{"shim_path":"/x"}""").forEach { body ->
+            file.writeText(body)
+            val read = store.read()
+            assertTrue(read is StoredWrap.Unreadable, "$body read as $read")
+            assertEquals(null, read.state)
+            val problem = read.problem().orEmpty()
+            assertTrue(problem.contains(file.toString()), "the message names the file: $problem")
+        }
     }
 }

@@ -63,8 +63,10 @@ internal class ClaudeAccountSignIn(
     /** The pending folder this attempt will write, or null with the refusal already on [cell]. */
     private fun prepare(head: String, label: String?, cell: AtomicReference<LoginStatus>): ClaudePendingAccount? {
         val wanted = label?.takeIf { it.isNotBlank() } ?: mint(head)
-        if (busy(head, wanted)) {
-            failed(cell, "a sign-in for '$wanted' on $head is already running")
+        val refused = auth.refusal()
+            ?: "a sign-in for '$wanted' on $head is already running".takeIf { busy(head, wanted) }
+        if (refused != null) {
+            failed(cell, refused)
             return null
         }
         val pending = Cancellables.runCatchingCancellable { folders.pending(head, wanted) }

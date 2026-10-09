@@ -4,6 +4,7 @@ package splice.head.transport
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.perf.UpstreamGapEnd
 import splice.core.util.JsonScalars
 
@@ -30,7 +31,13 @@ internal object UpstreamEventKinds {
             UpstreamGapEnd.THINKING_DELTA, UpstreamGapEnd.TEXT_DELTA,
             UpstreamGapEnd.INPUT_JSON_DELTA, UpstreamGapEnd.TOOL_INPUT_DELTA,
             -> deltaHasContent(event, kind)
-            else -> false
+            UpstreamGapEnd.MESSAGE_START,
+            UpstreamGapEnd.MESSAGE_STOP,
+            UpstreamGapEnd.PING,
+            UpstreamGapEnd.MESSAGE_DELTA,
+            UpstreamGapEnd.CANCELLED,
+            UpstreamGapEnd.UNKNOWN,
+            -> false
         }
     }
 
@@ -81,16 +88,16 @@ internal object UpstreamEventKinds {
         is JsonArray -> payload.any(::payloadHasContent)
         is JsonObject -> CONTENT_STRINGS.any { JsonScalars.strIfString(payload[it]).isNotEmpty() } ||
             CONTENT_NODES.any { payloadHasContent(payload[it]) }
-        else -> false
+        null, is JsonPrimitive -> false
     }
 
     private fun deltaHasContent(event: JsonObject, kind: UpstreamGapEnd): Boolean {
         val delta = event[UPSTREAM_EVENT_DELTA_FIELD]
         return when {
             delta is JsonObject -> {
-                val field = when (kind) {
-                    UpstreamGapEnd.THINKING_DELTA -> "thinking"
-                    UpstreamGapEnd.TEXT_DELTA -> "text"
+                val field = when {
+                    kind == UpstreamGapEnd.THINKING_DELTA -> "thinking"
+                    kind == UpstreamGapEnd.TEXT_DELTA -> "text"
                     else -> "partial_json"
                 }
                 JsonScalars.strIfString(delta[field]).isNotEmpty()

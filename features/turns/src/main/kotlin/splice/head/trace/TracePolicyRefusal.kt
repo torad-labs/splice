@@ -13,8 +13,10 @@ import splice.head.turn.OutcomeSentences
 
 /** Only an authoritative refusal cause overrides stored words. Provider text adds detail, not provenance. */
 internal object TracePolicyRefusal {
-    fun sentence(turn: TracedTurn, cause: FailureCause?): String? = when (cause) {
-        FailureCause.CONTENT_FILTERED, FailureCause.MODEL_REFUSED -> OutcomeSentences.of(
+    fun sentence(turn: TracedTurn, cause: FailureCause?): String? {
+        val refusal = cause == FailureCause.CONTENT_FILTERED || cause == FailureCause.MODEL_REFUSED
+        if (cause == null || !refusal) return null
+        return OutcomeSentences.of(
             TurnOutcome.Failure(
                 message = if (cause == FailureCause.CONTENT_FILTERED) providerMessage(turn).orEmpty() else "",
                 cause = cause,
@@ -22,7 +24,6 @@ internal object TracePolicyRefusal {
                 providerReported = true,
             ),
         )
-        else -> null
     }
 
     private fun providerMessage(turn: TracedTurn): String? {

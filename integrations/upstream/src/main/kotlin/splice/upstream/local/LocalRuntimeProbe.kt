@@ -101,7 +101,7 @@ public class LocalRuntimeProbe(baseUrl: String, private val http: LocalHttp) {
                 val running = ollamaRunning()
                 data(body).map { m -> ollamaModel(JsonScalars.strOrEmpty(m["id"]), running, only, inferred) }
             }
-            else -> genericModels(runtime)
+            LocalRuntimeKind.VLLM, LocalRuntimeKind.OPENAI_COMPATIBLE -> genericModels(runtime)
         }
 
     private fun genericModels(runtime: LocalRuntime): List<LocalModel>? = get("$v1/models")?.let { body ->

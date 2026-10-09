@@ -92,7 +92,7 @@ internal class RoundSplice {
             val total = acc.plusTerminal(outcome.salvagedUsage)
             if (burned(total)) outcome.copy(salvagedUsage = total.toUsage()) else outcome
         }
-        else -> outcome
+        is TurnOutcome.Success -> outcome
     }
 
     private fun burned(total: RoundUsage): Boolean =

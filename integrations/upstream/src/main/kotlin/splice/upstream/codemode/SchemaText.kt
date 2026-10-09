@@ -45,7 +45,7 @@ internal object SchemaText {
             when (node) {
                 is JsonObject -> node[token]
                 is JsonArray -> arrayIndex(token)?.let(node::getOrNull)
-                else -> null
+                null, is JsonPrimitive -> null
             }
         }
     }

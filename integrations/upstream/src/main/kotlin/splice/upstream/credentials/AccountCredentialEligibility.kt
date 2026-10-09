@@ -202,7 +202,9 @@ internal class AccountCredentialEligibility(
 
         fun refreshed(current: State): State = when (presence) {
             AccountCredentialIdentitySource.CredentialPresence.MISSING -> current.observeMissing()
-            else -> current.recovered(identity)
+            AccountCredentialIdentitySource.CredentialPresence.PRESENT,
+            AccountCredentialIdentitySource.CredentialPresence.UNKNOWN,
+            -> current.recovered(identity)
         }
     }
 

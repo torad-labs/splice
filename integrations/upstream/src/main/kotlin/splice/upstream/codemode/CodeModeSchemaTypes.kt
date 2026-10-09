@@ -5,6 +5,7 @@ package splice.upstream.codemode
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.JsonWire
 
 /** JSON Schema to the TypeScript type codex renders; a rendering past [MAX_RENDERED_SCHEMA_BYTES]
@@ -82,7 +83,7 @@ internal class SchemaTypeRenderer(private val root: JsonElement) {
             }
             rendered.takeIf { it.isNotEmpty() }?.joinToString(" | ")
         }
-        else -> SchemaText.string(type)?.let { renderTypeKeyword(map, it) }
+        null, is JsonObject, is JsonPrimitive -> SchemaText.string(type)?.let { renderTypeKeyword(map, it) }
     }
 
     private fun renderShape(map: JsonObject): String = when {

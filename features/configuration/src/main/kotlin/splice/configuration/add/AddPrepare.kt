@@ -215,7 +215,14 @@ private class AddPortChoice(private val bindable: HeadPortBindable, private val 
             host == "::1" || host == "[::1]" || host.startsWith("127.")
 }
 
-/** `splice add-model`'s refusal (HeadModelArray, AddModelVerb); its message is the whole explanation. `splice
- *  add` decides AddRefusal values instead (V4-220). Public since LAYOUT-01: the CLI's guard renders it
- *  verbatim, as a refusal rather than a breakage. */
-public class AddRefused(message: String) : RuntimeException(message)
+/** What `splice add-model` ended in. A refusal is an answer, not a failure: its sentence is the whole explanation, composed
+ *  by splice, and the CLI prints it verbatim. `splice add` decides AddRefusal values instead (V4-220). */
+public sealed class AddModelsResult {
+    /** The picked rows were written to splice.toml. */
+    public data object Written : AddModelsResult()
+
+    /** The operator picked nothing, or left the prompts: the file is untouched. */
+    public data object NothingWritten : AddModelsResult()
+
+    public class Refused(public val sentence: String) : AddModelsResult()
+}

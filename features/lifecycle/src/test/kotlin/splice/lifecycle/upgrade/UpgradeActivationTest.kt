@@ -1,6 +1,6 @@
 // The activation transaction of `splice upgrade` (v0.4.0, FEATURES.md §5) under a LATE failure — after
 // the previous and current links moved — and under a failure of the restoration itself: the refusal is
-// always the authored UpgradeRefused, the pointers are back when they can be, and when they cannot the
+// always an authored Upgraded.Refused, the pointers are back when they can be, and when they cannot the
 // message names what is inconsistent.
 package splice.lifecycle.upgrade
 
@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
@@ -30,7 +29,7 @@ class UpgradeActivationTest {
         }
         val layout = UpgradeLayout(env)
         for (version in listOf("0.3.2", "9.9.9")) {
-            val dir = Files.createDirectories(layout.versionDir(version))
+            val dir = Files.createDirectories((layout.versionDir(version) as Upgraded.Ok).value)
             Files.writeString(dir.resolve("splice.jar"), "jar $version")
             Files.writeString(dir.resolve("splice-launch"), "shim $version")
         }
@@ -57,9 +56,7 @@ class UpgradeActivationTest {
             }
             layout.point(link, targetPath)
         }
-        val refused = assertThrows<UpgradeRefused> {
-            UpgradeActivation(out, layout, wrapper(), failLive).activate("9.9.9", "0.3.2")
-        }
+        val refused = UpgradeActivation(out, layout, wrapper(), failLive).activate("9.9.9", "0.3.2") as Upgraded.Refused
         assertTrue(refused.reason.contains("0.3.2 restored"), refused.reason)
         assertEquals("0.3.2", target(layout.current), "current points back at the running release")
         assertFalse(Files.exists(layout.previous), "previous did not exist before and does not now")
@@ -76,9 +73,8 @@ class UpgradeActivationTest {
             if (link == layout.liveJar || calls > 3) throw IOException("read-only")
             layout.point(link, targetPath)
         }
-        val refused = assertThrows<UpgradeRefused> {
-            UpgradeActivation(out, layout, wrapper(), failFromLive).activate("9.9.9", "0.3.2")
-        }
+        val activation = UpgradeActivation(out, layout, wrapper(), failFromLive)
+        val refused = activation.activate("9.9.9", "0.3.2") as Upgraded.Refused
         assertTrue(refused.reason.contains("recovery FAILED for"), refused.reason)
         assertTrue(refused.reason.contains("current"), "names the pointer it could not put back: ${refused.reason}")
         assertFalse(refused.reason.contains("restored"), refused.reason)
@@ -96,9 +92,7 @@ class UpgradeActivationTest {
             }
             layout.point(link, targetPath)
         }
-        val refused = assertThrows<UpgradeRefused> {
-            UpgradeActivation(out, layout, wrapper(), failLive).activate("9.9.9", "0.3.2")
-        }
+        val refused = UpgradeActivation(out, layout, wrapper(), failLive).activate("9.9.9", "0.3.2") as Upgraded.Refused
         assertTrue(refused.reason.contains("0.3.2 restored"), refused.reason)
         assertFalse(Files.exists(layout.liveShim), "no shim before, no shim after: the new release's is not kept")
         assertEquals("0.3.2", target(layout.current))

@@ -3,7 +3,6 @@ package splice.terminal
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.terminal.BG_CYAN
@@ -29,7 +28,7 @@ class WizardFrameTest {
     }
 
     @Test
-    fun `cancel prints one dim line and is the only member that raises cancellation`() {
+    fun `cancel prints one dim line and answers true, the wizard's own ending`() {
         val buf = StringBuilder()
         val frame = WizardFrame(buf, ask = ConfirmPrompt { _, d -> d })
         frame.intro("t")
@@ -37,8 +36,7 @@ class WizardFrameTest {
         frame.note("n", listOf("x"))
         frame.confirm("q", true)
         frame.outro("o")
-        val thrown = assertThrows(WizardCancelled::class.java) { frame.cancel("stopped") }
-        assertEquals("stopped", thrown.message)
+        assertTrue(frame.cancel("stopped"))
         assertEquals("$DIM" + "stopped$RESET\n", buf.toString().lines().last { it.isNotEmpty() } + "\n")
     }
 

@@ -775,6 +775,8 @@ class RoleRegistryLawTest {
         // 146 since Oct 5 CT: DayDirectoryAction holds cross-head body admission through metadata publication.
         // 147 since Oct 5 CT: HoldChange serializes refusal mutations against captured posting receipts.
         // 145 since Oct 7 CT: DashboardPage and ClasspathHtml left with the console UI.
+        // 144 since Oct 8 CT: UpgradeRun answers Upgraded<Boolean> now, so it left the `()->Boolean` entry.
+        // 145 since Oct 9 CT: AccountMembershipRefresh reconciles external credentials before selection.
         assertEquals(145, names.sumOf { it.orEmpty().size }, "the names the file accounts for")
         assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
         assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }

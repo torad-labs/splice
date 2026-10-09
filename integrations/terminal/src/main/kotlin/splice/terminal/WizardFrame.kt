@@ -6,7 +6,7 @@ import splice.core.terminal.BLACK
 import splice.core.terminal.DIM
 import splice.core.terminal.GREEN
 import splice.core.terminal.RESET
-import splice.core.util.Cancellables
+import java.io.IOException
 
 /** Asks a y/n question and returns the answer. */
 public fun interface ConfirmPrompt {
@@ -22,8 +22,12 @@ public class ConsoleConfirm(
     override fun invoke(question: String, default: Boolean): Boolean {
         if (!hasConsole()) return default
         out.append(question).append(if (default) " [Y/n] " else " [y/N] ")
-        // ast-grep-ignore: kt-no-silent-result-collapse -- 2026-09-17 (V4-112): same as AddSeams' prompter: a failed TTY read and an empty line both mean [default], which the `null, "" -> default` arm below says out loud.
-        val line = Cancellables.runCatchingCancellable { readlnOrNull()?.trim()?.lowercase() }.getOrNull()
+        // A failed TTY read and an empty line both mean [default], which the `null, "" -> default` arm below says out loud.
+        val line = try {
+            readlnOrNull()?.trim()?.lowercase()
+        } catch (_: IOException) {
+            null
+        }
         return when (line) {
             null, "" -> default
             "y", "yes" -> true
@@ -31,9 +35,6 @@ public class ConsoleConfirm(
         }
     }
 }
-
-/** The operator cancelled the wizard; [WizardFrame.cancel] throws it after saying why. */
-public class WizardCancelled(reason: String) : RuntimeException(reason)
 
 /** The setup wizard's chrome: intro, steps, notes, confirm, cancel and outro, all on [out]. */
 public class WizardFrame(
@@ -54,9 +55,10 @@ public class WizardFrame(
 
     public fun confirm(question: String, default: Boolean): Boolean = ask(question, default)
 
-    public fun cancel(reason: String): Nothing {
+    /** Says why the wizard ends without installing. True is the wizard's own answer for that ending: the operator chose it. */
+    public fun cancel(reason: String): Boolean {
         out.append(DIM).append(reason).append(RESET).append('\n')
-        throw WizardCancelled(reason)
+        return true
     }
 
     public fun outro(message: String) {

@@ -28,10 +28,6 @@ private const val SHIM_MODE = "rwxr-xr-x"
 /** `doctor --json` shipped in 0.4.0. */
 private const val JSON_DOCTOR_MINOR = 4
 
-/** A refusal decided before anything was activated. [reason] is text this command authored (a version, a
- *  path, a verdict), never bytes of a file it read — so it is printed as-is, not through SafeFailureText. */
-internal class UpgradeRefused(val reason: String) : RuntimeException(reason)
-
 /** A validated candidate. [provenanceGap] says why its attestation was not checked ("is not
  *  installed", "is not signed in"), or is null when it was checked or the base is a local mirror. */
 internal data class Staged(val version: String, val provenanceGap: String?)
@@ -49,36 +45,61 @@ internal class UpgradeRelease(
             ?: if (to == null) "$RELEASES/latest/download" else "$RELEASES/download/v${to.removePrefix("v")}"
 
     /** Fetch, verify and validate the release into [staging]. */
-    fun stage(base: String, staging: Path): Staged {
+    fun stage(base: String, staging: Path): Upgraded<Staged> {
         val remote = !base.startsWith("file:")
         val gap = if (remote) attestationGap() else null
-        val sums = String(fetched(base, SUMS_ASSET))
-        Files.createDirectories(staging)
-        for (asset in listOf(JAR_ASSET, SHIM_ASSET)) {
-            val bytes = fetched(base, asset)
-            verifySum(asset, bytes, sums)
-            val file = Files.write(staging.resolve(asset), bytes)
-            if (remote && gap == null) attest(file, asset)
-            val how = when {
-                !remote -> "sha256 ok (local release base, no attestation)"
-                gap == null -> "sha256 ok, attestation ok"
-                else -> "sha256 ok, provenance not checked (gh $gap)"
+        return fetched(base, SUMS_ASSET).then { sums ->
+            Files.createDirectories(staging)
+            stageAssets(Fetching(base, staging, String(sums), remote, gap)).then {
+                Files.setPosixFilePermissions(staging.resolve(SHIM_ASSET), PosixFilePermissions.fromString(SHIM_MODE))
+                validate(staging.resolve(JAR_ASSET)).then { version -> Upgraded.Ok(Staged(version, gap)) }
             }
-            output.line("  $GREEN✓$RESET ${asset.padEnd(UPGRADE_PAD)} $how")
         }
-        Files.setPosixFilePermissions(staging.resolve(SHIM_ASSET), PosixFilePermissions.fromString(SHIM_MODE))
-        return Staged(validate(staging.resolve(JAR_ASSET)), gap)
     }
+
+    /** What one stage reads and decides: where from, where to, the published sums, and whether provenance applies. */
+    private data class Fetching(
+        val base: String,
+        val staging: Path,
+        val sums: String,
+        val remote: Boolean,
+        val gap: String?,
+    )
+
+    private fun stageAssets(fetching: Fetching): Upgraded<Unit> {
+        for (asset in listOf(JAR_ASSET, SHIM_ASSET)) {
+            val refused = stageAsset(fetching, asset)
+            if (refused is Upgraded.Refused) return refused
+        }
+        return Upgraded.Ok(Unit)
+    }
+
+    private fun stageAsset(fetching: Fetching, asset: String): Upgraded<Unit> =
+        fetched(fetching.base, asset).then { bytes ->
+            verifySum(asset, bytes, fetching.sums).then {
+                val file = Files.write(fetching.staging.resolve(asset), bytes)
+                val attested = if (fetching.remote && fetching.gap == null) attest(file, asset) else Upgraded.Ok(Unit)
+                attested.then {
+                    val how = when {
+                        !fetching.remote -> "sha256 ok (local release base, no attestation)"
+                        fetching.gap == null -> "sha256 ok, attestation ok"
+                        else -> "sha256 ok, provenance not checked (gh ${fetching.gap})"
+                    }
+                    output.line("  $GREEN✓$RESET ${asset.padEnd(UPGRADE_PAD)} $how")
+                    Upgraded.Ok(Unit)
+                }
+            }
+        }
 
     /** The command that checks an installed asset's build provenance, for a stage that could not. */
     fun verifyLater(file: Path): String = "gh attestation verify $file --repo $GITHUB_REPO"
 
     /** Absent (null) and failed (a status class, a transport class) are different refusals: a 403
      *  or a DNS failure is not "no asset", and the operator's next step differs (review 2026-09-14). */
-    private fun fetched(base: String, asset: String): ByteArray = try {
-        fetch("$base/$asset") ?: refuse("no $asset at $base")
+    private fun fetched(base: String, asset: String): Upgraded<ByteArray> = try {
+        fetch("$base/$asset")?.let { Upgraded.Ok(it) } ?: Upgraded.Refused("no $asset at $base")
     } catch (failed: UpgradeFetchFailed) {
-        refuse("fetching $asset from $base failed: ${failed.why}")
+        Upgraded.Refused("fetching $asset from $base failed: ${failed.why}")
     }
 
     /** Null when gh can verify an attestation, else why not. An attestation that gh checks and
@@ -90,19 +111,25 @@ internal class UpgradeRelease(
         else -> "is not signed in"
     }
 
-    private fun verifySum(asset: String, bytes: ByteArray, sums: String) {
+    private fun verifySum(asset: String, bytes: ByteArray, sums: String): Upgraded<Unit> {
         val expected = sums.lineSequence().map { it.trim() }.firstOrNull { it.endsWith(" $asset") }
             ?.substringBefore(' ')
-            ?: refuse("no $asset entry in $SUMS_ASSET")
+            ?: return Upgraded.Refused("no $asset entry in $SUMS_ASSET")
         val actual = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-        if (!expected.equals(actual, ignoreCase = true)) {
-            refuse("sha256 verification FAILED for $asset (expected $expected, got $actual)")
+        return if (expected.equals(actual, ignoreCase = true)) {
+            Upgraded.Ok(Unit)
+        } else {
+            Upgraded.Refused("sha256 verification FAILED for $asset (expected $expected, got $actual)")
         }
     }
 
-    private fun attest(file: Path, asset: String) {
-        val verify = process(listOf("gh", "attestation", "verify", file.toString(), "--repo", GITHUB_REPO), false)
-        if (verify.code != 0) refuse("attestation verification FAILED for $asset")
+    private fun attest(file: Path, asset: String): Upgraded<Unit> {
+        val command = listOf("gh", "attestation", "verify", file.toString(), "--repo", GITHUB_REPO)
+        return if (process(command, false).code == 0) {
+            Upgraded.Ok(Unit)
+        } else {
+            Upgraded.Refused("attestation verification FAILED for $asset")
+        }
     }
 
     /** The candidate answers `version` like a splice jar and its doctor RUNS (findings are next
@@ -110,22 +137,28 @@ internal class UpgradeRelease(
      *  than 0.4.0 has no `--json`: its verb table ignored the flag and ran the full text doctor —
      *  write probes and daemon calls against the live install — only to be refused for not printing
      *  JSON (review 2026-09-14). Such a candidate skips the preflight, and says so. */
-    private fun validate(jar: Path): String {
+    private fun validate(jar: Path): Upgraded<String> {
         val version = process(listOf(java, "-jar", jar.toString(), "version"), false)
         val line = version.stdout.trim()
         if (version.code != 0 || !line.startsWith("splice ")) {
-            refuse("candidate jar failed validation: ${line.ifEmpty { "<empty>" }}")
+            return Upgraded.Refused("candidate jar failed validation: ${line.ifEmpty { "<empty>" }}")
         }
         val candidate = line.removePrefix("splice ").trim()
-        if (predatesJsonDoctor(candidate)) {
+        val refusal = if (predatesJsonDoctor(candidate)) {
             output.line("  ${"doctor".padEnd(UPGRADE_PAD)} $candidate predates doctor --json; preflight skipped")
-            return candidate
+            null
+        } else {
+            doctorRefusal(jar)
         }
+        return refusal ?: Upgraded.Ok(candidate)
+    }
+
+    /** The refusal when the candidate's `doctor --json` does not answer with a report; null when it does. */
+    private fun doctorRefusal(jar: Path): Upgraded.Refused? {
         val doctor = process(listOf(java, "-jar", jar.toString(), "doctor", "--json"), false)
-        if (doctor.code !in 0..1 || !doctor.stdout.trimStart().startsWith("{")) {
-            refuse("candidate jar's doctor --json did not answer with a report (exit ${doctor.code})")
-        }
-        return candidate
+        val answered = doctor.code in 0..1 && doctor.stdout.trimStart().startsWith("{")
+        if (answered) return null
+        return Upgraded.Refused("candidate jar's doctor --json did not answer with a report (exit ${doctor.code})")
     }
 
     private fun predatesJsonDoctor(version: String): Boolean {
@@ -134,6 +167,4 @@ internal class UpgradeRelease(
         val minor = parts.getOrNull(1)?.toIntOrNull() ?: return false
         return major == 0 && minor < JSON_DOCTOR_MINOR
     }
-
-    private fun refuse(reason: String): Nothing = throw UpgradeRefused(reason)
 }

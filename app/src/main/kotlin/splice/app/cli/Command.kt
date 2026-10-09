@@ -14,12 +14,14 @@ import splice.app.cli.auth.KeyCommand
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.setup.SetupCommand
 import splice.app.cli.status.StatusCommand
+import splice.configuration.add.AddModelsResult
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.diagnostics.logs.LogsCommand
 import splice.diagnostics.wire.WireCommand
+import splice.launch.install.InstallResult
 import splice.lifecycle.upgrade.UpgradeVerb
 import splice.lifecycle.upgrade.VersionedRestart
 import splice.sessions.list.SessionsCommand
@@ -48,9 +50,14 @@ public sealed class Command {
         override suspend fun run(): Int = success { InstallWiring.init(EnvReader(System::getenv)) }
     }
     public data class Install(val target: String?) : Command() {
-        override suspend fun run(): Int = outcomeExitCode(
-            InstallWiring.command().install(target, EnvReader(System::getenv)),
-        )
+        override suspend fun run(): Int {
+            val result = InstallWiring.command().install(target, EnvReader(System::getenv))
+            return when (result) {
+                InstallResult.Linked -> 0
+                InstallResult.Declined -> 1
+                is InstallResult.Refused -> refusal(result.sentence)
+            }
+        }
     }
     public data class Uninstall(val target: String?) : Command() {
         override suspend fun run(): Int = outcomeExitCode(
@@ -75,7 +82,11 @@ public sealed class Command {
 
     /** V4-34: `splice add-model` — pick OpenRouter catalog rows through the prompt toolkit. */
     public data object AddModel : Command() {
-        override suspend fun run(): Int = outcomeExitCode(AddWiring.addModel().add(TopologyLoader.configPath()))
+        override suspend fun run(): Int = when (val result = AddWiring.addModel().add(TopologyLoader.configPath())) {
+            AddModelsResult.Written -> 0
+            AddModelsResult.NothingWritten -> 1
+            is AddModelsResult.Refused -> refusal(result.sentence)
+        }
     }
 
     /** 2026-09-22: `splice models [provider]` — what each provider publishes, against splice.toml.
@@ -140,6 +151,13 @@ public sealed class Command {
      *  arm still calls it unqualified; it was a top-level function until the no-top-level-functions
      *  law (2026-08-15) gave it the type it always belonged to. Visibility unchanged (internal). */
     internal fun outcomeExitCode(ok: Boolean): Int = if (ok) 0 else 1
+
+    /** A verb that refused: its sentence, composed by splice from paths, command names and head keys, prints verbatim
+     *  on one line with no trace, and the exit code is 1. */
+    internal fun refusal(sentence: String): Int {
+        System.err.println("splice: $sentence")
+        return 1
+    }
 
     /** A verb that cannot fail: run [block], exit 0.
      *

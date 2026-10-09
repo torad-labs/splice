@@ -29,9 +29,11 @@ internal class UpgradeActivation(
     /** One transaction: the wrapper first (its I/O can fail; nothing is exposed yet), then the
      *  previous/current links, the live jar LAST — and every pointer restored if any step throws,
      *  so a failure never leaves the daemon on a release the metadata does not name. */
-    fun activate(version: String, from: String) {
-        val dir = layout.versionDir(version)
-        val fromDir = layout.versionDir(from)
+    fun activate(version: String, from: String): Upgraded<Unit> = layout.versionDir(version).then { dir ->
+        layout.versionDir(from).then { fromDir -> flip(version, from, dir, fromDir) }
+    }
+
+    private fun flip(version: String, from: String, dir: Path, fromDir: Path): Upgraded<Unit> {
         val links = mapOf(
             layout.previous to layout.pointedVersion(layout.previous)?.let(Path::of),
             layout.current to layout.pointedVersion(layout.current)?.let(Path::of),
@@ -39,7 +41,7 @@ internal class UpgradeActivation(
         val liveBefore = if (Files.isSymbolicLink(layout.liveJar)) Files.readSymbolicLink(layout.liveJar) else null
         val hadShim = Files.exists(layout.liveShim)
         var previousShim: Path? = null
-        Cancellables.runCatchingBestEffort {
+        val flipped = Cancellables.runCatchingBestEffort {
             previousShim = wrapper.activate(
                 layout.liveShim,
                 fromDir.resolve(SHIM_ASSET),
@@ -49,12 +51,17 @@ internal class UpgradeActivation(
             point(layout.previous, Path.of(from))
             point(layout.current, Path.of(version))
             point(layout.liveJar, layout.share.relativize(dir.resolve(JAR_ASSET)))
-        }.getOrElse { e ->
+        }
+        val error = flipped.exceptionOrNull()
+        if (error != null) {
             val failed = restore(links, liveBefore, previousShim, hadShim)
-            val why = "activating $version failed (${SafeFailureText.render(e)})"
-            throw UpgradeRefused(if (failed.isEmpty()) "$why; $from restored" else "$why; recovery FAILED for $failed")
+            val why = "activating $version failed (${SafeFailureText.render(error)})"
+            return Upgraded.Refused(
+                if (failed.isEmpty()) "$why; $from restored" else "$why; recovery FAILED for $failed",
+            )
         }
         output.line("  $GREEN✓$RESET ${"activated".padEnd(UPGRADE_PAD)} $version ($from kept for --rollback)")
+        return Upgraded.Ok(Unit)
     }
 
     /** Puts every pointer back, continuing past a step that fails; returns the names it could NOT

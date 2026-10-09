@@ -67,6 +67,7 @@ reason = """DayFileRemoval performs filesystem deletion and reports whether a fi
 signature = "()->Unit"
 dated = "2026-10-05"
 names = [
+    "AccountMembershipRefresh",
     "AuthRefreshObserver",
     "ClaudePoolChange",
     "CodeModeCleanup",
@@ -93,7 +94,9 @@ reason = """A nullary effect is the widest shape in the language and the one tha
 every one of these is an EVENT or an ACTION with its own lifecycle owner, and no two are wired \
 from the same place. HoldChange mutates credential-owned refusal state under its generation monitor; \
 it is neither a stream-start notification nor dispatched file IO. ClaudePoolChange publishes current stored membership into one booted head, \
-retaining session choices and captured credentials. ShutdownDaemon ends that head instead; swapping \
+retaining session choices and captured credentials. AccountMembershipRefresh reconciles externally written \
+credentials before the upstream selector captures a generation; unlike app-only mutation publication, \
+it cannot complete an account withdrawal. ShutdownDaemon ends that head instead; swapping \
 these roles would stop serving on login edits or fail to release resources on shutdown. \
 Notifications the caller only observes: AuthRefreshObserver (a credential \
 refresh happened mid-attempt), WorkerExited (the code-mode worker process died), ProtocolAnomaly \
@@ -136,7 +139,6 @@ names = [
     "TerminalSeen",
     "TopologyStale",
     "TranscriptReadBudget",
-    "UpgradeRun",
     "WatchdogTripped",
 ]
 reason = """THE CANONICAL GROUP, documented in kt-no-lambda-seam.yml's own header. ClientGone (the \
@@ -148,7 +150,7 @@ subjects: ContentReached (has any content frame left the emitter yet — the que
 wire-type rule turns on), WatchdogTripped (did the turn watchdog fire), TerminalSeen (has the WS \
 stream produced its terminal event), TopologyStale (has splice.toml changed under the running \
 daemon), KeyPresenceProbe (is a management key present right now), ConsolePresence (is a TTY \
-attached), UpgradeRun (does this process hold the upgrade lock), DaemonRestart (restart the daemon \
+attached), DaemonRestart (restart the daemon \
 and report whether it came back), DaemonSuccessor (arm the detached CLI before this unsupervised \
 daemon drains; false keeps it serving), and DaemonSupervised (V4-137: was this process started \
 under systemd — read from INVOCATION_ID, which systemd sets on every process it starts). \

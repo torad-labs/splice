@@ -43,6 +43,7 @@ import splice.app.control.ControlServer
 import splice.app.control.ManagedHead
 import splice.app.control.controlServerFor
 import splice.configuration.add.AddConsole
+import splice.configuration.add.AddLinked
 import splice.configuration.add.AddSignIn
 import splice.configuration.add.WrapperInstall
 import splice.core.auth.AuthDescription
@@ -129,7 +130,11 @@ class AddBackendRouteTest {
             runtime = ControlRuntime(shutdownDaemon = { drains.incrementAndGet() }),
             auth = ControlAuth(mgmtKey = mgmt, log = { logged += it }),
         )
-        control.ports.add = AddConsole(FakeSignIn(), WrapperInstall { k, _ -> linked.add(k) }, env, TerminalOutput { })
+        val install = WrapperInstall { k, _ ->
+            linked.add(k)
+            AddLinked.Linked
+        }
+        control.ports.add = AddConsole(FakeSignIn(), install, env, TerminalOutput { })
         runBlocking { control.start() }
     }
 

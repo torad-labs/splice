@@ -6,6 +6,7 @@ package splice.head.transport
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.serialization.json.JsonObject
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
@@ -65,35 +66,32 @@ internal class WsRoundDrive(
         // V4-242: a round the upstream TORE before any client frame is re-served over SSE too
         // (PreContentTear). Caught here, upstream of the translator, because the translator folds an
         // I/O failure into its honest terminal.
-        val instrumented = events.catch { torn -> throw reissued(torn, inputs) ?: torn }.onEach { evt ->
-            drive.slot.received()
-            UpstreamProgress.observe(evt, drive.watchdog)
-            if (runner.isFailureTerminal(evt) && !inputs.frameEmittedThisRound()) {
-                // A policy refusal is not re-served: over SSE the identical context met the identical
-                // refusal, so the round's translator ends the turn on it instead (WsFailureTerminal).
-                val failure = WsFailureTerminal(evt)
-                if (!failure.policyRefusal()) throw RoundNeedsSse(failureDetail(evt, failure))
+        val reserve = SseReserve()
+        val instrumented = events
+            .catch { torn -> if (!reserve.tear(torn, inputs)) throw torn }
+            .transformWhile { evt ->
+                drive.slot.received()
+                UpstreamProgress.observe(evt, drive.watchdog)
+                val reserved = reserve.event(evt, runner, inputs)
+                if (!reserved) {
+                    drive.perf.markOnce(PerfKeys.FIRST_BYTE)
+                    drive.perf.add(PerfKeys.EVENTS_IN, 1)
+                    emit(evt)
+                }
+                !reserved
             }
-            drive.perf.markOnce(PerfKeys.FIRST_BYTE)
-            drive.perf.add(PerfKeys.EVENTS_IN, 1)
-        }
         val signals = TurnSignals(
             watchdogFired = { drive.watchdog.fired },
             clientGone = { inputs.clientGone() },
         )
-        // V4-114: [RoundNeedsSse] is caught HERE, one frame below the throw, and leaves as a value.
-        // The three statements after it are exactly the ones this round must NOT run when it is
-        // about to be re-served over SSE — the perf mark, the zero-event classification, and
-        // roundEnded, which commits the chaining state (see the note below). That is why the abort
-        // stays a throw: the decision is made inside driveTurn's own collection, and a Kotlin
-        // suspend collect has no other way to stop early. Truncating the flow instead would let the
-        // translator author a terminal INTO inputs.sink, and the client would then see that
-        // terminal followed by the SSE round's content.
-        val raw = try {
-            provider.streamTranslator(drive.meta, signals).driveTurn(instrumented, inputs.sink)
-        } catch (needsSse: RoundNeedsSse) {
-            return WsRoundResult.NeedsSse(needsSse.detail)
-        }
+        // V4-114: the re-serve decision is a VALUE ([SseReserve]), taken inside the collection, which then
+        // ends without handing the translator the deciding event. The three statements after driveTurn are
+        // exactly the ones a round about to be re-served over SSE must NOT run: the perf mark, the zero-event
+        // classification and roundEnded, which commits the chaining state. The translator still sees an
+        // ended flow, so [SseReserve.gate] keeps its closing call off the client: it must author no terminal, or
+        // the client would see that terminal followed by the SSE round's content.
+        val raw = provider.streamTranslator(drive.meta, signals).driveTurn(instrumented, reserve.gate(inputs.sink))
+        reserve.detail?.let { return WsRoundResult.NeedsSse(it) }
         drive.perf.mark(PerfKeys.STREAM_END)
         // The report is the LAST statement, so it and the return are atomic from WsRoundDriver's
         // point of view: that caller sets `reported` only once drive() returns, and its finally
@@ -114,32 +112,6 @@ internal class WsRoundDrive(
         runner.roundEnded(drive.meta, ok = outcome is TurnOutcome.Success)
         return WsRoundResult.Streamed(outcome)
     }
-
-    /** The failure terminal's type and the error it carried, read in every shape the dialect's reducer
-     *  reads ([WsFailureTerminal]). Folded onto one line and clipped so a verbose server message cannot
-     *  flood the log. */
-    private fun failureDetail(evt: JsonObject, failure: WsFailureTerminal): String =
-        listOf(JsonScalars.strOrEmpty(evt["type"]), failure.code, failure.message)
-            .filter { it.isNotEmpty() }
-            .joinToString(" ")
-            .replace(oneLine, " ")
-            .take(FAILURE_DETAIL_MAX_CHARS)
-
-    /** V4-242: the re-serve over SSE of a round [torn] before the client saw anything of it, named by the
-     *  tear's words (PreContentTear), one line and clipped like [failureDetail]; null when it is not one. */
-    private fun reissued(torn: Throwable, inputs: WsRoundInputs): RoundNeedsSse? =
-        PreContentTear.words(torn, inputs)?.let { words ->
-            RoundNeedsSse(words.replace(oneLine, " ").take(FAILURE_DETAIL_MAX_CHARS))
-        }
-
-    private val oneLine = Regex("\\s+")
-
-    /** The loop break for [drive]'s own collection, and nothing else: private to this class, thrown
-     *  and caught between two adjacent statements, never a seam. A plain RuntimeException because
-     *  the translators' catch lists (IOException / SerializationException / IllegalArgumentException)
-     *  must not swallow it — the same reason [splice.upstream.transport.StreamTornBeforeClient] is one. The ANSWER
-     *  the caller reads is [WsRoundResult], not this (V4-114). */
-    private class RoundNeedsSse(val detail: String) : RuntimeException()
 }
 
 /**
@@ -159,6 +131,3 @@ internal sealed class WsRoundResult {
      *  transport's tear in its deepest words (V4-242). */
     data class NeedsSse(val detail: String) : WsRoundResult()
 }
-
-/** Long enough for a code and a sentence, short enough that one server message stays one line. */
-private const val FAILURE_DETAIL_MAX_CHARS = 240

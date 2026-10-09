@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.util.EnvReader
 import java.nio.file.Files
@@ -21,15 +20,15 @@ class UpgradeLayoutTest {
     @Test
     fun `recording retries preserve an earlier launcher copy without replacing it`(@TempDir home: Path) {
         val layout = layout(home)
-        val dir = Files.createDirectories(layout.versionDir(layout.installedVersion()))
+        val dir = Files.createDirectories(dirOf(layout, layout.installedVersion()))
         Files.writeString(layout.liveJar, "synthetic jar")
         Files.writeString(layout.liveShim, "live launcher")
         val saved = dir.resolve(EDITED_SHIM)
         Files.writeString(saved, "earlier preserved launcher")
-        assertEquals(saved, layout.ensureCurrentRecorded())
+        assertEquals(saved, (layout.ensureCurrentRecorded() as Upgraded.Ok).value)
         assertEquals("earlier preserved launcher", Files.readString(saved))
         assertEquals("live launcher", Files.readString(dir.resolve(SHIM_ASSET)))
-        assertNull(layout.ensureCurrentRecorded())
+        assertNull((layout.ensureCurrentRecorded() as Upgraded.Ok).value)
         assertEquals("earlier preserved launcher", Files.readString(saved))
         assertEquals("live launcher", Files.readString(layout.liveShim))
     }
@@ -51,7 +50,7 @@ class UpgradeLayoutTest {
         val good = listOf("1.2.3", "0.3.0-beta.1", "1.2.3-rc-1.x.7") +
             listOf("1.2.3-alpha-hyphen", "1.2.3+build.5", "1.0.0-0.3.7")
         for (v in good) {
-            assertEquals(layout.releases.resolve(v), layout.versionDir(v), v)
+            assertEquals(layout.releases.resolve(v), dirOf(layout, v), v)
         }
     }
 
@@ -60,8 +59,10 @@ class UpgradeLayoutTest {
         val layout = layout(home)
         val bad = listOf("01.2.3", "1.02.3", "1.2.3-01", "1.2.3-alpha..beta", "1.2.3-", "1.2.3+", "1.2", "v1.2.3")
         for (v in bad + listOf("current", "previous", "..", "../x", "/tmp/x", "1.2.3/x", "1.2.3 ")) {
-            val refused = assertThrows<UpgradeRefused>(v) { layout.versionDir(v) }
-            assertTrue(refused.reason.contains("not a normalized SemVer"), refused.reason)
+            val refused = layout.versionDir(v) as Upgraded.Refused
+            assertTrue(refused.reason.contains("not a normalized SemVer"), "$v: ${refused.reason}")
         }
     }
+
+    private fun dirOf(layout: UpgradeLayout, version: String): Path = (layout.versionDir(version) as Upgraded.Ok).value
 }

@@ -391,6 +391,7 @@ private class WsDriverFixture(private val tmp: Path, private val baseUrl: String
         emitter: TurnTerminal,
         scope: CoroutineScope,
         budget: WatchdogBudget = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+        sink: WireSink = RecordingSink2(),
     ): WsRoundInputs {
         val slot = InflightGate(LiveLimit { 1 }).admittedSlot()
         val drive = TurnDrive(
@@ -429,7 +430,7 @@ private class WsDriverFixture(private val tmp: Path, private val baseUrl: String
         return WsRoundInputs(
             drive = drive,
             body = RoundBody.Text("{}"),
-            sink = RecordingSink2(),
+            sink = sink,
             scope = scope,
             turnJob = Job(),
             frameEmittedThisRound = ClientFrameEmitted { false },
@@ -785,6 +786,224 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
     }
 }
 
+/** The round that fails or tears before the client saw a frame, and is re-served over SSE instead: the value drive()
+ *  answers, what the client sink is never given, and the line the fallback logs. Split from WsRoundDriverTest
+ *  (detekt LargeClass, 2026-10-08). */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class WsRoundReserveTest {
+
+    private val mock = MockChatGptUpstream()
+    private val client = HttpClient(CIO) { defaultRequest { bearerAuth("test-inference-token") } }
+    private lateinit var tmp: Path
+
+    @BeforeAll
+    fun setUp(@TempDir tempDir: Path) {
+        tmp = tempDir
+    }
+
+    @AfterAll
+    fun tearDown() {
+        client.close()
+        mock.stop()
+    }
+
+    /** Heads built so far: each one's store files are keyed by it, since the port it binds (0, so
+     *  the OS assigns one with no lease-then-bind window) is not known until it starts. */
+    private var built = 0
+
+    private fun provider(runner: WsRoundRunner): Provider = WsDriverFixture(tmp, mock.baseUrl).provider(runner)
+
+    private fun head(
+        runner: ScriptedRunner,
+        bridge: CodexCodeModeBridge? = null,
+        log: (String) -> Unit = {},
+    ): HeadServer = HeadServer(
+        provider = WsDriverFixture(tmp, mock.baseUrl).provider(runner, bridge),
+        listenPort = 0,
+        deps = headDeps(
+            tmp = tmp,
+            upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
+            log = log,
+            seams = HeadDeps.HeadSeams(requestMaterializationGate = RequestMaterializationGate()),
+        ).copy(stores = headStores(tmp, suffix = "-${++built}")),
+    )
+
+    private suspend fun coldFlowInputs(
+        emitter: TurnTerminal,
+        scope: CoroutineScope,
+        budget: WatchdogBudget = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+        sink: WireSink = RecordingSink2(),
+    ): WsRoundInputs = WsDriverFixture(tmp, mock.baseUrl).inputs(emitter, scope, budget, sink)
+
+    private fun turn(port: Int): String = runBlocking {
+        client.post("http://127.0.0.1:$port/v1/messages") {
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":100,
+                    "messages":[{"role":"user","content":"hi"}]}""",
+            )
+        }.bodyAsText()
+    }
+
+    /** V4-114 PIN. The pre-content fallback is a VALUE on [WsRoundDrive.drive]'s return type now,
+     *  not a thrown `splice.spi.WsRoundNeedsSse`: this test cannot compile against the old shape
+     *  (drive returned TurnOutcome and threw). It pins the two facts the throw carried that the
+     *  fallback depends on — the failure detail the log line is built from, and that the round is
+     *  reported by NEITHER roundEnded arm and never marks STREAM_END, because a round about to be
+     *  re-served over SSE must not commit its chaining state (WsRoundDriver owns the bypass). */
+    @Test
+    fun `a failure terminal before any client frame leaves drive as a NeedsSse value`() = runTest {
+        val runner = ScriptedRunner(emptyList())
+        val inputs = coldFlowInputs(RecordingTerminal(), this)
+        val drive = WsRoundDrive(provider(runner), ZeroEventClassifier { _, outcome, _, _ -> outcome })
+        val failed = ev(
+            """{"type":"response.failed","response":{"id":"r1",""" +
+                """"error":{"code":"server_error","message":"boom"}}}""",
+        )
+
+        val result = drive.drive(inputs, runner, flowOf(failed))
+
+        assertEquals(WsRoundResult.NeedsSse("response.failed server_error boom"), result)
+        assertEquals(0, runner.endedOk, "a round re-served over SSE is not a clean terminal")
+        assertEquals(0, runner.endedNotOk, "and drive must not report it at all — the driver owns the bypass")
+        assertNull(
+            inputs.drive.perf.snapshot().marks[PerfKeys.STREAM_END],
+            "STREAM_END belongs to a round that actually streamed",
+        )
+        inputs.drive.slot.release()
+    }
+
+    /** The re-served round writes NOTHING to the client: no terminal frame, no closing call. The flow ends
+     *  without the deciding event instead of throwing, so the translator runs to its end, and what it would
+     *  write there is the one thing the client must not see before the SSE round's own content. */
+    @Test
+    fun `a round re-served over SSE writes no terminal and no close to the client`() = runTest {
+        val calls = mutableListOf<String>()
+        val sink = object : WireSink by RecordingSink2() {
+            override suspend fun closeAll() {
+                calls += "closeAll"
+            }
+        }
+        val runner = ScriptedRunner(emptyList())
+        val inputs = coldFlowInputs(RecordingTerminal(), this, sink = sink)
+        val drive = WsRoundDrive(provider(runner), ZeroEventClassifier { _, outcome, _, _ -> outcome })
+        val failed = ev("""{"type":"response.failed","response":{"id":"r1","error":{"code":"server_error"}}}""")
+
+        val result = drive.drive(inputs, runner, flowOf(failed))
+
+        assertTrue(result is WsRoundResult.NeedsSse, "the round is re-served: $result")
+        assertEquals(emptyList<String>(), calls, "the client sink saw no closing call: no terminal, no truncation")
+        inputs.drive.slot.release()
+    }
+
+    /** FAILURE BEFORE ANY CLIENT FRAME -> the round is abandoned and SSE serves the turn, so the
+     *  upstream POST happens and the client sees the normal answer. Without this the failure is
+     *  delivered raw over the WebSocket, skipping retry / 401 refresh / 429 cooldown entirely. */
+    @Test
+    fun `a failure terminal before any client frame falls back to the SSE path`() {
+        val runner = ScriptedRunner(listOf("""{"type":"response.failed","response":{"id":"r1"}}"""))
+        val h = head(runner)
+        runBlocking { h.start() }
+        val port = h.port
+        try {
+            val before = mock.upstreamBodies.size
+            val sse = turn(port)
+            assertEquals(1, runner.attempts, "the overlay was tried")
+            assertEquals(1, runner.bypassed, "and it reported the bypass so the chain is cleared")
+            assertEquals(0, runner.endedOk, "a failure terminal is NOT a clean round")
+            assertEquals(0, runner.endedNotOk, "the bypass is reported by roundBypassed, never roundEnded - V4-114")
+            assertTrue(mock.upstreamBodies.size > before, "the SSE upstream must have served the turn")
+            assertTrue(sse.contains("event: message_stop"), "the client sees a normal completed turn")
+            assertTrue(AsyncFileIo.drain(), "the attempt counter reached its perf row")
+            val row = ev(Files.readString(tmp.resolve("perf-$built.jsonl")).trim())
+            assertEquals("2", row.getValue("attempts").toString(), "the websocket send and HTTP fallback both count")
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    /** FAILURE AFTER A FRAME -> the client has already seen output, so re-serving over SSE would
+     *  duplicate it. The round stays on the WS path and no upstream POST is made. */
+    @Test
+    fun `a failure terminal AFTER a client frame stays on the websocket path`() {
+        val runner = ScriptedRunner(
+            listOf(
+                """{"type":"response.created","response":{"id":"r1"}}""",
+                """{"type":"response.output_item.added","output_index":0,""" +
+                    """"item":{"type":"message","role":"assistant"}}""",
+                """{"type":"response.content_part.added","output_index":0,"content_index":0,""" +
+                    """"part":{"type":"output_text","text":""}}""",
+                """{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"hello"}""",
+                """{"type":"response.failed","response":{"id":"r1"}}""",
+            ),
+        )
+        val h = head(runner)
+        runBlocking { h.start() }
+        val port = h.port
+        try {
+            val before = mock.upstreamBodies.size
+            val sse = turn(port)
+            // Rounds > 1 are the head's own re-anchor retries, which a post-content failure gets on
+            // EITHER transport — pre-existing behaviour and not what this test is about.
+            assertTrue(runner.attempts >= 1, "the overlay served the round")
+            assertEquals(
+                0,
+                runner.bypassed,
+                "content was already emitted, so the pre-content fallback must NOT fire — re-serving " +
+                    "over SSE would duplicate output the client already has",
+            )
+            assertEquals(before, mock.upstreamBodies.size, "no SSE upstream request may be made")
+            assertTrue(sse.contains("hello"), "the content the client already saw is preserved")
+            assertFalse(sse.isEmpty())
+            // DR-7, the same defect the unit arm names, seen end to end: this round really did end
+            // in a failure terminal, so it must NOT have committed its chain.
+            assertEquals(0, runner.endedOk, "a failed round is not a clean terminal at any level")
+            assertTrue(runner.endedNotOk >= 1, "and every one of its attempts must clear the chain")
+        } finally {
+            runBlocking { h.stop() }
+        }
+    }
+
+    @Test
+    fun `the SSE fallback line carries a nested error object's message`() =
+        assertFallbackLineCarries(
+            """{"type":"response.failed","response":{"id":"r1","error":{"code":"server_error",""" +
+                """"message":"No tool output found for call_1"}}}""",
+            "server_error No tool output found for call_1",
+        )
+
+    @Test
+    fun `the SSE fallback line carries a flat error event's message`() =
+        assertFallbackLineCarries(
+            """{"type":"error","code":null,"message":"No tool output found for call_1"}""",
+            "error No tool output found for call_1",
+        )
+
+    @Test
+    fun `the SSE fallback line carries a plain-string error, folded onto one line`() =
+        assertFallbackLineCarries(
+            """{"type":"error","error":"No tool output found\nfor call_1"}""",
+            "error No tool output found for call_1",
+        )
+
+    private fun assertFallbackLineCarries(event: String, expected: String) {
+        val runner = ScriptedRunner(listOf(event))
+        val lines = mutableListOf<String>()
+        val h = head(runner, log = { synchronized(lines) { lines += it } })
+        runBlocking { h.start() }
+        val port = h.port
+        try {
+            val sse = turn(port)
+            assertTrue(sse.contains("event: message_stop"), "the SSE path served the turn")
+            assertEquals(1, runner.bypassed, "the failure terminal before any frame is a bypass")
+        } finally {
+            runBlocking { h.stop() }
+        }
+        val line = synchronized(lines) { lines.single { "serving over SSE" in it } }
+        assertTrue(expected in line, "the detail must survive the shape: $line")
+        assertFalse('\n' in line.trimEnd('\n'), "one log line: $line")
+    }
+}
+
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class WsRoundDriverTest {
 
@@ -828,7 +1047,8 @@ class WsRoundDriverTest {
         emitter: TurnTerminal,
         scope: CoroutineScope,
         budget: WatchdogBudget = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
-    ): WsRoundInputs = WsDriverFixture(tmp, mock.baseUrl).inputs(emitter, scope, budget)
+        sink: WireSink = RecordingSink2(),
+    ): WsRoundInputs = WsDriverFixture(tmp, mock.baseUrl).inputs(emitter, scope, budget, sink)
 
     private fun turn(port: Int): String = runBlocking {
         client.post("http://127.0.0.1:$port/v1/messages") {
@@ -977,102 +1197,6 @@ class WsRoundDriverTest {
         }
     }
 
-    /** V4-114 PIN. The pre-content fallback is a VALUE on [WsRoundDrive.drive]'s return type now,
-     *  not a thrown `splice.spi.WsRoundNeedsSse`: this test cannot compile against the old shape
-     *  (drive returned TurnOutcome and threw). It pins the two facts the throw carried that the
-     *  fallback depends on — the failure detail the log line is built from, and that the round is
-     *  reported by NEITHER roundEnded arm and never marks STREAM_END, because a round about to be
-     *  re-served over SSE must not commit its chaining state (WsRoundDriver owns the bypass). */
-    @Test
-    fun `a failure terminal before any client frame leaves drive as a NeedsSse value`() = runTest {
-        val runner = ScriptedRunner(emptyList())
-        val inputs = coldFlowInputs(RecordingTerminal(), this)
-        val drive = WsRoundDrive(provider(runner), ZeroEventClassifier { _, outcome, _, _ -> outcome })
-        val failed = ev(
-            """{"type":"response.failed","response":{"id":"r1",""" +
-                """"error":{"code":"server_error","message":"boom"}}}""",
-        )
-
-        val result = drive.drive(inputs, runner, flowOf(failed))
-
-        assertEquals(WsRoundResult.NeedsSse("response.failed server_error boom"), result)
-        assertEquals(0, runner.endedOk, "a round re-served over SSE is not a clean terminal")
-        assertEquals(0, runner.endedNotOk, "and drive must not report it at all — the driver owns the bypass")
-        assertNull(
-            inputs.drive.perf.snapshot().marks[PerfKeys.STREAM_END],
-            "STREAM_END belongs to a round that actually streamed",
-        )
-        inputs.drive.slot.release()
-    }
-
-    /** FAILURE BEFORE ANY CLIENT FRAME -> the round is abandoned and SSE serves the turn, so the
-     *  upstream POST happens and the client sees the normal answer. Without this the failure is
-     *  delivered raw over the WebSocket, skipping retry / 401 refresh / 429 cooldown entirely. */
-    @Test
-    fun `a failure terminal before any client frame falls back to the SSE path`() {
-        val runner = ScriptedRunner(listOf("""{"type":"response.failed","response":{"id":"r1"}}"""))
-        val h = head(runner)
-        runBlocking { h.start() }
-        val port = h.port
-        try {
-            val before = mock.upstreamBodies.size
-            val sse = turn(port)
-            assertEquals(1, runner.attempts, "the overlay was tried")
-            assertEquals(1, runner.bypassed, "and it reported the bypass so the chain is cleared")
-            assertEquals(0, runner.endedOk, "a failure terminal is NOT a clean round")
-            assertEquals(0, runner.endedNotOk, "the bypass is reported by roundBypassed, never roundEnded - V4-114")
-            assertTrue(mock.upstreamBodies.size > before, "the SSE upstream must have served the turn")
-            assertTrue(sse.contains("event: message_stop"), "the client sees a normal completed turn")
-            assertTrue(AsyncFileIo.drain(), "the attempt counter reached its perf row")
-            val row = ev(Files.readString(tmp.resolve("perf-$built.jsonl")).trim())
-            assertEquals("2", row.getValue("attempts").toString(), "the websocket send and HTTP fallback both count")
-        } finally {
-            runBlocking { h.stop() }
-        }
-    }
-
-    /** FAILURE AFTER A FRAME -> the client has already seen output, so re-serving over SSE would
-     *  duplicate it. The round stays on the WS path and no upstream POST is made. */
-    @Test
-    fun `a failure terminal AFTER a client frame stays on the websocket path`() {
-        val runner = ScriptedRunner(
-            listOf(
-                """{"type":"response.created","response":{"id":"r1"}}""",
-                """{"type":"response.output_item.added","output_index":0,""" +
-                    """"item":{"type":"message","role":"assistant"}}""",
-                """{"type":"response.content_part.added","output_index":0,"content_index":0,""" +
-                    """"part":{"type":"output_text","text":""}}""",
-                """{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"hello"}""",
-                """{"type":"response.failed","response":{"id":"r1"}}""",
-            ),
-        )
-        val h = head(runner)
-        runBlocking { h.start() }
-        val port = h.port
-        try {
-            val before = mock.upstreamBodies.size
-            val sse = turn(port)
-            // Rounds > 1 are the head's own re-anchor retries, which a post-content failure gets on
-            // EITHER transport — pre-existing behaviour and not what this test is about.
-            assertTrue(runner.attempts >= 1, "the overlay served the round")
-            assertEquals(
-                0,
-                runner.bypassed,
-                "content was already emitted, so the pre-content fallback must NOT fire — re-serving " +
-                    "over SSE would duplicate output the client already has",
-            )
-            assertEquals(before, mock.upstreamBodies.size, "no SSE upstream request may be made")
-            assertTrue(sse.contains("hello"), "the content the client already saw is preserved")
-            assertFalse(sse.isEmpty())
-            // DR-7, the same defect the unit arm names, seen end to end: this round really did end
-            // in a failure terminal, so it must NOT have committed its chain.
-            assertEquals(0, runner.endedOk, "a failed round is not a clean terminal at any level")
-            assertTrue(runner.endedNotOk >= 1, "and every one of its attempts must clear the chain")
-        } finally {
-            runBlocking { h.stop() }
-        }
-    }
-
     /** DR-91: the credential+attempt acquisition sat OUTSIDE the reporting try, so a cancellation
      *  landing while attempt() was in flight (post-send) unwound without roundEnded — the chain
      *  stayed anchored on a round that never finished and the NEXT turn chained onto it. Same
@@ -1107,46 +1231,6 @@ class WsRoundDriverTest {
      *  object under `response`, the flat event, and a plain-string `error` (DR-109) — because the
      *  refusal it exists to attribute ("No tool output found for function call …") arrives in
      *  whichever the backend picks, and a multi-line message must stay one log line. */
-    @Test
-    fun `the SSE fallback line carries a nested error object's message`() =
-        assertFallbackLineCarries(
-            """{"type":"response.failed","response":{"id":"r1","error":{"code":"server_error",""" +
-                """"message":"No tool output found for call_1"}}}""",
-            "server_error No tool output found for call_1",
-        )
-
-    @Test
-    fun `the SSE fallback line carries a flat error event's message`() =
-        assertFallbackLineCarries(
-            """{"type":"error","code":null,"message":"No tool output found for call_1"}""",
-            "error No tool output found for call_1",
-        )
-
-    @Test
-    fun `the SSE fallback line carries a plain-string error, folded onto one line`() =
-        assertFallbackLineCarries(
-            """{"type":"error","error":"No tool output found\nfor call_1"}""",
-            "error No tool output found for call_1",
-        )
-
-    private fun assertFallbackLineCarries(event: String, expected: String) {
-        val runner = ScriptedRunner(listOf(event))
-        val lines = mutableListOf<String>()
-        val h = head(runner, log = { synchronized(lines) { lines += it } })
-        runBlocking { h.start() }
-        val port = h.port
-        try {
-            val sse = turn(port)
-            assertTrue(sse.contains("event: message_stop"), "the SSE path served the turn")
-            assertEquals(1, runner.bypassed, "the failure terminal before any frame is a bypass")
-        } finally {
-            runBlocking { h.stop() }
-        }
-        val line = synchronized(lines) { lines.single { "serving over SSE" in it } }
-        assertTrue(expected in line, "the detail must survive the shape: $line")
-        assertFalse('\n' in line.trimEnd('\n'), "one log line: $line")
-    }
-
     /** DR-7, THE WS HALF. The idle watchdog used to target the TURN job on this path, so a stalled
      *  WebSocket round killed the translator along with the round and the salvage died with it —
      *  the SSE path earned salvage-and-continue and this one was left behind. The watchdog now

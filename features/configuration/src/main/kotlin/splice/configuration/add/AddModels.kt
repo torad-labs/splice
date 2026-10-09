@@ -90,13 +90,16 @@ internal class AddModelVerb(
 
     /** The file is read before the prompts and written through AddWrite's re-read, so an edit made while
      *  a picker was open refuses the add instead of being renamed over (V4-220). */
-    fun add(path: Path): Boolean {
+    fun add(path: Path): AddModelsResult {
         val existing = Files.readString(path)
-        val planned = plan(TopologyLoader.loadOrMaterialize(path)) ?: return false
-        if (planned.models.isEmpty()) return false
-        return when (val written = AddWrite().replace(path, existing, compose(existing, planned))) {
-            AddWritten.Written -> true
-            is AddWritten.Refused -> throw AddRefused(AddRefusalText().modelStale(path.toString(), written))
+        val planned = plan(TopologyLoader.loadOrMaterialize(path)) ?: return AddModelsResult.NothingWritten
+        if (planned.models.isEmpty()) return AddModelsResult.NothingWritten
+        return when (val composed = compose(existing, planned)) {
+            is RosterEdit.Refused -> AddModelsResult.Refused(composed.sentence)
+            is RosterEdit.Edited -> when (val written = AddWrite().replace(path, existing, composed.text)) {
+                AddWritten.Written -> AddModelsResult.Written
+                is AddWritten.Refused -> AddModelsResult.Refused(AddRefusalText().modelStale(path.toString(), written))
+            }
         }
     }
 

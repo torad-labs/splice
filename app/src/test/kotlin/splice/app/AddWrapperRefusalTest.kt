@@ -2,7 +2,8 @@
 // install verb refuses in a home with no launch shim, and the add must print the linker's own sentence.
 // It printed "failure (message withheld: it may quote file bytes)" instead, because AddWrapperLink
 // rendered every link failure through SafeFailureText, which withholds any IllegalStateException, and
-// InstallRefused is one. Seen in the V4-251 pty run of the built jar's `splice add codex`.
+// InstallRefused (now an InstallResult.Refused) was one. Seen in the V4-251 pty run of the built jar's
+// `splice add codex`.
 package splice.app
 
 import com.sun.net.httpserver.HttpServer

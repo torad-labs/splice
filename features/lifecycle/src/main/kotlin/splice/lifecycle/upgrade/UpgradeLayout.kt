@@ -44,12 +44,12 @@ internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = Inst
     /** Releases live exactly one normalized SemVer 2.0.0 segment below releases/: a link name ("current"),
      *  "..", an absolute path, a leading zero or an empty identifier is refused BEFORE a path is built,
      *  whoever supplies it — a candidate jar's version line, --to, or a previous link's target. */
-    fun versionDir(version: String): Path {
-        if (!isVersion(version)) {
-            throw UpgradeRefused("release version '$version' is not a normalized SemVer version")
+    fun versionDir(version: String): Upgraded<Path> =
+        if (isVersion(version)) {
+            Upgraded.Ok(releases.resolve(version))
+        } else {
+            Upgraded.Refused("release version '$version' is not a normalized SemVer version")
         }
-        return releases.resolve(version)
-    }
 
     /** Whether [version] is one normalized SemVer segment: what [versionDir] accepts. */
     fun isVersion(version: String): Boolean = semver.matches(version)
@@ -68,9 +68,12 @@ internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = Inst
      *  included: the pristine bytes are gone, and a rollback that copied nothing failed on the
      *  missing file (review 2026-09-14). With no pristine copy, preserve those unknown bytes
      *  separately too, edited or not; return that saved path for the upgrade's explanation. */
-    fun ensureCurrentRecorded(): Path? {
-        if (Files.isSymbolicLink(current)) return null
-        val dir = versionDir(installedVersion())
+    fun ensureCurrentRecorded(): Upgraded<Path?> {
+        if (Files.isSymbolicLink(current)) return Upgraded.Ok(null)
+        return versionDir(installedVersion()).then { dir -> Upgraded.Ok(record(dir)) }
+    }
+
+    private fun record(dir: Path): Path? {
         Files.createDirectories(dir)
         if (!Files.exists(dir.resolve(JAR_ASSET))) {
             Files.copy(liveJar, dir.resolve(JAR_ASSET), StandardCopyOption.COPY_ATTRIBUTES)
@@ -122,12 +125,12 @@ internal class UpgradeLayout(env: EnvReader, installLayout: InstallLayout = Inst
 
     /** The jar's own version line must be a plain semver segment (versionDir refuses anything else)
      *  and must confirm --to when one was given. */
-    fun confirmVersion(version: String, requested: String?): String {
-        versionDir(version)
+    fun confirmVersion(version: String, requested: String?): Upgraded<String> = versionDir(version).then {
         val wanted = requested?.removePrefix("v")
         if (wanted != null && wanted != version) {
-            throw UpgradeRefused("release $requested delivered a jar reporting $version; refusing to activate it")
+            Upgraded.Refused("release $requested delivered a jar reporting $version; refusing to activate it")
+        } else {
+            Upgraded.Ok(version)
         }
-        return version
     }
 }

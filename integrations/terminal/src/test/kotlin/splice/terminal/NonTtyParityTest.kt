@@ -212,7 +212,6 @@ private val EXCLUDED = mapOf(
     "ConfirmPrompt" to "seam interface — injected y/n",
     "UnixStty" to "seam — production stty runner, not a widget",
     "TimerPulseScheduler" to "seam — spinner timer, not a widget",
-    "WizardCancelled" to "exception type — cancel outcome",
     // The named seams (kt-no-lambda-seam, 2026-09-16). Each is an injected ROLE, exercised through
     // the widget that takes it rather than on its own: ConsolePresence is what every check below
     // sets to false, and RawBlock is what TerminalMode.raw runs.

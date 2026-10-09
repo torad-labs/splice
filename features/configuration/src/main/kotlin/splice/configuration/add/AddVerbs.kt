@@ -28,7 +28,7 @@ public class AddVerb(output: TerminalOutput, errors: TerminalOutput, ports: AddP
 public class AddModelsVerb(select: SelectPrompt, multi: MultiSelectPrompt) {
     private val verb = AddModelVerb(select, multi)
 
-    /** True when the picked rows were written to the splice.toml at [path]; a refused edit throws
-     *  [AddRefused] with the whole explanation. */
-    public fun add(path: Path): Boolean = verb.add(path)
+    /** Whether the picked rows were written to the splice.toml at [path]; a refused edit answers
+     *  [AddModelsResult.Refused] with the whole explanation. */
+    public fun add(path: Path): AddModelsResult = verb.add(path)
 }

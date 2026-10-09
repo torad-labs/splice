@@ -12,6 +12,7 @@ import splice.configuration.add.AddChecks
 import splice.configuration.add.AddCommand
 import splice.configuration.add.AddHttp
 import splice.configuration.add.AddHttpReply
+import splice.configuration.add.AddLinked
 import splice.configuration.add.AddPorts
 import splice.configuration.add.RuntimeHead
 import splice.configuration.add.RuntimeHeadAdd
@@ -38,7 +39,7 @@ class RuntimeRowPresentedTest {
         val out = TerminalOutput { lines += it }
         val ports = AddPorts(
             login = { _, _, _ -> error("a runtime head must never start a sign-in") },
-            install = { _, _ -> true },
+            install = { _, _ -> AddLinked.Linked },
             restart = { true },
             daemonUp = { true },
             prompt = { _, default -> default },

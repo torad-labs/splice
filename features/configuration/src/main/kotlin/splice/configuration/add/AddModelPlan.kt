@@ -45,8 +45,8 @@ internal class AddModelOffers {
  *  hand it a composition that does not parse. Production always passes the real editor. */
 internal class AddModelCompose(private val roster: RosterEditor) {
 
-    /** The composed text; throws [AddRefused] when the roster cannot be edited or the result does not parse. */
-    operator fun invoke(existing: String, plan: AddModelPlan): String {
+    /** The composed text, or the refusal when the roster cannot be edited or the result does not parse. */
+    operator fun invoke(existing: String, plan: AddModelPlan): RosterEdit {
         val key = plan.offer.providerKey
         // Only ids the provider table does not already carry: on the shipped starter every curated
         // id is already a provider row and the roster is what was missing, so a second copy here
@@ -64,20 +64,22 @@ internal class AddModelCompose(private val roster: RosterEditor) {
         val rostered = if (plan.offer.headDeclaresModels) {
             roster(existing, plan.offer.headKey, plan.models.map { it.id })
         } else {
-            existing
+            RosterEdit.Edited(existing)
         }
-        val composed = rostered.trimEnd('\n') + extra
-        refuseUnparseable(composed)
-        return composed
+        return when (rostered) {
+            is RosterEdit.Refused -> rostered
+            is RosterEdit.Edited -> unparseableOr(rostered.text.trimEnd('\n') + extra)
+        }
     }
 
     /** FAIL CLOSED (review 2026-09-17 (2)): the composition is parsed by the loader `splice` itself
      *  boots with BEFORE any byte reaches the operator's file, so a corrupted edit refuses instead
      *  of riding ATOMIC_MOVE over a working splice.toml. Nothing is written on the refusal — not
      *  even the temp file, which is created after this returns. */
-    private fun refuseUnparseable(composed: String) {
-        val failure = Cancellables.runCatchingCancellable { TopologyLoader.parse(composed) }.exceptionOrNull() ?: return
-        throw AddRefused(
+    private fun unparseableOr(composed: String): RosterEdit {
+        val failure = Cancellables.runCatchingCancellable { TopologyLoader.parse(composed) }.exceptionOrNull()
+            ?: return RosterEdit.Edited(composed)
+        return RosterEdit.Refused(
             "the roster edit does not parse, so splice.toml was left untouched: " + SafeFailureText.render(failure),
         )
     }

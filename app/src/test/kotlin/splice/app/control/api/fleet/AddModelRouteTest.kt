@@ -38,6 +38,7 @@ import splice.app.control.ControlRuntime
 import splice.app.control.ControlServer
 import splice.app.control.controlServerFor
 import splice.configuration.add.AddConsole
+import splice.configuration.add.AddLinked
 import splice.configuration.add.AddSignIn
 import splice.configuration.add.WrapperInstall
 import splice.core.config.ConfigService
@@ -90,7 +91,12 @@ class AddModelRouteTest {
             runtime = ControlRuntime(shutdownDaemon = { drains.incrementAndGet() }),
             auth = ControlAuth(mgmtKey = mgmt, log = { logged += it }),
         )
-        adds = AddConsole(NoSignIn(), WrapperInstall { _, _ -> true }, EnvReader { vars[it] }, TerminalOutput { })
+        adds = AddConsole(
+            NoSignIn(),
+            WrapperInstall { _, _ -> AddLinked.Linked },
+            EnvReader { vars[it] },
+            TerminalOutput { },
+        )
         runBlocking { control.start() }
     }
 

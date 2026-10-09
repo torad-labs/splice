@@ -10,22 +10,35 @@ import splice.topology.TomlStructureMasker
  *  edited text. The verb's fail-closed re-parse sits behind this seam so a test can hand it an
  *  editor that produces unparseable TOML and prove nothing is written (wall kt-no-lambda-seam). */
 internal fun interface RosterEditor {
-    operator fun invoke(text: String, headKey: String, ids: List<String>): String
+    operator fun invoke(text: String, headKey: String, ids: List<String>): RosterEdit
+}
+
+/** A roster edit's answer: the edited text, or the sentence that says why the roster cannot be edited. */
+internal sealed class RosterEdit {
+    class Edited(val text: String) : RosterEdit()
+
+    class Refused(val sentence: String) : RosterEdit()
 }
 
 internal class HeadModelArray {
 
-    fun withAdded(text: String, headKey: String, ids: List<String>): String {
+    fun withAdded(text: String, headKey: String, ids: List<String>): RosterEdit {
         val mask = TomlStructureMasker(text).mask()
         val open = arrayStart(text, mask, headKey)
-            ?: throw AddRefused(
+            ?: return RosterEdit.Refused(
                 "head '$headKey' declares a model roster splice cannot edit: expected a " +
                     "`models = [` line under [heads.$headKey]. Add ${ids.joinToString(", ")} by hand.",
             )
         val close = matchingBracket(mask, open)
-            ?: throw AddRefused("head '$headKey' has an unterminated models = [ array")
+            ?: return RosterEdit.Refused("head '$headKey' has an unterminated models = [ array")
+        return insertMissing(text, mask, open to close, ids)
+    }
+
+    /** [text] with the ids the `models = [` array between [bounds] does not list appended, or unchanged. */
+    private fun insertMissing(text: String, mask: String, bounds: Pair<Int, Int>, ids: List<String>): RosterEdit {
+        val (open, close) = bounds
         val missing = ids.filter { it !in rostered(text, mask, open + 1, close) }
-        if (missing.isEmpty()) return text
+        if (missing.isEmpty()) return RosterEdit.Edited(text)
         // The insertion point is the end of the array's last STRUCTURAL byte, so a comma lands
         // before a trailing comment rather than inside it, and the comment survives untouched.
         val end = lastStructure(mask, open + 1, close)
@@ -33,8 +46,10 @@ internal class HeadModelArray {
         val rest = text.substring(end, close)
         val closeIndent = if ('\n' in rest) rest.substringAfterLast('\n') else ""
         val added = missing.joinToString("") { "  { id = \"$it\" },\n" }
-        return text.substring(0, open + 1) + kept + (if (kept.endsWith(",") || kept.isEmpty()) "" else ",") +
-            rest.dropLast(closeIndent.length).ifEmpty { "\n" } + added + closeIndent + text.substring(close)
+        return RosterEdit.Edited(
+            text.substring(0, open + 1) + kept + (if (kept.endsWith(",") || kept.isEmpty()) "" else ",") +
+                rest.dropLast(closeIndent.length).ifEmpty { "\n" } + added + closeIndent + text.substring(close),
+        )
     }
 
     /** Index of the `[` that opens `models = [` inside the `[heads.KEY]` table, or null. Review

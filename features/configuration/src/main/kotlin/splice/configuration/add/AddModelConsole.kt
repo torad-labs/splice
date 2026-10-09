@@ -64,20 +64,28 @@ internal class AddModelConsole(private val env: EnvReader, private val writes: A
         ids.firstOrNull { it !in offered }?.let { return AddModelOutcome.NotOffered(headKey, it) }
         val plan = AddModelPlan(offer, offer.remaining.filter { it.id in ids })
         val path = listed.path
-        Cancellables.runCatchingCancellable { AddWrite().replace(path, listed.text, compose(listed.text, plan)) }.fold(
-            onSuccess = { written ->
-                when (written) {
-                    AddWritten.Written ->
-                        AddModelOutcome.Added(path, headKey, plan.models.map { it.id }, restart.take())
-                    is AddWritten.Refused -> AddModelOutcome.Refused(texts.modelStale(path.toString(), written))
+        Cancellables.runCatchingCancellable { refusalOf(path, listed.text, compose(listed.text, plan)) }.fold(
+            onSuccess = { refusal ->
+                if (refusal == null) {
+                    AddModelOutcome.Added(path, headKey, plan.models.map { it.id }, restart.take())
+                } else {
+                    AddModelOutcome.Refused(refusal)
                 }
             },
-            onFailure = { AddModelOutcome.Refused(refusal(path, it)) },
+            onFailure = { AddModelOutcome.Refused(writeFailure(path, it)) },
         )
     }
 
-    /** A roster edit AddModelCompose refused says why in its own words; anything else names the file. */
-    private fun refusal(path: Path, failure: Throwable): String =
-        (failure as? AddRefused)?.message
-            ?: "$path could not be written (${SafeFailureText.render(failure)}), so nothing was saved."
+    /** The sentence the add was refused with, or null once the composed text is written. */
+    private fun refusalOf(path: Path, text: String, composed: RosterEdit): String? = when (composed) {
+        is RosterEdit.Refused -> composed.sentence
+        is RosterEdit.Edited -> {
+            val written = AddWrite().replace(path, text, composed.text) as? AddWritten.Refused
+            written?.let { texts.modelStale(path.toString(), it) }
+        }
+    }
+
+    /** A write that failed outright: the sentence names the file, never the failure's own bytes. */
+    private fun writeFailure(path: Path, failure: Throwable): String =
+        "$path could not be written (${SafeFailureText.render(failure)}), so nothing was saved."
 }

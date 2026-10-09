@@ -74,7 +74,7 @@ class AddCommandTest {
             },
             install = { key, _ ->
                 installed += key
-                true
+                AddLinked.Linked
             },
             restart = {
                 restarted += 1
@@ -482,7 +482,10 @@ class AddLiveCommandTest {
         }
         val ports = AddPorts(
             login = { _, _, _ -> error("the synthetic credential is already present") },
-            install = { _, _ -> events.add("linked") },
+            install = { _, _ ->
+                events.add("linked")
+                AddLinked.Linked
+            },
             restart = { events.add("restarted") },
             daemonUp = { true },
             prompt = { question, default -> if (question.startsWith("Run one short live")) "yes" else default },

@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.SHIM_VERSION
 import splice.core.config.UserHome
@@ -102,7 +101,7 @@ class InstallCommandTest {
             // A real file makes the whole install fail so install.sh cannot print false success.
             val bin = home.resolve(".local").resolve("bin")
             bin.resolve("grok").writeString("real file")
-            assertThrows<InstallRefused> { installCommand().install("grok", env = noEnv) }
+            assertTrue(installCommand().install("grok", env = noEnv) is InstallResult.Refused)
             assertFalse(bin.resolve("grok").isSymbolicLink())
             assertEquals("real file", Files.readString(bin.resolve("grok")))
         }
@@ -116,7 +115,7 @@ class InstallCommandTest {
             Files.createDirectories(bin)
             bin.resolve("grok").writeString("real file")
 
-            assertThrows<IllegalStateException> { installCommand().install("--all", env = noEnv) }
+            assertTrue(installCommand().install("--all", env = noEnv) is InstallResult.Refused)
 
             assertFalse(Files.exists(bin.resolve("claudex"), NOFOLLOW_LINKS))
             assertFalse(Files.exists(bin.resolve("splice"), NOFOLLOW_LINKS))
@@ -130,7 +129,7 @@ class InstallCommandTest {
             seedTopology(home)
             Files.delete(shimPath(home))
 
-            assertThrows<InstallRefused> { installCommand().install("--all", env = noEnv) }
+            assertTrue(installCommand().install("--all", env = noEnv) is InstallResult.Refused)
 
             assertFalse(Files.exists(home.resolve(".local/bin/claudex"), NOFOLLOW_LINKS))
         }
@@ -217,6 +216,9 @@ class InstallCommandTest {
 }
 
 /** The verbs as app wires them — stdout for progress, stderr for refusals — so capture() reads both. */
+/** The sentence of a refused install; fails the test when the install was anything else. */
+private fun refusal(result: InstallResult): String = (result as InstallResult.Refused).sentence
+
 private fun installCommand() = InstallCommand(stdout, TerminalOutput(System.err::println))
 
 private val stdout = TerminalOutput(::println)
@@ -252,7 +254,7 @@ class InstallLinkerClaimTest {
             ExclusiveSymlinkClaim(l, target)
         }
         val linker = InstallLinker(stdout, claim = interleaving)
-        org.junit.jupiter.api.assertThrows<IllegalStateException> { linker.installSelf(noEnv) }
+        assertTrue(linker.installSelf(noEnv) is InstallResult.Refused)
         assertEquals(foreign, Files.readString(link), "the foreign wrapper must survive the lost claim")
         assertFalse(link.isSymbolicLink(), "the name must not have been retargeted")
     }
@@ -267,7 +269,7 @@ class InstallLinkerClaimTest {
         val stale = home.resolve("stale-target")
         stale.writeString("stale")
         Files.createSymbolicLink(bin.resolve("splice"), stale)
-        assertTrue(InstallLinker(stdout).installSelf(noEnv))
+        assertTrue(InstallLinker(stdout).installSelf(noEnv) is InstallResult.Linked)
         assertTrue(bin.resolve("splice").readSymbolicLink().toString().endsWith("splice-launch"))
     }
 
@@ -287,11 +289,9 @@ class InstallLinkerClaimTest {
         previous.writeString("working")
         Files.createSymbolicLink(bin.resolve("splice"), previous)
         val failing = WrapperClaim { _, _ -> throw java.io.IOException("disk full") }
-        val refused = org.junit.jupiter.api.assertThrows<IllegalStateException> {
-            InstallLinker(stdout, claim = failing).installSelf(noEnv)
-        }
+        val refused = refusal(InstallLinker(stdout, claim = failing).installSelf(noEnv))
         // V4-220: the console's add shows an install refusal verbatim (saved.wrapper.error): no em-dash.
-        assertFalse('—' in refused.message.orEmpty(), refused.message)
+        assertFalse('—' in refused, refused)
         assertTrue(bin.resolve("splice").isSymbolicLink(), "the command name must not be left empty")
         assertEquals(previous, bin.resolve("splice").readSymbolicLink(), "the working wrapper is restored")
     }
@@ -317,22 +317,18 @@ class InstallShimPresenceTest {
         val restored = java.nio.file.attribute.PosixFilePermissions.fromString("rwx------")
         Files.setPosixFilePermissions(share, denied)
         val failure = try {
-            org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) {
-                InstallLinker(stdout).installSelf(layoutEnv(tmp))
-            }
+            refusal(InstallLinker(stdout).installSelf(layoutEnv(tmp)))
         } finally {
             Files.setPosixFilePermissions(share, restored)
         }
-        assertTrue(failure.message!!.contains("fix access"), failure.message)
-        assertFalse('—' in failure.message!!, failure.message)
+        assertTrue(failure.contains("fix access"), failure)
+        assertFalse('—' in failure, failure)
     }
 
     @Test
     fun `a genuinely missing shim keeps the install-sh remedy - DR-74 control`(@TempDir tmp: java.nio.file.Path) {
-        val failure = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) {
-            InstallLinker(stdout).installSelf(layoutEnv(tmp))
-        }
-        assertTrue(failure.message!!.contains("run install.sh"), failure.message)
+        val failure = refusal(InstallLinker(stdout).installSelf(layoutEnv(tmp)))
+        assertTrue(failure.contains("run install.sh"), failure)
     }
 
     // DR-85 (batches 6+7 review): a DANGLING splice-launch stats as NoSuch while its NOFOLLOW
@@ -342,12 +338,10 @@ class InstallShimPresenceTest {
     fun `a dangling shim names the dangling state and the reinstall remedy - DR-85`(@TempDir tmp: java.nio.file.Path) {
         val share = Files.createDirectories(tmp.resolve("share"))
         Files.createSymbolicLink(share.resolve("splice-launch"), share.resolve("gone-target"))
-        val failure = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) {
-            InstallLinker(stdout).installSelf(layoutEnv(tmp))
-        }
-        assertTrue(failure.message!!.contains("dangling"), failure.message)
-        assertTrue(failure.message!!.contains("install.sh"), failure.message)
-        assertFalse('—' in failure.message!!, failure.message)
+        val failure = refusal(InstallLinker(stdout).installSelf(layoutEnv(tmp)))
+        assertTrue(failure.contains("dangling"), failure)
+        assertTrue(failure.contains("install.sh"), failure)
+        assertFalse('—' in failure, failure)
     }
 }
 
@@ -490,7 +484,7 @@ class InstallContainmentTest {
     fun `a relative escape in a wrapper command is refused, creating nothing - DR-169`(@TempDir home: Path) {
         withHome(home) {
             seedWithCommand(home, "../escaped")
-            assertThrows<IllegalStateException> { installCommand().install("--all", env = noEnv) }
+            assertTrue(installCommand().install("--all", env = noEnv) is InstallResult.Refused)
             // The assertion is the filesystem, not the exception: bin's PARENT is where ../escaped
             // lands, and before DR-169 a symlink appeared there.
             val outside = home.resolve(".local").resolve("escaped")
@@ -503,7 +497,7 @@ class InstallContainmentTest {
         withHome(home) {
             val target = home.resolve("absolute-escape")
             seedWithCommand(home, target.toString())
-            assertThrows<IllegalStateException> { installCommand().install("--all", env = noEnv) }
+            assertTrue(installCommand().install("--all", env = noEnv) is InstallResult.Refused)
             // bin.resolve(absolute) discards bin altogether, so this one never went near it.
             assertFalse(Files.exists(target, NOFOLLOW_LINKS), "an absolute command must not be claimed")
         }
@@ -531,7 +525,7 @@ class InstallContainmentTest {
     fun `an ordinary wrapper command still installs and uninstalls - DR-169 control`(@TempDir home: Path) {
         withHome(home) {
             seedWithCommand(home, "claudex")
-            assertTrue(installCommand().install("--all", env = noEnv))
+            assertTrue(installCommand().install("--all", env = noEnv) is InstallResult.Linked)
             val link = home.resolve(".local").resolve("bin").resolve("claudex")
             assertTrue(link.isSymbolicLink(), "the containment law must not reject a normal name")
             assertTrue(installCommand().uninstall("--all", env = noEnv))

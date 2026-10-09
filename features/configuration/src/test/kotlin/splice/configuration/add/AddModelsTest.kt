@@ -9,7 +9,6 @@ package splice.configuration.add
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -75,7 +74,7 @@ class AddModelsTest {
         val path = seed(dir)
         val before = Files.readString(path)
         val wrote = verb(select = Keyboard(byteArrayOf(ESC), tty = true)).add(path)
-        assertFalse(wrote)
+        assertEquals(AddModelsResult.NothingWritten, wrote)
         assertEquals(before, Files.readString(path))
     }
 
@@ -84,7 +83,7 @@ class AddModelsTest {
         val path = seed(dir)
         val before = Files.readString(path)
         val wrote = verb().add(path)
-        assertFalse(wrote)
+        assertEquals(AddModelsResult.NothingWritten, wrote)
         assertEquals(before, Files.readString(path))
     }
 
@@ -121,7 +120,7 @@ class AddModelsTest {
         val topology = TopologyLoader.loadOrMaterialize(path)
         val head = requireNotNull(topology.heads["openrouter"])
         val unchanged = HeadModelArray().withAdded(once, "openrouter", listOf(LUNA))
-        assertEquals(once, unchanged)
+        assertEquals(once, (unchanged as RosterEdit.Edited).text)
         assertEquals(1, requireNotNull(head.models).count { it.id == LUNA })
     }
 
@@ -169,7 +168,8 @@ class AddModelsTest {
         // arrayStart's $-anchored regex, which never saw the key was quoted.
         val quoted = Files.readString(seed(dir)).replace(HEADER, """[heads."openrouter"]""")
         val added = HeadModelArray().withAdded(quoted, "openrouter", listOf(LUNA))
-        assertTrue(rosterOf(added).contains(LUNA), "added id missing from the quoted head's roster")
+        val roster = rosterOf((added as RosterEdit.Edited).text)
+        assertTrue(roster.contains(LUNA), "added id missing from the quoted head's roster")
     }
 
     // ---- V4-83 finding (2): fail closed — nothing is written that cannot be re-parsed ---------
@@ -178,13 +178,14 @@ class AddModelsTest {
     fun `a composition the loader rejects leaves the file byte-identical`(@TempDir dir: Path) {
         val path = seed(dir)
         val before = Files.readString(path)
-        val refused = assertThrows(AddRefused::class.java) {
-            verb(
-                multi = Keyboard(byteArrayOf(SPACE, ENTER), tty = true),
-                roster = { _, _, _ -> "models = [ this is not toml" },
-            ).add(path)
-        }
-        assertTrue(refused.message.orEmpty().contains("does not parse"), "refusal does not name the reason")
+        val refused = verb(
+            multi = Keyboard(byteArrayOf(SPACE, ENTER), tty = true),
+            roster = { _, _, _ -> RosterEdit.Edited("models = [ this is not toml") },
+        ).add(path)
+        assertTrue(
+            (refused as AddModelsResult.Refused).sentence.contains("does not parse"),
+            "refusal does not name the reason",
+        )
         assertEquals(before, Files.readString(path))
         // Not even the temp file: the re-parse runs before it is created.
         assertEquals(listOf("splice.toml"), dir.toFile().list()?.sorted())
@@ -235,9 +236,9 @@ class AddModelsTest {
         }
         val verb = verb(multi = Keyboard(keys, tty = true))
 
-        val refused = assertThrows(AddRefused::class.java) { verb.add(path) }
+        val refused = verb.add(path) as AddModelsResult.Refused
 
-        assertTrue(refused.message.orEmpty().contains("changed while add-model was open"), refused.message)
+        assertTrue(refused.sentence.contains("changed while add-model was open"), refused.sentence)
         val after = Files.readString(path)
         assertTrue(after.endsWith(edit), "the edit made during the prompt was overwritten")
         assertFalse(LUNA in rosterOf(after), "the refused add still reached the roster")
@@ -273,7 +274,7 @@ class AddModelsTest {
 
     /** The first id the emitted profile's head roster does not yet carry. */
     private fun addFirstRemaining(path: Path): Boolean =
-        verb(multi = Keyboard(byteArrayOf(SPACE, ENTER), tty = true)).add(path)
+        verb(multi = Keyboard(byteArrayOf(SPACE, ENTER), tty = true)).add(path) == AddModelsResult.Written
 
     /** The file with the `models = [ ... ]` array of `[heads.openrouter]` cut out. */
     private fun outsideRoster(text: String): String =

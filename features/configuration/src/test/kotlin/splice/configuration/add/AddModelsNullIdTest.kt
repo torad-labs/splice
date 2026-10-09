@@ -53,7 +53,7 @@ class AddModelsNullIdTest {
             checks = AddChecks(TerminalOutput(::println), http),
             ports = AddPorts(
                 login = { _, _, _ -> true },
-                install = { _, _ -> true },
+                install = { _, _ -> AddLinked.Linked },
                 restart = { true },
                 daemonUp = { false },
                 prompt = { _, default -> default },

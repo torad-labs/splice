@@ -9,7 +9,7 @@
 // its next poll.
 //
 // Only DoctorFix's members run here, and each is a CLI verb that is safe unattended: `install --all`
-// creates or relinks splice's own wrapper symlinks and refuses (InstallRefused) rather than replacing
+// creates or relinks splice's own wrapper symlinks and refuses (InstallResult.Refused) rather than replacing
 // a foreign file. The PATH row, a foreign file, access problems and the shim stay text: their remedy
 // is an rc edit, a move or a reinstall that only the operator can make.
 package splice.diagnostics.doctor
@@ -17,8 +17,9 @@ package splice.diagnostics.doctor
 import splice.core.terminal.TerminalOutput
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import splice.launch.install.InstallCommand
-import splice.launch.install.InstallFailureText
+import splice.launch.install.InstallResult
 
 /** One fix's answer: [report] is the `doctor --json` text of the run taken AFTER the fix. */
 public sealed class DoctorFixOutcome {
@@ -51,13 +52,20 @@ public class DoctorFixes(private val doctor: DoctorCommand, private val env: Env
         val after = doctor.collect(userEnv, answers = answers)
         val report = doctor.reportJson(after, userEnv)
         val remaining = after.sections.flatMap { it.second }.count { it.fixId == fix }
-        val refusal = ran.exceptionOrNull()?.let(InstallFailureText::render)
+        val refusal = refusalOf(ran.getOrNull(), ran.exceptionOrNull())
             ?: "$verb ran, but $remaining doctor row(s) still call for it".takeIf { remaining > 0 }
         return if (refusal == null) {
             DoctorFixOutcome.Applied(fix, report)
         } else {
             DoctorFixOutcome.Refused(fix, refusal, report)
         }
+    }
+
+    /** The sentence the fix refused with: the linker's own, or a failure nobody composed a sentence for, withheld. */
+    private fun refusalOf(result: InstallResult?, failure: Throwable?): String? = when {
+        result is InstallResult.Refused -> result.sentence
+        failure != null -> SafeFailureText.render(failure)
+        else -> null
     }
 }
 

@@ -5,6 +5,8 @@
 package splice.launch.install
 
 import splice.core.terminal.TerminalOutput
+import splice.core.topology.HeadConfig
+import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -39,10 +41,10 @@ internal class InstallLinker(
     private val claim: WrapperClaim = ExclusiveSymlinkClaim,
 ) {
 
-    internal fun install(headArg: String?, env: EnvReader): Boolean {
+    internal fun install(headArg: String?, env: EnvReader): InstallResult {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(env))
         val launchShim = layout.launchShimPath(env)
-        requireShimPresent(launchShim)
+        shimRefusal(launchShim)?.let { return InstallResult.Refused(it) }
         val bin = layout.localBin(env)
         Files.createDirectories(bin)
         // All heads for --all/no-arg, else the one named by topology key OR wrapper command (a failed
@@ -50,54 +52,68 @@ internal class InstallLinker(
         val selected = if (headArg == null || headArg == "--all") {
             topology.heads
         } else {
-            val key = heads.resolveSpecificHead(topology, headArg) ?: return false
+            val key = heads.resolveSpecificHead(topology, headArg) ?: return InstallResult.Declined
             topology.heads.filterKeys { it == key }
         }
-        // Validate the WHOLE topology's commands (+ `splice`) on EVERY install, not just this
-        // invocation — otherwise sequential single-head installs silently retarget an existing
-        // wrapper symlink onto a command another head already owns.
+        val refusal = collisionRefusal(topology) ?: linkRefusal(bin, selected, launchShim)
+        if (refusal == null) output.line("splice: ensure $bin is on your PATH to use the wrappers")
+        return if (refusal == null) InstallResult.Linked else InstallResult.Refused(refusal)
+    }
+
+    /** Link the `splice` admin command itself (so `splice dashboard/status/...` work as commands). */
+    internal fun installSelf(env: EnvReader): InstallResult {
+        val launchShim = layout.launchShimPath(env)
+        shimRefusal(launchShim)?.let { return InstallResult.Refused(it) }
+        val bin = layout.localBin(env)
+        Files.createDirectories(bin)
+        val refusal = linkOne(bin, SELF_COMMAND, SELF_COMMAND, launchShim)
+        return if (refusal == null) InstallResult.Linked else InstallResult.Refused(refusal)
+    }
+
+    /** Validate the WHOLE topology's commands (+ `splice`) on EVERY install, not just this
+     *  invocation — otherwise sequential single-head installs silently retarget an existing
+     *  wrapper symlink onto a command another head already owns. */
+    private fun collisionRefusal(topology: Topology): String? {
         val commandOwners = topology.heads
             .map { (key, head) -> (head.claude.command ?: key) to key }
             .plus(SELF_COMMAND to SELF_COMMAND)
             .groupBy({ it.first }, { it.second })
         val collisions = commandOwners.filterValues { it.size > 1 }
-        if (collisions.isNotEmpty()) {
-            val owners = collisions.entries.joinToString("; ") { (command, keys) ->
-                "$command <- ${keys.joinToString(", ")}"
-            }
-            throw InstallRefused("topology maps multiple heads to one wrapper command: $owners")
+        if (collisions.isEmpty()) return null
+        val owners = collisions.entries.joinToString("; ") { (command, keys) ->
+            "$command <- ${keys.joinToString(", ")}"
         }
+        return "topology maps multiple heads to one wrapper command: $owners"
+    }
+
+    /** The first reason a selected wrapper (or `splice` itself) cannot be linked, all checked before any is linked. */
+    private fun linkRefusal(bin: Path, selected: Map<String, HeadConfig>, launchShim: Path): String? {
         val requested = selected.map { (key, head) -> key to (head.claude.command ?: key) }
         val commands = requested.map { it.second } + SELF_COMMAND
-        commands.forEach { command -> requireReplaceableLink(wrapperLink(bin, command)) }
-        requested.forEach { (key, command) -> linkOne(bin, key, command, launchShim) }
-        linkOne(bin, SELF_COMMAND, SELF_COMMAND, launchShim)
-        output.line("splice: ensure $bin is on your PATH to use the wrappers")
-        return true
+        return commands.firstNotNullOfOrNull { command -> replaceableRefusal(bin, command) }
+            ?: requested.firstNotNullOfOrNull { (key, command) -> linkOne(bin, key, command, launchShim) }
+            ?: linkOne(bin, SELF_COMMAND, SELF_COMMAND, launchShim)
     }
 
-    /** Link the `splice` admin command itself (so `splice dashboard/status/...` work as commands). */
-    internal fun installSelf(env: EnvReader): Boolean {
-        val launchShim = layout.launchShimPath(env)
-        requireShimPresent(launchShim)
-        val bin = layout.localBin(env)
-        Files.createDirectories(bin)
-        linkOne(bin, SELF_COMMAND, SELF_COMMAND, launchShim)
-        return true
+    /** DR-169: [InstallLayout.wrapperLinkOrNull]'s refusal as the sentence install already uses for a bad
+     *  topology — the same shape as the command-collision check above, and for the same reason: install.sh
+     *  must not print success over a topology it could not honour. Null when the name can be linked. */
+    private fun replaceableRefusal(bin: Path, command: String): String? {
+        val link = layout.wrapperLinkOrNull(bin, command) ?: return bareNameRefusal(bin, command)
+        return notSymlinkRefusal(link)
     }
 
-    /** DR-169: [InstallLayout.wrapperLinkOrNull]'s refusal turned into the loud failure install
-     *  already uses for a bad topology — the same shape as the command-collision check above, and
-     *  for the same reason: install.sh must not print success over a topology it could not honour. */
-    private fun wrapperLink(bin: Path, command: String): Path {
-        return layout.wrapperLinkOrNull(bin, command)
-            ?: throw InstallRefused("wrapper command '$command' must be a bare name directly under $bin")
-    }
+    private fun bareNameRefusal(bin: Path, command: String): String =
+        "wrapper command '$command' must be a bare name directly under $bin"
 
-    private fun linkOne(bin: Path, headKey: String, command: String, launchShim: Path) {
-        val link = wrapperLink(bin, command)
-        requireReplaceableLink(link)
-        try {
+    private fun notSymlinkRefusal(link: Path): String? =
+        if (Files.exists(link, NOFOLLOW_LINKS) && !link.isSymbolicLink()) "$link exists and is not a symlink" else null
+
+    /** Links one wrapper; the sentence for why it could not be, or null when it is linked. */
+    private fun linkOne(bin: Path, headKey: String, command: String, launchShim: Path): String? {
+        val link = layout.wrapperLinkOrNull(bin, command) ?: return bareNameRefusal(bin, command)
+        notSymlinkRefusal(link)?.let { return it }
+        return try {
             // DR-67: delete only a CONFIRMED symlink, then claim exclusively — a foreign file that
             // appears between the check and the claim wins, and the install fails loud.
             // DR-84: remember the old target first — the delete used to run OUTSIDE this try, so a
@@ -107,10 +123,11 @@ internal class InstallLinker(
             if (previous != null) Files.deleteIfExists(link)
             claimOrRestore(link, launchShim, previous)
             output.line("splice: installed '$command' -> $launchShim (head=$headKey)")
+            null
         } catch (e: java.io.IOException) {
             // SAFE-RENDER-EXEMPT[2026-08-31]: symlink claim under bin — the caught java.io.IOException is FileSystemException over a path we own, never file content
             // No em-dash: the console's add shows this sentence verbatim in saved.wrapper.error (V4-220).
-            throw InstallRefused("failed to link $command: $link was not claimable (${e.message})", e)
+            "failed to link $command: $link was not claimable (${e.message})"
         }
     }
 
@@ -133,39 +150,32 @@ internal class InstallLinker(
      *  operator to reinstall through what is actually a permissions problem. Only proven absence
      *  keeps the install.sh remedy; indeterminate access aborts naming the real one. DR-85: a
      *  DANGLING link (NoSuch through the link, entry present NOFOLLOW) is a third state — it
-     *  needs exactly the reinstall the unreadable wording forbids (the MgmtKey idiom). */
-    private fun requireShimPresent(launchShim: Path) {
+     *  needs exactly the reinstall the unreadable wording forbids (the MgmtKey idiom). Null when the shim is
+     *  there. */
+    private fun shimRefusal(launchShim: Path): String? {
         val failure = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(launchShim) }
-            .exceptionOrNull() ?: return
+            .exceptionOrNull() ?: return null
         val noSuch = failure is java.nio.file.NoSuchFileException
         val entryPresent = Files.exists(launchShim, NOFOLLOW_LINKS)
-        val message = when {
+        return when {
             noSuch && !entryPresent -> "launch shim not found at $launchShim (run install.sh)"
             noSuch -> "launch shim at $launchShim is a dangling symlink: its target is gone; run install.sh"
             else ->
                 "launch shim at $launchShim is unreadable (${SafeFailureText.render(failure)}); " +
                     "fix access to it and its parents, not reinstall"
         }
-        throw InstallRefused(message)
-    }
-
-    private fun requireReplaceableLink(link: Path) {
-        if (Files.exists(link, NOFOLLOW_LINKS) && !link.isSymbolicLink()) {
-            throw InstallRefused("$link exists and is not a symlink")
-        }
     }
 }
 
-/** An install that cannot honour the topology or the filesystem, in a sentence splice composed from
- *  paths, command names and head keys, so the CLI boundary prints it verbatim instead of a JVM
- *  trace (the V4-212 real-rig run: setup without the launch shim). Still an IllegalStateException,
- *  so every caller that caught the old `check` failures keeps catching it. */
-public class InstallRefused(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
+/** What an install did. A refusal is a sentence splice composed from paths, command names and head keys, so the CLI
+ *  boundary prints it verbatim instead of a JVM trace (the V4-212 real-rig run: setup without the launch shim). */
+public sealed class InstallResult {
+    /** The wrappers are linked. */
+    public data object Linked : InstallResult()
 
-/** V4-255: the one rule for showing an install failure, for every caller that catches one (the
- *  doctor's fix, `splice add`, the console's add). [InstallRefused] is final and splice composed its
- *  sentence, so it prints verbatim; anything else goes through the renderer that withholds quoted bytes. */
-public object InstallFailureText {
-    public fun render(failure: Throwable): String =
-        (failure as? InstallRefused)?.message ?: SafeFailureText.render(failure)
+    /** Nothing was installed and the reason is already printed (an unknown or ambiguous head). */
+    public data object Declined : InstallResult()
+
+    /** The install cannot honour the topology or the filesystem; [sentence] says why. */
+    public class Refused(public val sentence: String) : InstallResult()
 }

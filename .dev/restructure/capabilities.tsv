@@ -2834,7 +2834,6 @@ integrations/daemon-client/src/test/kotlin/splice/daemonclient/HealthProbeTest.k
 features/turns/src/main/kotlin/splice/head/perf/SessionTotals.kt	created		added by V4-244: each client session's running total, fed by PerfStats.record with the row it appends and priced at append by core's TurnPrice, so the status line prices a session of any length
 features/turns/src/test/kotlin/splice/head/perf/SessionTotalsTest.kt	created		added by V4-244: the running total's walls, each turn at its own card, isolation, restart, the start a total may claim after a drop or an unclean file
 app/src/test/kotlin/splice/app/AddWrapperRefusalTest.kt	created		added by V4-255: splice add as app composes it prints the linker's own sentence when the wrapper link is refused, run against the real install verb in a home with no launch shim
-features/launch/src/test/kotlin/splice/launch/install/InstallFailureTextTest.kt	created		added by V4-255: the one rule for showing an install failure, the linker's sentence verbatim and any other IllegalStateException withheld
 features/configuration/src/test/kotlin/splice/configuration/add/AddWrapperLinkTest.kt	created		added by V4-255: a wrapper link failure reads as the install seam renders it, withheld when the seam names nothing
 features/configuration/src/test/kotlin/splice/configuration/add/AddChecksWordingTest.kt	created		added by V4-266 and V4-267: a passing base url check reads reachable with no status code, and a provider with no published list reads as models from splice's catalog, with no dialect name
 features/models/src/test/kotlin/splice/models/list/ModelsHttpTest.kt	created		added by V4-268: the models verb names a timeout, a TLS failure and an unparsable URL in splice's words and withholds any other failure, against a client that fails the way the JDK's does
@@ -3946,3 +3945,5 @@ build-logic/src/main/kotlin/splice/hygiene/CatalogReader.kt	created		Reads the v
 build-logic/src/main/kotlin/splice/ladder/LadderLeg.kt	created		One leg of the gate ladder as a typed value read from the ladder table.
 build-logic/src/main/kotlin/splice/ladder/LadderTable.kt	created		Reads the gate ladder table into LadderLeg values for the gate-ladder convention plugin.
 build-logic/src/test/kotlin/splice/ladder/LadderTableTest.kt	created		Red-green proof that the ladder table parses to typed legs and refuses a malformed row.
+features/turns/src/main/kotlin/splice/head/transport/SseReserve.kt	created		added by V4-114: whether a websocket round is re-served over SSE, held as a value the round reads after its collection ends
+features/lifecycle/src/main/kotlin/splice/lifecycle/upgrade/Upgraded.kt	created		added by V4-114: what an upgrade step answers, its value or the refusal that stops the upgrade

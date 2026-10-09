@@ -45,7 +45,7 @@ class RuntimeHeadAddTest {
         val out = TerminalOutput { lines += it }
         val ports = AddPorts(
             login = { _, _, _ -> error("a runtime head must never start a sign-in") },
-            install = { _, _ -> true },
+            install = { _, _ -> AddLinked.Linked },
             restart = {
                 restarts += 1
                 true
@@ -140,7 +140,7 @@ class RuntimeHeadAddTest {
         val out = TerminalOutput { lines += it }
         val ports = AddPorts(
             login = { _, _, _ -> error("no sign-in") },
-            install = { _, _ -> true },
+            install = { _, _ -> AddLinked.Linked },
             restart = { false },
             daemonUp = { true },
             prompt = { _, default -> default },

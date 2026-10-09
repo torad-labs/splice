@@ -15,26 +15,26 @@ private const val LOCK_FILE = ".upgrade.lock"
 
 /** The upgrade or rollback that runs under the lock; true when it activated what it set out to. */
 internal fun interface UpgradeRun {
-    operator fun invoke(): Boolean
+    operator fun invoke(): Upgraded<Boolean>
 }
 
 internal class UpgradeLock(private val layout: UpgradeLayout) {
 
     /** Runs [run] holding the install's upgrade lock, or refuses when another process holds it. */
-    fun held(run: UpgradeRun): Boolean {
+    fun held(run: UpgradeRun): Upgraded<Boolean> {
         Files.createDirectories(layout.releases)
         val lockFile = layout.releases.resolve(LOCK_FILE)
         return FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
             // null: another process holds it; Overlapping: this process does (a test, or a nested run).
             val lock = try {
                 channel.tryLock()
-            } catch (held: OverlappingFileLockException) {
-                throw refused(lockFile).initCause(held)
-            } ?: throw refused(lockFile)
-            lock.use { run() }
+            } catch (_: OverlappingFileLockException) {
+                null
+            }
+            if (lock == null) refused(lockFile) else lock.use { run() }
         }
     }
 
     private fun refused(lockFile: Path) =
-        UpgradeRefused("another splice upgrade is running (holding $lockFile); wait for it")
+        Upgraded.Refused("another splice upgrade is running (holding $lockFile); wait for it")
 }

@@ -16,9 +16,9 @@ import splice.core.topology.AuthKindRegistry
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.launch.install.InstallLayout
+import splice.launch.install.InstallResult
 import splice.terminal.SelectOption
 import splice.terminal.SelectOutcome
-import splice.terminal.WizardCancelled
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -66,18 +66,21 @@ internal class SetupCommand(
     /** The post-install OAuth tail, in splice.app.cli.setup since V4-156 (concentration). */
     private val signIn = SetupSignIn(loginHead, env)
 
-    internal suspend fun setup(): Boolean = try {
-        runWizard()
-    } catch (_: WizardCancelled) {
-        true
+    internal suspend fun setup(): Boolean = runWizard()
+
+    private suspend fun runWizard(): Boolean = when (val answer = ask()) {
+        is WizardAnswer.Cancelled -> frame.cancel(answer.reason)
+        is WizardAnswer.Plan -> install(answer)
     }
 
-    private suspend fun runWizard(): Boolean {
+    /** The questions, up to the operator's go: the plan to install, or the reason the wizard ends without it. */
+    private suspend fun ask(): WizardAnswer {
         frame.intro("splice setup")
         val facts = detect()
         printDetected(facts)
         val options = startOptions(facts)
-        val start = chosenStart(prompts.choose(options, initialIndex(facts, options)))
+        val picked = prompts.choose(options, initialIndex(facts, options))
+        val start = chosenStart(picked) ?: return WizardAnswer.Cancelled("cancelled")
         val path = TopologyLoader.configPath(env)
         val bin = InstallLayout().localBin(env)
         val lanes = effects.lanes(prompts)
@@ -87,16 +90,20 @@ internal class SetupCommand(
         val local = localModel.offer(path)
         val summary = summaryLines(start, path, bin, heads, lanes.summaryLine(lane)) + localModel.summary(local)
         frame.note("Summary", summary)
-        if (!frame.confirm("Install now?", true)) frame.cancel("not installing")
+        if (!frame.confirm("Install now?", true)) return WizardAnswer.Cancelled("not installing")
+        return WizardAnswer.Plan(path, lanes, lane, picker, heads, local)
+    }
+
+    private suspend fun install(plan: WizardAnswer.Plan): Boolean {
         prompts.spinner.start("Installing")
         val result = Cancellables.runCatchingBestEffort { runInstall() }
         val installed = result.fold(onSuccess = { it }, onFailure = { false })
         if (installed) prompts.spinner.stop("Installed wrappers") else prompts.spinner.fail("Install failed")
         result.exceptionOrNull()?.let { throw it }
         if (!installed) return false
-        lanes.apply(lane, picker.addAll(heads))?.let { println(it) }
-        localModel.install(local)
-        val topology = TopologyLoader.loadOrMaterialize(path)
+        plan.lanes.apply(plan.lane, plan.picker.addAll(plan.heads))?.let { println(it) }
+        localModel.install(plan.local)
+        val topology = TopologyLoader.loadOrMaterialize(plan.path)
         val ok = signIn.signInPendingHeads(topology)
         signIn.printNextSteps(topology)
         // The ONE completion line on the last screen — printNextSteps deliberately has none. "You're
@@ -132,9 +139,9 @@ internal class SetupCommand(
         return if (i < 0) 0 else i
     }
 
-    private fun chosenStart(picked: SelectOutcome<SetupStart>): SetupStart = when (picked) {
+    private fun chosenStart(picked: SelectOutcome<SetupStart>): SetupStart? = when (picked) {
         is SelectOutcome.Chosen -> picked.value
-        SelectOutcome.Cancelled -> frame.cancel("cancelled")
+        SelectOutcome.Cancelled -> null
     }
 
     private fun summaryLines(
@@ -176,8 +183,24 @@ internal class SetupCommand(
     private fun runInstall(): Boolean {
         InstallWiring.init(env)
         val install = InstallWiring.command()
-        if (!install.install("--all", env)) return false
-        install.installSelf(env)
-        return true
+        val wrappers = install.install("--all", env)
+        val result = if (wrappers is InstallResult.Linked) install.installSelf(env) else wrappers
+        // A refusal prints its sentence on one line, as the install verb does; the wizard reports the install failed.
+        if (result is InstallResult.Refused) System.err.println("splice: ${result.sentence}")
+        return result is InstallResult.Linked
     }
+}
+
+/** What the wizard's questions end in: a plan the operator said go to, or the reason it ends without installing. */
+private sealed class WizardAnswer {
+    class Cancelled(val reason: String) : WizardAnswer()
+
+    class Plan(
+        val path: Path,
+        val lanes: SetupClaudeLane,
+        val lane: ClaudeLane,
+        val picker: SetupHeads,
+        val heads: List<String>,
+        val local: Boolean,
+    ) : WizardAnswer()
 }

@@ -63,42 +63,61 @@ internal class UpgradeCommand(
 
     fun upgrade(args: List<String>): Boolean {
         val parsed = parser.parse(args) ?: return parser.usage()
-        return try {
-            if (parsed.rollback && parsed.to != null) {
-                throw UpgradeRefused("--rollback takes no --to: it repoints at the previous release only")
-            }
+        val answer = if (parsed.rollback && parsed.to != null) {
+            Upgraded.Refused("--rollback takes no --to: it repoints at the previous release only")
+        } else {
             lock.held { if (parsed.rollback) rollback(parsed) else upgradeTo(parsed) }
-        } catch (refused: UpgradeRefused) {
-            val reason = refused.reason
-            output.line("splice upgrade: $reason")
-            output.line("${YELLOW}nothing activated$RESET: ${layout.installedVersion()} stays installed")
-            false
+        }
+        return when (answer) {
+            is Upgraded.Ok -> answer.value
+            is Upgraded.Refused -> {
+                output.line("splice upgrade: ${answer.reason}")
+                output.line("${YELLOW}nothing activated$RESET: ${layout.installedVersion()} stays installed")
+                false
+            }
         }
     }
 
-    private fun upgradeTo(a: UpgradeArgs): Boolean {
-        a.to?.let { layout.versionDir(it.removePrefix("v")) }
+    private fun upgradeTo(a: UpgradeArgs): Upgraded<Boolean> {
+        val requested = a.to?.let { layout.versionDir(it.removePrefix("v")) }
+        if (requested is Upgraded.Refused) return requested
         val base = release.base(a.to, env("SPLICE_RELEASE_BASE_URL"))
         output.line("${BOLD}splice upgrade$RESET$DIM: from $base$RESET")
         val staging = layout.stagingDir()
-        val candidate = staged(base, staging, a.to)
+        return staged(base, staging, a.to).then { candidate -> promote(a, staging, candidate) }
+    }
+
+    /** The validated [candidate] in [staging] becomes the release directory, then is activated and the daemon restarted. */
+    private fun promote(a: UpgradeArgs, staging: Path, candidate: Staged): Upgraded<Boolean> {
         val version = candidate.version
         val installed = layout.installedVersion()
         if (version == installed) {
             layout.discard(staging)
             output.line("  ${"version".padEnd(UPGRADE_PAD)} $version is already installed")
-            return true
+            return Upgraded.Ok(true)
         }
-        layout.ensureCurrentRecorded()?.let { saved ->
-            output.line(
-                "  a flat install's live launcher is kept as splice-launch.edited, " +
-                    "because splice cannot tell whether it was edited; saved at $saved",
-            )
+        return layout.ensureCurrentRecorded().then { saved ->
+            saved?.let {
+                output.line(
+                    "  a flat install's live launcher is kept as splice-launch.edited, " +
+                        "because splice cannot tell whether it was edited; saved at $it",
+                )
+            }
+            layout.versionDir(version).then { dir -> move(a, staging, dir, candidate, installed) }
         }
-        val dir = layout.versionDir(version)
+    }
+
+    private fun move(
+        a: UpgradeArgs,
+        staging: Path,
+        dir: Path,
+        candidate: Staged,
+        installed: String,
+    ): Upgraded<Boolean> {
+        val version = candidate.version
         layout.discard(dir)
         if (!Files.isDirectory(staging)) {
-            throw UpgradeRefused("the staged release at $staging disappeared (another upgrade running?); rerun")
+            return Upgraded.Refused("the staged release at $staging disappeared (another upgrade running?); rerun")
         }
         Files.move(staging, dir, StandardCopyOption.ATOMIC_MOVE)
         output.line("  $GREEN✓$RESET ${"staged".padEnd(UPGRADE_PAD)} $version -> $dir")
@@ -109,39 +128,42 @@ internal class UpgradeCommand(
         }
         if (!daemon.waitIdle(a.now)) {
             output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; the candidate stays staged")
-            return false
+            return Upgraded.Ok(false)
         }
-        activation.activate(version, installed)
-        layout.prunable().forEach(layout::discard)
-        return finish(version, a.now)
+        return activation.activate(version, installed).then {
+            layout.prunable().forEach(layout::discard)
+            Upgraded.Ok(finish(version, a.now))
+        }
     }
 
-    private fun rollback(a: UpgradeArgs): Boolean {
+    private fun rollback(a: UpgradeArgs): Upgraded<Boolean> {
         val previous = layout.pointedVersion(layout.previous)
-            ?: throw UpgradeRefused("no previous release to roll back to")
+            ?: return Upgraded.Refused("no previous release to roll back to")
         val installed = layout.installedVersion()
         output.line("${BOLD}splice upgrade --rollback$RESET$DIM: $installed -> $previous$RESET")
         if (!daemon.waitIdle(a.now)) {
             output.line("  $YELLOW!$RESET ${"waiting".padEnd(UPGRADE_PAD)} $STILL_BUSY; nothing changed")
-            return false
+            return Upgraded.Ok(false)
         }
-        activation.activate(previous, installed)
-        return finish(previous, a.now)
+        return activation.activate(previous, installed).then { Upgraded.Ok(finish(previous, a.now)) }
     }
 
     /** Fetch, verify and validate into [staging]; ANY failure after the first byte removes the staging
      *  directory, and a `--to` that the candidate jar does not confirm is a refusal, not a rename. */
-    private fun staged(base: String, staging: Path, requested: String?): Staged {
-        // runCatchingCancellable folds I/O and parse failures into a refusal; a refusal thrown by the
-        // verifier itself passes straight through it, so the cleanup catches the refusal, not the Result.
-        return try {
-            val candidate = Cancellables.runCatchingCancellable { release.stage(base, staging) }
-                .getOrElse { e -> throw UpgradeRefused("staging failed: ${SafeFailureText.render(e)}") }
-            candidate.copy(version = layout.confirmVersion(candidate.version, requested))
-        } catch (refused: UpgradeRefused) {
-            layout.discard(staging)
-            throw refused
-        }
+    private fun staged(base: String, staging: Path, requested: String?): Upgraded<Staged> {
+        // runCatchingCancellable folds I/O and parse failures into a refusal; a refusal the verifier itself
+        // answers is already a value, so the cleanup below sees either one.
+        val answer = Cancellables.runCatchingCancellable { release.stage(base, staging) }.fold(
+            onSuccess = { staged ->
+                staged.then { candidate ->
+                    layout.confirmVersion(candidate.version, requested)
+                        .then { confirmed -> Upgraded.Ok(candidate.copy(version = confirmed)) }
+                }
+            },
+            onFailure = { Upgraded.Refused("staging failed: ${SafeFailureText.render(it)}") },
+        )
+        if (answer is Upgraded.Refused) layout.discard(staging)
+        return answer
     }
 
     private fun finish(version: String, now: Boolean): Boolean {

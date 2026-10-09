@@ -7,6 +7,7 @@ import splice.app.auth.AddSignInSessions
 import splice.app.cli.AdminSupport
 import splice.app.cli.auth.LoginCommand
 import splice.configuration.add.AddConsole
+import splice.configuration.add.AddLinked
 import splice.configuration.add.AddLiveResult
 import splice.configuration.add.AddLiveTurn
 import splice.configuration.add.AddLogin
@@ -24,7 +25,7 @@ import splice.core.util.EnvReader
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
 import splice.launch.install.InstallCommand
-import splice.launch.install.InstallFailureText
+import splice.launch.install.InstallResult
 import splice.terminal.KeyReader
 import splice.terminal.MultiSelectPrompt
 import splice.terminal.SelectPrompt
@@ -77,12 +78,14 @@ internal object AddWiring {
     )
 }
 
-/** V4-255: the install verb as the add's wrapper seam, for the CLI and the console alike. Its refusals
- *  print as the linker wrote them (InstallFailureText); anything else stays withheld. */
+/** V4-255: the install verb as the add's wrapper seam, for the CLI and the console alike. A refusal is the linker's own
+ *  sentence, carried to the add as the reason the wrapper was not linked. */
 internal class LinkerInstall(private val install: InstallCommand) : WrapperInstall {
-    override fun invoke(key: String, env: EnvReader): Boolean = install.install(key, env)
-
-    override fun refusalText(failure: Throwable): String = InstallFailureText.render(failure)
+    override fun invoke(key: String, env: EnvReader): AddLinked = when (val result = install.install(key, env)) {
+        InstallResult.Linked -> AddLinked.Linked
+        InstallResult.Declined -> AddLinked.NotLinked(null)
+        is InstallResult.Refused -> AddLinked.NotLinked(result.sentence)
+    }
 }
 
 /** Exercises the head's installed command, including client-auth and OAuth launch setup.

@@ -17,9 +17,9 @@ public class InstallCommand(output: TerminalOutput, errors: TerminalOutput) {
     private val linker = InstallLinker(output, heads = heads)
     private val uninstaller = UninstallCommand(output, errors, heads = heads)
 
-    public fun install(headArg: String?, env: EnvReader): Boolean = linker.install(headArg, env)
+    public fun install(headArg: String?, env: EnvReader): InstallResult = linker.install(headArg, env)
 
-    public fun installSelf(env: EnvReader): Boolean = linker.installSelf(env)
+    public fun installSelf(env: EnvReader): InstallResult = linker.installSelf(env)
 
     public fun uninstall(headArg: String?, env: EnvReader): Boolean = uninstaller.uninstall(headArg, env)
 }

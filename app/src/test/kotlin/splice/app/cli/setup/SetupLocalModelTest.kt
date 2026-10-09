@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.configuration.add.AddLinked
 import splice.configuration.add.AddLogin
 import splice.configuration.add.AddPorts
 import splice.configuration.add.AddPrompter
@@ -481,7 +482,7 @@ class SetupLocalModelTest {
                 sink,
                 AddPorts(
                     login = AddLogin { _, _, _ -> error("a runtime head never signs in") },
-                    install = WrapperInstall { _, _ -> true },
+                    install = WrapperInstall { _, _ -> AddLinked.Linked },
                     restart = DaemonRestart {
                         restarts[0] += 1
                         true

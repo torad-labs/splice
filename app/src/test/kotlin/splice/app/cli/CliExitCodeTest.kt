@@ -6,9 +6,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.configuration.add.AddRefused
 import splice.core.config.UserHome
-import splice.launch.install.InstallRefused
 import splice.topology.TopologyLoader
 import java.nio.file.Files
 import java.nio.file.Path
@@ -175,24 +173,16 @@ class CliExitCodeTest {
         }
     }
 
-    // From AddModelsTest when `splice add` moved to features/configuration (LAYOUT-01): the guard is
-    // the CLI's, so its arm stays with the CLI.
+    // `java -jar app-all.jar setup` with no launch shim (the V4-212 real-rig run): the refusal reached the operator
+    // as a JVM trace. It is an answer of the install verb now, so the verb prints it and exits 1 without the boundary.
     @Test
-    fun `a refused roster edit leaves the boundary an exit code, not a stack trace`() {
-        // Cli.guarded is the DR-99 boundary; AddRefused was outside its catch set, so a refusal
-        // reached the operator as a raw JVM trace.
-        assertEquals(1, Cli().guarded { throw AddRefused("head 'openrouter' cannot be edited") })
-    }
-
-    // `java -jar app-all.jar setup` with no launch shim (the V4-212 real-rig run): the refusal was a
-    // bare IllegalStateException, outside the catch set, and reached the operator as a JVM trace.
-    @Test
-    fun `an install refusal renders its sentence, one line, no stack trace`() {
-        val sentence = "launch shim not found at /tmp/splice-none/splice-launch (run install.sh)"
+    fun `an install refusal prints its sentence on one line, no stack trace, and exits 1`(@TempDir home: Path) {
         var code = -1
-        val err = stderrOf { code = Cli().guarded { throw InstallRefused(sentence) } }
+        val err = stderrOf { UserHome.within(home) { code = runCli(arrayOf("install")) } }
         assertEquals(1, code)
-        assertEquals("splice: $sentence\n", err.replace("\r\n", "\n"))
+        assertTrue(err.startsWith("splice: launch shim not found at "), err)
+        assertTrue(err.trimEnd().endsWith("(run install.sh)"), err)
+        assertFalse(err.contains("\tat "), "no stack trace may reach the operator: $err")
     }
 }
 

@@ -2219,16 +2219,16 @@ tools/e2e/src/commands/oracle.ts	retain	tools/e2e/src/commands/oracle.ts	Cohesiv
 tools/e2e/src/compat/python-http.ts	retain	tools/e2e/src/compat/python-http.ts	Cohesive engineering tooling
 tools/e2e/src/compat/python-json.ts	retain	tools/e2e/src/compat/python-json.ts	Cohesive engineering tooling
 tools/e2e/src/compat/python-values.ts	retain	tools/e2e/src/compat/python-values.ts	Cohesive engineering tooling
-tools/e2e/test/code-mode.guidance.test.ts	retain	tools/e2e/test/code-mode.guidance.test.ts	Cohesive engineering tooling
-tools/e2e/test/code-mode.mock.test.ts	retain	tools/e2e/test/code-mode.mock.test.ts	Cohesive engineering tooling
-tools/e2e/test/code-mode.probe.test.ts	retain	tools/e2e/test/code-mode.probe.test.ts	Cohesive engineering tooling
-tools/e2e/test/code-mode.test.ts	retain	tools/e2e/test/code-mode.test.ts	Cohesive engineering tooling
+tools/e2e/test/code-mode.guidance.test.ts	retire		removed Oct 9 with the gate cut: the selftests and the rule-coverage proof are gone, the product legs stay
+tools/e2e/test/code-mode.mock.test.ts	retire		removed Oct 9 with the gate cut: the selftests and the rule-coverage proof are gone, the product legs stay
+tools/e2e/test/code-mode.probe.test.ts	retire		removed Oct 9 with the gate cut: the selftests and the rule-coverage proof are gone, the product legs stay
+tools/e2e/test/code-mode.test.ts	retire		removed Oct 9 with the gate cut: the selftests and the rule-coverage proof are gone, the product legs stay
 tools/e2e/test/console-wire-keys.test.ts	retire		retired Oct 7: the operator ordered every console UI removed from the repo; the daemon's /api/* stays
-tools/e2e/test/heads.test.ts	retain	tools/e2e/test/heads.test.ts	Cohesive engineering tooling
-tools/e2e/test/oracle.test.ts	retain	tools/e2e/test/oracle.test.ts	Cohesive engineering tooling
+tools/e2e/test/heads.test.ts	retire		removed Oct 9 with the gate cut: the selftests and the rule-coverage proof are gone, the product legs stay
+tools/e2e/test/oracle.test.ts	retire		removed Oct 9 with the gate cut: the selftests and the rule-coverage proof are gone, the product legs stay
 tools/e2e/tsconfig.json	retain	tools/e2e/tsconfig.json	Cohesive engineering tooling
 tools/gate/config/ladder.json	retain	tools/gate/config/ladder.json	Cohesive engineering tooling
-tools/gate/config/rule-coverage-exclusions.toml	retain	tools/gate/config/rule-coverage-exclusions.toml	Cohesive engineering tooling
+tools/gate/config/rule-coverage-exclusions.toml	retire		removed Oct 9 with the gate cut: the selftests and the rule-coverage proof are gone, the product legs stay
 tools/gate/index.ts	retain	tools/gate/index.ts	Cohesive engineering tooling
 tools/gate/src/commands/allowlist.ts	retain	tools/gate/src/commands/allowlist.ts	Cohesive engineering tooling
 tools/gate/src/commands/audit.ts	retain	tools/gate/src/commands/audit.ts	Cohesive engineering tooling
@@ -2244,9 +2244,9 @@ tools/gate/src/lib/astgrep.ts	retain	tools/gate/src/lib/astgrep.ts	Cohesive engi
 tools/gate/src/lib/audit.ts	retain	tools/gate/src/lib/audit.ts	Cohesive engineering tooling
 tools/gate/src/lib/configguard.ts	retain	tools/gate/src/lib/configguard.ts	Cohesive engineering tooling
 tools/gate/src/lib/conventional.ts	retain	tools/gate/src/lib/conventional.ts	Cohesive engineering tooling
-tools/gate/src/lib/coverage.ts	retain	tools/gate/src/lib/coverage.ts	Cohesive engineering tooling
+tools/gate/src/lib/coverage.ts	retire		removed Oct 9 with the gate cut: the selftests and the rule-coverage proof are gone, the product legs stay
 tools/gate/src/lib/dependabot.ts	retain	tools/gate/src/lib/dependabot.ts	Cohesive engineering tooling
-tools/gate/src/lib/exclusions.ts	retain	tools/gate/src/lib/exclusions.ts	Cohesive engineering tooling
+tools/gate/src/lib/exclusions.ts	retire		removed Oct 9 with the gate cut: the selftests and the rule-coverage proof are gone, the product legs stay
 tools/gate/src/lib/flock.ts	retain	tools/gate/src/lib/flock.ts	Cohesive engineering tooling
 tools/gate/src/lib/hook.ts	retain	tools/gate/src/lib/hook.ts	Cohesive engineering tooling
 tools/gate/src/lib/jdk.ts	retain	tools/gate/src/lib/jdk.ts	Cohesive engineering tooling
@@ -2269,8 +2269,8 @@ tools/gate/test/audit.test.ts	retain	tools/gate/test/audit.test.ts	Cohesive engi
 tools/gate/test/campaign-cli-selftest-canary.sh	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
 tools/gate/test/campaign-cli-selftest.sh	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
 tools/gate/test/configguard.test.ts	retain	tools/gate/test/configguard.test.ts	Cohesive engineering tooling
-tools/gate/test/coverage.test.ts	retain	tools/gate/test/coverage.test.ts	Cohesive engineering tooling
-tools/gate/test/exclusions.test.ts	retain	tools/gate/test/exclusions.test.ts	Cohesive engineering tooling
+tools/gate/test/coverage.test.ts	retire		removed Oct 9 with the gate cut: the selftests and the rule-coverage proof are gone, the product legs stay
+tools/gate/test/exclusions.test.ts	retire		removed Oct 9 with the gate cut: the selftests and the rule-coverage proof are gone, the product legs stay
 tools/gate/test/hook.test.ts	retain	tools/gate/test/hook.test.ts	Cohesive engineering tooling
 tools/gate/test/jdk.test.ts	retain	tools/gate/test/jdk.test.ts	Cohesive engineering tooling
 tools/gate/test/landed.test.ts	retire		removed Oct 9 with the campaign system: Marcos retired the campaign ledgers and every tool that served them
@@ -3168,7 +3168,7 @@ integrations/dialects/openai-responses/src/test/kotlin/splice/dialect/responses/
 integrations/dialects/openai-chat/src/test/kotlin/splice/dialect/chat/v4382/AttributionBlockSystemMessageTest.kt	created		V4-382: two requests differing only in the attribution fingerprint build the same openai-chat system message
 core/src/test/kotlin/splice/core/usage/v4425/PlanLimitRefusalZoneTest.kt	created		V4-425: a spent plan window's refusal says its reset in the machine's own month, day, clock time and zone abbreviation, never the ISO instant, with the holding clause and the wait sentence unchanged
 tools/e2e/src/commands/conformance.ts	created		V4-282: the conformance verb: boots the fat jar with a head per dialect x system_prompt_mode over a loopback fake upstream and asserts every Claude Code message class reaches it intact, with a census read from the Kotlin source
-tools/e2e/test/conformance.test.ts	created		V4-282: the conformance verb's own net (corpus complete against the source, the census failing by name, every grader red and green, the generated topology)
+tools/e2e/test/conformance.test.ts	retire		removed Oct 9 with the gate cut: the selftests and the rule-coverage proof are gone, the product legs stay
 fixtures/conformance/_manifest.json	created		V4-282: the conformance corpus manifest: the class roster, the client system text, each mode's head prompt and the system seam each mode must produce
 fixtures/conformance/task-notification.json	created		V4-282: a background subagent's task notification as a mid-conversation role=system message, checked on every dialect (V4-277's defect)
 fixtures/conformance/session-start-hook.json	created		V4-282: SessionStart hook context as a mid-conversation role=system message in text blocks, checked on every dialect

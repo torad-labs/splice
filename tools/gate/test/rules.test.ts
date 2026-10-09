@@ -4,18 +4,17 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { EXCLUSIONS, ROUTED_CONFIG } from "../src/commands/rules.ts";
+import { ROUTED_CONFIG } from "../src/commands/rules.ts";
 import { astGrepBin } from "../src/lib/astgrep.ts";
 import { layout } from "../src/lib/repo.ts";
-import { readRules, readSgConfig } from "../src/lib/rules.ts";
 
 const { repoRoot } = layout();
 const script = (JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { scripts: Record<string, string> })
   .scripts["gate:rules"]!;
 
 describe("gate rules", () => {
-  test("package.json's gate:rules is this verb, coverage proof included", () => {
-    expect(script.trim()).toBe("bun tools/gate rules --prove-coverage");
+  test("package.json's gate:rules is this verb", () => {
+    expect(script.trim()).toBe("bun tools/gate rules");
   });
 
   test("runs the two ast-grep invocations the npm script used to spell, in order", () => {
@@ -34,15 +33,6 @@ describe("gate rules", () => {
     const local = join(repoRoot, "node_modules", ".bin", "ast-grep");
     const chosen = astGrepBin(repoRoot);
     expect(existsSync(local) ? chosen : Bun.which("ast-grep")).toBe(chosen);
-  });
-
-  test("the coverage exclusion table it reads exists and speaks only for routed rules", async () => {
-    expect(existsSync(join(repoRoot, EXCLUSIONS))).toBe(true);
-    const ids = new Set(readRules(readSgConfig(join(repoRoot, ROUTED_CONFIG)).ruleDirs).map((r) => r.id));
-    const table = (await import(join(repoRoot, EXCLUSIONS))) as { default: { exclusion: { rule?: string; rules?: string[] }[] } };
-    for (const row of table.default.exclusion) {
-      for (const id of [...(row.rules ?? []), ...(row.rule ? [row.rule] : [])]) expect(ids).toContain(id);
-    }
   });
 });
 

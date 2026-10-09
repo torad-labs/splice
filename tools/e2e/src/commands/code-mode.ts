@@ -1,5 +1,5 @@
 /**
- * `e2e code-mode <probe|mock|guidance|compare> [flags]` — THE CODE-MODE BRIDGE'S OWN HARNESSES,
+ * `e2e code-mode <probe|mock|compare> [flags]` — THE CODE-MODE BRIDGE'S OWN HARNESSES,
  * in one module. Merged from checks/e2e/code_mode_probe.ts, code_mode_mock.ts,
  * code_mode_guidance.ts and code_mode_compare.ts (restructure PR 5); the four carried one another's
  * fixtures, workspaces and seams across four files and three dynamic imports, and nothing else ever
@@ -65,7 +65,6 @@ import {
   pyRstrip, pySplitlines, setKey, StopIteration, sub, SubprocessError, TimeoutExpired, truthy, typeName, ValueError,
   type Proc,
 } from "../compat/python-values.ts";
-import { exitStatusOf } from "../../../gate/src/lib/status.ts";
 import { findRepoRoot } from "../../../gate/src/lib/repo.ts";
 import { daemonEnv } from "../daemon-env.ts";
 import { bootFailure, DAEMON_READY_SECONDS, readBootLog, readCredentialBootLog } from "../daemon-startup.ts";
@@ -2423,24 +2422,8 @@ export const compareSeams = {
 // =============================================================================================
 
 export const usage =
-  "code-mode <probe|mock|guidance|compare> [flags]   " +
-  "the code-mode bridge's harnesses: budget-proxy A/B probe, packaged-bridge mock, prompt-only guidance oracles, billed comparison";
-
-/** `--selftest` per arm is that arm's bun test file; the status is what a shell would report. */
-const SELFTEST = {
-  probe: "code-mode.probe.test.ts",
-  mock: "code-mode.mock.test.ts",
-  guidance: "code-mode.guidance.test.ts",
-} as const;
-
-function selftest(arm: keyof typeof SELFTEST): number {
-  const file = resolve(import.meta.dir, "../../test", SELFTEST[arm]);
-  const child = Bun.spawnSync([process.execPath, "test", file], {
-    cwd: findRepoRoot(import.meta.dir),
-    stdio: ["inherit", "inherit", "inherit"],
-  });
-  return exitStatusOf(child);
-}
+  "code-mode <probe|mock|compare> [flags]   " +
+  "the code-mode bridge's harnesses: budget-proxy A/B probe, packaged-bridge mock, billed comparison";
 
 /** The exit status for a harness failure — a fact about the RUN, never a verdict about the bridge.
  *  Same vocabulary as `e2e oracle`. */
@@ -2463,7 +2446,7 @@ function artifactPresent(artifact: string): boolean {
 }
 
 const PROBE_PROG = "e2e code-mode probe";
-const PROBE_USAGE = `usage: ${PROBE_PROG} [-h] [--selftest] [--proxy-port PROXY_PORT]
+const PROBE_USAGE = `usage: ${PROBE_PROG} [-h] [--proxy-port PROXY_PORT]
                           [--baseline-port BASELINE_PORT]
                           [--code-mode-port CODE_MODE_PORT]
                           [--metrics-port METRICS_PORT] [--model MODEL]
@@ -2479,7 +2462,6 @@ tool-output content is written to the receipt.
 
 options:
   -h, --help            show this help message and exit
-  --selftest
   --proxy-port PROXY_PORT
   --baseline-port BASELINE_PORT
   --code-mode-port CODE_MODE_PORT
@@ -2491,7 +2473,6 @@ options:
 
 async function probeArm(argv: string[]): Promise<number> {
   const a = argparse(argv, [
-    { flag: "--selftest", kind: "true" },
     { flag: "--proxy-port", kind: "int" },
     { flag: "--baseline-port", kind: "int" },
     { flag: "--code-mode-port", kind: "int" },
@@ -2500,7 +2481,6 @@ async function probeArm(argv: string[]): Promise<number> {
     { flag: "--artifact", kind: "str" },
     { flag: "--receipt", kind: "str" },
   ], PROBE_PROG, PROBE_USAGE, PROBE_HELP);
-  if (a.selftest) return selftest("probe");
   if (a.proxy_port) {
     const server = await threadingHTTPServer("127.0.0.1", a.proxy_port as number, proxyHandler(new Budget()), "HTTP/1.1");
     process.stdout.write(`Budget proxy listening on loopback:${server.serverPort}\n`);
@@ -2515,11 +2495,11 @@ async function probeArm(argv: string[]): Promise<number> {
     await runComparison(a as unknown as ComparisonArgs);
     return 0;
   }
-  argparseError(PROBE_PROG, PROBE_USAGE, "choose --selftest, --proxy-port, or all comparison arguments");
+  argparseError(PROBE_PROG, PROBE_USAGE, "choose --proxy-port or all comparison arguments");
 }
 
 const MOCK_PROG = "e2e code-mode mock";
-const MOCK_USAGE = `usage: ${MOCK_PROG} [-h] [--selftest] [--artifact ARTIFACT]
+const MOCK_USAGE = `usage: ${MOCK_PROG} [-h] [--artifact ARTIFACT]
                          [--receipt RECEIPT]
 `;
 const MOCK_HELP = `${MOCK_USAGE}
@@ -2529,40 +2509,21 @@ in-memory workspace.
 
 options:
   -h, --help           show this help message and exit
-  --selftest
   --artifact ARTIFACT
   --receipt RECEIPT
 `;
 
 async function mockArm(argv: string[]): Promise<number> {
   const a = argparse(argv, [
-    { flag: "--selftest", kind: "true" },
     { flag: "--artifact", kind: "str" },
     { flag: "--receipt", kind: "str" },
   ], MOCK_PROG, MOCK_USAGE, MOCK_HELP);
-  if (a.selftest) return selftest("mock");
   if (a.artifact && a.receipt) {
     if (!artifactPresent(a.artifact as string)) return HARNESS_EXIT;
     await runMock(a as unknown as { artifact: string; receipt: string });
     return 0;
   }
-  argparseError(MOCK_PROG, MOCK_USAGE, "choose --selftest or both --artifact and --receipt");
-}
-
-const GUIDANCE_PROG = "e2e code-mode guidance";
-const GUIDANCE_USAGE = `usage: ${GUIDANCE_PROG} [-h] [--selftest]\n`;
-const GUIDANCE_HELP = `${GUIDANCE_USAGE}
-Frozen synthetic repository and evidence oracles for the prompt-only A/B.
-
-options:
-  -h, --help  show this help message and exit
-  --selftest
-`;
-
-function guidanceArm(argv: string[]): number {
-  const a = argparse(argv, [{ flag: "--selftest", kind: "true" }], GUIDANCE_PROG, GUIDANCE_USAGE, GUIDANCE_HELP);
-  if (a.selftest) return selftest("guidance");
-  argparseError(GUIDANCE_PROG, GUIDANCE_USAGE, "choose --selftest");
+  argparseError(MOCK_PROG, MOCK_USAGE, "choose both --artifact and --receipt");
 }
 
 const COMPARE_PROG = "e2e code-mode compare";
@@ -2600,7 +2561,6 @@ async function compareArm(argv: string[]): Promise<number> {
 const ARMS: Record<string, (argv: string[]) => number | Promise<number>> = {
   probe: probeArm,
   mock: mockArm,
-  guidance: guidanceArm,
   compare: compareArm,
 };
 

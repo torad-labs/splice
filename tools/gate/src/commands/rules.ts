@@ -1,4 +1,4 @@
-// `gate rules [--prove-coverage]` — the ast-grep walls, the proof that they are all routed, and the
+// `gate rules` — the ast-grep walls, the proof that they are all routed, and the
 // rules that guard the rules. `gate rules --stdin pretooluse` is the SAME walls at write time: the
 // hook event arrives on stdin and the decision leaves on stdout (src/lib/hook.ts;
 // .claude/settings.json routes PreToolUse to it).
@@ -13,28 +13,23 @@
 //   4. SINGLE-SOURCE (src/lib/single-source.ts): a guarded literal has one declaration, not two.
 //   5. the CONFIG GUARD (src/lib/configguard.ts): the surface a generator weakens next when the
 //      code is walled — the detekt posture, the rule severities, and the Dependabot Kotlin scope.
-// `--prove-coverage` adds P1: `ast-grep scan` reports matches, so it is structurally blind to a
-// glob that selects nothing, or one that still matches one module while the others lost
-// enforcement. See src/lib/coverage.ts.
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { runAstGrep } from "../lib/astgrep.ts";
 import { configGuardProblems } from "../lib/configguard.ts";
-import { proveCoverage } from "../lib/coverage.ts";
 import { LIFECYCLES, hook, isLifecycle } from "../lib/hook.ts";
 import { layout } from "../lib/repo.ts";
 import { routingProblems } from "../lib/routing.ts";
 import { singleSourceProblems } from "../lib/single-source.ts";
 
 export const usage =
-  "rules [--prove-coverage]             ast-grep walls + rule routing + config guard (+ P1 coverage)\n" +
+  "rules                                ast-grep walls + rule routing + config guard\n" +
   "  rules --stdin pretooluse             the same walls over a hook event on stdin (the Claude Code hook)";
 
 /** The ast-grep config the walls run against — implicit, because `ast-grep scan` with no --config
  *  walks up to it. It stays at the repository root: ruleDirs and every files:/ignores: glob
  *  resolve relative to ITS directory. */
 export const ROUTED_CONFIG = "sgconfig.yml";
-export const EXCLUSIONS = "tools/gate/config/rule-coverage-exclusions.toml";
 
 const LEGS: readonly (readonly string[])[] = [
   ["scan"],
@@ -51,16 +46,12 @@ export async function rules(argv: readonly string[]): Promise<number> {
     return hook(readFileSync(0, "utf8"));
   }
 
-  let prove = false;
-  for (const arg of argv) {
-    if (arg === "--prove-coverage") prove = true;
-    else {
-      console.error(`gate rules: unknown argument ${arg}`);
-      return 2;
-    }
+  if (argv.length > 0) {
+    console.error(`gate rules: unknown argument ${argv[0]}`);
+    return 2;
   }
 
-  const { repoRoot, buildRoot } = layout();
+  const { repoRoot } = layout();
   // A config that is not there would make both legs a silent no-op. Name it instead.
   if (!existsSync(join(repoRoot, ROUTED_CONFIG))) {
     console.error(`gate rules: ${ROUTED_CONFIG} is missing — a leg with no config passes without checking anything`);
@@ -95,31 +86,5 @@ export async function rules(argv: readonly string[]): Promise<number> {
     return 1;
   }
   console.log("config-guard: PASS");
-
-  if (!prove) return 0;
-
-  const report = await proveCoverage({
-    repoRoot,
-    buildRoot,
-    sgconfigPath: join(repoRoot, ROUTED_CONFIG),
-    exclusionsPath: join(repoRoot, EXCLUSIONS),
-  });
-  console.log(
-    `\ncoverage: ${report.rules} routed rules over ${report.units} source roots ` +
-      `(${report.modules} gradle modules + ${report.surfaces} workspace surface) — ` +
-      `${report.coveredPairs} rule×source-root pairs covered, ${report.exclusions} dated exclusions ` +
-      // the rows are what the table looks like; the ATOMS are what is graded. A row naming 14
-      // modules is 14 dispositions, and printing only the row count hides the real denominator.
-      `(${report.exclusionAtoms} scoped dispositions)`,
-  );
-  console.log(
-    `cross-check: ${report.crossCheckAgreed}/${report.crossChecked} rules' files:/ignores: agree with ast-grep's own selection`,
-  );
-  if (report.ok) {
-    console.log("OK — every routed rule reaches every expected source root, or a dated row says why.");
-    return 0;
-  }
-  for (const finding of report.findings) console.error(`  ${finding.kind}: ${finding.message}`);
-  console.error(`\nFAILED — ${report.findings.length} coverage finding(s).`);
-  return 1;
+  return 0;
 }

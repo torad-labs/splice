@@ -1,5 +1,5 @@
 /**
- * `e2e heads [--tier 1|2|all|perf-oracle|mcp-oracle|plant-oracle] [--head KEY] [--list] [--selftest]`
+ * `e2e heads [--tier 1|2|all|perf-oracle|mcp-oracle|plant-oracle] [--head KEY] [--list]`
  * `e2e heads reasoning-cache` (alias `--probe reasoning-cache`)
  * — FULL-STACK E2E OVER EVERY CONFIGURED HEAD (codex, grok, kimi, ...), plus the reasoning-cache
  * wire probe. Merged from checks/e2e/heads-e2e.sh, checks/e2e/heads-e2e-selftest.sh and
@@ -68,14 +68,14 @@ import {
 } from "node:fs";
 import net from "node:net";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { exitStatusOf } from "../../../gate/src/lib/status.ts";
 import { layout } from "../../../gate/src/lib/repo.ts";
 import { daemonEnv } from "../daemon-env.ts";
 import { bootFailure, DAEMON_READY_SECONDS, readBootLog } from "../daemon-startup.ts";
 
 export const usage =
-  "heads [--tier 1|2|all|perf-oracle|mcp-oracle|plant-oracle] [--head KEY] [--list] [--selftest] [--probe reasoning-cache]   " +
+  "heads [--tier 1|2|all|perf-oracle|mcp-oracle|plant-oracle] [--head KEY] [--list] [--probe reasoning-cache]   " +
   "full-stack e2e over every configured head; `heads reasoning-cache` is the gateway-held reasoning-cache wire probe";
 
 /** The exit status for a harness failure — a fact about the RUN, never a verdict about a head.
@@ -1495,16 +1495,6 @@ async function reasoningCacheProbe(): Promise<number> {
 }
 
 // ── the verb ─────────────────────────────────────────────────────────────────
-/** `--selftest` is this verb's own bun test file; the status is what a shell would report. */
-function selftest(): number {
-  const file = resolve(import.meta.dir, "../../test/heads.test.ts");
-  const child = Bun.spawnSync([process.execPath, "test", file], {
-    cwd: layout().repoRoot,
-    stdio: ["inherit", "inherit", "inherit"],
-  });
-  return exitStatusOf(child);
-}
-
 export async function heads(argv: readonly string[]): Promise<number> {
   const args = [...argv];
   let tier = "all";
@@ -1526,8 +1516,6 @@ export async function heads(argv: readonly string[]): Promise<number> {
       case "--list":
         list = true;
         break;
-      case "--selftest":
-        return selftest();
       case "--probe":
         probe = args.shift() ?? "";
         break;

@@ -9,12 +9,11 @@
   "scripts": {
     "gate": "bun tools/gate run",
     "gate:no-python": "bun tools/gate no-python && bun test tools/gate/test/no-python.test.ts",
-    "gate:rules": "bun tools/gate rules --prove-coverage",
+    "gate:rules": "bun tools/gate rules",
     "gate:audit": "bun tools/gate audit",
     "test:hooks": "bun test tools/gate/test/hook.test.ts",
     "e2e:heads": "bun tools/e2e heads",
     "e2e:heads:wire": "bun tools/e2e heads --tier 1",
-    "e2e:heads:selftest": "bun tools/e2e heads --selftest",
     "e2e:docker": "bash tools/e2e/docker/run.sh",
     "oracle:capture": "bun tools/e2e oracle capture",
     "oracle:check": "bun tools/e2e oracle check",

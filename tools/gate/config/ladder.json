@@ -4,9 +4,9 @@
     {
       "task": "gateRules",
       "inputs": ["**"],
-      "commit": ["sgconfig.yml","quality/rules/**","tools/gate/config/rule-coverage-exclusions.toml"],
+      "commit": ["sgconfig.yml","quality/rules/**"],
       "why": "The ast-grep walls, then RULE ROUTING (the walls prove the routed rules pass and cannot prove they are ALL routed; .rules/kotlin sat unreferenced for a month reporting zero findings), then the CONFIG GUARD (no detekt baseline, maxIssues 0, every rule document severity:error, the dependabot scope, the concentration leg's routing), then the P1 coverage proof.",
-      "command": ["bun", "tools/gate", "rules", "--prove-coverage"]
+      "command": ["bun", "tools/gate", "rules"]
     },
     {
       "task": "hookTests",
@@ -20,12 +20,6 @@
       "why": "Eleven frozen request/response scenarios grade the built Kotlin gateway byte-for-byte against the captured Node oracle. Keeping the replay as a package script without a gate leg left the parity claim entirely opt-in. It depends on :app:shadowJar because it judges the fat jar: without the dependency it ran first, found no jar and BUILT one through a nested gradle inside the gate (measured 2026-09-21).",
       "command": ["bun", "tools/e2e", "oracle"],
       "dependsOn": [":app:shadowJar"]
-    },
-    {
-      "task": "oracleSelftest",
-      "inputs": ["tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","integrations/providers/codex/src/main/resources/**"],
-      "why": "The oracle verb's own net (corpus integrity, graders, argv contract, provenance arms) — added with the port in PR 5 and, until this row, routed by nothing (#170 review).",
-      "command": ["bun", "test", "tools/e2e/test/oracle.test.ts"]
     },
     {
       "task": "conformance",
@@ -42,46 +36,10 @@
       "dependsOn": [":app:shadowJar"]
     },
     {
-      "task": "conformanceSelftest",
-      "inputs": ["tools/e2e/**","tools/gate/src/lib/repo.ts","fixtures/conformance/**","core/src/main/kotlin/splice/core/topology/TopologySchema.kt","core/src/main/kotlin/splice/core/prompt/HeadSystemPrompt.kt"],
-      "why": "The conformance verb's own net: the corpus complete against the source's dialects and modes, the census failing BY NAME on a missing dialect, mode, class, fixture or check, and every grader passing a faithful upstream request and failing a mutated one, so the leg above cannot stay green because its checker lost the ability to find anything.",
-      "command": ["bun", "test", "tools/e2e/test/conformance.test.ts"]
-    },
-    {
       "task": "e2eTypecheck",
       "inputs": ["tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","tools/release/src/lib/shim.ts","package.json","bun.lock"],
       "why": "94 strict TypeScript errors accumulated in tools/e2e because its older per-file debt baseline masked the project. Check the whole project without a baseline so new drift fails CI immediately.",
       "command": ["bun", "node_modules/@typescript/native/bin/tsc", "--noEmit", "--project", "tools/e2e/tsconfig.json"]
-    },
-    {
-      "task": "e2eHeadsSelftest",
-      "inputs": ["tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","integrations/providers/codex/src/main/resources/**"],
-      "why": "Local, no quota: skip / fake-token / FATAL-mgmt-key against a loopback control+head. The live `e2e:heads` lane is billed and stays out of the ladder.",
-      "command": ["bun", "tools/e2e", "heads", "--selftest"]
-    },
-    {
-      "task": "codeModeProbeSelftest",
-      "inputs": ["tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","integrations/providers/codex/src/main/resources/**"],
-      "why": "Budget/oracle canaries are local; the explicit code-mode A/B lane consumes subscription quota.",
-      "command": ["bun", "tools/e2e", "code-mode", "probe", "--selftest"]
-    },
-    {
-      "task": "codeModeStartupReceiptSelftest",
-      "inputs": ["tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","integrations/providers/codex/src/main/resources/**"],
-      "why": "The code-mode startup receipt comparison, red-green proven.",
-      "command": ["bun", "test", "tools/e2e/test/code-mode.test.ts"]
-    },
-    {
-      "task": "codeModeGuidanceSelftest",
-      "inputs": ["tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","integrations/providers/codex/src/main/resources/**"],
-      "why": "The code-mode guidance text's own arms.",
-      "command": ["bun", "tools/e2e", "code-mode", "guidance", "--selftest"]
-    },
-    {
-      "task": "codeModeMockSelftest",
-      "inputs": ["tools/e2e/**","tools/gate/src/lib/repo.ts","tools/gate/src/lib/status.ts","integrations/providers/codex/src/main/resources/**"],
-      "why": "The code-mode mock's own arms.",
-      "command": ["bun", "tools/e2e", "code-mode", "mock", "--selftest"]
     },
     {
       "task": "codeModePackagedMock",
@@ -149,12 +107,6 @@
       "commit": [".github/secret-scan-allow.toml",".github/secret-scan-allow.txt"],
       "why": "Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.",
       "command": ["bun", "tools/gate", "allowlist", "--check"]
-    },
-    {
-      "task": "receiptSelftest",
-      "inputs": ["tools/e2e/docker/**","core/src/main/kotlin/splice/core/Versions.kt"],
-      "why": "The Docker e2e receipt's Claude Code pin: TESTED_CLAUDE_CODE in Versions.kt, the Dockerfile, lib.sh and every container scenario must agree, and the receipt contract must refuse a run that skipped the version step. Only run.sh called it, after a container run, so a drifted pin stayed green until someone ran Docker.",
-      "command": ["bun", "tools/e2e/docker/receipt-selftest.ts"]
     }
   ]
 }

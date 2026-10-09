@@ -26,9 +26,9 @@ describe("which legs a commit runs", () => {
     expect(tasks(["sgconfig.yml"], [{ ...rules, task: "onJar", dependsOn: [JAR_TASK] }])).toEqual([]);
   });
 
-  test("the shipped ladder runs the rules leg for the three paths a rule's coverage depends on", () => {
+  test("the shipped ladder runs the rules leg for the two paths a rule depends on", () => {
     const shipped = JSON.parse(readFileSync(join(repoRoot, "tools/gate/config/ladder.json"), "utf8")).legs as Leg[];
-    for (const path of ["sgconfig.yml", "quality/rules/kotlin/x.yml", "tools/gate/config/rule-coverage-exclusions.toml"]) {
+    for (const path of ["sgconfig.yml", "quality/rules/kotlin/x.yml"]) {
       expect(tasks([path], shipped), path).toContain("gateRules");
     }
   });

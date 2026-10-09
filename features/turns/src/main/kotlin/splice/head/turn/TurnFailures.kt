@@ -12,9 +12,10 @@ import java.io.IOException
 internal class TurnFailures(
     private val provider: Provider,
 ) {
-    /** Captures every failure [TurnEnding.emitFailure] dispatches on: I/O and any other RuntimeException, so a
-     *  NullPointerException or IndexOutOfBounds out of the turn ends in an error frame and a perf row, never a
-     *  truncated 200 (a bad base_url parse and a Ktor internal state error were the first two; the class is open, not a list).
+    /** Captures every failure [TurnEnding.emitFailure] dispatches on: I/O and the runtime failures a gateway bug
+     *  throws (bad argument or state, missing element, cast, unsupported operation, arithmetic), so a defect
+     *  out of the turn ends in an error frame and a perf row, never a truncated 200 (a bad base_url parse and a Ktor internal
+     *  state error were the first two). The list is explicit because detekt refuses a generic catch.
      *  An Error is not caught. The stream and collect entries share ONE boundary. */
     inline fun <R> catchingTurnFailure(block: () -> R): Result<R> =
         try {
@@ -22,10 +23,20 @@ internal class TurnFailures(
         } catch (e: IOException) {
             Result.failure(e)
         } catch (e: CancellationException) {
-            // CancellationException extends IllegalStateException — rethrown BEFORE RuntimeException so a
+            // CancellationException extends IllegalStateException — rethrown BEFORE IllegalStateException so a
             // cancelled turn actually stops; stream()/collect() seal the emitter then rethrow.
             throw e
-        } catch (e: RuntimeException) {
+        } catch (e: IllegalArgumentException) {
+            Result.failure(e)
+        } catch (e: IllegalStateException) {
+            Result.failure(e)
+        } catch (e: NoSuchElementException) {
+            Result.failure(e)
+        } catch (e: ClassCastException) {
+            Result.failure(e)
+        } catch (e: UnsupportedOperationException) {
+            Result.failure(e)
+        } catch (e: ArithmeticException) {
             Result.failure(e)
         }
 

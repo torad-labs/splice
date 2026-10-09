@@ -16,7 +16,9 @@ const names = (problems: string[], phrase: string) => problems.some((p) => p.inc
 
 beforeAll(() => {
   tmp = mkdtempSync(join(tmpdir(), "gate-configguard-"));
-  for (const rel of ["quality/detekt/detekt.yml", ".github/dependabot.yml", "package.json"]) {
+  // sgconfig.yml rides along because the severity guard reads its utilDirs: a fragment there must declare no
+  // severity, and without the config the guard would read one as a wall.
+  for (const rel of ["quality/detekt/detekt.yml", ".github/dependabot.yml", "package.json", "sgconfig.yml"]) {
     mkdirSync(dirname(join(tmp, rel)), { recursive: true });
     cpSync(join(repoRoot, rel), join(tmp, rel));
   }

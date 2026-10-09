@@ -3976,3 +3976,6 @@ integrations/claude-code/src/main/kotlin/splice/client/wrap/WrapStateStore.kt	cr
 tools/gate/src/lib/selector.ts	created		the one selector pre-commit, pre-push and the pull-request gate share: changed files to affected modules
 tools/gate/test/selector.test.ts	created		the selector against the real module law
 features/turns/src/test/kotlin/splice/head/HeadServerEndingsTest.kt	created		Pins the host 529 reaching the client as overloaded_error after a retry, and an oversized frame after content ending the stream with the content kept.
+quality/rules/utils/single-source-declaration.yml	created		Architecture and static enforcement
+tools/gate/src/lib/single-source.ts	created		Architecture and static enforcement
+tools/gate/test/single-source.test.ts	created		Architecture and static enforcement

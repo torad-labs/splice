@@ -16,8 +16,9 @@
 // `Array.isArray(v) ? v : [v]` below is correct for THIS corpus specifically (measured: of the
 // tracked rule YAML files, zero are multi-document and zero have a sequence root; ast-grep would
 // reject a sequence-root rule file anyway). Do not copy it to a corpus where that is untrue.
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { relative, resolve } from "node:path";
+import { readSgConfig } from "./rules.ts";
 
 const RULE_SUFFIXES = [".yml", ".yaml"];
 
@@ -89,12 +90,23 @@ export function ruleFiles(root: string, maxdepth: number): string[] {
   return found;
 }
 
+/** The utilDirs of <root>/sgconfig.yml, absolute and slash-trimmed; empty when the config declares none. */
+function utilPaths(root: string): string[] {
+  const config = resolve(root, "sgconfig.yml");
+  if (!existsSync(config)) return [];
+  return readSgConfig(config).utilDirs.map((dir) => dir.replace(/\/+$/, ""));
+}
+
 /** Every rule document under <root>/quality/rules that is not a blocking error, by name. The two
  *  phrases are load-bearing: the test arms pin them so a wall that fails for the WRONG reason
  *  cannot be mistaken for one that works. */
 export function severityViolations(root: string): string[] {
   const violations: string[] = [];
   const rulesDir = resolve(root, "quality/rules");
+  // A utilDirs document is a rule FRAGMENT a wall names with `matches:`; ast-grep never scans it on its own, so a
+  // severity on one would be inert and would read as a wall. The guard inverts for them: a fragment must declare
+  // none, and so can never be mistaken for a wall that fires on every match of its shape.
+  const utils = utilPaths(root);
   for (const path of walk(rulesDir, Number.MAX_SAFE_INTEGER)) {
     if (!RULE_SUFFIXES.some((s) => path.endsWith(s))) continue;
     const r = relative(resolve(root), path);
@@ -105,10 +117,18 @@ export function severityViolations(root: string): string[] {
       violations.push(`${r} is not parseable YAML (${(exc as Error).name}) — ast-grep cannot load it`);
       continue;
     }
+    const fragment = utils.some((dir) => path.startsWith(`${dir}/`));
     for (const [index, doc] of docs) {
       if (!isAstGrepDoc(doc) || isFixture(doc)) continue;
       const severity = doc["severity"];
-      if (severity === undefined || severity === null) {
+      if (fragment) {
+        if (severity !== undefined && severity !== null) {
+          violations.push(
+            `${r} document ${index} (id: ${String(doc["id"])}) is a utilDirs fragment and declares ` +
+              `a severity ('${String(severity)}') — a fragment is named by a wall, never scanned as one`,
+          );
+        }
+      } else if (severity === undefined || severity === null) {
         violations.push(
           `${r} document ${index} (id: ${String(doc["id"])}) declares no top-level severity, ` +
             "so ast-grep loads it and runs non-blocking (scan exits 0 on a match)",

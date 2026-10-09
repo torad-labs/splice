@@ -1,5 +1,7 @@
 id: kt-no-vanilla-config-dir
 valid:
+  # the one declaration, exempt by its shape: a const val
+  - 'public const val CLAUDE_DIR: String = ".claude"'
   # the ONE source of the name — every legitimate reader goes through the constant, not a literal
   - 'val dir = home.resolve(Keys.CLAUDE)'
   - 'val dir = configDir.resolve(Keys.PROJECTS)'
@@ -9,6 +11,8 @@ valid:
   - 'val dir = home.resolve(".claude-codex")'
   - 'val sessions = home.resolve(".claude-deepseek/projects")'
 invalid:
+  # a second spelling that is not a const declaration is the drift this wall exists for
+  - 'val CLAUDE_DIR = ".claude"'
   # the shape a re-introduction takes: a head item resolved off the vanilla literal
   - 'val projects = home.resolve(".claude").resolve("projects")'
   - 'val sessions = Paths.get(System.getProperty("user.home"), ".claude", "sessions")'

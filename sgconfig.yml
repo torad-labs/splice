@@ -9,5 +9,7 @@
 # Policy lives ONLY in the ruleDirs below — never in per-rule Python.
 ruleDirs:
   - quality/rules/kotlin
+utilDirs:
+  - quality/rules/utils
 testConfigs:
   - testDir: quality/rules/rule-tests

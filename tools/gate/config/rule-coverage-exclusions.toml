@@ -142,19 +142,6 @@ own routes name their ClientAuth door at registration.)
 """
 
 [[exclusion]]
-rule = "kt-no-runcatching-in-coroutine"
-modules = ["integrations-claude-code", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse", "integrations-providers-openai", "quality-compiler-plugin"]
-sourceSets = ["main"]
-date = "2026-09-22"
-reason = """
-The wall binds turn and stream coroutines in :upstream, the dialects, :features-turns, the feature
-route modules, :integrations-mcp, and :app (the control plane lives in app/control since LAYOUT-01). :integrations-claude-code is a local filesystem adapter, the provider
-modules are auth/quirk adapters outside that path, and :quality-compiler-plugin is a compiler plugin.
-LAYOUT-01 moved LogSafe into :core; the exact relocated file is covered by the file-scope disposition
-below instead of excusing the entire core module.
-"""
-
-[[exclusion]]
 rule = "kt-no-stream-options-request"
 modules = ["integrations-dialects-openai-chat"]
 sourceSets = ["main"]
@@ -163,22 +150,6 @@ reason = """
 The rule's own exemption, quoted from its files: comment: "every main source EXCEPT the chat
 dialect, where include_usage is the documented usage-frame knob — a NEW dialect/provider must not
 reopen the incident."
-"""
-
-[[exclusion]]
-rule = "kt-no-vanilla-config-dir"
-modules = [
-  "core", "integrations-upstream", "integrations-dialects-anthropic", "integrations-dialects-openai-responses",
-  "integrations-dialects-openai-chat", "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse",
-  "integrations-providers-openai", "features-turns", "quality-compiler-plugin",
-]
-sourceSets = ["main"]
-date = "2026-09-20"
-reason = """
-Head isolation (V4-115) is decided in three places only: :integrations-claude-code materializes a
-head's Claude config dir, control/Launch* assembles the per-launch spec, and app's
-LaunchSpecFactory sets CLAUDE_CONFIG_DIR. LAYOUT-01 moved the complete adapter into
-:integrations-claude-code, which the rule covers file-for-file; :core owns no config-dir producer.
 """
 
 [[exclusion]]
@@ -214,7 +185,7 @@ configuration adapter, not a features-turns turn or socket owner.
 
 [[exclusion]]
 rules = [
-  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
+  "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-mcp"]
 sourceSets = ["main"]
@@ -246,7 +217,7 @@ with the ignores dropped, three with them in.
 [[exclusion]]
 rules = [
   "kt-json-scalars-single-source", "kt-log-escapes-caller-input",
-  "kt-no-runcatching-in-coroutine", "kt-outcome-tag-single-source",
+  "kt-outcome-tag-single-source",
 ]
 modules = ["core"]
 sourceSets = ["main"]
@@ -261,6 +232,8 @@ the selected LogSafe destination. (kt-no-silent-result-collapse was a sixth unti
 began selecting all of core.)
 (2026-10-09: kt-control-route-guarded left this row. It binds every production root, and the head's
 own routes name their ClientAuth door at registration.)
+(2026-10-09: kt-no-runcatching-in-coroutine left this row. It binds every production root: a function
+that rethrows the cancellation it captured passes by structure.)
 """
 
 [[exclusion]]
@@ -371,28 +344,6 @@ Tests give a home through UserHome.within, never by moving the property.
 """
 
 [[exclusion]]
-rule = "kt-no-vanilla-config-dir"
-files = ["app/src/main/kotlin/**/*.kt"]
-date = "2026-09-23"
-reason = """
-Inside :app the wall binds only the launch seam's CLAUDE_CONFIG_DIR producer, head/LaunchSpecFactory.kt;
-the rest of :app never spells a config dir. The launch seam that was control/Launch*.kt is
-features/launch now (LAYOUT-01), bound whole. :integrations-claude-code needs no row: the wall binds
-its whole main source set, minus its one dated ignore, ClaudeConfigKeys.kt, the single source of the
-vanilla dir's NAME. Losing a whole module still fails: a files-row can never excuse a wholly lost root.
-"""
-
-[[exclusion]]
-rule = "kt-no-vanilla-config-dir"
-files = ["integrations/claude-code/src/main/kotlin/**/ClaudeConfigKeys.kt"]
-date = "2026-09-22"
-reason = """
-Keys.CLAUDE / Keys.CLAUDE_DIR is the rule's one dated ignore and the sole declaration of the vanilla
-dir name. LAYOUT-01 moved that declaration with the Claude Code adapter, while the rule still covers
-the rest of :integrations-claude-code file-for-file.
-"""
-
-[[exclusion]]
 rule = "kt-turn-finally-flush-quietly"
 files = ["features/turns/src/main/kotlin/**/*.kt"]
 date = "2026-09-20"
@@ -427,7 +378,7 @@ either (TestNet); MidStreamTearContinuesTest is a deliberately paced test double
 
 [[exclusion]]
 rules = [
-  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
+  "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-heads"]
 sourceSets = ["main"]
@@ -460,12 +411,9 @@ module disposition for it excuses nothing and its row is gone rather than re-rea
   kt-no-runblocking-exported-bridge   pinned to app/**/Main.kt and app/**/cli/** — the CLI process
                                       boundary, where a runBlocking bridge is the exported entry.
                                       :features-heads is a library module with no main().
-  kt-no-vanilla-config-dir            pinned to the LAUNCH SEAM: integrations/claude-code/**, app's
-                                      LaunchSpecFactory.kt, and daemon/control's Launch*.kt. It is
-                                      the one rule here that names daemon/control at all, so it was
-                                      checked by hand: LaunchResponse.kt, LaunchService.kt and
-                                      LaunchTypes.kt are all still at that path and none of them was
-                                      part of this extraction. The seam did not move.
+  kt-no-vanilla-config-dir            2026-10-09: no longer pinned to the launch seam. It binds every
+                                      production Kotlin and Kotlin-script root, so no module row
+                                      excuses it and every row that named it dropped the name.
   kt-turn-finally-flush-quietly       pinned to features/turns/**/splice/head/** — the head's TURN
                                       cleanup. This is splice.heads.start in another module, with
                                       no turn lifecycle. Extraction source was daemon/control.
@@ -481,7 +429,7 @@ extraction and covers only it.
 
 [[exclusion]]
 rules = [
-  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
+  "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-http"]
 sourceSets = ["main"]
@@ -496,7 +444,7 @@ carry its rules too; this row does not authorize losing their coverage.
 
 [[exclusion]]
 rules = [
-  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
+  "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-usage"]
 sourceSets = ["main"]
@@ -512,7 +460,7 @@ production root now, so no module disposition for it excuses anything.)
 
 [[exclusion]]
 rules = [
-  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
+  "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-sessions"]
 sourceSets = ["main"]
@@ -526,7 +474,7 @@ DID select one of those sources was widened to features/sessions instead of bein
 
 [[exclusion]]
 rules = [
-  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
+  "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-models"]
 sourceSets = ["main"]
@@ -567,12 +515,12 @@ The launch recipe, the Claude head's wrap and the resume hook came from daemon/c
 five scopes selected them there: they grade exceptions as outcomes at refusal-type declaration sites,
 the CLI's runBlocking bridge, quota selection, turn cleanup, and streaming wire catches. Every rule
 that DID select them was widened to features/launch instead, and kt-no-vanilla-config-dir, which bound
-only Launch*.kt, now binds the whole module.
+only Launch*.kt, binds every production root as of 2026-10-09.
 """
 
 [[exclusion]]
 rules = [
-  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
+  "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-lifecycle", "features-diagnostics", "features-configuration", "features-events"]
 sourceSets = ["main"]
@@ -588,7 +536,7 @@ to these roots instead of being excluded.
 [[exclusion]]
 rules = [
   "kt-log-escapes-caller-input",
-  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
+  "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-topology"]
 sourceSets = ["main"]
@@ -606,7 +554,7 @@ own routes name their ClientAuth door at registration.)
 [[exclusion]]
 rules = [
   "kt-log-escapes-caller-input",
-  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
+  "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-codemode"]
 sourceSets = ["main"]
@@ -625,7 +573,7 @@ own routes name their ClientAuth door at registration.)
 [[exclusion]]
 rules = [
   "kt-log-escapes-caller-input",
-  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
+  "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-oauth"]
 sourceSets = ["main"]
@@ -647,7 +595,7 @@ own routes name their ClientAuth door at registration.)
 [[exclusion]]
 rules = [
   "kt-log-escapes-caller-input",
-  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
+  "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-terminal"]
 sourceSets = ["main"]
@@ -669,7 +617,7 @@ own routes name their ClientAuth door at registration.)
 [[exclusion]]
 rules = [
   "kt-log-escapes-caller-input",
-  "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
+  "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-daemon-client"]
 sourceSets = ["main"]
@@ -691,7 +639,7 @@ own routes name their ClientAuth door at registration.)
 
 [[exclusion]]
 rules = [
-  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
+  "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-accounts"]
 sourceSets = ["main"]

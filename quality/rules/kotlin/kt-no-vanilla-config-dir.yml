@@ -21,11 +21,11 @@
 # through while producing the identical runtime path. Anchoring the regex on the inner content node
 # is delimiter-agnostic.
 #
-# THE ONE DATED ALLOWLIST ENTRY. ClaudeConfigKeys.kt is the single source of the name (Keys.CLAUDE /
-# Keys.CLAUDE_DIR); every legitimate reader — the materializer's isolation guard that refuses to
-# materialize into ~/.claude, and its sessions arm, which is the ONE dispositioned escape — reaches it
-# through that constant, never through a literal of its own. Allowing the constant's declaration site
-# is what keeps the wall discriminating: a second spelling anywhere else in this surface is red.
+# THE ONE DECLARATION. UserHome.kt declares the name once (`const val CLAUDE_DIR`); every reader, the materializer's
+# isolation guard and its sessions arm among them, reaches it through that constant or the ClaudeConfigKeys alias
+# of it, never through a literal of its own. The declaration is exempt by its shape (single-source-declaration:
+# a `const val`), not by a path ignore, so a second spelling anywhere in this surface is red, and the `gate rules`
+# uniqueness leg turns a second DECLARATION red too.
 #
 # WHAT THIS RULE CANNOT SEE, and what covers it. The wall is a LINT shape: a regression that reaches
 # the vanilla dir through Keys.CLAUDE (the materializer's own globalDir()) is not a literal and is not
@@ -43,26 +43,30 @@
 id: kt-no-vanilla-config-dir
 language: kotlin
 severity: error
-message: "A head's config dir must never be spelled from the vanilla ~/.claude literal — heads are fully isolated (V4-115). Use Keys.CLAUDE (the one source) or a head config dir."
+message: "A head's config dir must never be spelled from the vanilla ~/.claude literal — heads are fully isolated (V4-115). Use UserHome.CLAUDE_DIR (the one source) or a head config dir."
 note: >
-  Resolve the vanilla config dir from ClaudeConfigKeys.Keys (CLAUDE / CLAUDE_DIR) if you are the
+  Resolve the vanilla config dir from UserHome.CLAUDE_DIR (Keys.VANILLA_DIR is its alias) if you are the
   materializer's isolation guard or its dispositioned sessions-registry arm; anywhere else, a head's
   generated state belongs under its OWN CLAUDE_CONFIG_DIR. A shared projects tree is the 2026-09-16
   incident: it put 95 head transcripts in the vanilla tree and broke the vanilla client's resume.
+# NO NARROW `files:` LIST (2026-10-09). It used to name the launch seam, which made the law a property of where a
+# literal happened to sit: a reader outside that seam could spell `~/.claude` and the rule never looked. A denominator
+# taken from the list being checked cannot fail for what the list omits, so the rule now binds every production Kotlin
+# root the scan walks, and a new module inherits it the day it appears. Test sources are excluded by SOURCE SET, never
+# by module: a test that materializes a fake vanilla tree is exactly what this law permits.
 files:
-  # LAYOUT-01: the Claude Code launch seam moved as one module; its enforcement moved with it.
-  - integrations/claude-code/src/main/kotlin/splice/client/**/*.kt
-  # 2026-09-23 LAYOUT-01: control's Launch*.kt became features/launch, and the wall takes the whole
-  # module — the recipe, the Claude head's wrap and the resume hook all point at a head's config dir.
-  - features/launch/src/main/**/*.kt
-  - app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt
-  - "build-logic/src/main/**/*.kt"
-  - "build-logic/src/main/**/*.kts"
+  - "**/src/main/**/*.kt"
+  - "**/src/main/**/*.kts"
 ignores:
-  # the ONE dated entry: the single source of the vanilla dir's NAME (Keys.CLAUDE / Keys.CLAUDE_DIR)
-  - integrations/claude-code/src/main/kotlin/**/ClaudeConfigKeys.kt
+  - "**/src/test/**"
+  - "**/src/testFixtures/**"
 rule:
-  kind: string_literal
-  has:
-    kind: string_content
-    regex: '^(?:~/)?\.claude(?:/.*)?$'
+  all:
+    - kind: string_literal
+    - has:
+        kind: string_content
+        regex: '^(?:~/)?\.claude(?:/.*)?$'
+    - not:
+        inside:
+          matches: single-source-declaration
+          stopBy: end

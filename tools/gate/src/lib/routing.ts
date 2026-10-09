@@ -73,7 +73,15 @@ export function routingProblems(input: RoutingInput): string[] {
   const problems: string[] = [];
   const config = readSgConfig(sgconfigPath);
   const ruleDirs = config.ruleDirs.map((d) => trimSlash(relative(repoRoot, d)));
-  const referenced = [...ruleDirs, ...config.testDirs.map((d) => trimSlash(relative(repoRoot, d)))];
+  // utilDirs holds rule FRAGMENTS a rule body names with `matches:`. ast-grep never scans them on their own, so
+  // they are referenced by the config without being a wall, and the uniqueness leg (lib/single-source.ts) is what
+  // proves a util is actually used.
+  const utilDirs = config.utilDirs.map((d) => trimSlash(relative(repoRoot, d)));
+  const referenced = [
+    ...ruleDirs,
+    ...utilDirs,
+    ...config.testDirs.map((d) => trimSlash(relative(repoRoot, d))),
+  ];
   const allowedPaths = allowlist.map((entry) => entry.split("|")[0]!);
 
   if (ruleDirs.length === 0) problems.push(`${sgconfig} declares no ruleDirs — every ast-grep wall in this repo is dormant.`);

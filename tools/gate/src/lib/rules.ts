@@ -18,12 +18,15 @@ export interface Rule {
 export interface SgConfig {
   readonly path: string;
   readonly ruleDirs: readonly string[];
+  /** utilDirs: — rule fragments a rule body names with `matches:`, never scanned on their own. */
+  readonly utilDirs: readonly string[];
   readonly testDirs: readonly string[];
 }
 
 export function readSgConfig(configPath: string): SgConfig {
   const parsed = Bun.YAML.parse(readFileSync(configPath, "utf8")) as {
     ruleDirs?: string[];
+    utilDirs?: string[];
     testConfigs?: { testDir: string }[];
   };
   const base = resolve(configPath, "..");
@@ -31,6 +34,7 @@ export function readSgConfig(configPath: string): SgConfig {
   return {
     path: configPath,
     ruleDirs: (parsed.ruleDirs ?? []).map(at),
+    utilDirs: (parsed.utilDirs ?? []).map(at),
     testDirs: (parsed.testConfigs ?? []).map((t) => at(t.testDir)),
   };
 }

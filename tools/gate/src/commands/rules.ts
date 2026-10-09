@@ -3,14 +3,15 @@
 // hook event arrives on stdin and the decision leaves on stdout (src/lib/hook.ts;
 // .claude/settings.json routes PreToolUse to it).
 //
-// Four legs, in order, with `&&` semantics:
+// Five legs, in order, with `&&` semantics:
 //   1. `ast-grep scan` over the tree and 2. `ast-grep test --skip-snapshot-tests` — the two
 //      invocations `npm run gate:rules` used to spell (package.json:15); that script is now this
 //      verb. (A third leg once ran the dormant .rules/kotlin pack's own cases; it held 0 rule-tests
 //      and PR 1 deleted both.)
 //   3. rule ROUTING (src/lib/routing.ts): the walls leg proves the routed rules pass; it cannot
 //      prove they are ALL routed. Completeness, not conformance.
-//   4. the CONFIG GUARD (src/lib/configguard.ts): the surface a generator weakens next when the
+//   4. SINGLE-SOURCE (src/lib/single-source.ts): a guarded literal has one declaration, not two.
+//   5. the CONFIG GUARD (src/lib/configguard.ts): the surface a generator weakens next when the
 //      code is walled — the detekt posture, the rule severities, and the Dependabot Kotlin scope.
 // `--prove-coverage` adds P1: `ast-grep scan` reports matches, so it is structurally blind to a
 // glob that selects nothing, or one that still matches one module while the others lost
@@ -23,6 +24,7 @@ import { proveCoverage } from "../lib/coverage.ts";
 import { LIFECYCLES, hook, isLifecycle } from "../lib/hook.ts";
 import { layout } from "../lib/repo.ts";
 import { routingProblems } from "../lib/routing.ts";
+import { singleSourceProblems } from "../lib/single-source.ts";
 
 export const usage =
   "rules [--prove-coverage]             ast-grep walls + rule routing + config guard (+ P1 coverage)\n" +
@@ -77,6 +79,14 @@ export async function rules(argv: readonly string[]): Promise<number> {
     return 1;
   }
   console.log("rule-routing: PASS");
+
+  const duplicates = singleSourceProblems(repoRoot, join(repoRoot, ROUTED_CONFIG));
+  if (duplicates.length) {
+    for (const p of duplicates) console.error(`  ✗ ${p}`);
+    console.error("single-source: FAIL");
+    return 1;
+  }
+  console.log("single-source: PASS");
 
   const guard = configGuardProblems(repoRoot);
   if (guard.length) {

@@ -11,8 +11,10 @@ package splice.lawsuite
 import org.gradle.api.Project
 import org.gradle.api.Task
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.api.tasks.testing.Test
+import org.gradle.kotlin.dsl.of as valueSourceOf
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
@@ -45,6 +47,25 @@ object ReadSet {
         }
         return set
     }
+
+    /** [git] as a build value: asked again on every build, so the configuration cache holds it by its answer. */
+    fun gitProvider(project: Project, roots: List<String>): Provider<List<String>> =
+        project.providers.valueSourceOf(ReadSetListing::class) {
+            parameters.repo.set(project.rootProject.layout.projectDirectory)
+            parameters.roots.set(roots)
+            parameters.tracked.set(false)
+        }
+
+    /** [globbed] as a build value (see [gitProvider]). */
+    fun globbedProvider(project: Project, globs: List<String>): Provider<List<String>> =
+        gitProvider(project, globs.map { ":(glob)$it" })
+
+    /** [tracked] as a build value (see [gitProvider]). */
+    fun trackedProvider(project: Project): Provider<List<String>> =
+        project.providers.valueSourceOf(ReadSetListing::class) {
+            parameters.repo.set(project.rootProject.layout.projectDirectory)
+            parameters.tracked.set(true)
+        }
 
     /** The same set for a row's glob patterns (a directory glob): git's own `:(glob)` pathspec, so the expansion is git's too. */
     fun globbed(repo: File, globs: List<String>): List<String> = git(repo, globs.map { ":(glob)$it" })
@@ -116,7 +137,7 @@ object ReadSet {
         declareFiles(
             project,
             lawTest,
-            git(project.rootProject.projectDir, roots),
+            gitProvider(project, roots),
             "law-read-set",
             "splice.lawReadSetFile",
         )
@@ -124,7 +145,13 @@ object ReadSet {
 
     /** Declares the exact files [set] as inputs of [task]: fingerprints each, writes them NUL-delimited to `build/<name>.txt`
      *  (a task of its own, a dependency of [task]) and hands that path to the test JVM as [property], beside `splice.root`. */
-    fun declareFiles(project: Project, task: TaskProvider<Test>, set: List<String>, name: String, property: String) {
+    fun declareFiles(
+        project: Project,
+        task: TaskProvider<Test>,
+        set: Provider<List<String>>,
+        name: String,
+        property: String,
+    ) {
         val listFile = declareInputs(project, task, set, name)
         task.configure {
             systemProperty("splice.root", project.rootProject.projectDir.absolutePath)
@@ -137,7 +164,7 @@ object ReadSet {
     fun declareInputs(
         project: Project,
         task: TaskProvider<out Task>,
-        set: List<String>,
+        set: Provider<List<String>>,
         name: String,
     ): RegularFileProperty {
         val repo = project.rootProject.projectDir
@@ -147,11 +174,11 @@ object ReadSet {
         val write = project.tasks.register("write-$name") {
             inputs.property("readSet", set)
             outputs.file(listFile)
-            doLast { listFile.get().asFile.apply { parentFile.mkdirs() }.writeText(encode(set)) }
+            doLast { listFile.get().asFile.apply { parentFile.mkdirs() }.writeText(encode(set.get())) }
         }
         task.configure {
             dependsOn(write)
-            inputs.files(set.map { repo.resolve(it) }).withPropertyName("$name-files")
+            inputs.files(set.map { files -> files.map { repo.resolve(it) } }).withPropertyName("$name-files")
             inputs.file(listFile).withPropertyName("$name-list")
         }
         return listFile

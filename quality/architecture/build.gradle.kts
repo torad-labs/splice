@@ -222,7 +222,7 @@ tasks.withType<Test>().configureEach {
 splice.lawsuite.ReadSet.declareFiles(
     project,
     tasks.named<Test>("test"),
-    splice.lawsuite.ReadSet.tracked(repoRoot.asFile),
+    splice.lawsuite.ReadSet.trackedProvider(project),
     "conventional-candidates",
     "splice.conventionalCandidatesFile",
 )

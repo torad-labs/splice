@@ -67,7 +67,7 @@ val legTasks = legs.map { leg ->
             // The row's globs are expanded by git (tracked, plus untracked and not ignored), never by walking the tree: a walk reads
             // ignored directories and throws on a dangling link under them.
             inputs.files(
-                provider { splice.lawsuite.ReadSet.globbed(rootDir, e2eGlobs).map { rootDir.resolve(it) } },
+                splice.lawsuite.ReadSet.globbedProvider(project, e2eGlobs).map { files -> files.map { rootDir.resolve(it) } },
             ).withPropertyName("ladderInputs")
             outputs.file(stamp)
             doLast { stamp.get().asFile.apply { parentFile.mkdirs() }.writeText("$name\n") }

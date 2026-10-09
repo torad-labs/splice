@@ -13,9 +13,8 @@
 // rateLimitedPlan's 429 arm each spelled out `clock() + minOf(pushback, MAX)` followed by
 // `accumulateAndGet(max)` — and is now [arm], called from both.
 //
-// NF-01's wall retired to UpstreamClientRateLimitTest and HeadServerCapacityTest
-// (.dev/campaigns/proxy-hardening/walls/wall_registry.toml): the clamp, and clear() dropping an
-// armed horizon through a real restart.
+// NF-01's wall retired to UpstreamClientRateLimitTest and HeadServerCapacityTest: the clamp, and
+// clear() dropping an armed horizon through a real restart.
 //
 // V4-47 (2026-09-16): the provider's own reset is CAPTURED here and NAMED to the operator, but the
 // translated fail-fast horizon is deliberately NOT extended to it. THAT DECISION IS LOAD-BEARING — do not
@@ -36,7 +35,6 @@
 // is in :features-turns, and :upstream depends only on :core — that edge would invert.
 package splice.upstream.retry
 
-import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LocalTimeText
 import splice.core.util.WallClock
@@ -47,6 +45,7 @@ import splice.upstream.RetryNotice
 import splice.upstream.StreamStart
 import splice.upstream.transport.UpstreamFailed
 import java.time.Instant
+import java.time.format.DateTimeParseException
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -187,8 +186,13 @@ public class RateLimitCooldown public constructor(
         // failure to diagnose, and logging one per 429 would be noise on exactly the path an
         // operator is already reading.
         val absoluteWallMs = epochSeconds?.times(MS_PER_S)
-            // ast-grep-ignore: kt-no-silent-result-collapse -- best-effort vendor timestamp; null is the complete story, see above
-            ?: iso?.let { Cancellables.runCatchingCancellable { Instant.parse(it).toEpochMilli() }.getOrNull() }
+            ?: iso?.let {
+                try {
+                    Instant.parse(it).toEpochMilli()
+                } catch (_: DateTimeParseException) {
+                    null
+                }
+            }
         val delayMs = absoluteWallMs?.minus(wallClock()) ?: inSeconds?.times(MS_PER_S) ?: return
         if (delayMs <= 0) return
         holds.refusing {

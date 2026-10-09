@@ -47,13 +47,20 @@ private fun <O : Any> storageOf(owner: O): Any? = owner.javaClass.declaredFields
     }
 }
 
+/** Every read below but the cap test expects a body; a refusal there is the failure, named. */
+private fun BodyRead.received(): ReceivedBody = when (this) {
+    is BodyRead.Received -> body
+    is BodyRead.TooLarge -> error("the read refused the body at $limit bytes")
+}
+
 class RequestBodyReaderTest {
     @Test
     fun `unknown length decoding preserves UTF8 characters split across read boundaries`() = runTest {
         val expected = "x".repeat(16_383) + "café 🐉\n".repeat(4_000)
         val bytes = expected.toByteArray(Charsets.UTF_8)
+        val reader = RequestBodyReader(1_000)
         for (declared in listOf(null, bytes.size.toLong())) {
-            val result = RequestBodyReader(1_000).receiveBodyBounded(ByteReadChannel(bytes), declared, bytes.size)
+            val result = reader.receiveBodyBounded(ByteReadChannel(bytes), declared, bytes.size).received()
             assertEquals(expected, result.text)
             assertEquals(bytes.size, result.bytes)
         }
@@ -67,9 +74,10 @@ class RequestBodyReaderTest {
             prefix + byteArrayOf(0xE2.toByte(), 0x82.toByte()),
             prefix + byteArrayOf(0xF0.toByte(), 0x9F.toByte(), 0x99.toByte(), 0x82.toByte(), 0xFF.toByte()),
         )
+        val reader = RequestBodyReader(5_000)
         for (bytes in bodies) {
             for (declared in listOf(null, 1L, bytes.size.toLong())) {
-                val result = RequestBodyReader(5_000).receiveBodyBounded(ByteReadChannel(bytes), declared, bytes.size)
+                val result = reader.receiveBodyBounded(ByteReadChannel(bytes), declared, bytes.size).received()
                 assertEquals(bytes.toString(Charsets.UTF_8), result.text)
                 assertEquals(bytes.size, result.bytes)
             }
@@ -101,7 +109,8 @@ class RequestBodyReaderTest {
                 }
             },
         )
-        val result = reader.receiveBodyBounded(ByteReadChannel(ByteArray(0)), bytes.size.toLong(), bytes.size)
+        val empty = ByteReadChannel(ByteArray(0))
+        val result = reader.receiveBodyBounded(empty, bytes.size.toLong(), bytes.size).received()
         assertEquals(bytes.size, result.text.length)
         assertNotNull(staged)
         repeat(8) {
@@ -125,7 +134,7 @@ class RequestBodyReaderTest {
         Recording().use { recording ->
             recording.enable("jdk.ObjectAllocationOutsideTLAB").withStackTrace()
             recording.start()
-            val result = reader.receiveBodyBounded(ByteReadChannel(bytes), bytes.size.toLong(), bytes.size)
+            val result = reader.receiveBodyBounded(ByteReadChannel(bytes), bytes.size.toLong(), bytes.size).received()
             assertEquals(bytes.size, result.text.length)
             recording.stop()
             recording.dump(capture)
@@ -154,12 +163,8 @@ class RequestBodyReaderTest {
         val reader = RequestBodyReader(1_000)
         val bytes = "x".repeat(1_001).toByteArray()
         for (declared in listOf(null, bytes.size.toLong())) {
-            try {
-                reader.receiveBodyBounded(ByteReadChannel(bytes), declared, 1_000)
-                error("an oversized body was accepted")
-            } catch (tooLarge: RequestBodyTooLarge) {
-                assertEquals(1_000, tooLarge.limit)
-            }
+            val read = reader.receiveBodyBounded(ByteReadChannel(bytes), declared, 1_000)
+            assertEquals(BodyRead.TooLarge(1_000), read, "declared=$declared")
         }
     }
 
@@ -196,7 +201,7 @@ class RequestBodyReaderTest {
             val channel = ByteReadChannel(bytes)
             val thread = Thread.currentThread().threadId()
             val before = bean.getThreadAllocatedBytes(thread)
-            val result = reader.receiveBodyBounded(channel, declared, bytes.size)
+            val result = reader.receiveBodyBounded(channel, declared, bytes.size).received()
             val allocated = bean.getThreadAllocatedBytes(thread) - before
             assertTrue(thread == Thread.currentThread().threadId(), "the measured read must stay on this thread")
             assertEquals(expected, result.text)

@@ -2,7 +2,7 @@
 // ReceivedBody, RequestBodyTooLarge, READ_BUFFER_BYTES) @ 1caedd6 — invariants unchanged: bounded
 // body I/O under the read timeout, the declared-Content-Length pre-check, the running-total cap,
 // and the EOF-vs-zero-read disambiguation a raw readAvailable needs. Split out (HD-24); both
-// nested shapes WIDENED private nested -> internal, because RequestBodyTooLarge is caught in
+// nested shapes WIDENED private nested -> internal, because the cap refusal is rendered in
 // AdmissionGate.materializeOrRespond and ReceivedBody is read by TurnPreparation and CountTokens.
 package splice.head
 
@@ -30,7 +30,20 @@ private val processRequestBodyRead = RequestBodyRead(ChannelReads::readAvailable
 
 internal data class ReceivedBody(val text: String, val bytes: Int)
 
-internal class RequestBodyTooLarge(val limit: Int) : RuntimeException()
+/**
+ * What a bounded body read answered: the body, or the cap that refused it.
+ *
+ * V4-440: this was a RequestBodyTooLarge thrown from three places and recovered in exactly one
+ * catch, in AdmissionGate.materializeOrRespond. Every other caller of [RequestBodyReader] — and
+ * every future one — inherited an exception it had no reason to know about, and no compiler check
+ * said so. As a case, a caller that forgets the cap does not compile.
+ */
+internal sealed class BodyRead {
+    data class Received(val body: ReceivedBody) : BodyRead()
+
+    /** [limit] is the byte cap the body exceeded, declared or while reading. */
+    data class TooLarge(val limit: Int) : BodyRead()
+}
 
 /** UTF-8 staging stays in fixed segments, including partial characters across reads.
  *  The parser's final String is allocated once. Closing drops every staging segment even when
@@ -87,17 +100,20 @@ internal class RequestBodyReader(
     private val requestReadTimeoutMs: Long,
     private val read: RequestBodyRead = processRequestBodyRead,
 ) {
-    suspend fun receiveBodyBounded(call: ApplicationCall, limit: Int): ReceivedBody {
+    suspend fun receiveBodyBounded(call: ApplicationCall, limit: Int): BodyRead {
         return withTimeout(requestReadTimeoutMs) {
             val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
-            if (declared != null && declared > limit) throw RequestBodyTooLarge(limit)
-            receiveBodyBounded(call.receiveChannel(), declared, limit)
+            if (declared != null && declared > limit) {
+                BodyRead.TooLarge(limit)
+            } else {
+                receiveBodyBounded(call.receiveChannel(), declared, limit)
+            }
         }
     }
 
-    suspend fun receiveBodyBounded(channel: ByteReadChannel, declared: Long?, limit: Int): ReceivedBody {
+    suspend fun receiveBodyBounded(channel: ByteReadChannel, declared: Long?, limit: Int): BodyRead {
         return withTimeout(requestReadTimeoutMs) {
-            if (declared != null && declared > limit) throw RequestBodyTooLarge(limit)
+            if (declared != null && declared > limit) return@withTimeout BodyRead.TooLarge(limit)
             val bufferBytes = minOf(declared ?: limit.toLong(), READ_BUFFER_BYTES.toLong()).coerceAtLeast(1).toInt()
             RequestBodyText(bufferBytes).use { output ->
                 val buffer = ByteArray(bufferBytes)
@@ -106,11 +122,13 @@ internal class RequestBodyReader(
                 var count = read(channel, buffer)
                 while (count >= 0) {
                     total += count
-                    if (total > limit) throw RequestBodyTooLarge(limit)
+                    // The cap is answered, not thrown, so the staging segments still drop through
+                    // `use` on this path exactly as they did when it unwound.
+                    if (total > limit) return@use BodyRead.TooLarge(limit)
                     output.append(buffer, count)
                     count = read(channel, buffer)
                 }
-                ReceivedBody(output.text(), total)
+                BodyRead.Received(ReceivedBody(output.text(), total))
             }
         }
     }

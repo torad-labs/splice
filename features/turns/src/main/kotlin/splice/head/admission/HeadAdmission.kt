@@ -58,10 +58,9 @@ internal class HeadAdmission(
             // Their heap lease follows the same slot that already owns that drive's lifetime.
             val owner = MaterializationOwner { admitted.materializedEnd = it }
             val leaseStart = telemetry.arrivalTime()
-            val prepared = admission.materializeOrRespond(
+            val prepared = admission.materializeBodyOrRespond(
                 call,
-                owner = owner,
-                beforeRefusal = TurnEnd(admitted::release),
+                Materializing(owner = owner, beforeRefusal = TurnEnd(admitted::release)),
             ) {
                 telemetry.prepare(perf, leaseStart) { preparation.prepareTurn(call, perf) }
             } ?: return

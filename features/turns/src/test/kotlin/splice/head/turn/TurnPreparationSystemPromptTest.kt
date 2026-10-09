@@ -71,6 +71,12 @@ private class UnplaceableProvider(delegate: Provider) : Provider by delegate {
     override fun withSystemPrompt(turn: BuiltTurn, prompt: String, mode: SystemPromptMode): BuiltTurn = turn
 }
 
+/** Every fixture body here is within the cap, so a refusal is the failure, named. */
+private fun Materialized<Preparation>.prepared(): Preparation = when (this) {
+    is Materialized.Done -> value
+    is Materialized.TooLarge -> error("the fixture body cannot exceed the cap, refused at  bytes")
+}
+
 class TurnPreparationSystemPromptTest {
 
     private val parser = AnthropicBodyParse()
@@ -364,7 +370,7 @@ class TurnPreparationSystemPromptTest {
     }
 
     private suspend fun build(preparation: TurnPreparation, call: ApplicationCall, perf: TurnPerf): BuiltTurn {
-        val result = preparation.prepareTurn(call, perf)
+        val result = preparation.prepareTurn(call, perf).prepared()
         return (result as? Preparation.Ready)?.built ?: error("expected a Ready preparation, got $result")
     }
 

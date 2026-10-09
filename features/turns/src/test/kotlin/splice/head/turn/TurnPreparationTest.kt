@@ -72,6 +72,12 @@ private class LayersTestAuth : RefreshableAuthProvider {
     override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
 }
 
+/** Every fixture body here is within the cap, so a refusal is the failure, named. */
+private fun Materialized<Preparation>.prepared(): Preparation = when (this) {
+    is Materialized.Done -> value
+    is Materialized.TooLarge -> error("the fixture body cannot exceed the cap, refused at  bytes")
+}
+
 class TurnPreparationTest {
 
     private val parser = AnthropicBodyParse()
@@ -204,7 +210,7 @@ class TurnPreparationTest {
             application {
                 routing {
                     post("/v1/messages") {
-                        val result = preparation.prepareTurn(call, TurnPerf())
+                        val result = preparation.prepareTurn(call, TurnPerf()).prepared()
                         captured = (result as? Preparation.Ready)?.built ?: error("expected Ready, got $result")
                         call.respondText("ok")
                     }
@@ -237,7 +243,7 @@ class TurnPreparationTest {
             application {
                 routing {
                     post("/v1/messages") {
-                        val result = preparation.prepareTurn(call, TurnPerf())
+                        val result = preparation.prepareTurn(call, TurnPerf()).prepared()
                         assertTrue(result is Preparation.Rejected, result.toString())
                         AdmissionResponses().respondInvalidRequest(call, (result as Preparation.Rejected).message)
                     }

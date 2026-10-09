@@ -94,8 +94,16 @@
 #                              between two adjacent statements (a suspend `collect` has no other way
 #                              to stop early), which is why the SPI class is gone rather than moved.
 #
-#   EXEMPTED (4, dated inline at each declaration — every catch site logs and propagates a client-
-#   visible failure terminal, and NO catch site continues or retries the turn):
+#   EXEMPTED (4, dated inline at each declaration — every catch site either logs and propagates a
+#   client-visible failure terminal, or treats the throwable as the transport failure it already is):
+#
+#   CORRECTED 2026-10-09: this header used to claim "NO catch site continues or retries the turn",
+#   and that was false of StreamTornBeforeClient. UpstreamClient.kt:305 catches it, folds it into
+#   `Result.failure(e)`, and hands it to onTransportError.kt:345, whose first act is
+#   reissueRules.canReissueStream(...) — so that catch site can RE-ISSUE the stream and the turn can
+#   still succeed. The exemption survives the correction for a different reason, the one the entry
+#   below already gives: it shares its arm with a raw IOException, so it is retried as a transport
+#   failure and not as a decision this side made. The claim was simply not the one holding it up.
 #     UpstreamErrors.kt:13   UpstreamAuthMissing   TurnFailures.kt:26 (the per-turn error boundary,
 #       in the same catch chain as IOException/IllegalStateException), TurnKnownEnd.kt:31 ->
 #       emitError(AUTHENTICATION) + login hint, TurnDriver.kt:149 -> markCredentialMissing() and the
@@ -128,16 +136,17 @@ note: >
   catch written for a real invariant break, making a refusal and a bug indistinguishable. A class
   that genuinely IS an invariant break takes
   `// ast-grep-ignore: kt-no-exception-as-outcome -- YYYY-MM-DD: <why no caller can recover>`.
-files:
-  - features/sessions/src/main/**/*.kt
-  - features/models/src/main/**/*.kt
-  - features/usage/src/main/**/*.kt
-  - integrations/upstream/src/main/**/*.kt
-  - core/src/main/**/*.kt
-  # LAYOUT-01: preserve declaration-side enforcement on the relocated Claude Code adapter.
-  - integrations/claude-code/src/main/**/*.kt
-  - "build-logic/src/main/**/*.kt"
-  - "build-logic/src/main/**/*.kts"
+# NO `files:` LIST (2026-10-09). It used to name six roots, which made the law a property of where
+# a class happened to live: features/turns declared RequestBodyTooLarge and the rule never looked.
+# A denominator taken from the list being checked cannot fail for what the list omits, so the rule
+# now binds every production root the scan walks, and a new module inherits it the day it appears.
+#
+# Test sources are excluded by SOURCE SET, never by module: a private test double that models an
+# invariant break is exactly what this law permits, and HeadServerFailureBranchTest.kt:88 and
+# PassthroughStreamTranslatorTest.kt:1058 are two of them. A new module's tests inherit this.
+ignores:
+  - "**/src/test/**"
+  - "**/src/testFixtures/**"
 rule:
   all:
     - kind: class_declaration

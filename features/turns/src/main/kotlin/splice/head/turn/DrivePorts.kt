@@ -32,8 +32,27 @@ internal fun interface ZeroEventClassifier {
  * that held its lease across the upstream call would starve every other head's materialization.
  *
  * `T : Any` at the fast-fail entry point is not incidental: null there means CONTENTION and nothing
- * else, so a legitimately-null result is made unrepresentable rather than ambiguous.
+ * else, so a legitimately-null result is made unrepresentable rather than ambiguous. The body cap is
+ * the second thing a materialization can answer, and it answers it as a [Materialized] case for the
+ * same reason: a refusal the caller must render is a branch the compiler checks, not a thrown name.
  */
 internal fun interface MaterializedRequest<T> {
     suspend operator fun invoke(): T
+}
+
+/**
+ * What a materialization answered: the decoded request, or the body cap it refused.
+ *
+ * [TooLarge] exists because the cap is read in two places that cannot share a return — the declared
+ * Content-Length, checked before any admission wait, and the running total inside the body read, a
+ * frame at a time. Both are refusals of the SAME request with the SAME 413 and the same bytes on the
+ * wire, so [AdmissionGate.materializeOrRespond] renders them in one `when` branch. Before V4-440 the
+ * read threw a RequestBodyTooLarge that only that one catch recovered: every other caller of the
+ * reader inherited an exception it had no reason to know about, and nothing checked that it did.
+ */
+internal sealed class Materialized<out T : Any> {
+    data class Done<T : Any>(val value: T) : Materialized<T>()
+
+    /** [limit] is the cap that refused the body, which the 413's text names. */
+    data class TooLarge(val limit: Int) : Materialized<Nothing>()
 }

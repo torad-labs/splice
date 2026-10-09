@@ -41,6 +41,7 @@ import splice.core.wire.AnthropicRequest
 import splice.head.ActivityLabel
 import splice.head.ActivitySamples
 import splice.head.AnthropicBodyParse
+import splice.head.BodyRead
 import splice.head.ClientAuth
 import splice.head.HeadDeps
 import splice.head.MessageEdges
@@ -101,10 +102,26 @@ internal class TurnPreparation(
     private val messageEdges = MessageEdges(deps.seams.events)
     private val providerTurns = ProviderTurnBuild(provider, deps, replay)
 
-    suspend fun prepareTurn(call: ApplicationCall, perf: TurnPerf): Preparation {
+    /** [Materialized.TooLarge] rather than a [Preparation] case: the 413 belongs to the admission
+     *  gate, which writes it while the lease is still held, exactly where the thrown refusal used
+     *  to unwind to. A Preparation case would render it after the lease returned, which is a
+     *  different order on the wire. */
+    suspend fun prepareTurn(call: ApplicationCall, perf: TurnPerf): Materialized<Preparation> {
         val sessionId = call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
         deps.seams.clientVersions.observe(sessionId, call.request.headers[HttpHeaders.UserAgent])
-        val body = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes)
+        val body = when (val read = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes)) {
+            is BodyRead.TooLarge -> return Materialized.TooLarge(read.limit)
+            is BodyRead.Received -> read.body
+        }
+        return Materialized.Done(preparedFrom(call, perf, sessionId, body))
+    }
+
+    private suspend fun preparedFrom(
+        call: ApplicationCall,
+        perf: TurnPerf,
+        sessionId: String?,
+        body: ReceivedBody,
+    ): Preparation {
         perf.mark(PerfKeys.RECV)
         perf.setCount(PerfKeys.REQ_BYTES, body.bytes.toLong())
         val parsing = bodyParse.parse(body.text)

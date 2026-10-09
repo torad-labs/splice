@@ -113,20 +113,6 @@ excusing :core wholesale.
 """
 
 [[exclusion]]
-rule = "kt-no-exception-as-outcome"
-modules = [
-  "integrations-dialects-anthropic", "integrations-dialects-openai-responses", "integrations-dialects-openai-chat",
-  "integrations-providers-codex", "integrations-providers-grok", "integrations-providers-kimi", "integrations-providers-muse", "integrations-providers-openai",
-  "features-turns", "app", "quality-compiler-plugin",
-]
-sourceSets = ["main"]
-date = "2026-09-20"
-reason = """
-The sealed-outcome law is pinned where refusal types are DECLARED — :core and :upstream. Every
-other module consumes those sealed hierarchies rather than declaring its own exception-as-outcome.
-"""
-
-[[exclusion]]
 rule = "kt-no-println"
 files = ["app/src/main/kotlin/**/*.kt"]
 date = "2026-09-23"
@@ -224,7 +210,7 @@ configuration adapter, not a features-turns turn or socket owner.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
+  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-mcp"]
 sourceSets = ["main"]
@@ -464,7 +450,7 @@ name Ktor's WriterContent: it delegates to it and adds the clean close in a fina
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
+  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-heads"]
 sourceSets = ["main"]
@@ -490,11 +476,10 @@ call.parameters["head"] and hands that caller-supplied name to HeadAudit.record,
 forged-audit-line hazard the rule was written for. Excluding it would have retired a live
 protection, not waived a dormant one.
 
-THE SIX BELOW PASS THAT TEST — each names a scope this code was never inside:
-  kt-no-exception-as-outcome          pinned to upstream/, core/, integrations/claude-code/ — the DECLARATION sites
-                                      for refusal types. The extracted code came from
-                                      daemon/control, which this rule has never covered, so no
-                                      declaration left its reach.
+THE FIVE BELOW PASS THAT TEST — each names a scope this code was never inside.
+(2026-10-09: kt-no-exception-as-outcome used to head this list, pinned to upstream/, core/ and
+integrations/claude-code/. It no longer takes a files: list — it binds every production root — so a
+module disposition for it excuses nothing and its row is gone rather than re-reasoned.)
   kt-no-runblocking-exported-bridge   pinned to app/**/Main.kt and app/**/cli/** — the CLI process
                                       boundary, where a runBlocking bridge is the exported entry.
                                       :features-heads is a library module with no main().
@@ -519,7 +504,7 @@ extraction and covers only it.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
+  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-http"]
 sourceSets = ["main"]
@@ -541,10 +526,11 @@ sourceSets = ["main"]
 date = "2026-09-22"
 reason = """
 The budget and alert slices came from core/budget, core/alert, and control/api/usage. None of these
-five scopes covered any of those sources: their owners are CLI bridges, client-home launching,
-quota selection, turn cleanup, and streaming wire catches. The six control-plane rules follow the
-routes, and kt-no-exception-as-outcome follows the core-owned models into this feature. These
-exclusions preserve the source scope rather than reasoning from whether a violation exists today.
+scopes covered any of those sources: their owners are CLI bridges, client-home launching, quota
+selection, turn cleanup, and streaming wire catches. The six control-plane rules follow the routes.
+These exclusions preserve the source scope rather than reasoning from whether a violation exists
+today. (2026-10-09: kt-no-exception-as-outcome was dropped from this row — it binds every
+production root now, so no module disposition for it excuses anything.)
 """
 
 [[exclusion]]
@@ -592,7 +578,7 @@ suppress a finding in the selected ModelsRoute.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-wire-catch-ioexception-alone",
+  "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-launch"]
 sourceSets = ["main"]
@@ -607,7 +593,7 @@ only Launch*.kt, now binds the whole module.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
+  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-lifecycle", "features-diagnostics", "features-configuration", "features-events"]
 sourceSets = ["main"]
@@ -622,7 +608,7 @@ to these roots instead of being excluded.
 
 [[exclusion]]
 rules = [
-  "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
+  "kt-control-route-guarded", "kt-log-escapes-caller-input",
   "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-topology"]
@@ -638,7 +624,7 @@ integrations/topology instead of being excluded, and kt-no-println now reaches t
 
 [[exclusion]]
 rules = [
-  "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
+  "kt-control-route-guarded", "kt-log-escapes-caller-input",
   "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-codemode"]
@@ -655,7 +641,7 @@ widened to integrations/codemode instead, and kt-no-println, which ignored app/c
 
 [[exclusion]]
 rules = [
-  "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
+  "kt-control-route-guarded", "kt-log-escapes-caller-input",
   "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-oauth"]
@@ -675,7 +661,7 @@ widened to integrations/oauth, and kt-no-println, which ignored app/auth and app
 
 [[exclusion]]
 rules = [
-  "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
+  "kt-control-route-guarded", "kt-log-escapes-caller-input",
   "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-terminal"]
@@ -695,7 +681,7 @@ widened to integrations/terminal, and kt-no-println, which ignored app/cli, now 
 
 [[exclusion]]
 rules = [
-  "kt-control-route-guarded", "kt-log-escapes-caller-input", "kt-no-exception-as-outcome",
+  "kt-control-route-guarded", "kt-log-escapes-caller-input",
   "kt-no-vanilla-config-dir", "kt-outcome-tag-single-source", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["integrations-daemon-client"]
@@ -716,7 +702,7 @@ reaches them.
 
 [[exclusion]]
 rules = [
-  "kt-no-exception-as-outcome", "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
+  "kt-no-vanilla-config-dir", "kt-wire-catch-ioexception-alone",
 ]
 modules = ["features-accounts"]
 sourceSets = ["main"]

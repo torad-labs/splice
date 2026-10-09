@@ -13,6 +13,8 @@ import kotlinx.serialization.json.put
 import splice.core.perf.PromptTokenEstimate
 import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
+import splice.head.admission.Materializing
+import splice.head.turn.Materialized
 import splice.upstream.Provider
 
 internal class CountTokens(
@@ -31,9 +33,14 @@ internal class CountTokens(
         // pre-flight sizing for minutes (review 2026-07-22). Memory stays bounded by the
         // materialization gate (fastFail: contention 529s instead of queueing, so a count_tokens
         // flood cannot camp the shared heap budget) plus the maxRequestBytes cap.
-        val prepared = admission.materializeOrRespond(call, fastFail = true) {
-            val body = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes)
-            bodyParse.parse(body.text).map { PromptTokenEstimate.fromBytes(body.bytes.toLong()) }
+        val prepared = admission.materializeBodyOrRespond(call, Materializing(fastFail = true)) {
+            when (val read = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes)) {
+                // The 413 is the gate's to write, so the cap travels back as the case it is.
+                is BodyRead.TooLarge -> Materialized.TooLarge(read.limit)
+                is BodyRead.Received -> Materialized.Done(
+                    bodyParse.parse(read.body.text).map { PromptTokenEstimate.fromBytes(read.body.bytes.toLong()) },
+                )
+            }
         } ?: return
         // Both success and invalid-body replies publish only after materialization returned its loan.
         val estimate = prepared.getOrNull()

@@ -63,6 +63,12 @@ private class SlotTestAuth : RefreshableAuthProvider {
     override suspend fun describe(): AuthDescription = AuthDescription(true, "test")
 }
 
+/** Every fixture body here is within the cap, so a refusal is the failure, named. */
+private fun Materialized<Preparation>.prepared(): Preparation = when (this) {
+    is Materialized.Done -> value
+    is Materialized.TooLarge -> error("the fixture body cannot exceed the cap, refused at  bytes")
+}
+
 class SlotPromptTurnTest {
 
     @TempDir
@@ -142,7 +148,7 @@ class SlotPromptTurnTest {
             application {
                 routing {
                     post("/v1/messages") {
-                        val result = preparation.prepareTurn(call, perf)
+                        val result = preparation.prepareTurn(call, perf).prepared()
                         captured = (result as? Preparation.Ready)?.built ?: error("expected Ready, got $result")
                         call.respondText("ok")
                     }

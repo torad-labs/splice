@@ -104,7 +104,10 @@ class BuiltTurnEndTest {
             application {
                 routing {
                     post("/v1/messages") {
-                        outcome = runCatching { preparation.prepareTurn(call, TurnPerf()) }.fold({ it }, { it })
+                        // The Done wrapper is the lease protocol, not what this test is about: unwrap it so
+                        // the captured outcome stays the Preparation case (or the throwable) it always was.
+                        outcome = runCatching { preparation.prepareTurn(call, TurnPerf()) }
+                            .fold({ (it as? Materialized.Done)?.value ?: it }, { it })
                         call.respondText("ok")
                     }
                 }

@@ -24,6 +24,7 @@ import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -56,7 +57,6 @@ import splice.head.HeadDeps
 import splice.head.HeadFileWriteCleanup
 import splice.head.RequestBodyRead
 import splice.head.RequestBodyReader
-import splice.head.RequestBodyTooLarge
 import splice.head.TestResponsesProvider
 import splice.head.compaction.CompactionReplay
 import splice.head.headStores
@@ -125,8 +125,10 @@ class MaterializationRefusalTest {
                 post("/probe") {
                     admission.materializeOrRespond(
                         call,
-                        fastFail = call.request.headers["x-synthetic-fast"] == "true",
-                        beforeRefusal = TurnEnd { released++ },
+                        Materializing(
+                            fastFail = call.request.headers["x-synthetic-fast"] == "true",
+                            beforeRefusal = TurnEnd { released++ },
+                        ),
                     ) {
                         entered = true
                         "must not materialize"
@@ -298,7 +300,7 @@ class AdmissionGateTest {
             routing {
                 post("/probe") {
                     lengths += call.request.headers[HttpHeaders.ContentLength]
-                    val entered = admission.materializeOrRespond(call, fastFail = true) { "admitted" }
+                    val entered = admission.materializeOrRespond(call, Materializing(fastFail = true)) { "admitted" }
                     if (entered != null) call.respondText(entered)
                 }
             }
@@ -487,7 +489,9 @@ class AdmissionGateTest {
             1_000,
             RequestBodyRead { _, _ ->
                 when (next) {
-                    1 -> throw RequestBodyTooLarge(4)
+                    // Five bytes into a cap of four: the reader's running-total arm answers
+                    // TooLarge before it appends, which is what the thrown refusal used to be.
+                    1 -> 5
                     2 -> throw SseSpuriousWakeupException(1)
                     else -> withTimeout(1) { CompletableDeferred<Nothing>().await() }
                 }
@@ -600,25 +604,6 @@ class AdmissionGateTest {
         return loanFree to candidateFree
     }
 
-    private fun handler(
-        provider: Provider,
-        deps: HeadDeps,
-        reader: RequestBodyReader = RequestBodyReader(1_000),
-    ): HeadAdmission {
-        val responses = AdmissionResponses()
-        val clientAuth = ClientAuth(deps, responses, ForeignHostLog("synthetic head", deps.log))
-        val window = AdmissionWindow().apply { open() }
-        return HeadAdmission(
-            deps,
-            clientAuth,
-            AdmissionGate(provider, deps, window, responses),
-            AdmissionTelemetry(deps.gate, deps.seams.clock),
-            TurnPreparation(provider, deps, reader, AnthropicBodyParse(), clientAuth),
-            responses,
-            TurnDriver(provider, deps, CompactionReplay()),
-        )
-    }
-
     private fun continuationProvider(): Provider {
         val delegate = testProvider
         return object : Provider by delegate {
@@ -666,6 +651,27 @@ private fun ready(): Preparation.Ready = Preparation.Ready(
     messagesHash = null,
     hasPriorExchange = false,
 )
+
+/** The head under test, wired the way HeadServer wires it: file-scoped so the cap-refusal class
+ *  below uses the same assembly as AdmissionGateTest and neither owns a second one. */
+private fun handler(
+    provider: Provider,
+    deps: HeadDeps,
+    reader: RequestBodyReader = RequestBodyReader(1_000),
+): HeadAdmission {
+    val responses = AdmissionResponses()
+    val clientAuth = ClientAuth(deps, responses, ForeignHostLog("synthetic head", deps.log))
+    val window = AdmissionWindow().apply { open() }
+    return HeadAdmission(
+        deps,
+        clientAuth,
+        AdmissionGate(provider, deps, window, responses),
+        AdmissionTelemetry(deps.gate, deps.seams.clock),
+        TurnPreparation(provider, deps, reader, AnthropicBodyParse(), clientAuth),
+        responses,
+        TurnDriver(provider, deps, CompactionReplay()),
+    )
+}
 
 private val testProvider: TestResponsesProvider = TestResponsesProvider(
     tuning = ProviderTuning(
@@ -733,5 +739,51 @@ class AdmissionTimingTest {
         perf.firstClientByte()
         assertEquals(400L, perf.snapshot().counters[PerfKeys.ARRIVAL_TO_FIRST_CLIENT_BYTE_MS])
         assertEquals(0, deps.gate.snapshot().inflight)
+    }
+}
+
+/**
+ * V4-440 turned the request-body cap from a thrown RequestBodyTooLarge into a [Materialized] case.
+ * The one thing that must not move is what the client sees, and the cap has two arms that reach the
+ * wire from different places: the declared Content-Length, refused before the reader is called, and
+ * the running total, refused a frame into the read. This holds them to ONE refusal.
+ */
+class RequestBodyCapRefusalTest {
+    @Test
+    fun `both cap arms answer the client one 413 with the same bytes`(@TempDir tmp: Path) = testApplication {
+        val deps = headDeps(tmp).copy(policy = HeadDeps.HeadPolicy(maxRequestBytes = 4))
+        var next = 0
+        val reader = RequestBodyReader(
+            1_000,
+            RequestBodyRead { _, _ ->
+                // Five bytes into a cap of four on the second post; the third never answers at all.
+                if (next == 1) 5 else withTimeout(1) { CompletableDeferred<Nothing>().await() }
+            },
+        )
+        val handler = handler(testProvider, deps, reader)
+        application { routing { post("/probe") { handler.handleMessages(call) } } }
+
+        // "12345" declares 5 against the cap of 4, so it is refused before the reader is called.
+        // "x" declares 1 and is refused by the running total the delegate reports mid-read.
+        val replies = listOf("12345", "x", "x").map { body ->
+            val response = client.post("/probe") {
+                header(HttpHeaders.Authorization, "Bearer test-inference-token")
+                setBody(body)
+            }
+            next++
+            response.status.value to response.bodyAsText()
+        }
+
+        val (declaredStatus, declaredBody) = replies[0]
+        val (runningStatus, runningBody) = replies[1]
+        val (timeoutStatus, timeoutBody) = replies[2]
+        assertEquals(413, declaredStatus, declaredBody)
+        assertEquals(413, runningStatus, runningBody)
+        assertEquals(declaredBody, runningBody, "the two cap arms must be indistinguishable to the client")
+        assertTrue(declaredBody.contains("exceeds 4 bytes"), declaredBody)
+        // The control: a DIFFERENT refusal does differ, so the equality above is a check that can
+        // fail and not a tautology that would hold however the two arms were spelled.
+        assertEquals(408, timeoutStatus, timeoutBody)
+        assertNotEquals(declaredBody, timeoutBody, "a different refusal must differ, or the check above cannot fail")
     }
 }

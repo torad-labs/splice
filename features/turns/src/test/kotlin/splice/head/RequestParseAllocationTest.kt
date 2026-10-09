@@ -77,7 +77,10 @@ class RequestParseAllocationTest {
         val reader = RequestBodyReader(READ_TIMEOUT_MS)
 
         val decoded = measure("reader", reporter) {
-            reader.receiveBodyBounded(ByteReadChannel(bytes), bytes.size.toLong(), bytes.size)
+            when (val read = reader.receiveBodyBounded(ByteReadChannel(bytes), bytes.size.toLong(), bytes.size)) {
+                is BodyRead.Received -> read.body
+                is BodyRead.TooLarge -> error("the fixture is measured against its own size; it cannot refuse")
+            }
         }
         val tree = measure("tree", reporter) { lenientJson.parseToJsonElement(text).jsonObject }
         val typed = measure("typed", reporter) {

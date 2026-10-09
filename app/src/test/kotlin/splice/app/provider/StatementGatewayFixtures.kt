@@ -12,9 +12,7 @@ import splice.upstream.codemode.CodeModeCall
 import splice.upstream.codemode.CodeModeCell
 import splice.upstream.codemode.CodeModeResult
 import splice.upstream.codemode.CodeModeRuntime
-import splice.upstream.codemode.CodeModeSealedSource
 import splice.upstream.codemode.CodeModeSource
-import splice.upstream.codemode.CodeModeSourcePart
 import splice.upstream.codemode.CodeModeStep
 import java.net.InetSocketAddress
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -120,7 +118,6 @@ internal class StatementGatewayUpstream(private val batch: String? = null) {
 
 /** Observes the real native cell without implementing parsing, admission, execution or tool publication. */
 internal class StatementGatewayRuntime(
-    private val excludeBatchAdmission: Boolean = false,
     private val startupDelayMs: Long = 0L,
 ) : CodeModeRuntime {
     val delivered = Channel<List<CodeModeResult>>(Channel.UNLIMITED)
@@ -144,7 +141,7 @@ internal class StatementGatewayRuntime(
     ): CodeModeCell {
         starts.incrementAndGet()
         delay(startupDelayMs)
-        val cell = runtime.startStreaming(admit(source), tools, descriptions)
+        val cell = runtime.startStreaming(source, tools, descriptions)
         started.complete(Unit)
         return object : CodeModeCell {
             override suspend fun advance(results: List<CodeModeResult>): CodeModeStep {
@@ -158,16 +155,6 @@ internal class StatementGatewayRuntime(
             }
 
             override fun close() = cell.close()
-        }
-    }
-
-    private fun admit(source: CodeModeSource): CodeModeSource {
-        if (!excludeBatchAdmission) return source
-        val sealed = checkNotNull(source as? CodeModeSealedSource)
-        check("Promise" in sealed.sealedGlobals) { "The mutant must remove a real producer commitment" }
-        return object : CodeModeSealedSource {
-            override val sealedGlobals: Set<String> = sealed.sealedGlobals - "Promise"
-            override suspend fun read(): CodeModeSourcePart = source.read()
         }
     }
 

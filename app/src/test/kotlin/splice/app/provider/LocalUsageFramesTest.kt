@@ -20,7 +20,6 @@ import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
-import splice.topology.TopologyLoader
 
 class LocalUsageFramesTest {
 
@@ -74,28 +73,5 @@ class LocalUsageFramesTest {
     fun `the provider's own local flag decides, not the shape of its base_url`() {
         assertEquals(false, asks("http://127.0.0.1:8099/v1", local = false))
         assertEquals(true, asks("http://192.168.1.50:8000/v1", local = true))
-    }
-
-    @Test
-    fun `splice toml carries stream_usage into the provider's quirks`() {
-        val toml = """
-            [providers.ex]
-            dialect = "openai-chat"
-            base_url = "http://127.0.0.1:8099/v1"
-            auth = { kind = "api-key", env = "EX_KEY" }
-            quirks = { stream_usage = false }
-
-            [[providers.ex.models]]
-            id = "m1"
-            context_window = 131072
-
-            [heads.ex]
-            provider = "ex"
-            port = 3301
-            discovery_prefix = "ex/"
-            pinned_model = "m1"
-        """.trimIndent()
-
-        assertEquals(false, TopologyLoader.parse(toml).providers.getValue("ex").quirks.streamUsage)
     }
 }

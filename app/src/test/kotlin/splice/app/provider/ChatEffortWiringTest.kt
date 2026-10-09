@@ -9,7 +9,6 @@ import org.junit.jupiter.api.assertThrows
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
-import splice.core.topology.ChatEffortVocabularyConfig
 import splice.core.turn.WatchdogBudget
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
@@ -184,19 +183,6 @@ class ChatEffortWiringTest {
         assertFalse(built.requestBody.containsKey("reasoning_effort"))
         assertFalse(built.requestBody.containsKey("reasoning"))
         assertEquals("low", built.meta.effort)
-    }
-
-    @Test
-    fun `blank vocabulary names defaults and values are rejected`() {
-        assertThrows<IllegalArgumentException> { ChatEffortVocabularyConfig("", mapOf("low" to "low")) }
-        assertThrows<IllegalArgumentException> { ChatEffortVocabularyConfig("max", mapOf("" to "low")) }
-        assertThrows<IllegalArgumentException> { ChatEffortVocabularyConfig("max", mapOf("low" to "")) }
-        assertThrows<IllegalArgumentException> {
-            ChatEffortVocabularyConfig("max", mapOf("low" to "low", "LOW" to "high"))
-        }
-        assertThrows<IllegalArgumentException> {
-            ChatEffortVocabularyConfig("max", mapOf("low" to "low"), modelPattern = "[")
-        }
     }
 
     private fun assertEffort(

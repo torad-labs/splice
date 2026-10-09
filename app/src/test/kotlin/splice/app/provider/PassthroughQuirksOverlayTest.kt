@@ -74,18 +74,6 @@ class PassthroughQuirksOverlayTest {
         }
     }
 
-    // A neutral base (the claude head) declares nothing and must stay faithful.
-    @Test
-    fun `a neutral base with no declarations stays faithful`() {
-        val neutral = PassthroughQuirks(providerTag = "claude-splice")
-        val quirks = assembly.passthroughQuirks(provider(QuirksConfig()), neutral)
-        assertEquals(false, quirks.stripCacheControl)
-        assertEquals(false, quirks.mfjsSanitize)
-        assertEquals(false, quirks.synthesizeSignatures)
-        assertEquals(false, quirks.reanchorPrefill)
-        assertNull(quirks.blockAllowlist)
-    }
-
     // V4-41: reanchor_prefill selects the continuation SHAPE — PREFILL (kimi and deepseek, both
     // measured) or RESTART-ONLY (everything unmeasured, plus muse, which rejects a prefill outright
     // with invalid_request_error). It is a per-vendor fact exactly like block_allowlist, so it

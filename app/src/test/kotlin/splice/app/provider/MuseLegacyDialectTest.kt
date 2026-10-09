@@ -1,4 +1,4 @@
-package splice.app.provider.v4393
+package splice.app.provider
 
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -7,8 +7,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TokenUrlRefreshCall
-import splice.app.provider.ProviderAssembly
-import splice.app.provider.ProviderBuild
 import splice.core.auth.RefreshAttempt
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths

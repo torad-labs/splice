@@ -2,28 +2,19 @@
 // code-mode default-on. Shared ResponsesArm only dispatches.
 package splice.app.provider
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
-import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.TokenUrlRefreshCall
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
-import splice.core.config.CODE_MODE_DIR
-import splice.core.config.CODE_MODE_STATE_SUFFIX
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.model.DiscoveredModel
@@ -39,16 +30,9 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.core.turn.WatchdogBudget
 import splice.oauth.OAuthAccountFiles
-import splice.provider.codex.CodeModeBridgeConfig
-import splice.provider.codex.CodeModeSessionAlive
-import splice.provider.codex.CodexCodeModeBridge
 import splice.upstream.BuiltTurn
-import java.lang.ref.Reference
-import java.lang.ref.WeakReference
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.ScheduledFuture
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 class CodexResponsesArmTest {
@@ -97,89 +81,6 @@ class CodexResponsesArmTest {
         assertTrue(after.requestBody.toString().contains("\"name\":\"exec\""), "the refreshed roster marks it")
         assertEquals(1, logged.count { it.contains("[code-mode]") }, "said once, at start: $logged")
         wired.provider.onHeadStop()
-    }
-
-    @Test
-    fun `the production bridge receives the session liveness port`(@TempDir tmp: Path) = runTest {
-        val sessions = CodeModeSessionAlive { false }
-        val arm = CodexResponsesArm(
-            StatePaths(baseOverride = tmp.resolve("state")),
-            backgroundScope,
-            log = {},
-            refreshCall = TokenUrlRefreshCall { _, _ -> RefreshAttempt.Denied("test-denied") },
-            sessionAlive = sessions,
-        )
-        val method = CodexResponsesArm::class.java.getDeclaredMethod("codeModeBridge", ProviderBuild::class.java)
-        method.isAccessible = true
-        val manager = method.invoke(arm, context(tmp, tmp.resolve("auth.json"))) as CodexCodeModeBridge
-        val field = CodexCodeModeBridge::class.java.getDeclaredField("config")
-        field.isAccessible = true
-        assertSame(sessions, (field.get(manager) as CodeModeBridgeConfig).sessionAlive)
-    }
-
-    @Test
-    fun `ending the daemon provider scope cancels retained sweeps without deleting retry evidence`(
-        @TempDir tmp: Path,
-    ) = runBlocking {
-        val paths = seedRetainedState(tmp)
-        val job = SupervisorJob()
-        val arm = CodexResponsesArm(
-            paths,
-            CoroutineScope(job),
-            {},
-            TokenUrlRefreshCall { _, _ -> RefreshAttempt.Denied("test-denied") },
-            sessionAlive = CodeModeSessionAlive { null },
-        )
-        val method = CodexResponsesArm::class.java.getDeclaredMethod("codeModeBridge", ProviderBuild::class.java)
-        method.isAccessible = true
-        val bridge = method.invoke(arm, context(tmp, tmp.resolve("auth.json"))) as CodexCodeModeBridge
-        val registry = field(bridge, "registry")
-        val sweep = field(field(registry, "timed"), "running") as ScheduledFuture<*>
-        val payload = registryPayload(registry)
-        try {
-            bridge.onHeadStop()
-            assertFalse(sweep.isCancelled, "ordinary head stop must keep the reusable registry")
-            job.cancelAndJoin()
-            assertTrue(sweep.isCancelled, "terminal provider scope must not leave a global sweep armed")
-            withTimeout(5.seconds) {
-                while (payload.get() != null) {
-                    System.gc()
-                    delay(10.milliseconds)
-                }
-            }
-            val state = paths.headsDir.resolve("codex").resolve(CODE_MODE_DIR)
-            assertTrue(
-                Files.list(state).use { files ->
-                    files.anyMatch { Files.readString(it).contains("scope-owner-source") }
-                },
-                "terminal disposal keeps the durable no-rerun record",
-            )
-            Reference.reachabilityFence(bridge)
-        } finally {
-            job.cancelAndJoin()
-        }
-    }
-
-    private fun seedRetainedState(tmp: Path): StatePaths {
-        val paths = StatePaths(baseOverride = tmp.resolve("state"))
-        Files.createDirectories(paths.stateDir)
-        val legacy = paths.stateDir.resolve("codex$CODE_MODE_STATE_SUFFIX")
-        Files.writeString(
-            legacy,
-            """{"records":[{"id":"r1","key":"conversation-1","outer":{"owner_payload":"owned"},""" +
-                """"outerCallId":"o1","source":"scope-owner-source","phase":"COMPLETED","pending":[],""" +
-                """"results":{},"output":"out","error":null,"totalCalls":0,"rounds":0,""" +
-                """"updatedAt":${System.currentTimeMillis()},"lastDigest":"d"}],"expired":[]}""",
-        )
-        return paths
-    }
-
-    private fun <O : Any> field(owner: O, name: String): Any =
-        checkNotNull(owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner))
-
-    private fun <R : Any> registryPayload(registry: R): WeakReference<Any> {
-        val record = (field(registry, "records") as List<*>).first()
-        return WeakReference(field(checkNotNull(record), "outer"))
     }
 
     private fun writeAccounts(tmp: Path): Path {

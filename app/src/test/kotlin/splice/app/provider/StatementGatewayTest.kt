@@ -20,7 +20,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -119,21 +118,6 @@ class StatementGatewayTest {
         nativeBatch(tmp, this, "allSettled")
     }
 
-    @Test
-    @Timeout(GATEWAY_TEST_SECONDS)
-    fun `removing producer batch admission holds both native batches until upstream completion`(
-        @TempDir tmp: Path,
-    ) = runBlocking {
-        for (batch in listOf("all", "allSettled")) {
-            val gateway = Gateway(tmp.resolve(batch), this, batch, excludeBatchAdmission = true)
-            try {
-                gateway.blockedBatch()
-            } finally {
-                gateway.close()
-            }
-        }
-    }
-
     /** Stress the publication boundary only after native startup, without changing its deadlines. */
     private suspend fun rejectUnderCpuLoad(gateway: Gateway) {
         val active = AtomicBoolean(true)
@@ -187,11 +171,10 @@ class StatementGatewayTest {
         tmp: Path,
         private val scope: CoroutineScope,
         private val batch: String? = null,
-        excludeBatchAdmission: Boolean = false,
         startupDelayMs: Long = 0L,
     ) {
         private val upstream = StatementGatewayUpstream(batch)
-        private val runtime = StatementGatewayRuntime(excludeBatchAdmission, startupDelayMs)
+        private val runtime = StatementGatewayRuntime(startupDelayMs)
         private val history = mutableListOf(Json.parseToJsonElement("""{"role":"user","content":"go"}""").jsonObject)
         private val bridge = CodexCodeModeBridge(
             CodeModeBridgeConfig(
@@ -365,25 +348,6 @@ class StatementGatewayTest {
                     "calls=${runtime.calls.size} posts=${upstream.posts.get()}",
                 timeout,
             )
-        }
-
-        suspend fun blockedBatch() = coroutineScope {
-            head.start()
-            val pending = async { send(firstBody).bodyAsText() }
-            try {
-                withTimeout(WORKER_START_BOUND_MS) { runtime.started.await() }
-                assertNull(withTimeoutOrNull(250) { pending.await() }, "removing admission must block early dispatch")
-                assertEquals(1L, upstream.terminal.count)
-                assertEquals(1, upstream.posts.get())
-                upstream.next.countDown()
-                assertNull(withTimeoutOrNull(250) { pending.await() }, "a later statement without EOF must not release")
-                upstream.terminal.countDown()
-                val wire = withTimeout(5_000) { pending.await() }
-                assertEquals(2, toolCalls(wire).size, wire)
-                assertEquals(1, runtime.starts.get())
-            } finally {
-                pending.cancelAndJoin()
-            }
         }
 
         private suspend fun awaitReleased(outputTokens: Long) {

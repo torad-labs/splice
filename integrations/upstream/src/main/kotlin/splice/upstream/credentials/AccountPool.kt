@@ -129,13 +129,7 @@ public class AccountPool(
         // the in-monitor selection below reads the cache, never the credential file.
         val current = liveMembership
         current.accounts.forEach { it.refreshCredentialEvidence() }
-        val caller = CallerLogin(
-            callerCredentialKey,
-            callerCredentialKey?.let { key ->
-                current.accounts.singleOrNull { it.auth.observedCredentialKey() == key }?.label
-            },
-            sessionId,
-        )
+        val caller = CallerLogin(callerCredentialKey, sessionId, current.accounts)
         if (sessionId == null) {
             return synchronized(statelessLock) {
                 val chosen = selected(statelessPrevious, at, excluded, current, caller)
@@ -160,8 +154,7 @@ public class AccountPool(
         current: AccountMembership,
         caller: CallerLogin,
     ): Pair<Selection, SessionAccount?> {
-        val preferred = caller.label.takeIf { caller.session == null || caller.key != previous?.callerKey }
-        val chosen = choose(previous?.label.takeIf { caller.session != null }, at, excluded, current, preferred)
+        val chosen = choose(caller.continuesFrom(previous), at, excluded, current, caller.preferred(previous))
             ?: return Selection.Exhausted(AccountAvailability.earliestReset(current.accounts, at)) to null
         // A new session starts relative to primary even when its credential is missing: choosing
         // a backup is cache-cold on that first turn and updates the head-wide last-switch notice.
@@ -174,7 +167,7 @@ public class AccountPool(
         val session = SessionAccount(
             chosen.account.label,
             moved ?: previous?.lastSwitch,
-            caller.key ?: previous?.callerKey,
+            caller.remembered(previous),
         )
         return selection to session
     }
@@ -355,7 +348,25 @@ public class AccountPool(
         val lease: AccountCredentialEligibility.Lease,
     )
 
-    private data class CallerLogin(val key: String?, val label: String?, val session: String?)
+    /** The login the caller presented, and what it decides for one selection: which account it asks for, whether the
+     *  session carries its history into the choice, and which login the session remembers afterwards. A call without
+     *  a session has no history to carry and nothing to remember it by. */
+    private class CallerLogin(private val key: String?, private val session: String?, accounts: List<PoolAccount>) {
+        private val label: String? = key?.let { presented ->
+            accounts.singleOrNull { it.auth.observedCredentialKey() == presented }?.label
+        }
+
+        /** The account this login names, unless the session already acted on this same login: a changed login takes
+         *  precedence over automatic stickiness, an unchanged one has had its turn. */
+        fun preferred(previous: SessionAccount?): String? =
+            label.takeIf { session == null || key != previous?.callerKey }
+
+        /** The label the choice starts from: the session's last account, never a stateless call's. */
+        fun continuesFrom(previous: SessionAccount?): String? = previous?.label.takeIf { session != null }
+
+        /** The login the session records: this one when presented, else the one it already had. */
+        fun remembered(previous: SessionAccount?): String? = key ?: previous?.callerKey
+    }
 
     private data class SessionAccount(val label: String, val lastSwitch: AccountSwitch?, val callerKey: String? = null)
 }

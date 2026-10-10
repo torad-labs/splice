@@ -334,6 +334,13 @@ private val SHIPPED_SITES: Map<String, Map<String, Int>> = mapOf(
     "features/sessions/src/main/kotlin/splice/sessions/teams/TeamStore.kt" to mapOf("writeAtomic0600(" to 2),
     "features/turns/src/main/kotlin/splice/head/compact/Compact.kt" to mapOf("JsonlSink.appendLine(" to 1),
     "features/turns/src/main/kotlin/splice/head/compaction/CompactionRecordings.kt" to mapOf("writeAtomic0600(" to 1),
+    // The history-window cut rewrites the straddling generation in place: a 0600 sibling, the kept rows copied into
+    // it, then one atomic move over the original. Three calls, one rewrite.
+    "features/turns/src/main/kotlin/splice/head/perf/HistoryPrune.kt" to mapOf(
+        "createNew0600(" to 1,
+        "Files.newBufferedWriter(" to 1,
+        "Files.move(" to 1,
+    ),
     "features/turns/src/main/kotlin/splice/head/perf/PerfStats.kt" to mapOf(
         "Files.copy(" to 1,
         "JsonlSink.appendLine(" to 1,

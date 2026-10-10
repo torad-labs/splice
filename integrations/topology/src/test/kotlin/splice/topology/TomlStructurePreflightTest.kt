@@ -33,4 +33,27 @@ internal class TomlStructurePreflightTest {
         val thrown = assertThrows(IllegalArgumentException::class.java) { TomlStructurePreflight.check(doctored) }
         assertTrue(thrown.message!!.contains("defined twice"), thrown.message)
     }
+
+    // The finding reaches the refusal and the daemon log, so it names a table and a line and never a value. A
+    // preamble line is a bare key and value the operator wrote, an unquoted API key among them.
+    @Test
+    fun `a duplicate models key in the preamble names the preamble and line and never the key written there`() {
+        val secret = "sk-live-9f8e7d6c5b4a"
+        val doctored = "api_key = $secret\nmodels = [{ id = \"a\" }]\nmodels = [{ id = \"b\" }]\n\n" +
+            "[daemon]\ncontrol_port = 4400\n"
+
+        val thrown = assertThrows(IllegalArgumentException::class.java) { TomlStructurePreflight.check(doctored) }
+
+        assertTrue("the preamble (line 1)" in thrown.message!!, thrown.message)
+        assertTrue(secret !in thrown.message!! && "api_key" !in thrown.message!!, thrown.message)
+    }
+
+    @Test
+    fun `a reopened table is named with the line where it was reopened`() {
+        val doctored = "[daemon]\ncontrol_port = 4400\n\n[daemon]\ncontrol_port = 4401\n"
+
+        val thrown = assertThrows(IllegalArgumentException::class.java) { TomlStructurePreflight.check(doctored) }
+
+        assertTrue("table [daemon] (line 4) is defined twice" in thrown.message!!, thrown.message)
+    }
 }

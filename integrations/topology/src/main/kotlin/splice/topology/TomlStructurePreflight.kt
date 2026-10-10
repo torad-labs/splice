@@ -58,21 +58,35 @@ internal object TomlStructurePreflight {
             if (header.startsWith("[") && !header.startsWith("[[")) {
                 if (!seenHeaders.add(header)) {
                     throw TopologyStructureFailure(
-                        "table $header is defined twice: TOML forbids redefining a table and ktoml " +
-                            "silently merges both bodies (a stale roster would ride the union); keep " +
-                            "one section per table",
+                        "table ${tableName(header)} (line ${lineOf(structure, sectionStart)}) " +
+                            "is defined twice: TOML forbids redefining a table and ktoml silently merges both " +
+                            "bodies (a stale roster would ride the union); keep one section per table",
                     )
                 }
             }
             if (MODELS_LINE_ASSIGNMENT.findAll(section).count() > 1) {
                 throw TopologyStructureFailure(
-                    "duplicate models key in ${header.ifEmpty { "the preamble" }}: TOML forbids it " +
+                    "duplicate models key in ${tableName(header)} (line ${lineOf(structure, sectionStart)}): " +
+                        "TOML forbids it " +
                         "and ktoml silently merges; keep exactly one models = [...] line per head",
                 )
             }
             sectionStart = end
         }
     }
+
+    /** The table a finding names: the bracketed header and nothing after it. A section that opens with a bare
+     *  key (the preamble) is named as the preamble, because its first line is a key and a value the operator
+     *  wrote, and a finding goes to the refusal and the daemon log. */
+    private fun tableName(header: String): String {
+        if (!header.startsWith("[")) return "the preamble"
+        val close = header.indexOf(']')
+        val brackets = header.takeWhile { it == '[' }.length
+        return if (close < 0) "the preamble" else header.substring(0, minOf(header.length, close + brackets))
+    }
+
+    /** The 1-based line of [offset] in the masked text, which keeps every newline of the file. */
+    private fun lineOf(structure: String, offset: Int): Int = structure.take(offset).count { it == '\n' } + 1
 
     /** ktoml collapses repeated map keys before HeadConfig can see them. Read only masked keys. */
     private fun rejectDuplicateSlots(structure: String) {

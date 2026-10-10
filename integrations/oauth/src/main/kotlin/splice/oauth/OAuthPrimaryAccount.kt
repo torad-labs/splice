@@ -3,6 +3,8 @@
 // command reads it. A rename stores a name only, the shape Claude's rename already has, because the first file can
 // be the vendor CLI's own and splice never writes its own fields into that. A remove deletes the file only when it is
 // splice's own; a file the provider config points at on purpose (auth.file) is shared, and keeps its refusal.
+// CREDENTIAL-WRITE-EXEMPT[2026-10-10]: the one file written here is the first account's name, a one-line text file
+// beside the pool; it holds no credential and no JSON, so there is nothing to merge onto.
 package splice.oauth
 
 import splice.core.config.UserHome

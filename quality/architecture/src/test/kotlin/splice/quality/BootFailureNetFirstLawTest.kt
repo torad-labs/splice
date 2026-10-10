@@ -17,7 +17,7 @@ import java.io.File
 internal object BootFailureNetFirst {
     const val MAIN_IN_APP = "splice/app/Main.kt"
     private const val INSTALL = "Thread.setDefaultUncaughtExceptionHandler(bootFailureHandler("
-    private const val PARSE = "TopologyLoader.loadOrMaterialize"
+    private const val PARSE = "TopologyLoader.loadForBoot"
 
     fun audit(source: String?, rel: String): List<String> {
         if (source == null) return listOf("$rel: missing — the daemon entry point is the subject of this law")
@@ -72,6 +72,6 @@ class BootFailureNetFirstLawTest {
 
     private companion object {
         const val INSTALL_LINE = "Thread.setDefaultUncaughtExceptionHandler(bootFailureHandler(bootstrapPaths))\n"
-        const val PARSE_LINE = "val loaded = TopologyLoader.loadOrMaterializeWithDigest(topologyPath)\n"
+        const val PARSE_LINE = "val loaded = TopologyLoader.loadForBoot(topologyPath)\n"
     }
 }

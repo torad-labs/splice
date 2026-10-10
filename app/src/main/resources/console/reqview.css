@@ -133,6 +133,7 @@ mark { background: var(--key-light); color: #241d14; border-radius: .2rem; paddi
 .gone { display: flex; align-items: center; gap: 1rem; padding: 1.2rem 1.3rem; border: .12rem dashed var(--track-line); border-radius: var(--r-in); }
 .gone .state svg { width: 1.1rem; height: 1.1rem; }
 .gone .act { margin-left: auto; }  /* Start saving, Keep longer: the way out, at the box's end */
+.gone .said { margin-left: auto; font: 500 1rem/1 var(--font-name); color: var(--text-body); white-space: nowrap; }  /* Start saving's answer, in Settings' voice: a confirmation, not an alarm */
 .gone .sub { font: 500 .98rem/1 var(--font-data); color: var(--text-mute); }
 
 .attempt .two.one { grid-template-columns: minmax(0, 1fr); }

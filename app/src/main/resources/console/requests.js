@@ -39,7 +39,7 @@ const RV_KEPT = REQVIEW.kept; // whether a state has records to draw, as the sha
 // A provider's own failure takes the glyph of the FACT it shares: a rate limit is the limit, an api_error is the
 // retries splice spent on it, and a refused credential is the credential glyph (its word, "Credentials refused",
 // is what separates it from being signed out). The rest are the plain bang.
-const GLYPH_OF = { "error:cancelled": "bang", "error:restarted": "bang", "error:turn-cap": "bang", "error:plan-limit": "limit", "error:rate-limited": "limit",
+const GLYPH_OF = { "error:cancelled": "bang", "error:restarted": "bang", "error:at-capacity": "limit", "error:turn-cap": "bang", "error:plan-limit": "limit", "error:rate-limited": "limit",
   "error:all-accounts-exhausted": "limit", "error:budget-blocked": "limit", "error:auth-missing": "signout", "error:upstream-failed": "retries",
   "failure:overloaded_error": "retries", "error:conn-reset": "retries", "error:upstream-frame-too-large": "bang", empty_model: "bang", "error:unexpected": "bang",
   "failure:rate_limit_error": "limit", "failure:api_error": "retries", "failure:authentication_error": "signout",
@@ -50,7 +50,7 @@ const OUTCOME = Object.fromEntries(Object.keys(OUTCOME_WORD).concat(["ok", "empt
 // readable (kit.js tagWord), because a person can act on "Context window error" and can act on nothing at all with
 // "Failed". "Failed" is the Outcome switch's label, which counts every failure, and belongs nowhere else on this page.
 // The endings splice decides itself, whose outcome word already says who and why: no provider line is drawn for them
-const SPLICE_ENDED = new Set(["error:restarted", "error:budget-blocked", "error:all-accounts-exhausted", "error:turn-cap", "error:cancelled"]);
+const SPLICE_ENDED = new Set(["error:restarted", "error:at-capacity", "error:budget-blocked", "error:all-accounts-exhausted", "error:turn-cap", "error:cancelled"]);
 const outcomeOf = (r) => OUTCOME[r.outcome] || { cls: "fail", word: tagWord(r.outcome) ?? "", glyph: "bang" };
 // What sits beside the word: the reset a spent window named, or the retries splice ran inside the request. THE ROW
 // DECIDES, not the tag: splice writes the reset when it turned a request away because every account was spent
@@ -97,6 +97,8 @@ const SEARCH_MIN = 2; // the shortest text the search route reads (TraceSearch.k
 let state = {
   loading: true, error: null, heads: [], providerOf: {}, modelLabel: {}, sessions: {}, keySeen: {},
   rows: [], matched: 0, capped: false, facets: { models: [], accounts: [], sessions: [] }, headErrors: [], sessionsError: null, traceDays: null, capture: {}, config: null,
+  // what Start saving answered, per command: { word, failed }, the word that stands beside "Not saved" once pressed
+  saving: {},
   // what the search answered: how far back it read, why it stopped, and the turns it could not reach
   search: null,
   // when the window lists nothing: the nearest wider window that has matches, and how many (readWider)
@@ -558,11 +560,28 @@ function goneHtml(r, st) {
     const days = state.capture[r.head]?.days;
     return line(`Older than ${n0(days)} ${days === 1 ? "day" : "days"}`, `<a class="act quiet" href="settings.html#data">Keep longer</a>`);
   }
-  // Not saved, alone: the switch that would save the next one takes effect only after a restart, and a page draws only
-  // settings the daemon takes live (knobs.js), so Start saving waits until the switch applies live (fin, Marlin, Oct 10)
-  return line("Not saved");
+  // Not saved: while the command is still not saving, the button that starts it; once it saves, the word alone. The
+  // switch applies to the command's next request with no restart (builder2, 993f070cb), so the button is back.
+  const said = state.saving[r.head];
+  const act = said ? `<span class="${said.failed ? "detail" : "said"}">${esc(said.word)}</span>`
+    : state.capture[r.head]?.on === false ? `<button class="act quiet" data-act="startsave" data-h="${esc(r.head)}">Start saving</button>` : "";
+  return line("Not saved", act);
 }
 
+
+/** Start saving: this command's Prompts and answers on, the same write Your data makes (PUT /capture). The daemon
+ *  takes it on the command's next request and says so (restart_required false, CaptureRoutes.kt); a daemon that still
+ *  answers restart_required is told as it is. */
+async function startSaving(head) {
+  state.saving[head] = { word: "Saving" };
+  render();
+  const res = await API.put(`/api/heads/${encodeURIComponent(head)}/capture`, { enabled: true });
+  if (!res.ok) { state.saving[head] = { word: refusalOf(res, "Saving could not be started"), failed: true }; render(); return; }
+  state.capture[head] = { ...state.capture[head], on: true };
+  // Settings' word for a change the daemon took live (knobs.js), so the same fact reads the same on both pages
+  state.saving[head] = { word: res.body?.restart_required ? "Saves after splice restarts" : "Applied" };
+  render();
+}
 
 /** The records as the view reads them: what Claude Code sent, every send upstream on the rail, and what came back. */
 function traceFrom(records, r) {
@@ -706,6 +725,7 @@ document.addEventListener("click", (e) => {
     case "set": ui[m] = v || null; if (m === "win") ui.win = v; ui.menu = null; ui.n = 200; again(); break;
     case "unset": ui[m] = null; if (m === "from") ui.to = null; ui.n = 200; again(); break;
     case "outcome": ui.outcome = v; ui.n = 200; again(); break;
+    case "startsave": startSaving(el.dataset.h); break;
     case "why": ui.why = ui.why === v ? null : v; ui.n = 200; again(); break;
     case "widen": ui.win = v; ui.n = 200; again(); break;
     case "toggle": ui[m] = !ui[m]; ui.n = 200; again(); break;

@@ -24,14 +24,8 @@
 package splice.core.perf
 
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
-
-// why: a window is written in days and compared against epoch millis, in one place for both files.
-private const val DAY_MS = 24L * 60 * 60 * 1000
-
-// why: the console reads the window in hours to size the week bar when the buckets do not fill it.
-private const val HOURS_PER_DAY = 24L
+import kotlin.time.Duration.Companion.days
 
 /** 35 days: what a FRESH install keeps (written into its starter splice.toml, so the person can
  *  read and change the number that governs their disk). A longest month plus the days it is read
@@ -46,7 +40,7 @@ public const val HISTORY_DEFAULT_DAYS: Int = 35
 /** The literal word that keeps everything, in splice.toml and on the wire. A word rather than a
  *  number because every number is a window, and the one choice that is not a window should not have
  *  to be spelled as one. */
-public const val HISTORY_FOREVER: String = "forever"
+internal const val HISTORY_FOREVER: String = "forever"
 
 /** How far back splice keeps a head's history: its hourly totals and its request records.
  *
@@ -69,11 +63,11 @@ public data class HistoryWindow(
     public fun cutoffMs(nowMs: Long): Long? = when (days) {
         null -> null
         0 -> Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
-        else -> nowMs - days * DAY_MS
+        else -> nowMs - days * 1.days.inWholeMilliseconds
     }
 
     /** The same window in the unit the console reads it in, or null when it keeps everything. */
-    public val hours: Long? get() = days?.let { it * HOURS_PER_DAY }
+    public val hours: Long? get() = days?.let { it * 1.days.inWholeHours }
 
     /** How it is written in splice.toml and answered on the wire. */
     public val text: String get() = days?.toString() ?: HISTORY_FOREVER
@@ -84,7 +78,7 @@ public data class HistoryWindow(
  *  keeps what it had, the way a bool knob's refused word does ([BoolKnobWords]'s shape, V4-286).
  *  A refusal matters more here than for most knobs: the knob governs deletion, and a typo that read
  *  as a short window would delete history nobody asked it to. */
-public object HistoryWindowWords {
+internal object HistoryWindowWords {
     /** The window a word names, or null when the word names none. */
     public fun of(raw: String): HistoryWindow? {
         val word = raw.trim()

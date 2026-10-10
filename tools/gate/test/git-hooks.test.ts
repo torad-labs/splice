@@ -201,7 +201,15 @@ async function captured<T>(fn: () => Promise<T>): Promise<{ result: T; text: str
   }
 }
 
-const pushOf = (sha: string): string => `refs/heads/feat/x ${sha} refs/heads/feat/x 0000000000000000000000000000000000000000\n`;
+/** git's stdin names the LOCAL ref it read the tip from, and the hook re-reads that ref when the judgement ends, so a
+ *  fixture names its own branch rather than one that does not exist. */
+const pushOf = (root: string, sha: string): string =>
+  `${branchRef(root)} ${sha} refs/heads/feat/x 0000000000000000000000000000000000000000\n`;
+
+/** The fixture's own branch, whatever `git init` named it. */
+function branchRef(root: string): string {
+  return Bun.spawnSync(["git", "symbolic-ref", "HEAD"], { cwd: root, stdout: "pipe" }).stdout.toString().trim();
+}
 /** The fixtures have no ladder: a pre-push test that is not about the ladder injects this empty one. */
 const NO_LEGS: Leg[] = [];
 
@@ -337,7 +345,7 @@ describe("pre-push judges the tip", () => {
     writeFile(root, TARGET, VIOLATION);
     git(root, ["add", TARGET]);
     commit(root, "chore(test): probe tip");
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(1);
     expect(text).toContain("PRE-PUSH: FAIL — judged the pushed sha");
   });
@@ -350,7 +358,7 @@ describe("pre-push judges the tip", () => {
     writeFile(root, TARGET, CLEAN);
     git(root, ["add", TARGET]);
     commit(root, "chore(test): fixed tip");
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(0);
     expect(text).toContain("PRE-PUSH: PASS — judged the pushed sha");
   });
@@ -366,7 +374,7 @@ describe("pre-push judges the tip", () => {
       trees.push(at ?? "");
       return compiler(root)(tasks, at);
     };
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null, legs: NO_LEGS }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate, openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(0);
     expect(text).toContain("judged the pushed sha");
     expect(trees.length).toBe(1);
@@ -382,8 +390,28 @@ describe("pre-push judges the tip", () => {
     writeFile(root, TARGET, CLEAN);
     git(root, ["add", TARGET]);
     commit(root, "chore(test): fixed tip");
-    const { result } = await captured(() => prePush(lay(root), pushOf(violating), { gate: compiler(root), openRun: () => null, legs: NO_LEGS }));
+    const { result } = await captured(() => prePush(lay(root), pushOf(root, violating), { gate: compiler(root), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(1);
+  });
+
+  test("RED: a peer's commit during the judgement moves the branch, and the push is refused rather than carrying it", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): the tip this push judges");
+    const judged = head(root);
+    // The peer commits while gradle runs, exactly as a shared checkout lets it: git reads the ref again at the end of
+    // the push, so what lands is this later commit and not the one the gate judged.
+    const gate: GateRunner = async (...args) => {
+      writeFile(root, TARGET, CLEAN.replace("Probe", "Peer"));
+      git(root, ["add", TARGET]);
+      commit(root, "chore(test): a peer's commit, never judged");
+      return await compiler(root)(...args);
+    };
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, judged), { gate, openRun: () => null, legs: NO_LEGS }));
+    expect(result).toBe(1);
+    expect(text).toContain("the branch moved while the gate judged");
+    expect(text).toContain(`not the judged ${judged.slice(0, 7)}`);
   });
 });
 
@@ -400,7 +428,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     git(root, ["add", TARGET]);
     commit(root, "chore(test): one module");
     const calls: string[][] = [];
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(0);
     expect(calls).toEqual([[":core:check", "lawSuites"]]);
     expect(text).toContain("; scope: no legs; gradle: check of :core, lawSuites; PublicSourceNamesNoHostToolTest in lawSuites");
@@ -412,7 +440,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     git(root, ["add", TARGET]);
     commit(root, "chore(test): one module");
     const calls: string[][] = [];
-    const { result } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
+    const { result } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(0);
     expect(calls).toEqual([[":core:check", "lawSuites"]]);
   });
@@ -421,7 +449,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const root = wallsRepo();
     docsCommit(root);
     const calls: string[][] = [];
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(0);
     expect(calls).toEqual([]);
     expect(text).toContain("PRE-PUSH: PASS — judged the pushed sha");
@@ -434,7 +462,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     git(root, ["add", TARGET]);
     commit(root, "chore(test): new branch");
     const calls: string[][] = [];
-    expect(await prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS })).toBe(0);
+    expect(await prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS })).toBe(0);
     expect(calls[0]).toContain(":core:check");
   });
 
@@ -445,7 +473,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     git(root, ["add", TARGET]);
     commit(root, "chore(test): new branch");
     const calls: string[][] = [];
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(1);
     expect(calls).toEqual([]);
     expect(text).toContain("pre-push: ✗ cannot scope the push:");
@@ -455,7 +483,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const root = wallsRepo();
     docsCommit(root);
     const calls: string[][] = [];
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root, calls), openRun: () => null }));
     expect(result).toBe(1);
     expect(calls).toEqual([]);
     expect(text).toContain("pre-push: ✗ cannot scope the push:");
@@ -466,7 +494,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const root = wallsRepo();
     docsCommit(root);
     const bare: Leg[] = [{ task: "bareRow", command: ["true"] }];
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: bare }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root), openRun: () => null, legs: bare }));
     expect(result).toBe(1);
     expect(text).toContain("ladder rows declare no inputs, so the push cannot be scoped: bareRow");
   });
@@ -475,7 +503,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     const root = wallsRepo();
     docsCommit(root);
     const red: Leg[] = [{ task: "redLeg", command: ["bun", "-e", "process.exit(3)"], inputs: ["**"] }];
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root), openRun: () => null, legs: red }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root), openRun: () => null, legs: red }));
     expect(result).toBe(1);
     expect(text).toContain("PRE-PUSH: FAIL — judged the pushed sha ");
     expect(text).toContain("; scope: legs redLeg; gradle: none (docs only)");
@@ -487,7 +515,7 @@ describe("pre-push scopes the gate to the pushed diff", () => {
     docsCommit(root);
     const calls: string[][] = [];
     const green: Leg[] = [{ task: "greenLeg", command: ["bun", "-e", "process.exit(0)"], inputs: ["**"] }];
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate: compiler(root, calls), openRun: () => null, legs: green }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate: compiler(root, calls), openRun: () => null, legs: green }));
     expect(result).toBe(0);
     expect(calls).toEqual([]);
     expect(text).toContain("; scope: legs greenLeg; gradle: none (docs only)");
@@ -507,7 +535,7 @@ describe("a collision reruns the tasks once, and a second collision fails", () =
       calls.push([...tasks]);
       return calls.length === 1 ? { status: 1, output: EOF_TRACE } : { status: 0, output: "BUILD SUCCESSFUL\n" };
     };
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null, legs: NO_LEGS, rivalLive: () => true }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate, openRun: () => null, legs: NO_LEGS, rivalLive: () => true }));
     expect(result).toBe(0);
     expect(calls.length).toBe(2);
     expect(text).toContain("passed on the rerun after a collision");
@@ -523,7 +551,7 @@ describe("a collision reruns the tasks once, and a second collision fails", () =
       calls.push([...tasks]);
       return { status: 1, output: RESULTS_TRACE };
     };
-    const { result, text } = await captured(() => prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null, legs: NO_LEGS, rivalLive: () => true }));
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, head(root)), { gate, openRun: () => null, legs: NO_LEGS, rivalLive: () => true }));
     expect(result).toBe(1);
     expect(calls.length).toBe(2);
     expect(text).toContain("a collision again on the rerun");
@@ -539,7 +567,7 @@ describe("a collision reruns the tasks once, and a second collision fails", () =
       calls.push([...tasks]);
       return { status: 1, output: COMPILE_RED };
     };
-    expect(await prePush(lay(root), pushOf(head(root)), { gate, openRun: () => null, legs: NO_LEGS })).toBe(1);
+    expect(await prePush(lay(root), pushOf(root, head(root)), { gate, openRun: () => null, legs: NO_LEGS })).toBe(1);
     expect(calls.length).toBe(1);
   });
 

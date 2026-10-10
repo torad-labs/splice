@@ -497,7 +497,7 @@ export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}): 
 async function judgeTip(
   lay: Layout,
   tip: string,
-  refs: readonly { tip: string; remote: string }[],
+  refs: readonly PushedRef[],
   deps: HookDeps,
   started: number,
 ): Promise<number> {
@@ -528,7 +528,7 @@ async function judgeIn(
   lay: Layout,
   root: string,
   head: string,
-  refs: readonly { tip: string; remote: string }[],
+  refs: readonly PushedRef[],
   deps: HookDeps,
   started: number,
 ): Promise<number> {
@@ -583,6 +583,12 @@ async function judgeIn(
   const failedLegs = await direct;
   const elapsed = seconds(started);
   const gradleRed = judged !== undefined && judged.status !== 0;
+  const moved = gradleRed || failedLegs.length > 0 ? [] : movedRefs(lay.repoRoot, refs, head);
+  if (moved.length > 0) {
+    console.log(`PRE-PUSH: FAIL — judged ${judgedWhat}${scopeClause}`);
+    console.error(`pre-push: ✗ the branch moved while the gate judged: ${moved.join("; ")} — push again so the gate judges what git will send`);
+    return 1;
+  }
   if (!gradleRed && failedLegs.length === 0) {
     const rerun = judged?.reran ? "; passed on the rerun after a collision" : "";
     console.log(`PRE-PUSH: PASS — judged ${judgedWhat}${rerun}${scopeClause}`);
@@ -596,15 +602,45 @@ async function judgeIn(
   return 1;
 }
 
-/** The refs a push moves, from git's stdin: the tip each one points at and the remote sha it moves from (zero for a new
- *  branch). A deletion has no tip and is not here. */
-function pushedRefs(stdin: string): { tip: string; remote: string }[] {
+/** One ref a push moves: the LOCAL ref git read the tip from (a ref name, `HEAD`, or a raw sha when the refspec named
+ *  one), the tip it points at, and the remote sha it moves from (zero for a new branch). */
+export interface PushedRef {
+  readonly local: string;
+  readonly tip: string;
+  readonly remote: string;
+}
+
+/** The refs a push moves, from git's stdin. A deletion has no tip and is not here. */
+function pushedRefs(stdin: string): PushedRef[] {
   return stdin
     .split("\n")
     .map((line) => line.trim().split(/\s+/))
     .filter((fields) => fields.length === 4)
-    .map((fields) => ({ tip: fields[1] ?? "", remote: fields[3] ?? "" }))
+    .map((fields) => ({ local: fields[0] ?? "", tip: fields[1] ?? "", remote: fields[3] ?? "" }))
     .filter((ref) => !ZERO_SHA.test(ref.tip));
+}
+
+/** The sha a local ref resolves to now, or undefined when git cannot say. */
+function refTipNow(root: string, ref: string): string | undefined {
+  const read = git(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+  const text = read.stdout.toString("utf8").trim();
+  return read.status === 0 && text.length > 0 ? text : undefined;
+}
+
+/** THE MOVED-TIP CHECK. A judgement takes minutes, and the seats share one checkout: a peer committing meanwhile moves
+ *  the very ref this push is about. Measured on 2026-10-10: a push that started at 12:25 was judged and reported as
+ *  6aa5549, a peer committed 6f66b0c in the checkout at 12:30, and origin took 6f66b0c at 12:33 — 6aa5549 never
+ *  existed on the remote, which gave it no push event and no workflow run, so a commit nothing judged landed. The
+ *  judgement is only worth what the push sends, so a ref that no longer points at the judged tip REFUSES here; an
+ *  explicit sha refspec resolves to itself and passes. */
+function movedRefs(root: string, refs: readonly PushedRef[], judged: string): string[] {
+  const moved: string[] = [];
+  for (const ref of refs) {
+    const now = refTipNow(root, ref.local);
+    if (now === undefined) moved.push(`${ref.local} cannot be read, so the tip this push would send cannot be confirmed`);
+    else if (now !== judged) moved.push(`${ref.local} is now ${now.slice(0, 7)}, not the judged ${judged.slice(0, 7)}`);
+  }
+  return moved;
 }
 
 /** The paths the pushed refs change, each ref against the sha it moves from. A new branch has no such sha, so it is

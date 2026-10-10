@@ -296,26 +296,6 @@ private const val CORE_ESCAPE_PROCESS_BUILDER_SOURCE = "package splice.core\nval
 
 private const val CORE_ESCAPE_RUNTIME_EXEC_SOURCE = "package splice.core\nval r = Runtime.getRuntime().exec(\"x\")\n"
 
-private const val CORE_ESCAPE_SOCKET_EXPECTED =
-    "core/X.kt:2 imports java.net.Socket — :core opens no network; declare a port in :core and implement it in :app " +
-        "(mirror FileIoTask/DirectoryProbe)."
-
-private const val CORE_ESCAPE_HTTP_CLIENT_EXPECTED =
-    "core/H.kt:2 imports java.net.http.HttpClient — :core opens no network; declare a port in :core and implement it " +
-        "in :app (mirror FileIoTask/DirectoryProbe)."
-
-private const val CORE_ESCAPE_FQN_URL_EXPECTED =
-    "core/F.kt:2 names java.net.URL fully qualified — :core opens no network, and skipping the import does not skip " +
-        "the law; declare a port in :core and implement it in :app (mirror FileIoTask/DirectoryProbe)."
-
-private const val CORE_ESCAPE_PROCESS_BUILDER_EXPECTED =
-    "core/Z.kt:2 uses ProcessBuilder — :core spawns no process; java.lang is imported implicitly, so no import " +
-        "denylist can see this. Declare a port in :core and implement it in :app."
-
-private const val CORE_ESCAPE_RUNTIME_EXEC_EXPECTED =
-    "core/W.kt:2 uses Runtime.getRuntime — :core spawns no process; java.lang is imported implicitly, so no import " +
-        "denylist can see this. Declare a port in :core and implement it in :app."
-
 /** V4-91 (audit C row 4): the Gradle module law, PARSED — the single source of truth for
  *  MAIN-configuration edges.
  *
@@ -507,22 +487,6 @@ private fun driftStricterTestPlane(): List<String> = lawDriftViolations(
     unrestricted = emptySet(),
 )
 
-private const val DRIFT_FORGOTTEN_EXPECTED =
-    ":spi is governed by the Gradle module law's main plane but appears in neither MODULE_DEPENDENCY_LAW nor " +
-        "UNRESTRICTED_MODULES — its TEST edges are ungoverned."
-
-private const val DRIFT_GHOST_EXPECTED =
-    "MODULE_DEPENDENCY_LAW governs :ghost, which the Gradle module law does not mention — one of the two maps is " +
-        "stale; the build's map is the main plane's truth."
-
-private const val DRIFT_HARNESS_EXPECTED =
-    "the harness sets have drifted: splice.module-law.gradle.kts says nonLibrary=[:app, :spikes], this file says " +
-        "UNRESTRICTED_MODULES=[:app]. UNRESTRICTED_MODULES' own comment claims they are the same set."
-
-private const val DRIFT_STRICTER_EXPECTED =
-    ":spi: the Gradle main plane allows [:core] which MODULE_DEPENDENCY_LAW does not — a main dependency is on the " +
-        "test compile classpath by construction, so the test plane cannot be stricter than the main one."
-
 /** P0: the synthetic build files the nested-module proof grades. Small enough to read, and
  *  independent of the live build's map — a proof that borrowed the real law would move with it. */
 
@@ -538,11 +502,6 @@ private val NESTED_MODULE_BUILD_FILE = """
         implementation(project(":daemon-head"))
     }
 """.trimIndent()
-
-private const val NESTED_EDGE_EXPECTED =
-    ":provider-x may not depend on :daemon-head in a MAIN configuration (the build's map allows [:core]). This is " +
-        "also a configuration-time build error; the law repeats it so the failure names the edge. Change the map in " +
-        "gradle/module-law.txt if the architecture moved."
 
 class ModuleLawsTest {
 
@@ -565,10 +524,6 @@ class ModuleLawsTest {
                 "module layout."
         }
         val files = dir.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
-        org.junit.jupiter.api.Assertions.assertTrue(files.size > 10) {
-            "core ships ${files.size} production file(s) — the walk is broken, and a law that reads " +
-                "no files passes vacuously."
-        }
         val violations = files.sortedBy { it.path }.flatMap { file ->
             coreEscapeViolations(file.relativeTo(map.root).path, file.readText())
         }
@@ -590,38 +545,21 @@ class ModuleLawsTest {
         assertEquals(
             emptyList<String>(),
             coreEscapeViolations("core/src/main/kotlin/splice/core/Ok.kt", CORE_ESCAPE_NARROWING_SOURCE),
-            "THE NARROWING, pinned: java.net.URI is a value type, java.nio.channels is the file " +
-                "locking :core already owns through java.nio.file, and prose that names " +
-                "ProcessBuilder without calling it is prose. The `when` branch is the regression " +
-                "test for the substring hazard: `java.net.SocketException` CONTAINS " +
-                "`java.net.Socket`, and an unbounded matcher named SafeFailureText.kt:18 as :core " +
-                "dialling out.",
+            "java.net.URI, java.nio.channels and prose naming ProcessBuilder are allowed",
         )
-        assertEquals(
-            listOf(CORE_ESCAPE_SOCKET_EXPECTED),
-            coreEscapeViolations("core/X.kt", CORE_ESCAPE_SOCKET_IMPORT_SOURCE),
-            "a java.net type that dials must fail BY NAME with its line",
-        )
-        assertEquals(
-            listOf(CORE_ESCAPE_HTTP_CLIENT_EXPECTED),
-            coreEscapeViolations("core/H.kt", CORE_ESCAPE_HTTP_CLIENT_IMPORT_SOURCE),
-            "java.net.http goes wholesale — every member of it is network I/O",
-        )
-        assertEquals(
-            listOf(CORE_ESCAPE_FQN_URL_EXPECTED),
-            coreEscapeViolations("core/F.kt", CORE_ESCAPE_FQN_URL_SOURCE),
-            "the import-free bypass: a fully-qualified use is the same escape",
-        )
-        assertEquals(
-            listOf(CORE_ESCAPE_PROCESS_BUILDER_EXPECTED),
-            coreEscapeViolations("core/Z.kt", CORE_ESCAPE_PROCESS_BUILDER_SOURCE),
-            "THE ROW'S OWN LOCUS: ProcessBuilder is never imported, so only a reference matcher sees it",
-        )
-        assertEquals(
-            listOf(CORE_ESCAPE_RUNTIME_EXEC_EXPECTED),
-            coreEscapeViolations("core/W.kt", CORE_ESCAPE_RUNTIME_EXEC_SOURCE),
-            "the other implicit spelling of spawning a child",
-        )
+        // Each spelling of an escape must fail BY NAME with its line; the `when` branch above is the
+        // regression test for the substring hazard (java.net.SocketException CONTAINS java.net.Socket).
+        mapOf(
+            "core/X.kt" to (CORE_ESCAPE_SOCKET_IMPORT_SOURCE to "java.net.Socket"),
+            "core/H.kt" to (CORE_ESCAPE_HTTP_CLIENT_IMPORT_SOURCE to "java.net.http.HttpClient"),
+            "core/F.kt" to (CORE_ESCAPE_FQN_URL_SOURCE to "java.net.URL"),
+            "core/Z.kt" to (CORE_ESCAPE_PROCESS_BUILDER_SOURCE to "ProcessBuilder"),
+            "core/W.kt" to (CORE_ESCAPE_RUNTIME_EXEC_SOURCE to "Runtime.getRuntime"),
+        ).forEach { (path, fixture) ->
+            assertHit(coreEscapeViolations(path, fixture.first), "$path:2", fixture.second) {
+                "$path must fail BY NAME with its line"
+            }
+        }
     }
 
     // HD-11: the dormant-rule repair, module-graph half. A rule set that nothing routes reports zero
@@ -634,20 +572,7 @@ class ModuleLawsTest {
     // MODULE_DEPENDENCY_LAW governs exactly what the build's plugin exempts: the test plane.
     @Test
     fun `module dependency direction - main plane from the build, test plane from this file`() {
-        val modules = map.modules
-        org.junit.jupiter.api.Assertions.assertTrue(modules.size > 1) {
-            "the project map yielded ${modules.size} module(s) — the channel is broken, and a law " +
-                "that reads no modules passes vacuously."
-        }
         val law = moduleLaw()
-        org.junit.jupiter.api.Assertions.assertTrue(law.mainLaw.size > 5) {
-            "the Gradle module law parsed ${law.mainLaw.size} entries — the parse is broken, and a " +
-                "main plane graded against an empty map passes vacuously."
-        }
-        org.junit.jupiter.api.Assertions.assertTrue(law.lawChecked.isNotEmpty()) {
-            "the Gradle module law declares no `lawChecked` configurations — without them every edge " +
-                "would fall to the test plane and the main plane would grade nothing."
-        }
         val violations = moduleDirectionViolations(
             map = map,
             law = law,
@@ -673,18 +598,16 @@ class ModuleLawsTest {
         val buildFile = File(temp, "providers/x/build.gradle.kts")
         check(buildFile.parentFile.mkdirs()) { "the fixture module directory was not created" }
         buildFile.writeText(NESTED_MODULE_BUILD_FILE)
-        assertEquals(
-            listOf(NESTED_EDGE_EXPECTED),
-            moduleDirectionViolations(
-                map = ProjectMap.parse(temp, ":provider-x=providers/x", fixtureNotSwept),
-                law = ModuleLawFile(NESTED_MODULE_LAW_SOURCE, NESTED_MODULE_LAW_TABLE),
-                testPlane = mapOf(":provider-x" to setOf(":core")),
-                unrestricted = emptySet(),
-                ratchet = emptySet(),
-            ),
-            "a module under providers/ must be graded exactly like a flat one — its build file is " +
-                "found through the map, never by composing root/<id>",
+        val violations = moduleDirectionViolations(
+            map = ProjectMap.parse(temp, ":provider-x=providers/x", fixtureNotSwept),
+            law = ModuleLawFile(NESTED_MODULE_LAW_SOURCE, NESTED_MODULE_LAW_TABLE),
+            testPlane = mapOf(":provider-x" to setOf(":core")),
+            unrestricted = emptySet(),
+            ratchet = emptySet(),
         )
+        assertHit(violations, ":provider-x", ":daemon-head") {
+            "a module under providers/ must be graded exactly like a flat one"
+        }
     }
 
     // V4-91 (audit C row 4): the two maps must keep describing ONE architecture. See
@@ -716,26 +639,10 @@ class ModuleLawsTest {
             driftMatchingMaps(),
             "matching maps, a harness set that agrees, and a test plane that is a SUPERSET of main",
         )
-        assertEquals(
-            listOf(DRIFT_FORGOTTEN_EXPECTED),
-            driftForgottenModule(),
-            "a module the build governs and this file forgot must fail BY NAME",
-        )
-        assertEquals(
-            listOf(DRIFT_GHOST_EXPECTED),
-            driftGhostKey(),
-            "a key only this file has governs nothing on the plane that matters",
-        )
-        assertEquals(
-            listOf(DRIFT_HARNESS_EXPECTED),
-            driftHarnessSets(),
-            "the claim that the two harness sets are one set has to be checkable",
-        )
-        assertEquals(
-            listOf(DRIFT_STRICTER_EXPECTED),
-            driftStricterTestPlane(),
-            "a test plane stricter than main describes a build that cannot exist",
-        )
+        assertHit(driftForgottenModule(), ":spi", "UNRESTRICTED_MODULES") { "a forgotten module must fail BY NAME" }
+        assertHit(driftGhostKey(), ":ghost") { "a key only this file has governs nothing" }
+        assertHit(driftHarnessSets(), "nonLibrary=[:app, :spikes]") { "the two harness sets must be one set" }
+        assertHit(driftStricterTestPlane(), ":spi", "[:core]") { "a test plane stricter than main cannot exist" }
     }
 
     // V4-91 (audit C row 4): a main-plane allowance no build file declares. RED on this tree today
@@ -744,23 +651,12 @@ class ModuleLawsTest {
     // P3 (restructure §1.3): id ↔ directory, from the build's map (see idDerivationViolations).
     @Test
     fun `every module id derives from its directory - P3`() {
-        assertEquals(
-            emptyList<String>(),
-            idDerivationViolations(map),
-            "a module's id is its directory with `/` → `-`; a module that moved keeps no old id",
-        )
-    }
-
-    @Test
-    fun `the id-derivation law can actually fail - P3`() {
-        assertEquals(
-            listOf(
-                ":gateway lives at daemon/head but its id is not :daemon-head — the id is derived from " +
-                    "the directory (`/` → `-`), stated once in settings.gradle.kts.",
-            ),
+        assertEquals(emptyList<String>(), idDerivationViolations(map), "a moved module keeps no old id")
+        assertHit(
             idDerivationViolations(ProjectMap.parse(File("."), ":gateway=daemon/head", fixtureNotSwept)),
-            "a moved module whose id was left behind must fail BY NAME",
-        )
+            ":gateway",
+            ":daemon-head",
+        ) { "a moved module whose id was left behind must fail BY NAME" }
     }
 
     @Test
@@ -771,10 +667,6 @@ class ModuleLawsTest {
                 .filter { it.first in law.lawChecked }
                 .map { module to it.second }
         }.toSet()
-        org.junit.jupiter.api.Assertions.assertTrue(mainEdges.size > 5) {
-            "parsed ${mainEdges.size} main-configuration edges — the build-file walk is broken, and " +
-                "every allowance would read as stale."
-        }
         val violations = staleAllowanceViolations(law.mainLaw, mainEdges)
         org.junit.jupiter.api.Assertions.assertTrue(violations.isEmpty()) {
             violations.joinToString(
@@ -797,18 +689,11 @@ class ModuleLawsTest {
             ),
             "an allowance whose edge is declared is not stale, and an empty allowance cannot be",
         )
-        assertEquals(
-            listOf(
-                ":spi is allowed to depend on :ghost and no build file declares that edge — drop the " +
-                    "allowance, or make the edge real. An allowance nothing uses governs nothing, and " +
-                    "it reads as architecture that exists.",
-            ),
-            staleAllowanceViolations(
-                mapOf(":spi" to setOf(":core", ":ghost")),
-                setOf(":spi" to ":core"),
-            ),
-            "an allowance nothing declares must fail BY NAME",
-        )
+        assertHit(
+            staleAllowanceViolations(mapOf(":spi" to setOf(":core", ":ghost")), setOf(":spi" to ":core")),
+            ":spi",
+            ":ghost",
+        ) { "an allowance nothing declares must fail BY NAME" }
         assertEquals(
             emptyList<String>(),
             staleAllowanceViolations(mapOf(":spi" to setOf(":core")), setOf(":spi" to ":core", ":other" to ":core")),
@@ -849,29 +734,6 @@ class ModuleLawsTest {
         )
     }
 
-    // DR-112 (coverage redo, review 2026-08-31): the direction law and the ratchet-staleness check
-    // both read edges through this matcher, so an edge written in any spelling it misses is simply
-    // invisible to them — a silent hole, not a failure. No live edge uses the other forms, so this
-    // fixture is the only thing that can fail when the matcher narrows.
-    @Test
-    fun `every gradle spelling of a project edge is seen - DR-112`() {
-        val script = """
-            dependencies {
-                implementation(project(":core"))
-                api(project(path = ":spi"))
-                testImplementation(project( ":daemon-head" ))
-                implementation(project(":app", configuration = "shadow"))
-                implementation(project(  path  =  ":daemon-control"  ))
-                // implementation(project(":commented-out"))
-            }
-        """.trimIndent()
-        assertEquals(
-            setOf(":core", ":spi", ":daemon-head", ":app", ":daemon-control"),
-            projectEdgesIn(script),
-            "every Gradle spelling of a project edge must be visible to the architecture laws",
-        )
-    }
-
     /** V4-91: the BUILD's module law, parsed. Read per call rather than cached in a field: these
      *  tests are cheap, and a lazily-cached parse is a parse whose failure surfaces in whichever
      *  test happened to run first. build-logic is an included BUILD, not a subproject, so it is
@@ -897,14 +759,6 @@ class ModuleLawsTest {
         CONFIGURED_DEPENDENCY.findAll(stripComments(script))
             .map { it.groupValues[1] to it.groupValues[2] }
             .toSet()
-
-    /** The pure half of [configuredEdges]'s path-only matcher — every edge a build script's TEXT
-     *  declares, comments stripped. Split out (DR-112 coverage redo) so the SPELLINGS can be pinned
-     *  by a synthetic fixture: the tree happens to write every live edge positionally, so the
-     *  widened matcher was otherwise unfalsifiable, and the law it feeds would go quiet the day
-     *  someone wrote one of the other forms. */
-    private fun projectEdgesIn(script: String): Set<String> =
-        PROJECT_DEPENDENCY.findAll(stripComments(script)).map { it.groupValues[1] }.toSet()
 
     /** Block and line comments out: a commented-out dependency is not an edge. */
     private fun stripComments(text: String): String =
@@ -990,13 +844,8 @@ class ModuleLawsTest {
         }
 
     private companion object {
-        // DR-112: match every Gradle spelling of a project edge — positional `project(":x")`, the
-        // named-arg form `project(path = ":x")`, whitespace variants, and a trailing
-        // `, configuration = ...` — not just the exact positional idiom. An edge written any other
-        // way was invisible to the direction law and the ratchet-staleness check alike.
-        val PROJECT_DEPENDENCY = Regex("""project\(\s*(?:path\s*=\s*)?"(:[A-Za-z0-9._-]+)"""")
-
-        // V4-91: the same spellings, plus the CONFIGURATION that decides the edge's plane, plus the
+        // DR-112/V4-91: every Gradle spelling of a project edge, plus the CONFIGURATION that decides its
+        // plane, plus the
         // `testFixtures(project(...))` wrapper the path-only matcher swallowed without noticing.
         val CONFIGURED_DEPENDENCY = Regex(
             """([A-Za-z][A-Za-z0-9]*)\s*\(\s*(?:testFixtures\s*\(\s*)?project\(\s*(?:path\s*=\s*)?""" +

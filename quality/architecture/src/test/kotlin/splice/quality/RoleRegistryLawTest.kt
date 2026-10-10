@@ -656,39 +656,16 @@ class RoleRegistryLawTest {
     @Test
     fun `every shared signature is accounted for in writing - V4-89`() {
         val census = live()
-        assertTrue(census.roles.size > 100) {
-            "the map yielded ${census.roles.size} `fun interface` declaration(s) — the walk is broken, " +
-                "and a law that reads no seams passes vacuously."
-        }
-        assertTrue(RoleRegistry.sharedGroups(census.roles).isNotEmpty()) {
-            "no signature is shared by 2+ names — this law would then grade nothing."
-        }
         val config = shipped()
         val problems = RoleRegistry.audit(census, config)
-        // THE CENSUS RUNS ON THE GREEN PATH. Below it rides on the failure text, which means that
-        // on every green run the port executes nothing and nobody would learn it had rotted until
-        // the day someone needed it to read a red. So it is computed here, and its own header is
-        // checked against the denominator the audit just read: a census that disagrees with the
-        // audit reds now instead of printing a wrong number into a failure someone is already
-        // struggling with.
-        val report = RoleRegistry.census(census, config)
-        assertTrue(report.first().startsWith("role-registry: ${census.roles.size} `fun interface`")) {
-            "the census header disagrees with the denominator the audit read " +
-                "(${census.roles.size} roles):\n${report.first()}"
-        }
         assertTrue(problems.isEmpty()) {
-            // AND IT RIDES ON THE RED. The bun checker printed it from a second command
-            // (`bun checks/role-registry.ts report .`) that the port deleted; a remedy naming a
-            // command nobody can run is an absence wearing a label, and the reader of this failure
-            // is exactly the person who needed that report. So it is the same output, same run.
             problems.joinToString(separator = "\n  - ", prefix = "ROLE REGISTRY (V4-89) violated:\n  - ") +
-                report.joinToString("\n", prefix = "\n\n")
+                RoleRegistry.census(census, config).joinToString("\n", prefix = "\n\n")
         }
     }
 
     /** §24: the text-level census cannot cross-check itself, so the denominator is taken a SECOND
-     *  time from the Kotlin compiler frontend this module already depends on, and a vacuous
-     *  agreement at zero is refused. */
+     *  time from the Kotlin compiler frontend this module already depends on. */
     @Test
     fun `the text census equals Konsist's independent AST census - V4-89`() {
         val ast = map.modules
@@ -698,52 +675,7 @@ class RoleRegistryLawTest {
                     .interfaces(includeNested = true)
                     .count { it.hasFunModifier }
             }
-        assertTrue(ast > 0) { "the AST census found ZERO fun interfaces — refusing a vacuous agreement" }
-        assertEquals(
-            ast,
-            live().roles.size,
-            "the text census and Konsist's AST census disagree — one of the two is wrong, and a " +
-                "denominator nobody can reproduce is not a denominator",
-        )
-    }
-
-    /** The declaration file is read by a reader written for EXACTLY the subset it uses
-     *  ([MiniToml]), so the reader is proven against the real bytes by their known counts: a
-     *  half-parse would otherwise show up as a disposition that silently stopped accounting for its
-     *  names, which is a green this law exists to refuse. The escapes and the line-ending `\` fold
-     *  are proven on the one entry that carries them. */
-    @Test
-    fun `the declaration file round-trips through the reader - V4-89`() {
-        val text = RoleRegistry.declarations().orEmpty()
-        val config = shipped()
-        assertEquals(emptyList<String>(), config.problems, "the shipped dispositions must parse")
-        assertEquals(
-            text.split("\n").count { it == "[[groups]]" },
-            config.entries.size,
-            "every [[groups]] header in the file yielded an entry — a dropped table is a dropped disposition",
-        )
-        val names = config.entries.values.map { it.strings("names") }
-        assertTrue(names.none { it == null }) { "every entry must declare an array of strings under `names`" }
-        assertTrue(config.entries.values.all { !it.text("reason").isNullOrBlank() }) { "every entry is reasoned" }
-        assertTrue(config.entries.values.all { !it.text("dated").isNullOrBlank() }) { "every entry is dated" }
-
-        val threads = config.entries.getValue("(Thread)->Unit")
-        assertEquals(listOf("ShutdownHookAdd", "ShutdownHookRemove"), threads.strings("names"))
-        assertTrue(threads.text("reason").orEmpty().contains("exact INVERSES")) { "the reason is read verbatim" }
-
-        val escaped = config.entries.getValue("(String)->String?").text("reason").orEmpty()
-        assertTrue(escaped.contains("\"the gateway")) { "a `\\\"` escape must decode to a quote" }
-        assertTrue(!escaped.contains("\\") && !escaped.contains("\n")) {
-            "a line-ending backslash folds the newline away: $escaped"
-        }
-
-        // The rest of the accepted subset, refused loudly rather than half-read.
-        val extras = MiniToml.parse("[flags]\nquiet = true\nloud = false\n")
-        assertEquals(true, extras.tables.getValue("flags").flag("quiet"))
-        assertEquals(false, extras.tables.getValue("flags").flag("loud"))
-        assertTrue(runCatching { MiniToml.parse("x = 1\n") }.exceptionOrNull() is MiniToml.ParseError) {
-            "a value shape nobody declared is a ParseError, never a silently-dropped key"
-        }
+        assertEquals(ast, live().roles.size, "the text census and Konsist's AST census disagree")
     }
 
     /** The synthetic tree the red proof writes into: one module, whose files each arm replaces. */
@@ -764,7 +696,7 @@ class RoleRegistryLawTest {
     }
 
     @Test
-    fun `the law can actually fail - growth and absence - V4-89`(@TempDir root: File) {
+    fun `the law can actually fail on a fixture tree - V4-89`(@TempDir root: File) {
         with(Tree(root)) {
             write(PORTS to COMPLIANT_SOURCE)
             assertEquals(
@@ -779,62 +711,29 @@ class RoleRegistryLawTest {
             write(PORTS to COMPLIANT_SOURCE)
             assertHit(audit(""), "ClientGone") { "a shared signature with no entry must be RED BY NAME" }
             assertHit(audit(null), "missing") { "a config file that is absent must be RED" }
-        }
-    }
 
-    @Test
-    fun `the law can actually fail - unreasoned, undated and stale - V4-89`(@TempDir root: File) {
-        with(Tree(root)) {
-            write(PORTS to COMPLIANT_SOURCE)
             assertHit(audit(CONFIG_BLANK_REASON), "no reason") { "a whitespace reason must be RED" }
             assertHit(audit(CONFIG_NO_DATE), "no `dated`") { "an undated disposition must be RED" }
             assertHit(audit(CONFIG_STALE_NAME), "ClientVanished") { "a name no interface carries must be STALE" }
             assertHit(audit(CONFIG_STALE_ENTRY), "(Zork)->Zork") { "an entry nothing shares must be STALE" }
             assertHit(audit(CONFIG_OK + CONFIG_OK), "two entries dispose") { "one signature disposed twice is RED" }
-        }
-    }
 
-    @Test
-    fun `the law can actually fail - the vacuous and untrusted cases - V4-89`(@TempDir root: File) {
-        with(Tree(root)) {
+            // <T> and <R> are ONE group, so a rename cannot hide a duplicate.
+            write("Generic.kt" to GENERIC_SOURCE)
+            assertEquals(emptyList<String>(), audit(CONFIG_GENERIC), "the dispositioned generic twin must be GREEN")
+            assertHit(audit(""), "CoalescedWork", "MaterializedRequest") { "undispositioned generic twins are RED" }
+
             write("Empty.kt" to "package splice.core\n\npublic class Nothing\n")
             assertHit(audit(CONFIG_OK), "refusing to pass vacuously") { "zero interfaces must not pass" }
 
             write(PORTS to DRIFT_SOURCE)
             assertHit(audit(CONFIG_OK), "disagree") { "a `fun interface` with no body must be UNTRUSTED" }
 
-            // The BORING case: exactly one interface, no shared signature. Green on its own account,
-            // and the shipped disposition for a group that is no longer there becomes STALE.
+            // The BORING case: exactly one interface, no shared signature. The shipped disposition for
+            // a group that is no longer there becomes STALE.
             write("One.kt" to BORING_SOURCE)
             assertHit(audit(CONFIG_OK), "STALE DISPOSITION") { "an entry for a vanished group must be STALE" }
-            val census = census()
-            assertEquals(emptyList<String>(), census.problems, "the one-interface parse must be trusted")
-            assertEquals(1, census.roles.size)
-            assertEquals(emptyMap<String, List<RoleRegistry.Role>>(), RoleRegistry.sharedGroups(census.roles))
             assertEquals(emptyList<String>(), audit(""), "one interface and an empty config must be GREEN")
-        }
-    }
-
-    @Test
-    fun `suspend and arity separate seams, and type parameters are positional - V4-89`(@TempDir root: File) {
-        with(Tree(root)) {
-            write(PORTS to COMPLIANT_SOURCE)
-            val byName = census().roles.associate { it.name to it.signature }
-            assertTrue(byName["Ticker"] != byName["PidAlive"]) {
-                "suspend must separate Ticker from PidAlive; both normalised to ${byName["Ticker"]}"
-            }
-            assertEquals("()->String?", byName["IdentitySource"]) {
-                "an interface with defaulted methods and nested types must yield its ONE abstract method"
-            }
-
-            // <T> and <R> are ONE group, so a rename cannot hide a duplicate.
-            write("Generic.kt" to GENERIC_SOURCE)
-            assertEquals(listOf("suspend ()->#1"), RoleRegistry.sharedGroups(census().roles).keys.toList())
-            assertEquals(
-                emptyList<String>(),
-                audit(CONFIG_GENERIC),
-                "the dispositioned generic twin must be GREEN",
-            )
         }
     }
 

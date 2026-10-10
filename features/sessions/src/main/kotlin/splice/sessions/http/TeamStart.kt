@@ -30,8 +30,6 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.session.SessionPane
-import splice.core.session.SessionPanes
-import splice.core.session.SessionTerminal
 import splice.core.util.Cancellables
 import splice.http.JsonReply
 import splice.sessions.registry.SessionAvailability
@@ -42,38 +40,6 @@ import splice.sessions.teams.TeamStore
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
-
-/** A terminal and the record of which of its panes carries which session: two halves of one capability. */
-public data class SessionDriver(val terminal: SessionTerminal, val panes: SessionPanes)
-
-/** The daemon's session driver, read per request: null until one is wired. */
-public fun interface TerminalSource {
-    public operator fun invoke(): SessionDriver?
-}
-
-/** What a head's launch command is, or why it cannot be launched. */
-public sealed class StartCommand {
-    /** The argv that starts the head's Claude Code, before the flags a member adds. */
-    public data class Ready(val argv: List<String>) : StartCommand()
-
-    /** The sentence the person reads, including the fix when there is one. */
-    public data class Refused(val reason: String) : StartCommand()
-}
-
-/** The launch command of a head, by its key. */
-public fun interface StartCommands {
-    public fun forHead(head: String): StartCommand
-}
-
-/** Pins one session to one account of its head's pool; false when the head has no such account. */
-public fun interface AccountPins {
-    public fun pin(head: String, label: String, session: String): Boolean
-}
-
-/** Whether a session Claude Code was started with registers itself within [seconds]. */
-public fun interface SessionArrival {
-    public suspend fun arrived(session: String, seconds: Long): Boolean
-}
 
 // why: a cold Claude Code on a slow disk, or one that stops at a first-run prompt, shows itself within this long;
 // past it the screen is the answer, and a person is never left looking at Starting.
@@ -100,7 +66,7 @@ public class TeamStart(
     private val home: Path,
 ) {
     public suspend fun start(teamId: String, slotId: String): JsonReply {
-        val store = teams() ?: return refuse(HttpStatusCode.ServiceUnavailable, TEAMS_UNWIRED)
+        val store = teams() ?: return Refusals.reply(HttpStatusCode.ServiceUnavailable, TEAMS_UNWIRED)
         return when (val member = locate(store, teamId, slotId)) {
             is Located.Missing -> member.reply
             is Located.Member -> refusalToStart(member.team, member.slot) ?: launchable(store, member)
@@ -108,9 +74,9 @@ public class TeamStart(
     }
 
     private suspend fun launchable(store: TeamStore, member: Located.Member): JsonReply {
-        val driving = driver() ?: return refuse(HttpStatusCode.ServiceUnavailable, NO_TERMINAL)
+        val driving = driver() ?: return Refusals.reply(HttpStatusCode.ServiceUnavailable, NO_TERMINAL)
         return when (val command = commands.forHead(member.slot.head)) {
-            is StartCommand.Refused -> refuse(HttpStatusCode.Conflict, command.reason)
+            is StartCommand.Refused -> Refusals.reply(HttpStatusCode.Conflict, command.reason)
             is StartCommand.Ready -> launch(store, driving, member, command.argv)
         }
     }
@@ -126,28 +92,28 @@ public class TeamStart(
 
     /** [act] on the member's session, or the reply that says there is no such member or it holds no session. */
     private inline fun onSession(teamId: String, slotId: String, act: (String) -> JsonReply): JsonReply {
-        val store = teams() ?: return refuse(HttpStatusCode.ServiceUnavailable, TEAMS_UNWIRED)
+        val store = teams() ?: return Refusals.reply(HttpStatusCode.ServiceUnavailable, TEAMS_UNWIRED)
         return when (val member = locate(store, teamId, slotId)) {
             is Located.Missing -> member.reply
             is Located.Member ->
                 member.slot.session?.let(act)
-                    ?: refuse(HttpStatusCode.Conflict, "${member.slot.id} has no session", Refusal.ENDED)
+                    ?: Refusals.reply(HttpStatusCode.Conflict, "${member.slot.id} has no session", Refusal.ENDED)
         }
     }
 
     private fun locate(store: TeamStore, teamId: String, slotId: String): Located {
         val team = store.team(teamId)
-            ?: return Located.Missing(refuse(HttpStatusCode.NotFound, "$NO_SUCH_TEAM$teamId"))
+            ?: return Located.Missing(Refusals.reply(HttpStatusCode.NotFound, "$NO_SUCH_TEAM$teamId"))
         val slot = team.slots.firstOrNull { it.id == slotId }
-            ?: return Located.Missing(refuse(HttpStatusCode.NotFound, "no such slot in $teamId: $slotId"))
+            ?: return Located.Missing(Refusals.reply(HttpStatusCode.NotFound, "no such slot in $teamId: $slotId"))
         return Located.Member(team, slot)
     }
 
     /** Why this slot cannot be started now, or null when it can. */
     private fun refusalToStart(team: Team, slot: TeamSlot): JsonReply? = when {
-        team.archived -> refuse(HttpStatusCode.Conflict, "${team.name} is archived; restore it before starting")
+        team.archived -> Refusals.reply(HttpStatusCode.Conflict, "${team.name} is archived; restore it before starting")
         slot.session != null && live(slot.session) ->
-            refuse(HttpStatusCode.Conflict, "${slot.id} already has a running session")
+            Refusals.reply(HttpStatusCode.Conflict, "${slot.id} already has a running session")
         else -> null
     }
 
@@ -164,7 +130,7 @@ public class TeamStart(
         val session = UUID.randomUUID().toString()
         val folder = team.repo.takeIf { it.isNotBlank() && Files.isDirectory(Path.of(it)) } ?: home.toString()
         if (slot.account != null && !pins.pin(slot.head, slot.account, session)) {
-            return refuse(HttpStatusCode.Conflict, "${slot.head} has no account named ${slot.account}")
+            return Refusals.reply(HttpStatusCode.Conflict, "${slot.head} has no account named ${slot.account}")
         }
         store.bind(team.id, mapOf(slot.id to session))
         // The flags that make the member a member: the id splice minted, the slot's own name, and its model.
@@ -178,7 +144,7 @@ public class TeamStart(
             onSuccess = { pane -> opened(store, driving, member, session, pane) },
             onFailure = {
                 giveBack(store, member)
-                refuse(HttpStatusCode.BadGateway, "the terminal would not open: ${it.message}")
+                Refusals.reply(HttpStatusCode.BadGateway, "the terminal would not open: ${it.message}")
             },
         )
     }
@@ -232,13 +198,4 @@ public class TeamStart(
     private fun giveBack(store: TeamStore, member: Located.Member) {
         store.bind(member.team.id, mapOf(member.slot.id to member.slot.session))
     }
-
-    private fun refuse(status: HttpStatusCode, sentence: String, reason: Refusal? = null) =
-        JsonReply(
-            status,
-            buildJsonObject {
-                put("error", sentence)
-                reason?.let { put("reason", it.key) }
-            }.toString(),
-        )
 }

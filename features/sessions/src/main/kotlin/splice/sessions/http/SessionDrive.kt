@@ -48,15 +48,6 @@ private const val LAUNCH_PANE_GONE =
 private const val LAUNCH_PANE_TAKEN =
     "the terminal this session was started in is running something else now, so nothing is typed into it"
 
-/** The terminal a live session's own launch recorded, and the process that launch became. */
-public data class LaunchedTerminal(val pid: Long, val pane: String, val server: String)
-
-/** Where a session started from the person's own terminal runs: null for a session no launch recorded a terminal for,
- *  or one that is no longer running. Read on every act, because the person can close or reuse that terminal. */
-public fun interface LaunchedTerminals {
-    public fun of(sessionId: String): LaunchedTerminal?
-}
-
 /** The console's hands on one session's terminal, by session id. A session has one when splice opened it (the pane
  *  memory) or when its own launch recorded the terminal it ran in, and only while that terminal still has it in front. */
 public class SessionDrive(
@@ -191,37 +182,6 @@ public class SessionDrive(
         }.toString(),
     )
 
-    /** [reason] is the refusal as a key a page can name in a word (fin): the sentence is for the log, never matched. */
     private fun refuse(status: HttpStatusCode, sentence: String, reason: Refusal? = null) =
-        JsonReply(
-            status,
-            buildJsonObject {
-                put("error", sentence)
-                reason?.let { put("reason", it.key) }
-            }.toString(),
-        )
-}
-
-/** Why an act on a session was refused, as the stable key a refusal body carries beside its sentence. */
-public enum class Refusal(public val key: String) {
-    /** The member holds no session, so nothing runs to act on: its card's own state says so. */
-    ENDED("ended"),
-
-    /** The terminal splice opened for it is closed, so nothing runs there. */
-    CLOSED("closed"),
-
-    /** splice did not start it and no launch recorded its terminal. */
-    NOT_OURS("not_ours"),
-
-    /** The terminal its launch recorded is closed. */
-    PANE_GONE("pane_gone"),
-
-    /** The terminal its launch recorded runs something else now. */
-    PANE_TAKEN("pane_taken"),
-
-    /** splice has no terminal wired to drive sessions in. */
-    NO_TERMINAL("no_terminal"),
-
-    /** The terminal did not take the keys. */
-    REFUSED("refused"),
+        Refusals.reply(status, sentence, reason)
 }

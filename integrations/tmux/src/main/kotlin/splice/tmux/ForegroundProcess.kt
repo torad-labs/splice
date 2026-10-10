@@ -14,9 +14,11 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
-// why: the fields after the command's closing parenthesis in /proc/<pid>/stat, counted from its state (proc(5)):
-// state, ppid, pgrp, session, tty_nr, tpgid.
+// why: pgrp's position in /proc/<pid>/stat, counted after the comm field's closing parenthesis from its state
+// (proc(5)): state, ppid, pgrp.
 private const val PGRP_FIELD = 2
+
+// why: tpgid's position in /proc/<pid>/stat, counted the same way: state, ppid, pgrp, session, tty_nr, tpgid.
 private const val TPGID_FIELD = 5
 
 // why: a process tree deeper than this is a loop or a misread, never a shell that started a session.

@@ -16,6 +16,7 @@ import splice.core.model.ModelRates
 import splice.core.model.TokenBuckets
 import splice.core.model.TokenCost
 import splice.core.model.TurnPrice
+import splice.core.perf.HistoryWindow
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.UsageHistory
 import splice.core.turn.noRequestUsage
@@ -363,8 +364,9 @@ class EconomicsStoreTest {
         assertEquals(320, b.upstreamBytes)
     }
 
-    /** Retention is what keeps the file small enough to read on every dashboard poll. The window is a month
-     *  and the days it is read over (Marlin, Oct 10, 2026), because plans and keys are paid by the month. */
+    /** Retention is what keeps the file small enough to read on every dashboard poll. A fresh install's
+     *  window is a month and the days it is read over (Marlin, Oct 10, 2026), because plans and keys are
+     *  paid by the month. */
     @Test
     fun `buckets older than the retention window are dropped`(@TempDir tmp: Path) {
         var now = 1_000 * HOUR
@@ -379,6 +381,39 @@ class EconomicsStoreTest {
         val buckets = store.read()
         assertEquals(2, buckets.size, "the bucket past the window must be gone")
         assertEquals(listOf(2L, 4L), buckets.map { it.inTokens })
+    }
+
+    /** The window is the PERSON'S (Settings > Your data, Oct 10, 2026), not a number splice ships: a
+     *  shorter one they set trims to their days, and the word forever trims nothing at all. */
+    @Test
+    fun `the hours are kept for the window the person set, and forever keeps every hour`(@TempDir tmp: Path) {
+        var now = 1_000 * HOUR
+        val week = EconomicsStore(
+            tmp.resolve("week.json"),
+            UNPRICED,
+            WallClock { now },
+            window = HistoryWindow(7),
+        )
+        week.record(turn(inTokens = 1))
+        now += 8 * 24 * HOUR
+        week.record(turn(inTokens = 2))
+        assertEquals(listOf(2L), week.read().map { it.inTokens }, "a seven-day window keeps seven days")
+
+        var later = 1_000 * HOUR
+        val kept = EconomicsStore(
+            tmp.resolve("forever.json"),
+            UNPRICED,
+            WallClock { later },
+            window = HistoryWindow(null),
+        )
+        kept.record(turn(inTokens = 1))
+        later += 400 * 24 * HOUR // more than a year on
+        kept.record(turn(inTokens = 2))
+        assertEquals(
+            listOf(1L, 2L),
+            kept.read().map { it.inTokens },
+            "forever keeps the oldest hour: no cutoff is ever computed for it",
+        )
     }
 
     @Test

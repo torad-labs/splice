@@ -577,11 +577,38 @@ public enum class Knob(
     // (PerfStats' rotation archive, wired by ManagedHeadFactory; kt-perf-history-archived keeps it
     // so). Same shape as activityRetentionDays: whole archived files older than the window are swept
     // on the next rotation. 0 turns the archive off: the one-generation rotate of before.
+    //
+    // SUPERSEDED, NOT RETIRED (Oct 10, 2026): historyRetentionDays below is the one window a person
+    // sets, and it covers these records AND the hourly totals. This key stays readable because an
+    // install that predates the setting must keep the window it already had — including the 90 days
+    // it had by default. It is the CARRY-OVER source, read only when the new key is absent
+    // (SpliceConfig.historyWindow); nothing writes it any more.
     PERF_ARCHIVE_RETENTION_DAYS(
         "perfArchiveRetentionDays",
         KnobKind.NUMBER,
         listOf("SPLICE_PERF_ARCHIVE_RETENTION_DAYS"),
         typedDefault = KnobDefault.Count(90L),
+        restartRequired = true,
+    ),
+
+    // NEW Oct 10, 2026: the ONE history window (console Settings > Your data) — the hourly totals
+    // and the request records, as one setting, because "how far back can I read this" is one
+    // question about one set of days.
+    //
+    // DEFAULT IS ABSENT ON PURPOSE. A number here would become every upgrade's new window, and a
+    // shorter one deletes history nobody asked it to (Marlin, Oct 10: an upgrade never shortens
+    // history on its own, so a 90 stays 90). Absent means "nobody has set this", which
+    // SpliceConfig.historyWindow answers from the records window the install already had. A FRESH
+    // install gets HISTORY_DEFAULT_DAYS written into its starter splice.toml, where the person can
+    // read the number that governs their disk.
+    //
+    // STRING, NOT NUMBER: `forever` is a value a person may choose, and the one choice that is not
+    // a window should not have to be spelled as one. ConfigCoercion refuses any other word by name.
+    HISTORY_RETENTION_DAYS(
+        "historyRetentionDays",
+        KnobKind.STRING,
+        listOf("SPLICE_HISTORY_RETENTION_DAYS"),
+        typedDefault = KnobDefault.None,
         restartRequired = true,
     ),
     ;

@@ -874,7 +874,13 @@ command = "claude-splice"
 # messageEdges = "true"                                    # bool; keep SendMessage edges; false stops new writes after restart, retained days stay until delete/retention
 # activityStoreHeads = "*"                                  # which heads store activity labels: "*", "" or "a,b"
 # budgetDefaultAction = "warn"                               # "warn" or "block"; PUT /api/budgets fills a bare row
-# perfArchiveRetentionDays = "90"                            # days; retired perf generations kept in <state>/perf-archive; 0 = off
+# perfArchiveRetentionDays = "90"                            # days; SUPERSEDED by historyRetentionDays, read only as its carry-over
+# historyRetentionDays = "35"                                # days, or "forever"; how far back splice keeps BOTH the hourly totals and the
+#                                                            #   request records. A fresh install's splice.toml carries 35. An install that
+#                                                            #   predates this key keeps the window it had (perfArchiveRetentionDays, 90):
+#                                                            #   an upgrade never shortens history on its own. 0 keeps nothing past the
+#                                                            #   live file. Any other word is refused by name and the window is unchanged.
+#                                                            #   Shortening it deletes nothing until you say yes in Settings > Your data.
 
 # ── ENVIRONMENT VARIABLES ───────────────────────────────────────────────────────
 # Precedence for every name below is env > TOML > default: an environment variable beats the TOML
@@ -918,6 +924,7 @@ command = "claude-splice"
 #   SPLICE_MESSAGE_EDGES messageEdges
 #   SPLICE_BUDGET_DEFAULT_ACTION budgetDefaultAction      SPLICE_PERF_ARCHIVE_RETENTION_DAYS perfArchiveRetentionDays
 #   SPLICE_SUPERVISOR_UNIT supervisorUnit                 SPLICE_MCP_SLICE mcpSlice
+#   SPLICE_HISTORY_RETENTION_DAYS historyRetentionDays
 #
 # Seam reads, no TOML spelling — a path or endpoint the daemon reads directly:
 #   SPLICE_CONFIG           the config file to load, overriding the default lookup

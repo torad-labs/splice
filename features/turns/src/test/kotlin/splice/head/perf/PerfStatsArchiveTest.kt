@@ -1,7 +1,11 @@
 // NEW: V4-133 — PerfStats' opt-in archive: a rotated-out generation is copied into archiveDir,
-// timestamped, before JsonlSink would otherwise discard it; the sweep evicts generations past
-// archiveRetentionDays and keeps the rest. maxBytes = 1 forces every record() past the first to
+// timestamped, before JsonlSink would otherwise discard it; the sweep evicts generations past the
+// person's history window and keeps the rest. maxBytes = 1 forces every record() past the first to
 // rotate, so the sequence needs only a handful of rows rather than 64 MB of turns.
+//
+// Oct 10, 2026: the window is the one setting a person sets for their whole history (Settings > Your
+// data), so the last case here is the one that was unreachable before — they chose to keep
+// everything, and the sweep has nothing it may delete.
 package splice.head.perf
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -9,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.perf.HistoryWindow
 import splice.core.perf.TurnPerf
 import splice.core.util.AsyncFileIo
 import java.nio.file.Files
@@ -27,7 +32,7 @@ class PerfStatsArchiveTest {
         val file = tmp.resolve("perf.jsonl")
         val archiveDir = tmp.resolve("archive")
         var now = 1_000L
-        val stats = PerfStats(file, clock = { now }, archiveDir = archiveDir, archiveRetentionDays = 30, maxBytes = 1)
+        val stats = PerfStats(file, clock = { now }, archiveDir = archiveDir, window = HistoryWindow(30), maxBytes = 1)
 
         row(stats)
         now += 1_000
@@ -43,11 +48,11 @@ class PerfStatsArchiveTest {
     }
 
     @Test
-    fun `the sweep evicts an archived generation past archiveRetentionDays and keeps the rest`(@TempDir tmp: Path) {
+    fun `the sweep evicts an archived generation past the window and keeps the rest`(@TempDir tmp: Path) {
         val file = tmp.resolve("perf.jsonl")
         val archiveDir = tmp.resolve("archive")
         var now = 0L
-        val stats = PerfStats(file, clock = { now }, archiveDir = archiveDir, archiveRetentionDays = 5, maxBytes = 1)
+        val stats = PerfStats(file, clock = { now }, archiveDir = archiveDir, window = HistoryWindow(5), maxBytes = 1)
 
         row(stats)
         now += DAY_MS
@@ -68,5 +73,32 @@ class PerfStatsArchiveTest {
         assertEquals(1, remaining.size, "the stale generation was evicted; the fresh one was kept")
         assertTrue(Files.notExists(firstArchived), "the specific stale file is gone, not just outnumbered")
         assertNotEquals(firstArchived.fileName, remaining.single().fileName, "the survivor is the NEW generation")
+    }
+
+    @Test
+    fun `a person who keeps everything keeps every archived generation`(@TempDir tmp: Path) {
+        val file = tmp.resolve("perf.jsonl")
+        val archiveDir = tmp.resolve("archive")
+        var now = 0L
+        val forever = HistoryWindow(null)
+        val stats = PerfStats(file, clock = { now }, archiveDir = archiveDir, window = forever, maxBytes = 1)
+
+        row(stats)
+        now += DAY_MS
+        row(stats)
+        now += DAY_MS
+        row(stats) // archives the first generation
+        assertTrue(AsyncFileIo.drain())
+        val archived = Files.list(archiveDir).use { it.toList() }.single()
+
+        // A year on, with the file as old as the install: a window that keeps everything has no
+        // horizon to compare it against, so the sweep must leave it where it is.
+        Files.setLastModifiedTime(archived, FileTime.fromMillis(now - 365 * DAY_MS))
+        now += DAY_MS
+        row(stats)
+        assertTrue(AsyncFileIo.drain())
+
+        assertTrue(Files.exists(archived), "forever deletes nothing, however old the generation is")
+        assertEquals(2, Files.list(archiveDir).use { it.toList() }.size, "and the new generation lands beside it")
     }
 }

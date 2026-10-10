@@ -162,8 +162,9 @@ origin.
   `statuslineGitRoots` is per-head overridable, the trusted root that head's statusline probes the
   repo under (`home`, `tmp` or `statuslineGitRoots`), or none, where it shows no branch.
 - **Perf history is kept past two generations.** Every head
-  archives each retired generation into `<state>/perf-archive` for `perfArchiveRetentionDays` (90;
-  `0` turns it off), the perf readers (the usage windows, team economics, `splice perf`) read the
+  archives each retired generation into `<state>/perf-archive` for `historyRetentionDays` (`0`
+  turns it off; `perfArchiveRetentionDays` is the older spelling, read as the window an install
+  already had), the perf readers (the usage windows, team economics, `splice perf`) read the
   archive oldest first and skip, unopened, any generation that ended before the window, and a team's
   lifetime tally starts at the team's creation.
 - **Heads without a model allowlist offer discovered models.** At start
@@ -644,6 +645,10 @@ origin.
 - **A `splice.toml` with findings refuses boot and lists every one at once.** Each finding names its key and
   line and never a value. `splice restart` refuses before it stops a running daemon, so a bad edit no longer
   takes a healthy daemon down.
+  Run from a terminal, a `splice` command that hits the refusal offers a fix session: for each finding you can
+  remove its line, set a new value, or open your editor at that line. `splice.toml` is backed up first, the file
+  is checked again after every fix, and the command runs again only when nothing is left. Off a terminal it prints
+  the list, exits non-zero and changes nothing.
 - **The console reaches past Accounts.** It also has a Needs you landing page, Fleet, Usage, Turns (with a page
   per turn), Teams, Projects, Settings (Advanced whole-file edit, Storage, Conversation), Doctor and Health, and a
   Playground that sends one prompt to several models side by side.
@@ -656,8 +661,12 @@ origin.
   re-send of that turn is refused.
 - **API keys are managed through the control API and the console.** `GET /api/keys` names the keys (never a
   value), and `PUT` and `DELETE /api/keys/{ENV}` set and remove one, as `splice key` does.
-- **Hourly economics history is kept for 35 days** and read through `GET /api/economics`. An hour priced without
-  a rate card is priced again later from its perf rows at the cards splice holds then.
+- **One setting says how far back splice keeps your history.** `historyRetentionDays` covers both
+  the hourly spend totals and the request records: days, or `forever`. A fresh install's
+  `splice.toml` carries 35 days, which is a month of plan billing plus the days it is read over.
+  An install made before this setting keeps the window it already had (`perfArchiveRetentionDays`,
+  90), because an upgrade never shortens your history on its own. An hourly total priced without a
+  rate card is priced again later from its perf rows at the cards splice holds then.
 - **Settings Storage lists what splice keeps and clears it.** It covers retained turn statistics and live session
   totals, separate from the trace deletion capture-off already does.
 - **Two provider quirks.** `summary_delivery` switches off the cutoff that empties gpt-6.1-sol reasoning summaries

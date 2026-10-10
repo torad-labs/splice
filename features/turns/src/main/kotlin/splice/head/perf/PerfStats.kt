@@ -23,7 +23,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
-import splice.core.config.Knob
+import splice.core.perf.HISTORY_DEFAULT_DAYS
+import splice.core.perf.HistoryWindow
 import splice.core.perf.InputDigest
 import splice.core.perf.InputPrefix
 import splice.core.perf.LivenessProbe
@@ -155,7 +156,7 @@ internal class MeasuredInputs {
 // ~256 KiB of trailing JSONL bounds parse cost regardless of file age.
 private const val READ_TAIL_BYTES = 256 * 1024
 
-// why: archiveRetentionDays is a day count; the sweep compares epoch millis against a millis window.
+// why: the sweep keeps today whole, so a one-day window never deletes the generation it just wrote.
 private const val DAY_MS = 86_400_000L
 
 public class PerfStats(
@@ -167,7 +168,10 @@ public class PerfStats(
      *  (every construction site before this row, and every one this row did not touch) is today's
      *  exact behaviour — one generation, then discard. */
     private val archiveDir: Path? = null,
-    private val archiveRetentionDays: Int = Knob.PERF_ARCHIVE_RETENTION_DAYS.count().toInt(),
+    /** How far back this install keeps its history, the person's one setting (Settings > Your
+     *  data): the same window the hourly totals are kept over, because they are the same days read
+     *  from two files. Defaults to what a fresh install writes. */
+    private val window: HistoryWindow = HistoryWindow(HISTORY_DEFAULT_DAYS),
     /** V4-133: the rotate threshold [record] appends against — JsonlSink's own default for every
      *  construction site this row did not touch, injectable so a test can force a rotation (and
      *  therefore the archive hook) without writing 64 MB of turns. */
@@ -378,7 +382,7 @@ public class PerfStats(
 
     /** [JsonlSink.RotationArchive]'s hook: copy the generation JsonlSink is about to overwrite into
      *  [archiveDir], named so two rotates of the same file never collide, then sweep archived files
-     *  past [archiveRetentionDays]. Runs on the file-IO lane already inside [Cancellables]'s guard
+     *  past [window]. Runs on the file-IO lane already inside [Cancellables]'s guard
      *  (JsonlSink.rotateIfOver), so a failure here is silent by the SAME contract every other write
      *  in this class already accepts — the append it rides is never blocked by it. */
     private fun archiveRolled(rolled: Path) {
@@ -420,11 +424,12 @@ public class PerfStats(
         }
     }
 
-    /** Deletes archived generations older than [archiveRetentionDays], relative to now. Today
-     *  counts as one of the kept days, the same convention [splice.core.storage.ActivityDays]
-     *  uses for the console's stores. */
+    /** Deletes archived generations older than [window], relative to now. Today counts as one of
+     *  the kept days, the same convention [splice.core.storage.ActivityDays] uses for the console's
+     *  stores — so the floor of one day below, which keeps the generation this rotation just wrote.
+     *  A window that keeps everything sweeps nothing: the null cutoff returns before the scan. */
     private fun sweepArchive(dir: Path) {
-        val oldest = clock() - archiveRetentionDays.coerceAtLeast(1) * DAY_MS
+        val oldest = window.days?.let { clock() - it.coerceAtLeast(1) * DAY_MS } ?: return
         Files.newDirectoryStream(dir).use { entries ->
             entries.filter { entry -> archiveName.rotatedAt(entry.fileName.toString()) != null }
                 .forEach { entry ->

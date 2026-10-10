@@ -38,7 +38,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.put
 import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
-import splice.core.perf.ECONOMICS_RETENTION_MS
+import splice.core.perf.HISTORY_DEFAULT_DAYS
+import splice.core.perf.HistoryWindow
 import splice.core.util.Cancellables
 import splice.core.util.CoalescedFlush
 import splice.core.util.DaemonLog
@@ -53,9 +54,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private const val HOUR_MS = 60L * 60 * 1000
 
-// V4-122: RETENTION_MS is splice.core.perf.ECONOMICS_RETENTION_MS now. The console reports the same
-// window in HOURS from :daemon-control/api, which has no dependency edge to this module, so the comment
-// that used to claim the two mirrored each other is replaced by one declaration both can read.
+// V4-122: the window is splice.core.perf.HistoryWindow now, and the person owns it (Settings > Your
+// data, Oct 10, 2026). The console reports the same window in HOURS from :daemon-control/api, which has
+// no dependency edge to this module, so the comment that used to claim the two mirrored each other is
+// replaced by one declaration both read — and now by one setting the person sets once for both files.
 
 // 840 buckets (35 days) at the ~340 bytes a live head writes is under 300 KB; 4MB is a corrupt-file guard
 // with headroom. Measured Oct 10, 2026 on claude-splice: 182 buckets, 61231 bytes.
@@ -152,6 +154,10 @@ public class EconomicsStore(
     private val price: TurnPrice,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val log: LogSink = LogSink(DaemonLog::write),
+    /** How far back this head's hours are kept — the person's own setting (Settings > Your data),
+     *  carried from the records window their install already had. Defaults to what a fresh install
+     *  writes, so a store built without one keeps the shipped window rather than nothing. */
+    private val window: HistoryWindow = HistoryWindow(HISTORY_DEFAULT_DAYS),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -238,8 +244,10 @@ public class EconomicsStore(
         readFromDisk().forEach { buckets[it.hour] = it }
     }
 
+    // A window that keeps everything trims nothing: the null cutoff is the whole of `forever`, and
+    // the hours stay exactly as they are rather than being compared against an invented horizon.
     private fun trimUnderLock() {
-        val cutoff = clock() - ECONOMICS_RETENTION_MS
+        val cutoff = window.cutoffMs(clock()) ?: return
         buckets.keys.filter { it < cutoff }.forEach { buckets.remove(it) }
     }
 

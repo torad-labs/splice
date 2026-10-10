@@ -7,6 +7,7 @@ import io.ktor.server.routing.application
 import io.ktor.server.routing.get
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
+import splice.core.perf.HistoryWindow
 import splice.usage.USAGE_READ_PENDING_HEADER
 import splice.usage.UsageHeadLookup
 import splice.usage.UsageHeads
@@ -19,8 +20,9 @@ internal class UsageReadRoutes(
     lookup: UsageHeadLookup,
     private val io: CoroutineDispatcher,
     private val guard: ControlGuard,
+    window: HistoryWindow,
 ) {
-    private val economics = EconomicsPayloads(heads, lookup = lookup)
+    private val economics = EconomicsPayloads(heads, lookup = lookup, window = window)
     private val perf = PerfRoutes(lookup)
 
     fun register(route: Route) {

@@ -11,6 +11,9 @@
 // (a raw map would read pre-clamp values and silently hand out un-floored timeouts).
 package splice.core.config
 
+import splice.core.perf.HISTORY_DEFAULT_DAYS
+import splice.core.perf.HistoryWindow
+import splice.core.perf.HistoryWindowWords
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.ReasoningDisplayParser
 
@@ -67,8 +70,31 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     public val traceRetentionDays: Int get() = long(Knob.TRACE_RETENTION_DAYS).toInt().coerceAtLeast(1)
 
     /** V4-133: how many days of retired perf generations a head archives; 0 turns the archive off,
-     *  which is the one-generation rotate every install had before it. */
+     *  which is the one-generation rotate every install had before it. Superseded by
+     *  [historyWindow], which reads it as the carry-over for an install that predates the setting. */
     public val perfArchiveRetentionDays: Int get() = long(Knob.PERF_ARCHIVE_RETENTION_DAYS).toInt().coerceAtLeast(0)
+
+    /**
+     * How far back this install keeps its history: the hourly totals AND the request records, as
+     * the one setting a person sets on Settings > Your data.
+     *
+     * WHERE THE ANSWER COMES FROM, and why in this order:
+     *  1. `historyRetentionDays`, when the person has set it. A bad word never reaches here —
+     *     ConfigCoercion refuses it by name and the knob stays absent, so a typo reads as "unset"
+     *     rather than as a short window that would delete history.
+     *  2. otherwise the records window the install ALREADY HAD (`perfArchiveRetentionDays`, 90 by
+     *     default): an upgrade never shortens history on its own, so a 90 stays 90 and nothing is
+     *     deleted because splice learned a new name for the question (Marlin, Oct 10, 2026).
+     *  3. the legacy 0 is the one value that does not carry: it said "keep no retired perf
+     *     generations", which says nothing about the hourly totals a person holds. Taken as the
+     *     unified window it would delete them, so it reads as [HISTORY_DEFAULT_DAYS] instead and
+     *     the person can write a 0 back in the file, where the row reads "Not saved".
+     *
+     * A fresh install never reaches 2 or 3: its starter splice.toml carries the default in writing.
+     */
+    public val historyWindow: HistoryWindow
+        get() = string(Knob.HISTORY_RETENTION_DAYS)?.let(HistoryWindowWords::of)
+            ?: HistoryWindow(perfArchiveRetentionDays.takeIf { it > 0 } ?: HISTORY_DEFAULT_DAYS)
 
     /** V4-174: the longest body a trace record keeps whole, in characters; at least one. */
     public val traceMaxBodyChars: Int

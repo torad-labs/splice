@@ -208,18 +208,24 @@ internal class ManagedHeadFactory(
         usageStore = UsageStore(statePaths.usageFile(ctx.key), statePaths.ratelimitFile(ctx.key)),
         telemetry = HeadTelemetryStores(
             compactStats = CompactStats(statePaths.compactStatsFile(ctx.key)),
-            // V4-133's archive, wired: a generation the 64 MB rotate retires is kept for
-            // perfArchiveRetentionDays instead of discarded; 0 days is the one-generation rotate of old.
+            // V4-133's archive, wired: a generation the 64 MB rotate retires is kept for the
+            // person's history window instead of discarded, and a window that keeps nothing is the
+            // one-generation rotate of old. The window is the SAME one the economics store below
+            // trims against — one setting, two files (Settings > Your data, Oct 10, 2026).
             perfStats = PerfStats(
                 statePaths.perfStatsFile(ctx.key),
-                archiveDir = statePaths.perfArchiveDir.takeIf { ctx.cfg.perfArchiveRetentionDays > 0 },
-                archiveRetentionDays = ctx.cfg.perfArchiveRetentionDays,
+                archiveDir = statePaths.perfArchiveDir.takeIf { !ctx.cfg.historyWindow.nothing },
+                window = ctx.cfg.historyWindow,
                 // V4-244: each session's running total, fed by the rows this store appends and priced at
                 // each row's own model's card, against the same catalog the economics store uses.
                 totals = SessionTotals(statePaths.sessionTotalsFile(ctx.key), TurnPrice(ctx.catalog)),
             ),
             // V4-221: each turn priced at its own model's card, against the same catalog the budget uses.
-            economics = EconomicsStore(statePaths.economicsFile(ctx.key), TurnPrice(ctx.catalog)),
+            economics = EconomicsStore(
+                statePaths.economicsFile(ctx.key),
+                TurnPrice(ctx.catalog),
+                window = ctx.cfg.historyWindow,
+            ),
         ),
         quota = primaryQuota,
         accounts = HeadAccountStores(

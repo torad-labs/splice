@@ -57,7 +57,7 @@ internal class UsageMount(
 
     // File scans, cache-monitor waits and folds must not occupy Netty's control request event loops.
     private val fileIo = ProcessDispatchers().io()
-    private val usageReads = UsageReadRoutes(usageHeads, usageLookup, fileIo, guard)
+    private val usageReads = UsageReadRoutes(usageHeads, usageLookup, fileIo, guard, config.getConfig().historyWindow)
 
     // V4-133 (FEATURES.md §5/§6): read at CALL time through the same BudgetSource/AlertSource
     // discipline every other console port keeps — see ConsolePorts.

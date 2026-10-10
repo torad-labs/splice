@@ -15,6 +15,7 @@ import kotlinx.serialization.descriptors.StructureKind
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 import splice.core.config.UserHome
+import splice.core.perf.HISTORY_DEFAULT_DAYS
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -159,6 +160,13 @@ control_port = 3096
 show_reasoning = "text"
 summary = "detailed"
 replay_reasoning = false
+
+[defaults]
+# How far back splice keeps this install's history: the hourly spend totals and the request
+# records, as one window. Days, or "forever". Change it here, or on Settings > Your data in the
+# console, where shortening it says how many turns it would delete and deletes nothing until you
+# say yes. An install made before this line existed keeps the 90 days it already had.
+historyRetentionDays = "$HISTORY_DEFAULT_DAYS"
 
 # No provider or head is selected on first run. Connect a plan with `splice setup`, or add a
 # specific profile with `splice add <profile>`. The ChatGPT, Grok, Kimi and Muse sign-in examples

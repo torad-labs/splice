@@ -21,6 +21,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.longOrNull
 import splice.core.memory.HeapWeights
+import splice.core.perf.HistoryWindowWords
 import splice.core.util.EnvReader
 
 private const val MIN_UPSTREAM_TIMEOUT_MS = 30_000L
@@ -208,10 +209,15 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
     // a failure mode — so they are three functions rather than three inlined blocks (HD-25).
 
     /** [raw] is the spelling a source gave: its text, or null when the source had no value. Each arm reads only the text. */
-    fun coerce(knob: Knob, raw: String?): Any? = if (knob == Knob.MIRROR_REASONING) {
-        false
-    } else {
-        when (knob.kind) {
+    fun coerce(knob: Knob, raw: String?): Any? = when {
+        knob == Knob.MIRROR_REASONING -> false
+        // The history window governs DELETION, so a word that is neither a day count nor `forever`
+        // must be refused by name rather than kept as text no reader understands: a typo that read
+        // as a short window would delete history nobody asked it to. Refusing it here puts it in
+        // the same reject log, doctor row and PATCH answer as every other bad knob value, and the
+        // window stays whatever it already was.
+        knob == Knob.HISTORY_RETENTION_DAYS -> coerceString(raw)?.let { HistoryWindowWords.of(it)?.text }
+        else -> when (knob.kind) {
             KnobKind.BOOL -> coerceBool(raw)
             KnobKind.NUMBER -> coerceNumber(knob, raw)
             KnobKind.STRING -> coerceString(raw)

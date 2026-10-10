@@ -79,7 +79,7 @@ class SessionsTranscriptCompositionTest {
             json(
                 """{"session_id":"$HEADED","path":"$file","messages":[""" +
                     """{"index":0,"role":"user","text":"the head's copy"}],"next":null,""" +
-                    """"unparseable_lines":1,"sidechain_records":1,"skipped_records":{"attachment":1}}""",
+                    """"moves":[],"unparseable_lines":1,"sidechain_records":1,"skipped_records":{"attachment":1}}""",
             ),
             json(reply.body),
         )

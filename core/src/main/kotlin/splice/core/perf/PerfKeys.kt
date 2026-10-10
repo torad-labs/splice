@@ -83,6 +83,9 @@ public object PerfKeys {
     /** One client-facing code-mode step synthesized without an upstream post, not a turn. */
     public const val LOCAL_STEP: String = "local_step"
 
+    /** Claude Code's activity side query, answered by the head itself with no model: a local step of its own kind. */
+    public const val ACTIVITY_QUERY: String = "activity_query"
+
     /** Elapsed milliseconds inside canonical history passes, summed on the owning turn. */
     public const val CODE_MODE_CANONICAL_MS: String = "code_mode_canonical_ms"
 

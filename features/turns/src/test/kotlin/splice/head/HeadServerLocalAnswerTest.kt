@@ -11,6 +11,9 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -25,11 +28,13 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
 import splice.upstream.transport.UpstreamClient
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration.Companion.seconds
@@ -47,12 +52,14 @@ class HeadServerLocalAnswerTest {
     private val port: Int get() = head.port
     private val lines = CopyOnWriteArrayList<String>()
     private lateinit var head: HeadServer
+    private lateinit var perfFile: Path
     private val client = HttpClient(CIO) {
         defaultRequest { bearerAuth("test-inference-token") }
     }
 
     @BeforeAll
     fun setUp(@TempDir tmp: Path) = runBlocking {
+        perfFile = tmp.resolve("perf.jsonl")
         head = HeadServer(
             provider = TestResponsesProvider(
                 tuning = ProviderTuning(
@@ -121,6 +128,19 @@ class HeadServerLocalAnswerTest {
             lines.any { it.contains("activity label answered locally: \"Reading runAgent.ts\"") },
             lines.joinToString(),
         )
+    }
+
+    @Test
+    fun `an answered side query leaves a perf row that names its kind and counts as no turn`() = runBlocking {
+        post(stream = true)
+
+        assertTrue(AsyncFileIo.drain(), "the row must reach disk before it is read")
+        val row = Files.readAllLines(perfFile).map { Json.parseToJsonElement(it).jsonObject }
+            .single { it["activity_query"] != null }
+        assertEquals("1", row.getValue("activity_query").toString(), row.toString())
+        assertEquals("1", row.getValue("local_step").toString(), "no turn figure may count the answer: $row")
+        assertEquals("ok", row.getValue("outcome").jsonPrimitive.content)
+        assertEquals("gpt-5.6-sol", row.getValue("model").jsonPrimitive.content)
     }
 
     @Test

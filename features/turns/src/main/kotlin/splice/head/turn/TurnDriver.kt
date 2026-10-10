@@ -149,7 +149,10 @@ internal class TurnDriver(
         streamer.stream(call, inputs)
 
     /** Claude Code's activity side query, answered by the proxy (ActivityLabel): no upstream turn. */
-    suspend fun answerLocally(call: ApplicationCall, local: Preparation.Local) = localResponses.answer(call, local)
+    suspend fun answerLocally(call: ApplicationCall, local: Preparation.Local, perf: TurnPerf) {
+        localResponses.answer(call, local)
+        telemetry.recordActivityAnswer(local, provider.catalog.stripSuffixes(local.model), perf)
+    }
 
     /** A compaction retry served from the detached first attempt's recording (CompactionReplay). */
     suspend fun replay(call: ApplicationCall, replayed: Preparation.Replay) = localResponses.replay(call, replayed)

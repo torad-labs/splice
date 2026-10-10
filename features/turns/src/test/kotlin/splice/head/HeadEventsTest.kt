@@ -290,19 +290,21 @@ private class Rig(root: Path) {
 
     fun selectedAccount(): String? = pool.view(SESSION).selectedLabel
 
-    /** The perf rows the head wrote, as (ts, outcome), once [count] of them have landed. The append is
+    /** The perf rows of TURNS the head wrote, as (ts, outcome), once [count] of them have landed. The head's own
+     *  answer to the activity side query leaves a row too, marked a local step, and is no turn. The append is
      *  asynchronous, so this waits for the file rather than reading it once. */
     suspend fun perfRows(count: Int): List<Pair<String, String>> = withTimeout(WAIT_MS) {
-        var lines = rowLines()
-        while (lines.size < count) {
+        var rows = turnRows()
+        while (rows.size < count) {
             delay(POLL_MS)
-            lines = rowLines()
+            rows = turnRows()
         }
-        lines.map { line ->
-            val row = Json.parseToJsonElement(line).jsonObject
+        rows.map { row ->
             row.getValue("ts").jsonPrimitive.long.toString() to row.getValue("outcome").jsonPrimitive.content
         }
     }
+
+    private fun turnRows() = rowLines().map { Json.parseToJsonElement(it).jsonObject }.filter { "local_step" !in it }
 
     /** Only newline-terminated rows: the writer appends asynchronously, so the last line can still be mid-write,
      *  and a reader of an append-only log takes a row once its newline is there. */

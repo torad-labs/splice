@@ -74,7 +74,7 @@ internal class HeadAdmission(
         // including a borrowed handle whose row still belongs to its independent source.
         when (prepared) {
             is Preparation.Rejected -> responses.respondInvalidRequest(call, prepared.message)
-            is Preparation.Local -> driver.answerLocally(call, prepared)
+            is Preparation.Local -> driver.answerLocally(call, prepared, admitted.perf)
             is Preparation.Replay -> {
                 // settle returned this retry's candidate before it follows the independently held drive.
                 driver.replay(call, prepared)

@@ -10,6 +10,7 @@ import kotlinx.coroutines.withContext
 import splice.core.budget.HeadBudget
 import splice.core.budget.NoHeadBudget
 import splice.core.model.TurnBill
+import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSnapshot
 import splice.core.perf.PerfTurnIds
@@ -300,6 +301,24 @@ internal class TurnTelemetry(
                 "latency=${clock() - t0}ms $detail\n",
         )
         log(snap.perfLine(headKey, tag, meta.compact, meta.route.upstreamModel, session))
+    }
+
+    /** Claude Code's activity side query is answered by the head with no model. It leaves a row of its own,
+     *  marked as a local step so no turn figure counts it, and as an activity query so a view can name its kind. */
+    fun recordActivityAnswer(local: Preparation.Local, wireModel: String, perf: TurnPerf) {
+        perf.mark(PerfKeys.TOTAL)
+        perf.setCount(PerfKeys.LOCAL_STEP, 1)
+        perf.setCount(PerfKeys.ACTIVITY_QUERY, 1)
+        perfStats.record(
+            PerfRowMeta(
+                wireModel,
+                OutcomeTag.OK.wire,
+                compact = false,
+                session = local.sessionId?.take(SESSION_TAG_CHARS),
+                transcript = PerfTranscriptIds(sessionId = local.sessionId),
+            ),
+            perf.snapshot(),
+        )
     }
 
     fun errTurn(kind: String, drive: TurnDrive, detail: String): String =

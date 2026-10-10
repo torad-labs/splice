@@ -54,9 +54,6 @@ private const val WRITE_TIMEOUT_MS = 1_000L
 /** The whole-turn cap, which bounded the stalled write before this row. */
 private const val TOTAL_MS = 12_000L
 
-/** A prefill that runs past the write timeout before the upstream sends its headers. */
-private const val PREFILL_MS = 3 * WRITE_TIMEOUT_MS
-
 /** How long the warm-up requests hold their answers, so each opens its own pooled connection. */
 private const val WARM_MS = 300L
 
@@ -76,6 +73,14 @@ private val BUFFERED_BODY = "{\"pad\":\"" + "x".repeat(200 shl 10) + "\"}"
 private val SLOW_BODY = "{\"pad\":\"" + "x".repeat(192 shl 10) + "\"}"
 private const val SLOW_CHUNK = 4096
 private const val SLOW_PAUSE_MS = 125L
+
+/** The write bound for the two arms that must NOT be cut: the watch cuts after this long with no byte taken, so a
+ *  host that starves the test upstream's reader for a second (a loaded build) is not a stall at this bound. */
+private const val LOAD_TOLERANT_WRITE_TIMEOUT_MS = 5_000L
+
+/** A prefill past [LOAD_TOLERANT_WRITE_TIMEOUT_MS], and a turn cap that outlasts it. */
+private const val LONG_PREFILL_MS = LOAD_TOLERANT_WRITE_TIMEOUT_MS + 1_000L
+private const val LONG_TOTAL_MS = 30_000L
 
 /** A fixed client send buffer, so the slow link blocks the writer instead of vanishing into autotuning. */
 private const val SLOW_SEND_BUFFER = 64 * 1024
@@ -108,15 +113,16 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
 
     @Test
     fun `a request fully written whose headers come after the write timeout is not cut`() {
-        val upstream = upstream(then = Serving.Answers(PREFILL_MS))
+        val upstream = upstream(then = Serving.Answers(LONG_PREFILL_MS))
         val retries = CopyOnWriteArrayList<String>()
         val started = System.nanoTime()
+        val client = client(totalMs = LONG_TOTAL_MS, writeTimeoutMs = LOAD_TOLERANT_WRITE_TIMEOUT_MS)
 
-        val answer = runBlocking { client().posted(context(upstream, retries), BIG_BODY) { "ok" } }
+        val answer = runBlocking { client.posted(context(upstream, retries), BIG_BODY) { "ok" } }
 
         val elapsedMs = (System.nanoTime() - started) / 1_000_000
         assertEquals("ok", answer)
-        assertTrue(elapsedMs >= PREFILL_MS, "the headers came after the write timeout: ${elapsedMs}ms")
+        assertTrue(elapsedMs >= LONG_PREFILL_MS, "the headers came after the write timeout: ${elapsedMs}ms")
         assertEquals(1, upstream.accepted.get(), "one connection: nothing was cut")
         assertTrue(retries.isEmpty(), "no retry: $retries")
     }
@@ -178,7 +184,11 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
     fun `a request the upstream keeps taking slowly is never cut`() {
         val upstream = upstream(then = Serving.Answers(0, pauseMs = SLOW_PAUSE_MS))
         val retries = CopyOnWriteArrayList<String>()
-        val client = client(sockets = UpstreamSockets(sendBufferBytes = SLOW_SEND_BUFFER))
+        val client = client(
+            totalMs = LONG_TOTAL_MS,
+            writeTimeoutMs = LOAD_TOLERANT_WRITE_TIMEOUT_MS,
+            sockets = UpstreamSockets(sendBufferBytes = SLOW_SEND_BUFFER),
+        )
 
         val answer = runCatching { runBlocking { client.posted(context(upstream, retries), SLOW_BODY) { "ok" } } }
 
@@ -244,11 +254,16 @@ class UpstreamClientWriteStallTest(@TempDir tmp: Path) {
 
     private data class Cut(val ms: Long, val stalled: Boolean, val thrown: String)
 
-    private fun client(attempts: Int = 2, totalMs: Long = TOTAL_MS, sockets: UpstreamSockets = UpstreamSockets()) =
+    private fun client(
+        attempts: Int = 2,
+        totalMs: Long = TOTAL_MS,
+        writeTimeoutMs: Long = WRITE_TIMEOUT_MS,
+        sockets: UpstreamSockets = UpstreamSockets(),
+    ) =
         UpstreamClient(
             totalTimeoutMs = totalMs,
             maxRetries = attempts,
-            client = UpstreamTransport().client(totalMs, LogSink {}, AtomicBoolean(true), WRITE_TIMEOUT_MS, sockets),
+            client = UpstreamTransport().client(totalMs, LogSink {}, AtomicBoolean(true), writeTimeoutMs, sockets),
             pacing = RetryPacing(waiter = RecordingWaiter()),
         )
 

@@ -30,6 +30,9 @@ class AddCommandTest {
     private val installed = mutableListOf<String>()
     private var restarted = 0
 
+    /** How many times the checkup ran. */
+    private var doctored = 0
+
     /** Whether the asked-for restart succeeds; one test turns it off. */
     private var restartOk = true
 
@@ -80,6 +83,10 @@ class AddCommandTest {
             daemonUp = { daemonUp },
             prompt = { question, default -> answers[question]?.removeFirstOrNull()?.ifEmpty { default } ?: default },
             liveTurn = { _, _ -> AddLiveResult(true, "the head answered the check turn") },
+            doctor = {
+                doctored += 1
+                true
+            },
         ),
         bindable = HeadPortBindable { true }, // the verb's other steps, not host listener admission
     )
@@ -127,6 +134,7 @@ class AddCommandTest {
         assertEquals(3099, topology.heads.getValue("fw").port, "the first configured head gets the first free port")
         assertEquals(listOf("fw"), installed)
         assertEquals(0, restarted, "no daemon was up, nothing to restart")
+        assertEquals(1, doctored, "a saved head ends with the checkup run, not a hint to run it")
     }
 
     @Test
@@ -138,6 +146,7 @@ class AddCommandTest {
         val unlisted = runBlocking { command(http(fwRoutes)).add(base + listOf("--model", "nope:1000"), env) }
         assertFalse(unlisted)
         assertEquals(before, Files.readString(config()))
+        assertEquals(0, doctored, "an add that wrote nothing runs no checkup")
         assertTrue(installed.isEmpty())
     }
 

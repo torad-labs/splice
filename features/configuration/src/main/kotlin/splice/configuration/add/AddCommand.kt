@@ -117,7 +117,8 @@ internal class AddCommand(
             output.line("  $RED✗$RESET $daemonLabel restart failed. The head is saved; $then")
         }
         if (live) checkWrittenHead(c, env, activated, linked)
-        output.line("  Checkup     ${CYAN}splice doctor$RESET $DIM(anything wrong prints its fix)$RESET")
+        output.line("  ${"checkup".padEnd(ADD_PAD)} ${CYAN}splice doctor$RESET")
+        ports.doctor(env)
         return activated
     }
 

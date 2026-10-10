@@ -7,6 +7,7 @@ import splice.app.auth.AddSignInSessions
 import splice.app.cli.AdminSupport
 import splice.app.cli.auth.LoginCommand
 import splice.configuration.add.AddConsole
+import splice.configuration.add.AddDoctor
 import splice.configuration.add.AddLinked
 import splice.configuration.add.AddLiveResult
 import splice.configuration.add.AddLiveTurn
@@ -56,6 +57,7 @@ internal object AddWiring {
             daemonUp = DaemonUpProbe { port -> AdminSupport.daemonUp(port) },
             prompt = ConsolePrompter(),
             liveTurn = CommandLiveTurn(),
+            doctor = AddDoctor { env -> DoctorWiring.command().doctor(emptyList(), env) },
         ),
     )
 

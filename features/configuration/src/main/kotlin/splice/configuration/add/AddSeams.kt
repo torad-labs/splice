@@ -43,6 +43,11 @@ public fun interface AddLiveTurn {
     public operator fun invoke(command: String, env: EnvReader): AddLiveResult
 }
 
+/** Runs the checkup (`splice doctor`) once the head is saved; true when it found nothing to fail. */
+public fun interface AddDoctor {
+    public operator fun invoke(env: EnvReader): Boolean
+}
+
 /** The ways `splice add` reaches outside itself, as app composes them (AddWiring) and a test
  *  fakes them: one contract rather than five constructor parameters on every verb that takes them. */
 public data class AddPorts(
@@ -54,4 +59,5 @@ public data class AddPorts(
     public val liveTurn: AddLiveTurn = AddLiveTurn { _, _ ->
         AddLiveResult(false, "the live checker is not configured; run the head's command to check it")
     },
+    public val doctor: AddDoctor = AddDoctor { true },
 )

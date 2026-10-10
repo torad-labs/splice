@@ -630,7 +630,11 @@ origin.
   cache kept an hour than for one kept five minutes, and splice charges each write at the rate for the
   duration the usage reports (`cache_write` and `cache_write_1h`, with `long_context_cache_write_1h` for a
   long-context tier). A turn on a model the roster does not name takes its published card too, so a Claude
-  head whose client picks the model no longer leaves those turns unpriced and out of a budget's sight.
+  head whose client picks the model no longer leaves those turns unpriced and out of a budget's sight. The OpenAI
+  gpt-5 family on api.openai.com (gpt-5 to gpt-5.5, with their mini, nano and pro variants) and the xAI grok-4.20
+  variants carry their cards too, so a turn on them is priced; the ChatGPT backend lists only its own gpt-6 and
+  gpt-5.6 models. GPT-5.6 Sol's price is a promotion that OpenAI says holds through at least November 21, 2026, so
+  that row is read again then.
 - **The shared MCP host caches `tools/list`.** Every session sharing a hosted server gets the listing from one
   cache, dropped when the child changes its tools or exits, whoever owns the process slot at that moment.
   `/api/mcp` reports each hosted server's resident memory.
@@ -640,25 +644,34 @@ origin.
   cannot be resolved while `[projects]` is configured carries `system_prompt_cwd_unresolved=1`, and doctor
   fails a project prompt table that sets both `system_prompt` and `system_prompt_file`, as the daemon refuses it at load.
 - **A budget day runs midnight to midnight where the daemon runs.** Under the UTC day a Chicago budget lifted
-  at 7 PM. The refusal says it lifts at midnight, local time, and Accounts draws the same day.
+  at 7 PM. The refusal says it lifts at midnight, local time, and Accounts draws the same day, taking its start from
+  the daemon, so the two days a year the clock changes run 23 or 25 hours and are counted as they ran. Accounts adds up
+  whole hours only; where midnight falls inside an hour (a zone offset by half an hour), the hour holding it is its
+  own figure beside the day's and is never guessed into either day.
 - **Accounts reports what a provider says about usage.** A provider that answers with no usage clears the
   account's bars and the card says "<Provider> doesn't report limits"; a failed probe keeps the last reading
-  with its time. Claude's per-model weekly windows (Opus, Sonnet) appear under the weekly window, each with its own reset.
+  with its time. Claude's per-model weekly windows (Opus, Sonnet) appear under the weekly window, each with its own reset,
+  and a model week past its own reset is not drawn as a current reading. Each bar is marked stale from its own
+  reading, so a fresh five-hour window beside a week that has ended no longer shows that week's spent figure as
+  today's. When two heads share one login and only one of them pins it, the pin shows on that head alone, so Unpin acts
+  on the head that holds it.
 - **A provider can say whose machine runs it.** `discovery = { family = "vast" }` on a provider groups a
   rented GPU reached through an SSH tunnel as vast.ai in the console, where its loopback address would say This computer.
 - **A launch inside tmux records its pane** with the launch, so a tool that drives sessions finds the pane of a session it started.
 - **A `splice.toml` with findings refuses boot and lists every one at once.** Each finding names its key and
-  line and never a value. `splice restart` refuses before it stops a running daemon, so a bad edit no longer
-  takes a healthy daemon down.
+  line, says what to write instead, and never prints a value you wrote. `splice restart` refuses before it stops a
+  running daemon, so a bad edit no longer takes a healthy daemon down.
   So do `splice upgrade` and the launcher that replaces an older daemon after an install: the new build checks your
   `splice.toml` first, and when it would refuse, the old daemon keeps running and you see the list.
+  `splice check-config` is that check on its own: it prints the list, changes nothing and exits 3 when this build
+  would refuse your file. A plain `systemctl restart` cannot be checked first, because systemd stops the unit
+  before splice runs.
   Run from a terminal, a `splice` command that hits the refusal offers a fix session, `splice restart` included:
   for each finding you can remove its line, set a new value, open your editor at that line, or skip it for now.
   `splice.toml` is backed up before the first change, the file is checked again after every fix, and the command
   runs again only when nothing is left, so `splice restart` repairs the file and then restarts in one go. A value
   you type is not echoed to the screen, since it can be a token. A `splice.toml` that is a link is fixed at the file
   it points to, and stays a link. Off a terminal the command prints the list, exits non-zero and changes nothing.
-  Every finding names its key and line, says what to write instead, and never prints a value you wrote.
 - **The console reaches past Accounts.** It also has a Needs you landing page, Fleet, Usage, Turns (with a page
   per turn), Teams, Projects, Settings (Advanced whole-file edit, Storage, Conversation), Doctor and Health, and a
   Playground that sends one prompt to several models side by side.
@@ -674,15 +687,19 @@ origin.
 - **One setting says how far back splice keeps your history.** `historyRetentionDays` covers both
   the hourly spend totals and the request records: days, or `forever`. A fresh install's
   `splice.toml` carries 35 days, which is a month of plan billing plus the days it is read over.
-  An install made before this setting keeps the window it already had (`perfArchiveRetentionDays`,
-  90), because an upgrade never shortens your history on its own. An hourly total priced without a
+  An install made before this setting keeps the widest window it already had (`perfArchiveRetentionDays`,
+  90 unless you set it, or the 35 days the hourly totals always kept), because an upgrade never shortens your
+  history on its own. An hourly total priced without a
   rate card is priced again later from its perf rows at the cards splice holds then.
-  Usage reaches as far back as the turns splice holds: an hour the hourly totals lack is built from the
-  request records behind it, priced at the cards splice holds now, so the month view is no longer drawn over
+  Usage reaches as far back as the turns splice holds, whatever window you keep: an hour the hourly totals lack is
+  built from the request records behind it, priced at the cards splice holds now, so the month view is no longer drawn over
   fewer days than the records on disk. An hour is built only when it can be exact: a read that was not whole
   backfills nothing, the oldest hour the records reach is left out, and an hour the totals already have is
   never replaced. A window of `0` still keeps today, because a daily budget reads today's records; they go
-  at the local midnight.
+  at the local midnight. `GET /api/history` answers the saved window, what is held (turns, bytes, the oldest
+  moment) and the pace in MB a month; `?days=N` adds what choosing N would delete, counted to the minute, and
+  `PUT /api/history` saves N and deletes exactly that. It refuses a moment newer than the window now warrants and a
+  save made while any record file could not be read whole, so nothing is deleted that was not shown.
 - **Settings Storage lists what splice keeps and clears it.** It covers retained turn statistics and live session
   totals, separate from the trace deletion capture-off already does.
 - **Two provider quirks.** `summary_delivery` switches off the cutoff that empties gpt-6.1-sol reasoning summaries

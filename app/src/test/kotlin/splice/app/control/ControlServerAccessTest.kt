@@ -10,6 +10,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
@@ -44,6 +45,9 @@ private val SESSION_ROWS = setOf(
 /** The rows that answer with no key at all: the liveness probe, and the console's pages (back Oct 10, 2026), which
  *  carry no data: a page reads splice only through the keyed rows. */
 private val OPEN_ROWS = setOf("GET /health", "GET /", "GET /{...}")
+
+/** The status line rows answer a call with no Authorization header with one relaunch line and no data. */
+private val RELAUNCH_NOTICE_ROWS = setOf("GET /statusline/{head}", "POST /statusline/{head}")
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ControlServerAccessTest {
@@ -105,6 +109,33 @@ class ControlServerAccessTest {
         assertEquals(HttpStatusCode.OK, status.status, "the management key still opens the plane")
     }
 
+    // A session launched under 0.3.x holds no turn key: its status line command sends no bearer. The door
+    // stays shut for it, but the line it prints says what to do instead of a JSON refusal.
+    @Test
+    fun `a status line call with no key gets one relaunch line and no figures`() = runBlocking {
+        val replies = listOf(
+            client.get("http://127.0.0.1:$port/statusline/codex"),
+            client.post("http://127.0.0.1:$port/statusline/codex") { setBody("{}") },
+        )
+        replies.forEach { reply ->
+            assertEquals(HttpStatusCode.OK, reply.status)
+            assertEquals("splice updated: relaunch this session for its status line", reply.bodyAsText().trim())
+        }
+    }
+
+    @Test
+    fun `a status line call with a wrong key is still refused, and the right key still gets its data`() = runBlocking {
+        val wrong = client.get("http://127.0.0.1:$port/statusline/codex") {
+            header("Authorization", "Bearer not-the-key")
+        }
+        assertEquals(HttpStatusCode.Unauthorized, wrong.status)
+        val keyed = client.get("http://127.0.0.1:$port/statusline/codex") {
+            header("Authorization", "Bearer $turnKey")
+        }
+        assertEquals(HttpStatusCode.OK, keyed.status)
+        assertTrue(!keyed.bodyAsText().contains("relaunch this session"), "a keyed call gets the status line")
+    }
+
     // v0.4.0 review: the list of routes the turn key must NOT open was five paths picked by hand, so a
     // route given Door.SESSION anywhere else, or registered with no guard at all, passed. The rows now
     // come from the router itself (ControlServer.routeTable), MCP routes included, and every one is
@@ -123,7 +154,7 @@ class ControlServerAccessTest {
             val withTurnKey = rawStatus(path, "127.0.0.1:$port", bearer = turnKey, method = method)
             val withNoKey = rawStatus(path, "127.0.0.1:$port", method = method)
             val turnKeyAdmitted = row in SESSION_ROWS || row in OPEN_ROWS
-            val noKeyAdmitted = row in OPEN_ROWS
+            val noKeyAdmitted = row in OPEN_ROWS || row in RELAUNCH_NOTICE_ROWS
             if ((withTurnKey != 401) == turnKeyAdmitted && (withNoKey != 401) == noKeyAdmitted) {
                 null
             } else {

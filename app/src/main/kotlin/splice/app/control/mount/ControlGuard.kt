@@ -80,8 +80,21 @@ internal class ControlGuard(
     /** Mints the management key now, before the port opens, so a dashboard load never races the minting. */
     fun mintKey(): String = mgmtKey.get()
 
-    suspend fun guarded(call: ApplicationCall, door: Door = Door.MANAGEMENT, block: MgmtRoute) {
+    /** [keylessNotice] answers a call that carries NO Authorization header at all with a 200 and that one line,
+     *  instead of the JSON refusal: a status line command from a session launched before 0.4.0 sends no
+     *  bearer, and the line it prints is the only place the user would see what to do. The door stays shut: a
+     *  wrong key is still refused, and the notice carries no data. */
+    suspend fun guarded(
+        call: ApplicationCall,
+        door: Door = Door.MANAGEMENT,
+        keylessNotice: String? = null,
+        block: MgmtRoute,
+    ) {
         val header = call.request.headers["Authorization"]
+        if (header == null && keylessNotice != null) {
+            call.respondText(keylessNotice, ContentType.Text.Plain)
+            return
+        }
         val authorized = mgmtKey.matchesBearer(header) || when (door) {
             Door.MANAGEMENT -> false
             Door.MCP -> mcpAccessKey.matchesBearer(header)

@@ -62,7 +62,7 @@ curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.4.0/install
   directory to owner-only (0700).
 - **Rotate the management key before relaunching sessions.** A 0.3.x session other than
   `claude-splice` still holds the management key and can run turns until rotation, but its old
-  keyless status line is refused by 0.4.0. Under 0.3.x the management key sat in those sessions'
+  keyless status line is not answered by 0.4.0: it prints "splice updated: relaunch this session for its status line" instead of figures. Under 0.3.x the management key sat in those sessions'
   environment, where the model's tools could print it into a transcript. Delete
   `<state>/mgmt-key`, then stop the daemon: `systemctl --user stop splice.service` where a unit
   runs it, otherwise end its process. Then run `splice restart` or launch any head. A fresh key

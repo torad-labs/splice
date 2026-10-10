@@ -32,6 +32,9 @@ import splice.usage.statusline.StatuslineRoute
 // table renders first, never the whole ledger.
 private const val DEFAULT_PERF_TAIL = 200
 
+/** What a pre-0.4.0 session's status line prints: it sends no bearer, and 0.4.0 does not answer it with data. */
+private const val STATUSLINE_RELAUNCH = "splice updated: relaunch this session for its status line"
+
 internal class UsageMount(
     heads: Map<String, ManagedHead>,
     resolver: HeadResolver,
@@ -96,7 +99,11 @@ internal class UsageMount(
         route.put("/api/alerts") { guard.guarded(call) { alertRoutes.write(call.receiveText()).send(call) } }
         route.post("/api/alerts/test") { guard.guarded(call) { alertRoutes.test().send(call) } }
         // A SESSION's statusline command calls these, so its turn key opens them (with the resume hook).
-        route.post("/statusline/{head}") { guard.guarded(call, Door.SESSION) { statuslineRoute.statusline(call) } }
-        route.get("/statusline/{head}") { guard.guarded(call, Door.SESSION) { statuslineRoute.statusline(call) } }
+        route.post("/statusline/{head}") {
+            guard.guarded(call, Door.SESSION, STATUSLINE_RELAUNCH) { statuslineRoute.statusline(call) }
+        }
+        route.get("/statusline/{head}") {
+            guard.guarded(call, Door.SESSION, STATUSLINE_RELAUNCH) { statuslineRoute.statusline(call) }
+        }
     }
 }

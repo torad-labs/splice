@@ -1,6 +1,8 @@
 package splice.app.cli.status
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -8,6 +10,7 @@ import splice.core.config.UserHome
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
+import splice.daemonclient.DaemonProbe
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -61,6 +64,17 @@ class StatusCommandTest {
         UserHome.within(tmp) {
             assertTrue(StatusCommand().authPresent("kimi", provider) { null })
         }
+    }
+
+    @Test
+    fun `status shows the daemon's newer-client warning and nothing when it has none`() {
+        val heads = DaemonProbe.HealthHeads(total = 1, ready = 1, failed = 0)
+        val warning = "Claude Code 9.9.9 is newer than the version splice 0.4.0 was tested with (2.1.289)"
+        val warned = DaemonProbe.HealthView("0.4.0", heads = heads, clientVersionWarning = warning)
+
+        assertEquals(warning, StatusCommand().clientVersionWarning(warned))
+        assertNull(StatusCommand().clientVersionWarning(DaemonProbe.HealthView("0.4.0", heads = heads)))
+        assertNull(StatusCommand().clientVersionWarning(null))
     }
 
     @Test

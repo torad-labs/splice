@@ -130,6 +130,7 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
         CommandFactory { a -> Command.Upgrade(a.drop(1)) },
     ),
     "status" to CommandRegistration("", CommandFactory.Alone(Command.Status)),
+    "console" to CommandRegistration("", CommandFactory.Alone(Command.Console)),
     "restart" to CommandRegistration(
         "[--now]",
         CommandFactory { a ->

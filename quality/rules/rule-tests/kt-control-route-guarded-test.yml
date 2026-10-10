@@ -26,6 +26,9 @@ valid:
   - 'route.get(path = "/health") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }'
   # dated allowlist: the unauthenticated liveness probe
   - 'get("/health") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }'
+  # dated allowlist: the console's pages, which carry no data (Oct 10, 2026)
+  - 'route.get("/") { call.respondRedirect("/accounts.html") }'
+  - 'route.get("/{asset...}") { serve(call) }'
   # kotlinx buildJsonObject `put` is not a route registration — the path literal is what separates them
   - 'put("total", summaries.sumOf { (_, summary) -> summary.total })'
   - 'put("sessions", buildJsonArray { listing.sessions.forEach { add(row(it)) } })'
@@ -44,8 +47,7 @@ invalid:
   # the census
   - 'post("/statusline/{head}") { statuslineRoute.statusline(call) }'
   - 'get("/statusline/{head}") { statuslineRoute.statusline(call) }'
-  # the console page left the allowlist on Oct 7, 2026: an unguarded page at either path is red
-  - 'get("/") { call.respondText(dashboardHtml(), ContentType.Text.Html) }'
+  # the console page left the allowlist on Oct 7, 2026, and came back on Oct 10 at / and /{asset...} only
   - 'get("/dashboard") { call.respondText(dashboardHtml(), ContentType.Text.Html) }'
   # the allowlist is anchored per path: a near-miss of an allowlisted route is still red
   - 'get("/healthz") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }'
@@ -56,6 +58,8 @@ invalid:
   - 'route("/api/sub") { respond(call, thing()) }'
   # the allowlist is ANCHORED to the exact path: a prefix must not inherit /health's exemption
   - 'get("/health/detail") { call.respondText(secrets()) }'
+  - 'get("/api/{asset...}") { call.respondText(secrets()) }'
+  - 'get("/{asset...}/x") { call.respondText(secrets()) }'
   - 'get("/healthz") { call.respondText(secrets()) }'
   # a trailing comment is not an authorization decision the build can see
   - 'post("/launch/{head}") { launchRoutes.launch(call) } // stdin-piped per tick; no bearer'

@@ -56,7 +56,7 @@ public data class LoginAnnouncement(
 )
 
 /** The operator's desktop browser. Public: `splice console` opens its page through it as well. */
-internal class SystemBrowserOpener(private val output: TerminalOutput) : BrowserOpener {
+public class SystemBrowserOpener(private val output: TerminalOutput) : BrowserOpener {
 
     /** WALL (2026-09-16). A TEST must never launch the operator's browser. SetupCommandTest
      *  constructed SetupCommand without overriding its loginHead seam, so the wizard ran a REAL

@@ -83,3 +83,17 @@ SOFTWARE.
 
 Forked at upstream commit `d66dd54d7baed0059d2fc34280b409ee6c6730df`
 (v0.2.6; see `PROVENANCE.md` for the full fork record).
+
+## Console fonts
+The fonts the console's pages load (`app/src/main/resources/console/fonts/`), by family, each with its license text beside the font files.
+- Fraunces (`fraunces-400.woff2`)
+  - Copyright 2018 The Fraunces Project Authors (https://github.com/undercasetype/Fraunces)
+  - License: SIL Open Font License, Version 1.1
+  - Full license text: `app/src/main/resources/console/fonts/OFL-Fraunces.txt`
+- IBM Plex Mono (`ibm-plex-mono-400.woff2`, `ibm-plex-mono-500.woff2`, `ibm-plex-mono-600.woff2`)
+  - License: SIL Open Font License, Version 1.1
+  - Full license text: `app/src/main/resources/console/fonts/OFL-IBM-Plex.txt`
+- Source Serif 4 (`source-serif-4-400.woff2`)
+  - Copyright 2014 - 2023 Adobe (http://www.adobe.com/), with Reserved Font Name ‘Source’. All Rights Reserved.
+  - License: SIL Open Font License, Version 1.1
+  - Full license text: `app/src/main/resources/console/fonts/OFL-Source-Serif-4.txt`

@@ -123,7 +123,8 @@ class CommandParserTest {
         )
         val lost = shipped.filter { parser.parse(arrayOf(it)) == null }
         assertEquals(emptyList<String>(), lost, "verbs 0.4.0 shipped that no longer parse")
-        // Removed with the console on Oct 7, 2026, by the operator's order.
+        // The console came back on Oct 10, 2026, opened by `splice console`; the old verb stays gone.
+        assertEquals(Command.Console, parser.parse(arrayOf("console")))
         assertEquals(null, parser.parse(arrayOf("dashboard")), "splice dashboard opened the removed console")
     }
 }

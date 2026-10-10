@@ -13,6 +13,7 @@ import splice.app.TraceWiring
 import splice.app.cli.auth.KeyCommand
 import splice.app.cli.auth.LoginCommand
 import splice.app.cli.setup.SetupCommand
+import splice.app.cli.status.ConsoleCommand
 import splice.app.cli.status.StatusCommand
 import splice.configuration.add.AddModelsResult
 import splice.core.GATEWAY_VERSION
@@ -110,6 +111,11 @@ public sealed class Command {
     }
 
     public data object Status : Command() { override suspend fun run(): Int = success { StatusCommand().status() } }
+
+    /** `splice console`: opens the console in the browser, unlocked. */
+    public data object Console : Command() {
+        override suspend fun run(): Int = outcomeExitCode(ConsoleCommand().open())
+    }
 
     /** `splice restart [--now]`: waits for compactions in flight unless [now] (V4-216). */
     public data class Restart(val now: Boolean = false) : Command() {

@@ -37,6 +37,10 @@
 #     probe) and it returns no head or config detail: ControlServer.kt:126-127 states both halves.
 #   2026-09-18 to 2026-10-07: `/` and `/dashboard`, the web console page. Removed with the console
 #     UI by the operator's order on Oct 7, 2026; an unguarded route at either path is red again.
+#   2026-10-10: `/` and `/{asset...}`, the console's pages, back by the operator's order of Oct 10 (Marlin's
+#     console lead brief). They serve only the packaged drawing (HTML, CSS, JS, fonts) by a plain name
+#     (ConsoleMount's ASSET pattern) and carry no data: every number on a page comes from the keyed /api/* rows,
+#     with the management key `splice console` hands the page in its address fragment. `/dashboard` stays red.
 # The allowlist is a PATH regex, so it is anchored per route and cannot be widened by accident; an
 # entry admits exactly the path it spells.
 #
@@ -112,4 +116,4 @@ rule:
           regex: '\bguarded\s*\('
     # ALLOWLIST — see the dated entries in this rule's header. One anchored alternative per route.
     - not:
-        regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*(?:path\s*=\s*)?"(/health)"'
+        regex: '^(?:[A-Za-z_][A-Za-z0-9_]*\.)?(get|post|put|patch|delete|head|options|route)\(\s*(?:path\s*=\s*)?"(/health|/|/\{asset\.\.\.\})"'

@@ -41,9 +41,9 @@ private val SESSION_ROWS = setOf(
     "POST /hooks/foreground/{head}",
 )
 
-/** The row that answers with no key at all: the liveness probe. The console page that answered at
- *  `/` and `/dashboard` was removed on Oct 7, 2026. */
-private val OPEN_ROWS = setOf("GET /health")
+/** The rows that answer with no key at all: the liveness probe, and the console's pages (back Oct 10, 2026), which
+ *  carry no data: a page reads splice only through the keyed rows. */
+private val OPEN_ROWS = setOf("GET /health", "GET /", "GET /{...}")
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ControlServerAccessTest {
@@ -150,13 +150,18 @@ class ControlServerAccessTest {
         assertTrue(said.single().startsWith("[security] the control plane refused"), said.single())
     }
 
-    // Oct 7, 2026: the operator removed the console UI. The daemon serves no page at either path the
-    // console lived at; only the keyed API and /health remain.
+    // Oct 10, 2026: the console is back as the drawing on live data (replacing the Oct 7 pin that no page answered).
+    // Its pages open with no key; nothing but a packaged page, stylesheet, script or font is served there, and every
+    // number still needs the key.
     @Test
-    fun `the daemon serves no console page, at either path it lived at`() {
-        for (path in listOf("/", "/dashboard")) {
+    fun `the console's pages open with no key, and nothing else does`() {
+        assertEquals(302, rawStatus("/", "localhost:$port"))
+        assertEquals(200, rawStatus("/accounts.html", "localhost:$port"))
+        assertEquals(200, rawStatus("/fonts/fraunces-400.woff2", "localhost:$port"))
+        for (path in listOf("/dashboard", "/fonts/OFL-Fraunces.txt", "/..%2fmgmt-key", "/nope.html")) {
             assertEquals(404, rawStatus(path, "localhost:$port"), path)
         }
+        assertEquals(401, rawStatus("/api/accounts", "localhost:$port"), "the numbers still need the key")
     }
 
     /** `/statusline/{key}/(method:POST)` — how the router renders a route — as `POST /statusline/{key}`. */

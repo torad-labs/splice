@@ -1,6 +1,7 @@
 // PORT-OF: server/src/control/api.mjs + control-server.mjs @ pre-public-port-baseline — the centralized control
-// plane (spliced, loopback :3096). Bearer-guarded /api/* aggregating every head; it serves no
-// console page (removed Oct 7, 2026). Single-daemon simplification (plan): heads are IN-PROCESS Head
+// plane (spliced, loopback :3096). Bearer-guarded /api/* aggregating every head, and the console's pages at /
+// (removed Oct 7, 2026, back Oct 10 as the drawing on live data, ConsoleMount). Single-daemon
+// simplification (plan): heads are IN-PROCESS Head
 // objects, so lifecycle is start()/stop() calls and config is ONE shared service — NO PATCH
 // fanout (deleted, not ported). File-based truth (auth/usage/compact/logs) so a DOWN head still
 // shows last-known state.
@@ -38,6 +39,7 @@ import splice.app.control.api.HeadSignals
 import splice.app.control.mount.AccountsMount
 import splice.app.control.mount.AddMount
 import splice.app.control.mount.BoundResource
+import splice.app.control.mount.ConsoleMount
 import splice.app.control.mount.ConfigurationMount
 import splice.app.control.mount.ControlGuard
 import splice.app.control.mount.ControlMount
@@ -139,6 +141,9 @@ internal class ControlServer(
     private val launchSessions = LaunchSessions(sessions, ports, config.statePaths)
     private val launch = LaunchMount(heads, resolver, launchService, audit, log, guard, launchSessions)
 
+    // Oct 10, 2026: the console's pages at /, open rows that carry no data (ConsoleMount).
+    private val console = ConsoleMount()
+
     // The order the rows register in: MCP last, and only when the daemon hosts MCP at all (null keeps the control
     // plane exactly as before). The MCP host is the one bound resource: the server starts it after the bind.
     private val mcp: McpMount? = runtime.mcpHost?.let { McpMount(it, guard) }
@@ -158,6 +163,7 @@ internal class ControlServer(
         ControlMount(diagnostics::register),
         ControlMount(models::register),
         ControlMount(launch::register),
+        ControlMount(console::register),
     ) + listOfNotNull(mcp)
     private val resources: List<BoundResource> = listOfNotNull(mcp)
 

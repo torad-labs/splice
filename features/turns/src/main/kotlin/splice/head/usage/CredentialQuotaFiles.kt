@@ -31,14 +31,17 @@ public class CredentialQuotaFiles(private val base: Path, private val log: LogSi
         }
     }
 
-    /** Serialize writes from the one live head owner; an older observation cannot replace a newer one. */
+    /** Serialize writes from the one live head owner; an older observation cannot replace a newer one. A turn's
+     *  header reading names no model weeks, so it keeps the ones the usage probe stored for the same week, as the
+     *  head's own tracker does: before Oct 10, 2026 each turn erased Fable's week from the account's reading. */
     @Synchronized
     override fun observed(key: String, snapshot: QuotaSnapshot) {
         if (snapshot.isEmpty) return
         val file = file(key)
         val previous = read(key)
         if (previous != null && previous.updatedAt > snapshot.updatedAt) return
-        Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, codec.encode(snapshot)) }
+        val kept = snapshot.keepingModelsOf(previous)
+        Cancellables.runCatchingCancellable { SecureFile.writeAtomic0600(file, codec.encode(kept)) }
             .onFailure {
                 log("[quota] credential observation write failed (${it::class.simpleName}); standing is unknown\n")
             }

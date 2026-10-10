@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.CredentialKey
+import splice.core.usage.ModelQuota
 import splice.core.usage.QuotaJson
 import splice.core.usage.QuotaSnapshot
 import splice.core.usage.QuotaWindow
@@ -41,6 +42,15 @@ class CredentialQuotaFilesTest {
         assertEquals(snapshot(12.0, 1_000L), reopened.read(first))
         assertEquals(snapshot(85.0, 2_000L), reopened.read(second))
         assertEquals(snapshot(99.0, 1_000L), QuotaJson().decode(Files.readString(base)))
+    }
+
+    @Test
+    fun `a turn's header reading keeps the model weeks the usage probe stored for the same week`() {
+        val files = CredentialQuotaFiles(directory.resolve("native-quota.json"), LogSink {})
+        val fable = listOf(ModelQuota("Fable", 40.0, 600_000L))
+        files.observed(first, snapshot(10.0, 1_000L).copy(models = fable))
+        files.observed(first, snapshot(11.0, 2_000L))
+        assertEquals(snapshot(11.0, 2_000L).copy(models = fable), files.read(first))
     }
 
     @Test

@@ -39,7 +39,11 @@ function windowOf(pct, resetSec, lenSec, slot) {
   return { label, used: Math.round(pct), len: LEN[label], left: left != null && left >= 0 ? left : null };
 }
 const plainPlan = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : undefined);
-const acctId = (row) => row.selector_key || row.label || "primary";
+// An account's name on one command, as splice knows it there: two commands can each have an account called "primary"
+// (ChatGPT's and Grok's), so the page keys an account by its commands and that name, and sends splice the name only.
+const labelOf = (row) => row.selector_key || row.label || "primary";
+const acctId = (row) => `${(row.heads || []).join("+")}/${labelOf(row)}`;
+const labelOn = (a, head) => a.row?.account_labels?.[head] || labelOf(a.row);
 
 // One read of everything the page shows. Each provider: its commands (with their order, pin and day) and its accounts.
 async function load() {
@@ -95,11 +99,13 @@ async function load() {
   await Promise.all([...provs.values()].filter((p) => p.kind === "plan").flatMap((p) => p.cmds.map(async (c) => {
     const o = await API.get(`/api/auth/${encodeURIComponent(c.head)}/order`);
     const mine = p.accounts.filter((a) => (a.row.heads || []).includes(c.head));
-    const ids = (o.body?.effective_order || []).filter((id) => mine.some((a) => a.id === id));
+    const byLabel = (label) => mine.find((a) => labelOn(a, c.head) === label)?.id;
+    const ids = [...new Set((o.body?.effective_order || []).map(byLabel).filter(Boolean))];
     c.order = [...ids, ...mine.map((a) => a.id).filter((id) => !ids.includes(id))];
     c.mode = o.body?.order?.length ? "mine" : "soonest";
     c.pin = mine.find((a) => a.row.pinned)?.id || null;
-    c.serving = o.body?.next_target ?? null; c.following = o.body?.following_target ?? null; // the pool's own picks
+    // the pool's own picks, named by label on this command
+    c.serving = byLabel(o.body?.next_target) ?? null; c.following = byLabel(o.body?.following_target) ?? null;
   })));
   data = [...provs.values()];
 }
@@ -338,7 +344,9 @@ async function submitCode(field) {
 function howFor(p, a, c) {
   const head = c ? c.head : a.row.heads[0];
   if (a.row?.login_place) return { start: `/api/claude-logins/${encodeURIComponent(a.row.login_place.id)}/login`, body: { label: null }, poll: head, native: true };
-  return { start: `/api/auth/${encodeURIComponent(head)}/login`, body: a.row?.label ? { label: a.row.label } : {}, poll: head };
+  // its name on that command; the first account of a ChatGPT, Grok, Kimi or Muse command is "primary" there
+  const label = a.row?.account_labels?.[head] || a.row?.label;
+  return { start: `/api/auth/${encodeURIComponent(head)}/login`, body: label ? { label } : {}, poll: head };
 }
 // ---------- an account ----------
 // serves: every command this account serves now, each riding it as a chip. Use now pins it on the rail's command.
@@ -616,7 +624,7 @@ async function moveTo(p, c, aid, index) {
   const unpin = c.pin === aid; // moving the pinned account by hand is placing it: the pin gives way
   c.order = list.map((x) => x.id); c.mode = "mine"; if (unpin) c.pin = null; render({ flip: true });
   if (unpin) await API.del(`/api/auth/${encodeURIComponent(c.head)}/switch`);
-  await API.put(`/api/auth/${encodeURIComponent(c.head)}/order`, { order: c.order });
+  await API.put(`/api/auth/${encodeURIComponent(c.head)}/order`, { order: list.map((x) => labelOn(x, c.head)) });
   await refresh();
 }
 // ---------- keys: arrows on a grip, Enter and Escape in the fields ----------
@@ -688,13 +696,13 @@ document.addEventListener("click", async (e) => {
     case "probe": probe(); break;
     // Soonest reset is no order of his own (AccountPool.kt:101, :259); My order keeps the order shown, as his.
     case "mode": {
-      const order = t.dataset.v === "mine" ? ruled(p, k).map((x) => x.id) : [];
-      k.mode = t.dataset.v; if (order.length) k.order = order; render({ flip: true });
-      await API.put(headPath(k, "order"), { order }); await refresh(); break;
+      const order = t.dataset.v === "mine" ? ruled(p, k) : [];
+      k.mode = t.dataset.v; if (order.length) k.order = order.map((x) => x.id); render({ flip: true });
+      await API.put(headPath(k, "order"), { order: order.map((x) => labelOn(x, k.head)) }); await refresh(); break;
     }
     // Use now pins the account on that command: it serves from the next request, the rule stays, and the pin undoes it
     // (SwitchRoute.kt).
-    case "use": k.pin = a.id; render({ flip: true }); await API.post(headPath(k, "switch"), { label: a.id }); await refresh(); break;
+    case "use": k.pin = a.id; render({ flip: true }); await API.post(headPath(k, "switch"), { label: labelOn(a, k.head) }); await refresh(); break;
     case "unpin": k.pin = null; render({ flip: true }); await API.del(headPath(k, "switch")); await refresh(); break;
     case "lane": ui.lane[p.id] = k.cmd; closeAll(); render({ flip: true }); break; // the rail shows that command's order
     case "add": addAccount(p.id, k.cmd); break;

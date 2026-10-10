@@ -35,9 +35,12 @@ class HostedServerSwapTest {
     private val exitMayFinish = CountDownLatch(1)
     private val exits = AtomicInteger()
 
-    /** The first child to exit is held in its exit wait until the test lets it go; later ones are reaped as usual. */
+    /** The first child to exit is held in its exit wait until the test lets it go; later ones are reaped as usual.
+     *  The first is reaped before the test is told: stdout closes a beat before the kernel reaps a dead child, and a
+     *  listing in that beat would still find the old child alive and be written to it. */
     private val holdFirstExit = ChildReaped { child ->
         if (exits.getAndIncrement() == 0) {
+            child.waitFor(WAIT_MS, TimeUnit.MILLISECONDS)
             exitEntered.countDown()
             check(exitMayFinish.await(WAIT_MS, TimeUnit.MILLISECONDS)) { "the test never released the old child" }
         }

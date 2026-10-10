@@ -62,7 +62,7 @@ dated = "2026-10-02"
 names = ["DayFileRemoval", "PluginFileMatch"]
 reason = """DayFileRemoval performs filesystem deletion and reports whether a file existed; its IOException refuses a purge. PluginFileMatch only classifies a path for plugin discovery and never deletes it. A predicate cannot implement the destructive operation, so these contracts remain distinct."""
 
-# ── 20 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
+# ── 21 names, () -> Unit ──────────────────────────────────────────────────────────────────────────
 [[groups]]
 signature = "()->Unit"
 dated = "2026-10-05"
@@ -75,6 +75,7 @@ names = [
     "HaltJvm",
     "HandoffMark",
     "HoldChange",
+    "ListingReturned",
     "MuseMintWriteGuard",
     "ProtocolAnomaly",
     "PulseTick",
@@ -113,7 +114,9 @@ successfully, so the detached drive may keep its recording only if its terminal 
 this acknowledgement never runs after failed completion, unlike the earlier HandoffMark or the \
 provider resource release at TurnEnd, proved by TurnStreamerCleanupTest), RestoreStep \
 (undo one already-applied upgrade step), FileIoTask (the body to run on the file-IO dispatcher), \
-MuseMintWriteGuard (the pre-write assertion before a minted key is persisted), HandoffMark (the \
+MuseMintWriteGuard (the pre-write assertion before a minted key is persisted), ListingReturned (a hosted \
+child's tools/list answer is back and the cache has not kept it yet: the one instant a change notification can \
+land, which the cache's own test uses to force that interleaving), HandoffMark (the \
 turn has been handed to upstream — a MARK the pipeline sets once, which is why it is a name of \
 its own rather than folded onto one of the observers above: an observer is subscribed to, a mark \
 is set). Substituting any for any other is not a type error and would be silent: HaltJvm for \

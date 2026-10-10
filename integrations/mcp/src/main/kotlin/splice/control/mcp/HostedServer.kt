@@ -25,19 +25,7 @@ import java.io.BufferedWriter
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
-
-private const val EXIT_WAIT_MS = 1_000L
-
-/** How long the host waits for a child that closed its stdout to be reaped, so its exit code is real. A test holds
- *  this wait open to put a replacement child in the process slot while the old child's exit is still being handled. */
-internal fun interface ChildReaped {
-    operator fun invoke(child: Process): Boolean
-}
-
-/** The production wait: up to a second for the kernel to reap the child. */
-internal val waitForReap = ChildReaped { child -> child.waitFor(EXIT_WAIT_MS, TimeUnit.MILLISECONDS) }
 
 internal class HostedServer(
     private val spec: McpServerSpec,
@@ -271,12 +259,9 @@ internal class HostedServer(
         } catch (e: IOException) {
             lastError = "read failed: ${e.message}"
         }
-        // The listing this child gave is stale whoever owns the process slot now: a replacement spawned during
-        // the wait below shares this cache and must not be served the old child's tools.
-        tools.drop()
+        tools.drop() // stale whoever owns the slot now: a replacement shares this cache
         if (process !== p) return
-        // stdout EOF arrives a beat before the kernel reaps the child; wait that beat so the code is real.
-        val code = if (reaped(p)) p.exitValue().toString() else "unknown"
+        val code = reaped.codeOf(p)
         // Compare-and-clear: a replacement may have been spawned during the wait; never clear it.
         val mine = synchronized(stateLock) {
             (process === p).also {

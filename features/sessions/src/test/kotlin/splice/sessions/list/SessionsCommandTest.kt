@@ -237,7 +237,7 @@ class SessionsCommandTest {
         val command = SessionsCommand(
             TerminalOutput(::println),
             TerminalOutput(System.err::println),
-            SessionAccounts { mapOf("s-1" to SessionAccountLine("primary", "work")) },
+            SessionAccounts { mapOf(SessionAccountKeys.of("claudex", "s-1") to SessionAccountLine("primary", "work")) },
         )
 
         val lines = capture { command.sessions({ null }, registry) { now } }.lines()
@@ -247,6 +247,38 @@ class SessionsCommandTest {
         val beta = lines.first { it.contains("beta") }
         assertFalse(beta.contains("pinned"), beta)
         assertFalse(beta.contains(" on "), beta)
+    }
+
+    @Test
+    fun `one session id on two heads shows each head its own account and pin`(@TempDir dir: Path) {
+        Files.writeString(
+            dir.resolve("11.json"),
+            """{"pid":11,"sessionId":"s-1","name":"alpha","status":"busy","updatedAt":$now,"cwd":"/w/a"}""",
+        )
+        Files.writeString(
+            dir.resolve("12.json"),
+            """{"pid":12,"sessionId":"s-1","name":"beta","status":"busy","updatedAt":$now,"cwd":"/w/b"}""",
+        )
+        val registry = SessionRegistry(
+            sessionsDir = dir,
+            routeOf = { pid -> SessionRoute.Head(if (pid == 11L) "claudex" else "grok") },
+            pidAlive = { true },
+            clock = { now },
+        )
+        val accounts = SessionAccounts {
+            mapOf(
+                SessionAccountKeys.of("claudex", "s-1") to SessionAccountLine("primary", "work"),
+                SessionAccountKeys.of("grok", "s-1") to SessionAccountLine("team", null),
+            )
+        }
+        val command = SessionsCommand(TerminalOutput(::println), TerminalOutput(System.err::println), accounts)
+
+        val lines = capture { command.sessions({ null }, registry) { now } }.lines()
+
+        assertTrue(lines.first { it.contains("alpha") }.contains("claudex on primary (pinned to work)"))
+        val beta = lines.first { it.contains("beta") }
+        assertTrue(beta.contains("grok on team"), beta)
+        assertFalse(beta.contains("pinned"), beta)
     }
 
     private fun sessionsCommand() = SessionsCommand(TerminalOutput(::println), TerminalOutput(System.err::println))

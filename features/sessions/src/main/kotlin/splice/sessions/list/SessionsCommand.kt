@@ -65,8 +65,10 @@ public class SessionsCommand(
         val rows = listing.sessions
         listing.error?.let { output.line("  $RED✗$RESET the registry could not be listed: ${clean(it)}") }
         if (rows.isEmpty() && listing.error == null) output.line("  $DIM–  no registered sessions$RESET")
-        val byId = if (rows.isEmpty()) emptyMap() else accounts.read(envReader)
-        rows.forEach { s -> printRow(s, home, now(), s.sessionId?.let(byId::get)) }
+        val byId = if (rows.isEmpty()) emptyMap<SessionAccountKey, SessionAccountLine>() else accounts.read(envReader)
+        rows.forEach { s ->
+            printRow(s, home, now(), s.sessionId?.let { byId[SessionAccountKeys.of(s.head, it)] })
+        }
         output.line("")
         output.line("  ${DIM}gone = the process exited · stale = alive, no registry update for 30 min · $RESET")
         output.line("  ${DIM}headless `claude -p` runs never register here$RESET")

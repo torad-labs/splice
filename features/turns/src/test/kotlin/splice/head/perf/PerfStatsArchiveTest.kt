@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.perf.HistoryWindow
+import splice.core.perf.KeptHistory
 import splice.core.perf.TurnPerf
 import splice.core.util.AsyncFileIo
 import java.nio.file.Files
@@ -32,7 +33,13 @@ class PerfStatsArchiveTest {
         val file = tmp.resolve("perf.jsonl")
         val archiveDir = tmp.resolve("archive")
         var now = 1_000L
-        val stats = PerfStats(file, clock = { now }, archiveDir = archiveDir, window = HistoryWindow(30), maxBytes = 1)
+        val stats = PerfStats(
+            file,
+            clock = { now },
+            archiveDir = archiveDir,
+            kept = KeptHistory { HistoryWindow(30) },
+            maxBytes = 1,
+        )
 
         row(stats)
         now += 1_000
@@ -52,7 +59,13 @@ class PerfStatsArchiveTest {
         val file = tmp.resolve("perf.jsonl")
         val archiveDir = tmp.resolve("archive")
         var now = 0L
-        val stats = PerfStats(file, clock = { now }, archiveDir = archiveDir, window = HistoryWindow(5), maxBytes = 1)
+        val stats = PerfStats(
+            file,
+            clock = { now },
+            archiveDir = archiveDir,
+            kept = KeptHistory { HistoryWindow(5) },
+            maxBytes = 1,
+        )
 
         row(stats)
         now += DAY_MS
@@ -81,7 +94,13 @@ class PerfStatsArchiveTest {
         val archiveDir = tmp.resolve("archive")
         var now = 0L
         val forever = HistoryWindow(null)
-        val stats = PerfStats(file, clock = { now }, archiveDir = archiveDir, window = forever, maxBytes = 1)
+        val stats = PerfStats(
+            file,
+            clock = { now },
+            archiveDir = archiveDir,
+            kept = KeptHistory { forever },
+            maxBytes = 1,
+        )
 
         row(stats)
         now += DAY_MS

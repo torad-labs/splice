@@ -128,7 +128,7 @@ class HistoryRoutesTest {
         )
         Files.writeString(archived, row(old) + "\n")
         val saved = ArrayList<String>()
-        val routes = routes(paths) { saved += it; null }
+        val routes = routes(paths, HistoryWindowStore { saved += it; null })
         val offered = ok(routes.read(HistoryWindow(35, UTC), proposedDays = "7")).getValue("cut").jsonObject
         val moment = offered.getValue("cutoff_epoch_ms").jsonPrimitive.long
 
@@ -181,7 +181,7 @@ class HistoryRoutesTest {
         val paths = paths(tmp)
         write(paths, at(2026, 10, 3, 15, 10), at(2026, 10, 9, 8, 0))
         val saved = ArrayList<String>()
-        val routes = routes(paths) { saved += it; null }
+        val routes = routes(paths, HistoryWindowStore { saved += it; null })
 
         // A moment inside the window: picking 7 days can never authorize deleting yesterday.
         val refused = routes.save("""{"days":7,"delete_before_epoch_ms":${NOW - DAY}}""")
@@ -226,7 +226,7 @@ class HistoryRoutesTest {
         // A directory wearing a record's name: something is there, and splice cannot read it.
         Files.createDirectories(paths.stateDir.resolve("other-perf.jsonl"))
         val saved = ArrayList<String>()
-        val routes = routes(paths) { saved += it; null }
+        val routes = routes(paths, HistoryWindowStore { saved += it; null })
 
         val read = ok(routes.read(HistoryWindow(35, UTC), proposedDays = "7"))
         assertTrue(
@@ -246,8 +246,17 @@ class HistoryRoutesTest {
         val paths = paths(tmp)
         write(paths, at(2026, 10, 9, 8, 0))
 
-        assertEquals(HttpStatusCode.BadRequest, routes(paths).read(HistoryWindow(7, UTC), "a month").status)
-        assertEquals(HttpStatusCode.BadRequest, routes(paths).save("""{"days":"forver"}""").status)
+        // The console's picker cannot send these, so whoever reads this refusal is editing
+        // splice.toml or the env var in a terminal, and needs to see what they wrote (fin, Oct 10).
+        val read = routes(paths).read(HistoryWindow(7, UTC), "a month")
+        assertEquals(HttpStatusCode.BadRequest, read.status)
+        assertTrue(read.body.contains("historyRetentionDays"), read.body)
+        assertTrue(read.body.contains("a month"), read.body)
+
+        val misspelt = routes(paths).save("""{"days":"forver"}""")
+        assertEquals(HttpStatusCode.BadRequest, misspelt.status)
+        assertTrue(misspelt.body.contains("forver"), misspelt.body)
+
         assertEquals(HttpStatusCode.BadRequest, routes(paths).save("not json at all").status)
     }
 
@@ -256,7 +265,7 @@ class HistoryRoutesTest {
         val paths = paths(tmp)
         write(paths, at(2026, 1, 1, 1, 0), at(2026, 10, 9, 8, 0))
         val saved = ArrayList<String>()
-        val routes = routes(paths) { saved += it; null }
+        val routes = routes(paths, HistoryWindowStore { saved += it; null })
 
         val body = ok(routes.read(HistoryWindow(35, UTC), proposedDays = "forever"))
         assertNull(body["cut"], "there is no moment to offer, so there is nothing to confirm")
@@ -314,6 +323,41 @@ class HistoryRoutesTest {
         )
     }
 
+    /** One moment for everything the window covers (Marlin, Oct 10, 2026): the hourly spending
+     *  totals and finished sessions' totals are trimmed at the same moment the records were cut at,
+     *  in the same save, so Usage cannot still draw days the person was just told are gone. */
+    @Test
+    fun `the save trims every other store at the same moment it cut the records at`(@TempDir tmp: Path) {
+        val paths = paths(tmp)
+        write(paths, at(2026, 10, 1, 12, 0), at(2026, 10, 9, 8, 0))
+        val asked = ArrayList<Long>()
+        val routes = routes(paths, others = HistoryStores { asked += it; null })
+        val moment = ok(routes.read(HistoryWindow(35, UTC), proposedDays = "7"))
+            .getValue("cut").jsonObject.getValue("cutoff_epoch_ms").jsonPrimitive.long
+
+        val body = ok(routes.save("""{"days":7,"delete_before_epoch_ms":$moment}"""))
+
+        assertEquals(listOf(moment), asked, "one moment, the one that was on the screen")
+        assertNull(body["not_deleted"], "and nothing was left behind to report")
+    }
+
+    @Test
+    fun `a store that could not be trimmed is named, because the records are already gone`(
+        @TempDir tmp: Path,
+    ) {
+        val paths = paths(tmp)
+        write(paths, at(2026, 10, 1, 12, 0), at(2026, 10, 9, 8, 0))
+        val routes = routes(paths, others = HistoryStores { "the hourly totals are locked" })
+
+        val body = ok(routes.save("""{"days":7,"delete_before_epoch_ms":${SEVEN_DAY_CUT / MINUTE * MINUTE}}"""))
+
+        assertEquals(
+            "the hourly totals are locked",
+            body.getValue("not_deleted").jsonPrimitive.content,
+            "silence would read as all of it went",
+        )
+    }
+
     private fun paths(tmp: Path): StatePaths = StatePaths(baseOverride = tmp.resolve("state")).also {
         Files.createDirectories(it.perfArchiveDir)
     }
@@ -322,13 +366,11 @@ class HistoryRoutesTest {
         Files.writeString(paths.perfStatsFile("h"), stamps.joinToString("\n") { row(it) } + "\n")
     }
 
-    private fun routes(paths: StatePaths, store: HistoryWindowStore = HistoryWindowStore { null }) = HistoryRoutes(
-        paths,
-        store,
-        WallClock { NOW },
-        UTC,
-        LogSink { },
-    )
+    private fun routes(
+        paths: StatePaths,
+        store: HistoryWindowStore = HistoryWindowStore { null },
+        others: HistoryStores = HistoryStores { null },
+    ) = HistoryRoutes(paths, store, others, WallClock { NOW }, UTC, LogSink { })
 
     private fun ok(reply: splice.http.JsonReply) = Json.parseToJsonElement(
         reply.body.also { assertEquals(HttpStatusCode.OK, reply.status, it) },

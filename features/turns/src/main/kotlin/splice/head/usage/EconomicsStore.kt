@@ -36,10 +36,10 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.put
-import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
 import splice.core.perf.HISTORY_DEFAULT_DAYS
 import splice.core.perf.HistoryWindow
+import splice.core.perf.KeptHistory
 import splice.core.util.Cancellables
 import splice.core.util.CoalescedFlush
 import splice.core.util.DaemonLog
@@ -64,90 +64,6 @@ private const val HOUR_MS = 60L * 60 * 1000
 private const val MAX_FILE_BYTES = 4L * 1024 * 1024
 private const val ECONOMICS_FLUSH_DELAY_MS = 1_000L
 
-/** One hour's client turns and code-mode steps, grouped without widening the economics bucket. */
-public data class EconomicsTurnCounts(
-    val turns: Long = 0,
-    val localSteps: Long = 0,
-    /** Turns with incomplete billing usage; numeric sums below include only observed values. */
-    val unreportedUsageTurns: Long = 0,
-) {
-    public fun add(localStep: Boolean): EconomicsTurnCounts =
-        if (localStep) copy(localSteps = localSteps + 1) else copy(turns = turns + 1)
-
-    public fun record(turn: TurnEconomics): EconomicsTurnCounts {
-        val next = add(turn.localStep)
-        if (turn.localStep) return next
-        val unknown = !TurnBill.fullyReported(turn.counters())
-        return if (unknown) next.copy(unreportedUsageTurns = next.unreportedUsageTurns + 1) else next
-    }
-}
-
-/** One hour of a head's economics. Sums only — ratios are derived by the reader, never stored,
- *  so a bucket stays mergeable and a rounding choice never hardens into the file. */
-public data class EconomicsBucket(
-    val hour: Long,
-    val counts: EconomicsTurnCounts = EconomicsTurnCounts(),
-    val tokens: BucketTokens = BucketTokens(),
-    val bytes: BucketBytes = BucketBytes(),
-    val tools: BucketTools = BucketTools(),
-    val rateLimited: Long = 0,
-    val cost: BucketCost = BucketCost(),
-) {
-    val turns: Long get() = counts.turns
-    val localSteps: Long get() = counts.localSteps
-
-    /** The flat read surface over the grouped sums: readers keep one name per figure. */
-    val inTokens: Long get() = tokens.inTokens
-    val cachedTokens: Long get() = tokens.cachedTokens
-    val cacheWriteTokens: Long get() = tokens.cacheWriteTokens
-    val outTokens: Long get() = tokens.outTokens
-    val reqBytes: Long get() = bytes.reqBytes
-    val upstreamBytes: Long get() = bytes.upstreamBytes
-    val toolsEager: Long get() = tools.toolsEager
-    val toolsDeferred: Long get() = tools.toolsDeferred
-    val deferralTurns: Long get() = tools.deferralTurns
-    val costUsd: Double? get() = cost.costUsd
-    val unpricedTurns: Long get() = cost.unpricedTurns
-}
-
-/** One hour's token sums. Observed values only; the unreported-usage count beside them records the unknown turns. */
-public data class BucketTokens(
-    /** Every request's input the hour billed, cache buckets included: each turn's final round and the
-     *  rounds it absorbed, the same three sums for [cachedTokens] and [cacheWriteTokens]. */
-    val inTokens: Long = 0,
-    val cachedTokens: Long = 0,
-    /** V4-86: the cache-WRITE half of [inTokens], disjoint from [cachedTokens] (the read half).
-     *  Recorded BESIDE input, never out of it, for the same reason [cachedTokens] is: the plan
-     *  meters total input and a written block bills in full. It is a separate sum because it
-     *  bills at the vendor's cache_write rate, not the input rate. */
-    val cacheWriteTokens: Long = 0,
-    val outTokens: Long = 0,
-)
-
-/** One hour's request sizes: what clients sent and what the head sent upstream. */
-public data class BucketBytes(
-    val reqBytes: Long = 0,
-    val upstreamBytes: Long = 0,
-)
-
-/** One hour's tool-surface partition sums. */
-public data class BucketTools(
-    val toolsEager: Long = 0,
-    val toolsDeferred: Long = 0,
-    val deferralTurns: Long = 0,
-)
-
-/** One hour's dollars and the turns that could not be priced. */
-public data class BucketCost(
-    /** V4-221: the hour's dollars, each turn priced at its own model's card. NULL for an hour read
-     *  from a file written before the field existed — "not priced then", never $0 — and it stays null
-     *  if this daemon adds turns to that same hour, because a sum missing the earlier turns would
-     *  read as the hour's whole cost. */
-    val costUsd: Double? = 0.0,
-    /** V4-221: turns whose model had no rate card; their dollars are not in [costUsd]. */
-    val unpricedTurns: Long = 0,
-)
-
 public class EconomicsStore(
     private val file: Path,
     /** V4-221: the head's pricer. Required: a store without one would record every turn unpriced. */
@@ -155,9 +71,10 @@ public class EconomicsStore(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val log: LogSink = LogSink(DaemonLog::write),
     /** How far back this head's hours are kept — the person's own setting (Settings > Your data),
-     *  carried from the records window their install already had. Defaults to what a fresh install
-     *  writes, so a store built without one keeps the shipped window rather than nothing. */
-    private val window: HistoryWindow = HistoryWindow(HISTORY_DEFAULT_DAYS),
+     *  carried from the records window their install already had, and read at every trim so that
+     *  shortening it on the page shortens it now. Defaults to what a fresh install writes, so a
+     *  store built without one keeps the shipped window rather than nothing. */
+    private val kept: KeptHistory = KeptHistory { HistoryWindow(HISTORY_DEFAULT_DAYS) },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -192,6 +109,24 @@ public class EconomicsStore(
             version += 1
         }
         CoalescedFlush.scheduleCoalesced(ECONOMICS_FLUSH_DELAY_MS, writeScheduled) { flushScheduled() }
+    }
+
+    /**
+     * Drop every hour that ENDS before [momentMs], and say how many went.
+     *
+     * This is the save on Settings > Your data, not the window's own trim: the person was shown a
+     * count at one moment and said yes to it, so the hours go at that moment rather than at whatever
+     * the window works out to later. The same boundary as [trimUnderLock] for the same reason, an
+     * hour starts on a UTC hour and a day can begin inside one, and the persist is immediate
+     * because a page that reads straight after the yes must not be served the old file.
+     */
+    public fun trimBefore(momentMs: Long): Int {
+        val dropped = synchronized(lock) {
+            loadUnderLock()
+            dropHoursEndingBefore(momentMs).also { if (it > 0) version += 1 }
+        }
+        if (dropped > 0) flushNow()
+        return dropped
     }
 
     /** Numeric sums are observed values only; the count beside them records unknown turns. */
@@ -277,12 +212,22 @@ public class EconomicsStore(
     // A window that keeps everything trims nothing: the null cutoff is the whole of `forever`, and
     // the hours stay exactly as they are rather than being compared against an invented horizon.
     private fun trimUnderLock() {
-        val cutoff = window.cutoffMs(clock()) ?: return
-        // An hour is dropped only when it ENDS before the cutoff. A bucket starts on a UTC hour and
-        // a window of zero cuts at the operator's own midnight, which in a half-hour zone (Kolkata,
-        // UTC+5:30) falls INSIDE an hour: comparing starts would drop the bucket a paid turn just
-        // after midnight landed in, and with it the Day figure that turn is budgeted against.
-        buckets.keys.filter { it + HOUR_MS <= cutoff }.forEach { buckets.remove(it) }
+        dropHoursEndingBefore(kept.now().cutoffMs(clock()) ?: return)
+    }
+
+    /**
+     * Drop every hour that ENDS before [cutoffMs], and say how many went. The one rule both cuts
+     * obey: the window's own trim, and the save on Settings > Your data.
+     *
+     * An hour is dropped only when it ENDS before the cut. A bucket starts on a UTC hour and a
+     * window of zero cuts at the operator's own midnight, which in a half-hour zone (Kolkata,
+     * UTC+5:30) falls INSIDE an hour: comparing starts would drop the bucket a paid turn just
+     * after midnight landed in, and with it the Day figure that turn is budgeted against.
+     */
+    private fun dropHoursEndingBefore(cutoffMs: Long): Int {
+        val going = buckets.keys.filter { it + HOUR_MS <= cutoffMs }
+        going.forEach { buckets.remove(it) }
+        return going.size
     }
 
     // best-effort by design: a missing/corrupt file reads as empty; cancellation propagates.

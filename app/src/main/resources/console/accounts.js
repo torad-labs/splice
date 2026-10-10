@@ -49,6 +49,9 @@ function windowOf(pct, resetSec, lenSec, slot, current) {
   const left = resetSec ? Math.round((resetSec * 1000 - NOW.getTime()) / 60000) : null;
   const due = left != null && left >= 0;
   return { label, used: Math.round(pct), len: LEN[label], left: due ? left : null, resetMs: due ? resetSec * 1000 : null,
+    // The reset splice last heard about, once it has gone by: the figure beside it is the ENDED window's, and the
+    // cell has to say so. Null when no reset was ever reported, which is the one case the page knows nothing about.
+    rolledMs: resetSec && !due ? resetSec * 1000 : null,
     stale: current === false };
 }
 // A model week's own freshness, under the account week it is drawn beneath: that week's reading is the one
@@ -258,7 +261,13 @@ function ring(w) {
   return `<svg class="ring" viewBox="0 0 40 40" aria-hidden="true"><circle class="trk" cx="20" cy="20" r="15"/><circle class="arc" cx="20" cy="20" r="15" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}"/></svg>`;
 }
 const bar = (v, cls = "") => `<div class="bar ${cls}"><b data-v="${v}"></b></div>`;
-const resets = (w) => (w.left == null ? "<span></span>" : `<span class="when">${ring(w)}Resets ${at(w.resetMs)}</span>`); // a reading whose reset has passed shows no time
+// A window still running says when it resets, with its ring. A window whose reported reset has already gone by says
+// "Reset" and that time, past tense, with no ring: there is nothing left to fill, and "Week 93% used" beside an empty
+// cell read as a live week at 93% when it was the ended week's figure (fin's word, Oct 10; the hollow bar is the
+// other half of the same fact). A window that reported no reset at all keeps the empty cell, because there the page
+// genuinely knows nothing to say.
+const resets = (w) => (w.left != null ? `<span class="when">${ring(w)}Resets ${at(w.resetMs)}</span>`
+  : w.rolledMs != null ? `<span class="when rolled">Reset ${at(w.rolledMs)}</span>` : "<span></span>");
 // The budget day refills at the DAEMON's midnight, so its strip says that one word: a day name and "12:00 AM" read
 // as a weekly date to both walkers (fin, Oct 10). The plan windows keep their times, which really move. Read from a
 // browser in another zone the daemon's midnight is not midnight there, so the word is only used when it is one.

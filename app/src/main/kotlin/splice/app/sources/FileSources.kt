@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.model.TurnPrice
 import splice.core.perf.HISTORY_DEFAULT_DAYS
 import splice.core.perf.HistoryWindow
+import splice.core.perf.KeptHistory
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTotal
 import splice.core.usage.QuotaSnapshot
@@ -97,18 +98,21 @@ public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSo
  *  copy on purpose: [EconomicsRow] is :daemon-control's own vocabulary and :daemon-control may not see :daemon-head,
  *  so the translation belongs here, in the composition root, and nowhere else. */
 public class EconomicsStoreSource(
-    private val store: EconomicsStore,
+    /** Read by the console AND trimmed by the save on Settings > Your data, which is why the save
+     *  reaches it through this source rather than building a second store over the same file. */
+    public val store: EconomicsStore,
     perfRows: PerfRowsFileSource? = null,
     /** The cards splice holds NOW, which price again the hours whose turns had none when they ran. */
     price: TurnPrice? = null,
-    /** How far back this install keeps its history: the edge the backfill may reach back to. */
-    window: HistoryWindow = HistoryWindow(HISTORY_DEFAULT_DAYS),
+    /** How far back this install keeps its history: the edge the backfill may reach back to, read
+     *  at every read so a window the person just widened is reached on the next one. */
+    kept: KeptHistory = KeptHistory { HistoryWindow(HISTORY_DEFAULT_DAYS) },
     clock: WallClock = WallClock(System::currentTimeMillis),
 ) : HeadEconomicsSource {
     private val probes = perfRows?.let(::ProbeEconomics)
     private val reprice = perfRows?.let { rows -> price?.let { EconomicsReprice(rows, it) } }
     private val backfill = perfRows?.let { rows ->
-        price?.let { EconomicsBackfill(rows, it, window, clock) }
+        price?.let { EconomicsBackfill(rows, it, kept, clock) }
     }
 
     override fun read(): EconomicsRead {

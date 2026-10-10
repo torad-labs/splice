@@ -56,6 +56,7 @@ import splice.core.compaction.CompactionInstructions
 import splice.core.config.Knob
 import splice.core.config.TurnKey
 import splice.core.config.UserHome
+import splice.core.perf.KeptHistory
 import splice.core.version.ClientVersionTracker
 import splice.head.HeadDeps
 import splice.head.admission.AdmissionErrorBody
@@ -162,7 +163,10 @@ internal class ControlPlane(
     /** V4-133 (FEATURES.md §5/§6): the daemon's ONE budget and alert-settings stores. */
     internal val budgets = ConsoleWiring.budgetStore(statePaths)
     internal val alerts = ConsoleWiring.alertStore(statePaths)
-    internal val perfRows = PerfSourceFiles(statePaths)
+
+    // The window a person set on Settings > Your data, read at every use so shortening it needs no
+    // restart: this one reader is what every head's perf, archive and economics store asks.
+    internal val perfRows = PerfSourceFiles(statePaths, KeptHistory { config.getConfig().historyWindow })
     internal val foregroundTools = splice.sessions.registry.ForegroundTools()
 
     /** V4-444: each assembled head's provider, registered by ManagedHeadFactory, so the Playground sends

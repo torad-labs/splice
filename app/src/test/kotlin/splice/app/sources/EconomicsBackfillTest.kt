@@ -13,6 +13,7 @@ import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
 import splice.core.model.TurnPrice
 import splice.core.perf.HistoryWindow
+import splice.core.perf.KeptHistory
 import splice.core.turn.UsageHistory
 import splice.core.util.WallClock
 import splice.head.usage.EconomicsStore
@@ -223,14 +224,14 @@ class EconomicsBackfillTest {
             TurnPrice(card),
             WallClock { now },
             log = { },
-            window = window,
+            kept = KeptHistory { window },
         )
         store.record(work())
         return EconomicsStoreSource(
             store,
             PerfRowsFileSource(perf),
             TurnPrice(card),
-            window = window,
+            kept = KeptHistory { window },
             clock = WallClock { now },
         ).rows()
     }
@@ -242,7 +243,7 @@ class EconomicsBackfillTest {
         store,
         PerfRowsFileSource(perf),
         TurnPrice(card),
-        window = HistoryWindow(1),
+        kept = KeptHistory { HistoryWindow(1) },
         clock = WallClock { NOW_MS },
     )
 

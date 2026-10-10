@@ -24,6 +24,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.perf.HISTORY_DEFAULT_DAYS
 import splice.core.perf.HistoryWindow
+import splice.core.perf.KeptHistory
 import splice.core.util.WallClock
 import splice.core.wire.ControlFields.HEADS
 import splice.core.wire.ControlFields.KEY
@@ -47,13 +48,13 @@ public class EconomicsPayloads(
     private val lookup: UsageHeadLookup? = null,
     /** How far back the person keeps their history: the window these buckets are trimmed against,
      *  so the console can size a week or a month bar honestly when the hours do not fill it. */
-    private val window: HistoryWindow = HistoryWindow(HISTORY_DEFAULT_DAYS),
+    private val kept: KeptHistory = KeptHistory { HistoryWindow(HISTORY_DEFAULT_DAYS) },
 ) {
 
     public fun economicsJson(): String = economicsJson(null)
 
     public fun economicsJson(preparation: UsageReadPreparation?): String = buildJsonObject {
-        put("retention_hours", window.hours)
+        put("retention_hours", kept.now().hours)
         put("generated_at", clock())
         putJsonArray(HEADS) {
             heads.all().forEach { m ->

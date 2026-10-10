@@ -24,7 +24,7 @@
 package splice.app.sources
 
 import splice.core.model.TurnPrice
-import splice.core.perf.HistoryWindow
+import splice.core.perf.KeptHistory
 import splice.core.util.WallClock
 import splice.head.usage.EconomicsBucket
 import kotlin.time.Duration.Companion.hours
@@ -35,7 +35,7 @@ private val BACKFILL_HOUR_MS = 1.hours.inWholeMilliseconds
 internal class EconomicsBackfill(
     private val perf: PerfRowsFileSource,
     private val price: TurnPrice,
-    private val window: HistoryWindow,
+    private val kept: KeptHistory,
     private val clock: WallClock,
 ) {
     private val rows = EconomicsFromRows(price)
@@ -48,7 +48,7 @@ internal class EconomicsBackfill(
      * closed, or when the rows cannot give an exact answer. [held] is what the rollup holds now.
      */
     fun missing(held: List<EconomicsBucket>): List<EconomicsBucket> {
-        val from = window.cutoffMs(clock()) ?: 0L
+        val from = kept.now().cutoffMs(clock()) ?: 0L
         val oldestHeld = held.minOfOrNull { it.hour }
         // Once per start, and over for good once the rollup reaches the window's edge itself: there
         // is no gap then, and nothing to scan the archived generations for.

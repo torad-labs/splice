@@ -27,6 +27,7 @@ import splice.core.perf.HISTORY_DEFAULT_DAYS
 import splice.core.perf.HistoryWindow
 import splice.core.perf.InputDigest
 import splice.core.perf.InputPrefix
+import splice.core.perf.KeptHistory
 import splice.core.perf.LivenessProbe
 import splice.core.perf.PerfArchiveName
 import splice.core.perf.PerfKeys
@@ -168,7 +169,7 @@ public class PerfStats(
     /** How far back this install keeps its history, the person's one setting (Settings > Your
      *  data): the same window the hourly totals are kept over, because they are the same days read
      *  from two files. Defaults to what a fresh install writes. */
-    private val window: HistoryWindow = HistoryWindow(HISTORY_DEFAULT_DAYS),
+    private val kept: KeptHistory = KeptHistory { HistoryWindow(HISTORY_DEFAULT_DAYS) },
     /** V4-133: the rotate threshold [record] appends against — JsonlSink's own default for every
      *  construction site this row did not touch, injectable so a test can force a rotation (and
      *  therefore the archive hook) without writing 64 MB of turns. */
@@ -427,7 +428,7 @@ public class PerfStats(
      *  null cutoff returns before the scan. A window of zero keeps the generations rotated today,
      *  which is what a daily budget reads after a 64 MB roll, and drops them at midnight. */
     private fun sweepArchive(dir: Path) {
-        val oldest = window.cutoffMs(clock()) ?: return
+        val oldest = kept.now().cutoffMs(clock()) ?: return
         Files.newDirectoryStream(dir).use { entries ->
             entries.filter { entry -> archiveName.rotatedAt(entry.fileName.toString()) != null }
                 .forEach { entry ->

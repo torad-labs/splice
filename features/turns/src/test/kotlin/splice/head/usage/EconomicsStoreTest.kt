@@ -17,6 +17,7 @@ import splice.core.model.TokenBuckets
 import splice.core.model.TokenCost
 import splice.core.model.TurnPrice
 import splice.core.perf.HistoryWindow
+import splice.core.perf.KeptHistory
 import splice.core.turn.AbsorbedRounds
 import splice.core.turn.UsageHistory
 import splice.core.turn.noRequestUsage
@@ -394,7 +395,7 @@ class EconomicsStoreTest {
             tmp.resolve("week.json"),
             UNPRICED,
             WallClock { now },
-            window = HistoryWindow(7),
+            kept = KeptHistory { HistoryWindow(7) },
         )
         week.record(turn(inTokens = 1))
         now += 8 * 24 * HOUR
@@ -406,7 +407,7 @@ class EconomicsStoreTest {
             tmp.resolve("forever.json"),
             UNPRICED,
             WallClock { later },
-            window = HistoryWindow(null),
+            kept = KeptHistory { HistoryWindow(null) },
         )
         kept.record(turn(inTokens = 1))
         later += 400 * 24 * HOUR // more than a year on
@@ -430,7 +431,7 @@ class EconomicsStoreTest {
             tmp.resolve("today.json"),
             UNPRICED,
             WallClock { now },
-            window = HistoryWindow(0, kolkata),
+            kept = KeptHistory { HistoryWindow(0, kolkata) },
         )
 
         store.record(turn(inTokens = 11))
@@ -441,6 +442,56 @@ class EconomicsStoreTest {
             18L,
             store.read().sumOf { it.inTokens },
             "the spend of a day that began mid-hour is what that day's budget is measured against",
+        )
+    }
+
+    /** Marcos asked twice for a setting to apply without a restart, and the console's rule is that a
+     *  change reads "Applied" once (Marlin, Oct 10, 2026). The window is therefore read at every
+     *  trim: a store that captured it would keep the old one until the daemon restarted. */
+    @Test
+    fun `shortening the window shortens it now, with no restart`(@TempDir tmp: Path) {
+        var now = 1_000 * HOUR
+        var window = HistoryWindow(90)
+        val store = EconomicsStore(tmp.resolve("live.json"), UNPRICED, WallClock { now }, kept = KeptHistory { window })
+        store.record(turn(inTokens = 1))
+        now += 60 * 24 * HOUR
+        store.record(turn(inTokens = 2))
+        assertEquals(2, store.read().size, "both hours are inside the ninety days")
+
+        window = HistoryWindow(7)
+        now += HOUR
+        store.record(turn(inTokens = 3))
+
+        assertEquals(
+            listOf(2L, 3L),
+            store.read().map { it.inTokens },
+            "the sixty-day-old hour went on the first trim after the window changed, not after a restart",
+        )
+    }
+
+    /** The save on Settings > Your data: the person was shown a count at one moment and said yes to
+     *  it, so the hours go at THAT moment. The same boundary as the window's own trim, because an
+     *  hour starts on a UTC hour and a person's day can begin inside one. */
+    @Test
+    fun `the save trims the hours that end before the moment it was given`(@TempDir tmp: Path) {
+        var now = 1_000 * HOUR
+        val file = tmp.resolve("save.json")
+        val store = EconomicsStore(file, UNPRICED, WallClock { now })
+        store.record(turn(inTokens = 1))
+        now += 2 * HOUR
+        store.record(turn(inTokens = 2))
+
+        assertEquals(
+            0,
+            store.trimBefore(1_000 * HOUR + HOUR / 2),
+            "an hour the moment falls INSIDE is not over, so it stays whole",
+        )
+        assertEquals(1, store.trimBefore(1_001 * HOUR), "an hour that ended before the moment goes")
+
+        assertEquals(listOf(2L), store.read().map { it.inTokens })
+        assertFalse(
+            Files.readString(file).contains("\"hour\":${1_000 * HOUR}"),
+            "and it is gone from the file at once: a page read straight after the yes must not be served the old one",
         )
     }
 

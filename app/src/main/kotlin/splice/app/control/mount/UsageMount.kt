@@ -16,11 +16,8 @@ import splice.app.control.UsageHeadAdapter
 import splice.app.control.api.HeadResolver
 import splice.app.sources.PerfStatsSource
 import splice.core.config.ConfigService
-import splice.core.config.Knob
+import splice.core.perf.KeptHistory
 import splice.core.version.ClientVersionTracker
-import splice.head.perf.HistoryDays
-import splice.head.perf.HistoryRoutes
-import splice.head.perf.HistoryWindowStore
 import splice.head.perf.TurnKeptRoutes
 import splice.models.roster.DeclaredHeads
 import splice.upstream.codemode.ProcessDispatchers
@@ -61,18 +58,14 @@ internal class UsageMount(
 
     // File scans, cache-monitor waits and folds must not occupy Netty's control request event loops.
     private val fileIo = ProcessDispatchers().io()
-    private val usageReads = UsageReadRoutes(usageHeads, usageLookup, fileIo, guard, config.getConfig().historyWindow)
+    private val kept = KeptHistory { config.getConfig().historyWindow }
+    private val usageReads = UsageReadRoutes(usageHeads, usageLookup, fileIo, guard, kept)
+
+    // Settings > Your data's one window, with its own wiring: see HistoryWiring.
+    private val history = HistoryWiring(ports, config, guard, fileIo, heads)
 
     // V4-133 (FEATURES.md §5/§6): read at CALL time through the same BudgetSource/AlertSource
     // discipline every other console port keeps — see ConsolePorts.
-    // The one window on Settings > Your data. The scan cache lives here, across calls; the routes
-    // are built per call like every other console port, so a port wired after mount is still read.
-    private val historyDays = HistoryDays()
-    private val historyWindow = HistoryWindowStore { text ->
-        val written = config.patch(mapOf(Knob.HISTORY_RETENTION_DAYS.key to text))
-        written.rejected.values.firstOrNull() ?: written.notPersisted
-    }
-
     private val budgetRoutes = BudgetRoutes(BudgetSource { ports.budgets }, config, usageLookup)
     private val alertRoutes = AlertRoutes(AlertSource { ports.alerts })
 
@@ -103,7 +96,7 @@ internal class UsageMount(
                 withContext(fileIo) { TurnKeptRoutes(ports.turnStatistics, liveTotals).delete() }.send(call)
             }
         }
-        registerHistory(route)
+        history.register(route)
         route.get("/api/budgets") { guard.guarded(call) { budgetRoutes.read(ports.budgetSpending).send(call) } }
         route.put("/api/budgets") {
             guard.guarded(call) { budgetRoutes.write(call.receiveText(), ports.budgetSpending).send(call) }
@@ -119,23 +112,4 @@ internal class UsageMount(
             guard.guarded(call, Door.SESSION, STATUSLINE_RELAUNCH) { statuslineRoute.statusline(call) }
         }
     }
-
-    /** Settings > Your data's one window: what is held, what a shorter one would delete, and the
-     *  save that deletes exactly that. */
-    private fun registerHistory(route: Route) {
-        route.get("/api/history") {
-            guard.guarded(call) {
-                val days = call.request.queryParameters["days"]
-                withContext(fileIo) { history().read(config.getConfig().historyWindow, days) }.send(call)
-            }
-        }
-        route.put("/api/history") {
-            guard.guarded(call) {
-                val asked = call.receiveText()
-                withContext(fileIo) { history().save(asked) }.send(call)
-            }
-        }
-    }
-
-    private fun history() = HistoryRoutes(ports.turnStatistics, historyWindow, inventory = historyDays)
 }

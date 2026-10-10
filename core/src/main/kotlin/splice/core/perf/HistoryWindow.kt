@@ -73,6 +73,20 @@ public data class HistoryWindow(
     public val text: String get() = days?.toString() ?: HISTORY_FOREVER
 }
 
+/**
+ * The window AS IT IS NOW, read at every use and never captured.
+ *
+ * A person who shortens their history on Settings > Your data has shortened it, not scheduled it
+ * (Marlin, Oct 10, 2026): "Applied" has to be true when the row says it. A store that captured the
+ * window it was built with would keep trimming by the old one until the daemon restarted, so a
+ * person who chose "Today only" for privacy would still be shown last week's spending, which is
+ * being told something false. Reading the window per use costs one map lookup in ConfigService and
+ * removes the restart from the setting entirely.
+ */
+public fun interface KeptHistory {
+    public fun now(): HistoryWindow
+}
+
 /** The words the history window reads, any case, around whitespace: whole days from zero up, or
  *  [HISTORY_FOREVER], read in [zone] so that one install has ONE answer to where a day begins: a
  *  window of zero cuts at midnight, and a reader that parsed the word without saying which midnight

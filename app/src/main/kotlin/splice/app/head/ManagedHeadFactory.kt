@@ -25,7 +25,7 @@ import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.model.ClientWindows
 import splice.core.model.TurnPrice
-import splice.core.perf.HistoryWindow
+import splice.core.perf.KeptHistory
 import splice.core.util.LogSink
 import splice.diagnostics.logs.LogFileSource
 import splice.head.compact.CompactStats
@@ -113,6 +113,8 @@ internal class ManagedHeadFactory(
     private val launchSpecFactory: LaunchSpecFactory,
     private val log: LogSink,
     private val quotaSeams: QuotaPollSeams,
+    /** The head's turn history: the rows every store folds from, and the window they are kept
+     *  under, which [splice.app.sources.PerfSourceFiles] reads live. */
     private val perfSources: splice.app.sources.PerfSourceFiles = splice.app.sources.PerfSourceFiles(statePaths),
 ) {
     internal var quotaProbes: QuotaProbes = QuotaProbes(AuthHttpClientFactory().create())
@@ -157,7 +159,7 @@ internal class ManagedHeadFactory(
         return ManagedHead(
             head = server,
             auth = wired.auth,
-            sources = sourcesFor(key, stores, quotaPollers, TurnPrice(ctx.catalog), ctx.cfg.historyWindow),
+            sources = sourcesFor(key, stores, quotaPollers, TurnPrice(ctx.catalog), perfSources.kept),
             usageWarning = UsageWarning(warnPct = cfg.usageWarnPct, warnTokens5h = cfg.usageWarnTokens5h),
             authSurface = HeadAuthSurface(
                 authKind = ctx.providerCfg.auth.kind,
@@ -181,7 +183,7 @@ internal class ManagedHeadFactory(
         price: TurnPrice,
         /** The same window the store trims by, so the hours it backfills reach as far as the ones
          *  it keeps. Left at its default, an install that keeps 90 days or forever rebuilt only 35. */
-        window: HistoryWindow,
+        kept: KeptHistory,
     ): HeadSources {
         val perfRows = perfSources.rowsFor(key)
         return HeadSources(
@@ -190,7 +192,7 @@ internal class ManagedHeadFactory(
             logs = LogFileSource(statePaths.logsDir.resolve("daemon.log"), "[$key]"),
             perf = PerfStatsSource(stores.telemetry.perfStats),
             perfRows = perfRows,
-            economics = EconomicsStoreSource(stores.telemetry.economics, perfRows, price, window),
+            economics = EconomicsStoreSource(stores.telemetry.economics, perfRows, price, kept),
         )
     }
 
@@ -221,7 +223,7 @@ internal class ManagedHeadFactory(
             perfStats = PerfStats(
                 statePaths.perfStatsFile(ctx.key),
                 archiveDir = statePaths.perfArchiveDir,
-                window = ctx.cfg.historyWindow,
+                kept = perfSources.kept,
                 // V4-244: each session's running total, fed by the rows this store appends and priced at
                 // each row's own model's card, against the same catalog the economics store uses.
                 totals = SessionTotals(statePaths.sessionTotalsFile(ctx.key), TurnPrice(ctx.catalog)),
@@ -230,7 +232,7 @@ internal class ManagedHeadFactory(
             economics = EconomicsStore(
                 statePaths.economicsFile(ctx.key),
                 TurnPrice(ctx.catalog),
-                window = ctx.cfg.historyWindow,
+                kept = perfSources.kept,
             ),
         ),
         quota = primaryQuota,

@@ -62,8 +62,11 @@ private val RATE_MONTH_MS = 30.days.inWholeMilliseconds
 // refusal that will not delete on it, so a person reads the same cause in both places.
 private const val NOT_WHOLE = "the records did not read whole: "
 
-// why: the one refusal for a window that is neither a count of days nor the word forever.
-private const val NOT_A_WINDOW = "a window is a number of days or the word forever"
+// why: the one refusal for a window that is neither a count of days nor the word forever, naming
+// the setting and quoting what it got. The console's picker and its Custom field can only send whole
+// days or `forever`, so this is read by someone editing splice.toml or the env var in a terminal,
+// and the person fixing the file needs to see what they wrote (fin, Oct 10, 2026).
+private const val NOT_A_WINDOW = "historyRetentionDays takes a number of days or forever, not"
 
 // why: the same refusal TurnKeptRoutes gives for the same cause, so one unwired install reads the
 // same way on both rows of Your data.
@@ -74,10 +77,26 @@ public fun interface HistoryWindowStore {
     public fun save(text: String): String?
 }
 
+/**
+ * Everything else the one window covers, trimmed to the same moment the records were cut at: the
+ * hourly spending totals, and finished sessions' own totals.
+ *
+ * Marlin, Oct 10, 2026: when a person says yes to "Delete 25,877 turns", everything history covers
+ * is gone at that moment. Someone who chose "Today only" for privacy and still saw last week's
+ * spending on Usage would have been told something false, and no sentence on the page covers that.
+ * Returns the first reason a store could not be trimmed, so a save that did not do all of what it
+ * said says so, or null when it did.
+ */
+public fun interface HistoryStores {
+    public fun trimBefore(momentMs: Long): String?
+}
+
 /** The history row's reads and its one save. */
 public class HistoryRoutes(
     private val paths: StatePaths?,
     private val saved: HistoryWindowStore,
+    /** The other stores the window covers. Trimmed at the same moment, in the same save. */
+    private val others: HistoryStores = HistoryStores { null },
     private val clock: WallClock = WallClock { System.currentTimeMillis() },
     private val zone: ZoneId = ZoneId.systemDefault(),
     private val log: LogSink = LogSink(DaemonLog::write),
@@ -92,7 +111,7 @@ public class HistoryRoutes(
     public fun read(window: HistoryWindow, proposedDays: String? = null): JsonReply {
         val source = paths ?: return refuse(HttpStatusCode.ServiceUnavailable, NOT_WIRED)
         val proposed = proposedDays?.let { HistoryWindowWords.of(it, zone) }
-        if (proposedDays != null && proposed == null) return refuse(HttpStatusCode.BadRequest, NOT_A_WINDOW)
+        if (proposedDays != null && proposed == null) return notAWindow(proposedDays)
         return Cancellables.runCatchingCancellable {
             val held = inventory.held(source.stateDir, source.perfArchiveDir)
             body(window, proposed, held, cut = proposed?.let { pick -> cutoff(pick)?.let(held::before) })
@@ -105,25 +124,33 @@ public class HistoryRoutes(
     /** Save the window in [request] and delete exactly the records it showed the person. */
     public fun save(request: String): JsonReply {
         val source = paths ?: return refuse(HttpStatusCode.ServiceUnavailable, NOT_WIRED)
-        val asked = asked(request) ?: return refuse(HttpStatusCode.BadRequest, NOT_A_WINDOW)
-        return Cancellables.runCatchingCancellable { apply(asked, source) }.fold(
+        val asked = asked(request)
+        if (asked.window == null) return notAWindow(asked.word)
+        val window = asked.window
+        return Cancellables.runCatchingCancellable { apply(window, asked.deleteBefore, source) }.fold(
             onSuccess = { it },
             onFailure = { refuse(HttpStatusCode.InternalServerError, "cannot save the window: ${why(it)}") },
         )
     }
 
-    private fun apply(asked: Asked, source: StatePaths): JsonReply {
+    private fun apply(window: HistoryWindow, moment: Long?, source: StatePaths): JsonReply {
         val held = inventory.held(source.stateDir, source.perfArchiveDir)
-        val moment = asked.deleteBefore
         // The save is attempted only once the moment is allowed, so a refusal leaves both the window
         // and the records exactly as they were and the row reads "Not saved" truthfully.
-        val refused = refusal(asked.window, held, moment)
-            ?: saved.save(asked.window.text)?.let { refuse(HttpStatusCode.BadRequest, "not saved: $it") }
+        val refused = refusal(window, held, moment)
+            ?: saved.save(window.text)?.let { refuse(HttpStatusCode.BadRequest, "not saved: $it") }
         if (refused != null) return refused
         val taken = moment?.let { HistoryPrune(log).before(it, source.stateDir, source.perfArchiveDir) }
+        // The records and everything else history covers are cut at ONE moment, the one the person
+        // was shown. A store that could not be trimmed is named in the answer rather than passed
+        // over: the records are already gone, so silence here would read as "all of it went".
+        val missed = moment?.let { others.trimBefore(it) }
         val after = inventory.held(source.stateDir, source.perfArchiveDir)
         val cut = taken?.let { HistoryCut(checkNotNull(moment), it.turns, it.bytes) }
-        return JsonReply(HttpStatusCode.OK, body(asked.window, proposed = null, held = after, cut = cut))
+        return JsonReply(
+            HttpStatusCode.OK,
+            body(window, proposed = null, held = after, cut = cut, missed = missed),
+        )
     }
 
     /** Why this save cannot delete what it was asked to, or null when it can. */
@@ -131,7 +158,13 @@ public class HistoryRoutes(
         val allowed = cutoff(window)
         return when {
             moment == null -> null
-            held.readError != null -> refuse(HttpStatusCode.ServiceUnavailable, NOT_WHOLE + held.readError)
+            held.readError != null -> {
+                // The row reads "Not saved" and the cause goes to the log, where every source
+                // sentence goes (fin, Oct 10, 2026). The console re-asks the read and redraws the
+                // band, because the count on the button was the wrong count.
+                log("[history] a save was refused: " + NOT_WHOLE + held.readError + "\n")
+                refuse(HttpStatusCode.ServiceUnavailable, NOT_WHOLE + held.readError)
+            }
             allowed == null || moment > allowed ->
                 refuse(HttpStatusCode.Conflict, "that is not where this window cuts; read the history again")
             else -> null
@@ -139,16 +172,28 @@ public class HistoryRoutes(
     }
 
     /** The window and moment a save carries, or null when the body does not name a window. */
-    private fun asked(request: String): Asked? {
+
+    /** What a save body asked for. [Asked.window] is null when the body named no window splice
+     *  understands, and [Asked.word] is then what it did name, for the refusal to quote. */
+    private fun asked(request: String): Asked {
         val read = Cancellables.runCatchingCancellable { json.parseToJsonElement(request).jsonObject }
             .onFailure { log("[history] a save body that is not JSON was refused: ${why(it)}\n") }
-        val document = read.getOrNull() ?: return null
-        val window = (document["days"] as? JsonPrimitive)?.content
-            ?.let { HistoryWindowWords.of(it, zone) } ?: return null
-        return Asked(window, (document["delete_before_epoch_ms"] as? JsonPrimitive)?.longOrNull)
+        val document = read.getOrNull() ?: return Asked(null, null, "")
+        val word = (document["days"] as? JsonPrimitive)?.content.orEmpty()
+        return Asked(
+            HistoryWindowWords.of(word, zone),
+            (document["delete_before_epoch_ms"] as? JsonPrimitive)?.longOrNull,
+            word,
+        )
     }
 
-    private fun body(window: HistoryWindow, proposed: HistoryWindow?, held: HistoryHeld, cut: HistoryCut?): String =
+    private fun body(
+        window: HistoryWindow,
+        proposed: HistoryWindow?,
+        held: HistoryHeld,
+        cut: HistoryCut?,
+        missed: String? = null,
+    ): String =
         JsonWire.string(
             buildJsonObject {
                 put("window", spelled(proposed ?: window))
@@ -165,6 +210,7 @@ public class HistoryRoutes(
                 // Said where every figure above it is: a reading that is not whole cannot be read as
                 // a total, and it is the same sentence that refuses a deletion counted on it.
                 held.readError?.let { put("reason", NOT_WHOLE + it) }
+                missed?.let { put("not_deleted", it) }
             },
         )
 
@@ -197,8 +243,12 @@ public class HistoryRoutes(
 
     private fun why(failure: Throwable): String = SafeFailureText.render(failure)
 
+    /** The refusal for a window that is neither days nor forever, quoting what arrived. */
+    private fun notAWindow(value: String?): JsonReply =
+        refuse(HttpStatusCode.BadRequest, "$NOT_A_WINDOW \"${value.orEmpty()}\"")
+
     private fun refuse(status: HttpStatusCode, why: String): JsonReply =
         JsonReply(status, JsonWire.string(buildJsonObject { put("error", why) }))
 
-    private data class Asked(val window: HistoryWindow, val deleteBefore: Long?)
+    private data class Asked(val window: HistoryWindow?, val deleteBefore: Long?, val word: String)
 }

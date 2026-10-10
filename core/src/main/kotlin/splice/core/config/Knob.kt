@@ -604,12 +604,18 @@ public enum class Knob(
     //
     // STRING, NOT NUMBER: `forever` is a value a person may choose, and the one choice that is not
     // a window should not have to be spelled as one. ConfigCoercion refuses any other word by name.
+    // NO RESTART. Every reader of this window reads it through KeptHistory at the moment it needs
+    // it — each head's hourly store and its archive sweep, the backfill's reach, the retention the
+    // console declares, and the history row itself. Marcos asked twice for changes to apply without
+    // a restart, and the console's rule is that a change reads "Applied" once (Marlin, Oct 10,
+    // 2026): a person who shortens their history has shortened it, and the save on Settings > Your
+    // data trims every store to the moment it showed them. Saying restart-required here would be
+    // asking for one that nothing needs.
     HISTORY_RETENTION_DAYS(
         "historyRetentionDays",
         KnobKind.STRING,
         listOf("SPLICE_HISTORY_RETENTION_DAYS"),
         typedDefault = KnobDefault.None,
-        restartRequired = true,
     ),
     ;
 

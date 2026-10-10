@@ -182,14 +182,17 @@ function refusalOf(answer, fallback) {
 // ---------- a member's state, in the words its own client registered ----------
 const WAITING = { "input needed": "Needs you", "permission prompt": "Needs you" };
 /** What the member's running turn says about its silence: Stalled with the retries or the silence counter, or the resume
- *  countdown, drawn by the kit's own look() so Teams and Sessions say it alike. Null when nothing is wrong. */
+ *  countdown, drawn by the kit's own look() so Teams and Sessions say it alike. Null when nothing is wrong.
+ *  An idle member whose newest request was turned away reads At limit or Signed out from the row's ended_by. */
 function stallLook(slot, session) {
-  if (!session || session.waiting_for || !(session.status === "working" || session.status === "busy")) return null;
-  const turn = state.live[slot.session];
-  const stall = stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs);
+  if (!session || session.waiting_for || session.availability === "gone") return null;
+  const running = session.status === "working" || session.status === "busy";
+  // with no request in flight, the row's ended_by says how the newest one ended: At limit, or Signed out
+  const turn = running ? state.live[slot.session] : undefined;
+  const stall = stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs, running ? undefined : session.ended_by);
   if (!stall) return null;
   state.stalls[slot.id] = stall;
-  return look({ id: slot.id, state: "working", stall });
+  return look({ id: slot.id, state: running ? "working" : "idle", stall });
 }
 function stateOf(session) {
   if (!session) return { cls: "ended", lamp: "<i></i>", word: "Gone", detail: "" };

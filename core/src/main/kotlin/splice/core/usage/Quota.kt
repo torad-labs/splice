@@ -43,7 +43,16 @@ public data class QuotaSnapshot(
         val prior = earlier?.sevenDay?.resetsAt
         // the endpoint rounds its reset to the second and the headers carry their own, so one week reads within a minute
         val sameWeek = reset != null && prior != null && kotlin.math.abs(reset - prior) <= SAME_RESET_SECONDS
-        return if (models.isEmpty() && sameWeek) copy(models = earlier.models) else this
+        if (models.isNotEmpty() || !sameWeek) return this
+        // EACH MODEL'S WEEK IS ITS OWN. Anthropic's weekly_scoped rows carry their own resets_at, and a
+        // model week can roll while the account's own week runs on, so the aggregate reset above answers
+        // for the account and for nothing else. A row whose week has already rolled by the second THIS
+        // reading was observed is dropped rather than carried: its figure is the usage of a week that
+        // ended, and carrying it reports spent capacity on a week that starts at zero. A row the provider
+        // gave no reset for has only the account's week to go on, which is the comparison above.
+        val observed = observedAtEpochSeconds
+        val running = earlier.models.filter { it.resetsAt == null || observed == null || it.resetsAt > observed }
+        return copy(models = running)
     }
 
     /** V4-452: the window this snapshot's CURRENT reading at [nowMillis] names fully used, and its reset; the
@@ -73,7 +82,15 @@ public data class QuotaSnapshot(
         val observed = observedAtEpochSeconds
         val current = { w: QuotaWindow -> w.takeIf { QuotaFreshness.current(observed, it.resetsAt, nowSeconds) } }
         val week = sevenDay?.let(current)
-        val byModel = if (week == null) emptyList() else models
+        // Each model row is judged on ITS OWN reset, not the account week's: a model whose week has rolled
+        // has nothing read since, so its pre-reset figure is not a current reading (the same rule the
+        // windows above are held to). A row with no reset of its own rides the account week, which is
+        // what [QuotaFreshness.current] reduces to for a null reset.
+        val byModel = if (week == null) {
+            emptyList()
+        } else {
+            models.filter { QuotaFreshness.current(observed, it.resetsAt, nowSeconds) }
+        }
         return copy(fiveHour = fiveHour?.let(current), sevenDay = week, models = byModel).takeUnless { it.isEmpty }
     }
 }

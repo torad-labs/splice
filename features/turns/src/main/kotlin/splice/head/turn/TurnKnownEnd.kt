@@ -3,6 +3,7 @@
 package splice.head.turn
 
 import splice.core.perf.OutcomeTag
+import splice.core.perf.PerfKeys
 import splice.core.turn.ErrorType
 import splice.core.usage.PlanLimit
 import splice.core.util.ERR_SNIPPET
@@ -102,10 +103,16 @@ internal class TurnKnownEnd(
 
     /** V4-419: the tag an upstream failure ends the turn on. One caused by a spent plan window ends
      *  [OutcomeTag.PLAN_LIMIT] and speaks the window and its reset on the trace before the record closes (a surface
-     *  that spoke first wins over the table's sentence); every other one is [OutcomeTag.UPSTREAM_FAILED]. */
+     *  that spoke first wins over the table's sentence); every other one is [OutcomeTag.UPSTREAM_FAILED].
+     *
+     *  V4-444: the reset instant is also COUNTED on the row, so a surface reading the perf file alone (the console's
+     *  Requests list) can say when the window comes back instead of only that it was spent. Before this it was
+     *  recorded on one ending out of three: the one where admission turned the request away with every account spent
+     *  ([splice.head.admission.ExhaustedAccountAdmission]). */
     private fun endingTag(drive: TurnDrive, plan: PlanLimit?): OutcomeTag {
         if (plan == null) return OutcomeTag.UPSTREAM_FAILED
         drive.trace?.failureSentence(OutcomeSentences.planLimit(plan))
+        drive.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, plan.resetEpochSeconds)
         return OutcomeTag.PLAN_LIMIT
     }
 }

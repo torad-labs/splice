@@ -1,7 +1,9 @@
 // NEW: a turn that a spent PLAN window ended is recorded as one, and says when it comes back. Marlin's walk
 // (f7f1e9308, daemon.log:39520): ChatGPT answered usage_limit_reached with a reset six days out, the retry loop armed the
 // plan hold, and the turn was then recorded error:upstream-failed with the table's "wait a moment and retry"; the turns
-// held behind it read "wait for the limit to clear" with no time, though splice held the instant. Driven through a real
+// held behind it read "wait for the limit to clear" with no time, though splice held the instant. V4-444: the
+// instant is COUNTED on both rows too (earliest_reset_epoch_seconds), since the console's list reads the perf
+// file and not the trace's sentence; a burst that names no reset counts none. Driven through a real
 // head over a local upstream, so it is the routes that record: the turn that meets the 429 (TurnKnownEnd) and the turn
 // refused at admission while the hold is live (HeadAdmission), read back from the trace the Turns page reads. A burst
 // 429 that names no reset must keep both of its old endings and their sentences. The machine's zone is set to Tokyo for
@@ -25,6 +27,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -33,6 +36,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.perf.PerfKeys
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.PlanLimit
@@ -153,6 +157,12 @@ private fun JsonObject.outcome() = getValue("outcome").jsonPrimitive.content
 
 private fun JsonObject.sentence() = get("failure_sentence")?.jsonPrimitive?.content
 
+/** The instant this row counts the spent window coming back, null when it counts none. A surface reading the perf
+ *  file alone (the console's Requests list) has only this. */
+private fun JsonObject.resetCounted(): Long? = get("perf")?.jsonObject
+    ?.get("counters")?.jsonObject
+    ?.get(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS)?.jsonPrimitive?.content?.toLong()
+
 /** Runs [block] with the machine's zone set to [zone], and puts the old one back. */
 private fun <T> inZone(zone: String, block: () -> T): T {
     val saved = TimeZone.getDefault()
@@ -198,6 +208,9 @@ class PlanLimitTurnEndingTest {
             assertFalse("CT" in sentence || "wait a moment" in sentence, "the generic words came back: $sentence")
         }
         assertEquals(said[0], said[1], "the held turn names the same instant, in the same words")
+        endings.forEach { ending ->
+            assertEquals(reset, ending.resetCounted(), "the row counts when the window comes back: $ending")
+        }
     }
 
     @Test
@@ -217,5 +230,8 @@ class PlanLimitTurnEndingTest {
         assertEquals(listOf("error:upstream-failed", "error:rate-limited"), endings.map { it.outcome() })
         assertEquals(OutcomeSentences.of("error:upstream-failed"), endings[0].sentence())
         assertEquals(OutcomeSentences.of("error:rate-limited"), endings[1].sentence())
+        endings.forEach { ending ->
+            assertNull(ending.resetCounted(), "a burst with no reset counts none, so no surface can invent one")
+        }
     }
 }

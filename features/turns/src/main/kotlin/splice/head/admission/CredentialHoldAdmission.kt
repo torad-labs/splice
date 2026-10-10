@@ -7,6 +7,7 @@ import splice.core.auth.ClientAuthProvider
 import splice.core.auth.CredentialKey
 import splice.core.auth.Credentials
 import splice.core.perf.OutcomeTag
+import splice.core.perf.PerfKeys
 import splice.core.usage.PlanLimit
 import splice.core.util.WallClock
 import splice.head.HeadDeps
@@ -105,7 +106,12 @@ internal class CredentialHoldAdmission(
         val armedMs = cooldown.remainingMs()
         val now = wallClock()
         val reset = cooldown.providerUnavailableForMs().takeIf { it > 0L }?.let { (now + it) / MILLIS_PER_SECOND }
-        plan?.let { trace?.failureSentence(OutcomeSentences.planLimit(it)) }
+        // V4-444: the held turn speaks the window on the trace AND counts its reset, so the row says when the window
+        // comes back to a surface that reads only the perf file.
+        plan?.let {
+            trace?.failureSentence(OutcomeSentences.planLimit(it))
+            admitted.perf.setCount(PerfKeys.EARLIEST_RESET_EPOCH_SECONDS, it.resetEpochSeconds)
+        }
         driver.recordLocalRefusal(
             prepared.built.meta,
             admitted.perf,

@@ -101,7 +101,9 @@ public object PerfKeys {
     public const val RETRIES: String = "retries"
     public const val REFRESHES: String = "refreshes"
 
-    /** The selector's exact earliest exhausted-account reset, never the capped client retry deadline. */
+    /** The exact instant a spent window comes back, never the capped client retry deadline: the selector's earliest
+     *  exhausted-account reset when admission turned the request away, and the plan window's own reset on every other
+     *  turn that ended error:plan-limit (V4-444). */
     public const val EARLIEST_RESET_EPOCH_SECONDS: String = "earliest_reset_epoch_seconds"
     public const val REQ_BYTES: String = "req_bytes"
     public const val UPSTREAM_REQ_BYTES: String = "upstream_req_bytes"

@@ -19,8 +19,10 @@ const REQVIEW = (() => {
     bang: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v9M12 18.5v.5"/></svg>',
     compact: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14M5 20h14M12 7v4M9 9l3 3 3-3M12 17v-4M9 15l3-3 3 3"/></svg>',
   };
-  // kept, cut or unavailable: the records are there. off, deleted or expired: only the perf row is (Knob.kt:519-530, TraceRoute.kt)
-  const kept = (st) => ["kept", "cut", "unavailable"].includes(st);
+  // kept or cut: the records are there, and only then are there tabs. Every other state is said ONCE for the request, in
+  // the page's words with the page's control (h.gone), never "Not kept" on Sent, Attempts and Returned in turn: three
+  // empty tabs are what sent both p157 and p158 hunting through Settings (fin, Oct 10).
+  const kept = (st) => ["kept", "cut"].includes(st);
   // one frame's piece of the answer, in whichever dialect it came: Anthropic's block delta, a Responses text delta, or a
   // chat completion chunk's content. Consecutive pieces of one answer fold to one line in the frames list.
   const pieceOf = (f) => {
@@ -131,18 +133,11 @@ const REQVIEW = (() => {
     function blockHtml(title, inner, extra = "") { return `<section class="block"><h3>${title}${extra}</h3>${inner}</section>`; }
     // the bodies, by tab: what the caller sent splice, each send upstream, and what splice handed back.
     // tr: { sent: {headers, body}, attempts: [{url, start, ms, status, headers, body, resHeaders?, frames? | raw?, failure?, lock?}],
-    // returned: {status, frames | body} }. st: the records' state (kept, cut, unavailable, off, deleted, expired, step).
+    // returned: {status, frames | body} }. st: the records' state, kept or cut; every other state never reaches here.
     function bodiesHtml(r, tr, st) {
-      if (st === "step") return `<div class="gone"><span class="state">No send</span></div>`;
-      // the records are being read; nothing is drawn as missing until that read answers
-      if (st === "reading") return `<div class="gone"><span class="state">Reading</span></div>`;
-      if (st === "off") return `<div class="gone"><span class="state">${ICON.lock}Not traced</span></div>`;
-      if (st === "deleted") return `<div class="gone"><span class="state">Deleted</span></div>`;
-      if (st === "expired") return `<div class="gone"><span class="state">Not kept</span></div>`;
-      // Unavailable: the request is listed and its records are not here. There is no body, no headers and no status
-      // to draw, so every block says so — reading one off a trace that is not there is the one thing this must not do.
-      const tab = s().tab, cut = st === "cut", gone = st === "unavailable" || !tr;
-      const absent = `<p class="unavail">Not kept</p>`;
+      // a kept trace that holds no record for a piece: that piece was not reported, which is not the request missing
+      const tab = s().tab, cut = st === "cut", gone = !tr;
+      const absent = `<p class="unavail">Not reported</p>`;
       if (tab === "sent") return blockHtml("Headers", gone ? absent : headersHtml(tr.sent.headers))
         + blockHtml("Body", gone ? absent : `${bodyTree(tr.sent.body, `${r.id}.sent`)}${cut ? `<p class="cut">Cut at 16M characters</p>` : ""}`);
       if (tab === "returned") {
@@ -154,7 +149,7 @@ const REQVIEW = (() => {
         const ended = ["error", "response.failed"].includes(rt.frames?.at(-1)?.event);
         return blockHtml("Status", rt.status == null ? absent : `<p class="status s${ended ? "x" : String(rt.status)[0]}">${rt.status}</p>`) + blockHtml("Body", inner);
       }
-      if (gone) return `<div class="gone"><span class="state">Not kept</span></div>`;
+      if (gone) return `<div class="gone"><span class="state">Not reported</span></div>`;
       // a send's answer: its headers when the record has them, then its frames or its body
       const answer = (a, i) => (a.frames ? framesHtml(a.frames, `${r.id}:a${i}`) : `<div class="json">${tree(a.raw, `${r.id}.raw${i}`, 0, () => true)}</div>`);
       const resHtml = (a, i) => (a.resHeaders ? `<div>${blockHtml("Response", headersHtml(a.resHeaders))}${answer(a, i)}</div>`
@@ -197,15 +192,18 @@ const REQVIEW = (() => {
       return `<div class="figs" style="--n:${cells.length}">${cells.map((k) => of[k]()).join("")}</div>`;
     }
     // the open request. h: the head's lamp (cls, glyph), word, name and account, the page's own acts, the trace and its
-    // state, and the figures with the cost's text
+    // state, the figures with the cost's text, and h.gone: the one line the page says when the records are not here
     function paneHtml(r, h) {
       const bodies = kept(h.st);
+      const lower = bodies ? bodiesHtml(r, h.tr(), h.st)
+        : h.st === "reading" ? `<div class="gone"><span class="state">Reading</span></div>` : h.gone ?? "";
       const tabs = bodies ? `<div class="switch tabs" role="tablist">${[["sent", "Sent"], ["attempts", "Attempts"], ["returned", "Returned"]].map(([v, w]) => `<button role="tab" data-act="tab" data-v="${v}" aria-pressed="${s().tab === v}">${w}</button>`).join("")}</div>` : "";
       return `<section class="pane rqpane" style="--c:${colorOf(r.provider)}" aria-label="Request at ${clockS(r.ts)}"><header><span class="lamp ${h.lampCls}" aria-hidden="true">${h.lamp}</span>`
         + `<div class="who"><div class="top"><span class="name">${esc(h.name)}</span><time>${dayOf(r.ts)}${clockS(r.ts)}</time></div>`
         + `<div class="meta"><span class="chip">${esc(r.cmd)}</span>${h.word}<span>${esc(r.model)}</span>${h.acct ? `<span>${h.acct}</span>` : ""}</div></div>`
         + `<div class="acts">${h.acts}</div></header>`
-        + `<div class="scroll">${h.st === "step" ? "" : railHtml(r, kept(h.st) ? h.tr() : null)}${h.st === "step" ? "" : figuresHtml(r, h.cells, h.cost)}${tabs}<div class="bodies">${bodiesHtml(r, bodies ? h.tr() : null, h.st)}</div></div></section>`;
+        // h.said: what the provider answered, verbatim and unlabelled, directly under the outcome in the header (fin)
+        + `<div class="scroll">${h.said ?? ""}${railHtml(r, bodies ? h.tr() : null)}${figuresHtml(r, h.cells, h.cost)}${tabs}<div class="bodies">${lower}</div></div></section>`;
     }
     // its controls: a tab, a fold of a body, a send's frames. True when the click was one of them; the page draws again.
     function click(el) {

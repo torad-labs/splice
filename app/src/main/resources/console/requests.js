@@ -7,6 +7,8 @@
 //   GET /api/heads · /api/models            the commands, each one's provider, and its models' own labels
 //   GET /api/perf/turns?head=…              one head's window of requests, filtered BY THE DAEMON (TurnsFilter.kt):
 //                                           since, n, outcome, model, account, session, unattributed, local, compact
+//                                           (always local=0: a code-mode step posts nothing upstream and is no request,
+//                                           PerfKeys.kt:83-84, and Usage leaves it out too, TurnBill.kt:110-112)
 //   the same, n=1                           the window's own menus: its models, accounts and sessions, whatever the
 //                                           filters are, so a menu never lists only what the current filter left
 //   GET /api/heads/{head}/trace/search?q=   the turns whose sent or returned body holds the words, newest first, with
@@ -35,6 +37,7 @@ const FAMILY = { anthropic: "claude", openai: "gpt", codex: "gpt", xai: "grok", 
 // the open request is reqview.js, shared with Compare models, and so are its clock and count words
 const { clockS, dayOf, n0, secs, GLYPH } = REQVIEW;
 const RV = REQVIEW.view(() => ui);
+const RV_KEPT = REQVIEW.kept; // whether a state has records to draw, as the shared view decides it
 const kTok = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e4 ? `${Math.round(n / 1000)}K` : n >= 1000 ? `${+(n / 1000).toFixed(1)}K` : `${n}`);
 const money = (usd) => `≈$${usd < 0.01 ? +usd.toFixed(4) : usd.toFixed(usd < 1 ? 3 : 2)}`; // priced at the model's card
 
@@ -43,7 +46,7 @@ const money = (usd) => `≈$${usd < 0.01 ? +usd.toFixed(4) : usd.toFixed(usd < 1
 // A provider's own failure takes the glyph of the FACT it shares: a rate limit is the limit, an api_error is the
 // retries splice spent on it, and a refused credential is the credential glyph (its word, "Credentials refused",
 // is what separates it from being signed out). The rest are the plain bang.
-const GLYPH_OF = { "error:cancelled": "bang", "error:restarted": "bang", "error:plan-limit": "limit", "error:rate-limited": "limit",
+const GLYPH_OF = { "error:cancelled": "bang", "error:restarted": "bang", "error:turn-cap": "bang", "error:plan-limit": "limit", "error:rate-limited": "limit",
   "error:all-accounts-exhausted": "limit", "error:budget-blocked": "limit", "error:auth-missing": "signout", "error:upstream-failed": "retries",
   "failure:overloaded_error": "retries", "error:conn-reset": "retries", "error:upstream-frame-too-large": "bang", empty_model: "bang", "error:unexpected": "bang",
   "failure:rate_limit_error": "limit", "failure:api_error": "retries", "failure:authentication_error": "signout",
@@ -53,14 +56,25 @@ const OUTCOME = Object.fromEntries(Object.keys(OUTCOME_WORD).concat(["ok", "empt
 // NO ROW READS "Failed": a tag fin has worded gets fin's word, and anything else shows the provider's own type made
 // readable (kit.js tagWord), because a person can act on "Context window error" and can act on nothing at all with
 // "Failed". "Failed" is the Outcome switch's label, which counts every failure, and belongs nowhere else on this page.
-const outcomeOf = (r) => (r.local ? { cls: "step", word: "Step" } : OUTCOME[r.outcome]
-  || { cls: "fail", word: tagWord(r.outcome) ?? "", glyph: "bang" });
+const outcomeOf = (r) => OUTCOME[r.outcome] || { cls: "fail", word: tagWord(r.outcome) ?? "", glyph: "bang" };
 // What sits beside the word: the reset a spent window named, or the retries splice ran inside the request. THE ROW
 // DECIDES, not the tag: splice writes the reset when it turned a request away because every account was spent
 // (ExhaustedAccountAdmission.kt:32), and a request that met the window mid-flight ends error:plan-limit with no reset
 // in its row at all — 156 of them in one live day. Reading the lock off the tag would promise a time no row holds.
-const besideOf = (r) => r.reset ? `<span class="detail">${ICON.lock}Resets ${dayOf(r.reset)}${clock(r.reset)}</span>`
-  : r.retries ? `<span class="detail">${r.retries} ${r.retries === 1 ? "retry" : "retries"}</span>` : "";
+// THE LOCK NAMES ITS WINDOW the way Accounts names its rows (accounts.js LEN: "5 hours", "Day", "Week", "Month"), from
+// the length the provider's own refusal gave (limit_window_seconds), so the two pages agree by construction. A refusal
+// that named no window reads "At limit", the kit's limit word, and names none (fin, Oct 10): p157 and p158 each called
+// the lock's cause a guess when it gave a time and no window.
+const WINDOW_WORD = { 18000: "5 hours", 86400: "Day", 604800: "Week", 2592000: "Month" };
+const lockWord = (r) => WINDOW_WORD[r.window] ?? "At limit";
+const resetWord = (r) => `${lockWord(r)} · Resets ${dayOf(r.reset)}${clock(r.reset)}`;
+// Then what splice did inside the request: a broken stream it resumed or started over, in the timeline's tick word and
+// the tick's colour (.mend, hitstop 8405b48), so a walker finds docs-site without timing it (p157), and its retries.
+const besideOf = (r) => {
+  if (r.reset) return `<span class="detail">${ICON.lock}${resetWord(r)}</span>`;
+  const mend = r.resumed ? `<span class="detail mend">${r.resumedFresh ? WHY.startedover.word : WHY.resumed.word}</span>` : "";
+  return mend + (r.retries ? `<span class="detail">${r.retries} ${r.retries === 1 ? "retry" : "retries"}</span>` : "");
+};
 // why a request has no dollar figure (TurnPriceGap.kt), in fin's words; one that was never answered says nothing
 const REASON = { plan: "Plan", local: "This computer", vast: "vast.ai", unanswered: "", uncounted: "Uncounted", undeclared: "No price" };
 // A key is an account: its variable and the day splice first saw THAT key, "OPENROUTER_API_KEY · Sep 14" (fin's
@@ -74,7 +88,7 @@ const acctHtml = (r) => {
   const was = key.replaced ? `<span class="detail">Replaced</span>` : "";
   return `<span class="var">${esc(key.name)}</span> · ${dayWord(key.seen)}${was}`;
 };
-const costText = (r) => (r.local ? "" : r.cost != null ? money(r.cost) : REASON[r.reason] ?? "");
+const costText = (r) => (r.cost != null ? money(r.cost) : REASON[r.reason] ?? "");
 const DOWN = G('<path d="M6 9l6 6 6-6"/>', 'class="down" aria-hidden="true"');
 
 // ---------- the filters, as /api/perf/turns takes them (TurnsFilter.kt), plus the search over bodies ----------
@@ -89,14 +103,21 @@ let state = {
   rows: [], matched: 0, capped: false, facets: { models: [], accounts: [], sessions: [] }, headErrors: [], sessionsError: null, traceDays: null, capture: {}, config: null,
   // what the search answered: how far back it read, why it stopped, and the turns it could not reach
   search: null,
+  // when the window lists nothing: the nearest wider window that has matches, and how many (readWider)
+  wider: null,
+  // what Start saving answered, per command: the word that stands beside "Not saved" once the button is pressed
+  saving: {},
 };
+// What Start saving says while the switch waits on a restart to take. fin's word is pending (asked Oct 10); until it
+// lands this is the plain fact, and it is the one line to change.
+const AFTER_RESTART = "Saves after splice restarts";
 let ui = { open: null, q: "", win: "24h", cmd: null, sid: null, model: null, account: null, repo: null, from: null, to: null,
-  outcome: "all", why: null, compact: false, steps: true, menu: null, n: 200, tab: "sent", nodes: new Set(), auto: true };
+  outcome: "all", why: null, compact: false, menu: null, n: 200, tab: "sent", nodes: new Set(), auto: true };
 const root = document.getElementById("requests");
 const wide = sideBySide;
 // How far back every read asks: the window, or the stretch a door from another page named, which may reach further
 // back than the window does. One figure, so the rows, the menus and the search all cover the same ground.
-const since = () => Math.min(ui.from ?? Infinity, +NOW - WINDOWS[ui.win][1]);
+const since = (win = ui.win) => Math.min(ui.from ?? Infinity, +NOW - WINDOWS[win][1]);
 const providerOfCmd = (cmd) => state.providerOf[(state.heads.find((h) => h.command === cmd) || {}).key];
 const sessTitle = (sid) => { const s = state.sessions[sid]; return s?.name || (sid ? `Session ${String(sid).slice(0, 8)}` : ""); };
 
@@ -182,8 +203,9 @@ const WHY_ASKS = {
   resumed: { resumed: "1", started_over: "0" }, silentresume: { resumed: "1", started_over: "0" },
   startedover: { started_over: "1" }, silentover: { started_over: "1" },
 };
-function turnsPath(head, filtered) {
-  const p = new URLSearchParams({ head: head.key, since: String(since()), time_zone: ZONE, n: filtered ? String(MAX_HELD) : "1" });
+function turnsPath(head, filtered, win = ui.win) {
+  // local=0 on both reads, so the menus count the same requests the list does
+  const p = new URLSearchParams({ head: head.key, since: String(since(win)), time_zone: ZONE, n: filtered ? String(MAX_HELD) : "1", local: "0" });
   if (filtered) {
     if (ui.outcome === "fail") p.set("outcome", "failed");
     if (ui.outcome === "stopped") p.set("outcome", "stopped");
@@ -193,7 +215,6 @@ function turnsPath(head, filtered) {
     else if (ui.account) p.set("account", ui.account.split("|").slice(1).join("|"));
     if (ui.sid) p.set("session", String(ui.sid).slice(0, 8));
     if (ui.compact) p.set("compact", "1");
-    if (!ui.steps) p.set("local", "0");
     if (ui.to) p.set("until", String(ui.to));
     for (const [key, value] of Object.entries(WHY_ASKS[ui.why] || {})) {
       const tier = value === "tier" ? idleTier(head) : null;
@@ -243,7 +264,6 @@ async function readRows() {
 /** One perf row as this page draws it. A key the writer never put in the row is left null, never zeroed: a provider
  *  that reported no tokens and a request that never got a first byte draw nothing where their figure would be. */
 function mapRow(head, row) {
-  const local = row.local_step === 1;
   const started = row.ts - (row.total ?? 0);
   // THE ONE SILENCE THE ROW RECORDS AS AN INTERVAL: up_gap_max_ms with its own start, which the keys say belong to the
   // same winning interval (PerfKeys.kt:133-135). It is drawn only when it is a silence splice would have asked about:
@@ -268,7 +288,7 @@ function mapRow(head, row) {
     provider: state.providerOf[head.key] ?? null,
     ts: new Date(row.ts), sid, outcome: row.outcome, cause: row.cause ?? null,
     model: row.model ? state.modelLabel[row.model] ?? row.model : null, modelId: row.model ?? null,
-    account: row.account ?? null, compact: row.compact === true, local,
+    account: row.account ?? null, compact: row.compact === true,
     attempts: row.attempts ?? 0, retries: row.retries ?? 0,
     total: row.total ?? 0, ttfb: row.first_byte ?? null, ftok: row.first_delta ?? null,
     queued: row.admit_wait_ms ?? 0,
@@ -281,6 +301,12 @@ function mapRow(head, row) {
     in: row.in_tokens ?? null, cached: row.cached_tokens ?? 0, write: row.cache_write_tokens ?? null, out: row.out_tokens ?? null,
     cost: row.cost_usd ?? null, reason: row.cost_reason ?? null,
     reset: row.earliest_reset_epoch_seconds ? new Date(row.earliest_reset_epoch_seconds * 1000) : null,
+    // the spent window's length as the provider's refusal named it, null when it named none (limit_window_seconds)
+    window: row.limit_window_seconds ?? null,
+    // whether the command was saving when this ran: false only when the row says it was not (capture: false)
+    saving: row.capture === false ? false : null,
+    // what the provider answered, kept on the row even when no body was (provider_status, provider_message)
+    providerStatus: row.provider_status ?? null, providerMessage: row.provider_message ?? null,
     repo: state.sessions[sid]?.repo?.name ?? null,
   };
 }
@@ -316,8 +342,11 @@ async function readSearch() {
     const res = reads[i];
     if (!res.ok) { errors.push(refusalOf(res, `${head.command}\u2019s prompts and answers could not be searched`)); return; }
     for (const hit of res.body?.hits || []) hits.push(mapHit(head, hit));
-    if (res.body?.back_to_epoch_ms != null) backTo = Math.max(backTo ?? 0, res.body.back_to_epoch_ms);
-    if (res.body?.stopped_on) stopped = res.body.stopped_on;
+    // a head that stopped early sets the floor; one that read all it keeps reaches nothing older and sets none
+    if (res.body?.stopped_on) {
+      stopped = res.body.stopped_on;
+      if (res.body.back_to_epoch_ms != null) backTo = Math.min(backTo ?? Infinity, res.body.back_to_epoch_ms);
+    }
   });
   state.search = { hits, errors, backTo, stopped };
 }
@@ -338,10 +367,36 @@ function searched() {
 // ---------- what the daemon cannot filter: a project, a stretch of time and what happened ----------
 // These narrow the rows the read already cut. The read asks for the window's newest 2,000, so a narrow one of these
 // says how many of the window it had to look at, rather than reading as the whole window's answer.
-function filtered() {
-  return searched().filter((r) => (!ui.repo || r.repo === ui.repo)
-    && (!ui.from || (+r.ts > ui.from && +r.ts <= (ui.to ?? +NOW)))
-    && (!ui.why || WHY[ui.why].has(r)));
+const narrow = (rows) => rows.filter((r) => (!ui.repo || r.repo === ui.repo)
+  && (!ui.from || (+r.ts > ui.from && +r.ts <= (ui.to ?? +NOW)))
+  && (!ui.why || WHY[ui.why].has(r)));
+const filtered = () => narrow(searched());
+
+// AN EMPTY WINDOW WHOSE OLDER ROWS MATCH says how many and widens in one tap, for every door and filter (Marlin, after
+// the Started over door opened on No match in 24 hours with 31 in the week; hitstop f80553d). One read at the widest
+// window with the same filters, narrowed as the list is, then counted for each wider window, nearest first. A head whose
+// read held its cap may not reach back to a window's start, and that window's figure is then a floor, drawn with a plus.
+// A search or a named stretch of time is not widened: the search reads its own records, and a stretch is its own window.
+async function readWider() {
+  state.wider = null;
+  const keys = Object.keys(WINDOWS), later = keys.slice(keys.indexOf(ui.win) + 1);
+  if (!later.length || ui.q || ui.from || state.headErrors.length || filtered().length) return;
+  const heads = askedHeads(), widest = later[later.length - 1];
+  const reads = await Promise.all(heads.map((h) => API.get(turnsPath(h, true, widest))));
+  const rows = [];
+  let reach = -Infinity; // the latest point a capped head's read stopped at: older than this, its rows weren't carried
+  for (const [i, head] of heads.entries()) {
+    const answer = (reads[i].body?.heads || []).find((x) => x.key === head.key);
+    if (!reads[i].ok || !answer || answer.error) return; // a count missing one command would be a wrong count
+    const mine = (answer.rows || []).map((row) => mapRow(head, row));
+    if (answer.truncated && mine.length) reach = Math.max(reach, Math.min(...mine.map((r) => +r.ts)));
+    rows.push(...mine);
+  }
+  const kept = narrow(rows);
+  for (const win of later) {
+    const start = +NOW - WINDOWS[win][1], n = kept.filter((r) => +r.ts > start).length;
+    if (n) { state.wider = { win, n, floor: reach > start }; return; }
+  }
 }
 const uniq = (xs) => [...new Set(xs)];
 
@@ -376,6 +431,10 @@ function menuHtml(key) {
 function filtersHtml() {
   const out = ui.outcome;
   const sw = `<div class="switch" role="group" aria-label="Outcome">${[["all", "All"], ["fail", "Failed"], ["stopped", "Stopped"]].map(([v, w]) => `<button data-act="outcome" data-v="${v}" aria-pressed="${out === v}">${w}</button>`).join("")}</div>`;
+  // Started over happens during a request that can still end clean, so it is not an outcome (fin) but a door of its
+  // own beside the switch (Marlin, p157; hitstop f80553d): the why filter, pressed when a door brings it, and it
+  // combines with Failed and Stopped. Its toggle is its chip, so no second chip is drawn for it.
+  const over = `<button class="ftog" data-act="why" data-v="startedover" aria-pressed="${ui.why === "startedover"}"><i></i>${WHY.startedover.word}</button>`;
   const tog = (key, label, on) => `<button class="ftog" data-act="toggle" data-m="${key}" aria-pressed="${on}"><i></i>${label}</button>`;
   const acct = ui.account && ui.account !== "none" ? state.facets.accounts.find(([k]) => k === ui.account) : null;
   return `<div class="filters">${pickBtn("win", WINDOWS[ui.win][0], false)}`
@@ -385,8 +444,8 @@ function filtersHtml() {
     + pickBtn("account", ui.account ? (ui.account === "none" ? "No account" : acctHtml({ account: acct?.[1].account ?? "" })) : "Account", Boolean(ui.account))
     + (ui.repo ? `<span class="fwrap"><span class="fbtn on">${esc(ui.repo)}</span><button class="fclear" data-act="unset" data-m="repo" aria-label="Clear">${ICON.close}</button></span>` : "")
     + (ui.from ? `<span class="fwrap"><span class="fbtn on">${dayOf(new Date(ui.from + 1))}${ui.to ? `${clock(new Date(ui.from))} to ${clock(new Date(ui.to))}` : `Since ${clock(new Date(ui.from))}`}</span><button class="fclear" data-act="unset" data-m="from" aria-label="Clear">${ICON.close}</button></span>` : "")
-    + (ui.why ? `<span class="fwrap"><span class="fbtn on">${esc(WHY[ui.why].word)}</span><button class="fclear" data-act="unset" data-m="why" aria-label="Clear">${ICON.close}</button></span>` : "")
-    + `${sw}${tog("compact", "Compactions", ui.compact)}${tog("steps", "Steps", ui.steps)}</div>`;
+    + (ui.why && ui.why !== "startedover" ? `<span class="fwrap"><span class="fbtn on">${esc(WHY[ui.why].word)}</span><button class="fclear" data-act="unset" data-m="why" aria-label="Clear">${ICON.close}</button></span>` : "")
+    + `${sw}${over}${tog("compact", "Compactions", ui.compact)}</div>`;
 }
 
 // ---------- the list: the newest first, on the rail, an hour mark where the hour turns ----------
@@ -395,7 +454,7 @@ function rowHtml(r) {
   const lamp = r.compact ? GLYPH.compact : o.glyph ? GLYPH[o.glyph] : "<i></i>";
   const word = (o.word ? `<span class="word ${o.cls}">${o.word}</span>` : r.compact ? `<span class="word">Compaction</span>` : "") + besideOf(r);
   // a figure the provider never reported is left out, never printed as 0
-  const tokens = r.local ? "" : (r.in != null ? `<span class="tok">${kTok(r.in)} tokens in${r.in && r.cached / r.in >= .5 ? `<em>${Math.round((r.cached / r.in) * 100)}% cached</em>` : ""}</span>` : "")
+  const tokens = (r.in != null ? `<span class="tok">${kTok(r.in)} tokens in${r.in && r.cached / r.in >= .5 ? `<em>${Math.round((r.cached / r.in) * 100)}% cached</em>` : ""}</span>` : "")
     + (r.out != null ? `<span class="tok">${kTok(r.out)} out</span>` : "");
   const match = h ? `<p class="match"><span class="where">${h.where === "sent" ? "Sent" : "Returned"}</span>${markIn(`… ${h.text} …`)}</p>` : "";
   return `<article class="card rq ${o.cls}${r.compact ? " compact" : ""}" style="--c:${colorOf(r.provider)}" data-open="${esc(r.id)}" aria-current="${ui.open === r.id}">`
@@ -414,14 +473,17 @@ function heldFoot() {
   const n = state.matched;
   return `<p class="foot held">The newest ${n0(MAX_HELD)} of each command. ${n0(n)} request${n === 1 ? "" : "s"} in ${WINDOWS[ui.win][0].toLowerCase()}.</p>`;
 }
-// a search says where it stopped reading, so an answer is never read as "nothing was ever sent"
+// A SEARCH THAT READ EVERYTHING KEPT HAS NO FOOTER: its results are whole (fin, Oct 10). One that stopped early says the
+// oldest record it actually read, which can never be later than a hit above it. fin's "Search further" waits on the
+// route: /trace/search takes q, since and limit and nothing to resume from (TraceMount.kt), so there is no read to
+// continue and no button that would do nothing.
+// p157 read "Searched back to 1:34 PM, splice keeps them for 7 days" over a 10:12 AM hit while Settings said Forever:
+// the time was the NEWEST of the heads' stopping points, and the window was a second figure that contradicted Settings.
+// The time is now the OLDEST any head reached, and no keep-for figure appears here at all; the window lives on Settings.
 function searchFoot() {
   const s = state.search;
-  if (!s) return "";
-  const back = s.backTo ? `Searched back to ${dayOf(new Date(s.backTo))}${clock(new Date(s.backTo))}` : "Searched the prompts and answers on disk";
-  const why = s.stopped === "limit" ? ", and stopped at a hundred requests" : s.stopped === "time" ? ", and stopped when the search ran long" : "";
-  const kept = state.traceDays ? ` splice keeps them for ${state.traceDays} ${state.traceDays === 1 ? "day" : "days"}.` : "";
-  return `<p class="foot searched">${back}${why}.${kept}</p>`;
+  if (!s?.stopped || s.backTo == null) return "";
+  return `<p class="foot searched">Searched back to ${dayOf(new Date(s.backTo))}${clock(new Date(s.backTo))}</p>`;
 }
 function listHtml() {
   const rows = filtered().slice().sort((a, b) => +b.ts - +a.ts);
@@ -430,7 +492,10 @@ function listHtml() {
   if (state.loading) return `<div class="list"><div class="nomatch"><span class="state">Reading</span></div></div>`;
   if (state.error) return `<div class="list"><div class="nomatch"><span class="state">${esc(state.error)}</span></div></div>`;
   if (!rows.length && ui.q) return `<div class="list">${trouble}<div class="nomatch"><span class="state">No match</span><button class="act quiet" data-act="clearall">Clear</button></div>${searchFoot()}</div>`;
-  if (!rows.length) return `<div class="list">${trouble}<div class="nomatch"><span class="state">${anyFilter() ? "No match" : "No requests"}</span>${anyFilter() ? `<button class="act quiet" data-act="clearall">Clear</button>` : ""}</div></div>`;
+  if (!rows.length) {
+    const w = state.wider, widen = w ? `<button class="act" data-act="widen" data-v="${w.win}">${n0(w.n)}${w.floor ? "+" : ""} in the last ${WINDOWS[w.win][0]}</button>` : "";
+    return `<div class="list">${trouble}<div class="nomatch"><span class="state">${anyFilter() ? "No match" : "No requests"}</span>${widen}${anyFilter() ? `<button class="act quiet" data-act="clearall">Clear</button>` : ""}</div></div>`;
+  }
   const shown = rows.slice(0, ui.n), items = [];
   let hour = null;
   for (const r of shown) {
@@ -442,25 +507,30 @@ function listHtml() {
     : "";
   return `<div class="list">${trouble}${items.join("")}${more}${heldFoot()}${searchFoot()}</div>`;
 }
-const anyFilter = () => Boolean(ui.cmd || ui.sid || ui.model || ui.account || ui.repo || ui.from || ui.why || ui.compact || !ui.steps || ui.outcome !== "all" || ui.q);
+const anyFilter = () => Boolean(ui.cmd || ui.sid || ui.model || ui.account || ui.repo || ui.from || ui.why || ui.compact || ui.outcome !== "all" || ui.q);
 
 // ---------- the open request: its own records, as its trace kept them ----------
-// kept or cut: the records are there. off, deleted, expired or unavailable: only the perf row is.
+// kept or cut: the records are there. unsaved, deleted, expired or norecords: only the perf row is, and the detail says
+// which ONCE, in fin's words (Oct 10), each true to a cause splice measured:
+//   unsaved    the row says its command was not saving when it ran (capture: false, TurnTelemetry): "Not saved"
+//   deleted    the daemon says he deleted them: "Deleted"
+//   expired    older than the command's keep-for: "Older than N days"
+//   norecords  saving was on, or the row predates the fact, and the records are not there: "No records". Never a
+//              cause, and never "Start saving", because saving was on (Marlin, Oct 10).
+// The command's capture switch NOW is never read as the cause: a request older than a toggle ran under the old setting.
 const traces = new Map(); // one read per request, held while the page is open
 function traceState(r) {
-  if (r.local) return "step"; // a step splice answered itself posted nothing upstream
   const held = traces.get(r.id);
   if (held?.state) return held.state;
-  // a row that kept no trace turn has no records to read: its command was not saving them, or this request was never
-  // traced. A row that HAS one is being read, and nothing is drawn as missing while that read is in flight.
-  if (r.turn) return "reading";
-  return state.capture[r.head]?.on === false ? "off" : "unavailable";
+  if (r.saving === false) return "unsaved";
+  // a row that HAS a trace turn is being read, and nothing is drawn as missing while that read is in flight
+  return r.turn ? "reading" : "norecords";
 }
 const traceOf = (r) => traces.get(r.id)?.tr ?? null;
 
 /** Reads one request's records, then draws it again. A refusal becomes the state the view draws, in its own words. */
 async function readTrace(r) {
-  if (r.local || !r.turn || traces.has(r.id)) return;
+  if (!r.turn || traces.has(r.id)) return;
   traces.set(r.id, { state: "reading", tr: null });
   const res = await API.get(`/api/heads/${encodeURIComponent(r.head)}/trace?turn=${encodeURIComponent(r.turn)}`);
   const records = res.ok ? res.body?.records || [] : [];
@@ -473,15 +543,43 @@ async function readTrace(r) {
   render();
 }
 
-/** Which state a refused read is in, from the daemon's own answer: the files it deleted, the days it no longer keeps,
- *  or a command that is not saving them at all. */
+/** Which state a refused read is in, from the daemon's own answer: the files he deleted, or the days the command no
+ *  longer keeps. Anything else is "No records": a cause this page cannot establish is not worded. */
 function refusedState(res, r) {
   const why = res.body?.error || "";
   if (why.includes("trace deleted")) return "deleted";
   const days = state.capture[r.head]?.days;
   if (days != null && +r.ts < +NOW - days * 24 * 3600e3) return "expired";
-  if (state.capture[r.head]?.on === false) return "off";
-  return "unavailable";
+  return "norecords";
+}
+
+/** The one line the detail says when the records are not here, with the one control that changes it next time. */
+function goneHtml(r, st) {
+  const line = (word, act = "") => `<div class="gone"><span class="state">${word}</span>${act}</div>`;
+  if (st === "deleted") return line("Deleted");
+  if (st === "norecords") return line("No records");
+  if (st === "expired") {
+    const days = state.capture[r.head]?.days;
+    return line(`Older than ${n0(days)} ${days === 1 ? "day" : "days"}`, `<a class="act quiet" href="settings.html#data">Keep longer</a>`);
+  }
+  // Not saved: while the command is still not saving, the button that starts it; once it saves, the word alone
+  const said = state.saving[r.head];
+  const act = said ? `<span class="detail">${said}</span>`
+    : state.capture[r.head]?.on === false ? `<button class="act quiet" data-act="startsave" data-h="${esc(r.head)}">Start saving</button>` : "";
+  return line("Not saved", act);
+}
+
+/** Start saving: this command's Prompts and answers on, the same write Your data makes (PUT /capture). The daemon reads
+ *  the switch at start, and says so on every write (restart_required, CaptureRoutes.kt), so "Applied" is said only when
+ *  it is true; until then the word is fin's for a change waiting on a restart. */
+async function startSaving(head) {
+  state.saving[head] = "Saving";
+  render();
+  const res = await API.put(`/api/heads/${encodeURIComponent(head)}/capture`, { enabled: true });
+  if (!res.ok) { state.saving[head] = refusalOf(res, "Saving could not be started"); render(); return; }
+  state.capture[head] = { ...state.capture[head], on: true };
+  state.saving[head] = res.body?.restart_required ? AFTER_RESTART : "Applied";
+  render();
 }
 
 /** The records as the view reads them: what Claude Code sent, every send upstream on the rail, and what came back. */
@@ -542,9 +640,14 @@ function paneHtml() {
   const o = outcomeOf(r), lamp = r.compact ? GLYPH.compact : o.glyph ? GLYPH[o.glyph] : "<i></i>";
   const word = (o.word ? `<span class="word ${o.cls}">${o.word}</span>` : r.compact ? `<span class="word">Compaction</span>` : "") + besideOf(r);
   const priced = r.reason !== "unanswered"; // a request nothing answered has no cost to show
+  const st = traceState(r);
+  // what the provider answered, verbatim, with its status: kept on the row whether or not the bodies were (Marlin item 2)
+  const said = r.providerMessage || r.providerStatus != null
+    ? `<p class="said">${r.providerStatus != null ? `<span class="status sx">${r.providerStatus}</span>` : ""}${esc(r.providerMessage ?? "")}</p>` : "";
   return RV.paneHtml(r, { lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: sessTitle(r.sid), acct: r.account ? acctHtml(r) : "",
     acts: `${openSession(r)}<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`,
-    st: traceState(r), tr: () => traceOf(r), cells: priced ? ["in", "write", "out", "cost", "attempts"] : ["in", "write", "out", "attempts"], cost: costText(r) });
+    st, gone: RV_KEPT(st) || st === "reading" ? "" : goneHtml(r, st), said,
+    tr: () => traceOf(r), cells: priced ? ["in", "write", "out", "cost", "attempts"] : ["in", "write", "out", "attempts"], cost: costText(r) });
 }
 
 // ---------- render ----------
@@ -579,6 +682,7 @@ async function reload({ standing = false } = {}) {
   if (standing) render();
   if (standing) await readStanding();
   await Promise.all([readRows(), readSearch()]);
+  await readWider();
   state.loading = false;
   autoOpen();
   render({ keep: false });
@@ -606,11 +710,14 @@ document.addEventListener("click", (e) => {
     case "set": ui[m] = v || null; if (m === "win") ui.win = v; ui.menu = null; ui.n = 200; again(); break;
     case "unset": ui[m] = null; if (m === "from") ui.to = null; ui.n = 200; again(); break;
     case "outcome": ui.outcome = v; ui.n = 200; again(); break;
+    case "why": ui.why = ui.why === v ? null : v; ui.n = 200; again(); break;
+    case "widen": ui.win = v; ui.n = 200; again(); break;
     case "toggle": ui[m] = !ui[m]; ui.n = 200; again(); break;
-    case "clearall": Object.assign(ui, { cmd: null, sid: null, model: null, account: null, repo: null, from: null, to: null, outcome: "all", why: null, compact: false, steps: true });
+    case "clearall": Object.assign(ui, { cmd: null, sid: null, model: null, account: null, repo: null, from: null, to: null, outcome: "all", why: null, compact: false });
       { const q = document.getElementById("q"); q.value = ""; ui.q = ""; } again(); break;
     case "more": ui.n += 200; render(); break;
     case "close": ui.open = null; ui.auto = false; render(); break;
+    case "startsave": startSaving(el.dataset.h); break;
     case "tab": case "node": case "frames": RV.click(el); render({ keep: true }); break; // the open request's own controls (reqview.js)
   }
 });
@@ -621,15 +728,22 @@ const autoOpen = () => {
   if (wide() && ui.auto) ui.open = filtered().slice().sort((a, b) => +b.ts - +a.ts)[0]?.id ?? null;
   else if (!wide() && ui.auto) ui.open = null;
 };
-addEventListener("resize", () => { autoOpen(); render(); });
+// a window widened past side-by-side opens the top request, and that request's records are read like any other open
+// (the 3828 look, Oct 10: the pane sat on Reading because nothing asked)
+addEventListener("resize", () => { autoOpen(); render(); const r = ui.open && find(ui.open); if (r) readTrace(r); });
 
-// a door from another page carries its filters in the address (?win=7d&cmd=claude-grok&why=cut): the list opens
-// filtered, with each filter as its chip, and the top match open where there's room
+// A door from another page carries its filters in the address (?win=7d&cmd=claude-grok&why=cut): the list opens
+// filtered, with each filter as its chip, and the top match open where there's room. The project is spelled
+// `project`, the word every other screen uses for it (a chart column on Usage opens
+// ?project=splice&from=…&to=…); `repo` is the same filter under the name the session record gives it, kept so an
+// older link still opens. A from-to span names epoch milliseconds, half-open as the daemon reads it, and `to`
+// left out means "through now" rather than an open end nobody can see.
 const ADDR = new URLSearchParams(location.search);
 if (WINDOWS[ADDR.get("win")]) ui.win = ADDR.get("win");
-for (const k of ["cmd", "model", "account", "repo", "session"]) if (ADDR.get(k)) ui[k === "session" ? "sid" : k] = ADDR.get(k);
+for (const k of ["cmd", "model", "account", "session"]) if (ADDR.get(k)) ui[k === "session" ? "sid" : k] = ADDR.get(k);
+ui.repo = ADDR.get("project") ?? ADDR.get("repo") ?? ui.repo;
 if (ADDR.get("from")) { ui.from = +ADDR.get("from"); ui.to = ADDR.get("to") ? +ADDR.get("to") : null; } // no end: through now
-if (WHY[ADDR.get("why")]) ui.why = ADDR.get("why");
+if (WHY[ADDR.get("why")]) ui.why = ADDR.get("why"); // Started over's door arrives with its toggle pressed
 if (["clean", "stopped", "fail"].includes(ADDR.get("outcome"))) ui.outcome = ADDR.get("outcome");
 if (ADDR.get("q")) { ui.q = ADDR.get("q"); document.getElementById("q").value = ui.q; }
 // a door that names one request shows that request, never the top row

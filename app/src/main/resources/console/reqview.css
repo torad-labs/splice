@@ -3,6 +3,7 @@
 .word.fail { color: var(--limit); }
 .detail { font: 500 .95rem/1 var(--font-data); color: var(--limit); display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
 .detail svg { width: 1rem; height: 1rem; }
+.detail.mend { color: var(--key-light); }  /* a broken stream splice resumed or started over: the timeline tick's colour, on the row */
 mark { background: var(--key-light); color: #241d14; border-radius: .2rem; padding: 0 .12rem; }
 /* the outcome as an element: clean a still dot, a failure in the limit's colour with what stopped it, stopped a square,
    a compaction its own mark, and a step splice answered itself an outline */
@@ -12,7 +13,6 @@ mark { background: var(--key-light); color: #241d14; border-radius: .2rem; paddi
 .lamp.stopped i { border-radius: .15rem; background: var(--text-body); width: .7rem; height: .7rem; }
 .lamp.compact { color: var(--key-light); }
 .lamp.compact svg { width: 1.35rem; height: 1.35rem; }
-.lamp.step i { width: .7rem; height: .7rem; background: transparent; box-shadow: inset 0 0 0 .13rem var(--text-mute); }
 
 /* ---------- the open request ---------- */
 .rqpane > header .top { gap: 1.1rem; }
@@ -107,6 +107,8 @@ mark { background: var(--key-light); color: #241d14; border-radius: .2rem; paddi
 .status.s2 { color: var(--live); }
 .status.s4, .status.s5 { color: var(--limit); }
 .status.sx { color: var(--text-body); } /* a 200 that ended on an error event */
+/* what the provider said on a failed request, above the timeline (Marlin p157 item 2); hitstop to draw */
+.said { display: flex; align-items: baseline; gap: .7rem; margin: 0 0 1.2rem; font: 500 1rem/1.45 var(--font-name); color: var(--text-body); overflow-wrap: anywhere; }
 
 /* one send upstream: where it went, what it carried, what came back */
 .attempt { padding: 1.1rem 1.2rem 1.25rem; border: .12rem solid var(--ink); border-radius: var(--r-obj); background: var(--obj-high); }
@@ -126,6 +128,7 @@ mark { background: var(--key-light); color: #241d14; border-radius: .2rem; paddi
 /* no records: the row still has its time, sends, tokens and cost; the bodies say why they're not here */
 .gone { display: flex; align-items: center; gap: 1rem; padding: 1.2rem 1.3rem; border: .12rem dashed var(--track-line); border-radius: var(--r-in); }
 .gone .state svg { width: 1.1rem; height: 1.1rem; }
+.gone .act { margin-left: auto; }  /* Start saving, Keep longer: the way out, at the box's end */
 .gone .sub { font: 500 .98rem/1 var(--font-data); color: var(--text-mute); }
 
 .attempt .two.one { grid-template-columns: minmax(0, 1fr); }

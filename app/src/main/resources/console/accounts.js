@@ -269,9 +269,11 @@ async function waitSignin(target) {
   render();
   const gen = s.gen, res = await API.post(s.how.start, s.how.body || {});
   if (ui.signin[target] !== s || s.gen !== gen) return;
-  if (!res.ok || !res.body?.id) { failSignin(target); return; }
-  s.id = res.body.id; seen(target, res.body);
+  if (!res.ok || !res.body?.id) { failSignin(target, res.body); return; }
+  s.id = res.body.id; seen(target, read(s, res.body));
 }
+// An add's answer carries its sign-in inside it (AddViews.kt:63); a command's sign-in answers as itself.
+const read = (s, body) => (s.how.watch ? body?.sign_in || {} : body);
 function seen(target, st) { // one status answer: show its step, finish, fail, or ask again in a second
   const s = ui.signin[target];
   if (!s || s.state !== "wait") return;
@@ -284,10 +286,10 @@ function seen(target, st) { // one status answer: show its step, finish, fail, o
   if (changed) { render(); s.swapped = false; }
   const gen = s.gen;
   s.timer = setTimeout(async () => {
-    const res = await API.get(`/api/auth/${encodeURIComponent(s.how.poll)}/login/${encodeURIComponent(s.id)}`);
+    const res = await API.get(s.how.watch || `/api/auth/${encodeURIComponent(s.how.poll)}/login/${encodeURIComponent(s.id)}`);
     if (ui.signin[target] !== s || s.gen !== gen) return;
     if (!res.ok) { failSignin(target); return; }
-    seen(target, res.body);
+    seen(target, read(s, res.body));
   }, 1000);
 }
 function failSignin(target, st = null) {
@@ -303,6 +305,7 @@ function failSignin(target, st = null) {
 async function finishSignin(target) {
   const s = ui.signin[target];
   stopTimers(s);
+  if (s.how.done && !(await s.how.done())) return; // an add saves after its sign-in; a refused save says so in place
   delete ui.signin[target];
   if (target === "prov") ui.addProv = null;
   await refresh(s.spot ? s.spot.split("/")[1] : "new");
@@ -310,7 +313,7 @@ async function finishSignin(target) {
 function cancelSignin(target) {
   if (ui.signin[target]) stopTimers(ui.signin[target]);
   delete ui.signin[target];
-  if (target === "prov") ui.addProv = null;
+  if (target === "prov") dropAdd();
   render();
 }
 function openSignin(target) {
@@ -543,6 +546,51 @@ function addAccount(pid, cmd) {
   const { c } = findCmd(cmd);
   startSignin(`add:${cmd}`, { start: `/api/auth/${encodeURIComponent(c.head)}/login`, body: {}, poll: c.head });
 }
+// ---------- adding a provider: one add on splice's own route (AddRoutes.kt), saved once it can sign in ----------
+// The provider picks the profile splice adds it from (GET /api/add/profiles). Saving writes its command and restarts
+// splice (AddRoutes.kt:115), so the tile waits until splice answers again with the provider on the board.
+const PROFILE = { claude: "claude", gpt: "codex", grok: "grok", kimi: "kimi", muse: "muse", router: "openrouter", deepseek: "deepseek" };
+async function pickProvider(c) {
+  const res = await API.post("/api/add", { profile: PROFILE[c.id] });
+  const add = res.ok ? res.body : null;
+  ui.addProv = { id: c.id, stage: add?.sign_in_by === "key" ? "key" : "sign", add: add?.id || null, env: add?.key_env || null };
+  if (ui.addProv.stage === "key") { render(); document.getElementById("key-in")?.focus(); return; }
+  const done = () => saveAdd(c.id, "prov");
+  if (add?.sign_in_by === "login") {
+    startSignin("prov", { start: `/api/add/${encodeURIComponent(add.id)}/login`, watch: `/api/add/${encodeURIComponent(add.id)}`, done });
+    return;
+  }
+  const again = () => { dropAdd(); pickProvider(c); }; // Try again opens the add afresh: there is no sign-in to restart
+  ui.signin.prov = { how: { done, again }, state: "wait" }; render(); // nothing to sign in to (Claude's login is forwarded)
+  if (add) finishSignin("prov"); else failSignin("prov", res.body);
+}
+// The save, then splice's restart: true once the provider is back on the board. A refused save, or a splice that does
+// not come back in a minute and a half, shows on the tile it was added from.
+async function saveAdd(pid, target) {
+  const res = await API.post(`/api/add/${encodeURIComponent(ui.addProv.add)}/save`);
+  if (!res.ok) { if (target === "key") keyState(document.getElementById("key-in"), "Not saved"); else failSignin(target, res.body); return false; }
+  ui.addProv.add = null; // saved: nothing left to discard
+  for (let i = 0; i < 90; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    await load();
+    if (data.some((p) => p.id === pid)) return true;
+  }
+  if (target === "key") keyState(document.getElementById("key-in"), "Not saved"); else failSignin(target);
+  return false;
+}
+function dropAdd() { // an add that will not be saved is closed on splice too
+  if (ui.addProv?.add) API.del(`/api/add/${encodeURIComponent(ui.addProv.add)}`);
+  ui.addProv = null;
+}
+async function saveKey() {
+  const st = ui.addProv, field = document.getElementById("key-in");
+  if (!st.add || !st.env) { keyState(field, "Not saved"); return; }
+  const res = await API.put(`/api/keys/${encodeURIComponent(st.env)}`, { value: pasted() });
+  if (!res.ok) { keyState(field, "Not saved"); return; }
+  field.parentElement.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+  if (await saveAdd(st.id, "key")) { ui.addProv = null; await refresh(st.id); }
+  else field.parentElement.querySelectorAll("button").forEach((b) => { b.disabled = false; });
+}
 const pasted = () => document.getElementById("key-in").value.trim(); // the value goes one way: into the store, never back
 // The key field's state, set in place so the pasted value is never written back into the page. Save stays off while the
 // field is empty (KeyWrites.kt:26).
@@ -650,7 +698,7 @@ document.addEventListener("click", async (e) => {
     case "copy-code":
       navigator.clipboard?.writeText(ui.signin[t.dataset.t].code).catch(() => {});
       t.classList.add("copied"); setTimeout(() => t.classList.remove("copied"), 1200); break;
-    case "retry-signin": waitSignin(t.dataset.t); break;
+    case "retry-signin": { const s = ui.signin[t.dataset.t]; if (s.how.again) s.how.again(); else waitSignin(t.dataset.t); break; }
     case "cancel-signin": cancelSignin(t.dataset.t); break;
     case "menu": ui.menu = ui.menu === t.dataset.s ? null : t.dataset.s; ui.armed = null; ui.removeErr = null; render(); board.querySelector(".menu button")?.focus(); break;
     case "rename": ui.menu = null; ui.rename = t.dataset.s; render(); break;
@@ -689,6 +737,10 @@ document.addEventListener("click", async (e) => {
       break;
     }
     case "cancel-budget": ui.editor = null; render(); break;
+    case "add-provider": ui.addProv = { stage: "pick" }; render(); break;
+    case "cancel-prov": dropAdd(); render(); break;
+    case "pick": pickProvider(CATALOG.find((x) => x.id === t.dataset.id)); break;
+    case "save-key": if (pasted()) saveKey(); break;
   }
 });
 

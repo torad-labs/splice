@@ -26,6 +26,8 @@ export const SLOT_TIMEOUT_EXIT = 75;
  *  daemon when another idle one is compatible with it, so a pair with equal JVM args kept culling each other and the next push started
  *  a cold one. A marker in the pre-push tree's JVM args makes its daemon incompatible with the checkout's: each stays warm. */
 const PRE_PUSH_LABEL = "pre-push";
+/** Projects the pre-push tree builds at once; hostshield's own cap (6) stays the ceiling for every other build. */
+const PRE_PUSH_WORKERS = 3;
 const HEAP_CAPS = "-Xmx1536m -XX:MaxMetaspaceSize=512m";
 /** The warm daemon's own caps, on the command line because ~/.gradle/gradle.properties (hostshield's 2 GB heap and 5 minute idle
  *  timeout) outranks the project's gradle.properties and only the command line outranks both. The worker cap stays hostshield's. */
@@ -226,7 +228,10 @@ function spawnGradle(
   const offline = childEnv.CI ? [] : ["--offline"];
   // Projects build in parallel on CI only. The runner is the job's alone; on this box the slot's JVMs
   // run in buildgate.slice, which hostshield makes earlyoom's first victim, so here one project at a time.
-  const parallel = childEnv.CI ? ["--parallel"] : [];
+  // The pre-push tree is the exception: its longest tasks (the app and turns test suites, then the kover and detekt
+  // tasks of every module the diff reaches) are independent of each other and ran one after another, 395 s of
+  // gradle on a catalog push. Three workers overlap them while the build gate's admission still bounds the machine.
+  const parallel = childEnv.CI ? ["--parallel"] : label === PRE_PUSH_LABEL ? ["--parallel", `--max-workers=${PRE_PUSH_WORKERS}`] : [];
   // `command -v buildgate` — resolved against the child's PATH, because buildgate is this MACHINE's
   // memory-containment wrapper and nothing in the tree provides it. Calling it unconditionally is
   // what took every gradle leg on CI down with `buildgate: command not found` (gradle-slot.sh:37-42).

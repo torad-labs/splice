@@ -152,13 +152,16 @@ describe("the gradle slot", () => {
     expect(readFileSync(pushTree.receipt, "utf8")).toContain("-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=512m -Dsplice.daemon=pre-push");
   });
 
-  test("--parallel is CI's alone: on this box one project builds at a time", async () => {
+  test("--parallel is CI's and the pre-push tree's: every other local build runs one project at a time", async () => {
     const local = fakeBuildRoot();
     await runUnderSlot({ layout: local.layout, label: "local", args: ["help"], env: { CI: "", PATH: local.path } });
     expect(readFileSync(local.receipt, "utf8")).toContain("ARGS:--offline ");
     const ci = fakeBuildRoot();
     await runUnderSlot({ layout: ci.layout, label: "ci", args: ["help"], env: { CI: "true", PATH: ci.path } });
     expect(readFileSync(ci.receipt, "utf8")).toContain("ARGS:--parallel --no-daemon help");
+    const push = fakeBuildRoot();
+    await runUnderSlot({ layout: push.layout, label: "pre-push", args: ["help"], env: { CI: "", PATH: push.path } });
+    expect(readFileSync(push.receipt, "utf8")).toContain("--parallel --max-workers=3");
   });
 
   test("the shell script's flock and this CLI's cannot both hold the slot", async () => {

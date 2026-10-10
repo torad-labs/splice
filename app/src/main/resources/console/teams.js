@@ -259,7 +259,7 @@ function memberHtml(tm, slot) {
 function askHtml(session, slotId, readOnly, key) {
   const asked = (session.last?.asks || [])[0];
   const failed = ui.failed.get(key);
-  const why = failed ? `<p class="why">${esc(failed)}</p>` : "";
+  const why = failed ? `<p class="why limit">${esc(failed)}</p>` : "";
   if (!asked) {
     const offer = state.screens[slotId];
     const what = prompted(session.last, offer);
@@ -304,7 +304,7 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model }) {
     word = `<span class="word starting">${GLYPH.wait}Starting</span>`;
   } else if (failed) {
     word = `<span class="word limit">Not started</span>`;
-    why = `<p class="why">${esc(failed)}</p>`;
+    why = `<p class="why limit">${esc(failed)}</p>`;
     acts = ro ? "" : `<button class="act" data-act="start" data-s="${esc(slot.id)}">Try again</button>`;
   } else if (!ro) {
     const free = Object.values(state.sessions).filter((x) =>

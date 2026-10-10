@@ -88,8 +88,13 @@
 .card.m .now { margin: .8rem 0 0; display: flex; align-items: center; gap: .5rem; min-width: 0; font: 500 1rem/1 var(--font-data); color: var(--text-body); }
 .card.m .now svg, .what svg { width: 1.1rem; height: 1.1rem; flex: none; }
 .obj { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-/* a start that did not come up says why, and the terminal's own last lines keep their breaks */
-.card.m .why { margin: .8rem 0 0; font: 400 1.05rem/1.45 var(--font-name); color: var(--limit); white-space: pre-line; overflow-wrap: anywhere; }
+/* the line under a card's headline, and the terminal's own last lines keep their breaks. BODY COLOUR, NOT
+   THE LIMIT COLOUR: this class carries three different sentences, and only one of them is bad news. A
+   permission prompt's own description ("Run the tax tests") and the fallback telling the person where to
+   answer are ordinary prose, and painting them the failure red said a turn had gone wrong when none had. */
+.card.m .why { margin: .8rem 0 0; font: 400 1.05rem/1.45 var(--font-name); color: var(--text-body); white-space: pre-line; overflow-wrap: anywhere; }
+/* a start that did not come up is the one that reads as a fault, because it is one */
+.card.m .why.limit { color: var(--limit); }
 .card.m .use { margin-top: .9rem; padding-top: .75rem; border-top: .12rem solid var(--track); }
 .card.m .use:empty { display: none; }
 .slot-acts { display: flex; align-items: center; flex-wrap: wrap; gap: .7rem; margin-top: .95rem; position: relative; }

@@ -54,6 +54,10 @@ internal class CodexAuthDescribe(
             out["account_id_masked"] =
                 if (acct.isNotEmpty()) "${acct.take(MASK_KEEP)}…${acct.takeLast(MASK_KEEP)}" else ""
             JsonScalars.str(raw, FIELD_LAST_REFRESH)?.let { out[FIELD_LAST_REFRESH] = it }
+            // The sign-in's own claims tell two ChatGPT accounts apart on Accounts: its stable user id and its email.
+            val claims = CodexOAuth().decodeJwtClaims(JsonScalars.str(tokens, FIELD_ID_TOKEN))
+            JsonScalars.str(claims, "sub")?.takeIf(String::isNotBlank)?.let { out["account_uuid"] = it }
+            JsonScalars.str(claims, "email")?.takeIf(String::isNotBlank)?.let { out["account_email"] = it }
             hasAccess
         }
         // A failed read is not "present"; its failure is consumed below via exceptionOrNull -> read_error.

@@ -99,7 +99,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
                     ),
                     observedAtEpochSeconds = quota?.fiveHour?.observedAt ?: quota?.sevenDay?.observedAt,
                 ),
-                authExclusion = AuthExclusionView(null, null),
+                authExclusion = AuthExclusionView(null, null, identity = identityOf(description.fields)),
                 flags = AccountFlags(
                     available = null,
                     credentialPresent = description.present,
@@ -159,9 +159,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
             account.credential.excludedUntilEpochMillis,
             account.credential.exclusionReason,
             fields[REFUSAL_FIELD],
-            fields["account_uuid"]?.takeIf(String::isNotBlank)?.let {
-                ClaudeAccountIdentity(it, fields["account_email"])
-            },
+            identityOf(fields),
             fields["display_name"],
         ),
         flags = AccountFlags(
@@ -207,6 +205,11 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
             .maxByOrNull { it.observedAtEpochMs }
         AccountAnswerJson.write(into, answer)
     }
+
+    /** The account a credential proves it signed in as, when its description names one: a Claude login's, or a
+     *  ChatGPT sign-in's user id and email. */
+    private fun identityOf(fields: Map<String, String>): ClaudeAccountIdentity? =
+        fields["account_uuid"]?.takeIf(String::isNotBlank)?.let { ClaudeAccountIdentity(it, fields["account_email"]) }
 
     /** A first OAuth account's name and whether it may be removed; null for every other row. */
     private fun first(row: JoinedAccount): FirstAccountEdit? {

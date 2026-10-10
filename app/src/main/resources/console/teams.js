@@ -256,6 +256,9 @@ function memberHtml(tm, slot) {
   const stop = !liveNow(s) || ro ? ""
     : ui.stopping.has(key) ? `<button class="act quiet small stopping" disabled>${ICON.wait}Stopping</button>`
     : `<button class="act quiet small" data-act="stop" data-s="${esc(slot.id)}">Stop</button>`;
+  // a refused Stop leaves the card where it is, Stop back in its place, and the refusal beside it
+  const refused = ui.failed.get(`stop:${key}`);
+  const refusal = refused ? `<span class="refusal" role="status">${esc(refused)}</span>` : "";
   const now = L.cls === "ended" ? null : lastActivity(slot.id);
   const body = L.cls === "needs" ? askHtml(s, slot.id, ro, key) : now ? `<p class="now">${activityHtml(now)}</p>` : "";
   // What the member is on: the name its session carries, else the folder it is in, as the drawing reads it.
@@ -266,7 +269,7 @@ function memberHtml(tm, slot) {
   const opens = slot.session ? ` go" tabindex="0" role="link" data-go="${esc(slot.session)}` : "";
   return `<article class="card m ${L.cls}${opens}" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
     `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>` +
-    `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${chip}${stop}</div>` +
+    `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${refusal}${chip}${stop}</div>` +
     `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail}<span>${esc(model)}</span>` +
     `${where ? `<span>${esc(where)}</span>` : ""}${also ? `<span class="also">Also on ${esc(also)}</span>` : ""}${heard ? `<span class="when">${hhmm(heard)}</span>` : ""}</div>` +
     `${body}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
@@ -348,6 +351,8 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model }) {
     why = `<p class="why limit">${esc(failed)}</p>`;
     acts = ro ? "" : `<button class="act" data-act="start" data-s="${esc(slot.id)}">Try again</button>`;
   } else if (!ro) {
+    const bindFailed = ui.failed.get(`bind:${key}`);
+    if (bindFailed) why = `<p class="why limit">${esc(bindFailed)}</p>`;
     const free = Object.values(state.sessions).filter((x) =>
       x.head === slot.head && x.availability !== "gone" && !state.teams.some((t) => !t.archived && t.slots.some((y) => y.session === x.session_id)));
     acts = `<button class="act primary" data-act="start" data-s="${esc(slot.id)}">Start new</button>` +
@@ -442,7 +447,7 @@ function boardHtml(tm) {
   return `<section class="team${ro ? " archived" : ""}" data-key="team:${esc(tm.id)}">` +
     `<header class="team-head"><div class="who"><h2>${esc(tm.name)}</h2>${tm.goal ? `<p class="goal">${esc(tm.goal)}</p>` : ""}` +
     `<div class="where">${tm.repo ? `<span class="repo">${GLYPH.folder}${esc(tm.repo)}</span>` : ""}${T ? figures(T, sinceOf(tm)) : ""}</div></div>` +
-    `<div class="acts">${more}</div></header>` +
+    `<div class="acts">${ui.failed.get("archive") ? `<span class="refusal" role="status">${esc(ui.failed.get("archive"))}</span>` : ""}${more}</div></header>` +
     `<div class="room"><div class="members">${tm.slots.map((s) => memberHtml(tm, s)).join("")}</div>` +
     `<section class="talk" aria-label="Chat"><header>${day}</header><div class="log chat">${chatHtml(tm)}</div></section>` +
     `<section class="feed"><header><h3>Activity</h3><span class="dname">${dayName(ui.day)}</span></header>` +
@@ -628,9 +633,10 @@ async function answerSlot(tm, slot, choice) {
   await read();
 }
 
-async function act(answer, whenRefused) {
+/** A refused act keeps the board: its word sits by the control that was refused, [where] in ui.failed. */
+async function act(answer, whenRefused, where) {
   if (!answer.ok) {
-    state.error = refusalOf(answer, whenRefused);
+    ui.failed.set(where, refusalOf(answer, whenRefused));
     render();
     return false;
   }
@@ -690,21 +696,26 @@ document.addEventListener("click", async (e) => {
     case "new": Object.assign(ui, { compose: composeFrom(null), menu: null, pick: null }); render(); sheet.querySelector("#t-name")?.focus(); break;
     case "edit": Object.assign(ui, { compose: composeFrom(tm), menu: null }); render(); sheet.querySelector("#t-name")?.focus(); break;
     case "more": ui.menu = ui.menu === "more" ? null : "more"; render(); break;
-    case "archive": ui.menu = null; await act(await API.post(`/api/teams/${tm.id}/archive`), "The team was not archived"); break;
+    case "archive":
+      ui.menu = null; ui.failed.delete("archive");
+      await act(await API.post(`/api/teams/${tm.id}/archive`), "The team was not archived", "archive");
+      break;
     case "day": ui.day = Math.max(0, Math.min(6, ui.day + +b.dataset.d)); render(); await readTeam(); break;
     case "start": await startSlot(tm, slot); break;
     case "use": { const k = `${tm.id}/${slot.id}`; ui.menu = ui.menu === k ? null : k; render(); break; }
     case "bind":
       ui.menu = null;
-      await act(await API.put(`/api/teams/${tm.id}/sessions`, { bindings: { [slot.id]: b.dataset.to } }), "The session was not bound");
+      ui.failed.delete(`bind:${tm.id}/${slot.id}`);
+      await act(await API.put(`/api/teams/${tm.id}/sessions`, { bindings: { [slot.id]: b.dataset.to } }),
+        "The session was not bound", `bind:${tm.id}/${slot.id}`);
       break;
     case "stop": { // the refusal is a word by its reason key; its cause goes to the log (fin, kit stopRefusal)
       const key = `${tm.id}/${slot.id}`;
-      ui.stopping.add(key); render();
+      ui.failed.delete(`stop:${key}`); ui.stopping.add(key); render();
       const res = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/stop`);
       ui.stopping.delete(key);
       const refused = stopRefusal(res);
-      if (refused) { state.error = refused; render(); } else await read();
+      if (refused) { ui.failed.set(`stop:${key}`, refused); render(); } else await read();
       break;
     }
     case "answer": await answerSlot(tm, slot, Number(b.dataset.i)); break;

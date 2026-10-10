@@ -99,6 +99,9 @@
    answer are ordinary prose, and painting them the failure red said a turn had gone wrong when none had. */
 .card.m .why { margin: .8rem 0 0; font: 400 1.05rem/1.45 var(--font-name); color: var(--text-body); white-space: pre-line; overflow-wrap: anywhere; }
 /* a start that did not come up is the one that reads as a fault, because it is one */
+.refusal { font: 400 1.05rem/1.2 var(--font-name); color: var(--limit); min-width: 0; overflow-wrap: anywhere; }
+.card.m .top .refusal { margin-left: auto; text-align: right; }
+.card.m .top .refusal + .chip { margin-left: .8rem; }
 .card.m .why.limit { color: var(--limit); }
 .card.m .use { margin-top: .9rem; padding-top: .75rem; border-top: .12rem solid var(--track); }
 .card.m .use:empty { display: none; }

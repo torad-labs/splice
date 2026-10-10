@@ -68,3 +68,9 @@ internal interface PerfLineVisit {
     fun raw(line: String)
     fun kept(line: PerfCachedLine)
 }
+
+/** The cumulative-drops evidence of one perf line: whether it may carry the counter, and the value if parsed. */
+internal data class PerfDropsHint(
+    val candidate: Boolean,
+    val count: Long?,
+)

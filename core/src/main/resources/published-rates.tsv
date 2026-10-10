@@ -3,6 +3,12 @@
 #   DeepSeek all matched, so no price changed. GPT-5.6 Sol's price is a PROMOTION the OpenAI page says holds "at least through
 #   November 21, 2026": re-read it then. The listed pages also carry models with no row here (OpenAI gpt-5.5 and older, xAI
 #   the grok-4.20 variants), which a turn on them prices as unlisted until a row is added.
+# Rows added Oct 10, 2026 (splice-builder2), from developers.openai.com/api/docs/pricing and docs.x.ai/docs/models: the
+#   OpenAI gpt-5 family on api.openai.com (an OpenAI API-key head's open catalog accepts any id the API serves; the ChatGPT
+#   backend lists only the gpt-6 and gpt-5.6 rows above, so none is added for chatgpt.com), and the xAI grok-4.20 variants
+#   the live Grok roster lists, plus grok-4.5-latest, the alias docs.x.ai names beside grok-build-latest. A -pro model
+#   publishes no cached-input price, so cache_read carries its input price (no discount invented). Not added: gpt-4.x, the o
+#   series, gpt-3.5 and the realtime models, which no agentic head here sends turns to.
 # A plan turn priced here reads as what the same work would cost on the vendor's API.
 # A row in splice.toml, a head's card, or a price the provider's model list publishes always wins over these.
 # tier_over: a request whose input is MORE than this many tokens is billed at the tier for all of its tokens.
@@ -55,12 +61,29 @@ api.openai.com	gpt-6-luna	0.1	0.01	0.5	0.125		272000	0.2	0.02	0.75	0.25
 api.openai.com	gpt-5.6-sol	4	0.4	20	5		272000	8	0.8	30	10				
 api.openai.com	gpt-5.6-terra	2	0.2	12	2.5		272000	4	0.4	18	5				
 api.openai.com	gpt-5.6-luna	0.2	0.02	1.2	0.25		272000	0.4	0.04	1.8	0.5				
+api.openai.com	gpt-5.5	5	0.5	30			272000	10	1	45					
+api.openai.com	gpt-5.5-pro	30	30	180			272000	60	60	270					
+api.openai.com	gpt-5.4	2.5	0.25	15			272000	5	0.5	22.5					
+api.openai.com	gpt-5.4-pro	30	30	180			272000	60	60	270					
+api.openai.com	gpt-5.4-mini	0.75	0.075	4.5											
+api.openai.com	gpt-5.4-nano	0.2	0.02	1.25											
+api.openai.com	gpt-5.2	1.75	0.175	14											
+api.openai.com	gpt-5.2-pro	21	21	168											
+api.openai.com	gpt-5.1	1.25	0.125	10											
+api.openai.com	gpt-5	1.25	0.125	10											
+api.openai.com	gpt-5-mini	0.25	0.025	2											
+api.openai.com	gpt-5-nano	0.05	0.005	0.4											
+api.openai.com	gpt-5-pro	15	15	120											
 api.x.ai	grok-4.7	2	0.5	6			199999	4	1	12					
 api.x.ai	grok-4.6	2	0.5	6			199999	4	1	12					
 api.x.ai	grok-4.5	2	0.3	6			199999	4	0.6	12					
 api.x.ai	grok-build-latest	2	0.3	6			199999	4	0.6	12					
 api.x.ai	grok-4.3	1.25	0.2	2.5			199999	2.5	0.4	5					
 api.x.ai	grok-build-0.1	1	0.2	2			199999	2	0.4	4					
+api.x.ai	grok-4.20-0309-reasoning	1.25	0.2	2.5			199999	2.5	0.4	5					
+api.x.ai	grok-4.20-0309-non-reasoning	1.25	0.2	2.5			199999	2.5	0.4	5					
+api.x.ai	grok-4.20-multi-agent-0309	1.25	0.2	2.5			199999	2.5	0.4	5					
+api.x.ai	grok-4.5-latest	2	0.3	6			199999	4	0.6	12					
 api.meta.ai	muse-spark-1.3	1.25	0.15	4.25											
 api.meta.ai	muse-spark-1.2	1.25	0.15	4.25											
 api.meta.ai	muse-spark-1.1	1.25	0.15	4.25											

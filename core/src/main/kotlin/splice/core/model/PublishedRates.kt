@@ -13,7 +13,7 @@ import java.net.URISyntaxException
 internal object PublishedRates {
     private val cards: Map<Pair<String, String>, ModelRates> by lazy {
         val resource = checkNotNull(javaClass.getResourceAsStream(RESOURCE)) { "missing $RESOURCE" }
-        val lines = resource.bufferedReader().use { it.readLines() }.filterNot { it.startsWith(COMMENT) }
+        val lines = resource.bufferedReader().use { it.readLines() }.filterNot { it.startsWith(SOURCE_LINE) }
         check(lines.firstOrNull() == HEADER) { "unexpected $RESOURCE header" }
         val rows = lines.drop(1).filter(String::isNotBlank)
         val parsed = rows.associate { line ->
@@ -72,5 +72,5 @@ internal object PublishedRates {
     private const val INVALID = "invalid $RESOURCE row"
 
     // why: lines that cite each vendor's source start with this and are not rows.
-    private const val COMMENT = "#"
+    private const val SOURCE_LINE = "#"
 }

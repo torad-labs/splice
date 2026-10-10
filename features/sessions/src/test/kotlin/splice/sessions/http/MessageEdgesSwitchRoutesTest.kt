@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.session.ActivityAction
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.sessions.activity.ActivityStores
@@ -67,7 +66,7 @@ class MessageEdgesSwitchRoutesTest {
         val team = rig.team()
         val stores = stores(root)
         stores.edges.record(MessageEdge(LEAD, BUILDER, AT, "toolu_1"))
-        stores.activity.label(LEAD, "claude", ActivityAction("Reading README.md"), AT)
+        stores.activity.label(LEAD, "claude", "Reading README.md", AT)
         assertTrue(AsyncFileIo.drain())
         val planted = root.resolve("activity/leave-me.txt")
         Files.writeString(planted, "keep")
@@ -131,7 +130,7 @@ class MessageEdgesSwitchRoutesTest {
     fun `label delete works after all heads stop storing labels`(@TempDir root: Path) {
         val rig = TeamRig(root)
         val active = stores(root)
-        active.activity.label(LEAD, "claude", ActivityAction("Reading README.md"), AT)
+        active.activity.label(LEAD, "claude", "Reading README.md", AT)
         assertTrue(AsyncFileIo.drain())
         val off = ActivityStores(root.resolve("activity"), 7, "", WallClock { AT })
         val text = SentTextSource { _, _, ids -> SentTexts(null, emptyMap(), ids) }

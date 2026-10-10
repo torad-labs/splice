@@ -43,6 +43,24 @@ internal class TeamRules {
 
     fun mintId(): String = "team-" + UUID.randomUUID().toString().replace("-", "").take(ID_HEX_CHARS)
 
+    /** Refuses binding a session to [saved] that another unarchived team already holds (Marlin, 2026-10-10:
+     *  one active team per session), naming that team. Only a session [saved] did not hold in [before] is
+     *  judged, so a team already double-bound in older data can still be edited, and an archived team
+     *  frees its sessions. The console draws a double binding on both teams with the other one named
+     *  (it never picks one silently); this is the write that keeps new data from making one. */
+    fun refuseTaken(all: List<Team>, before: Team?, saved: Team) {
+        if (saved.archived) return
+        val held = before?.slots?.mapNotNull { it.session }.orEmpty().toSet()
+        val others = all.filter { it.id != saved.id && !it.archived }
+        for (session in saved.slots.mapNotNull { it.session }.filter { it !in held }) {
+            val owner = others.firstOrNull { team -> team.slots.any { it.session == session } } ?: continue
+            throw TeamRefusal(
+                "session $session is already on the team ${owner.name} (${owner.id}); a session belongs to one " +
+                    "active team, so unbind it there or archive that team first",
+            )
+        }
+    }
+
     /** Refuses a team with no name, a slot with no id or head, a repeated slot id, or a repo that
      *  is set but is not a real directory: the console cannot stat paths, so a refusal here is the
      *  only one a team with a dead repo ever gets. A blank repo (none set) is not checked — this is

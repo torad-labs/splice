@@ -187,6 +187,7 @@ public class TeamStore(
                 rules.carried(slot, previous?.slots?.firstOrNull { it.id == slot.id }, now)
             },
         )
+        rules.refuseTaken(all, previous, saved)
         write(if (previous == null) all + saved else all.map { if (it.id == saved.id) saved else it })
         return saved
     }
@@ -226,6 +227,7 @@ public class TeamStore(
         val all = writable()
         val team = all.firstOrNull { it.id == teamId } ?: throw TeamRefusal("no such team: $teamId")
         val saved = edit(team).copy(updatedAt = clock())
+        rules.refuseTaken(all, team, saved)
         write(all.map { if (it.id == teamId) saved else it })
         return saved
     }

@@ -81,6 +81,44 @@ class TeamStoreTest {
     }
 
     @Test
+    fun `a session already on another active team is refused by that team's name, until it is freed`() {
+        val s = store()
+        val first = s.upsert(team(lead, builder))
+        val second = s.upsert(team(lead, builder).copy(name = "borealis"))
+        s.bind(first.id, mapOf("b1" to S1))
+
+        val taken = assertThrows(TeamRefusal::class.java) { s.bind(second.id, mapOf("b1" to S1)) }
+        assertTrue(taken.message!!.contains("already on the team atlas (${first.id})"), taken.message)
+        assertNull(s.team(second.id)!!.slots.single { it.id == "b1" }.session, "a refused bind writes nothing")
+
+        // A composer save that carries the same session in is the same write, and is refused the same way.
+        val viaUpsert = team(lead, builder.copy(session = S1), id = second.id).copy(name = "borealis")
+        assertThrows(TeamRefusal::class.java) { s.upsert(viaUpsert) }
+
+        s.bind(first.id, mapOf("b1" to null))
+        assertEquals(S1, s.bind(second.id, mapOf("b1" to S1)).slots.single { it.id == "b1" }.session)
+    }
+
+    @Test
+    fun `an archived team frees its sessions, and a team already double-bound can still be edited`() {
+        val s = store()
+        val first = s.upsert(team(lead, builder))
+        val second = s.upsert(team(lead, builder).copy(name = "borealis"))
+        s.bind(first.id, mapOf("b1" to S1))
+        s.archive(first.id)
+        s.bind(second.id, mapOf("b1" to S1))
+        assertEquals(setOf(first.id, second.id), s.bindingsOf(S1).map { it.first.id }.toSet())
+
+        // Older data that already holds S1 twice, unarchived: an unrelated edit must not be refused for it.
+        s.instruct(second.id, "lead", "be terse")
+        Files.writeString(file, Files.readString(file).replace("\"archived\": true", "\"archived\": false"))
+        Files.setLastModifiedTime(file, FileTime.fromMillis(Files.getLastModifiedTime(file).toMillis() + 5000))
+        val edited = s.instruct(second.id, "lead", "be terse")
+        assertEquals("be terse", edited.slots.single { it.id == "lead" }.instructions)
+        assertEquals(2, s.bindingsOf(S1).size, "both teams still hold it; the console draws it on both")
+    }
+
+    @Test
     fun `instructions are set, blank clears them, and archive only sets the flag`() {
         val s = store()
         val id = s.upsert(team(lead, builder)).id

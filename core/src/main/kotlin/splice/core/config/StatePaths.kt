@@ -65,6 +65,10 @@ public const val CODE_MODE_STATE_SUFFIX: String = "-code-mode.json"
  *  when code mode is off. */
 public const val CODE_MODE_DIR: String = "code-mode"
 
+/** The Responses dialect keeps each conversation's encrypted reasoning in this directory of the head's own
+ *  `heads/<key>/`. One spelling for the dialect that writes it and Your data, which counts and clears it. */
+public const val REASONING_DIR: String = "reasoning"
+
 private const val STATE_LEAF: String = "state"
 
 /** The daemon's management key, the one file only an install that has run holds: the evidence of state. */

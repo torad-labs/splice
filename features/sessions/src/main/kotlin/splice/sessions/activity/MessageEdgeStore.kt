@@ -126,6 +126,15 @@ public class MessageEdgeStore(
         }.lines.toInt()
     }
 
+    /** The bytes [trimBefore] would remove with the same arguments, read and not changed, so a count shown before
+     *  a cut is the figure the cut then frees. Throws when the days could not be read. */
+    public fun bytesBefore(momentMs: Long, spared: SparedEdges = SparedEdges { false }): Long =
+        days.lines().sumOf { line ->
+            val edge = decode.parse(line)
+            val kept = edge == null || edge.at >= momentMs || spared.spares(edge)
+            if (kept) 0L else line.toByteArray().size + 1L
+        }
+
     public fun deleted(): Boolean = files.deleted()
 
     public fun record(edge: MessageEdge) {

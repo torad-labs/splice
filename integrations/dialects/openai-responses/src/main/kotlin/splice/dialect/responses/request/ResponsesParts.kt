@@ -2,6 +2,7 @@
 // Same-package; the provider keeps the SPI overrides and the WS lazy arm.
 package splice.dialect.responses.request
 
+import splice.core.config.REASONING_DIR
 import splice.core.util.LogSink
 import splice.dialect.responses.ReasoningContinuity
 import splice.dialect.responses.ReasoningSettings
@@ -83,6 +84,3 @@ internal class ResponsesParts(
         log,
     )
 }
-
-// Under the head's own state dir (ProviderTuning.stateDir).
-private const val REASONING_DIR = "reasoning"

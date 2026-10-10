@@ -23,6 +23,10 @@ import kotlin.concurrent.withLock
 
 internal val originalSessionId = Regex("[A-Za-z0-9_-]{1,128}")
 
+private fun interface AgedWork {
+    fun on(age: TranscriptOriginalAge): OriginalsHeld
+}
+
 private data class StagedOriginal(val source: Path, val target: Path, val staged: Path)
 
 private object OriginalOperations {
@@ -100,6 +104,18 @@ public class TranscriptOriginals(
         } catch (error: IOException) {
             log("[resume] original sweep kept unresolved files (${SafeFailureText.render(error)})\n")
         }
+    }
+
+    /** What a history cut at [momentMs] would take: copies of sessions last used before it. Counted when asked. */
+    public fun heldBefore(momentMs: Long): OriginalsHeld = aged { it.held(momentMs) }
+
+    /** Removes the copies of sessions last used before [momentMs], under the lock every other writer takes. */
+    public fun deleteBefore(momentMs: Long): OriginalsHeld = aged { it.delete(momentMs) }
+
+    private fun aged(work: AgedWork): OriginalsHeld {
+        val age = TranscriptOriginalAge(root)
+        if (!Files.isDirectory(root, NOFOLLOW_LINKS)) return work.on(age)
+        return OriginalOperations.mutex.withLock { openLock().use { channel -> channel.lock().use { work.on(age) } } }
     }
 
     private fun openLock(): FileChannel {

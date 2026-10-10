@@ -7,7 +7,7 @@
  *  calling step() captures both. Keys are read from their files and compared here, never passed on
  *  argv (a process listing would show them) and never printed.
  */
-import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 type Json = Record<string, unknown>;
@@ -97,14 +97,19 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
     check(h["ok"] === true && h["readyHeads"] === h["heads"] && h["failedHeads"] === 0, "not every head is ready");
   },
 
-  /** api-heads < /api/heads — exactly the three e2e heads, each running. */
-  "api-heads"() {
+  /** api-heads [keys-csv] < /api/heads — exactly the scenario's heads, each running. The default is
+   *  the fresh machine's three; the upgrade scenario seeds a 0.3.2 user's five and names them. */
+  "api-heads"(argv) {
     const d = readJson("-");
     const heads = d["heads"] ?? d;
     const rows = (Array.isArray(heads) ? heads : Object.values(obj(heads))).map(obj);
     console.log("heads:", JSON.stringify(rows.map((h) => [h["key"], h["running"], h["healthy"]])));
+    const named = (argv[0] ?? "").trim();
+    const wanted = named === ""
+      ? ["claudex", "mockchat", "mockchat2"]
+      : named.split(",").map((k) => k.trim()).filter((k) => k !== "").sort();
     const keys = rows.map((h) => str(h["key"])).sort();
-    check(JSON.stringify(keys) === JSON.stringify(["claudex", "mockchat", "mockchat2"]), `heads are ${keys.join(",")}`);
+    check(JSON.stringify(keys) === JSON.stringify(wanted), `heads are ${keys.join(",")}, wanted ${wanted.join(",")}`);
     check(rows.every((h) => h["running"]), "a head is not running");
   },
 
@@ -223,6 +228,81 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
     check(!statusline.includes(mgmt) && !statusline.includes(turn), "a key is in the status line argv");
     check(splitWords(statusline)[3] === `@${header}`, `the status line does not read ${header}: ${statusline}`);
     check(mode(header) === 0o600, "turn-auth-header is not 0600");
+  },
+
+  /** subs-seen <log> <skip-lines> <path> <field> <value> — the vendor mock (mock_subs.ts) served a
+   *  request for <path> whose credential label was <value>, in the lines written AFTER <skip-lines>.
+   *  The skip is what makes a post-upgrade claim a post-upgrade claim: the same line from the 0.3.2
+   *  phase is already in the file, so the step records the count before the upgrade and passes it here. */
+  "subs-seen"(argv) {
+    const lines = readFileSync(arg(argv, 0, "log"), "utf8").split("\n").filter((l) => l.trim() !== "");
+    const skip = Number(arg(argv, 1, "skip-lines"));
+    const path = arg(argv, 2, "path");
+    const field = arg(argv, 3, "field");
+    const value = arg(argv, 4, "value");
+    const after = lines.slice(skip).map((l) => JSON.parse(l) as Json);
+    const forPath = after.filter((r) => str(r["path"]) === path);
+    console.log(`${after.length} request(s) after the upgrade, ${forPath.length} to ${path}:`);
+    forPath.forEach((r) => console.log(" ", JSON.stringify(r)));
+    check(forPath.length > 0, `the vendor mock served no ${path} after the upgrade`);
+    check(
+      forPath.some((r) => String(r[field]) === value),
+      `no ${path} after the upgrade carried ${field}=${value}`,
+    );
+  },
+
+  /** usage-head < /api/usage <head> <min-entries> <observed-before> — the daemon reports <head> with
+   *  usage it did not write itself: at least <min-entries> recorded turns, and a quota window whose
+   *  reading was observed at or before <observed-before> (the epoch second the upgrade install ran),
+   *  which only the old release's turns can have left. */
+  "usage-head"(argv) {
+    // ONE read of stdin: a pipe cannot be read twice, and the second read would see an empty document.
+    const payload = readJson("-");
+    const rows: unknown[] = Array.isArray(payload["heads"]) ? payload["heads"] : [];
+    console.log("usage rows:", JSON.stringify(rows.map((r) => obj(r)["key"])));
+    const head = arg(argv, 0, "head");
+    const minEntries = Number(arg(argv, 1, "min-entries"));
+    const observedBefore = Number(arg(argv, 2, "observed-before"));
+    const row = rows.map(obj).find((r) => str(r["key"]) === head);
+    check(row !== undefined, `/api/usage does not list ${head}`);
+    const usage = obj(row["usage"]);
+    const quota = obj(usage["quota"]);
+    const fiveHour = obj(quota["five_hour"]);
+    console.log(`${head}: usage=${JSON.stringify(usage["entries"])} five_hour=${JSON.stringify(fiveHour)}`);
+    check(Number(usage["entries"]) >= minEntries, `${head} reports ${usage["entries"]} usage entries`);
+    check(Number(fiveHour["used_pct"]) > 0, `${head}'s five-hour window reports no usage`);
+    check(
+      Number(fiveHour["observed_at"]) <= observedBefore,
+      `${head}'s reading was observed at ${fiveHour["observed_at"]}, after the upgrade ran at ${observedBefore}`,
+    );
+  },
+
+  /** perf-rows <file> <min> — the per-turn telemetry JSONL holds at least <min> rows, and the first
+   *  one's keys are printed (a row is a turn the old release measured). */
+  "perf-rows"(argv) {
+    const path = arg(argv, 0, "file");
+    const min = Number(arg(argv, 1, "min"));
+    check(existsSync(path), `no perf rows at ${path}`);
+    const lines = readFileSync(path, "utf8").split("\n").filter((l) => l.trim() !== "");
+    const first = lines[0] === undefined ? {} : (JSON.parse(lines[0]) as Json);
+    console.log(`${path}: ${lines.length} row(s); first row keys ${JSON.stringify(Object.keys(first).sort())}`);
+    check(lines.length >= min, `${path} holds ${lines.length} rows, wanted ${min}`);
+  },
+
+  /** code-mode-carried <legacy-file> <dir> <key> — the single file every pre-V4-340 daemon kept the
+   *  whole head in is gone, and <key>'s records are in their own file in <dir>. */
+  "code-mode-carried"(argv) {
+    const legacy = arg(argv, 0, "legacy-file");
+    const dir = arg(argv, 1, "dir");
+    const key = arg(argv, 2, "key");
+    check(existsSync(dir), `no code-mode directory at ${dir}`);
+    const names = readdirSync(dir).sort();
+    console.log(`${dir}: ${JSON.stringify(names)}; legacy ${legacy} ${existsSync(legacy) ? "STILL THERE" : "gone"}`);
+    check(names.length > 0, `${dir} holds no conversation file`);
+    const carried = names.filter((n) => readFileSync(join(dir, n), "utf8").includes(key));
+    console.log(`files naming the 0.3.2 conversation: ${JSON.stringify(carried)}`);
+    check(carried.length > 0, `no file in ${dir} holds the 0.3.2 conversation ${key}`);
+    check(!existsSync(legacy), `the legacy whole-head file ${legacy} was not removed after the carry`);
   },
 
   /** appended <before> <after> — the resumed transcript begins with the pre-upgrade bytes and grew. */

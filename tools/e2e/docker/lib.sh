@@ -283,7 +283,9 @@ cold_start() {
   ss -ltn | grep -E ":($CONTROL_PORT|$CODEX_HEAD_PORT|$CHAT_HEAD_PORT|$CHAT2_HEAD_PORT) " || { echo "head ports not listening"; return 1; }
 }
 
-api_heads() { curl_mgmt "http://127.0.0.1:$CONTROL_PORT/api/heads" | bun "$LIB_TS" api-heads; }
+# api_heads [keys-csv] — every head the scenario declared, running. The fresh machine's three are the
+# default; the upgrade scenario seeds a 0.3.2 user's five and names them.
+api_heads() { curl_mgmt "http://127.0.0.1:$CONTROL_PORT/api/heads" | bun "$LIB_TS" api-heads "${1:-}"; }
 
 # ── per-head model roster + window, packaging, and the turn key ────────────────────────────────
 # Each head materializes its OWN picker (settings.json availableModels + model, enforced, and a

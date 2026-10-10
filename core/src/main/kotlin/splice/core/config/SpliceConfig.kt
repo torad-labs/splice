@@ -47,6 +47,10 @@ public class SpliceConfig internal constructor(
     public val maxInflight: Int get() = long(Knob.MAX_INFLIGHT).toInt()
     public val maxQueued: Int get() = long(Knob.MAX_QUEUED).toInt()
 
+    /** How long one client request body read may take. Read LIVE, per read, through the head's RequestReadBudgetMs,
+     *  so a PATCH moves the ceiling of the next read and no restart is named for it. */
+    public val requestReadTimeoutMs: Long get() = long(Knob.REQUEST_READ_TIMEOUT_MS)
+
     /** Live console switch for reading Claude Code's already-written redacted transcript (V4-354). */
     public val transcriptView: Boolean get() = bool(Knob.TRANSCRIPT_VIEW)
     public val upstreamRetries: Int get() = long(Knob.UPSTREAM_RETRIES).toInt()

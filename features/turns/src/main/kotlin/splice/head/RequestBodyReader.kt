@@ -93,15 +93,23 @@ private class RequestBodyText(bufferBytes: Int) : AutoCloseable {
     }
 }
 
+/** How long one client request body read may take, in milliseconds (knob `requestReadTimeoutMs`), ASKED FOR AT EVERY
+ *  READ and never captured at construction — which is the whole point: an operator who widens the ceiling while the
+ *  daemon runs bounds the next read by the new value, with no restart. A CONFIGURED CEILING, not a clock reading
+ *  (ElapsedClock, WallClock) and not what is left of a deadline already running (RemainingTurnWait). */
+public fun interface RequestReadBudgetMs {
+    public operator fun invoke(): Long
+}
+
 /** Reads a request body into memory with a hard byte cap and the head's read timeout. */
 internal class RequestBodyReader(
-    /** The ONE thing this collaborator needs from the head (V4-105 item 3): the read timeout. Name
-     *  the SEAM, not the 25-parameter bundle it happened to live in. */
-    private val requestReadTimeoutMs: Long,
+    /** The ONE thing this collaborator needs from the head (V4-105 item 3): the read timeout, read live at each
+     *  read. Name the SEAM, not the 25-parameter bundle it happened to live in. */
+    private val requestReadTimeoutMs: RequestReadBudgetMs,
     private val read: RequestBodyRead = processRequestBodyRead,
 ) {
     suspend fun receiveBodyBounded(call: ApplicationCall, limit: Int): BodyRead {
-        return withTimeout(requestReadTimeoutMs) {
+        return withTimeout(requestReadTimeoutMs()) {
             val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
             if (declared != null && declared > limit) {
                 BodyRead.TooLarge(limit)
@@ -112,7 +120,7 @@ internal class RequestBodyReader(
     }
 
     suspend fun receiveBodyBounded(channel: ByteReadChannel, declared: Long?, limit: Int): BodyRead {
-        return withTimeout(requestReadTimeoutMs) {
+        return withTimeout(requestReadTimeoutMs()) {
             if (declared != null && declared > limit) return@withTimeout BodyRead.TooLarge(limit)
             val bufferBytes = minOf(declared ?: limit.toLong(), READ_BUFFER_BYTES.toLong()).coerceAtLeast(1).toInt()
             RequestBodyText(bufferBytes).use { output ->

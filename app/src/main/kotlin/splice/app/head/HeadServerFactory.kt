@@ -115,7 +115,9 @@ internal class HeadServerFactory(
                     mirrorReasoning = cfg.mirrorReasoning,
                     progressLine = cfg.progressLine,
                     maxRequestBytes = (knobs[Knob.MAX_REQUEST_BYTES.key] as Long).toInt(),
-                    requestReadTimeoutMs = knobs[Knob.REQUEST_READ_TIMEOUT_MS.key] as Long,
+                    // Re-read per head at EVERY client body read, the way the inflight ceiling is: the knob belongs
+                    // to the operator, who may widen it for a slow client mid-session without restarting the daemon.
+                    requestReadTimeoutMs = { config.getConfig(key).requestReadTimeoutMs },
                 ),
                 traffic = HeadDeps.HeadTraffic(
                     upstream = upstreamFactory.upstreamFor(ctx, cfg, log, stores.providerHold),

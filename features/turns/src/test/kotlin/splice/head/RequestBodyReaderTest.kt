@@ -27,7 +27,7 @@ class RequestBodyReaderTest {
     fun `unknown length decoding preserves UTF8 characters split across read boundaries`() = runTest {
         val expected = "x".repeat(16_383) + "café 🐉\n".repeat(4_000)
         val bytes = expected.toByteArray(Charsets.UTF_8)
-        val reader = RequestBodyReader(1_000)
+        val reader = RequestBodyReader(RequestReadBudgetMs { 1_000 })
         for (declared in listOf(null, bytes.size.toLong())) {
             val result = reader.receiveBodyBounded(ByteReadChannel(bytes), declared, bytes.size).received()
             assertEquals(expected, result.text)
@@ -43,7 +43,7 @@ class RequestBodyReaderTest {
             prefix + byteArrayOf(0xE2.toByte(), 0x82.toByte()),
             prefix + byteArrayOf(0xF0.toByte(), 0x9F.toByte(), 0x99.toByte(), 0x82.toByte(), 0xFF.toByte()),
         )
-        val reader = RequestBodyReader(5_000)
+        val reader = RequestBodyReader(RequestReadBudgetMs { 5_000 })
         for (bytes in bodies) {
             for (declared in listOf(null, 1L, bytes.size.toLong())) {
                 val result = reader.receiveBodyBounded(ByteReadChannel(bytes), declared, bytes.size).received()
@@ -56,7 +56,7 @@ class RequestBodyReaderTest {
     @Test
     fun `declared body staging never allocates a body sized contiguous byte array`(@TempDir tmp: Path) = runTest {
         val bytes = ByteArray(2 * 1024 * 1024) { 'x'.code.toByte() }
-        val reader = RequestBodyReader(5_000)
+        val reader = RequestBodyReader(RequestReadBudgetMs { 5_000 })
         reader.receiveBodyBounded(ByteReadChannel("warmup"), 6, 6)
         val capture = tmp.resolve("body-staging.jfr")
         Recording().use { recording ->
@@ -88,7 +88,7 @@ class RequestBodyReaderTest {
 
     @Test
     fun `declared and running byte limits both refuse oversized input`() = runTest {
-        val reader = RequestBodyReader(1_000)
+        val reader = RequestBodyReader(RequestReadBudgetMs { 1_000 })
         val bytes = "x".repeat(1_001).toByteArray()
         for (declared in listOf(null, bytes.size.toLong())) {
             val read = reader.receiveBodyBounded(ByteReadChannel(bytes), declared, 1_000)
@@ -99,7 +99,7 @@ class RequestBodyReaderTest {
     @Test
     fun `the read timeout cancels an unfinished channel read`() = runTest {
         val reader = RequestBodyReader(
-            1_000,
+            RequestReadBudgetMs { 1_000 },
             RequestBodyRead { _, _ ->
                 delay(2_000)
                 -1
@@ -115,12 +115,38 @@ class RequestBodyReaderTest {
     }
 
     @Test
+    fun `a ceiling widened while the daemon runs bounds the next read, on the reader already built`() = runTest {
+        // The operator's knob, not a value this reader captured: the FIRST read is cut at 1ms and the SECOND, on the
+        // same reader, finishes under the widened ceiling. A reader that snapshotted its budget fails the second half
+        // here, which is what a restartRequired knob meant for a client stuck mid-upload (knob live since 2026-10-10).
+        var ceilingMs = 1L
+        val reader = RequestBodyReader(
+            RequestReadBudgetMs { ceilingMs },
+            RequestBodyRead { _, _ ->
+                delay(50)
+                -1
+            },
+        )
+        var cutAtTheNarrowCeiling = false
+        try {
+            reader.receiveBodyBounded(ByteReadChannel(ByteArray(0)), null, 1_000)
+        } catch (_: TimeoutCancellationException) {
+            cutAtTheNarrowCeiling = true
+        }
+        assertTrue(cutAtTheNarrowCeiling, "the 1ms ceiling did not cut a 50ms read")
+
+        ceilingMs = 10_000L
+        val read = reader.receiveBodyBounded(ByteReadChannel(ByteArray(0)), null, 1_000).received()
+        assertEquals(0, read.bytes, "the widened ceiling let the same reader finish its next read")
+    }
+
+    @Test
     fun `unknown length 1 point 4 MB input avoids geometric whole body copies`(
         reporter: TestReporter,
     ) = runTest {
         val expected = "x".repeat(1_400_000)
         val bytes = expected.toByteArray(Charsets.UTF_8)
-        val reader = RequestBodyReader(1_000)
+        val reader = RequestBodyReader(RequestReadBudgetMs { 1_000 })
         val bean = ManagementFactory.getThreadMXBean() as? ThreadMXBean ?: error("JVM allocation counter is required")
         assertTrue(bean.isThreadAllocatedMemorySupported)
         bean.isThreadAllocatedMemoryEnabled = true

@@ -111,7 +111,7 @@ class CountTokensLeaseTest {
             provider,
             deps,
             AdmissionGate(provider, deps, AdmissionWindow(), responses),
-            RequestBodyReader(1000),
+            RequestBodyReader(RequestReadBudgetMs { 1000 }),
             AnthropicBodyParse(),
             responses,
         )

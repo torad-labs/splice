@@ -74,7 +74,7 @@ class RequestParseAllocationTest {
         val text = syntheticTurn()
         val bytes = text.toByteArray(Charsets.UTF_8)
         assertTrue(bytes.size in 900_000..1_200_000, "fixture is ${bytes.size} bytes; Claude Code sends 0.5-1.2 MB")
-        val reader = RequestBodyReader(READ_TIMEOUT_MS)
+        val reader = RequestBodyReader(RequestReadBudgetMs { READ_TIMEOUT_MS })
 
         val decoded = measure("reader", reporter) {
             when (val read = reader.receiveBodyBounded(ByteReadChannel(bytes), bytes.size.toLong(), bytes.size)) {

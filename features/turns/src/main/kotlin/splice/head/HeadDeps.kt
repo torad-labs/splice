@@ -92,7 +92,9 @@ public data class HeadDeps(
         // The split is the security property (v0.4.0): a head wired with ONE key for both roles hands
         // every session the operator routes again, so that wiring is refused rather than served.
         require(tokens.operatorToken != tokens.inferenceToken) { "operatorToken must differ from inferenceToken" }
-        require(policy.requestReadTimeoutMs > 0) { "requestReadTimeoutMs must be positive" }
+        // Read ONCE here, on what is configured now: a wiring that starts with a nonsense ceiling is refused at
+        // construction, and a later PATCH to a nonsense value is refused by the knob's own parse.
+        require(policy.requestReadTimeoutMs() > 0) { "requestReadTimeoutMs must be positive" }
         require(!policy.mirrorReasoning) { "mirrorReasoning is operator-locked off" }
     }
 
@@ -210,11 +212,13 @@ public data class HeadDeps(
         val compactionTail: CompactionTail = CompactionTail(),
     )
 
-    /** Read-once values. Nothing here is derived from a turn, which is what makes it policy rather
-     *  than state: an operator sets it and every turn reads the same answer. */
+    /** What an operator sets, never what a turn produces — which is what makes it policy rather than state. Most of
+     *  it is read once, at start. A field whose type is a READER is asked at every request instead, so an operator
+     *  who changes that knob while the daemon runs is obeyed by the next request rather than at the next restart;
+     *  either way no turn can change it, and two turns asking at the same moment get the same answer. */
     public data class HeadPolicy(
         val maxRequestBytes: Int = defaultMaxRequestBytes,
-        val requestReadTimeoutMs: Long = defaultRequestReadTimeoutMs,
+        val requestReadTimeoutMs: RequestReadBudgetMs = RequestReadBudgetMs { defaultRequestReadTimeoutMs },
         val stopDrainMs: Long = DEFAULT_STOP_DRAIN_MS,
         val mirrorReasoning: Boolean = false,
         val progressLine: Boolean = true,

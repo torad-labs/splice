@@ -175,7 +175,7 @@ fix session for a splice.toml boot refuses and answers whether every finding was
 restart` read the file again and go on to stop and start a daemon, so wired where a probe is wanted it would \
 restart on a read, and a probe wired here would restart on a file still broken."""
 
-# ── 6 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
+# ── 7 names, () -> Long (TWO MORE ARE DUPLICATES AND ARE NOT LISTED) ─────────────────────────────
 [[groups]]
 signature = "()->Long"
 dated = "2026-09-17"
@@ -184,6 +184,7 @@ names = [
     "HeadPerfSkipSource",
     "HostClock",
     "RemainingTurnWait",
+    "RequestReadBudgetMs",
     "WallClock",
     "WsPathPulse",
 ]
@@ -198,7 +199,12 @@ is the MCP host's own injected epoch reading, scoped to that subsystem's config 
 ages are testable without a process-global clock. RemainingTurnWait is a BUDGET — how much of the \
 turn deadline is left — not a clock reading at all. WsPathPulse is an AGE, milliseconds since the \
 last WS ping, which is a derived difference rather than either clock. HeadPerfSkipSource is not a \
-time at all: it is a COUNT of perf rows that could not be attributed. \
+time at all: it is a COUNT of perf rows that could not be attributed. RequestReadBudgetMs (Oct 10) is a \
+CONFIGURED CEILING and the only one of the seven an operator sets: how long ONE client body read may take, \
+read fresh at every read so a PATCH bounds the next one without a restart. It is not a reading of either \
+clock, and it is not RemainingTurnWait, which is what is left of a deadline already running — wiring that \
+budget in here would bound every body read by the remainder of one turn, and wiring this one there would \
+restart the turn's deadline at every read. \
 DELIBERATELY ABSENT: ElapsedNow (upstream/RuntimeSeams.kt:40) is ElapsedClock's role in a \
 second module, and AccountNow (upstream/credentials/AccountSelection.kt:22) is WallClock's. Both are red \
 by name until the fix row reconciles them; listing them here would be a lie that closes the wall."""

@@ -12,7 +12,8 @@ package splice.core.config
 // HONESTY (audit 2026-07-18): nearly every knob is SNAPSHOTTED at Daemon.start into constructed
 // objects (providers, watchdog budgets, auth caches, warn thresholds) — so nearly every knob is
 // restartRequired. The genuinely hot knobs are maxInflight and maxQueued (both read via a live
-// lambda per admission, straight into InflightGate). If you make a knob live-read, remove its
+// lambda per admission, straight into InflightGate) and requestReadTimeoutMs (read via one per
+// client body read, straight into RequestBodyReader). If you make a knob live-read, remove its
 // restartRequired flag in the same commit.
 public enum class Knob(
     public val key: String,
@@ -412,12 +413,14 @@ public enum class Knob(
         typedDefault = KnobDefault.Count(32 * 1024 * 1024L),
         restartRequired = true,
     ),
+
+    // LIVE since 2026-10-10: every client body read asks for this knob's current value through the head's
+    // RequestReadBudgetMs, so a PATCH bounds the NEXT read and nothing here claims a restart.
     REQUEST_READ_TIMEOUT_MS(
         "requestReadTimeoutMs",
         KnobKind.NUMBER,
         listOf("SPLICE_REQUEST_READ_TIMEOUT_MS"),
         typedDefault = KnobDefault.Count(30_000L),
-        restartRequired = true,
     ),
 
     // PROCESS-SHARED heap bytes for decoding/translating across the daemon, not a request count.

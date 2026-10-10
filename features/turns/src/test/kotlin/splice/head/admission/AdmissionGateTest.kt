@@ -58,6 +58,7 @@ import splice.head.HeadDeps
 import splice.head.HeadFileWriteCleanup
 import splice.head.RequestBodyRead
 import splice.head.RequestBodyReader
+import splice.head.RequestReadBudgetMs
 import splice.head.TestResponsesProvider
 import splice.head.compaction.CompactionReplay
 import splice.head.headStores
@@ -491,7 +492,7 @@ class AdmissionGateTest {
         initial.release()
         var next = 0
         val reader = RequestBodyReader(
-            1_000,
+            RequestReadBudgetMs { 1_000 },
             RequestBodyRead { _, _ ->
                 when (next) {
                     // Five bytes into a cap of four: the reader's running-total arm answers
@@ -676,7 +677,7 @@ private fun ready(): Preparation.Ready = Preparation.Ready(
 private fun handler(
     provider: Provider,
     deps: HeadDeps,
-    reader: RequestBodyReader = RequestBodyReader(1_000),
+    reader: RequestBodyReader = RequestBodyReader(RequestReadBudgetMs { 1_000 }),
 ): HeadAdmission {
     val responses = AdmissionResponses()
     val clientAuth = ClientAuth(deps, responses, ForeignHostLog("synthetic head", deps.log))
@@ -771,7 +772,7 @@ class RequestBodyCapRefusalTest {
         val deps = headDeps(tmp).copy(policy = HeadDeps.HeadPolicy(maxRequestBytes = 4))
         var next = 0
         val reader = RequestBodyReader(
-            1_000,
+            RequestReadBudgetMs { 1_000 },
             RequestBodyRead { _, _ ->
                 // Five bytes into a cap of four on the second post; the third never answers at all.
                 if (next == 1) 5 else withTimeout(1) { CompletableDeferred<Nothing>().await() }

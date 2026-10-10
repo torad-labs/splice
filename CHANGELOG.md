@@ -228,7 +228,7 @@ origin.
   this labelled-copy CLI saves credentials byte for byte and is separate from per-request pool
   selection. `splice doctor` reports the mode.
 - **Teams: sessions on different heads work one goal.** `PUT /api/teams` creates a team: a name, a repo, a goal and role slots,
-  exactly one of them the lead, each with a role, a head, its own instructions and a bound session or an open seat. From its next
+  any of them marked the lead, each with a role, a head, its own instructions and a bound session or an open seat. From its next
   turn through splice, every session bound to an active team gets its team, its role, the team goal, the slot's
   instructions and where to reach the lead. The text is appended after the head's own prompt, even
   on a `replace` head, and an edit applies on the next turn with no restart; that turn cannot hit
@@ -641,6 +641,32 @@ origin.
 - **A provider can say whose machine runs it.** `discovery = { family = "vast" }` on a provider groups a
   rented GPU reached through an SSH tunnel as vast.ai in the console, where its loopback address would say This computer.
 - **A launch inside tmux records its pane** with the launch, so a tool that drives sessions finds the pane of a session it started.
+- **A `splice.toml` with findings refuses boot and lists every one at once.** Each finding names its key and
+  line and never a value. `splice restart` refuses before it stops a running daemon, so a bad edit no longer
+  takes a healthy daemon down.
+- **The console reaches past Accounts.** It also has a Needs you landing page, Fleet, Usage, Turns (with a page
+  per turn), Teams, Projects, Settings (Advanced whole-file edit, Storage, Conversation), Doctor and Health, and a
+  Playground that sends one prompt to several models side by side.
+- **A running session takes a note from the console.** `POST /api/sessions/{id}/message` writes the note to the
+  session's inbox socket. It is proven on Claude Code 2.1.282 to 2.1.286, and `/api/sessions` names those versions
+  so a page can refuse before anyone types. `GET /api/sessions/{id}/transcript` reads a transcript from its end,
+  newest first, with a cursor, governed by the live `transcriptView` knob; `GET /api/sessions/{id}/resume`
+  returns a read-only recipe for resuming on another head.
+- **The operator can stop a live turn.** `POST /api/heads/{head}/turns/{id}/stop` ends it, and the client's
+  re-send of that turn is refused.
+- **API keys are managed through the control API and the console.** `GET /api/keys` names the keys (never a
+  value), and `PUT` and `DELETE /api/keys/{ENV}` set and remove one, as `splice key` does.
+- **Hourly economics history is kept for 35 days** and read through `GET /api/economics`. An hour priced without
+  a rate card is priced again later from its perf rows at the cards splice holds then.
+- **Settings Storage lists what splice keeps and clears it.** It covers retained turn statistics and live session
+  totals, separate from the trace deletion capture-off already does.
+- **Two provider quirks.** `summary_delivery` switches off the cutoff that empties gpt-6.1-sol reasoning summaries
+  and sends `stream_options.reasoning_summary_delivery`. `tool_name_cap` caps tool-name length on passthrough heads
+  and the cap is restorable.
+- **Upstream sockets use TCP keepalive,** so a half-open connection no longer reads as healthy for the whole turn cap.
+- **`splice doctor` and `splice models` honour `NO_COLOR`.** Doctor gives its problems more room than passing
+  checks, and each doctor row says whether its fix is a command or advice (`fix_kind`).
+- **Usage rows report each turn's reasoning tokens** and give the reason when a row has no cost.
 
 ### Changed
 - **Responses WebSockets retire at 35 minutes before their next round.** Age is measured from
@@ -661,8 +687,8 @@ origin.
   metadata keep their heap charges while held. The daemon bounds tracked heap use to half its maximum
   heap, with a separate share for trace reads. A capacity refusal is retryable.
 - **Build and runtime dependency pins are updated.** Kotlin 2.3.21, Ktor 3.6.0, coroutines 1.11.0,
-  serialization 1.11.0, GraalJS 25.3.4.1, Netty 4.2.17.Final and Jackson 2.21.5 match main's
-  dependency baseline. Trace compression adds zstd-jni 1.5.7-18.
+  serialization 1.11.0, GraalJS 25.4.4.1.1, Netty 4.2.17.Final and Jackson 2.22.3 match main's
+  dependency baseline. Trace compression adds zstd-jni 1.5.7-20.
 - **Batched text and thinking are paced on every head.** When visible text or thinking arrives
   together, splice's shared client write path spreads it over a one-second pacing window.
   Each 16 ms tick releases at least four queued deltas, or all that remain, without reordering
@@ -772,7 +798,7 @@ origin.
   code mode. The setting applies only to those models on the ChatGPT backend, where it must stay false; on any other model or backend it does nothing.
 - **Repository layout consolidated.** The `experiments/` cache-replay
   reproducer, the `goals/` note and the `.superpowers/` leftovers are gone; the one tracked
-  milestone report now sits under `.dev/campaigns/head-decoupling/`, and the untracked `dev/`
+  milestone report now sits under `docs/superpowers/plans/`, and the untracked `dev/`
   tree is folded into `.dev/`. Local machine paths are gone from the tracked ledgers and plans.
 - **The shipped code compiles warning-free, and a new warning fails the build.** Every main
   source set compiles with `allWarningsAsErrors`, and a discarded result the compiler flags
@@ -1051,7 +1077,7 @@ origin.
   a finished step shows.
 - **Budgets warn and block.** `PUT /api/budgets` stored a head's daily budget and
   nothing on the turn path read it, so a `block` head kept serving turns. Each head now weighs its
-  turns against its budget per UTC day, priced from the model's rate card.
+  turns against its budget per day of the operator's local midnight, priced from the model's rate card.
   Earlier spend loads in the background after restart, so admission can
   miss it until that read finishes. `block` refuses a turn once the available tally reaches the
   limit: a 403 `permission_error` naming the head, the spend,

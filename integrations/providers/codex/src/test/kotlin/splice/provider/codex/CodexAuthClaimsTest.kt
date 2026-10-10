@@ -46,11 +46,15 @@ class CodexAuthClaimsTest {
     }
 
     @Test
-    fun `describe names the account the sign-in proves, by its user id and email`(@TempDir tmp: Path) = runTest {
+    fun `describe names the account by a masked user id and email, never the whole of either`(
+        @TempDir tmp: Path,
+    ) = runTest {
         val id = jwt("""{"sub":"user-abc","email":"work@example.com"}""")
         val d = provider(tmp, """{"tokens":{"access_token":"secret","id_token":"$id"}}""").describe()
-        assertEquals("user-abc", d.fields["account_uuid"])
-        assertEquals("work@example.com", d.fields["account_email"])
+        assertEquals("user…-abc", d.fields["account_uuid"])
+        assertEquals("w…@example.com", d.fields["account_email"])
+        val whole = d.fields.values.any { it.contains("work@") || it == "user-abc" }
+        assertFalse(whole, "the whole identity never leaves describe")
         assertFalse(d.fields.values.any { it.contains("secret") || it == id })
     }
 

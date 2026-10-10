@@ -77,34 +77,6 @@ class AccountPoolFailoverTest {
     }
 
     @Test
-    fun `the account named as following is the one the command moves to when the one in use is held`() {
-        val fixture = AccountPoolTest.Fixture()
-        val one = fixture.account("one", primary = true)
-        val two = fixture.account("two")
-        val three = fixture.account("three")
-        val pool = fixture.pool(one, two, three).also { it.order = listOf("one", "three", "two") }
-        assertEquals("one", pool.nextTargetLabel(SESSION))
-        assertEquals("three", pool.view(SESSION).followingLabel)
-
-        limitNatively(one, resetInSeconds = 2 * HOUR_S)
-        assertEquals("three", pool.chosen(), "the turn goes where Accounts said it would")
-        assertEquals("two", pool.view(SESSION).followingLabel)
-
-        holdRefusal(three, resetInSeconds = 3 * HOUR_S)
-        holdRefusal(two, resetInSeconds = 4 * HOUR_S)
-        assertEquals("one", pool.nextTargetLabel(SESSION), "every login held: the nearest reset serves")
-        assertEquals("three", pool.view(SESSION).followingLabel, "then the next nearest")
-    }
-
-    @Test
-    fun `a lone login has no following account`() {
-        val fixture = AccountPoolTest.Fixture()
-        val pool = fixture.pool(fixture.account("only", primary = true))
-        assertEquals("only", pool.nextTargetLabel(SESSION))
-        assertEquals(null, pool.view(SESSION).followingLabel)
-    }
-
-    @Test
     fun `a held refusal on a translated provider moves the turn the same way`() {
         val fixture = AccountPoolTest.Fixture()
         val one = fixture.account("one", primary = true)

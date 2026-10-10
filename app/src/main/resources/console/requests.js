@@ -622,9 +622,13 @@ function paneHtml() {
   const word = (o.word ? `<span class="word ${o.cls}">${o.word}</span>` : r.compact ? `<span class="word">Compaction</span>` : "") + besideOf(r);
   const priced = r.reason !== "unanswered"; // a request nothing answered has no cost to show
   const st = traceState(r);
-  // what the provider answered, verbatim, with its status: kept on the row whether or not the bodies were (Marlin item 2)
-  const said = r.providerMessage || r.providerStatus != null
-    ? `<p class="said">${r.providerStatus != null ? `<span class="status sx">${r.providerStatus}</span>` : ""}${esc(r.providerMessage ?? "")}</p>` : "";
+  // What the provider answered, kept on the row whether or not the bodies were, so it shows in every trace state
+  // (Marlin item 2; hitstop 442e831). The provider by Accounts' name, its status, its own words. A status of 200 is left
+  // out, because the failure came inside the stream and a 200 beside it misleads. Nothing answered, no line.
+  const code = r.providerStatus != null && r.providerStatus !== 200 ? r.providerStatus : null;
+  const said = r.providerMessage || code != null
+    ? `<p class="upmsg"><span class="who">${esc(PROVIDER_NAME[r.provider] ?? r.cmd)}</span>${code != null ? `<span class="code">${code}</span>` : ""}`
+      + `${r.providerMessage ? `<q>${esc(r.providerMessage)}</q>` : ""}</p>` : "";
   return RV.paneHtml(r, { lampCls: `${o.cls}${r.compact ? " compact" : ""}`, lamp, word, name: sessTitle(r.sid), acct: r.account ? acctHtml(r) : "",
     acts: `${openSession(r)}<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`,
     st, gone: RV_KEPT(st) || st === "reading" ? "" : goneHtml(r, st), said,

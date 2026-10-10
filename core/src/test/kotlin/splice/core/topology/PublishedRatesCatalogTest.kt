@@ -73,6 +73,33 @@ class PublishedRatesCatalogTest {
         assertNull(ratesOf(unknown, "grok-9"))
     }
 
+    /** A Claude head forwards the client's own login, so Claude Code picks the models and a turn arrives on
+     *  an id no row names. The card for that id ships in the binary, and reading it only off the rows left
+     *  every such turn unpriced — a budget stayed open on spending it could not see. */
+    @Test
+    fun `a turn on a model the roster does not name takes the price its vendor publishes`() {
+        val forwarded = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://api.anthropic.com",
+            auth = AuthConfig("client"),
+            models = listOf(ModelEntry("claude-sonnet-5", label = "Claude Sonnet 5", contextWindow = 1_000_000)),
+        )
+        val head = HeadConfig("claude-splice", 3098, "claude-splice--", "claude-sonnet-5")
+        val price = TurnPrice(forwarded.catalogFor(head))
+        // A million fresh input tokens and a million output: Opus 5.5 at 4 + 20, and it names no row here.
+        val turn = mapOf(
+            PerfKeys.IN_TOKENS to 1_000_000L,
+            PerfKeys.OUT_TOKENS to 1_000_000L,
+            PerfKeys.CACHED_TOKENS to 0L,
+            PerfKeys.CACHE_WRITE_TOKENS to 0L,
+        )
+
+        assertEquals(true, price.declares("claude-opus-5-5"), "the shipped card is the head's answer for it")
+        assertEquals(24.0, price.usd("claude-opus-5-5", turn)!!, 1e-9)
+        assertEquals(12.0, price.usd("claude-sonnet-5", turn)!!, 1e-9, "a declared row prices as before")
+        assertNull(price.usd("some-model-nobody-publishes", turn), "an id no vendor publishes stays unpriced")
+    }
+
     @Test
     fun `a DeepSeek turn is priced at the card for the hour it ran in, peak on weekday mornings UTC`() {
         val deepseek = ProviderConfig(

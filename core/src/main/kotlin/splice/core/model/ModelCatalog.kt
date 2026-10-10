@@ -130,6 +130,12 @@ public data class ModelCatalog(
     val pinnedModel: String = "",
     val windows: CatalogWindows = CatalogWindows(),
     val client: ClientModelPolicy = ClientModelPolicy(),
+    /** The provider's `base_url`, so a model the roster does not name can still take the price its vendor
+     *  publishes (TurnPrice reads it). A declared row gets that card when the catalog is built
+     *  (ProviderConfig.catalogFor); a head whose client picks its own models ([ClientModelPolicy.open]) runs
+     *  turns on ids no row names, and those have only the vendor's host to go on. Empty is no vendor: a
+     *  catalog built without one prices exactly as it did before. */
+    val vendorBaseUrl: String = "",
 ) {
     init {
         require(client.open || models.isNotEmpty()) { "a catalog needs at least one picker model" }

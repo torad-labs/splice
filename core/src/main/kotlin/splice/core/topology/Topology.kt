@@ -285,6 +285,10 @@ public data class ProviderConfig(
                     .takeIf { auth.kind == AuthKind.ChatgptOAuth.wire },
             ),
             client = ClientModelPolicy(tierSlots = head.tierSlots(), open = clientPicksModels),
+            // A head whose client picks its own models takes a turn on an id no row names (this provider
+            // accepts it, [clientPicksModels]), and splice ships that id's published card: the catalog
+            // carries the host so the pricer can read it (TurnPrice.ratesFor).
+            vendorBaseUrl = baseUrl,
         )
     }
 

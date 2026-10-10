@@ -23,9 +23,18 @@ public class TurnPrice(private val catalog: ModelCatalog?, private val cost: Tok
     /** Whether [model] has a rate card, so that a request on it with token counts gets a price. */
     public fun declares(model: String?): Boolean = model?.let(::ratesFor) != null
 
+    /** A row's own card, else the card the vendor publishes for the model id itself.
+     *
+     *  A Claude head's catalog accepts any model the client asks for (ClientModelPolicy.open,
+     *  ProviderConfig.clientPicksModels), so a turn runs on ids no roster row names — and reading the card
+     *  off the rows alone left every one of those turns unpriced while its published card shipped in the
+     *  binary. A budget then stayed open on spending it could not see. The order is unchanged where a row
+     *  exists: a head card and a row card still win, since the row is consulted first. */
     private fun ratesFor(model: String): ModelRates? {
         val c = catalog?.live() ?: return null
         val key = c.stripSuffixes(model)
-        return cost.ratesFor(null, key, c.models.firstOrNull { c.stripSuffixes(it.id) == key }?.rates)
+        val row = c.models.firstOrNull { c.stripSuffixes(it.id) == key }?.rates
+        val shipped = c.vendorBaseUrl.takeIf(String::isNotEmpty)?.let { PublishedRates.of(it, key) }
+        return cost.ratesFor(null, key, row ?: shipped)
     }
 }

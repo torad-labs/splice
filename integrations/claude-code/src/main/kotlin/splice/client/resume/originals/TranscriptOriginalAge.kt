@@ -8,6 +8,7 @@ package splice.client.resume.originals
 
 import kotlinx.serialization.json.Json
 import splice.client.resume.TRANSCRIPT_SUFFIX
+import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -108,6 +109,6 @@ internal class TranscriptOriginalAge(private val root: Path) {
     } catch (_: NoSuchFileException) {
         emptyList()
     } catch (error: IOException) {
-        throw IOException("cannot read $dir: ${error.message}", error)
+        throw IOException("cannot read $dir: ${SafeFailureText.render(error)}", error)
     }
 }

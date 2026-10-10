@@ -286,8 +286,19 @@ names = [
     "FailedHeads",
     "LiveLimit",
     "OpenSockets",
+    "RetentionDays",
 ]
-reason = """Two GAUGES and a CAP, and InflightGate's own KDoc draws the line: LiveLimit is "a concurrency limit READ FRESH at every admission decision, never captured at construction" — the freshness is why kotlinx Semaphore is banned there, since a live PATCH of maxInflight must change the next admission without a head restart — and it is "distinct from a GAUGE (ControlServer.failedHeads), which is also `() -> Int` but reports what IS rather than bounding what may happen next". FailedHeads is that gauge, counting heads that failed to start, which the control plane turns into `ok:false`. OpenSockets counts live WS sockets on the responses path. A gauge wired where the limit was expected admits traffic against the current occupancy, so the gate stops gating — and both are non-negative Ints, so nothing complains."""
+reason = """Two GAUGES and a CAP, and InflightGate's own KDoc draws the line: LiveLimit is "a concurrency limit READ FRESH at every admission decision, never captured at construction" — the freshness is why kotlinx Semaphore is banned there, since a live PATCH of maxInflight must change the next admission without a head restart — and it is "distinct from a GAUGE (ControlServer.failedHeads), which is also `() -> Int` but reports what IS rather than bounding what may happen next". FailedHeads is that gauge, counting heads that failed to start, which the control plane turns into `ok:false`. OpenSockets counts live WS sockets on the responses path. A gauge wired where the limit was expected admits traffic against the current occupancy, so the gate stops gating — and both are non-negative Ints, so nothing complains. RetentionDays (Oct 10) is a fourth role: the days of history the operator chose (historyRetentionDays), read fresh so a live change moves the trace window on the next day asked. It counts days to keep, not live things, and is the only one of the four a config PATCH changes while the daemon runs."""
+
+# ── 2 names, (Path) -> Long ───────────────────────────────────────────────────────────────────────
+[[groups]]
+signature = "(Path)->Long"
+dated = "2026-10-10"
+names = [
+    "DayVolumeSpace",
+    "FileStamp",
+]
+reason = """Two measures of a path that no caller may swap. DayVolumeSpace answers how many bytes a day's volume has free, which a retention budget compares its trace bodies against; FileStamp answers when a file was last used, in epoch milliseconds, which a history cut compares against its moment. Both take a Path and return a Long, so a stamp wired where free space was expected would read as a volume that is full or empty and cut or keep a day's bodies for no reason, and nothing complains."""
 
 # ── 4 names, (Path, Path) -> Unit ─────────────────────────────────────────────────────────────────
 # Oct 1 CT: original-copy failure injection requires forced bytes, never a link activation or claim.

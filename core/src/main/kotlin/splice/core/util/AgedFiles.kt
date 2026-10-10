@@ -68,7 +68,7 @@ public class AgedFiles(
         } catch (_: NoSuchFileException) {
             return emptyList()
         } catch (failure: IOException) {
-            throw IOException("cannot read $root: ${failure.message}", failure)
+            throw IOException("cannot read $root: ${SafeFailureText.render(failure)}", failure)
         }
     }
 }

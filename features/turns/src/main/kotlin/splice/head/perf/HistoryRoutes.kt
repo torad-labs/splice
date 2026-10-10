@@ -14,8 +14,11 @@
 // at that moment and not at whatever the window works out to by the time the save arrives. A moment
 // NEWER than the window now warrants is refused, because it would delete more than was shown; an
 // older one is honoured and simply deletes less, which the background sweep tidies at its own pace.
-// Every moment this wire hands out is floored to the minute, which is the grain the tally counts at
-// and a wide enough grain that the seconds a person spends reading the confirmation cannot move it.
+// Every moment this wire hands out, and every moment it accepts, is on the hour
+// (HistoryWindow.onTheHour): the hourly rollup can only be cut there, and a cut finer than that
+// leaves a bucket whose records are half gone. It is also wide enough that the seconds a person
+// spends reading the confirmation cannot move it. The tally counts at the minute, so an hour
+// boundary is exact for it: no record is ever half counted.
 //
 // A PARTIAL READING NEVER AUTHORIZES A DELETION. If any record file could not be read whole, the
 // count is not the whole count, so a save that carries a moment is refused outright with the reason
@@ -104,7 +107,6 @@ public class HistoryRoutes(
      *  cheap; these routes themselves are built per request, like every other console port. */
     private val inventory: HistoryDays = HistoryDays(zone),
 ) {
-    private val grain = RecordLine()
     private val json = Json { ignoreUnknownKeys = true }
 
     /** What splice holds under [window], and what [proposedDays] would delete when it is given. */
@@ -133,8 +135,12 @@ public class HistoryRoutes(
         )
     }
 
-    private fun apply(window: HistoryWindow, moment: Long?, source: StatePaths): JsonReply {
+    private fun apply(window: HistoryWindow, asked: Long?, source: StatePaths): JsonReply {
         val held = inventory.held(source.stateDir, source.perfArchiveDir)
+        // On the hour, whatever arrived. The console echoes back the moment a read handed it, which
+        // is already on the hour, so this binds only a hand-written PUT: a cut inside an hour would
+        // take part of an hourly bucket's records and leave the bucket (HistoryWindow.onTheHour).
+        val moment = asked?.let(window::onTheHour)
         // The save is attempted only once the moment is allowed, so a refusal leaves both the window
         // and the records exactly as they were and the row reads "Not saved" truthfully.
         val refused = refusal(window, held, moment)
@@ -234,8 +240,9 @@ public class HistoryRoutes(
         put("bytes", cut.bytes)
     }
 
-    /** Where this window cuts, on the minute the tally counts at, so the two can never disagree. */
-    private fun cutoff(window: HistoryWindow): Long? = window.cutoffMs(clock())?.let(grain::flooredToMinute)
+    /** Where this window cuts. On the hour, because the window says so and every reader of it gets
+     *  the same answer: the count this hands out and the cut a save makes cannot disagree. */
+    private fun cutoff(window: HistoryWindow): Long? = window.cutoffMs(clock())
 
     /** What a month of writing at the last week's pace occupies. */
     private fun rate(held: HistoryHeld): Long =

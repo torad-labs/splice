@@ -18,9 +18,12 @@
 //  · an hour the rollup already has. It was summed from each turn's own usage as the turn finished,
 //    which is closer to the truth than any rebuild; the recorded hour always wins.
 //
-// ONCE PER START. A successful pass closes the gap by writing the hours into the rollup's own file, so
-// the next read is the file and not a scan of every archived generation in the window. A refused pass
-// leaves the flag down and is retried, because the refusal may be a write that had not settled yet.
+// ONCE PER WINDOW EDGE. A successful pass closes the gap by writing the hours into the rollup's own
+// file, so the next read is the file and not a scan of every archived generation in the window. It
+// remembers the edge it closed the gap down to rather than that it ran: widening the window moves
+// that edge back and opens a new gap, which is scanned when it opens and not at the next restart. A
+// refused pass remembers nothing and is retried, because the refusal may be a write that had not
+// settled yet.
 package splice.app.sources
 
 import splice.core.model.TurnPrice
@@ -40,8 +43,11 @@ internal class EconomicsBackfill(
 ) {
     private val rows = EconomicsFromRows(price)
 
+    /** The earliest cutoff a pass has already covered, or null when none has. A moment and not a
+     *  flag: a pass closes the gap down to the window's edge AS IT STOOD, and widening the window
+     *  moves that edge further back and opens a new gap. */
     @Volatile
-    private var filled = false
+    private var filledFrom: Long? = null
 
     /**
      * The hours to add to [held], or empty when there are none to add, when the gap is already
@@ -50,17 +56,35 @@ internal class EconomicsBackfill(
     fun missing(held: List<EconomicsBucket>): List<EconomicsBucket> {
         val from = kept.now().cutoffMs(clock()) ?: 0L
         val oldestHeld = held.minOfOrNull { it.hour }
-        // Once per start, and over for good once the rollup reaches the window's edge itself: there
-        // is no gap then, and nothing to scan the archived generations for.
-        val closed = oldestHeld != null && oldestHeld <= from
-        if (filled || closed) {
-            filled = true
+        if (done(from, oldestHeld)) {
+            cover(from)
             return emptyList()
         }
         val evidence = perf.economicsEvidence(from)
         if (evidence.work.readError != null || evidence.work.skipped != 0) return emptyList()
-        filled = true
+        cover(from)
         return built(evidence, from, oldestHeld)
+    }
+
+    /**
+     * Whether a pass at [from] has nothing left to find.
+     *
+     * Two ways. The rollup already reaches that edge itself, so there is no gap and nothing to scan
+     * the archived generations for. Or a pass has already covered that edge — ONCE PER EDGE, not
+     * once per start: a wider window is an edge further back than any pass has covered, and the gap
+     * it opens, between the hours the rollup reaches and the older ones the records still hold, is
+     * scanned when it opens. The flag this replaced went down for good on the first pass, so
+     * widening rebuilt nothing until the daemon restarted and the month view was drawn over the
+     * shorter history (found in review, Oct 10, 2026).
+     */
+    private fun done(from: Long, oldestHeld: Long?): Boolean {
+        if (oldestHeld != null && oldestHeld <= from) return true
+        return from >= (filledFrom ?: return false)
+    }
+
+    /** Record that the gap is closed down to [from], keeping the earliest edge any pass reached. */
+    private fun cover(from: Long) {
+        filledFrom = minOf(filledFrom ?: from, from)
     }
 
     /** One bucket per hour of rows inside the gap, each priced at the cards splice holds now. */

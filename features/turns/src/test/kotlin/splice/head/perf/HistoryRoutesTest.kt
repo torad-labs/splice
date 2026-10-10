@@ -34,10 +34,12 @@ private val UTC: ZoneId = ZoneId.of("UTC")
 private val NOW = ZonedDateTime.of(2026, 10, 10, 15, 12, 30, 0, UTC).toInstant().toEpochMilli()
 
 private const val DAY = 24 * 60 * 60 * 1000L
-private const val MINUTE = 60 * 1000L
+private const val HOUR = 60 * 60 * 1000L
 
-/** A seven-day window from [NOW] cuts at 3:12 PM on Oct 3, on the minute and not on the second. */
-private val SEVEN_DAY_CUT = NOW - 7 * DAY - 30_000
+/** A seven-day window from [NOW] falls at 3:12:30 PM on Oct 3 and cuts at 3 PM: every cut lands on
+ *  the hour, because the hourly rollup can only be dropped a whole bucket at a time and the records
+ *  it is reconciled against have to lose exactly the hours it loses (HistoryWindow.onTheHour). */
+private val SEVEN_DAY_CUT = (NOW - 7 * DAY) / HOUR * HOUR
 
 private fun at(year: Int, month: Int, day: Int, hour: Int, minute: Int): Long =
     ZonedDateTime.of(year, month, day, hour, minute, 0, 0, UTC).toInstant().toEpochMilli()
@@ -77,19 +79,19 @@ class HistoryRoutesTest {
         assertNull(body["cut"], "nothing is proposed, so nothing is counted as going")
     }
 
-    /** The one property the confirmation rests on. The cut moment is the time of day the person is
-     *  reading at, so it lands mid-day, and only the turns BEFORE it are the ones being offered. */
+    /** The one property the confirmation rests on. The cut moment is the hour the person is reading
+     *  in, so it lands mid-day, and only the turns BEFORE it are the ones being offered. */
     @Test
-    fun `a proposed window counts the turns before its own minute, not the whole day it cuts`(
+    fun `a proposed window counts the turns before its own hour, not the whole day it cuts`(
         @TempDir tmp: Path,
     ) {
         val paths = paths(tmp)
         write(
             paths,
             at(2026, 10, 1, 12, 0), // gone: days before the cut
-            at(2026, 10, 3, 15, 10), // gone: the cut day, two minutes before the cut
-            at(2026, 10, 3, 15, 11), // gone: one minute before it
-            at(2026, 10, 3, 15, 13), // kept: a minute after it, on the same day
+            at(2026, 10, 3, 14, 10), // gone: the cut day, an hour before the cut
+            at(2026, 10, 3, 14, 59), // gone: the last minute before the hour the cut lands on
+            at(2026, 10, 3, 15, 10), // kept: inside that hour, which goes whole or not at all
             at(2026, 10, 9, 8, 0), // kept
         )
 
@@ -97,14 +99,14 @@ class HistoryRoutesTest {
         val cut = body.getValue("cut").jsonObject
 
         assertEquals(
-            SEVEN_DAY_CUT / MINUTE * MINUTE,
+            SEVEN_DAY_CUT,
             cut.getValue("cutoff_epoch_ms").jsonPrimitive.long,
-            "the moment is floored to the minute, so the seconds a person spends reading cannot move it",
+            "the moment is on the hour, which is the only grain the records and the hourly totals can share",
         )
         assertEquals(
             3,
             cut.getValue("turns").jsonPrimitive.int,
-            "the three turns before 3:12 PM on Oct 3, and not the fourth one 2 minutes later",
+            "the three turns before 3 PM on Oct 3, and not the fourth one inside the hour the cut opens",
         )
         assertEquals(
             "7",
@@ -122,7 +124,9 @@ class HistoryRoutesTest {
     fun `a yes saves the window and deletes exactly the turns that were counted`(@TempDir tmp: Path) {
         val paths = paths(tmp)
         val old = at(2026, 10, 1, 12, 0)
-        write(paths, old, at(2026, 10, 3, 15, 10), at(2026, 10, 3, 15, 13), at(2026, 10, 9, 8, 0))
+        // 14:50 and 15:13 sit either side of the hour the cut lands on, so the generation holding
+        // both is the one that has to be rewritten rather than kept or deleted whole.
+        write(paths, old, at(2026, 10, 3, 14, 50), at(2026, 10, 3, 15, 13), at(2026, 10, 9, 8, 0))
         val archived = paths.perfArchiveDir.resolve(
             PerfArchiveName(paths.perfStatsFile("h").fileName.toString()).of(old),
         )
@@ -156,7 +160,7 @@ class HistoryRoutesTest {
         write(
             paths,
             at(2026, 10, 1, 12, 0),
-            at(2026, 10, 3, 15, 10),
+            at(2026, 10, 3, 14, 50), // before the hour the seven-day cut lands on
             at(2026, 10, 9, 8, 0),
             at(2026, 10, 10, 9, 0),
         )
@@ -210,7 +214,7 @@ class HistoryRoutesTest {
             "splice does not offer to delete a row it cannot date",
         )
 
-        ok(routes.save("""{"days":7,"delete_before_epoch_ms":${SEVEN_DAY_CUT / MINUTE * MINUTE}}"""))
+        ok(routes.save("""{"days":7,"delete_before_epoch_ms":$SEVEN_DAY_CUT}"""))
 
         assertEquals(
             listOf("""{"model":"m","outcome":"torn"}"""),
@@ -234,7 +238,7 @@ class HistoryRoutesTest {
             "a figure that is partial must not read as a total",
         )
 
-        val refused = routes.save("""{"days":7,"delete_before_epoch_ms":${SEVEN_DAY_CUT / MINUTE * MINUTE}}""")
+        val refused = routes.save("""{"days":7,"delete_before_epoch_ms":$SEVEN_DAY_CUT}""")
 
         assertEquals(HttpStatusCode.ServiceUnavailable, refused.status, refused.body)
         assertEquals(emptyList<String>(), saved, "a count that is not whole cannot authorize a deletion")
@@ -349,7 +353,7 @@ class HistoryRoutesTest {
         write(paths, at(2026, 10, 1, 12, 0), at(2026, 10, 9, 8, 0))
         val routes = routes(paths, others = HistoryStores { "the hourly totals are locked" })
 
-        val body = ok(routes.save("""{"days":7,"delete_before_epoch_ms":${SEVEN_DAY_CUT / MINUTE * MINUTE}}"""))
+        val body = ok(routes.save("""{"days":7,"delete_before_epoch_ms":$SEVEN_DAY_CUT}"""))
 
         assertEquals(
             "the hourly totals are locked",

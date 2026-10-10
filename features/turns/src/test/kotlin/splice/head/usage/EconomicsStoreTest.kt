@@ -495,6 +495,35 @@ class EconomicsStoreTest {
         )
     }
 
+    /** Found in review, Oct 10, 2026. A page poll that lands between the config patch and the save's
+     *  explicit trim drops the expired hours from memory ITSELF, and the save then has nothing left
+     *  to drop. A save that wrote only when its own call had moved something answered a clean
+     *  "Applied" over a file that still held every expired hour, and the next boot read them back.
+     *  The promise is about the file. */
+    @Test
+    fun `a read between the patch and the save still gets the expired hours off the disk`(@TempDir tmp: Path) {
+        var now = 1_000 * HOUR
+        var window = HistoryWindow(90)
+        val file = tmp.resolve("raced.json")
+        val store = EconomicsStore(file, UNPRICED, WallClock { now }, kept = KeptHistory { window })
+        store.record(turn(inTokens = 1))
+        now += 60 * 24 * HOUR
+        store.record(turn(inTokens = 2))
+        store.flushNow()
+        assertTrue(Files.readString(file).contains("\"hour\":${1_000 * HOUR}"), "the old hour is on the disk")
+
+        // The person saves "7 days": the window is patched, a poll lands and is served the new
+        // window, and only then does the save reach this store.
+        window = HistoryWindow(7)
+        assertEquals(listOf(2L), store.read().map { it.inTokens }, "the poll is already served the shorter window")
+        assertEquals(0, store.trimBefore(now - 7 * 24 * HOUR), "and the save finds nothing left to drop")
+
+        assertFalse(
+            Files.readString(file).contains("\"hour\":${1_000 * HOUR}"),
+            "the expired spend is off the disk anyway: the save answers for the file, not for its own call",
+        )
+    }
+
     @Test
     fun `state survives a restart`(@TempDir tmp: Path) {
         val file = tmp.resolve("e.json")

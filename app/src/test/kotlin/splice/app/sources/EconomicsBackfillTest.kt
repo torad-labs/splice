@@ -217,6 +217,48 @@ class EconomicsBackfillTest {
         assertEquals((now - 39 * day) / HOUR_MS * HOUR_MS, kept.first().hour)
     }
 
+    /** Found in review, Oct 10, 2026. The pass that closes the gap recorded only THAT IT HAD RUN, so
+     *  widening the window afterwards rebuilt nothing until the daemon was restarted: a person who
+     *  moved from 35 days to forever was shown the month view drawn over 35 days of hours, with the
+     *  turns for the rest sitting on disk. A window is widened on a page, so it cannot want a boot. */
+    @Test
+    fun `widening the window rebuilds the hours it now reaches, with no restart`(@TempDir dir: Path) {
+        val day = 24 * HOUR_MS
+        val now = 100 * day
+        val perf = dir.resolve("head-perf.jsonl")
+        // The oldest hour on disk is always left out (a generation can begin mid-hour), so the one
+        // that widening brings into reach is the 39-day-old hour between it and the recorded hour.
+        Files.writeString(
+            perf,
+            listOf(now - 40 * day, now - 39 * day, now).joinToString("\n") { rowAt(it) } + "\n",
+        )
+        var window = HistoryWindow(35)
+        val store = EconomicsStore(
+            dir.resolve("widened.json"),
+            TurnPrice(card),
+            WallClock { now },
+            log = { },
+            kept = KeptHistory { window },
+        )
+        store.record(work())
+        val head = EconomicsStoreSource(
+            store,
+            PerfRowsFileSource(perf),
+            TurnPrice(card),
+            kept = KeptHistory { window },
+            clock = WallClock { now },
+        )
+        assertEquals(1, head.rows().size, "a 35-day window has no gap to fill 39 days back")
+
+        window = HistoryWindow(null)
+
+        assertEquals(
+            listOf((now - 39 * day) / HOUR_MS * HOUR_MS, now / HOUR_MS * HOUR_MS),
+            head.rows().map { it.hour },
+            "the hour the records still hold is rebuilt as soon as the window reaches it",
+        )
+    }
+
     /** One head's economics as an install keeping [window] would read it. */
     private fun reaching(dir: Path, perf: Path, window: HistoryWindow, now: Long): List<EconomicsRow> {
         val store = EconomicsStore(

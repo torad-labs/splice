@@ -125,7 +125,11 @@ public class EconomicsStore(
             loadUnderLock()
             dropHoursEndingBefore(momentMs).also { if (it > 0) version += 1 }
         }
-        if (dropped > 0) flushNow()
+        // The promise is about the FILE, not about this call. A read that landed between the config
+        // patch and this save has already dropped the expired hours from memory, so this call can
+        // drop none of them while every one of them is still on disk: persist whenever memory is
+        // ahead of the file, not when this call happened to be the one that moved it.
+        if (synchronized(lock) { version > persistedVersion }) flushNow()
         return dropped
     }
 
@@ -149,10 +153,17 @@ public class EconomicsStore(
     )
 
     /** Buckets inside the retention window, oldest first. */
-    public fun read(): List<EconomicsBucket> = synchronized(lock) {
-        loadUnderLock()
-        trimUnderLock()
-        buckets.values.sortedBy { it.hour }
+    public fun read(): List<EconomicsBucket> {
+        val (ordered, dropped) = synchronized(lock) {
+            loadUnderLock()
+            val dropped = trimUnderLock()
+            buckets.values.sortedBy { it.hour } to dropped
+        }
+        // What the window dropped has to leave the FILE too, or the next boot reads it straight back
+        // in. Scheduled only when an hour actually went, so a page poll that trims nothing — every
+        // poll but the first of an hour — writes nothing.
+        if (dropped) CoalescedFlush.scheduleCoalesced(ECONOMICS_FLUSH_DELAY_MS, writeScheduled) { flushScheduled() }
+        return ordered
     }
 
     /**
@@ -211,8 +222,18 @@ public class EconomicsStore(
 
     // A window that keeps everything trims nothing: the null cutoff is the whole of `forever`, and
     // the hours stay exactly as they are rather than being compared against an invented horizon.
-    private fun trimUnderLock() {
-        dropHoursEndingBefore(kept.now().cutoffMs(clock()) ?: return)
+    //
+    // A TRIM IS A CHANGE, wherever it is reached from, so it marks the file stale. A read trims too,
+    // because the window may have been shortened since the last write, and a trim that dropped hours
+    // without saying so let a GET landing between the config patch and the save do the dropping in
+    // memory: the save then found nothing left to drop, skipped its write, and answered a clean
+    // "Applied" over a file that still held every expired hour (found in review, Oct 10, 2026).
+    // Answers whether anything went, so the caller that reached it can get the file written.
+    private fun trimUnderLock(): Boolean {
+        val cutoffMs = kept.now().cutoffMs(clock()) ?: return false
+        if (dropHoursEndingBefore(cutoffMs) == 0) return false
+        version += 1
+        return true
     }
 
     /**

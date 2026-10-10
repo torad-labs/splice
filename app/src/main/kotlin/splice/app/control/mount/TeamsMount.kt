@@ -15,6 +15,7 @@ import splice.core.config.UserHome
 import splice.core.util.JsonScalars
 import splice.sessions.http.ActivitySource
 import splice.sessions.http.SentTextSource
+import splice.sessions.http.TeamScreen
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TeamStart
 import splice.sessions.http.TeamsRoutes
@@ -53,6 +54,9 @@ internal class TeamsMount(
         home = UserHome.dir(),
     )
 
+    /** What a member's screen is offering right now, read per call over the same terminal. */
+    private val screen = TeamScreen(TeamSource { ports.teams }, TerminalSource { ports.sessionDriver })
+
     /** There is deliberately no GET /api/teams/{id}; the board composes from these and /api/sessions. */
     fun register(route: Route) {
         teams?.let { registerTeams(route, it) }
@@ -85,6 +89,11 @@ internal class TeamsMount(
         }
         route.post("/api/teams/{id}/slots/{slot}/answer") {
             guard.guarded(call) { starts.answer(id(call), slot(call), choice(call.receiveText())).send(call) }
+        }
+        // The choices a member is showing, as its own client drew them (ScreenChoices): the card draws Allow /
+        // Always allow / Deny because they are on the screen, never because splice keeps a list of them.
+        route.get("/api/teams/{id}/slots/{slot}/screen") {
+            guard.guarded(call) { screen.offer(id(call), slot(call)).send(call) }
         }
         route.get("/api/teams/{id}/edges") { guard.guarded(call) { teams.reads.edges(id(call)).send(call) } }
         // V4-249: ?from=&to= is the caller's own day (the console's local one), beside ?day=, a UTC date.

@@ -156,9 +156,6 @@ internal class MeasuredInputs {
 // ~256 KiB of trailing JSONL bounds parse cost regardless of file age.
 private const val READ_TAIL_BYTES = 256 * 1024
 
-// why: the sweep keeps today whole, so a one-day window never deletes the generation it just wrote.
-private const val DAY_MS = 86_400_000L
-
 public class PerfStats(
     private val file: Path,
     /** Internal for the turn whose row waits on a streaming round: that row keeps the time its turn ended. */
@@ -424,12 +421,13 @@ public class PerfStats(
         }
     }
 
-    /** Deletes archived generations older than [window], relative to now. Today counts as one of
-     *  the kept days, the same convention [splice.core.storage.ActivityDays] uses for the console's
-     *  stores — so the floor of one day below, which keeps the generation this rotation just wrote.
-     *  A window that keeps everything sweeps nothing: the null cutoff returns before the scan. */
+    /** Deletes archived generations older than [window], relative to now. A generation's modified
+     *  time is the moment it was archived, and rows are appended in time order, so a file older than
+     *  the cutoff holds no row inside the window. A window that keeps everything sweeps nothing: the
+     *  null cutoff returns before the scan. A window of zero keeps the generations rotated today,
+     *  which is what a daily budget reads after a 64 MB roll, and drops them at midnight. */
     private fun sweepArchive(dir: Path) {
-        val oldest = window.days?.let { clock() - it.coerceAtLeast(1) * DAY_MS } ?: return
+        val oldest = window.cutoffMs(clock()) ?: return
         Files.newDirectoryStream(dir).use { entries ->
             entries.filter { entry -> archiveName.rotatedAt(entry.fileName.toString()) != null }
                 .forEach { entry ->

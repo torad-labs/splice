@@ -17,6 +17,9 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.perf.HISTORY_DEFAULT_DAYS
 import splice.core.perf.HistoryWindow
 import java.nio.file.Path
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
 
 class HistoryWindowTest {
     @TempDir
@@ -72,6 +75,25 @@ class HistoryWindowTest {
         )
         assertFalse(carried.nothing)
         assertTrue(written("historyRetentionDays" to "0").historyWindow.nothing, "a 0 they wrote themselves holds")
+    }
+
+    @Test
+    fun `keeping nothing keeps the day that is running, and drops it at midnight where the daemon runs`() {
+        val chicago = ZoneId.of("America/Chicago")
+        val nothing = HistoryWindow(0, chicago)
+        // 01:00 UTC on Oct 10, 2026, which is 20:00 on Oct 9 in Chicago: the running day began at
+        // 05:00 UTC that morning, and an hour before it is a finished day that goes.
+        val at = ZonedDateTime.of(2026, 10, 10, 1, 0, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
+        val midnight = ZonedDateTime.of(2026, 10, 9, 0, 0, 0, 0, chicago).toInstant().toEpochMilli()
+
+        assertEquals(midnight, nothing.cutoffMs(at), "the cutoff is the operator's own midnight, never UTC's")
+        assertTrue(nothing.nothing, "and it reads as keeping nothing, which is what the menu offers")
+        assertEquals("0", nothing.text)
+        assertEquals(
+            midnight + 24 * 60 * 60 * 1000,
+            HistoryWindow(0, chicago).cutoffMs(at + 5 * 60 * 60 * 1000),
+            "five hours later the Chicago day has rolled, and yesterday's hours go with it",
+        )
     }
 
     @Test

@@ -220,6 +220,35 @@ public class EconomicsStore(
         buckets.values.sortedBy { it.hour }
     }
 
+    /**
+     * Take hours splice holds the turns for but has no bucket for: the gap between what this file
+     * reaches back to and what the request records do (Marlin, Oct 10, 2026 — if splice holds a
+     * turn, Usage counts it). Answers the hours it holds afterwards, newest window first.
+     *
+     * NEVER OVERWRITES AN HOUR IT HAS. An hour recorded as its turns ran is the authority on itself:
+     * it was summed from the turns' own usage at the moment each one finished, while a rebuilt hour
+     * is read back from rows written on a different path. A bucket already here wins, always, and
+     * only the hours missing from the file are added.
+     *
+     * It is written, not derived per read, because deriving it means parsing every archived
+     * generation inside the window on every dashboard poll. Written once, the gap is closed and the
+     * next read is the file.
+     */
+    public fun backfill(hours: List<EconomicsBucket>): List<EconomicsBucket> {
+        val (snapshot, v) = synchronized(lock) {
+            loadUnderLock()
+            hours.forEach { hour -> buckets.putIfAbsent(hour.hour, hour) }
+            trimUnderLock()
+            val ordered = buckets.values.sortedBy { it.hour }
+            buckets.clear()
+            ordered.forEach { buckets[it.hour] = it }
+            version += 1
+            ordered to version
+        }
+        persist(snapshot, v)
+        return snapshot
+    }
+
     /** Force the newest snapshot to stable storage (head stop and deterministic tests). */
     public fun flushNow() {
         val (snapshot, v) = synchronized(lock) { buckets.values.sortedBy { it.hour } to version }
@@ -230,6 +259,7 @@ public class EconomicsStore(
 
     private val lock = Any()
     private val writeLock = Any()
+    private val hours = HourReader()
     private val buckets = LinkedHashMap<Long, EconomicsBucket>()
     private var loaded = false
     private var version = 0L
@@ -264,7 +294,7 @@ public class EconomicsStore(
             emptyList()
         } else {
             json.parseToJsonElement(Files.readString(file)).jsonArray
-                .mapNotNull { (it as? JsonObject)?.let(::bucketFrom) }
+                .mapNotNull { (it as? JsonObject)?.let(hours::bucketFrom) }
         }
     }.getOrElse { failure ->
         val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
@@ -322,54 +352,58 @@ public class EconomicsStore(
         }
     }
 
-    /** One numeric field, or null when absent or unparseable. A MEMBER taking the object as its
-     *  first parameter rather than the extension the original wrote: the receiver is kotlinx's,
-     *  so the compliant spelling puts it in the signature (kt-no-extension-functions). */
-    private fun long(o: JsonObject, key: String): Long? = (o[key] as? JsonPrimitive)?.content?.toLongOrNull()
+    /** The file's shape, read. Its own class so the store keeps room under detekt's per-class
+     *  function ceiling for the behaviour that is the store's, rather than for three field reads. */
+    private class HourReader {
+        /** One numeric field, or null when absent or unparseable. A MEMBER taking the object as its
+         *  first parameter rather than the extension the original wrote: the receiver is kotlinx's,
+         *  so the compliant spelling puts it in the signature (kt-no-extension-functions). */
+        fun long(o: JsonObject, key: String): Long? = (o[key] as? JsonPrimitive)?.content?.toLongOrNull()
 
-    /** An absent or garbage numeric field reads as 0 rather than dropping the whole hour: a
-     *  partially-written row should still contribute the counters it does carry. `hour` is the
-     *  one exception — without it the row cannot be placed, so [bucketFrom] returns null. */
-    private fun longOr(o: JsonObject, key: String): Long = long(o, key) ?: 0L
+        /** An absent or garbage numeric field reads as 0 rather than dropping the whole hour: a
+         *  partially-written row should still contribute the counters it does carry. `hour` is the
+         *  one exception: without it the row cannot be placed, so [bucketFrom] returns null. */
+        fun longOr(o: JsonObject, key: String): Long = long(o, key) ?: 0L
 
-    private fun bucketFrom(o: JsonObject): EconomicsBucket? {
-        val hour = long(o, "hour") ?: return null
-        return EconomicsBucket(
-            hour = hour,
-            counts = EconomicsTurnCounts(
-                longOr(o, "turns"),
-                longOr(o, "local_steps"),
-                longOr(o, "unreported_usage_turns"),
-            ),
-            tokens = BucketTokens(
-                inTokens = longOr(o, "in_tokens"),
-                cachedTokens = longOr(o, "cached_tokens"),
-                // THE MIGRATION, and it is deliberately the absent-field default rather than a version
-                // stamp: every economics.json written before V4-86 carries no `cache_write_tokens` key,
-                // and [longOr] reads an absent key as 0 — which is the TRUE historical value, because
-                // no cache-write counter existed to sum. A file-format version would have to map the
-                // old shape to exactly this, so the version field would carry no information. Pinned by
-                // EconomicsStoreTest's old-shape arm, which loads a hand-written 11-key row.
-                cacheWriteTokens = longOr(o, "cache_write_tokens"),
-                outTokens = longOr(o, "out_tokens"),
-            ),
-            bytes = BucketBytes(
-                reqBytes = longOr(o, "req_bytes"),
-                upstreamBytes = longOr(o, "upstream_req_bytes"),
-            ),
-            tools = BucketTools(
-                toolsEager = longOr(o, "tools_eager"),
-                toolsDeferred = longOr(o, "tools_deferred"),
-                deferralTurns = longOr(o, "deferral_turns"),
-            ),
-            rateLimited = longOr(o, "rate_limited"),
-            cost = BucketCost(
-                // V4-221: an hour written before the field has no `cost_usd` key and reads NULL — not
-                // priced then — which is the true historical value; JSON null (an hour that stayed
-                // unpriceable) reads null too.
-                costUsd = (o["cost_usd"] as? JsonPrimitive)?.content?.toDoubleOrNull(),
-                unpricedTurns = longOr(o, "unpriced_turns"),
-            ),
-        )
+        fun bucketFrom(o: JsonObject): EconomicsBucket? {
+            val hour = long(o, "hour") ?: return null
+            return EconomicsBucket(
+                hour = hour,
+                counts = EconomicsTurnCounts(
+                    longOr(o, "turns"),
+                    longOr(o, "local_steps"),
+                    longOr(o, "unreported_usage_turns"),
+                ),
+                tokens = BucketTokens(
+                    inTokens = longOr(o, "in_tokens"),
+                    cachedTokens = longOr(o, "cached_tokens"),
+                    // THE MIGRATION, and it is deliberately the absent-field default rather than a version
+                    // stamp: every economics.json written before V4-86 carries no `cache_write_tokens` key,
+                    // and [longOr] reads an absent key as 0, which is the TRUE historical value, because
+                    // no cache-write counter existed to sum. A file-format version would have to map the
+                    // old shape to exactly this, so the version field would carry no information. Pinned by
+                    // EconomicsStoreTest's old-shape arm, which loads a hand-written 11-key row.
+                    cacheWriteTokens = longOr(o, "cache_write_tokens"),
+                    outTokens = longOr(o, "out_tokens"),
+                ),
+                bytes = BucketBytes(
+                    reqBytes = longOr(o, "req_bytes"),
+                    upstreamBytes = longOr(o, "upstream_req_bytes"),
+                ),
+                tools = BucketTools(
+                    toolsEager = longOr(o, "tools_eager"),
+                    toolsDeferred = longOr(o, "tools_deferred"),
+                    deferralTurns = longOr(o, "deferral_turns"),
+                ),
+                rateLimited = longOr(o, "rate_limited"),
+                cost = BucketCost(
+                    // V4-221: an hour written before the field has no `cost_usd` key and reads NULL, not
+                    // priced then, which is the true historical value; JSON null (an hour that stayed
+                    // unpriceable) reads null too.
+                    costUsd = (o["cost_usd"] as? JsonPrimitive)?.content?.toDoubleOrNull(),
+                    unpricedTurns = longOr(o, "unpriced_turns"),
+                ),
+            )
+        }
     }
 }

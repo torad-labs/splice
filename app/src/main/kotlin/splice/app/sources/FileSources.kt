@@ -7,6 +7,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.model.TurnPrice
+import splice.core.perf.HISTORY_DEFAULT_DAYS
+import splice.core.perf.HistoryWindow
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTotal
 import splice.core.usage.QuotaSnapshot
@@ -14,6 +16,7 @@ import splice.core.usage.QuotaView
 import splice.core.usage.QuotaWindow
 import splice.core.usage.QuotaWindowView
 import splice.core.util.JsonScalars
+import splice.core.util.WallClock
 import splice.head.compact.CompactStats
 import splice.head.compact.CompactView
 import splice.head.compact.HeadCompactSource
@@ -98,13 +101,22 @@ public class EconomicsStoreSource(
     perfRows: PerfRowsFileSource? = null,
     /** The cards splice holds NOW, which price again the hours whose turns had none when they ran. */
     price: TurnPrice? = null,
+    /** How far back this install keeps its history: the edge the backfill may reach back to. */
+    window: HistoryWindow = HistoryWindow(HISTORY_DEFAULT_DAYS),
+    clock: WallClock = WallClock(System::currentTimeMillis),
 ) : HeadEconomicsSource {
     private val probes = perfRows?.let(::ProbeEconomics)
     private val reprice = perfRows?.let { rows -> price?.let { EconomicsReprice(rows, it) } }
+    private val backfill = perfRows?.let { rows ->
+        price?.let { EconomicsBackfill(rows, it, window, clock) }
+    }
 
     override fun read(): EconomicsRead {
         val held = store.read()
-        val kept = when (val deduction = probes?.withoutProbes(held) ?: ProbeDeduction.Done(held)) {
+        // The hours splice holds the turns for and the rollup has none for are written into the
+        // rollup first, so every reader below sees one set of hours and the scan happens once.
+        val whole = backfill?.missing(held)?.takeIf { it.isNotEmpty() }?.let { store.backfill(it) } ?: held
+        val kept = when (val deduction = probes?.withoutProbes(whole) ?: ProbeDeduction.Done(whole)) {
             is ProbeDeduction.Unavailable -> return EconomicsRead.Unavailable(deduction.gap.sentence)
             is ProbeDeduction.Done -> deduction.buckets
         }

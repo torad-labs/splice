@@ -15,11 +15,17 @@
 // reader gets it from [cutoffMs] returning null — "no cutoff" rather than "a cutoff in 5.8 million
 // years", which is the same arithmetic with a lie in it.
 //
-// WHY A DAY IS 24 HOURS HERE. The window answers "how much do we keep", not "which calendar day is
-// this": a fixed 24 hours makes the cutoff exact and the same in every zone, and no person can
-// read the difference a DST hour makes to a 35-day window. The budget DAY is the opposite case and
-// is drawn in the operator's own zone (BudgetLedger, Marlin, Oct 10).
+// WHY A DAY IS 24 HOURS HERE, EXCEPT FOR ZERO. For a window of days, 24 hours each makes the cutoff
+// exact and the same in every zone, and no person can read the difference a DST hour makes to a
+// 35-day window. Zero is the one case a person reads as a calendar day: "keep nothing" is a choice
+// the console offers, and a daily budget still has to know what today cost (Marlin, Oct 10, 2026),
+// so zero keeps the day that is running where the daemon runs and drops it at that midnight. That is
+// the same boundary the budget day is drawn on (BudgetLedger).
 package splice.core.perf
+
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 // why: a window is written in days and compared against epoch millis, in one place for both files.
 private const val DAY_MS = 24L * 60 * 60 * 1000
@@ -44,19 +50,27 @@ public const val HISTORY_FOREVER: String = "forever"
 
 /** How far back splice keeps a head's history: its hourly totals and its request records.
  *
- *  [days] is whole days, or null for [HISTORY_FOREVER] — keep everything. Zero keeps nothing past
- *  the live file: the archive is off, which is the one-generation rotate every install had before
- *  the archive existed. */
-public data class HistoryWindow(val days: Int?) {
+ *  [days] is whole days, or null for [HISTORY_FOREVER]: keep everything. Zero keeps the running day
+ *  only, so a daily budget can still say what today cost, and drops it at midnight where the daemon
+ *  runs. Nothing is kept beyond it: no finished day, no earlier hour. */
+public data class HistoryWindow(
+    val days: Int?,
+    /** Where a day begins and ends for a window of zero: the operator's own midnight, never UTC's. */
+    val zone: ZoneId = ZoneId.systemDefault(),
+) {
     /** Keeps everything: no hour and no archived generation is ever old enough to delete. */
     public val forever: Boolean get() = days == null
 
-    /** Nothing is kept past the live file; the archive is off. */
+    /** Keeps no finished day: today, and nothing once today ends. */
     public val nothing: Boolean get() = days == 0
 
     /** The oldest millisecond this window keeps at [nowMs], or null when it keeps everything.
      *  A reader trims what is older; a null answer means it trims nothing at all. */
-    public fun cutoffMs(nowMs: Long): Long? = days?.let { nowMs - it * DAY_MS }
+    public fun cutoffMs(nowMs: Long): Long? = when (days) {
+        null -> null
+        0 -> Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate().atStartOfDay(zone).toInstant().toEpochMilli()
+        else -> nowMs - days * DAY_MS
+    }
 
     /** The same window in the unit the console reads it in, or null when it keeps everything. */
     public val hours: Long? get() = days?.let { it * HOURS_PER_DAY }

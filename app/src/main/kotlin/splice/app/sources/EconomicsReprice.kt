@@ -10,10 +10,7 @@
 // re-derived from rows that are not the same turns would be a different hour's answer wearing this one's label.
 package splice.app.sources
 
-import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
-import splice.core.perf.PerfKeys
-import splice.head.usage.BucketCost
 import splice.head.usage.EconomicsBucket
 import splice.usage.perf.PerfRow
 import kotlin.time.Duration.Companion.hours
@@ -21,7 +18,9 @@ import kotlin.time.Duration.Companion.hours
 private val REPRICE_BUCKET_MS = 1.hours.inWholeMilliseconds
 
 /** Prices an hour again from the perf rows behind it, with the rate cards this daemon holds now. */
-internal class EconomicsReprice(private val perf: PerfRowsFileSource, private val price: TurnPrice) {
+internal class EconomicsReprice(private val perf: PerfRowsFileSource, price: TurnPrice) {
+    private val rows = EconomicsFromRows(price)
+
     /** [buckets] with every re-derivable unpriced hour priced again, or [buckets] unchanged when the rows
      *  cannot be read. The deduction has already run, so [buckets] holds no probe turns. */
     fun priced(buckets: List<EconomicsBucket>): List<EconomicsBucket> {
@@ -38,51 +37,10 @@ internal class EconomicsReprice(private val perf: PerfRowsFileSource, private va
     }
 
     /** The hour's cost from its own rows, or the hour unchanged when the rows are not the turns it counted. */
-    private fun repriced(bucket: EconomicsBucket, rows: List<PerfRow>): EconomicsBucket {
-        if (!sameTurns(bucket, rows)) return bucket
-        var usd = 0.0
-        var unpriced = 0L
-        for (row in rows) {
-            val local = row.fields[PerfKeys.LOCAL_STEP] == 1L
-            val amount = price.usd(row.facts.model, row.fields, row.ts)
-            if (amount == null) {
-                if (!local) unpriced += 1
-            } else {
-                usd += amount
-            }
-        }
-        // An hour that still holds an unpriced turn keeps its count, so the console says so rather than
-        // reading a partial sum as the hour's whole cost.
-        return bucket.copy(cost = BucketCost(costUsd = usd, unpricedTurns = unpriced))
+    private fun repriced(bucket: EconomicsBucket, hourRows: List<PerfRow>): EconomicsBucket {
+        if (hourRows.isEmpty()) return bucket
+        val rebuilt = rows.bucket(bucket.hour, hourRows)
+        if (!rows.sameTurns(bucket, rebuilt)) return bucket
+        return bucket.copy(cost = rebuilt.cost)
     }
-
-    /** Whether [rows] are exactly the turns [bucket] counted: the same turns and the same tokens, each sum
-     *  built the way the rollup builds it (every turn's absorbed rounds beside its final round). */
-    private fun sameTurns(bucket: EconomicsBucket, rows: List<PerfRow>): Boolean =
-        rows.isNotEmpty() && signature(rows) == signature(bucket)
-
-    /** The counts and token sums one hour is recognised by, read off the perf rows. */
-    private fun signature(rows: List<PerfRow>): List<Long> {
-        val locals = rows.count { it.fields[PerfKeys.LOCAL_STEP] == 1L }.toLong()
-        return listOf(
-            rows.size - locals,
-            locals,
-            rows.sumOf { (it.fields[PerfKeys.IN_TOKENS] ?: 0) + TurnBill.absorbed(it.fields).inputTokens },
-            rows.sumOf { (it.fields[PerfKeys.CACHED_TOKENS] ?: 0) + TurnBill.absorbed(it.fields).cachedTokens },
-            rows.sumOf {
-                (it.fields[PerfKeys.CACHE_WRITE_TOKENS] ?: 0) + TurnBill.absorbed(it.fields).cacheWriteTokens
-            },
-            rows.sumOf { it.fields[PerfKeys.OUT_TOKENS] ?: 0 },
-        )
-    }
-
-    /** The same six figures the rollup kept for that hour. */
-    private fun signature(bucket: EconomicsBucket): List<Long> = listOf(
-        bucket.turns,
-        bucket.localSteps,
-        bucket.inTokens,
-        bucket.cachedTokens,
-        bucket.cacheWriteTokens,
-        bucket.outTokens,
-    )
 }

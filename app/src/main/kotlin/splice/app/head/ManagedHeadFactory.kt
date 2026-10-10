@@ -209,12 +209,14 @@ internal class ManagedHeadFactory(
         telemetry = HeadTelemetryStores(
             compactStats = CompactStats(statePaths.compactStatsFile(ctx.key)),
             // V4-133's archive, wired: a generation the 64 MB rotate retires is kept for the
-            // person's history window instead of discarded, and a window that keeps nothing is the
-            // one-generation rotate of old. The window is the SAME one the economics store below
-            // trims against — one setting, two files (Settings > Your data, Oct 10, 2026).
+            // person's history window instead of discarded. The window is the SAME one the economics
+            // store below trims against: one setting, two files (Settings > Your data, Oct 10, 2026).
+            // The archive stays wired even for a window that keeps nothing, because a head that rolls
+            // 64 MB during the day would otherwise discard the turns today's budget reads; the sweep
+            // drops those generations at midnight instead.
             perfStats = PerfStats(
                 statePaths.perfStatsFile(ctx.key),
-                archiveDir = statePaths.perfArchiveDir.takeIf { !ctx.cfg.historyWindow.nothing },
+                archiveDir = statePaths.perfArchiveDir,
                 window = ctx.cfg.historyWindow,
                 // V4-244: each session's running total, fed by the rows this store appends and priced at
                 // each row's own model's card, against the same catalog the economics store uses.

@@ -4,6 +4,7 @@
 // kt-head-scoped-config-must-be-keyed still covers this head-scoped function.
 package splice.app.head
 
+import splice.app.AdoptedServing
 import splice.app.ConsoleEventPublisher
 import splice.app.HeadSentCredentials
 import splice.app.provider.ProviderBuild
@@ -51,6 +52,11 @@ internal class HeadServerFactory(
     /** Assigned before any head is assembled; the callback reads the login owner at request time. */
     internal var credentialAccountNames: HeadDeps.CredentialAccountNames = HeadDeps.CredentialAccountNames { null }
 
+    /** The sockets a manager handed the daemon, assigned by Daemon before it starts (see [AdoptedServing]). Like the
+     *  two below it is assigned rather than a constructor parameter, which is at its width ceiling, and nothing reads
+     *  it until [headServerFor] builds a head. The default binds every head port itself. */
+    internal var adopted: AdoptedServing = AdoptedServing()
+
     /** Assigned beside [credentialAccountNames]: hears each head's sent credential digests under that head's key and
      *  the session each request named. */
     internal var sentCredentials: HeadSentCredentials = HeadSentCredentials { _, _, _ -> }
@@ -76,6 +82,7 @@ internal class HeadServerFactory(
         return HeadServer(
             provider = provider,
             listenPort = ctx.head.port,
+            inherited = adopted.head(key),
             deps = HeadDeps(
                 tokens = HeadDeps.HeadTokens(inferenceToken = turnKey.get(), operatorToken = mgmtKey.get()),
                 // NO DEFAULTS on these two bundles (V4-105 items 1 and 2): the NULLABILITY is the

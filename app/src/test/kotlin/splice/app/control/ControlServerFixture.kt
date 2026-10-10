@@ -87,7 +87,7 @@ internal fun controlServerFor(
 ): ControlServer {
     val signals = signalsFor(heads)
     return ControlServer(
-        port,
+        ControlListen(port),
         heads,
         config,
         auth.guard(),
@@ -109,7 +109,7 @@ internal fun controlServerWith(
     auth: ControlAuth,
     runtime: ControlRuntime = ControlRuntime(),
 ): ControlServer = ControlServer(
-    0,
+    ControlListen(0),
     heads,
     config,
     auth.guard(),

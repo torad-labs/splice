@@ -68,6 +68,11 @@ public class Daemon(
         WorkerArtifacts.pinAtBoot()
     }
 
+    /** The sockets a manager handed this process, assigned by Main before [start] (see [AdoptedServing]). Assigned
+     *  rather than a constructor parameter: this constructor is at its width ceiling, and nothing reads the sockets
+     *  until [start] opens the listeners. The default binds every port itself, which is every start without one. */
+    internal var adopted: AdoptedServing = AdoptedServing()
+
     // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
     // display is operator-editable without recompiling. Env and runtime PATCH still win.
     // [heads.<key>.overrides] rides the per-head layer: heads share ONE ConfigService (one JVM,
@@ -194,6 +199,9 @@ public class Daemon(
     private var stopped = false
 
     public suspend fun start() {
+        // Before anything binds: the control plane and every head serve on a handed-over socket where there is one.
+        controlPlane.adopted = adopted
+        headServerFactory.adopted = adopted
         val cfg = config.getConfig()
         // TOML feeds ConfigService's topology layer; state/env/runtime override it consistently.
         // Resolved before the head loop so every launch recipe points at the actual listener.

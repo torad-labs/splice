@@ -75,7 +75,7 @@ class ListenerInventoryTest {
         val out = mutableListOf<String>()
         assertEquals(0, CapabilityReport { line: String -> out += line }.print())
         val body = Json.parseToJsonElement(out.single()).jsonObject.getValue("socket_activation").jsonObject
-        assertEquals("false", body.getValue("adopt_inherited").jsonPrimitive.content)
+        assertEquals("true", body.getValue("adopt_inherited").jsonPrimitive.content)
         assertEquals("LISTEN_FDNAMES", body.getValue("matches_by").jsonPrimitive.content)
     }
 }

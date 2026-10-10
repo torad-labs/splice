@@ -97,6 +97,7 @@ internal class ControlPlane(
     /** V4-136: the daemon's ONE compaction resolver, handed on to the control server so
      *  /api/compaction/instructions reports the resolver the daemon actually compacts with. */
     private val compactionInstructions: CompactionInstructions = CompactionInstructions(),
+    /** The control listener a socket manager handed this process, when it did. */
 ) {
     // Views over [daemon], never copies: a stored copy would fix the value at construction.
     private val statePaths get() = daemon.statePaths
@@ -232,6 +233,10 @@ internal class ControlPlane(
         probeScope.cancel()
     }
 
+    /** The sockets a manager handed the daemon, assigned by Daemon before [start] (see [AdoptedServing]). The
+     *  default binds the control port itself, which is every start without a socket manager. */
+    internal var adopted: AdoptedServing = AdoptedServing()
+
     /** Constructs and binds the control plane. Returns null (having already called
      *  [shutdownDaemon] and logged) when the bind fails — defense in depth for the
      *  restart-into-a-still-bound-port race (BS-4 DEFECT B): unlike a per-head start, an uncaught
@@ -273,7 +278,7 @@ internal class ControlPlane(
             HeapIngress(JvmHeap.budget, Knob.MAX_REQUEST_BYTES.count(), AdmissionErrorBody),
         )
         val srv = ControlServer(
-            controlPort,
+            adopted.control(controlPort),
             heads,
             config,
             guard,

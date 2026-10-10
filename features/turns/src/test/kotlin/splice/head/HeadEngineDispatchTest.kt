@@ -374,7 +374,7 @@ private fun dispatchEngine(provider: Provider, deps: HeadDeps): HeadEngine {
     )
     val count = CountTokens(provider, deps, gate, reader, parse, responses)
     return HeadEngine(
-        0,
+        HeadListen(0),
         { line -> deps.log("[${provider.key}] $line") },
         diagnostics,
         auth,

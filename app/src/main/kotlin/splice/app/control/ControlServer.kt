@@ -78,7 +78,8 @@ internal class ControlReadings(val health: ControlHealthReport, private val sign
 }
 
 internal class ControlServer(
-    private val port: Int,
+    /** The port to serve on, and the socket a manager already holds for it (see [ControlListen]). */
+    private val listen: ControlListen,
     private val heads: Map<String, ManagedHead>,
     private val config: ConfigService,
     /** The door every route runs behind, and the request admission, both built by ControlPlane. */
@@ -178,11 +179,11 @@ internal class ControlServer(
     private var boundPort: Int? = null
 
     /** The port this control plane listens on: the one its connector BOUND while running — the
-     *  OS-assigned one when it was constructed with port 0 — and the configured [port] otherwise.
+     *  OS-assigned one when it was constructed with port 0 — and the configured [ControlListen.port] otherwise.
      *  A caller that wants a free port passes 0 and reads this after [start]: leasing a number with
      *  ServerSocket(0) and handing it here to bind later leaves a window in which anything else may
      *  take it (the BindException class of CI run 35881955038). */
-    public val listeningPort: Int get() = boundPort ?: port
+    public val listeningPort: Int get() = boundPort ?: listen.port
 
     /** v0.4.0 review: every route the running engine serves, read off its router, so the test that walks
      *  every door takes the list from here and never from a list kept beside it (a route added with the
@@ -247,8 +248,10 @@ internal class ControlServer(
         ) {
             connector {
                 host = "127.0.0.1"
-                port = this@ControlServer.port
+                port = this@ControlServer.listen.port
             }
+            // An inherited socket brings its own event loops, channel and parent handler (AdoptedBootstrap).
+            listen.adopted?.let { adopted -> configureBootstrap = { adopted.applyTo(this) } }
             channelPipelineConfig = { pipeline -> guard.admit(pipeline) }
         }
 

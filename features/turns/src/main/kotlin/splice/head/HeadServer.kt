@@ -33,12 +33,14 @@ import splice.head.admission.AdmissionGate
 import splice.head.admission.AdmissionResponses
 import splice.head.admission.AdmissionTelemetry
 import splice.head.admission.AdmissionWindow
+import splice.head.admission.GateRefusals
 import splice.head.admission.HeadAdmission
 import splice.head.compaction.CompactionReplay
 import splice.head.perf.PerfStats
 import splice.head.turn.TurnDriver
 import splice.head.turn.TurnPreparation
 import splice.http.ingress.HeapIngress
+import splice.http.listen.AdoptedBootstrap
 import splice.upstream.Provider
 import java.util.concurrent.TimeUnit
 
@@ -63,6 +65,8 @@ public class HeadServer(
     private val provider: Provider,
     private val listenPort: Int,
     private val deps: HeadDeps,
+    /** The already-listening socket a socket manager handed the daemon for this head, when it did. */
+    inherited: AdoptedBootstrap? = null,
 ) : Head {
 
     private val gate get() = deps.traffic.gate
@@ -89,6 +93,7 @@ public class HeadServer(
         window,
         responses,
         CompactionPreflight(provider.catalog, deps.stores.perfStats),
+        GateRefusals(driver::recordGateRefusal),
     )
     private val diagnostics = HeadDiagnostics(provider, deps.traffic.gate, driver, deps.stores.captures.wireTap)
     private val admission = HeadAdmission(
@@ -108,7 +113,7 @@ public class HeadServer(
         responses,
     )
     private val engine = HeadEngine(
-        listenPort,
+        HeadListen(listenPort, inherited),
         { line -> deps.log("[${provider.key}] $line") },
         diagnostics,
         clientAuth,

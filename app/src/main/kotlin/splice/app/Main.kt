@@ -98,6 +98,15 @@ internal class DaemonProcess(
         start.ownerOnlyLines.forEach { log(it) }
         val shutdownSignal = CompletableDeferred<Unit>()
         InstallShim().shimStalenessWarning(EnvReader(System::getenv))?.let { log("$it\n") }
+        // FAIL-CLOSED: a socket manager's hand-off is read and checked BEFORE anything binds, and a hand-off that
+        // cannot be trusted refuses boot with every reason at once, the way a config finding does.
+        val handoff = SocketHandoff(EnvReader(System::getenv)).resolve(topology, controlPort)
+        if (handoff is Handoff.Refused) {
+            val findings = handoff.reasons.joinToString("") { reason -> "  - $reason\n" }
+            log("[daemon] socket activation refused; nothing was bound:\n$findings")
+            exitProcess(1)
+        }
+        (handoff as? Handoff.Adopted)?.let { log("[daemon] ${it.summary}\n") }
         val daemon = Daemon(
             topology,
             statePaths,
@@ -107,7 +116,7 @@ internal class DaemonProcess(
             // splice.toml is visible to the shim, doctor, and the dashboard.
             topologyDigest = start.loaded.digest,
             topologyPath = start.topologyPath,
-        )
+        ).also { it.adopted = AdoptedServing((handoff as? Handoff.Adopted)?.listeners) }
 
         // V4-445: keeps a wrapped plain `claude` wrapped across Claude Code's own updates. Production only: it
         // watches the real ~/.local/bin, which a test daemon must never do.

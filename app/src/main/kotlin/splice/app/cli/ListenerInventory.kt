@@ -7,6 +7,7 @@ package splice.app.cli
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.listen.ListenerNames
 import splice.core.terminal.TerminalOutput
 import splice.core.util.EnvReader
 import splice.core.util.SafeFailureText
@@ -26,6 +27,8 @@ internal class ListenerInventory(
     private val out: TerminalOutput = TerminalOutput(::println),
     private val errors: TerminalOutput = TerminalOutput { System.err.println(it) },
 ) {
+    private val names = ListenerNames()
+
     /** 0 with the JSON on stdout; [CONFIG_REFUSED_EXIT] with the findings on stderr when boot would refuse. */
     fun print(): Int {
         val path = TopologyLoader.configPath(env)
@@ -54,8 +57,8 @@ internal class ListenerInventory(
                 put(
                     "listeners",
                     buildJsonArray {
-                        add(row("control", null, "control", control))
-                        topology?.heads?.forEach { (key, head) -> add(row("head", key, "head-$key", head.port)) }
+                        add(row("control", null, names.control, control))
+                        topology?.heads?.forEach { (key, head) -> add(row("head", key, names.head(key), head.port)) }
                     },
                 )
             }.toString(),
@@ -76,9 +79,10 @@ internal class ListenerInventory(
 internal class CapabilityReport(private val out: TerminalOutput = TerminalOutput(::println)) {
     fun print(): Int {
         out.line(
-            """{"socket_activation":{"adopt_inherited":false,"protocol":1,"matches_by":"LISTEN_FDNAMES",""" +
+            """{"socket_activation":{"adopt_inherited":true,"protocol":1,"matches_by":"LISTEN_FDNAMES",""" +
                 """"control_required":true,"missing_head":"self-bind",""" +
-                """"refuses":["extra","duplicate","malformed","wrong_endpoint","non_listening"]}}""",
+                """"refuses":["extra","duplicate","malformed","wrong_endpoint","non_listening",""" +
+                """"native_unavailable"]}}""",
         )
         return 0
     }

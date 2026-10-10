@@ -37,6 +37,7 @@ import kotlinx.coroutines.withContext
 import splice.core.util.LogSink
 import splice.head.admission.HeadAdmission
 import splice.http.ingress.HeapIngress
+import splice.http.listen.AdoptedBootstrap
 import splice.upstream.codemode.ProcessDispatchers
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -57,10 +58,16 @@ private const val RUNNING_LIMIT = 2048
 // truncations (52/1000 stream tails).
 private const val WRITE_TIMEOUT_S = 60
 
+/** WHERE this head listens, as one value: the port it was configured with, and the already-listening socket a socket
+ *  manager handed the daemon for it, when it did (integrations/http AdoptedListeners). One value and not two
+ *  parameters because they answer one question, and because a bare second parameter took this constructor to the
+ *  width the ratchet refuses. */
+internal data class HeadListen(val port: Int, val adopted: AdoptedBootstrap? = null)
+
 /** The head's Ktor/Netty listener: POST /v1/messages EXACTLY, POST /v1/messages/count_tokens,
  *  GET /v1/models (discovery-wrapped) and GET /health {ok,port,version}. */
 internal class HeadEngine(
-    private val listenPort: Int,
+    private val listen: HeadListen,
     /** The ONE thing this collaborator needs from the head (V4-105 item 3): it read `deps.log` and
      *  nothing else, so it depended on a 25-parameter bundle to write a line. */
     private val log: LogSink,
@@ -80,8 +87,8 @@ internal class HeadEngine(
     val isRunning: Boolean get() = server != null
 
     /** The port a client reaches this head on: the one the connector BOUND while running — the
-     *  OS-assigned one when [listenPort] is 0 — and the configured [listenPort] otherwise. */
-    val port: Int get() = boundPort ?: listenPort
+     *  OS-assigned one when [HeadListen.port] is 0 — and the configured [HeadListen.port] otherwise. */
+    val port: Int get() = boundPort ?: listen.port
 
     /** Tests can pin call affinity; each listener gets an elastic I/O view independent of the shared I/O quota. */
     suspend fun start(
@@ -105,13 +112,16 @@ internal class HeadEngine(
         ) {
             connector {
                 host = "127.0.0.1"
-                port = listenPort
+                port = listen.port
             }
             // Every call here is a LONG-LIVED SSE turn that occupies a running slot for its
             // whole life (seconds..minutes). Netty's default runningLimit (32) silently queues
             // the 33rd concurrent agent turn behind in-flight ones — a fleet of subagents feels
             // like the gateway "can barely hold a few". HeadServerLoadTest pins the ceiling at
             // >= 1000 concurrently-held streams.
+            // An inherited socket brings its own event loops, channel and parent handler (AdoptedBootstrap): the
+            // engine serves on a listener the socket manager holds instead of binding the connector above.
+            listen.adopted?.let { adopted -> configureBootstrap = { adopted.applyTo(this) } }
             runningLimit = RUNNING_LIMIT
             callThreads?.let { callGroupSize = it }
             // Default 10s killed stream TAILS during 1000-way completion bursts (load test:

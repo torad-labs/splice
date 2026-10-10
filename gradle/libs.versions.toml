@@ -18,8 +18,9 @@ graaljs = "25.4.4.1.1"
 # slf4j-api arrives under ktor; this pins the no-op provider that rides beside it (2026-09-25). Keep it
 # on the API's own version: without a provider SLF4J prints three warning lines on a user's terminal.
 slf4j = "2.0.18"
-# TRANSITIVE CVE FLOOR (2026-07-27). netty is not a dependency we declare — it arrives under
-# ktor-server-netty. Dependabot therefore could not fix it: every security-update job failed with
+# TRANSITIVE CVE FLOOR (2026-07-27). netty arrives under ktor-server-netty, and the one netty artifact we
+# declare ourselves (netty-transport-native-epoll, for socket adoption) rides this same version.
+# Dependabot could not fix it on its own: every security-update job failed with
 # `security_update_dependency_not_found` because there was no declaration to edit, which is why the
 # alerts sat open with no PR ever appearing. Declaring the floor gives the resolver a minimum AND
 # Dependabot a line to bump next time. Raise, never lower; drop it once ktor's own netty clears it.
@@ -47,6 +48,10 @@ jackson-core = { module = "com.fasterxml.jackson.core:jackson-core", version.ref
 ktoml-core = { module = "com.akuleshov7:ktoml-core", version.ref = "ktoml" }
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
+# The Linux native transport, for ONE job: serving on a listening socket a socket manager already holds (see
+# integrations/http AdoptedListeners). Its public EpollServerSocketChannel(fd) is the only public-API way onto an
+# inherited descriptor, and the classifier is linux-x86_64 because socket activation is systemd, so Linux, only.
+netty-transport-native-epoll = { module = "io.netty:netty-transport-native-epoll", version.ref = "netty" }
 ktor-server-sse = { module = "io.ktor:ktor-server-sse", version.ref = "ktor" }
 ktor-server-test-host = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }

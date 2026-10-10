@@ -39,6 +39,13 @@ class ProviderFamilyRuleTest {
     }
 
     @Test
+    fun `a family the operator wrote names a rented GPU behind a tunnel, which its address cannot`() {
+        val tunnel = provider(API_KEY_WIRE, "http://127.0.0.1:8100/v1")
+        assertEquals("local", rule.of("bonsai-vast", tunnel))
+        assertEquals("vast", rule.of("bonsai-vast", tunnel.copy(family = "vast")))
+    }
+
+    @Test
     fun `runtimes on the operator's own machine are one family, whatever each is called`() {
         for (key in listOf("bonsai", "bonsai-vast", "bonsai-second")) {
             assertEquals("local", rule.of(key, provider(API_KEY_WIRE, "http://127.0.0.1:8099/v1")), key)

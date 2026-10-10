@@ -90,6 +90,7 @@ providers.*.extra_windows
 providers.*.extra_windows[].context_window	
 providers.*.extra_windows[].id	
 providers.*.extra_windows[].max_context_window	
+providers.*.family	
 providers.*.local	
 providers.*.models	
 providers.*.models[].client_model	

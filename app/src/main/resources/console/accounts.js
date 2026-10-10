@@ -5,7 +5,7 @@
 
 let NOW = new Date(); // read again at every load, so a reset reads in the viewer's own clock
 const LEN = { "5 hours": 300, Week: 10080, Month: 43200, Day: 1440 };
-const COLORS = { claude: "--claude", gpt: "--gpt", grok: "--grok", kimi: "--kimi", muse: "--muse", router: "--router", deepseek: "--deepseek", local: "--local" };
+const COLORS = { claude: "--claude", gpt: "--gpt", grok: "--grok", kimi: "--kimi", muse: "--muse", router: "--router", deepseek: "--deepseek", local: "--local", vast: "--local" };
 
 // splice's budget day is the UTC day (BudgetEnforcement.kt:10), so it refills at UTC midnight, read in the viewer's clock.
 function dayReset() {
@@ -18,6 +18,7 @@ const FAMILY = {
   anthropic: { id: "claude", name: "Claude" }, openai: { id: "gpt", name: "ChatGPT" }, xai: { id: "grok", name: "Grok" },
   moonshot: { id: "kimi", name: "Kimi" }, meta: { id: "muse", name: "Muse" }, openrouter: { id: "router", name: "OpenRouter" },
   deepseek: { id: "deepseek", name: "DeepSeek" }, local: { id: "local", name: "This computer" },
+  vast: { id: "vast", name: "vast.ai" }, // a rented GPU behind a tunnel: the provider says family = "vast" (fin's name)
 };
 // What Add provider offers: a provider splice can add, picked by the family it would run under.
 const CATALOG = [
@@ -63,10 +64,11 @@ async function load() {
   const provs = new Map();
   for (const h of st.body.registry || []) {
     const fam = FAMILY[h.family] || { id: h.family || h.key, name: h.family || h.key };
-    const kind = h.family === "local" ? "local" : h.authKind === "api-key" ? "key" : "plan";
+    const kind = h.family === "local" || h.family === "vast" ? "local" : h.authKind === "api-key" ? "key" : "plan";
     if (!provs.has(fam.id)) provs.set(fam.id, { id: fam.id, name: fam.name, kind, cmds: [], accounts: [] });
     const p = provs.get(fam.id), b = budgets.get(h.key), today = spendToday.get(h.key) || { usd: 0, unpriced: 0 };
     p.cmds.push({ cmd: h.label || h.key, head: h.key, spent: b ? b.used_usd : today.usd, unpriced: b ? b.unpriced_turns : today.unpriced,
+      local: kind === "local", // nothing bills it per token, so no figure and no line
       onPlan: ((b && b.unpriced_reason) || priceWhy.get(h.key) || (kind === "plan" ? "plan" : "undeclared")) === "plan",
       budget: b && b.daily_usd != null ? { cap: b.daily_usd, block: b.action === "block" } : null, mode: "soonest", pin: null, order: [] });
   }
@@ -247,15 +249,15 @@ function meterHtml(c, pick = null) {
   if (ui.editor && ui.editor.c === c.cmd) return `<div class="meter" data-meter="${c.cmd}">${editorHtml(c, tag)}</div>`;
   // A figure that leaves out a turn is no figure: until every turn has a price, the day shows only how many lack one
   // (Marlin, Oct 10), never "$0.00" over turns that cost something.
-  const spent = c.unpriced ? "" : money(c.spent);
+  const spent = c.unpriced || c.local ? "" : money(c.spent);
   if (!c.budget) {
     return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span><span class="money">${spent}${unpriced(c)}</span>`
       + `<button class="act quiet" data-act="edit-budget" data-c="${c.cmd}">Set budget</button>${resets(day)}</div>`;
   }
   const pct = Math.min(100, Math.round((c.spent / c.budget.cap) * 100)), mode = c.budget.block ? "Block" : "Warn";
-  const spoken = `${c.unpriced ? "Budget" : `${money(c.spent)} of`} ${cap(c.budget.cap)}, ${mode}${c.unpriced ? `, ${noPrice(c)}` : ""}`;
+  const spoken = `${spent ? `${spent} of` : "Budget"} ${cap(c.budget.cap)}, ${mode}${unpriced(c) ? `, ${noPrice(c)}` : ""}`;
   // no fill without a figure, and no empty box either: the cell stays, so the columns line up with the other rows
-  const fill = c.unpriced ? "<span></span>" : `<div class="capbox">${bar(pct, c.spent >= c.budget.cap ? "full" : "")}</div>`;
+  const fill = !spent ? "<span></span>" : `<div class="capbox">${bar(pct, c.spent >= c.budget.cap ? "full" : "")}</div>`;
   return `<div class="meter windows spend" data-meter="${c.cmd}">${tag}<span class="label">Day</span>${fill}`
     + `<button class="money act quiet" data-act="edit-budget" data-c="${c.cmd}" aria-label="${spoken}">${c.budget.block ? ICON.stop : ICON.bell}${spent ? `${spent} <em>of</em> ` : "<em>Budget</em> "}${cap(c.budget.cap)}${unpriced(c)}</button>${resets(day)}</div>`;
 }
@@ -264,7 +266,7 @@ function meterHtml(c, pick = null) {
 // A plan's turns read "on your plan": the plan covered them, and "with no price" would read as splice missing data.
 // Every other turn with no figure is a model with no rate card (fin's words, Marlin, Oct 10).
 const noPrice = (c) => `${c.unpriced.toLocaleString("en-US")} ${c.unpriced === 1 ? "turn" : "turns"} ${c.onPlan ? "on your plan" : "with no price"}`;
-const unpriced = (c) => (c.unpriced ? `<span class="unpriced own">${noPrice(c)}</span>` : "");
+const unpriced = (c) => (c.unpriced && !c.local ? `<span class="unpriced own">${noPrice(c)}</span>` : "");
 function editorHtml(c, tag) {
   const ed = ui.editor;
   const presets = [5, 10, 25, 50, 100].map((v) => `<button data-act="preset" data-v="${v}" aria-pressed="${ed.cap === v}">$${v}</button>`).join("");
@@ -468,7 +470,9 @@ const laneOf = (p) => p.cmds.find((c) => c.cmd === ui.lane[p.id]) || p.cmds[0];
 function providerHtml(p) {
   const head = (sw) => `<section class="provider" style="--c:${colorOf(p.id)}" data-key="prov:${p.id}"><header><h2><span class="blot"></span>${esc(p.name)}</h2>${sw}</header>`;
   if (p.kind !== "plan") {
-    const srv = serving(p), meters = p.kind === "local" ? "" : p.cmds.map((c) => meterHtml(c)).join(""); // no rates, no day to budget
+    const srv = serving(p), meters = (p.kind === "local" ? p.cmds.filter((c) => c.budget) : p.cmds).map((c) => meterHtml(c)).join("");
+    // a model on this computer or a rented GPU bills nothing per token: no Day row, unless he already set a budget on it
+    // (Marlin and fin, Oct 10), which keeps its row with no figure and no line
     return `${head("")}${meters}<div class="rail plain" data-rail="${p.id}">${p.accounts.map((a, i) => cardHtml(p, null, a, i, p.kind === "local" ? p.cmds.filter((c) => c.head === a.id) : a === srv ? p.cmds : [])).join("")}</div></section>`;
   }
   const c = laneOf(p), many = p.cmds.length > 1;

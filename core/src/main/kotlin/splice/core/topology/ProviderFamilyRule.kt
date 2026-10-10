@@ -15,12 +15,13 @@ private const val LOCAL_FAMILY = "local"
  * marked `local`, then the api-key registry by provider key (the lookup that already picks GrokProvider
  * for `xai`), and only then the local-runtime rule (an openai-chat base URL on loopback). Oct 10, 2026:
  * the loopback rule ran before the registry, so OpenRouter pointed at a proxy on this machine grouped as
- * "This computer", with no key card and no budget (Marlin's Accounts walk, p153 and p154). A
+ * "This computer", with no key card and no budget (Marlin's Accounts walk, p153 and p154). A `family` the operator
+ * wrote wins over all of it: no address tells a tunnel to a rented GPU from a server on this machine. A
  * provider none of those names is null, and the console falls back to registry order for it.
  */
 public class ProviderFamilyRule {
     public fun of(key: String, provider: ProviderConfig): String? =
-        when (AuthKindRegistry.from(provider.auth.kind)) {
+        provider.family ?: when (AuthKindRegistry.from(provider.auth.kind)) {
             AuthKind.ChatgptOAuth -> "openai"
             AuthKind.GrokOAuth -> "xai"
             AuthKind.KimiOAuth -> "moonshot"

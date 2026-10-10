@@ -8,6 +8,10 @@ package splice.sessions.http
 
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.put
+import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
@@ -43,6 +47,7 @@ internal class ResumableSessions(
     private val transcripts: SessionTranscripts,
     private val roots: List<Path>,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val log: LogSink = LogSink(DaemonLog::write),
 ) {
     private data class Verdict(val resumable: Boolean, val at: Long)
 
@@ -72,9 +77,32 @@ internal class ResumableSessions(
      *  character or two have hashes a few units apart, which would put them all in the same instant. */
     private fun spread(id: String): Long = Math.floorMod((id.hashCode() * GOLDEN).toLong(), FOUND_SPREAD_MS)
 
-    /** A lookup that refuses the id (not a session id) is a session the resume route also refuses. */
-    private fun measure(id: String): Boolean = when (val lookup = transcripts.page(id, roots, null, 1)) {
-        is TranscriptLookup.Found -> lookup.page.path.let(Path::of).toFile().length() > 0L
-        is TranscriptLookup.Missing, is TranscriptLookup.Refused -> false
+    /**
+     * Whether [id] has a transcript with bytes in it. A lookup that refuses the id (not a session id) is
+     * a session the resume route also refuses.
+     *
+     * A READ THAT FAILS IS AN ANSWER, NOT AN END. This opens a file per listed session, and a file read
+     * can fail for reasons that have nothing to do with the session: a tree that went away mid-walk, a
+     * directory the daemon cannot enter, a broken link. Letting that escape ended the whole listing —
+     * `GET /api/sessions` answered 500 on the everyday daemon while the same route answered an empty list
+     * on a desk with no sessions, so one unreadable file was taking down every session on the page
+     * (splice-builder2's walk, Oct 10, 2026). Resumable is a HINT on a row; the listing is the page. A
+     * session splice cannot read is not resumable, and the cause goes to the log where the person
+     * diagnosing it will look.
+     */
+    private fun measure(id: String): Boolean = Cancellables.runCatchingCancellable {
+        when (val lookup = transcripts.page(id, roots, null, 1)) {
+            is TranscriptLookup.Found -> lookup.page.path.let(Path::of).toFile().length() > 0L
+            is TranscriptLookup.Missing, is TranscriptLookup.Refused -> false
+        }
+    }.getOrElse { failure ->
+        log("[sessions] a transcript could not be read, so it is not offered for resume: " + why(failure) + "\n")
+        false
     }
+
+    /** What happened, and where. A file reader's own message can quote the file's bytes, so most of them
+     *  are withheld; the code location never quotes content, and without it a withheld message leaves
+     *  nothing at all to diagnose from. */
+    private fun why(failure: Throwable): String =
+        SafeFailureText.render(failure) + SafeFailureText.site(failure)
 }

@@ -25,6 +25,18 @@ import kotlin.concurrent.thread
 const val STARTUP_HELD = "STARTUP_HELD"
 const val PORT_CLOSED_LOCK_HELD = "PORT_CLOSED lock_held=true"
 const val UP_PORT_LIVE = "UP_PORT_LIVE="
+
+/** The two other answers [awaitListenerClosed] can give, said rather than left as silence: the stop never reached the
+ *  listener, or it reached it only after the daemon lock was already gone. Each is a different defect, and a reader of
+ *  the child's output should not have to tell them apart by what is missing. */
+private const val LISTENER_STILL_OPEN = "LISTENER_STILL_OPEN after_ms="
+private const val LOCK_ALREADY_RELEASED = "PORT_CLOSED lock_held=false"
+
+// why: the longest this client waits for the stop to reach the listener before reporting what it sees. A real stop
+// closes it in well under a second (Ktor's grace is 100ms), so this is a ceiling for a stop that is not coming, not a
+// guess at one that is: it sits far below the child's own 57s halt floor so the report always beats the watchdog.
+private const val AWAIT_CLOSE_MS = 10_000
+
 const val HOLD_BOUND = "[daemon] control plane bound"
 const val HOLD_UP = "[daemon] up:"
 
@@ -52,10 +64,36 @@ private fun say(line: String) {
     System.out.flush()
 }
 
-/** Blocks until the listener on [port] closes the connection a client holds open, which only a stop does. */
+/** Waits for the stop to reach the control listener, then says whether the listener had stopped accepting and whether
+ *  the daemon lock was still held at that moment — ALWAYS, bounded, whatever the stop does to this client.
+ *
+ *  THE WAIT IS BOUNDED AND NOTHING IT RAISES IS FATAL, because a held connection is not a reliable witness to its own
+ *  listener closing. A stop ends it three ways, and each one killed or parked this thread before it could count the
+ *  latch down: it resets the connection (the read throws), it closes the listener before this connect lands (the
+ *  connect throws), or it closes the listener and leaves this established connection open (the read never returns).
+ *  The held startup then never resumed, main's ordered stop waits on startup with no bound of its own by design, and
+ *  the teardown watchdog halted the JVM at 57s with the listener never reported closed — measured 2026-10-10, all
+ *  three ways in one afternoon, one standalone run in four and whole gradle runs together. So the read is given a
+ *  timeout and its failures are swallowed; the PORT and the LOCK are what answer the question.
+ *
+ *  THE ORDER THIS PINS HOLDS THROUGH THE HANDSHAKE, not through timing: the daemon releases its lock only after
+ *  startup resumes, startup resumes only on the countdown below, and the countdown comes after the lock is read. A
+ *  listener still accepting when the wait is up is said out loud too, so a stop that truly did not reach it reads as
+ *  that, here, instead of as a halt 57s later. */
 private fun awaitListenerClosed(port: Int, lockFile: Path, resume: CountDownLatch) = thread(isDaemon = true) {
-    Socket("127.0.0.1", port).use { it.getInputStream().read() }
-    if (!portAccepts(port) && lockHeld(lockFile)) say(PORT_CLOSED_LOCK_HELD)
+    try {
+        Socket("127.0.0.1", port).use { socket ->
+            socket.soTimeout = AWAIT_CLOSE_MS
+            socket.getInputStream().read()
+        }
+    } catch (_: IOException) {
+        // A refused connect, a reset, or the read's own timeout. None of them is this thread's answer to give.
+    }
+    when {
+        portAccepts(port) -> say("$LISTENER_STILL_OPEN$AWAIT_CLOSE_MS")
+        lockHeld(lockFile) -> say(PORT_CLOSED_LOCK_HELD)
+        else -> say(LOCK_ALREADY_RELEASED)
+    }
     resume.countDown()
 }
 

@@ -131,11 +131,6 @@ public fun interface DayRecord {
     public fun encode(file: Path): ByteArray
 }
 
-/** How many UTC days a store keeps, asked at every use so a window that changes takes effect on the next read. */
-public fun interface RetentionDays {
-    public fun days(): Int
-}
-
 public class ActivityDays(
     private val dir: Path,
     private val prefix: String,

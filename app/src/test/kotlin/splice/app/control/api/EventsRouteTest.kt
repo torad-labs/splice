@@ -45,6 +45,7 @@ import java.nio.file.Path
 private const val TIMEOUT_MS = 10_000L
 private const val POLL_MS = 25L
 private const val OPEN_FRAME = ": open"
+
 /** Enough id room between two buses in a test that the second cannot overlap the first. */
 private const val SEQ_GAP = 1_000L
 

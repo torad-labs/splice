@@ -68,6 +68,17 @@ curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.4.0/install
   runs it, otherwise end its process. Then run `splice restart` or launch any head. A fresh key
   is minted and the old key is refused. Then relaunch each session. Its next launch writes the
   current turn key to `turn-auth-header`; a session launched before rotation holds a stale key.
+- **A provider on a loopback `base_url` is now a local runtime.** Ollama, LM Studio and vLLM rows
+  are checked against what the runtime serves at boot: a row it does not list, or a
+  `context_window` larger than it reports, puts that head in DEGRADED while the rest of the daemon
+  serves. A runtime that is down boots as before. `local = false` on the provider keeps the 0.3.x
+  behaviour.
+- **Three defaults changed for a 0.3.x file that never set them.** ChatGPT heads on the Responses
+  dialect run code mode (`code_mode = false` in the provider's `quirks` turns it off). A Claude head shares its `projects`
+  tree with `~/.claude`, merging by hard link on its first launch (list `share` without `projects`
+  to keep it private). MCP hosting is on (`mcp_hosting = false` under `[daemon]` turns it off).
+- **`claudex -c` continues only sessions 0.4.0 began.** A session begun under 0.3.x is not in the
+  head's `splice-sessions.json`, so a bare `-c` starts a new one. `claudex -r <id>` resumes it.
 - **The installer records 0.3.x as the previous release,** so `splice upgrade --rollback` has a
   target.
 - **From 0.4.0 on,** `splice upgrade` fetches, installs and restarts in one command.

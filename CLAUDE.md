@@ -102,3 +102,4 @@ Marcos's standing rulings for splice, one per line.
 - A refused claim, a blocked file or an unanswered question is never a stopping point: take the next open work and say in one line what you took and what you are still waiting on.
 - No version bump and no release cut without Marcos's explicit go.
 - GitHub settings, branch protection, rulesets and required checks are Marcos's to change.
+- No detekt or ast-grep ignores, with one exception: LongParameterList skips @Serializable classes, which mirror an outside format (splice.toml, saved state, wire bodies) field by field (Marcos, 2026-10-09).

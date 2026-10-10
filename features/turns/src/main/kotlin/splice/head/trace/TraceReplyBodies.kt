@@ -55,7 +55,7 @@ internal class TraceReplyBodies(private val heap: HeapReservations = JvmHeap.bud
             val price = TurnPrice(head.catalog)
             val counters = countersOf(ending)
             val known = PerfKeys.IN_TOKENS in counters && PerfKeys.OUT_TOKENS in counters
-            put("cost_usd", if (known) price.usd(JsonScalars.str(ending, "model"), counters) else null)
+            put("cost_usd", if (known) price.usd(JsonScalars.str(ending, "model"), counters, turn.ts) else null)
         }
         putJsonArray("records") {
             turn.attempts.forEach { add(it) }

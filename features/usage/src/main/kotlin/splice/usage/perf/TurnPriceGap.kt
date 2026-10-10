@@ -61,7 +61,8 @@ private object ProviderRefusal {
  *  plans, so the window's counters and each row's own figure are the same decision read twice. */
 internal class TurnPriceGap(private val price: TurnPrice?, private val plans: AccountPlans) {
     /** The dollars this row billed, or null when [of] has a reason instead. */
-    fun usd(row: PerfRow): Double? = price?.takeIf { declares(row) && counted(row) }?.usd(row.facts.model, row.fields)
+    fun usd(row: PerfRow): Double? =
+        price?.takeIf { declares(row) && counted(row) }?.usd(row.facts.model, row.fields, row.ts)
 
     /** Null exactly when [usd] has a figure. */
     fun of(row: PerfRow): PriceGap? = when {

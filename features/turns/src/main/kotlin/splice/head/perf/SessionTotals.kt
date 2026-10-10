@@ -113,7 +113,7 @@ public class SessionTotals(
     public fun add(sessionTag: String, model: String, counters: Map<String, Long>, rowTs: Long) {
         if (sessionTag.isEmpty()) return
         if (!TurnBill.isCounted(counters)) return
-        val usd = price.usd(model, counters)
+        val usd = price.usd(model, counters, rowTs)
         val reopened = synchronized(lock) {
             loadUnderLock()
             dropIdleUnderLock()

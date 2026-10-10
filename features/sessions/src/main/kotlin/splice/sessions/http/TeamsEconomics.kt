@@ -157,7 +157,7 @@ internal class PerfTally(private val cost: TokenCost = TokenCost()) {
         val previousLastAt = lastAt
         if (previousLastAt == null || row.ts >= previousLastAt) lastOutcome = row.outcome
         lastAt = maxOf(previousLastAt ?: row.ts, row.ts)
-        val amount = TurnBill.usd(row.fields, rates(row.model, catalog), cost)
+        val amount = TurnBill.usd(row.fields, rates(row.model, catalog)?.at(row.ts), cost)
         if (amount == null) unpricedTurns += 1 else usd += amount
     }
 

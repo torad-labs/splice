@@ -10,6 +10,10 @@ import splice.core.model.LongContextRates
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
+import splice.core.model.TurnPrice
+import splice.core.perf.PerfKeys
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
 
 class PublishedRatesCatalogTest {
 
@@ -67,5 +71,36 @@ class PublishedRatesCatalogTest {
         val unknown = xai(ModelEntry("grok-9", label = "Grok 9", contextWindow = 500_000))
             .catalogFor(HeadConfig("claude-grok", 4104, "claude-grok--", "grok-9"))
         assertNull(ratesOf(unknown, "grok-9"))
+    }
+
+    @Test
+    fun `a DeepSeek turn is priced at the card for the hour it ran in, peak on weekday mornings UTC`() {
+        val deepseek = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://api.deepseek.com/anthropic",
+            auth = AuthConfig("api-key", env = "DEEPSEEK_API_KEY"),
+            models = listOf(ModelEntry("deepseek-flash", label = "DeepSeek V4.1 Flash", contextWindow = 1_000_000)),
+        )
+        val head = HeadConfig("claude-deepseek", 3107, "claude-deepseek--", "deepseek-flash")
+        val price = TurnPrice(deepseek.catalogFor(head))
+        // A million fresh input tokens and a million output tokens: 0.15 + 0.60 off-peak.
+        val turn = mapOf(
+            PerfKeys.IN_TOKENS to 1_000_000L,
+            PerfKeys.OUT_TOKENS to 1_000_000L,
+            PerfKeys.CACHED_TOKENS to 0L,
+            PerfKeys.CACHE_WRITE_TOKENS to 0L,
+        )
+
+        // Oct 7, 2026 is a Wednesday and Oct 10 a Saturday.
+        fun usdAt(day: Int, hour: Int, minute: Int = 0): Double {
+            val at = ZonedDateTime.of(2026, 10, day, hour, minute, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
+            return price.usd("deepseek-flash", turn, at)!!
+        }
+
+        assertEquals(1.5, usdAt(day = 7, hour = 2), 1e-9, "Wednesday 02:00 UTC is peak")
+        assertEquals(1.5, usdAt(day = 7, hour = 9, minute = 59), 1e-9, "09:59 is peak")
+        assertEquals(0.75, usdAt(day = 7, hour = 4), 1e-9, "04:00 is off-peak")
+        assertEquals(0.75, usdAt(day = 7, hour = 10), 1e-9, "10:00 is off-peak")
+        assertEquals(0.75, usdAt(day = 10, hour = 2), 1e-9, "Saturday is off-peak")
     }
 }

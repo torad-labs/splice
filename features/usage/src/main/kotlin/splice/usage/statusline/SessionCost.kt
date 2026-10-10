@@ -107,10 +107,11 @@ internal class SessionCost(
         return c.models.firstOrNull { c.stripSuffixes(it.id) == key }?.rates
     }
 
-    /** The card [turn] is billed at: its own model's, or [asked]'s for a row that recorded none. */
+    /** The card [turn] is billed at, for the hour it ran in: its own model's, or [asked]'s for a row that
+     *  recorded none. */
     private fun ratesOf(turn: PerfSessionTurn, asked: ModelRates?): ModelRates? {
-        val model = turn.model ?: return asked
-        return ratesFor(model)
+        val card = turn.model?.let(::ratesFor) ?: asked.takeIf { turn.model == null }
+        return card?.at(turn.ts)
     }
 }
 

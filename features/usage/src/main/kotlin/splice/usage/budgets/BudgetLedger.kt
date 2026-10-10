@@ -64,7 +64,7 @@ internal class BudgetLedger(
     }
 
     override fun spent(atMs: Long, model: String, counters: Map<String, Long>) {
-        val usd = measuredCost(model, counters)
+        val usd = measuredCost(model, counters, atMs)
         synchronized(lock) { tallyAt(atMs)?.let { charge(it, usd, counters) } }
         val limit = limit() ?: return
         if (usd == null) noteUnpriced(atMs, model)
@@ -152,12 +152,13 @@ internal class BudgetLedger(
             unread("${window.skipped} historical request records could not be read")
         }
         window.rows.filter { it.ts in dayStart until context.bootMs }
-            .forEach { charge(before, measuredCost(it.facts.model, it.fields), it.fields) }
+            .forEach { charge(before, measuredCost(it.facts.model, it.fields, it.ts), it.fields) }
         return before
     }
 
     /** Budgets enforce reported spend even when a failed stream's whole price is unknown. */
-    private fun measuredCost(model: String?, fields: Map<String, Long>): Double? = price.lowerBoundUsd(model, fields)
+    private fun measuredCost(model: String?, fields: Map<String, Long>, atMs: Long): Double? =
+        price.lowerBoundUsd(model, fields, atMs)
 
     private fun charge(tally: DayTally, usd: Double?, fields: Map<String, Long>) {
         if (TurnBill.fullyReported(fields)) tally.add(usd) else tally.addLowerBound(usd)

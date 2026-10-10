@@ -8,39 +8,45 @@
 #   grok-build-latest is docs.x.ai's alias of grok-4.5.
 # Meta: dev.meta.ai/docs/pricing-rate-limits.
 # Kimi: platform.kimi.ai/docs/pricing/chat-k3 and docs/guide/context-caching (cache write at the 5m TTL); k3-256k is K3.
-# Not here: DeepSeek prices by hour of day, which one card cannot hold; Kimi K2.7 Code publishes no price splice read.
-host	model	input	cache_read	output	cache_write	tier_over	tier_input	tier_cache_read	tier_output	tier_cache_write
-api.anthropic.com	claude-fable-5	10	1	50	12.5					
-api.anthropic.com	claude-fable-5-1	10	0.25	50	12.5					
-api.anthropic.com	claude-opus-5	5	0.5	25	6.25					
-api.anthropic.com	claude-opus-5-5	4	0.2	20	5					
-api.anthropic.com	claude-sonnet-5	2	0.2	10	2.5					
-api.anthropic.com	claude-sonnet-5-5	2	0.1	10	2.5					
-api.anthropic.com	claude-haiku-4-5	1	0.1	5	1.25					
-chatgpt.com	gpt-6-astra	10	1	50	12.5	272000	20	2	75	25
-chatgpt.com	gpt-6.1-sol	2	0.1	10	2.5	272000	4	0.2	15	5
-chatgpt.com	gpt-6-sol	2	0.2	10	2.5	272000	4	0.4	15	5
-chatgpt.com	gpt-6-luna	0.1	0.01	0.5	0.125	272000	0.2	0.02	0.75	0.25
-chatgpt.com	gpt-5.6-sol	4	0.4	20	5	272000	8	0.8	30	10
-chatgpt.com	gpt-5.6-terra	2	0.2	12	2.5	272000	4	0.4	18	5
-chatgpt.com	gpt-5.6-luna	0.2	0.02	1.2	0.25	272000	0.4	0.04	1.8	0.5
-api.openai.com	gpt-6-astra	10	1	50	12.5	272000	20	2	75	25
-api.openai.com	gpt-6.1-sol	2	0.1	10	2.5	272000	4	0.2	15	5
-api.openai.com	gpt-6-sol	2	0.2	10	2.5	272000	4	0.4	15	5
-api.openai.com	gpt-6-luna	0.1	0.01	0.5	0.125	272000	0.2	0.02	0.75	0.25
-api.openai.com	gpt-5.6-sol	4	0.4	20	5	272000	8	0.8	30	10
-api.openai.com	gpt-5.6-terra	2	0.2	12	2.5	272000	4	0.4	18	5
-api.openai.com	gpt-5.6-luna	0.2	0.02	1.2	0.25	272000	0.4	0.04	1.8	0.5
-api.x.ai	grok-4.7	2	0.5	6		199999	4	1	12	
-api.x.ai	grok-4.6	2	0.5	6		199999	4	1	12	
-api.x.ai	grok-4.5	2	0.3	6		199999	4	0.6	12	
-api.x.ai	grok-build-latest	2	0.3	6		199999	4	0.6	12	
-api.x.ai	grok-4.3	1.25	0.2	2.5		199999	2.5	0.4	5	
-api.x.ai	grok-build-0.1	1	0.2	2		199999	2	0.4	4	
-api.meta.ai	muse-spark-1.3	1.25	0.15	4.25						
-api.meta.ai	muse-spark-1.2	1.25	0.15	4.25						
-api.meta.ai	muse-spark-1.1	1.25	0.15	4.25						
-api.meta.ai	muse-spark-1.3-contributor	0.1	0.002	0.2						
-api.meta.ai	muse-spark-1.2-contributor	0.1	0.002	0.2						
-api.kimi.com	k3	3	0.3	15	3					
-api.kimi.com	k3-256k	3	0.3	15	3					
+# DeepSeek: api-docs.deepseek.com/quick_start/pricing. The row is the off-peak card; peak bills peak_factor times it
+#   in the UTC hours peak_hours_utc names (end exclusive), on peak_days (weekdays: Monday to Friday; empty: every day).
+#   deepseek-v4-flash is the legacy name DeepSeek still accepts and bills at the Flash price.
+# Not here: Kimi K2.7 Code publishes no price splice read.
+host	model	input	cache_read	output	cache_write	tier_over	tier_input	tier_cache_read	tier_output	tier_cache_write	peak_factor	peak_hours_utc	peak_days
+api.anthropic.com	claude-fable-5	10	1	50	12.5								
+api.anthropic.com	claude-fable-5-1	10	0.25	50	12.5								
+api.anthropic.com	claude-opus-5	5	0.5	25	6.25								
+api.anthropic.com	claude-opus-5-5	4	0.2	20	5								
+api.anthropic.com	claude-sonnet-5	2	0.2	10	2.5								
+api.anthropic.com	claude-sonnet-5-5	2	0.1	10	2.5								
+api.anthropic.com	claude-haiku-4-5	1	0.1	5	1.25								
+chatgpt.com	gpt-6-astra	10	1	50	12.5	272000	20	2	75	25			
+chatgpt.com	gpt-6.1-sol	2	0.1	10	2.5	272000	4	0.2	15	5			
+chatgpt.com	gpt-6-sol	2	0.2	10	2.5	272000	4	0.4	15	5			
+chatgpt.com	gpt-6-luna	0.1	0.01	0.5	0.125	272000	0.2	0.02	0.75	0.25			
+chatgpt.com	gpt-5.6-sol	4	0.4	20	5	272000	8	0.8	30	10			
+chatgpt.com	gpt-5.6-terra	2	0.2	12	2.5	272000	4	0.4	18	5			
+chatgpt.com	gpt-5.6-luna	0.2	0.02	1.2	0.25	272000	0.4	0.04	1.8	0.5			
+api.openai.com	gpt-6-astra	10	1	50	12.5	272000	20	2	75	25			
+api.openai.com	gpt-6.1-sol	2	0.1	10	2.5	272000	4	0.2	15	5			
+api.openai.com	gpt-6-sol	2	0.2	10	2.5	272000	4	0.4	15	5			
+api.openai.com	gpt-6-luna	0.1	0.01	0.5	0.125	272000	0.2	0.02	0.75	0.25			
+api.openai.com	gpt-5.6-sol	4	0.4	20	5	272000	8	0.8	30	10			
+api.openai.com	gpt-5.6-terra	2	0.2	12	2.5	272000	4	0.4	18	5			
+api.openai.com	gpt-5.6-luna	0.2	0.02	1.2	0.25	272000	0.4	0.04	1.8	0.5			
+api.x.ai	grok-4.7	2	0.5	6		199999	4	1	12				
+api.x.ai	grok-4.6	2	0.5	6		199999	4	1	12				
+api.x.ai	grok-4.5	2	0.3	6		199999	4	0.6	12				
+api.x.ai	grok-build-latest	2	0.3	6		199999	4	0.6	12				
+api.x.ai	grok-4.3	1.25	0.2	2.5		199999	2.5	0.4	5				
+api.x.ai	grok-build-0.1	1	0.2	2		199999	2	0.4	4				
+api.meta.ai	muse-spark-1.3	1.25	0.15	4.25									
+api.meta.ai	muse-spark-1.2	1.25	0.15	4.25									
+api.meta.ai	muse-spark-1.1	1.25	0.15	4.25									
+api.meta.ai	muse-spark-1.3-contributor	0.1	0.002	0.2									
+api.meta.ai	muse-spark-1.2-contributor	0.1	0.002	0.2									
+api.kimi.com	k3	3	0.3	15	3								
+api.kimi.com	k3-256k	3	0.3	15	3								
+api.deepseek.com	deepseek-flash	0.15	0.003	0.6							2	1-4,6-10	weekdays
+api.deepseek.com	deepseek-v4-pro	0.66	0.022	1.98							2	1-4,6-10	weekdays
+api.deepseek.com	deepseek-v4-flash	0.15	0.003	0.6							2	1-4,6-10	weekdays

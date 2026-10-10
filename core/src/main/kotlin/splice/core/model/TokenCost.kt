@@ -13,10 +13,10 @@
 // cache-WRITE bucket is carried where the dialect reports one — Anthropic-shaped wires do, and those
 // tokens bill at a premium rather than at the cache-miss rate.
 //
-// PEAK vs OFF-PEAK. DeepSeek publishes two cards for the same model, and this schema carries ONE,
-// deliberately: averaging them would invent a third price DeepSeek does not charge. Declare the card
-// you want reported. The DeepSeek profile declares OFF-PEAK and keeps the peak numbers beside it in
-// a comment; peak is exactly 2x off-peak, which is the discount DeepSeek documents.
+// PEAK vs OFF-PEAK. DeepSeek publishes two cards for the same model: peak is exactly 2x off-peak in the
+// hours it names. Averaging them would invent a third price DeepSeek does not charge, so since Oct 10,
+// 2026 the shipped card is the off-peak one with its [PeakHours], and each turn is priced at the card
+// for the hour it ran in ([ModelRates.at]). A card written in TOML carries no peak hours: it is one price.
 //
 // LONG-CONTEXT TIERS (V4-240). OpenAI and xAI publish a second, higher card for a request whose
 // input is over a size, and bill EVERY token of that request at it: gpt-6-sol past 272K input tokens,
@@ -42,7 +42,8 @@ import kotlinx.serialization.encoding.Encoder
  *
  *  [cacheWrite] null means the vendor reports no separate cache-write bucket, so those tokens bill
  *  at [input] — the conservative side, since a cache write never costs less than a cache miss.
- *  [longContext] null means one card at every request size. The TOML spelling is [ModelRatesToml]'s. */
+ *  [longContext] null means one card at every request size, and [peak] null one card at every
+ *  hour. The TOML spelling is [ModelRatesToml]'s, and it has no peak hours. */
 @Serializable(with = ModelRatesToml::class)
 public data class ModelRates(
     val input: Double,
@@ -50,7 +51,30 @@ public data class ModelRates(
     val output: Double,
     val cacheWrite: Double? = null,
     val longContext: LongContextRates? = null,
-)
+    val peak: PeakHours? = null,
+) {
+    /** The card a turn that ran at [atMs] is billed at: [peak]'s multiple of this one inside its hours, else this
+     *  one. A turn with no known time is billed at this card. */
+    public fun at(atMs: Long?): ModelRates {
+        val hours = peak ?: return this
+        if (atMs == null || !hours.covers(atMs)) return this
+        val f = hours.factor
+        return ModelRates(
+            input = input * f,
+            cacheRead = cacheRead * f,
+            output = output * f,
+            cacheWrite = cacheWrite?.times(f),
+            longContext = longContext?.let {
+                it.copy(
+                    input = it.input * f,
+                    cacheRead = it.cacheRead * f,
+                    output = it.output * f,
+                    cacheWrite = it.cacheWrite?.times(f),
+                )
+            },
+        )
+    }
+}
 
 /** V4-240: the vendor's card for a request whose input is MORE than [overInputTokens] tokens,
  *  counting fresh input, cache reads and cache writes alike. It bills the whole request, output

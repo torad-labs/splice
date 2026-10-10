@@ -52,6 +52,9 @@ internal object PublishedRates {
                 cacheWrite = row.optional("tier_cache_write"),
             )
         },
+        peak = row.optional("peak_factor")?.let { factor ->
+            PeakHours(factor, row.hours("peak_hours_utc"), row.days("peak_days"))
+        },
     )
 
     /** One line of the file, its cells by column name. An empty cell is a price the vendor does not publish. */
@@ -59,6 +62,19 @@ internal object PublishedRates {
         fun optional(column: String): Double? = cells.getValue(column).takeIf(String::isNotEmpty)?.toDouble()
 
         fun price(column: String): Double = checkNotNull(optional(column)) { INVALID }
+
+        /** `1-4,6-10`: each span's end is exclusive, so DeepSeek's 01:00 to 04:00 is `1-4`. */
+        fun hours(column: String): List<IntRange> = cells.getValue(column).split(',').map { span ->
+            val (from, to) = span.split('-').map(String::toInt)
+            from until to
+        }
+
+        /** `weekdays` is Monday to Friday; an empty cell is every day. */
+        fun days(column: String): Boolean = when (cells.getValue(column)) {
+            WEEKDAYS -> true
+            "" -> false
+            else -> error(INVALID)
+        }
     }
 
     // why: the file sits at the classpath root beside compaction-reserve.tsv, the other table core ships.
@@ -66,11 +82,14 @@ internal object PublishedRates {
 
     // why: the header names every column a row is read by, so a renamed or reordered column fails loudly.
     private const val HEADER = "host\tmodel\tinput\tcache_read\toutput\tcache_write\t" +
-        "tier_over\ttier_input\ttier_cache_read\ttier_output\ttier_cache_write"
+        "tier_over\ttier_input\ttier_cache_read\ttier_output\ttier_cache_write\tpeak_factor\tpeak_hours_utc\tpeak_days"
 
     // why: one sentence for a row with a missing cell or a price that is missing where one is required.
     private const val INVALID = "invalid $RESOURCE row"
 
     // why: lines that cite each vendor's source start with this and are not rows.
     private const val SOURCE_LINE = "#"
+
+    // why: the one peak_days word the file uses, DeepSeek's Monday to Friday.
+    private const val WEEKDAYS = "weekdays"
 }

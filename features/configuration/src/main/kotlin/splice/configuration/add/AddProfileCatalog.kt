@@ -237,25 +237,20 @@ internal class AddProfileCatalog {
             labels = AddLabels(
                 summary = "DeepSeek over its Anthropic-format endpoint (API key)",
             ),
-            // V4-37 RATES: DeepSeek publishes peak and OFF-PEAK cards; we declare OFF-PEAK, because
-            // averaging the two would invent a price DeepSeek does not charge (see TokenCost.kt).
-            // Peak is exactly 2x these, kept here so the choice is visible, not buried:
-            //   flash   peak 0.30 / 0.006 / 1.20      pro  peak 1.32 / 0.044 / 3.96
-            // No cache_write bucket — this endpoint reports none, so those tokens bill at input.
+            // RATES (Oct 10, 2026): none written. splice ships DeepSeek's off-peak card with its peak hours
+            // (published-rates.tsv), and a card written here would win over it and price every hour off-peak.
             models = listOf(
                 AddModel(
                     "deepseek-flash",
                     "DeepSeek V4.1 Flash",
                     WINDOW_1M,
                     slots = listOf("opus"),
-                    rates = ModelRates(input = 0.15, cacheRead = 0.003, output = 0.60),
                 ),
                 AddModel(
                     "deepseek-v4-pro",
                     "DeepSeek V4 Pro",
                     WINDOW_1M,
                     slots = listOf("sonnet"),
-                    rates = ModelRates(input = 0.66, cacheRead = 0.022, output = 1.98),
                 ),
             ),
         ),

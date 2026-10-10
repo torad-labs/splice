@@ -156,9 +156,10 @@ public class EconomicsStore(
 
     /** Fold one finished turn into its hour. Memory-only plus an enqueue — never blocks the turn. */
     public fun record(turn: TurnEconomics) {
-        val hour = clock() / HOUR_MS * HOUR_MS
+        val now = clock()
+        val hour = now / HOUR_MS * HOUR_MS
         val localStep = turn.localStep
-        val usd = price.usd(turn.model, turn.counters())
+        val usd = price.usd(turn.model, turn.counters(), now)
         synchronized(lock) {
             loadUnderLock()
             val b = buckets[hour] ?: EconomicsBucket(hour)

@@ -298,7 +298,7 @@ public class PerfStats(
         if (sessionId.isEmpty()) return PerfSessionTail(emptyList(), null)
         val rows = tailRows()
         val turns = rows.filter { row -> belongsTo(row, sessionId) }
-            .map { row -> PerfSessionTurn(modelOf(row), numericFields(row)) }
+            .map { row -> PerfSessionTurn(modelOf(row), numericFields(row), tsOf(row)) }
         val tailStart = if (historyBeyondTail()) rows.mapNotNull { tsOf(it) }.minOrNull() else null
         return PerfSessionTail(turns, tailStart)
     }

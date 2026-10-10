@@ -6,8 +6,8 @@
 package splice.core.perf
 
 /** One turn as its perf row recorded it: the [model] it ran on (null on a legacy or torn row that
- *  carries none) and the row's numeric fields. */
-public data class PerfSessionTurn(val model: String?, val counters: Map<String, Long>)
+ *  carries none), the row's numeric fields, and its [ts], which prices a vendor that bills by the hour. */
+public data class PerfSessionTurn(val model: String?, val counters: Map<String, Long>, val ts: Long? = null)
 
 /** One session's turns from ONE read of the tail, newest last. [tailStartMs] is the `ts` of the
  *  oldest row that read held, any session's, and only when the read did NOT reach the start of the

@@ -253,6 +253,16 @@ class MuseAuthProviderFixesTest {
         assertEquals("persisted-key", (auth.credentials() as Credentials.Bearer).token)
     }
 
+    // Oct 10, 2026: a granted mint with no subs_usage read as "nothing asked", so Muse's bars froze with no line.
+    @Test
+    fun `a granted mint that carries no usage answers an empty usage, never nothing`(@TempDir tempDir: Path) = runTest {
+        val auth = provider(authFile(tempDir)) { _, _ ->
+            val bare = Json.parseToJsonElement("""{"api_key":"k","is_subs_active":true}""").jsonObject
+            MuseMintAttempt.Granted(MuseSubscriptionKey(apiKey = "k", fields = bare))
+        }
+        assertEquals(JsonObject(emptyMap()), auth.usageFields())
+    }
+
     @Test
     fun `usageFields obeys an existing rate hold with no POST`(@TempDir tempDir: Path) = runTest {
         val file = authFile(tempDir)

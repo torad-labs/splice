@@ -97,7 +97,9 @@ public class MuseAuthProvider(
     /**
      * Poller-only mint for `subs_usage`. Does not persist and does not take the credential lock.
      * Obeys the same holds as [refresh]: a live hold is a null with no POST; 429 and inactive
-     * verdicts record those holds. Returns only the subs_usage object.
+     * verdicts record those holds. Returns only the subs_usage object, and an empty object when a granted mint
+     * carries none: Muse answered and has no usage for this account, which clears the bars (Oct 10, 2026), where a
+     * null is only "nothing was asked".
      */
     public suspend fun usageFields(): JsonObject? {
         val snapshot = store.read() ?: return null
@@ -152,7 +154,7 @@ public class MuseAuthProvider(
     ): JsonObject? {
         val attempt = attemptFor(accessToken, snapshot) ?: return null
         return when (attempt) {
-            is MuseMintAttempt.Granted -> attempt.key.fields["subs_usage"] as? JsonObject
+            is MuseMintAttempt.Granted -> attempt.key.fields["subs_usage"] as? JsonObject ?: JsonObject(emptyMap())
             is MuseMintAttempt.InvalidAccountToken -> {
                 invalidAccountToken(accessToken, allowChangedTokenRetry = false)
                 null

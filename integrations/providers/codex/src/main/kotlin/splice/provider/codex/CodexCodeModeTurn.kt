@@ -54,6 +54,9 @@ internal data class CodeModeRunContext(
     var scripts: Int = 0
 }
 
+/** The client-facing [sink] a round streams to and the [post] that sends its request upstream. */
+internal data class CodeModeRoundLink(val sink: WireSink, val post: CodeModeUpstreamPost)
+
 /**
  * History that no longer lines up with a record is DEGRADED, never refused. The status quo before
  * code mode was "send the history the client sent", and the client's history is always a valid one:

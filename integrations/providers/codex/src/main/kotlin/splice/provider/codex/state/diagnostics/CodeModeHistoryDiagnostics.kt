@@ -66,6 +66,10 @@ internal data class CodeModeNativeEvidence(
             "native_expected_occurrences=$expectedOccurrences native_actual_occurrences=$actualOccurrences"
 }
 
+/** Only fixed categories and a flag: where the witness came from, the kind of item it names, and whether it
+ *  resolved in the history. */
+internal data class CodeModeNativeWitness(val source: String, val kind: String, val resolved: Boolean)
+
 internal object CodeModeNativeEvidenceCapture {
     fun capture(
         index: CodeModeHistoryIndex,

@@ -137,6 +137,43 @@ internal data class CodeModeRecord(
     fun snapshot(): CodeModeRecordSnapshot = CodeModeRecordSnapshots.of(this)
 }
 
+/** The model's exec call that started the script: its raw item, call id and [source], and the [baseline] it sat on. */
+internal data class CodeModeOrigin(
+    var outer: JsonObject,
+    val outerCallId: String,
+    var source: String,
+    val baseline: CodeModeBaseline,
+)
+
+/** What the client's input looked like when the record was created: the whole input and its logical (client-visible)
+ *  part, each counted and digested, and the metadata version that wrote them. */
+internal data class CodeModeBaseline(
+    val inputCount: Int,
+    val inputDigest: String,
+    val logicalCount: Int,
+    val logicalDigest: String,
+    val metadataVersion: Int,
+)
+
+/** What the script is waiting on and how far it has run: its client calls still [pending], the [output] it has
+ *  produced, the calls and rounds it has used, and when and under which request digest it last moved. */
+internal data class CodeModeProgress(
+    val pending: MutableList<CodeModePending> = mutableListOf(),
+    var output: String? = null,
+    var totalCalls: Int = 0,
+    var rounds: Int = 0,
+    var updatedAt: Long,
+    var lastDigest: String,
+)
+
+/** The model's own items a record carries: the native [segments] placed in the history, and the [continuity]
+ *  items with their native [replay] that the next turn repeats. */
+internal data class CodeModeNativeContinuity(
+    var segments: List<CodeModeNativeSegment>,
+    var continuity: List<JsonElement>,
+    var replay: List<CodeModeNativeSegment>,
+)
+
 internal data class CodeModeAcceptedResult(val result: CodeModeResult, val media: List<JsonElement>?)
 
 @Serializable

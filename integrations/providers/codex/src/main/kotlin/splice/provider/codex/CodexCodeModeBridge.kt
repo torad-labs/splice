@@ -2,6 +2,7 @@
 package splice.provider.codex
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.GatewayCustomCall
 import splice.core.util.ElapsedClock
@@ -189,3 +190,13 @@ public class CodexCodeModeBridge(
         registry.timed.finish { onHeadStop() }
     }
 }
+
+/** V4-179: the two renderings of a turn's code-mode results that the script itself never sees. */
+public data class CodeModeResultRendering(
+    /** Per code-mode result id, the follow-up wire items its images render to (the ordinary dialect policy,
+     *  rendered once by CodexCodeModeTurnBuilder). The record persists them and the history replays them. */
+    val media: Map<String, List<JsonElement>> = emptyMap(),
+    /** The same results rendered with the V4-178 markers, for replay identity against a record the previous
+     *  daemon wrote (see CodexCodeModeValidation.conflicts). */
+    val legacy: List<CodeModeResult> = emptyList(),
+)

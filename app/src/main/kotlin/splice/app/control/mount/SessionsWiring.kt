@@ -120,7 +120,8 @@ internal class SessionsWiring(
     /** The listing Sessions and Requests read: the registry, with the sessions Claude Code already forgot kept as
      *  ended under the one history window (SeenSessions). */
     private val listed = sessions?.let {
-        val dir = StatePaths().stateDir.resolve(SEEN_SESSIONS_DIR)
+        // the daemon's own state root, never the process default: a daemon on another root keeps its record there
+        val dir = config.statePaths.stateDir.resolve(SEEN_SESSIONS_DIR)
         RecordedSessions(it, SeenSessions(dir, KeptHistory { config.getConfig().historyWindow }))
     }
     val routes: SessionsRoutes? = listed?.let {

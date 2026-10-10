@@ -335,6 +335,7 @@ internal class SseEmitter(
  *  are never remapped (see above); INVALID_REQUEST and AUTHENTICATION are never remapped (splice is
  *  telling the client something only the operator can change); and only the WIRE TYPE moves — the
  *  message still comes from FailureRenderer and telemetry still records the REAL type. */
+
 /** Has any content frame reached the client this turn — the one fact the pre-content rule turns on.
  *  Named for its role at the seam (wall kt-no-lambda-seam); the emitter asks it per error frame. */
 internal fun interface ContentReached {

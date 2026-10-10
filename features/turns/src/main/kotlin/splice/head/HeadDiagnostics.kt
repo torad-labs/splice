@@ -16,6 +16,7 @@ import kotlinx.serialization.json.put
 import splice.core.GATEWAY_VERSION
 import splice.core.head.GateCounts
 import splice.core.head.GateHealth
+import splice.core.head.GateWatchdog
 import splice.core.head.HeadHealth
 import splice.core.model.DiscoveryRow
 import splice.core.util.JsonWire
@@ -58,8 +59,16 @@ internal class HeadDiagnostics(
                     avgWaitMs = gateSnap.traffic.avgWaitMs,
                 ),
                 live = gateSnap.live,
-                // restartRequired (Knob.STREAM_IDLE_MS): the budget the head was built with is the one in force.
-                streamIdleMs = provider.watchdog.streamIdle.inWholeMilliseconds,
+                // restartRequired (Knob.STREAM_IDLE_MS): the budget the head was built with is the one in
+                // force. A tier with no limit is INFINITE here and crosses as null rather than as the
+                // Long.MAX_VALUE it converts to, because a reader handed that number draws a real ceiling.
+                watchdog = GateWatchdog(
+                    streamIdleMs = provider.watchdog.streamIdle.inWholeMilliseconds,
+                    firstByteTimeoutMs = provider.watchdog.firstByteTimeout
+                        .takeIf { it.isFinite() }?.inWholeMilliseconds,
+                    stallReanchorMs = provider.watchdog.stallReanchor
+                        .takeIf { it.isFinite() }?.inWholeMilliseconds,
+                ),
             ),
         )
     }

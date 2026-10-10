@@ -1,6 +1,7 @@
 // NEW: V4-319 — the console's reads of a head's live turns, and its stop.
 //
-// GET  /api/heads/{head}/turns/live      -> {head, turns: [{id, session, model, compact, age_ms, idle_ms, stopped}]}
+// GET  /api/heads/{head}/turns/live      -> {head, turns: [{id, session, model, compact, age_ms,
+//                                           idle_ms, seen_output, stopped}]}
 // POST /api/heads/{head}/turns/{id}/stop -> {stopped: true, head, session}
 //
 // Read in process from the registry HeadServerFactory fills as it builds each head (LiveTurnsByHead),
@@ -39,7 +40,8 @@ public class LiveTurnsRoutes(private val heads: TurnsHeadLookup, private val reg
                             put("model", turn.model)
                             put("compact", turn.compact)
                             put("age_ms", turn.ageMs)
-                            put("idle_ms", turn.idleMs)
+                            put("idle_ms", turn.silence.idleMs)
+                            put("seen_output", turn.silence.seenOutput)
                             put("stopped", turn.stopped)
                         },
                     )

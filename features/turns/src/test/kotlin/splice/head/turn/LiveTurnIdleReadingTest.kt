@@ -6,6 +6,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -90,6 +91,34 @@ class LiveTurnIdleReadingTest {
         }
     }
 
+    /** THE ROUTE SAYS WHICH LIMIT ITS IDLE IS MEASURED AGAINST, because idle alone does not say. These
+     *  two readings carry the SAME `idle_ms` and mean opposite things: the first is a prefill, which the
+     *  watchdog holds against firstByteTimeout and which is legitimately silent for minutes; the second
+     *  is a turn that answered and stopped, held against the stall tiers. A console told only the number
+     *  has to give both the same word.
+     *
+     *  Headers are deliberately on the prefill side. `touch()` is what upstream headers call, and it
+     *  moves the GATE to its streaming phase while the client has still seen nothing — so a reading
+     *  that took the gate's phase for this would push a turn into the stall tiers before its first byte
+     *  of content. `seen_output` follows `received()` instead, the same signal `idle_ms` follows. */
+    @Test
+    fun `the route says whether the provider has answered, and headers alone have not`() {
+        val prefill = admit()
+        try {
+            now += 400L
+            prefill.touch()
+            now += 100L
+            assertEquals(false, reading().getValue("seen_output").jsonPrimitive.boolean)
+            prefill.received()
+            now += 500L
+            val answered = reading()
+            assertEquals(true, answered.getValue("seen_output").jsonPrimitive.boolean)
+            assertEquals(500L, answered.getValue("idle_ms").jsonPrimitive.long, "quiet since that byte")
+        } finally {
+            prefill.release()
+        }
+    }
+
     @Test
     fun `a turn that streamed then went silent accumulates idle while age keeps growing`() {
         val slot = admit()
@@ -131,7 +160,7 @@ class LiveTurnIdleReadingTest {
         try {
             now += 500L
             first.received()
-            assertEquals(listOf(0L, 500L), turns.list().map { it.idleMs })
+            assertEquals(listOf(0L, 500L), turns.list().map { it.silence.idleMs })
             assertEquals(listOf(700L, 500L), turns.list().map { it.ageMs })
         } finally {
             first.release()

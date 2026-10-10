@@ -183,14 +183,14 @@ class LiveTurnProviderActivityTest {
             body.writeStringUtf8(": provider heartbeat")
             runCurrent()
             assertTrue(drive.perfCounter(PerfKeys.SSE_BYTES_IN) > 0)
-            assertEquals(0L, rig.turns.list().single().idleMs)
+            assertEquals(0L, rig.turns.list().single().silence.idleMs)
             rig.now += 100L
             body.writeStringUtf8("\n\n")
             runCurrent()
-            assertEquals(0L, rig.turns.list().single().idleMs)
+            assertEquals(0L, rig.turns.list().single().silence.idleMs)
             rig.now += 300L
             runCurrent()
-            assertEquals(300L, rig.turns.list().single().idleMs)
+            assertEquals(300L, rig.turns.list().single().silence.idleMs)
             assertEquals(900L, rig.turns.list().single().ageMs)
             assertEquals(0L, drive.perfCounter(PerfKeys.EVENTS_IN), "no parsed event exists to reset the reading")
         } finally {
@@ -210,14 +210,14 @@ class LiveTurnProviderActivityTest {
             repeat(2) {
                 rig.now += 500L
                 emit(Json.parseToJsonElement("""{"type":"provider.pulse"}""").jsonObject)
-                assertEquals(0L, rig.turns.list().single().idleMs)
+                assertEquals(0L, rig.turns.list().single().silence.idleMs)
             }
         }
         try {
             WsRoundDrive(rig.provider, ZeroEventClassifier { _, outcome, _, _ -> outcome })
                 .drive(rig.inputs(turn, this), Terminals, events)
             rig.now += 25L
-            assertEquals(25L, rig.turns.list().single().idleMs)
+            assertEquals(25L, rig.turns.list().single().silence.idleMs)
             assertEquals(1_025L, rig.turns.list().single().ageMs)
         } finally {
             turn.slot.release()
@@ -237,7 +237,7 @@ class LiveTurnProviderActivityTest {
                 .drive(rig.inputs(turn, this), Terminals, events)
             assertTrue(outcome is WsRoundResult.NeedsSse)
             rig.now += 25L
-            assertEquals(25L, rig.turns.list().single().idleMs)
+            assertEquals(25L, rig.turns.list().single().silence.idleMs)
         } finally {
             turn.slot.release()
         }

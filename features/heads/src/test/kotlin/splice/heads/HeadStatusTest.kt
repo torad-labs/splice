@@ -7,11 +7,13 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.core.head.GateCounts
 import splice.core.head.GateHealth
 import splice.core.head.GatePhase
 import splice.core.head.GateSlot
+import splice.core.head.GateWatchdog
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 
@@ -71,7 +73,7 @@ class HeadStatusTest {
             limit = 4,
             counts = GateCounts(acquired = 9, released = 7, waited = 3, avgWaitMs = 120),
             live = live,
-            streamIdleMs = 90_000,
+            watchdog = GateWatchdog(streamIdleMs = 90_000, firstByteTimeoutMs = 30_000),
         ),
     )
 
@@ -99,6 +101,19 @@ class HeadStatusTest {
 
         val live = gate["live"]!!.jsonArray.map { row -> row.jsonObject.mapValues { it.value.jsonPrimitive.content } }
         assertEquals(expected, live)
+    }
+
+    /** A LIMIT THE HEAD DOES NOT HAVE IS ABSENT, NOT A NUMBER. The re-anchor tier is off on every head
+     *  not measured to accept a continuation, which is most of them, and the first-byte tier is off for
+     *  a compaction. Both are INFINITE on the budget, and INFINITE in milliseconds is Long.MAX_VALUE —
+     *  a console given that draws a ceiling 292 million years out and reads the turn as having all the
+     *  time in the world. So an absent tier is an absent key, and the reader asks rather than divides. */
+    @Test
+    fun `a tier the head has no limit for is left out, and one it has is published`() {
+        val gate = gateOf(measured(emptyList()))
+
+        assertEquals(30_000L, gate["first_byte_timeout_ms"]!!.jsonPrimitive.content.toLong())
+        assertNull(gate["stall_reanchor_ms"], "this head arms no re-anchor tier, so it claims no limit")
     }
 
     @Test

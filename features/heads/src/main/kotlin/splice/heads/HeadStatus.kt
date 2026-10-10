@@ -8,8 +8,8 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
 import splice.core.GATEWAY_VERSION
+import splice.core.head.GateHealth
 import splice.core.head.GatePhase
 import splice.core.head.Head
 
@@ -30,39 +30,51 @@ public object HeadStatus {
         put("versionMatch", if (h.running) true else null as Boolean?)
         put("mode", null as String?)
         val gate = h.gate
-        putJsonObject("gate") {
-            put("inflight", gate.inflight)
-            put("queued", gate.queued)
-            if (gate.limit <= 0) put("max", "unlimited") else put("max", gate.limit)
-            // V4-213: the gate's own measurements. These were literals (0 and []) while the
-            // in-process gate kept no counts, so the console's in-flight list was always empty.
-            put("acquired", gate.counts.acquired)
-            put("released", gate.counts.released)
-            put("waited", gate.counts.waited)
-            put("avg_wait_ms", gate.counts.avgWaitMs)
-            putJsonArray("live") {
-                gate.live.forEach { slot ->
-                    addJsonObject {
-                        put("label", slot.label)
-                        put("compact", slot.compact)
-                        put(
-                            "phase",
-                            when (slot.phase) {
-                                GatePhase.CONNECT -> "connect"
-                                GatePhase.STREAMING -> "streaming"
-                            },
-                        )
-                        put("age_ms", slot.ageMs)
-                        put("idle_ms", slot.idleMs)
-                        slot.turnId?.let { put("turn_id", it) }
-                    }
-                }
-            }
-            put("stream_idle_ms", gate.streamIdleMs)
-        }
+        put("gate", gateJson(gate))
         put("maxInflight", if (gate.limit <= 0) null else gate.limit)
         put("health", healthJson(head, h))
         putJsonArray("pids") {}
+    }
+
+    /** The gate's own reading: what it holds, what it has held, and the limits that reading is judged
+     *  against. Its own function because it is its own projection — the head's identity and liveness
+     *  above do not change when the gate learns to report one more thing, and folding the two together
+     *  made one function complex enough for the wall to stop it. */
+    private fun gateJson(gate: GateHealth): JsonObject = buildJsonObject {
+        put("inflight", gate.inflight)
+        put("queued", gate.queued)
+        if (gate.limit <= 0) put("max", "unlimited") else put("max", gate.limit)
+        // V4-213: the gate's own measurements. These were literals (0 and []) while the
+        // in-process gate kept no counts, so the console's in-flight list was always empty.
+        put("acquired", gate.counts.acquired)
+        put("released", gate.counts.released)
+        put("waited", gate.counts.waited)
+        put("avg_wait_ms", gate.counts.avgWaitMs)
+        putJsonArray("live") {
+            gate.live.forEach { slot ->
+                addJsonObject {
+                    put("label", slot.label)
+                    put("compact", slot.compact)
+                    put(
+                        "phase",
+                        when (slot.phase) {
+                            GatePhase.CONNECT -> "connect"
+                            GatePhase.STREAMING -> "streaming"
+                        },
+                    )
+                    put("age_ms", slot.ageMs)
+                    put("idle_ms", slot.idleMs)
+                    slot.turnId?.let { put("turn_id", it) }
+                }
+            }
+        }
+        // The three limits a live slot's idle is read against. The two optional tiers are ABSENT
+        // rather than zero or huge when the head has no limit there, because a console draws a
+        // number it is given: zero would read as "no time left" and INFINITE's milliseconds as a
+        // ceiling 292 million years away. Absent is the only honest spelling of "no limit here".
+        put("stream_idle_ms", gate.watchdog.streamIdleMs)
+        gate.watchdog.firstByteTimeoutMs?.let { put("first_byte_timeout_ms", it) }
+        gate.watchdog.stallReanchorMs?.let { put("stall_reanchor_ms", it) }
     }
 
     private fun providerAnswerJson(head: Head): JsonElement {

@@ -84,8 +84,28 @@ public data class GateHealth(
     val limit: Int = 0,
     val counts: GateCounts = GateCounts(),
     val live: List<GateSlot> = emptyList(),
-    /** The head's configured stream-idle limit, the ceiling a live slot's idle is read against. */
+    /** The head's configured watchdog limits, the ceilings a live slot's idle is read against. */
+    val watchdog: GateWatchdog = GateWatchdog(),
+)
+
+/** The three limits a live slot's idle is measured against, as the console reads them.
+ *
+ *  ONE BUNDLE BECAUSE THEY ARE ONE FACT, and the console needs all of them: WHICH limit applies to a
+ *  given turn depends on the turn (see [splice.core.turn.WatchdogBudget] and TurnSilence.seenOutput), so
+ *  a reader handed only one of them cannot tell a prefill that is legitimately silent for minutes from
+ *  a round that has stopped. Handing over the one the turn happens to be measured against instead
+ *  would move that judgment out of the reader and into whoever assembled the snapshot.
+ *
+ *  [firstByteTimeoutMs] and [stallReanchorMs] are null when that tier has NO limit, which is ordinary
+ *  rather than exotic: the re-anchor tier is off on every head not measured to accept a continuation,
+ *  and a compaction has no pre-output tier at all. Null rather than the number the INFINITE they come
+ *  from converts to, because that number is [Long.MAX_VALUE] and a console handed it draws a limit of
+ *  292 million years. An absent limit is nothing, not a very large one. */
+public data class GateWatchdog(
+    /** The hard floor for a provider that never arms the re-anchor tier: breaching it ends the round. */
     val streamIdleMs: Long = 0,
+    val firstByteTimeoutMs: Long? = null,
+    val stallReanchorMs: Long? = null,
 )
 
 /** What the gate has admitted and held since the head started. */

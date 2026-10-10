@@ -269,4 +269,42 @@ class LiveTurnsTest {
         anonymous.release()
         assertEquals(emptySet<String>(), byHead.sessions())
     }
+
+    /** THE ARM THAT MAKES idleMs READABLE AT ALL. Two turns gone quiet for exactly the same time, one
+     *  that has never heard from the provider and one that answered first. Their idleMs is identical to
+     *  the millisecond, which is the whole problem: the watchdog holds the first against
+     *  firstByteTimeout, where two minutes of silence is a model thinking, and the second against the
+     *  stall tiers, where the same two minutes is a model that stopped. A console reading idle alone
+     *  has to give both the same word, and either word is wrong for one of them. */
+    @Test
+    fun `two turns silent for the same time are told apart by whether the provider has answered`() {
+        val waiting = slot()
+        turns.admitted(waiting, meta("sess-prefill"), hash("go"))
+        val answering = slot()
+        turns.admitted(answering, meta("sess-streaming"), hash("go"))
+        answering.received()
+        now += 120_000
+
+        val listed = turns.list().associateBy { it.session }
+
+        assertEquals(120_000L, listed.getValue("sess-prefill").silence.idleMs)
+        assertEquals(120_000L, listed.getValue("sess-streaming").silence.idleMs, "the same silence, to the ms")
+        assertFalse(listed.getValue("sess-prefill").silence.seenOutput, "nothing came back: this one is a prefill")
+        assertTrue(listed.getValue("sess-streaming").silence.seenOutput, "this one answered, and then went quiet")
+    }
+
+    /** Why the fact is its own flag and not lastByte compared against admission: a fast provider's
+     *  first byte lands in the millisecond the turn was admitted, and a derived read would call that
+     *  turn unanswered for as long as it ran — wrong for the common case, not the rare one. */
+    @Test
+    fun `a first byte in the same millisecond as admission still counts as answered`() {
+        val fast = slot()
+        turns.admitted(fast, meta("sess-fast"), hash("go"))
+        fast.received()
+
+        val turn = turns.list().single()
+
+        assertTrue(turn.silence.seenOutput, "the provider answered in that same millisecond, and that is an answer")
+        assertEquals(0L, turn.silence.idleMs, "and nothing has gone quiet yet")
+    }
 }

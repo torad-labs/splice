@@ -52,6 +52,31 @@ internal const val STOP_RESEND_WINDOW_MS = 10_000L
 /** The cancellation a stop sends into the turn's job: the seal reads it to write the stop's frame. */
 internal class OperatorStop : CancellationException(OPERATOR_STOPPED)
 
+/** How a turn's provider silence reads: how long quiet, and whether there is anything to be quiet
+ *  after. ONE VALUE BECAUSE NEITHER IS READABLE ALONE.
+ *
+ *  The watchdog measures silence against a different limit depending on [seenOutput]
+ *  ([splice.core.turn.WatchdogBudget]): before the first byte the limit is firstByteTimeout, and a
+ *  prefill is *legitimately silent for minutes*; after it, the limit is the re-anchor tier when the
+ *  round can be resumed and streamIdle otherwise. [idleMs] does not differ between the two, because a
+ *  turn that has heard nothing reports its whole age as idle — so a reader given the number alone
+ *  draws a two-minute prefill, which is a model thinking, exactly like a two-minute stall, which is a
+ *  model that stopped. Those are opposite answers: one says wait, the other says go look.
+ *
+ *  [seenOutput] IS NOT THE GATE'S PHASE, though that is the obvious place to reach for. The gate turns
+ *  [splice.core.head.GatePhase.STREAMING] on `touch()`, which upstream HEADERS call — a turn whose
+ *  provider sent a 200 and then nothing reads as streaming there while the client has seen no content
+ *  at all. That is right for the gate, whose job is liveness of the connection, and wrong here: it
+ *  would push a turn into the stall tiers while the watchdog still holds it against firstByteTimeout.
+ *  So this follows `received()`, the body-byte signal, exactly as [idleMs] does, and the two cannot
+ *  disagree with each other. */
+public data class TurnSilence(
+    /** Time since the provider's last byte, or since this turn was listed before its first byte. */
+    val idleMs: Long,
+    /** Whether the provider has answered at all yet. */
+    val seenOutput: Boolean = false,
+)
+
 /** One live turn as the console lists it. [session] is the client's full session id when it sent one;
  *  [stopped] is true between the stop and the slot's release, which is the seal's few milliseconds. */
 public data class LiveTurn(
@@ -61,8 +86,8 @@ public data class LiveTurn(
     val compact: Boolean,
     val ageMs: Long,
     val stopped: Boolean,
-    /** Time since the provider's last byte, or since this turn was listed before its first byte. */
-    val idleMs: Long = ageMs,
+    /** Silent for its whole age, having heard nothing, until the provider's first byte says otherwise. */
+    val silence: TurnSilence = TurnSilence(ageMs),
 )
 
 /** One head's live turns and its unused stop marks. [ids] mints a whole random UUID per turn, so no
@@ -86,10 +111,16 @@ public class LiveTurns(
         private val jobs: MutableSet<Job> = ConcurrentHashMap.newKeySet()
         private val stopped = AtomicBoolean(false)
         private val lastByte = AtomicLong(since)
+
+        /** Set once, on the provider's first byte. Not derived from [lastByte] against [since]: a byte
+         *  that lands in the same millisecond as admission would read as no byte at all, and on a fast
+         *  provider that is the common case rather than the rare one. */
+        private val answered = AtomicBoolean(false)
         override val turnId: String get() = id
 
         override fun received() {
             lastByte.set(clock())
+            answered.set(true)
         }
 
         fun driving(job: Job) {
@@ -115,7 +146,7 @@ public class LiveTurns(
             compact,
             now - since,
             stopped.get(),
-            (now - lastByte.get()).coerceAtLeast(0L),
+            TurnSilence((now - lastByte.get()).coerceAtLeast(0L), answered.get()),
         )
     }
 

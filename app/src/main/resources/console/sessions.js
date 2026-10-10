@@ -81,7 +81,7 @@ function sessionOf(row) {
     id: row.session_id, row, name: row.name || null, repo: folderOf(row), wt: row.repo?.worktree ?? null,
     head: row.head, cmd: commandOf(row.head), provider: state.providerOf[row.head] ?? null,
     model: ((m) => (m ? state.modelLabel[m] ?? m : null))(turn?.model ?? row.model), // a running turn's model is the one in use now
-    team: row.team?.name ?? null, state: st, live: st === "working" && Boolean(turn), turn, stall: st === "working" ? stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs) : null,
+    team: row.team?.name ?? null, state: st, live: st === "working" && Boolean(turn), turn, stall: st === "working" || st === "idle" ? stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs, row.ended_by) : null,
     ask: st === "needs" ? { kind: asked ? "input" : "dialog", asked, call: row.last } : null,
     at: new Date(row.updated_at || row.status_updated_at || row.started_at || 0),
   };

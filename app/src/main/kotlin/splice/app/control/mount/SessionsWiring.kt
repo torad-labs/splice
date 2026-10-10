@@ -111,13 +111,16 @@ internal class SessionsWiring(
             .mapTo(HashSet()) { it.wire }
 
     private val sessionEnding = SessionEndingOf { id ->
-        heads.values
-            .mapNotNull { (it.sources.perf as? PerfStatsSource)?.sessionEndings?.endingFor(id) }
-            .maxByOrNull { it.ts }
-            ?.takeIf { it.outcome in holdingEndings }
-            ?.let { ended ->
+        heads.mapNotNull { (key, head) ->
+            (head.sources.perf as? PerfStatsSource)?.sessionEndings?.endingFor(id)?.let { key to it }
+        }
+            .maxByOrNull { (_, ended) -> ended.ts }
+            ?.takeIf { (_, ended) -> ended.outcome in holdingEndings }
+            ?.let { (head, ended) ->
                 val resetMs = ended.resetEpochSeconds?.let(TimeUnit.SECONDS::toMillis)
-                SessionEnding(ended.outcome, ended.account, resetMs, ended.ts)
+                // in the Accounts roster's words: a client head's row carries the login's identity, not its label
+                val account = ended.account?.let { ports.claudeLogins?.accountLabel(head, it) ?: it }
+                SessionEnding(ended.outcome, account, resetMs, ended.ts)
             }
     }
 

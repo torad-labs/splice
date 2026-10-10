@@ -166,13 +166,22 @@ const STALL_SHOWN_MS = 30000;
 const RESUME_SHOWN_MS = 5000;
 // why: the continuations a round may spend on re-anchors (DEFAULT_MAX_CONTINUATIONS, Turn.kt:266); past them nothing resumes.
 const MAX_CONTINUATIONS = 5;
-/** What the session's request in flight is waiting on, from the live turn splice holds (LiveTurnsRoutes): refused and
- *  re-sent before any answer, quiet with a re-send coming (the head's stall_reanchor_ms, /api/heads gate), or quiet with none.
- *  Sessions and Teams both read it (Marlin, Oct 10). `at` is when it was read, so the
+// The endings that hold a session back until something changes, as the session row's ended_by names them (SessionsWiring).
+const LIMIT_ENDINGS = new Set(["error:plan-limit", "error:all-accounts-exhausted"]);
+/** What the session is waiting on. With a request in flight, from the live turn splice holds (LiveTurnsRoutes): refused
+ *  and re-sent before any answer, quiet with a re-send coming (the head's stall_reanchor_ms, /api/heads gate), or quiet
+ *  with none. With none, from how its newest request ended (the row's ended_by): turned away at a spent plan or pool
+ *  (At limit, until the window named comes back) or for want of a credential (Signed out). A plan name has no source
+ *  yet, so `plan` is null. Sessions and Teams both read it (Marlin, Oct 10). `at` is when it was read, so the
  *  counters move each second between reads. */
-function stallOf(turn, reanchorMs) {
-  if (!turn) return null;
-  const at = Date.now(), idle = turn.idle_ms ?? 0;
+function stallOf(turn, reanchorMs, endedBy) {
+  const at = Date.now();
+  if (!turn) {
+    if (endedBy?.outcome === "error:auth-missing") return { kind: "signout", at };
+    if (!LIMIT_ENDINGS.has(endedBy?.outcome) || (endedBy.reset_ms != null && endedBy.reset_ms <= at)) return null;
+    return { kind: "limit", acct: endedBy.account ?? null, plan: null, until: endedBy.reset_ms ? new Date(endedBy.reset_ms) : null, at };
+  }
+  const idle = turn.idle_ms ?? 0;
   if (turn.retries > 0 && !turn.seen_output) return { kind: "retries", n: turn.retries, at };
   if (reanchorMs && (turn.resumes ?? 0) < MAX_CONTINUATIONS && idle >= RESUME_SHOWN_MS) return { kind: "silent", ms: idle, resumeMs: Math.max(0, reanchorMs - idle), at };
   if (idle >= STALL_SHOWN_MS) return { kind: "silent", ms: idle, at };
@@ -183,7 +192,9 @@ function stallOf(turn, reanchorMs) {
 // for him to do. Opened, its line counts down to the re-send in the working colour (fin, console-lead's stall states,
 // Oct 10). Only a silence nothing will resume is Stalled.
 const resuming = (s) => s.state === "working" && s.stall?.resumeMs != null;
-const stalled = (s) => s.state === "working" && s.stall && !resuming(s);
+// A limit or a sign-out ended the turn, so it holds an idle session as well as a working one.
+const heldByEnding = (s) => s.stall?.kind === "limit" || s.stall?.kind === "signout";
+const stalled = (s) => Boolean(s.stall) && (s.state === "working" ? !resuming(s) : s.state === "idle" && heldByEnding(s));
 function look(s) {
   if (s.state === "needs") return { cls: "needs", lamp: ICON[s.ask.kind], word: "Needs you" };
   if (resuming(s)) return { cls: "working", lamp: ICON.trace, word: "Working",
@@ -192,9 +203,11 @@ function look(s) {
     const k = s.stall.kind, lamp = k === "silent" ? ICON.flat : ICON[k];
     const detail = k === "silent" ? `<span class="detail" data-silent="${s.id}">${ICON.watch(Math.floor(s.stall.ms / 1000))}<span>${counter(s.stall.ms)}</span></span>`
       : k === "retries" ? `<span class="detail">${s.stall.n} ${s.stall.n === 1 ? "retry" : "retries"}</span>`
-      : k === "limit" ? `${s.stall.acct ? acctPlanHtml(s.stall.acct, s.stall.plan) : ""}<span class="detail">Resets ${backWord(s.stall.until)}</span>` : `<span class="detail">Signed out</span>`;
+      : k === "limit" ? `${s.stall.acct ? acctPlanHtml(s.stall.acct, s.stall.plan) : ""}${s.stall.until ? `<span class="detail">Resets ${backWord(s.stall.until)}</span>` : ""}` : "";
     // a plan's limit ended the turn; nothing stalled, so the word is Accounts' own (fin): lock, At limit, the plan, its reset
     if (k === "limit") return { cls: "stalled", lamp, word: `${ICON.lock}At limit`, detail };
+    // no credential ended it, so nothing stalled either: the word is the state itself, as Accounts says it (fin)
+    if (k === "signout") return { cls: "stalled", lamp, word: "Signed out", detail: "" };
     return { cls: "stalled", lamp, word: "Stalled", detail };
   }
   if (s.state === "working") return { cls: "working", lamp: ICON.trace, word: "Working" };

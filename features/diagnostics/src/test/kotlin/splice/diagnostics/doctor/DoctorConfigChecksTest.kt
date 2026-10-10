@@ -79,6 +79,19 @@ class DoctorConfigChecksTest {
     }
 
     @Test
+    fun `a project table setting both system_prompt and system_prompt_file fails the doctor`(@TempDir tmp: Path) {
+        val both = toml(tmp, projectMode = null).replace(
+            "system_prompt = \"be careful here\"",
+            "system_prompt = \"be careful here\"\nsystem_prompt_file = \"p.md\"",
+        )
+
+        val failed = projectRows(both).single { it.status == CheckStatus.FAIL }
+
+        assertEquals("project-prompt:project:$tmp", failed.name)
+        assertTrue(failed.detail.contains("both system_prompt and system_prompt_file"), failed.detail)
+    }
+
+    @Test
     fun `a replace layer discloses at INFO that earlier layers are substituted`(@TempDir tmp: Path) {
         val row = projectRows(toml(tmp, projectMode = "\"replace\"")).first()
 

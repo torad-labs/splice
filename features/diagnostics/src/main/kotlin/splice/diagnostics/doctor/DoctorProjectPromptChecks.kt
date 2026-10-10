@@ -12,6 +12,7 @@ package splice.diagnostics.doctor
 
 import splice.core.config.UserHome
 import splice.core.prompt.SystemPromptMode
+import splice.core.topology.ProjectConfig
 import splice.core.topology.Topology
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -67,8 +68,25 @@ internal class DoctorProjectPromptChecks(private val replaceFix: String, private
                     ),
                 )
             }
-            missing + layers.mapNotNull { (name, mode, source) -> source?.let { layerRow(name, mode, it) } }
+            val rows = layers.mapNotNull { (name, mode, source) -> source?.let { layerRow(name, mode, it) } }
+            missing + bothKeys(raw, project) + rows
         }
+
+    /** A table that sets both system_prompt and system_prompt_file is a load error, never a silent precedence. */
+    private fun bothKeys(raw: String, project: ProjectConfig): List<DoctorCheck> {
+        val named = listOf("project:$raw" to project.systemPrompt) + project.heads.map { (head, p) ->
+            "project-head:$raw:$head" to p.systemPrompt
+        }
+        val files = listOf(project.systemPromptFile) + project.heads.values.map { it.systemPromptFile }
+        return named.zip(files).filter { (table, file) -> table.second != null && file != null }.map { (table) ->
+            DoctorCheck(
+                "project-prompt:${table.first}",
+                CheckStatus.FAIL,
+                "${table.first} sets both system_prompt and system_prompt_file, so the daemon refuses to load it",
+                "keep one of system_prompt or system_prompt_file in that table",
+            )
+        }
+    }
 
     private fun layerRow(name: String, mode: SystemPromptMode?, source: String): DoctorCheck = when (mode) {
         SystemPromptMode.REPLACE -> DoctorCheck(

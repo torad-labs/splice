@@ -107,6 +107,34 @@ class BudgetSpendTest {
         assertNull(owner.spending("unwired"))
     }
 
+    /** The count says "requests with no price", and the Requests page lists no local step, so a local step that has no
+     *  price is not one of them; its dollars, when it has a price, are still spent. */
+    @Test
+    fun `a local step with no price is no unpriced request, and a priced one still spends`() {
+        val store = BudgetStore(directory.resolve("budgets.json"))
+        store.replace(listOf(Budget("head", 5.0, BudgetActions.WARN)))
+        val ready = PerfRowsWindow(emptyList())
+        val owner = BudgetEnforcement(
+            store,
+            BudgetAlert { _, _ -> },
+            HeadPerfHistory { PerfRowsSource { ready } },
+            {},
+            WallClock { SPEND_BOOT_MS },
+            immediateSeed(),
+            ZoneOffset.UTC,
+        )
+        val head = owner.forHead("head", catalog)
+        head.spent(SPEND_BOOT_MS, "unpriced", mapOf(PerfKeys.LOCAL_STEP to 1L))
+        head.spent(SPEND_BOOT_MS, "priced", tokens(2) + (PerfKeys.LOCAL_STEP to 1L))
+
+        val spend = owner.spending("head")!!
+        assertEquals(0, spend.unpricedTurns)
+        assertEquals(2.0, spend.usedUsd)
+
+        head.spent(SPEND_BOOT_MS, "unpriced", emptyMap())
+        assertEquals(1, owner.spending("head")!!.unpricedTurns)
+    }
+
     @Test
     fun `a skipped history row or posted source without usage cannot become a measured zero`() {
         val samples = listOf(

@@ -28,6 +28,7 @@
 package splice.head.perf
 
 import splice.core.perf.PerfFiles
+import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import java.io.Closeable
@@ -45,6 +46,7 @@ import kotlin.time.Duration.Companion.minutes
 // why: the stamp every record carries, found without parsing the object around it. A 385 MB scan
 // that reads one number per line is a fraction of the same scan through a JSON parser.
 private const val STAMP_KEY = "\"ts\":"
+private const val LOCAL_STEP_KEY = "\"${PerfKeys.LOCAL_STEP}\":1"
 
 // why: a record is charged to the minute it was written in; the header says why not the day.
 private val RECORD_MINUTE_MS = 1.minutes.inWholeMilliseconds
@@ -136,7 +138,8 @@ public class HistoryDays(private val zone: ZoneId = ZoneId.systemDefault()) {
         RecordLines(file).use { lines ->
             while (true) {
                 val line = lines.next() ?: break
-                minutes.charge(record.minuteOf(line), record.onDisk(line))
+                // A local step is no request: it takes disk, so a cut still frees it, but it is no row of the count.
+                minutes.charge(record.minuteOf(line), record.onDisk(line), if (record.isLocalStep(line)) 0 else 1)
             }
         }
         return minutes.build()
@@ -155,6 +158,13 @@ internal class RecordLine {
 
     /** The minute a record belongs to, which is the grain a cut is counted at. */
     fun minuteOf(line: String): Long? = stampOf(line)?.let { it / RECORD_MINUTE_MS * RECORD_MINUTE_MS }
+
+    /** Whether a record is a step splice answered itself, which the Requests page leaves out and no count of requests
+     *  may include. */
+    fun isLocalStep(line: String): Boolean {
+        val at = line.indexOf(LOCAL_STEP_KEY).takeIf { it >= 0 } ?: return false
+        return line.getOrNull(at + LOCAL_STEP_KEY.length)?.isDigit() != true
+    }
 
     /** The bytes a line occupies, with the newline the reader stripped charged back to it. */
     fun onDisk(line: String): Long = line.toByteArray(Charsets.UTF_8).size + 1L

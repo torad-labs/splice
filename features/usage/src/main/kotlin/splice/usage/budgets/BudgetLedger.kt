@@ -18,6 +18,7 @@ import splice.core.budget.BudgetBlock
 import splice.core.budget.HeadBudget
 import splice.core.model.TurnBill
 import splice.core.model.TurnPrice
+import splice.core.perf.PerfKeys
 import splice.core.util.Cancellables
 import splice.core.util.LogSafe
 import splice.core.util.LogSink
@@ -67,7 +68,7 @@ internal class BudgetLedger(
         val usd = measuredCost(model, counters, atMs)
         synchronized(lock) { tallyAt(atMs)?.let { charge(it, usd, counters) } }
         val limit = limit() ?: return
-        if (usd == null) noteUnpriced(atMs, model)
+        if (usd == null && counters[PerfKeys.LOCAL_STEP] != 1L) noteUnpriced(atMs, model)
         if (limit.action == BudgetActions.WARN && reached(atMs, limit.usd)) warnOnce(atMs, limit.usd)
     }
 
@@ -160,7 +161,10 @@ internal class BudgetLedger(
     private fun measuredCost(model: String?, fields: Map<String, Long>, atMs: Long): Double? =
         price.lowerBoundUsd(model, fields, atMs)
 
+    /** Dollars are charged for every row. A request with no price is COUNTED only when the Requests page lists it, and
+     *  that page leaves out the steps splice answered itself, so a local step with no price is no request to count. */
     private fun charge(tally: DayTally, usd: Double?, fields: Map<String, Long>) {
+        if (usd == null && fields[PerfKeys.LOCAL_STEP] == 1L) return
         if (TurnBill.fullyReported(fields)) tally.add(usd) else tally.addLowerBound(usd)
     }
 

@@ -673,9 +673,12 @@ origin.
   runs again only when nothing is left, so `splice restart` repairs the file and then restarts in one go. A value
   you type is not echoed to the screen, since it can be a token. A `splice.toml` that is a link is fixed at the file
   it points to, and stays a link. Off a terminal the command prints the list, exits non-zero and changes nothing.
-- **A running session takes a note through the control API.** `POST /api/sessions/{id}/message` writes the note to the
+- **The console reaches past Accounts.** It also has a Needs you landing page, Fleet, Usage, Turns (with a page
+  per turn), Teams, Projects, Settings (Advanced whole-file edit, Storage, Conversation), Doctor and Health, and a
+  Playground that sends one prompt to several models side by side.
+- **A running session takes a note from the console.** `POST /api/sessions/{id}/message` writes the note to the
   session's inbox socket. It is proven on Claude Code 2.1.282 to 2.1.286, and `/api/sessions` names those versions
-  so a client can refuse before anyone types. `GET /api/sessions/{id}/transcript` reads a transcript from its end,
+  so a page can refuse before anyone types. `GET /api/sessions/{id}/transcript` reads a transcript from its end,
   newest first, with a cursor, governed by the live `transcriptView` knob; `GET /api/sessions/{id}/resume`
   returns a read-only recipe for resuming on another head.
 - **The operator can stop a live turn.** `POST /api/heads/{head}/turns/{id}/stop` ends it, and the client's
@@ -690,22 +693,24 @@ origin.
   90 unless you set it, or the 35 days the hourly totals always kept), because an upgrade never shortens your
   history on its own. An hourly total priced without a
   rate card is priced again later from its perf rows at the cards splice holds then.
-  The spend history reaches as far back as the turns splice holds, whatever window you keep: an hour the hourly totals lack is
-  built from the request records behind it, priced at the cards splice holds now, so a month of spending is no longer reported over
+  Usage reaches as far back as the turns splice holds, whatever window you keep: an hour the hourly totals lack is
+  built from the request records behind it, priced at the cards splice holds now, so the month view is no longer drawn over
   fewer days than the records on disk. An hour is built only when it can be exact: a read that was not whole
   backfills nothing, the oldest hour the records reach is left out, and an hour the totals already have is
-  never replaced. A window of `0` still keeps today, because a daily budget reads today's records; they go
+  never replaced. Widening the window rebuilds the hours it now reaches without a restart. A window of `0` still keeps today, because a daily budget reads today's records; they go
   at the local midnight. `GET /api/history` answers the saved window, what is held (turns, bytes, the oldest
-  moment) and the pace in MB a month; `?days=N` adds what choosing N would delete, counted to the minute, and
+  moment) and the pace in MB a month; `?days=N` adds what choosing N would delete, counted by the hour (the cut is floored to an hour, which keeps at most one hour more than the window names and never less), and
   `PUT /api/history` saves N and deletes exactly that, from every place splice keeps it: the request records, the
   hourly spending totals, the message edges (who a session messaged) and each finished session's total, so a person who
-  chooses "Today only" no longer reads last week's spend from `/api/economics`. The cut falls at your own midnight, and the
+  chooses "Today only" no longer reads last week's spend on Usage. The cut falls at your own midnight, and the
   message-edge day that midnight falls inside is cut row by row, so yesterday evening's rows go too; a row that cannot
   be read is kept, because it cannot be shown to be one of those you were asked about. A session's total goes by its
   last activity, and a session bound to a team that is still going is spared. A store that could not be trimmed is
   named in the answer. It refuses a moment newer than the window now warrants, a window that is neither a count of days nor
   `forever` (the refusal quotes what it received), and a save made while any record file could not be read whole;
   that one reads "Not saved", because nothing was saved and nothing was deleted.
+- **Settings Storage lists what splice keeps and clears it.** It covers retained turn statistics and live session
+  totals, separate from the trace deletion capture-off already does.
 - **Two provider quirks.** `summary_delivery` switches off the cutoff that empties gpt-6.1-sol reasoning summaries
   and sends `stream_options.reasoning_summary_delivery`. `tool_name_cap` caps tool-name length on passthrough heads
   and the cap is restorable.
@@ -769,9 +774,9 @@ origin.
   Completed source usage is counted once. Source replies stopped before completion are counted,
   while their token usage stays unreported when no usage arrived.
 - **The dashboard is replaced by the console.** 0.3.x served a dashboard at `/` and `/dashboard`, and
-  `splice dashboard` opened it. 0.4.0 removes both. The control plane serves the console at `/`
-  with no key, because the page carries no data and reads every number from the keyed `/api/*` routes;
-  nothing else opens without the key. `splice console` opens it. The console is the Accounts page: sign-in,
+  `splice dashboard` opened it. 0.4.0 removes both. The control plane serves the console's pages at `/`
+  with no key, because a page carries no data and reads every number from the keyed `/api/*` routes;
+  nothing else opens without the key. `splice console` opens it. Accounts is the first page: sign-in,
   Use now and the pin, Soonest reset and My order, rename and remove, key replace and remove, the daily
   budget, and Add provider. `splice dashboard` is gone.
 - **A screenshot-heavy session on a large-window model keeps its images.** Claude Code keeps at
@@ -935,7 +940,7 @@ origin.
   account preference but never blocks a turn by itself. A saved native refusal stays scoped to the
   login that received it and can still answer its first request after restart without contacting
   the provider. A local head whose runtime does not answer reads `runtime not answering on :<port>`,
-  and `splice status` and the daemon log report it down.
+  and Settings under Health reports it down.
 - **`splice doctor` gives the daemon's own fix for a splice.toml value of the wrong type.** It
   pointed at a file inside splice's source tree and suggested deleting the config; it now names the
   key, the line and the expected type, and says what to write, in the words the daemon prints when

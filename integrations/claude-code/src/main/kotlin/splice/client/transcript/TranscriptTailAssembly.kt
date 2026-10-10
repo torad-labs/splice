@@ -34,9 +34,11 @@ internal class TranscriptTailAssembly(
         return TailSelection(last, complete)
     }
 
-    /** What the session said, was told or called: a tool result and a system note are neither. */
+    /** What the session said, was told or called: a tool result and a system note are neither. A teammate's message is
+     *  something it was told. */
     private fun activity(message: TranscriptMessage): Boolean =
-        message.role == TranscriptRole.USER || message.role == TranscriptRole.ASSISTANT
+        message.role == TranscriptRole.USER || message.role == TranscriptRole.ASSISTANT ||
+            message.role == TranscriptRole.PEER
 
     private fun ready(before: List<TranscriptMessage>, last: TranscriptMessage?): Boolean {
         if (last == null) return false

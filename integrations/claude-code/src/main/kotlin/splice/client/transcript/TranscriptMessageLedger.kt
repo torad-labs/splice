@@ -2,8 +2,10 @@
 // reads records and this owns turning what they said into numbered, redacted messages.
 package splice.client.transcript
 
+import splice.sessions.transcript.KIND_INTERRUPTED
 import splice.sessions.transcript.TranscriptMessage
 import splice.sessions.transcript.TranscriptRole
+import splice.sessions.transcript.TranscriptSource
 import splice.sessions.transcript.TranscriptToolUse
 
 /** One tool call the client recorded inside an assistant message. */
@@ -46,6 +48,18 @@ internal class MessageLedger(
 
     fun text(at: Long, role: TranscriptRole, ts: Long?, text: String) {
         messages += TranscriptMessage(place(at), role, ts, redaction.shown(text))
+    }
+
+    /** A message another session sent, under the name it sends as. */
+    fun received(at: Long, ts: Long?, from: String, text: String) {
+        val source = TranscriptSource(from = from)
+        messages += TranscriptMessage(place(at), TranscriptRole.PEER, ts, redaction.shown(text), source = source)
+    }
+
+    /** The marker Claude Code writes when the person stops a turn or refuses a tool call. */
+    fun interrupted(at: Long, ts: Long?, text: String) {
+        val source = TranscriptSource(kind = KIND_INTERRUPTED)
+        messages += TranscriptMessage(place(at), TranscriptRole.SYSTEM, ts, redaction.shown(text), source = source)
     }
 
     fun toolResult(at: Long, ts: Long?, text: String, toolUseId: String?) {

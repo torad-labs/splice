@@ -16,6 +16,10 @@ import splice.sessions.transcript.TranscriptRole
 
 private const val UNTYPED = "untyped"
 
+/** How Claude Code opens the text it files when a turn is stopped or a tool call refused, whether or not it goes on to
+ *  say "for tool use". */
+private const val INTERRUPTED_MARKER = "[Request interrupted by user"
+
 // why: the most messages one record may make; they share its offset and are told apart by this many slots.
 internal const val PER_RECORD: Long = 1024
 
@@ -35,6 +39,7 @@ internal class PageAssembly(
     val nextIndex: Long get() = ledger.nextIndex
     val skipped: MutableMap<String, Int> = sortedMapOf()
     private val records = TranscriptRecords()
+    private val peers = PeerEnvelope()
     private var pending: PendingAssistant? = null
 
     /** [record] is null for a line that did not parse. */
@@ -103,20 +108,30 @@ internal class PageAssembly(
         val speaker = if (meta) TranscriptRole.SYSTEM else TranscriptRole.USER
         val content = message[CONTENT]
         if (content is JsonPrimitive && content.isString) {
-            ledger.text(at, speaker, ts, content.content)
+            userText(record, speaker, ts, content.content)
             return true
         }
-        for (block in records.blocks(message)) userBlock(block, speaker, ts)
+        for (block in records.blocks(message)) userBlock(record, block, speaker, ts)
         return true
     }
 
-    private fun userBlock(block: JsonObject, speaker: TranscriptRole, ts: Long?) {
+    /** What a user record's text is: a teammate's message, the marker of a stopped turn, or the person's words. */
+    private fun userText(record: JsonObject, speaker: TranscriptRole, ts: Long?, text: String) {
+        val received = peers.read(record, text)
+        when {
+            received != null -> ledger.received(at, ts, received.from, received.body)
+            text.trimStart().startsWith(INTERRUPTED_MARKER) -> ledger.interrupted(at, ts, text)
+            else -> ledger.text(at, speaker, ts, text)
+        }
+    }
+
+    private fun userBlock(record: JsonObject, block: JsonObject, speaker: TranscriptRole, ts: Long?) {
         when (JsonScalars.str(block, "type")) {
             "tool_result" -> {
                 val id = JsonScalars.str(block, "tool_use_id")
                 ledger.toolResult(at, ts, records.resultText(block[CONTENT]), id)
             }
-            "text" -> JsonScalars.str(block, "text")?.let { ledger.text(at, speaker, ts, it) }
+            "text" -> JsonScalars.str(block, "text")?.let { userText(record, speaker, ts, it) }
             else -> count("user:${JsonScalars.str(block, "type") ?: "block"}")
         }
     }

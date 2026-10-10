@@ -21,7 +21,11 @@ public const val CONVERSATION_READ_UNAVAILABLE: String =
 public const val SKIPPED_UNPARSEABLE: String = "unparseable"
 public const val SKIPPED_SIDECHAIN: String = "sidechain"
 
-public enum class TranscriptRole { USER, ASSISTANT, SYSTEM, TOOL }
+/** PEER is a message another session sent: told to this one, not said by the person at it. */
+public enum class TranscriptRole { USER, ASSISTANT, SYSTEM, TOOL, PEER }
+
+/** The kind of a system line that has a name of its own: the person stopped the turn or refused a tool call. */
+public const val KIND_INTERRUPTED: String = "interrupted"
 
 public data class TranscriptMessage(
     val index: Long,
@@ -32,6 +36,15 @@ public data class TranscriptMessage(
     /** The id Claude Code wrote on an assistant reply. Several lines share it, and the reader merges
      *  them into this message; the perf row joins its response to this id (V4-354). */
     val messageId: String? = null,
+    /** What a message is apart from its role, when the page draws it so; empty on the rest. */
+    val source: TranscriptSource = TranscriptSource(),
+)
+
+public data class TranscriptSource(
+    /** What a system line is, when the page draws it apart from other notes: [KIND_INTERRUPTED]. */
+    val kind: String? = null,
+    /** On a [TranscriptRole.PEER] message, the session that sent it, by the name it goes by. */
+    val from: String? = null,
 )
 
 /** The tool facts a message carries; every field is null on a message that is neither a call nor a result. */

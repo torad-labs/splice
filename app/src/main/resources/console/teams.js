@@ -500,13 +500,14 @@ function slotRowHtml(c, s, i) {
 function composerHtml() {
   const c = ui.compose;
   const ok = ready(c);
-  const err = c.error ? `<span class="state limit" role="status">${esc(c.error)}</span>` : "";
+  const word = c.error ? `<span class="state limit" role="status">${esc(c.error)}</span>` : "";
+  // only a refusal of the repo outlines Repo; any other refusal's word still sits on its row
+  const repoRefused = c.error && /^repo\b/i.test(c.error);
   return `<section class="compose" data-key="compose" role="dialog" aria-modal="true" aria-labelledby="t-title">` +
     `<h2 id="t-title">${c.id ? esc(state.teams.find((t) => t.id === c.id)?.name) : "New team"}</h2>` +
     `<div class="frow"><label for="t-name">Name</label><input class="field" id="t-name" value="${esc(c.name)}" autocomplete="off" spellcheck="false"></div>` +
     `<div class="frow"><label for="t-goal">Goal</label><textarea class="field" id="t-goal" rows="2">${esc(c.goal)}</textarea></div>` +
-    `<div class="frow"><label for="t-repo">Repo</label><input class="field" id="t-repo" value="${esc(c.repo)}" autocomplete="off" spellcheck="false"${c.error ? ' aria-invalid="true"' : ""}></div>` +
-    `${err ? `<div class="frow">${err}</div>` : ""}` +
+    `<div class="frow"><label for="t-repo">Repo</label><div class="withword"><input class="field" id="t-repo" value="${esc(c.repo)}" autocomplete="off" spellcheck="false"${repoRefused ? ' aria-invalid="true"' : ""}>${word}</div></div>` +
     `<h3>Members</h3><div class="rows">${c.slots.map((s, i) => slotRowHtml(c, s, i)).join("")}` +
     `<button class="add" data-act="add-slot"><span class="plus" aria-hidden="true">+</span>Add member</button></div>` +
     `<datalist id="roles"><option value="builder"><option value="reviewer"><option value="researcher"></datalist>` +
@@ -571,6 +572,7 @@ async function save(startAfter) {
   if (!answer.ok) {
     c.error = refusalOf(answer, "The team was not saved");
     render();
+    sheet.querySelector("#t-repo")?.focus(); // the refusal's word is on Repo's row, so Save leaves the person there
     return;
   }
   const saved = answer.body;
@@ -650,7 +652,15 @@ sheet.addEventListener("input", (e) => {
   const el = e.target;
   if (el.id === "t-name") c.name = el.value;
   else if (el.id === "t-goal") c.goal = el.value;
-  else if (el.id === "t-repo") { c.repo = el.value; return; }
+  else if (el.id === "t-repo") {
+    c.repo = el.value;
+    if (c.error) { // typing in Repo answers the refusal: its word and outline go, the field keeps its focus
+      c.error = null;
+      el.removeAttribute("aria-invalid");
+      sheet.querySelector(".withword .state")?.remove();
+    }
+    return;
+  }
   else if (el.matches(".role-in")) c.slots[+el.dataset.i].role = el.value;
   else if (el.matches(".instr")) { c.slots[+el.dataset.i].instructions = el.value; return; }
   const ok = Boolean(ready(c));

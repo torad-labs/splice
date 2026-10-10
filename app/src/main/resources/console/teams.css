@@ -98,10 +98,10 @@
    permission prompt's own description ("Run the tax tests") and the fallback telling the person where to
    answer are ordinary prose, and painting them the failure red said a turn had gone wrong when none had. */
 .card.m .why { margin: .8rem 0 0; font: 400 1.05rem/1.45 var(--font-name); color: var(--text-body); white-space: pre-line; overflow-wrap: anywhere; }
-/* a start that did not come up is the one that reads as a fault, because it is one */
 .refusal { font: 400 1.05rem/1.2 var(--font-name); color: var(--limit); min-width: 0; overflow-wrap: anywhere; }
 .card.m .top .refusal { margin-left: auto; text-align: right; }
 .card.m .top .refusal + .chip { margin-left: .8rem; }
+/* a start that did not come up is the one that reads as a fault, because it is one */
 .card.m .why.limit { color: var(--limit); }
 .card.m .use { margin-top: .9rem; padding-top: .75rem; border-top: .12rem solid var(--track); }
 .card.m .use:empty { display: none; }
@@ -165,6 +165,10 @@ html:has(#sheet .scrim) { overflow: hidden; }
 .frow { display: grid; grid-template-columns: 8rem minmax(0, 1fr); align-items: center; gap: 1.2rem; margin-bottom: 1.1rem; }
 .frow:has(> .state) { grid-template-columns: 8rem minmax(0, 1fr); }
 .frow > .state { grid-column: 2; }
+/* the modal's refusal sits on Repo's row, ending at the modal's right edge */
+.frow .withword { display: flex; align-items: center; gap: 1.2rem; min-width: 0; }
+.frow .withword .field { flex: 1 1 14rem; min-width: 0; }
+.frow .withword .state { flex: 0 1 auto; max-width: 55%; margin-left: auto; text-align: right; overflow-wrap: anywhere; }
 .frow label { font: 500 1.15rem/1 var(--font-name); color: var(--text-body); }
 .frow textarea { font: 400 1.12rem/1.45 var(--font-name); resize: vertical; }
 #t-name { font: 500 1.35rem/1 var(--font-name); }

@@ -31,9 +31,9 @@ private val CHOICE_LINE = Regex("""^\s*([>❯→*•]\s*)?([1-9])[.)]\s+(\S.*)$"
 private const val CHOICE = "CHOICE_"
 
 // why: what each group of CHOICE_LINE holds, named so the parse reads as the line does.
-private const val MARKER = 1
-private const val NUMBER = 2
-private const val LABEL = 3
+private const val MARKER_GROUP = 1
+private const val NUMBER_GROUP = 2
+private const val LABEL_GROUP = 3
 
 /** One choice the session is showing: the [key] that answers it and the [label] the client drew for it.
  *  [here] is true for the option the client is pointing at, which is what ACCEPT would take. */
@@ -46,7 +46,13 @@ public data class ScreenOffer(val asked: String, val choices: List<ScreenChoice>
     public val offering: Boolean get() = choices.isNotEmpty()
 }
 
-/** Reads the numbered choices off a session's screen, exactly as the client drew them. */
+/** Reads the numbered choices off a session's screen, exactly as the client drew them.
+ *
+ *  PUBLIC BECAUSE A ROUTE TAKES IT. The routes that serve these choices live in this module — Teams' slot
+ *  read and Sessions' own — and each is a public class the control plane mounts from :app, so this type is
+ *  part of their signature and justified by it (PublicSurfaceLawTest propagates justification through
+ *  public signatures). Internal reds those routes instead: a public function cannot expose an internal
+ *  parameter type. */
 public class ScreenChoices {
     /** What [screen] is offering. A screen splice cannot read a choice on offers nothing. */
     public fun on(screen: String): ScreenOffer {
@@ -77,9 +83,9 @@ public class ScreenChoices {
     }
 
     private fun drawn(hit: MatchResult): ScreenChoice = ScreenChoice(
-        key = SessionKey.valueOf(CHOICE + hit.groupValues[NUMBER]),
-        label = hit.groupValues[LABEL].trim(),
-        here = hit.groupValues[MARKER].isNotEmpty(),
+        key = SessionKey.valueOf(CHOICE + hit.groupValues[NUMBER_GROUP]),
+        label = hit.groupValues[LABEL_GROUP].trim(),
+        here = hit.groupValues[MARKER_GROUP].isNotEmpty(),
     )
 
     /** The question above the choices: the last run of non-empty lines before the first one, which is how

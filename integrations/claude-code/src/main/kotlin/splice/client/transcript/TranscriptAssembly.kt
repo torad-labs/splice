@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.JsonScalars
+import splice.sessions.transcript.KIND_TAKEN_BACK
 import splice.sessions.transcript.SKIPPED_SIDECHAIN
 import splice.sessions.transcript.SKIPPED_UNPARSEABLE
 import splice.sessions.transcript.TranscriptMessage
@@ -40,6 +41,7 @@ internal class PageAssembly(
     val skipped: MutableMap<String, Int> = sortedMapOf()
     private val records = TranscriptRecords()
     private val peers = PeerEnvelope()
+    private val lineage = TranscriptLineage()
     private var pending: PendingAssistant? = null
 
     /** [record] is null for a line that did not parse. */
@@ -58,7 +60,11 @@ internal class PageAssembly(
 
     fun finish(): List<TranscriptMessage> {
         flush()
-        return ledger.all()
+        val taken = lineage.takenBack()
+        if (taken.isEmpty()) return ledger.all()
+        return ledger.all().map { message ->
+            if (message.index in taken) message.copy(source = message.source.copy(kind = KIND_TAKEN_BACK)) else message
+        }
     }
 
     val pendingOffset: Long? get() = pending?.at
@@ -70,6 +76,7 @@ internal class PageAssembly(
     private val full: Boolean get() = ledger.size + (if (pending != null) 1 else 0) >= limit
 
     private fun conversation(record: JsonObject, messageId: String?): Boolean {
+        lineage.note(record)
         val type = JsonScalars.str(record, "type") ?: UNTYPED
         val message = record[MESSAGE] as? JsonObject
         val ts = records.timestamp(record)
@@ -122,7 +129,10 @@ internal class PageAssembly(
         when {
             received != null -> ledger.received(at, ts, received.from, received.body)
             text.trimStart().startsWith(INTERRUPTED_MARKER) -> ledger.interrupted(at, ts, text)
-            else -> ledger.text(at, speaker, ts, text)
+            else -> {
+                ledger.text(at, speaker, ts, text)
+                if (speaker == TranscriptRole.USER) lineage.person(record, ledger.all().last().index)
+            }
         }
     }
 

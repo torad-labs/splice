@@ -27,6 +27,9 @@ public enum class TranscriptRole { USER, ASSISTANT, SYSTEM, TOOL, PEER }
 /** The kind of a system line that has a name of its own: the person stopped the turn or refused a tool call. */
 public const val KIND_INTERRUPTED: String = "interrupted"
 
+/** The kind of a message of the person's that Claude Code took back into the prompt: a Stop landed before any reply. */
+public const val KIND_TAKEN_BACK: String = "taken_back"
+
 public data class TranscriptMessage(
     val index: Long,
     val role: TranscriptRole,
@@ -45,7 +48,7 @@ public data class TranscriptMessage(
 public data class ModelMove(val messageId: String, val model: String, val command: String?, val movedAt: Long)
 
 public data class TranscriptSource(
-    /** What a system line is, when the page draws it apart from other notes: [KIND_INTERRUPTED]. */
+    /** What a system line is, when the page draws it apart from other notes: [KIND_INTERRUPTED], or a person's message that was taken back, [KIND_TAKEN_BACK]. */
     val kind: String? = null,
     /** On a [TranscriptRole.PEER] message, the session that sent it, by the name it goes by. */
     val from: String? = null,

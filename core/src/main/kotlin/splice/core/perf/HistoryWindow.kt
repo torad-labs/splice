@@ -74,16 +74,19 @@ public data class HistoryWindow(
 }
 
 /** The words the history window reads, any case, around whitespace: whole days from zero up, or
- *  [HISTORY_FOREVER]. Anything else is no value — every layer refuses it by name and the window
+ *  [HISTORY_FOREVER], read in [zone] so that one install has ONE answer to where a day begins: a
+ *  window of zero cuts at midnight, and a reader that parsed the word without saying which midnight
+ *  would cut five hours from where the same page counted (caught by HistoryRoutesTest, Oct 10).
+ *  Anything else is no value — every layer refuses it by name and the window
  *  keeps what it had, the way a bool knob's refused word does ([BoolKnobWords]'s shape, V4-286).
  *  A refusal matters more here than for most knobs: the knob governs deletion, and a typo that read
  *  as a short window would delete history nobody asked it to. */
-internal object HistoryWindowWords {
+public object HistoryWindowWords {
     /** The window a word names, or null when the word names none. */
-    public fun of(raw: String): HistoryWindow? {
+    public fun of(raw: String, zone: ZoneId = ZoneId.systemDefault()): HistoryWindow? {
         val word = raw.trim()
-        if (word.equals(HISTORY_FOREVER, ignoreCase = true)) return HistoryWindow(null)
+        if (word.equals(HISTORY_FOREVER, ignoreCase = true)) return HistoryWindow(null, zone)
         val days = word.toIntOrNull() ?: return null
-        return if (days >= 0) HistoryWindow(days) else null
+        return if (days >= 0) HistoryWindow(days, zone) else null
     }
 }

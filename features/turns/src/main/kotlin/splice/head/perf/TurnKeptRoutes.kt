@@ -9,7 +9,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.config.StatePaths
-import splice.core.perf.PerfArchiveName
+import splice.core.perf.PerfFiles
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
@@ -32,9 +32,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
-private const val LIVE_SUFFIX = "-perf.jsonl"
-private const val PERF_ROLLED_SUFFIX = "-perf.jsonl.1"
-private const val ARCHIVED_INFIX = "-perf.jsonl-"
 private const val TOTALS_SUFFIX = "-session-totals.json"
 
 // why: scanning and deleting years of perf rows may take longer than one head's drain budget;
@@ -179,8 +176,8 @@ public class TurnKeptRoutes(
         val live = entries(source.stateDir)
         val archive = entries(source.perfArchiveDir)
         return KeptTurnFiles(
-            perf = live.filter { isLive(it.fileName.toString()) } +
-                archive.filter { isArchived(it.fileName.toString()) },
+            perf = live.filter { PerfFiles.isLive(it.fileName.toString()) } +
+                archive.filter { PerfFiles.isArchived(it.fileName.toString()) },
             totals = live.filter { it.fileName.toString().endsWith(TOTALS_SUFFIX) },
         )
     }
@@ -207,17 +204,6 @@ public class TurnKeptRoutes(
         } catch (_: NoSuchFileException) {
             emptyList()
         }
-    }
-
-    private fun isLive(name: String): Boolean =
-        (name.endsWith(LIVE_SUFFIX) && name.length > LIVE_SUFFIX.length) ||
-            (name.endsWith(PERF_ROLLED_SUFFIX) && name.length > PERF_ROLLED_SUFFIX.length)
-
-    private fun isArchived(name: String): Boolean {
-        val split = name.lastIndexOf(ARCHIVED_INFIX)
-        if (split <= 0) return false
-        val liveName = name.substring(0, split) + LIVE_SUFFIX
-        return PerfArchiveName(liveName).rotatedAt(name) != null
     }
 
     private fun rowDay(line: String): LocalDate? = Cancellables.runCatchingCancellable {

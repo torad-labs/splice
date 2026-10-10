@@ -1,4 +1,4 @@
-package splice.provider.codex
+package splice.provider.codex.auth
 
 import splice.core.usage.PlanLimit
 import java.util.concurrent.TimeUnit

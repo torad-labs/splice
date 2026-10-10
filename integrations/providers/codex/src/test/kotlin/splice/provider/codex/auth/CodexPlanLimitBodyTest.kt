@@ -1,4 +1,4 @@
-package splice.provider.codex
+package splice.provider.codex.auth
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.usage.PlanLimit
+import splice.provider.codex.auth.CodexPlanLimitBody
 import java.nio.file.Path
 
 private const val NOW_S = 1_790_584_000L

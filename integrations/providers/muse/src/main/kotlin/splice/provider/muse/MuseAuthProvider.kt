@@ -30,8 +30,8 @@ import splice.upstream.retry.SingleFlight
 import java.nio.file.Path
 import kotlin.coroutines.CoroutineContext
 
-private const val DEFAULT_RATE_HOLD_MS = 60_000L
-private const val MAX_MINT_HOLD_MS = 3_600_000L
+internal const val DEFAULT_RATE_HOLD_MS = 60_000L
+internal const val MAX_MINT_HOLD_MS = 3_600_000L
 
 /** Reads and re-mints one Muse account's persisted inference key. */
 public class MuseAuthProvider(
@@ -49,6 +49,7 @@ public class MuseAuthProvider(
     private val invalidAccountLatch = InvalidGrantLatch()
     private val holds = MuseMintHolds(clock)
     private val oauth = MuseOAuth()
+    private val verdict = MuseMintVerdict(holds, oauth, store, log)
     private val mintPersistence = MuseMintPersistence()
     private val lockPathText = authPath.resolveSibling("${authPath.fileName}.lock").toString()
     private val lockLog = LogSink { message ->
@@ -125,19 +126,23 @@ public class MuseAuthProvider(
     ): Credentials? {
         val attempt = attemptFor(accessToken, snapshot) ?: return null
         return when (attempt) {
-            is MuseMintAttempt.Granted ->
-                if (persistGranted(accessToken, attempt.key)) {
+            is MuseMintAttempt.Granted -> {
+                val ctx = currentCoroutineContext()
+                val guard = MuseMintWriteGuard { ctx.ensureActive() }
+                if (mintPersistence.persistGranted(authPath, accessToken, attempt.key, log, guard)) {
+                    store.clearCache()
                     holds.clear()
                     Credentials.Bearer(attempt.key.apiKey)
                 } else {
                     null
                 }
+            }
             is MuseMintAttempt.InvalidAccountToken ->
                 invalidAccountToken(accessToken, allowChangedTokenRetry)
             is MuseMintAttempt.SubscriptionRequired,
             is MuseMintAttempt.RateLimited,
             is MuseMintAttempt.Denied,
-            -> hold(snapshot, attempt)
+            -> verdict.hold(snapshot, attempt)
         }
     }
 
@@ -156,7 +161,7 @@ public class MuseAuthProvider(
             is MuseMintAttempt.RateLimited,
             is MuseMintAttempt.Denied,
             -> {
-                hold(snapshot, attempt)
+                verdict.hold(snapshot, attempt)
                 null
             }
         }
@@ -193,19 +198,6 @@ public class MuseAuthProvider(
         return if (coalesce) mintFlight.run { mint() } else mint()
     }
 
-    private suspend fun persistGranted(expectedAccessToken: String, key: MuseSubscriptionKey): Boolean {
-        val ctx = currentCoroutineContext()
-        val ok = mintPersistence.persistGranted(
-            authPath,
-            expectedAccessToken,
-            key,
-            log,
-            MuseMintWriteGuard { ctx.ensureActive() },
-        )
-        if (ok) store.clearCache()
-        return ok
-    }
-
     private suspend fun invalidAccountToken(
         usedAccessToken: String,
         allowChangedTokenRetry: Boolean,
@@ -234,37 +226,6 @@ public class MuseAuthProvider(
             }
         }
     }
-
-    private fun hold(snapshot: MuseCredentialSnapshot, attempt: MuseMintAttempt): Credentials? {
-        when (attempt) {
-            is MuseMintAttempt.SubscriptionRequired -> {
-                val actionUrl = oauth.safeActionOrigin(attempt.actionUrl)
-                holds.recordInactive(snapshot, MAX_MINT_HOLD_MS, actionUrl)
-                val action = actionUrl?.let { ": $it" }.orEmpty()
-                log("[muse-auth] subscription inactive; retry held for 60 minutes$action")
-            }
-            is MuseMintAttempt.RateLimited -> {
-                val holdMs = (attempt.retryAfterMs ?: DEFAULT_RATE_HOLD_MS)
-                    .coerceIn(DEFAULT_RATE_HOLD_MS, MAX_MINT_HOLD_MS)
-                holds.recordRetry(snapshot, holdMs)
-                log("[muse-auth] key mint rate limited; retry held")
-            }
-            is MuseMintAttempt.Denied -> {
-                holds.recordRetry(snapshot, MAX_MINT_HOLD_MS)
-                log("[muse-auth] key mint denied (${masked(attempt.detail, snapshot)}); retry held for 60 minutes")
-            }
-            is MuseMintAttempt.Granted, MuseMintAttempt.InvalidAccountToken -> Unit
-        }
-        store.clearCache()
-        return null
-    }
-
-    /** [detail] with the credentials this provider holds masked. Every denial's text is splice's own
-     *  (MuseOAuth.parseMuseKeyResponse, MuseRefresh's HTTP status), and this keeps one that quotes the
-     *  exchange from carrying the account token or the key into the log (V4-292). */
-    private fun masked(detail: String, snapshot: MuseCredentialSnapshot): String =
-        listOfNotNull(snapshot.accessToken, snapshot.apiKey).filter(String::isNotBlank)
-            .fold(detail) { text, secret -> text.replace(secret, "<redacted>") }
 }
 
 private data class MintFlightResult(

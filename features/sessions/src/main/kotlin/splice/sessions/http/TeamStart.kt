@@ -58,7 +58,9 @@ private sealed class Located {
 
 public class TeamStart(
     private val teams: TeamSource,
-    private val driver: TerminalSource,
+    /** The one drive every session's pane is reached through (SessionsWiring.drive), launch records included, so a
+     *  member Teams did not start, launched from his own tmux, answers and stops the way it does on Sessions. */
+    private val drive: SessionDrive,
     private val commands: StartCommands,
     private val pins: AccountPins,
     private val arrival: SessionArrival,
@@ -74,15 +76,12 @@ public class TeamStart(
     }
 
     private suspend fun launchable(store: TeamStore, member: Located.Member): JsonReply {
-        val driving = driver() ?: return Refusals.reply(HttpStatusCode.ServiceUnavailable, NO_TERMINAL)
+        val driving = drive.driver() ?: return Refusals.reply(HttpStatusCode.ServiceUnavailable, NO_TERMINAL)
         return when (val command = commands.forHead(member.slot.head)) {
             is StartCommand.Refused -> Refusals.reply(HttpStatusCode.Conflict, command.reason)
             is StartCommand.Ready -> launch(store, driving, member, command.argv)
         }
     }
-
-    /** The member's session drives the same pane, with the same refusals, as it does on Sessions (SessionDrive). */
-    private val drive = SessionDrive(driver)
 
     public fun stop(teamId: String, slotId: String): JsonReply = onSession(teamId, slotId) { drive.stop(it) }
 

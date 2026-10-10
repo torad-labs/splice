@@ -16,16 +16,13 @@ import io.ktor.http.HttpStatusCode
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.http.JsonReply
-import splice.sessions.prompt.ScreenChoices
 
 /** The live prompt on a member's screen, for the card that draws its choices. */
 public class TeamScreen(
     private val teams: TeamSource,
-    driver: TerminalSource,
-    choices: ScreenChoices = ScreenChoices(),
+    /** The one drive every session's screen is read through (SessionsWiring.drive), launch records included. */
+    private val drive: SessionDrive,
 ) {
-    private val drive = SessionDrive(driver, choices)
-
     public fun offer(teamId: String, slotId: String): JsonReply {
         val store = teams() ?: return refuse(HttpStatusCode.ServiceUnavailable, TEAMS_UNWIRED)
         val team = store.team(teamId) ?: return refuse(HttpStatusCode.NotFound, "$NO_SUCH_TEAM$teamId")

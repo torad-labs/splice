@@ -18,6 +18,9 @@ import splice.sessions.teams.Team
 import splice.sessions.teams.TeamSlot
 import java.nio.file.Path
 
+// why: the pid the member's own launch recorded, and the one running in front of its pane
+private const val OWN_PID = 4242L
+
 /** The screen read: what a member is showing, as choices a card can draw. */
 class TeamScreenTest {
 
@@ -29,7 +32,10 @@ class TeamScreenTest {
     private val panes = FakePanes()
 
     private fun screen(wired: Boolean = true) =
-        TeamScreen(TeamSource { rig.store }, TerminalSource { SessionDriver(terminal, panes).takeIf { wired } })
+        TeamScreen(
+            TeamSource { rig.store },
+            SessionDrive(TerminalSource { SessionDriver(terminal, panes).takeIf { wired } }),
+        )
 
     private fun team(): Team = rig.store.upsert(
         Team(
@@ -70,6 +76,28 @@ class TeamScreenTest {
             choices,
         )
         assertTrue(body.getValue("choices").jsonArray.first().jsonObject.getValue("here").jsonPrimitive.boolean)
+    }
+
+    /** The usual case: he started the member from his own tmux, so Teams never opened its pane. The drive is
+     *  Sessions' own, so the pane its launch recorded is read here exactly as it is there. */
+    @Test
+    fun `a member launched from his own terminal shows its choices, through the pane its launch recorded`() {
+        val id = team().id
+        rig.store.bind(id, mapOf("b1" to "s-own"))
+        val pane = SessionPane("%3@/tmp/tmux-1000/default")
+        terminal.inFront[pane] = OWN_PID
+        terminal.screenText = "Run the tax tests?\n❯ 1. Yes\n  2. No"
+        val launched = SessionDrive(
+            TerminalSource { SessionDriver(terminal, panes) },
+            launched = LaunchedTerminals { s ->
+                LaunchedTerminal(OWN_PID, "%3", "/tmp/tmux-1000/default").takeIf { s == "s-own" }
+            },
+        )
+
+        val reply = TeamScreen(TeamSource { rig.store }, launched).offer(id, "b1")
+
+        assertEquals(HttpStatusCode.OK, reply.status, reply.body)
+        assertEquals(2, rig.json(reply.body).getValue("choices").jsonArray.size)
     }
 
     @Test

@@ -19,7 +19,6 @@ import splice.sessions.http.TeamScreen
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TeamStart
 import splice.sessions.http.TeamsRoutes
-import splice.sessions.http.TerminalSource
 import splice.sessions.registry.SessionSource
 import splice.upstream.codemode.ProcessWaiter
 
@@ -46,7 +45,7 @@ internal class TeamsMount(
      *  wires them after this mount is constructed still serves them (the [ports] rule). */
     private val starts = TeamStart(
         teams = TeamSource { ports.teams },
-        driver = TerminalSource { ports.sessionDriver },
+        drive = wiring.drive,
         commands = HeadStartCommands(heads),
         pins = PoolAccountPins(heads),
         arrival = RegistryArrival(sessions, ProcessWaiter()),
@@ -54,8 +53,8 @@ internal class TeamsMount(
         home = UserHome.dir(),
     )
 
-    /** What a member's screen is offering right now, read per call over the same terminal. */
-    private val screen = TeamScreen(TeamSource { ports.teams }, TerminalSource { ports.sessionDriver })
+    /** What a member's screen is offering right now, read through Sessions' own drive, launch records included. */
+    private val screen = TeamScreen(TeamSource { ports.teams }, wiring.drive)
 
     /** There is deliberately no GET /api/teams/{id}; the board composes from these and /api/sessions. */
     fun register(route: Route) {

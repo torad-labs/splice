@@ -54,7 +54,8 @@ private const val LAUNCH_PANE_TAKEN =
 /** The console's hands on one session's terminal, by session id. A session has one when splice opened it (the pane
  *  memory) or when its own launch recorded the terminal it ran in, and only while that terminal still has it in front. */
 public class SessionDrive(
-    private val driver: TerminalSource,
+    /** The terminal the drive reaches panes through; TeamStart opens a member's pane on the same one. */
+    internal val driver: TerminalSource,
     private val choices: ScreenChoices = ScreenChoices(),
     private val launched: LaunchedTerminals = LaunchedTerminals { null },
 ) {

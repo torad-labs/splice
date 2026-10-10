@@ -96,7 +96,7 @@ class TeamStartTest {
 
     private fun start(on: TeamRig = rig, wired: Boolean = true) = TeamStart(
         teams = TeamSource { on.store },
-        driver = TerminalSource { SessionDriver(terminal, panes).takeIf { wired } },
+        drive = SessionDrive(TerminalSource { SessionDriver(terminal, panes).takeIf { wired } }),
         commands = StartCommands { command },
         pins = AccountPins { head, label, session ->
             pinned += Triple(head, label, session)

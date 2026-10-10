@@ -96,6 +96,9 @@ class TraceTailHeapTest {
             maxBodyChars = 2 * bodyChars,
             now = WallClock { at },
             ids = TurnIdMint { queue.removeFirst() },
+            // A ledger no write can fill: its leases return when the collector frees each turn's text, so a sized one
+            // made this setup depend on how far behind the collector was under suite load.
+            heap = HeapBudget(heapLimitBytes = 1L shl 40),
         )
         ids.forEach { id ->
             val body = id.padEnd(bodyChars, 'x')

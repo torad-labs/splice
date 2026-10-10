@@ -2,21 +2,17 @@
 // (concentration, 2026-08-19) so emitFailure is not billed for this surface. Same-package.
 package splice.head.turn
 
-import kotlinx.serialization.json.JsonPrimitive
-import splice.core.auth.Credentials
 import splice.core.perf.OutcomeTag
 import splice.core.perf.PerfKeys
 import splice.core.turn.ErrorType
 import splice.core.usage.PlanLimit
 import splice.core.util.ERR_SNIPPET
-import splice.core.util.JsonWire
 import splice.core.util.LogSink
 import splice.head.HeadHealthCounters
 import splice.head.admission.TurnQuota
 import splice.head.perf.PerfFailure
 import splice.head.pipeline.FailureRenderer
 import splice.upstream.Provider
-import splice.upstream.failure.ClassifiedFailure
 import splice.upstream.failure.FailureSource
 import splice.upstream.failure.ForeignCredential
 import splice.upstream.failure.UpstreamFailureClassifier
@@ -90,33 +86,18 @@ internal class TurnKnownEnd(
                 PerfFailure(
                     cause = failure.cause.name,
                     layers = e.layers,
-                    providerMessage = providerWords(e, read, sent),
+                    // V4-444: the provider's own words, or nothing. A local hold never asked the upstream and no status
+                    // means no answer came back; otherwise ForeignCredential judges from the reading BEFORE its own
+                    // rewrite, whose clause splice wrote for the CLIENT and would sit wrongly under this label.
+                    providerMessage = if (e.localHold || e.status == null) {
+                        null
+                    } else {
+                        ForeignCredential.upstreamsWords(e.body, read, sent)
+                    },
                 ),
             )
         }
     }
-
-    /** V4-444: what the PROVIDER said, for the row, or null when splice has nothing to attribute to it.
-     *
-     *  Three ways there is nothing: a local hold stood in for the upstream, so this turn never asked it; no status
-     *  came back at all, so no answer did either; and a sentence the CLASSIFIER authored is splice speaking, not the
-     *  provider — told apart by the body containing the words, which is a test no later classifier arm can slip
-     *  past and needs no list of the arms. The pre-[ForeignCredential] reading is used on purpose: its rewrite
-     *  prefixes splice's own clause, which is right for the client and wrong under a "what the upstream said"
-     *  label. Bounded like the client-facing text, and the credential splice sent is masked out of it. */
-    private fun providerWords(e: UpstreamFailed, read: ClassifiedFailure, sent: Credentials?): String? {
-        if (e.localHold || e.status == null) return null
-        val said = read.message.trim()
-        return said.takeIf { it.isNotBlank() && spoke(e.body, it) }
-            ?.let { ForeignCredential.withoutSentSecret(it, sent).take(ERR_SNIPPET) }
-    }
-
-    /** Whether [body] SAID [words]: as they read, or as a JSON string's own escaped spelling of them, which is how
-     *  a message lifted out of `error.message` appears in the bytes that arrived. The second reading is why a
-     *  provider's sentence with a quote or a line break in it still counts as the provider's — without it the
-     *  honest test above would drop exactly the messages that quote the request back. */
-    private fun spoke(body: String, words: String): Boolean =
-        body.contains(words) || body.contains(JsonWire.string(JsonPrimitive(words)).removeSurrounding("\""))
 
     private fun message(type: ErrorType, bounded: String, standby: String?): String =
         if (type == ErrorType.AUTHENTICATION && provider.loginCommand.isNotEmpty()) {

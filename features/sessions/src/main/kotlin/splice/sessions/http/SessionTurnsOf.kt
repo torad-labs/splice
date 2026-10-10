@@ -70,6 +70,6 @@ public fun interface SessionTurnsOf {
 }
 
 /** A control plane with no accumulator wired: every row keeps its `turns` absent. */
-public object NoSessionTurns : SessionTurnsOf {
+internal object NoSessionTurns : SessionTurnsOf {
     override fun countOf(sessionId: String): SessionTurnCount? = null
 }

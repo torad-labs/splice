@@ -8,9 +8,12 @@
 // the upstream refused. The comparison runs here, in-process, and the credential goes nowhere else.
 package splice.upstream.failure
 
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.auth.Credentials
 import splice.core.turn.ErrorType
 import splice.core.turn.FailureCause
+import splice.core.util.ERR_SNIPPET
+import splice.core.util.JsonWire
 
 /** Whether an upstream's authentication failure names a credential other than the one sent. */
 public object ForeignCredential {
@@ -23,11 +26,28 @@ public object ForeignCredential {
         return masked.isNotEmpty() && masked.none { (head, tail) -> secret.startsWith(head) && secret.endsWith(tail) }
     }
 
+    /** V4-444: the words the UPSTREAM itself said in [body], for a surface that labels them as its own (the console's
+     *  Requests list), or null when the sentence in [read] is not the upstream's. [read] must be the classifier's
+     *  reading BEFORE [upstreamsOwn] rewrites it: the classifier's own sentences (a gateway page, an overflow
+     *  restatement) and that rewrite are splice speaking, told apart by the body NOT containing them, a test no later
+     *  classifier arm can slip past and that needs no list of the arms. Bounded, with the credential [sent] masked. */
+    public fun upstreamsWords(body: String, read: ClassifiedFailure, sent: Credentials?): String? {
+        val said = read.message.trim()
+        return said.takeIf { it.isNotBlank() && spoke(body, it) }
+            ?.let { withoutSentSecret(it, sent).take(ERR_SNIPPET) }
+    }
+
+    /** Whether [body] SAID [words]: as they read, or as a JSON string's own escaped spelling of them, which is how a
+     *  message lifted out of `error.message` appears in the bytes that arrived. Without the second reading the test
+     *  would drop exactly the messages that quote the request back. */
+    private fun spoke(body: String, words: String): Boolean =
+        body.contains(words) || body.contains(JsonWire.string(JsonPrimitive(words)).removeSurrounding("\""))
+
     /** V4-444: [text] with the credential that was SENT replaced by a mask, for a surface that shows the
      *  upstream's own words (the console's Requests list). A provider that echoes a request header back into its
      *  error body would otherwise carry our key onto that surface. EXACT, never a pattern: only the one secret in
      *  hand is removed, so the provider's sentence survives whole and no key-shaped text of its own is eaten. */
-    public fun withoutSentSecret(text: String, sent: Credentials?): String {
+    private fun withoutSentSecret(text: String, sent: Credentials?): String {
         val secret = secretOf(sent)?.takeIf { it.isNotBlank() } ?: return text
         return text.replace(secret, SHORT_STARS)
     }

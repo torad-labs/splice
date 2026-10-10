@@ -155,7 +155,7 @@ async function load() {
     c.order = [...ids, ...mine.map((a) => a.id).filter((id) => !ids.includes(id))];
     c.mode = o.body?.order?.length ? "mine" : "soonest";
     c.orderable = new Set(o.body?.effective_order || []); // the labels splice will take in an order
-    c.pin = mine.find((a) => a.row.pinned)?.id || null;
+    c.pin = mine.find((a) => (a.row.pinned_heads || []).includes(c.head))?.id || null; // pinned on THIS head, not on whichever head a shared row came from
     // the pool's own picks, named by label on this command
     c.serving = byLabel(o.body?.next_target) ?? null; c.following = byLabel(o.body?.following_target) ?? null;
   })));

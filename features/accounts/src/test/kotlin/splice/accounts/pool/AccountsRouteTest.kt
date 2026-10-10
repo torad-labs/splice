@@ -60,6 +60,34 @@ class AccountsRouteTest {
     }
 
     @Test
+    fun `a credential two heads share is pinned only on the head that pins it`() = runBlocking {
+        val account = HeadAccountView(
+            "backup",
+            false,
+            true,
+            true,
+            "plus",
+            HeadAccountQuota(HeadAccountWindow(10.0, 100L, 18_000L), HeadAccountWindow(5.0, 200L, 604_800L), 1L),
+        )
+        val pinned = HeadAccountPoolView(
+            selectedLabel = "backup",
+            accounts = listOf(account),
+            lastSwitch = null,
+            pinnedLabel = "backup",
+        )
+        val free = HeadAccountPoolView(selectedLabel = "backup", accounts = listOf(account), lastSwitch = null)
+        val path = "/shared/backup.json"
+        // The first head to reach the row is the one that does NOT pin: its flag used to speak for both.
+        val heads = mapOf("head-a" to oauthHead("head-a", free, path), "head-b" to oauthHead("head-b", pinned, path))
+
+        val accounts = json.parseToJsonElement(AccountsRoute(heads).accountsJson()).jsonObject["accounts"]!!
+        val row = accounts.jsonArray.single().jsonObject
+
+        assertEquals(listOf("head-b"), row["pinned_heads"]!!.jsonArray.map { it.jsonPrimitive.content })
+        assertEquals("true", row["pinned"]!!.jsonPrimitive.content, "pinned somewhere is still pinned")
+    }
+
+    @Test
     fun `a joined credential uses each head's own account label and its newest answer`() = runBlocking<Unit> {
         for ((firstLabel, secondLabel) in listOf("one" to "two", "two" to "one")) {
             val account = HeadAccountView(firstLabel, true, true, true, null)

@@ -120,9 +120,10 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
             if (kind == "client" && account.primary) return@forEach
             val fields = described[account.label]?.fields.orEmpty()
             if (fields["native_place"] != null) return@forEach
-            merge(joined, fields["auth_path"] ?: "$headKey:${account.label}", headKey, account.label) {
+            val row = merge(joined, fields["auth_path"] ?: "$headKey:${account.label}", headKey, account.label) {
                 pooledAccount(kind, account, view, fields)
             }
+            if (account.label == view.pinnedLabel) row.pinnedHeads += headKey
         }
     }
 
@@ -180,13 +181,10 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
         headKey: String,
         label: String? = null,
         build: () -> JoinedAccount,
-    ) {
-        val existing = joined[key]
-        if (existing != null) {
-            existing.labelsByHead[headKey] = label
-        } else {
-            joined[key] = build().also { it.labelsByHead[headKey] = label }
-        }
+    ): JoinedAccount {
+        val row = joined.getOrPut(key) { build() }
+        row.labelsByHead[headKey] = label
+        return row
     }
 
     private fun write(
@@ -231,7 +229,8 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
         into.put("auth_exclusion_reason", row.authExclusion.reason)
         into.put("refusal", row.authExclusion.refusal)
         into.put("selected", row.flags.selected)
-        into.put("pinned", row.flags.pinned)
+        into.put("pinned", row.flags.pinned?.let { row.pinnedHeads.isNotEmpty() })
+        into.putJsonArray("pinned_heads") { row.pinnedHeads.forEach { add(it) } }
         into.put("next_target", row.flags.nextTarget)
         into.putJsonArray("heads") { row.heads.sorted().forEach { add(it) } }
     }
@@ -272,5 +271,8 @@ private data class JoinedAccount(
     val flags: AccountFlags,
     val labelsByHead: MutableMap<String, String?> = sortedMapOf(),
 ) {
+    /** The heads on which THIS credential is the pin. [flags] describes the first head that reached the row, so a
+     *  credential two heads share and only one pins would otherwise read as pinned on both. */
+    val pinnedHeads: MutableSet<String> = sortedSetOf()
     val heads: Set<String> get() = labelsByHead.keys
 }

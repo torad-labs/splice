@@ -21,11 +21,8 @@ import splice.accounts.claude.ClaudeLoginRows
 import splice.core.auth.AuthDescription
 import splice.core.auth.REFUSAL_FIELD
 import splice.core.topology.AuthKindRegistry
-import splice.core.usage.ModelQuota
-import splice.core.usage.QuotaJson
 import splice.core.usage.QuotaView
 import java.util.concurrent.TimeUnit
-import splice.core.usage.QuotaWindowView as PlanWindow
 
 /** [firsts] answers for a command's first OAuth account, so its row can be renamed and removed. Null leaves it
  *  fixed. */
@@ -221,25 +218,12 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
     }
 
     private fun writeQuota(into: JsonObjectBuilder, row: JoinedAccount, nowSeconds: Long) {
-        into.put("five_hour_limit_percent", row.quota.fiveHour.usedPercent?.let { 100 })
-        into.put("seven_day_limit_percent", row.quota.sevenDay.usedPercent?.let { 100 })
+        row.quota.writeInto(into, nowSeconds)
         into.put("credential_path", row.credential.path)
         into.put("kind", row.credential.kind)
         into.put("label", row.label)
         into.put("primary", row.primary)
         into.put("single_login", row.credential.singleLogin)
-        into.put("plan", row.quota.plan)
-        into.put("five_hour_used_percent", row.quota.fiveHour.usedPercent)
-        into.put("five_hour_reset_epoch_seconds", row.quota.fiveHour.resetEpochSeconds)
-        into.put("five_hour_window_seconds", row.quota.fiveHour.windowSeconds)
-        into.put("five_hour_current", current(row.quota.fiveHour, row.quota.observedAtEpochSeconds, nowSeconds))
-        into.put("seven_day_used_percent", row.quota.sevenDay.usedPercent)
-        into.put("seven_day_reset_epoch_seconds", row.quota.sevenDay.resetEpochSeconds)
-        into.put("seven_day_window_seconds", row.quota.sevenDay.windowSeconds)
-        into.put("seven_day_current", current(row.quota.sevenDay, row.quota.observedAtEpochSeconds, nowSeconds))
-        QuotaJson().putModels(into, "seven_day_models", row.quota.sevenDayModels)
-        into.put("observed_at_epoch_seconds", row.quota.observedAtEpochSeconds)
-        into.put("no_usage_at_epoch_seconds", row.quota.noUsageAt)
         into.put("available", row.flags.available)
         into.put("credential_present", row.flags.credentialPresent)
         into.put("auth_excluded_until_epoch_millis", row.authExclusion.untilEpochMillis)
@@ -250,20 +234,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
         into.put("next_target", row.flags.nextTarget)
         into.putJsonArray("heads") { row.heads.sorted().forEach { add(it) } }
     }
-
-    /** V4-407: whether a window may count as the plan's usage now. The figures still ship either way:
-     *  the Accounts page shows an old reading with its age, while the nearest limit reads current
-     *  windows only, so a reading hours old is never ranked as the fleet's limit. */
-    private fun current(window: QuotaWindowView, observedAt: Long?, nowSeconds: Long): Boolean {
-        val used = window.usedPercent ?: return false
-        return PlanWindow(used.toInt(), window.resetEpochSeconds, observedAt).currentAt(nowSeconds) != null
-    }
 }
-
-/** One quota window's percent, reset and (V4-132) its own reported LENGTH — [AccountPool]'s own
- *  [splice.upstream.credentials.AccountView] carries the same three fields; this is the console-payload copy of
- *  that shape, grouped so [JoinedQuota] carries five-hour and seven-day as ONE field each instead of three. */
-private data class QuotaWindowView(val usedPercent: Double?, val resetEpochSeconds: Long?, val windowSeconds: Long?)
 
 /** Why a pooled or single-login account cannot be selected right now, or all null when it can. [refusal]
  *  (V4-410) is the permanent kind: splice will not load that credential at all, so it is not a renewal. */
@@ -288,19 +259,6 @@ private data class AccountFlags(
 /** The credential a joined row stands for: where it lives, which auth kind owns it, and whether it is a head's
  *  single login rather than a pooled account. */
 private data class JoinedCredential(val path: String?, val kind: String, val singleLogin: Boolean)
-
-/** A joined row's plan, its two quota windows, and when they were read, from whichever source carried them. */
-private data class JoinedQuota(
-    val plan: String?,
-    val fiveHour: QuotaWindowView,
-    val sevenDay: QuotaWindowView,
-    /** Epoch SECONDS the quota was read, from whichever source carried it — null when it didn't. */
-    val observedAtEpochSeconds: Long?,
-    /** Each model's own weekly window, where the provider reports one (Claude). */
-    val sevenDayModels: List<ModelQuota> = emptyList(),
-    /** Epoch SECONDS the provider last answered with no usage for this account ([QuotaView.noUsageAt]). */
-    val noUsageAt: Long? = null,
-)
 
 /** One joined row: an OAuth account (or a single-login head with none) plus every head riding it.
  *  [merge] retains each head's own selector in [labelsByHead] as it joins the same credential path. */

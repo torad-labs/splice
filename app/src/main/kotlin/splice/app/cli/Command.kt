@@ -46,6 +46,11 @@ public sealed class Command {
     public data object Version : Command() {
         override suspend fun run(): Int = success { println("splice $GATEWAY_VERSION") }
     }
+
+    /** The boot findings pass of this build against the person's splice.toml (ConfigPreflight). */
+    public data object CheckConfig : Command() {
+        override suspend fun run(): Int = ConfigPreflight(EnvReader(System::getenv)).check()
+    }
     public data object ShimVersion : Command() { override suspend fun run(): Int = success { println(SHIM_VERSION) } }
     public data object Init : Command() {
         override suspend fun run(): Int = success { InstallWiring.init(EnvReader(System::getenv)) }

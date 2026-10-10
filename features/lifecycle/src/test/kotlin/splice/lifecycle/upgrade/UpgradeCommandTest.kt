@@ -195,6 +195,21 @@ internal class UpgradeCommandTest : UpgradeRig() {
         assertEquals(INSTALLED, link(home, "current"), "the rollback itself landed; only the restart is red")
     }
 
+    /** Fail-closed boot: a splice.toml the candidate refuses ends the upgrade before anything is activated or
+     *  restarted, with the candidate's whole list and the old release still the live one. */
+    @Test
+    fun `a candidate that refuses the config is not activated and nothing is restarted`(@TempDir home: Path) {
+        flatInstall(home)
+        pristine(home)
+        configCheck = UpgradeExit(3, "splice: splice.toml has 1 finding: heads.one.provider (line 9)\n")
+        val (ok, out) = captured { command(home, release(home)).upgrade(listOf("--now")) }
+        assertFalse(ok, out)
+        assertTrue(out.contains("heads.one.provider (line 9)"), out)
+        assertTrue(out.contains("nothing activated"), out)
+        assertFalse(Files.exists(home.resolve("share/releases/current")), "nothing became the live release")
+        assertEquals(0 to 0, unitRestarts to verbRestarts, "the running daemon is not restarted")
+    }
+
     /** A candidate older than 0.4.0 has no `doctor --json`; its text doctor is not run against the
      *  live install for nothing, and `--to` names the tag with or without its v (review 2026-09-14). */
     @Test

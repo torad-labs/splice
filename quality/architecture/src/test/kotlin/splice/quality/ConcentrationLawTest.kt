@@ -180,7 +180,14 @@ internal object Concentration {
     // packages' medians, measured with this law's own scan on the tree. 9 -> 11.
     // 2026-10-09: the LongParameterList data-class flip added grouped types beside their owners (CodexCodeModeState,
     // AccountsRoute, HeadAdmission); AddProfileCatalog and UpstreamPlaygroundProbe moved by neighbourhood. 11 -> 15.
-    const val RATCHET_MAX_HIGH = 15
+    // 2026-10-10: TWO entrants, measured with this law's own census at 12f234650 (16) and on that tree with the
+    // upgrade-path files (17). RestartCommand.kt 3.64 (C 158.5, denominator 43.5) entered with 89385f40a, the
+    // restart refusal's own topology read; splice-builder is moving that read out of the file, and when it lands
+    // the band returns to 16 and this number follows it down. Unchanged Knob.kt enters by neighbourhood: C 203.5
+    // in both, denominator 69.5 -> 67.5, ratio 2.93 -> 3.01, because splice.app.cli gained ConfigPreflight.kt
+    // (the check-config verb, C 41.0) and its median fell 80.5 -> 66.0 over 9 -> 10 files, and that package is a
+    // neighbour of splice.core.config. 15 -> 17.
+    const val RATCHET_MAX_HIGH = 17
 
     /** THE PACKAGE-SCALE BASELINE — the worst package's FILE COUNT. The package is named here so
      *  the diff reads without running anything, but the NAME is not gated: a different package

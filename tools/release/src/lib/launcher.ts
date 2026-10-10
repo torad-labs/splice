@@ -139,6 +139,24 @@ const ARMS: readonly Arm[] = [
     },
   },
   {
+    // Fail-closed boot: the new jar refuses this splice.toml, so the old daemon is NOT stopped and the launch ends
+    // with the list. Order matters: it runs straight after the replace arm and puts the daemon back to "old".
+    name: "a stale daemon is left running when the new jar refuses the config",
+    run: async (ctx) => {
+      writeFileSync(ctx.daemonState, "old\n");
+      ctx.daemon.forget();
+      const run = await ctx.launch({ ...ctx.harness, LAUNCHER_CONFIG_REFUSES: "1" });
+      if (ctx.daemon.lastShutdown) return "the stale daemon was shut down although the new jar refuses splice.toml";
+      if (read(ctx.daemonState) !== "old") return "the stale daemon was replaced although the new jar refuses splice.toml";
+      if (!run.stderr.includes("heads.one.provider")) return `the launch must print the findings, got: ${run.stderr}`;
+      const said = run.stderr.includes("was not stopped") ? null : `the launch must say the daemon was not stopped, got: ${run.stderr}`;
+      // Hand the arms after this one the state the replace arm left them: a current daemon.
+      writeFileSync(ctx.daemonState, "new\n");
+      ctx.daemon.forget();
+      return said;
+    },
+  },
+  {
     // Regression: a recipe env key that is not a bare identifier must never reach the launched
     // process. The bash shim's risk was `eval "$CMD"` executing `X$(touch …)`; the Node shim
     // rejects the key by name, so BOTH are asserted — the file the substitution would have created
@@ -838,6 +856,11 @@ function writeMocks(bin: string): void {
     'import { appendFileSync, writeFileSync } from "node:fs";\n' +
       // The short ownership writer is not a daemon boot or an administrative CLI invocation.
       'if (process.argv.includes("record-launch")) process.exit(0);\n' +
+      // fail-closed boot: the new jar's findings pass, asked before the stale daemon is stopped.
+      'if (process.argv.includes("check-config")) {\n' +
+      '  if (process.env.LAUNCHER_CONFIG_REFUSES === "1") { process.stdout.write("splice: splice.toml has 1 finding: heads.one.provider (line 9)\\n"); process.exit(3); }\n' +
+      "  process.exit(0);\n" +
+      "}\n" +
       'if (process.env.LAUNCHER_JAVA_BOOT_FAILS === "1") {\n' +
       // JW-01: a boot-dead daemon — the stack trace goes to stderr, which the shim must be
       // redirecting into daemon-boot.log (pre-fix it went to /dev/null).

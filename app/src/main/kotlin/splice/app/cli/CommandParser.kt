@@ -92,6 +92,7 @@ private val verbs: Map<String, CommandRegistration> = mapOf(
             if (valid) PendingLoginCommand(a.drop(1)) else null
         },
     ),
+    "check-config" to CommandRegistration("", CommandFactory.Alone(Command.CheckConfig)),
     "shim-version" to CommandRegistration("", CommandFactory.Alone(Command.ShimVersion)),
     "init" to CommandRegistration("", CommandFactory.Alone(Command.Init)),
     "install" to CommandRegistration("[<head>|--all]", CommandFactory.OneHead { a -> Command.Install(a.getOrNull(1)) }),

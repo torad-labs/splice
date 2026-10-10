@@ -71,7 +71,7 @@ module.exports = { liveStateDir };
 
 // Hand-paired with splice.core.SHIM_VERSION (core/src/main/kotlin/splice/core/Versions.kt)
 // — bump both together whenever this shim's behavior changes. No code generation.
-const SPLICE_SHIM_VERSION = "shim-15";
+const SPLICE_SHIM_VERSION = "shim-16";
 // Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
 const SPLICE_GATEWAY_VERSION = "0.4.0";
 
@@ -338,12 +338,27 @@ async function waitForHealth(attempts) {
 // A listener is valid only when it is splice and its version matches the installed JAR/shim.
 // New daemons can shut themselves down cleanly for an automatic upgrade. Legacy daemons without
 // that route fail loudly instead of silently serving an incompatible API forever.
+// Fail-closed boot, ahead of the stop: the NEW jar boots only on a splice.toml it finds no fault in, so it is asked
+// first (`check-config`, which reads and reports and writes nothing). A refusal leaves the running daemon up and
+// ends this launch with the whole list. A jar that has no such verb, or no java at all, answers some other way and
+// the launch goes on as it always did: the boot log then says what is wrong.
+const CONFIG_REFUSED_EXIT = 3;
+function refuseUnbootableConfig(running) {
+  try {
+    execFileSync("java", [USER_HOME, "-jar", JAR, "check-config"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60000 });
+  } catch (failure) {
+    if (failure.status !== CONFIG_REFUSED_EXIT) return;
+    fail(`${String(failure.stdout ?? "").trim()}\nsplice: the running ${running} daemon was not stopped; fix splice.toml, then launch again`);
+  }
+}
+
 async function replaceStaleDaemon() {
   const running = healthField("version");
   if (running === "") fail(`splice: port ${CONTROL_PORT} is occupied by a non-splice or malformed health endpoint`);
   if (running === SPLICE_GATEWAY_VERSION) return;
   const key = readKey();
   if (key === "") fail(`splice: daemon version ${running} is stale, but ${KEY_FILE} is unavailable; stop it and retry`);
+  refuseUnbootableConfig(running);
   warn(`splice: replacing stale daemon ${running} with ${SPLICE_GATEWAY_VERSION}…`);
   const answer = await request("POST", `${CONTROL}/api/daemon/shutdown`, 3000, { Authorization: `Bearer ${key}` });
   if (answer === null || answer.status >= 400) fail("splice: stale daemon cannot self-stop; terminate it once, then retry");

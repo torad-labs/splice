@@ -25,6 +25,9 @@ private const val GITHUB_REPO = "torad-labs/splice"
 private const val RELEASES = "https://github.com/$GITHUB_REPO/releases"
 private const val SHIM_MODE = "rwxr-xr-x"
 
+/** The exit code of the candidate jar's `check-config` when its boot findings refuse the person's splice.toml: a wire contract with another process, read here and declared there. */
+private const val CANDIDATE_CONFIG_REFUSAL_EXIT = 3
+
 /** `doctor --json` shipped in 0.4.0. */
 private const val JSON_DOCTOR_MINOR = 4
 
@@ -148,7 +151,7 @@ internal class UpgradeRelease(
             output.line("  ${"doctor".padEnd(UPGRADE_PAD)} $candidate predates doctor --json; preflight skipped")
             null
         } else {
-            doctorRefusal(jar)
+            doctorRefusal(jar) ?: configRefusal(jar)
         }
         return refusal ?: Upgraded.Ok(candidate)
     }
@@ -159,6 +162,19 @@ internal class UpgradeRelease(
         val answered = doctor.code in 0..1 && doctor.stdout.trimStart().startsWith("{")
         if (answered) return null
         return Upgraded.Refused("candidate jar's doctor --json did not answer with a report (exit ${doctor.code})")
+    }
+
+    /** Fail-closed boot, before anything is activated or stopped: the candidate's own `check-config` reads the
+     *  person's splice.toml with the findings the candidate will boot with. Exit 3 is its refusal, with every finding on
+     *  stdout; the upgrade then ends here with the old release active and the old daemon running. Any other answer (a
+     *  candidate that has no such verb prints its usage and exits otherwise) is no verdict, and the upgrade goes on. */
+    private fun configRefusal(jar: Path): Upgraded.Refused? {
+        val check = process(listOf(java, "-jar", jar.toString(), "check-config"), false)
+        if (check.code != CANDIDATE_CONFIG_REFUSAL_EXIT) return null
+        return Upgraded.Refused(
+            "the candidate would refuse to boot on your splice.toml, so the running daemon was not touched:\n" +
+                check.stdout.trim(),
+        )
     }
 
     private fun predatesJsonDoctor(version: String): Boolean {

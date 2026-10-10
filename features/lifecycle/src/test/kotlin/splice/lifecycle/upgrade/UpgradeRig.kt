@@ -65,7 +65,11 @@ internal abstract class UpgradeRig {
         else -> UpgradeExit(0, "").also { unitRestarts++ }
     }
 
+    /** What the candidate's `check-config` answers: 0 for a splice.toml it boots on, 3 with the findings it refuses. */
+    protected var configCheck = UpgradeExit(0, "")
+
     protected fun java(cmd: List<String>) = when {
+        cmd.last() == "check-config" -> configCheck
         cmd.last() == "version" -> UpgradeExit(0, "splice $reportedVersion\n")
         cmd.contains("doctor") -> UpgradeExit(if ("--json" in cmd) 0 else postUpgradeDoctor, "{}")
         else -> UpgradeExit(0, "")

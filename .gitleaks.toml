@@ -17,4 +17,7 @@ regexes = [
   # Code-mode record keys in retention fixtures: the whole value is "conversation-" + digits, which
   # crosses the 3.5 entropy floor by length alone (CodexCodeModeRetentionTest, CodexResponsesArmTest).
   '''"conversation-[0-9]+"''',
+  # The transcript redaction tests' synthetic secret, "token=abcdefgh" + digits: the string the redactor must hide.
+  # Wrapping its line past 120 columns (34844d63e) made the history scan match it.
+  '''token=abcdefgh[0-9]+''',
 ]

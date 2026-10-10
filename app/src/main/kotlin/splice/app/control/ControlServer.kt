@@ -39,8 +39,8 @@ import splice.app.control.api.HeadSignals
 import splice.app.control.mount.AccountsMount
 import splice.app.control.mount.AddMount
 import splice.app.control.mount.BoundResource
-import splice.app.control.mount.ConsoleMount
 import splice.app.control.mount.ConfigurationMount
+import splice.app.control.mount.ConsoleMount
 import splice.app.control.mount.ControlGuard
 import splice.app.control.mount.ControlMount
 import splice.app.control.mount.DaemonSelfAnswers

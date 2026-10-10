@@ -12,6 +12,9 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -28,8 +31,11 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.core.util.AsyncFileIo
 import splice.dialect.responses.ReasoningSettings
 import splice.head.compaction.CompactionTail
+import splice.upstream.BuiltTurn
+import splice.upstream.Provider
 import splice.upstream.ProviderLocations
 import splice.upstream.ProviderName
 import splice.upstream.ProviderTuning
@@ -44,6 +50,11 @@ private class TailAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-tail", "acct-tail")
     override suspend fun refresh(): Credentials = credentials()
     override suspend fun describe(): AuthDescription = AuthDescription(true, "fake")
+}
+
+/** A provider whose dialect cannot place a compaction tail: the SPI default hands the turn straight back. */
+private class UnplaceableTailProvider(delegate: Provider) : Provider by delegate {
+    override fun withCompactionTail(turn: BuiltTurn, instructions: String): BuiltTurn = turn
 }
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -63,25 +74,30 @@ class HeadServerCompactionTailTest(@param:TempDir private val root: Path) {
     }
 
     /** A codex head whose compaction tail is [config]; started, listening, and remembered for teardown. */
-    private fun head(name: String, config: CompactionConfig): HeadServer = runBlocking {
+    private fun head(
+        name: String,
+        config: CompactionConfig,
+        wrap: (Provider) -> Provider = { it },
+    ): HeadServer = runBlocking {
         val dir = java.nio.file.Files.createDirectories(root.resolve(name))
         val tail = CompactionTail(CompactionInstructions(config, dir), projectFor = { null })
-        val server = HeadServer(
-            provider = TestResponsesProvider(
-                tuning = ProviderTuning(
-                    name = ProviderName(key = "codex", label = "claudex"),
-                    catalog = ModelCatalog(
-                        discoveryPrefix = "claude-codex--",
-                        models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
-                        defaultContextWindow = 272_000,
-                    ),
-                    pinnedModel = "gpt-5.6-sol",
-                    auth = TailAuth(),
-                    locations = ProviderLocations(baseUrl = mock.baseUrl),
-                    watchdog = WatchdogBudget(20.seconds, 20.seconds, 30.seconds),
+        val codex = TestResponsesProvider(
+            tuning = ProviderTuning(
+                name = ProviderName(key = "codex", label = "claudex"),
+                catalog = ModelCatalog(
+                    discoveryPrefix = "claude-codex--",
+                    models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+                    defaultContextWindow = 272_000,
                 ),
-                reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+                pinnedModel = "gpt-5.6-sol",
+                auth = TailAuth(),
+                locations = ProviderLocations(baseUrl = mock.baseUrl),
+                watchdog = WatchdogBudget(20.seconds, 20.seconds, 30.seconds),
             ),
+            reasoning = ReasoningSettings(ReasoningDisplay.TEXT, false, "high", "detailed"),
+        )
+        val server = HeadServer(
+            provider = wrap(codex),
             listenPort = 0,
             deps = headDeps(
                 tmp = dir,
@@ -134,4 +150,19 @@ class HeadServerCompactionTailTest(@param:TempDir private val root: Path) {
             assertFalse(untouched.contains(TAIL))
             assertEquals(untouched, empty, "an empty rule opts out: the request is the client's own")
         }
+
+    @Test
+    fun `a tail the dialect cannot place is reported as not applied and never claimed`() = runBlocking {
+        val unplaced = head("unplaced", CompactionConfig(instructions = TAIL)) { UnplaceableTailProvider(it) }
+
+        val body = upstreamBodyFor(unplaced, SUMMARIZER, "compaction-3")
+
+        assertFalse(body.contains(TAIL), "the wire carries nothing the dialect could not place")
+        assertTrue(AsyncFileIo.drain(), "the compaction record must reach disk before it is read")
+        val source = java.nio.file.Files.readAllLines(root.resolve("unplaced").resolve("compact.jsonl"))
+            .map { Json.parseToJsonElement(it).jsonObject }
+            .mapNotNull { it["instructions_source"]?.jsonPrimitive?.content }
+            .single()
+        assertTrue(source.endsWith("(not applied)"), "the record says the text was not applied: $source")
+    }
 }

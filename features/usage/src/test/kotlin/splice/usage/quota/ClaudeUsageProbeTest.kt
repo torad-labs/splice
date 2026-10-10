@@ -32,6 +32,10 @@ private const val USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 // 2026-10-11T18:00:00+00:00, the Fable row's own resets_at in the Oct 10 answer.
 private const val FABLE_WEEK_RESETS = 1_791_741_600L
 
+// why: 2026-04-16T00:40Z, inside every window MAX_PLAN_BODY reports (Sonnet's week resets at 1,776,308,401 and the
+// account's at 1,776,387,600), so a reading taken here is one taken during the week it describes.
+private const val IN_WEEK_MS = 1_776_300_000_000L
+
 /** What the endpoint answered on a Max plan: both windows, a per-model weekly (Opus null, Sonnet read), and the
  *  extra-usage block (anthropics/claude-code#30930). `resets_at` carries fractional seconds and an offset. */
 private const val MAX_PLAN_BODY = """
@@ -92,10 +96,12 @@ class ClaudeUsageProbeTest {
     }
 
     // A turn's headers name no model weeks: the reading keeps the last ones while it is the same week, and drops them
-    // once the week rolls.
+    // once the week rolls. Read INSIDE the week the body reports (NOW_MS is months after it): since Oct 10, 2026 a
+    // model row is carried only while its OWN week is still running at the second the carrying reading was observed,
+    // so a reading taken after Sonnet's week had already rolled keeps nothing — which is the point of that rule.
     @Test
     fun `a reading with no model weeks keeps the last ones for the same week only`() {
-        val probed = parser.parse(obj(MAX_PLAN_BODY), NOW_MS)!!
+        val probed = parser.parse(obj(MAX_PLAN_BODY), IN_WEEK_MS)!!
         val week = probed.sevenDay!!
         val sameWeek = probed.copy(models = emptyList(), sevenDay = week.copy(resetsAt = week.resetsAt!! + 1))
         val rolled = week.copy(resetsAt = week.resetsAt!! + SEVEN_DAYS_SECONDS)

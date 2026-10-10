@@ -24,6 +24,7 @@ import {
   parseScan,
   preCommit,
   prePush,
+  printableRemote,
   rerunTasks,
   SHIM_BEGIN,
   scanMirror,
@@ -433,6 +434,84 @@ describe("pre-push judges the tip", () => {
     const { result, text } = await captured(() => prePush(lay(root), stdin, { gate, openRun: () => null, legs: NO_LEGS }));
     expect(result).toBe(0);
     expect(text).toContain("PRE-PUSH: PASS");
+  });
+});
+
+describe("the moved-tip refusal", () => {
+  const ZERO = "0000000000000000000000000000000000000000";
+
+  test("a push to a URL with a token in its userinfo prints the destination without it", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): the tip this push judges");
+    const judged = head(root);
+    const gate: GateRunner = async (...args) => {
+      writeFile(root, TARGET, CLEAN.replace("Probe", "Peer"));
+      git(root, ["add", TARGET]);
+      commit(root, "chore(test): a peer's commit, never judged");
+      return await compiler(root)(...args);
+    };
+    const remote = "https://someone:ghp_SECRETTOKEN@github.com/torad-labs/splice.git?token=ALSOSECRET";
+    const { result, text } = await captured(() => prePush(lay(root), pushOf(root, judged), { gate, openRun: () => null, legs: NO_LEGS }, remote));
+    expect(result).toBe(1);
+    expect(text).toContain(`git push https://github.com/torad-labs/splice.git ${judged}:refs/heads/feat/x`);
+    for (const secret of ["ghp_SECRETTOKEN", "someone:", "ALSOSECRET", "@github.com"]) expect(text).not.toContain(secret);
+  });
+
+  test("printableRemote keeps a name, drops userinfo from a URL and from an scp-like address", () => {
+    expect(printableRemote("origin")).toBe("origin");
+    expect(printableRemote("ssh://git:pw@host.example:2222/org/repo.git")).toBe("ssh://host.example:2222/org/repo.git");
+    expect(printableRemote("git@github.com:torad-labs/splice.git")).toBe("github.com:torad-labs/splice.git");
+    expect(printableRemote("/srv/git/splice.git")).toBe("/srv/git/splice.git");
+    expect(printableRemote("file:///srv/git/splice.git")).toBe("file:///srv/git/splice.git");
+  });
+
+  test("a push of two refs is refused when the FIRST moved while the second was being judged", async () => {
+    const root = wallsRepo();
+    git(root, ["checkout", "-q", "-b", "first"]);
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): the first tip");
+    const first = head(root);
+    git(root, ["checkout", "-q", "-b", "second", "origin/main"]);
+    writeFile(root, TARGET, CLEAN.replace("Probe", "Second"));
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): the second tip");
+    const second = head(root);
+    let judgements = 0;
+    const gate: GateRunner = async (...args) => {
+      judgements += 1;
+      if (judgements === 2) {
+        // while the second tip is judged, a peer commits on the first branch, whose verdict was already given
+        git(root, ["checkout", "-q", "first"]);
+        writeFile(root, TARGET, CLEAN.replace("Probe", "Peer"));
+        git(root, ["add", TARGET]);
+        commit(root, "chore(test): a peer's commit on the first branch, never judged");
+        git(root, ["checkout", "-q", "second"]);
+      }
+      return await compiler(root)(...args);
+    };
+    const stdin = `refs/heads/first ${first} refs/heads/first ${ZERO}\nrefs/heads/second ${second} refs/heads/second ${ZERO}\n`;
+    const { result, text } = await captured(() => prePush(lay(root), stdin, { gate, openRun: () => null, legs: NO_LEGS }));
+    expect(judgements).toBe(2);
+    expect(result).toBe(1);
+    expect(text).toContain(`refs/heads/first is now`);
+    expect(text).toContain(`not the judged ${first.slice(0, 7)}`);
+  });
+
+  test("an annotated tag pushed by its own object sha is not called moved", async () => {
+    const root = wallsRepo();
+    writeFile(root, TARGET, CLEAN);
+    git(root, ["add", TARGET]);
+    commit(root, "chore(test): the tagged tip");
+    git(root, ["-c", "user.name=test", "-c", "user.email=test@test", "-c", "tag.gpgsign=false", "tag", "-a", "v9.9.9", "-m", "release"]);
+    const tagObject = Bun.spawnSync(["git", "rev-parse", "refs/tags/v9.9.9"], { cwd: root, stdout: "pipe" }).stdout.toString().trim();
+    expect(tagObject).not.toBe(head(root));
+    const stdin = `refs/tags/v9.9.9 ${tagObject} refs/tags/v9.9.9 ${ZERO}\n`;
+    const { result, text } = await captured(() => prePush(lay(root), stdin, { gate: compiler(root), openRun: () => null, legs: NO_LEGS }));
+    expect(text).not.toContain("moved");
+    expect(result).toBe(0);
   });
 });
 

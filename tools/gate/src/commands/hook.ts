@@ -486,8 +486,17 @@ export async function prePush(lay: Layout, stdin: string, deps: HookDeps = {}, r
   }
   // Each distinct tip is judged on its own, as a clean checkout of that commit.
   for (const tip of [...new Set(refs.map((ref) => ref.tip))]) {
-    const code = await judgeTip(lay, tip, refs.filter((ref) => ref.tip === tip), deps, started, remoteName);
+    const code = await judgeTip(lay, tip, refs.filter((ref) => ref.tip === tip), refs, deps, started, remoteName);
     if (code !== 0) return code;
+  }
+  // The last look, right before the hook hands git its verdict: every ref git named, not only the tip just judged. A tip
+  // judged first can be passed by a peer's commit while a later tip is still being judged.
+  const moved = movedRefs(lay.repoRoot, refs);
+  if (moved.length > 0) {
+    console.log("PRE-PUSH: FAIL — the branch moved after the gate judged");
+    console.error(`pre-push: ✗ the branch moved while the gate judged: ${moved.join("; ")}`);
+    console.error(`pre-push: name the sha and git sends exactly what the gate judged: ${explicitPush(remoteName, refs)}`);
+    return 1;
   }
   return 0;
 }
@@ -498,6 +507,7 @@ async function judgeTip(
   lay: Layout,
   tip: string,
   refs: readonly PushedRef[],
+  pushed: readonly PushedRef[],
   deps: HookDeps,
   started: number,
   remoteName: string,
@@ -519,7 +529,7 @@ async function judgeTip(
   }
   console.error(`pre-push timing: build tree ${(tree.setupMs / 1000).toFixed(1)} s to move to the sha, ${((performance.now() - waitStarted - tree.setupMs) / 1000).toFixed(1)} s waiting for it`);
   try {
-    return await judgeIn(lay, tree.path, tip, refs, deps, started, remoteName);
+    return await judgeIn(lay, tree.path, tip, refs, pushed, deps, started, remoteName);
   } finally {
     tree.release();
   }
@@ -530,6 +540,7 @@ async function judgeIn(
   root: string,
   head: string,
   refs: readonly PushedRef[],
+  pushed: readonly PushedRef[],
   deps: HookDeps,
   started: number,
   remoteName: string,
@@ -585,11 +596,11 @@ async function judgeIn(
   const failedLegs = await direct;
   const elapsed = seconds(started);
   const gradleRed = judged !== undefined && judged.status !== 0;
-  const moved = gradleRed || failedLegs.length > 0 ? [] : movedRefs(lay.repoRoot, refs, head);
+  const moved = gradleRed || failedLegs.length > 0 ? [] : movedRefs(lay.repoRoot, pushed);
   if (moved.length > 0) {
     console.log(`PRE-PUSH: FAIL — judged ${judgedWhat}${scopeClause}`);
     console.error(`pre-push: ✗ the branch moved while the gate judged: ${moved.join("; ")}`);
-    console.error(`pre-push: name the sha and git sends exactly what the gate judged: ${explicitPush(remoteName, refs, head)}`);
+    console.error(`pre-push: name the sha and git sends exactly what the gate judged: ${explicitPush(remoteName, pushed)}`);
     return 1;
   }
   if (!gradleRed && failedLegs.length === 0) {
@@ -626,12 +637,26 @@ function pushedRefs(stdin: string): PushedRef[] {
 }
 
 /** The push that cannot carry an unjudged commit: the sha spelled out, so git has no ref left to re-read. One command
- *  per ref the push moves. */
-function explicitPush(remoteName: string, refs: readonly PushedRef[], judged: string): string {
-  return refs.map((ref) => `git push ${remoteName} ${judged}:${ref.remoteRef || ref.local}`).join(" && ");
+ *  per ref the push moves, each with the sha that ref was judged at. */
+function explicitPush(remoteName: string, refs: readonly PushedRef[]): string {
+  return refs.map((ref) => `git push ${printableRemote(remoteName)} ${ref.tip}:${ref.remoteRef || ref.local}`).join(" && ");
 }
 
-/** The sha a local ref resolves to now, or undefined when git cannot say. */
+/** The destination as it may be PRINTED: scheme, host and path. With no remote named, git hands the hook the remote's URL,
+ *  and a URL can carry a token in its userinfo; a refusal that quoted it would copy the secret into a terminal, a log and
+ *  a chat. Userinfo and query never leave this function. A remote's NAME and a local path pass through as they are. */
+export function printableRemote(remote: string): string {
+  try {
+    const url = new URL(remote);
+    if (url.host !== "") return `${url.protocol}//${url.host}${url.pathname}`;
+  } catch {
+    /* not an absolute URL: a name, a path, or scp-like user@host:path */
+  }
+  const scp = /^(?:[^@/\s]+@)?([^:/\s]+):(?!\/\/)(.*)$/.exec(remote);
+  return scp ? `${scp[1]}:${scp[2]}` : remote;
+}
+
+/** The commit a ref or sha resolves to now, peeled through an annotated tag, or undefined when git cannot say. */
 function refTipNow(root: string, ref: string): string | undefined {
   const read = git(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
   const text = read.stdout.toString("utf8").trim();
@@ -651,15 +676,24 @@ function refTipNow(root: string, ref: string): string | undefined {
  *  after the hook and takes its refspecs as text; a refspec naming a branch is resolved then, and one naming a sha has
  *  nothing left to resolve. (The trace shows when send-pack runs, not the content of its stdin.)
  *
- *  So this guard re-reads the local ref on the green path and refuses when it moved, and every push names its sha:
- *  `git push origin $(git rev-parse HEAD):refs/heads/<branch>`, with the sha taken as the push starts. The refusal
- *  prints that command. A sha refspec resolves to itself and passes. */
-function movedRefs(root: string, refs: readonly PushedRef[], judged: string): string[] {
+ *  So this guard re-reads EVERY local ref the push names, each against the tip it was judged at, once when a tip's verdict
+ *  is ready and again right before the hook returns, and refuses when any moved. Both sides are peeled to their commit,
+ *  so a push of an annotated tag by its own object sha compares commit with commit.
+ *
+ *  WHAT THIS CANNOT CLOSE. A gap of microseconds remains after the last check: git reads the ref again when the push
+ *  ends, and a commit landing in that window is sent unjudged. Only the explicit-sha rule closes it, because a sha has
+ *  no ref left to re-read: `git push origin $(git rev-parse HEAD):refs/heads/<branch>`, with the sha taken as the push
+ *  starts. The refusal prints that command. A sha refspec resolves to itself and passes. */
+function movedRefs(root: string, refs: readonly PushedRef[]): string[] {
   const moved: string[] = [];
   for (const ref of refs) {
+    const judged = refTipNow(root, ref.tip);
     const now = refTipNow(root, ref.local);
-    if (now === undefined) moved.push(`${ref.local} cannot be read, so the tip this push would send cannot be confirmed`);
-    else if (now !== judged) moved.push(`${ref.local} is now ${now.slice(0, 7)}, not the judged ${judged.slice(0, 7)}`);
+    if (judged === undefined || now === undefined) {
+      moved.push(`${ref.local} cannot be read, so the tip this push would send cannot be confirmed`);
+    } else if (now !== judged) {
+      moved.push(`${ref.local} is now ${now.slice(0, 7)}, not the judged ${judged.slice(0, 7)}`);
+    }
   }
   return moved;
 }

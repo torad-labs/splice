@@ -570,16 +570,17 @@ function goneHtml(r, st) {
 
 
 /** Start saving: this command's Prompts and answers on, the same write Your data makes (PUT /capture). The daemon
- *  takes it on the command's next request and says so (restart_required false, CaptureRoutes.kt); a daemon that still
- *  answers restart_required is told as it is. */
+ *  takes it on the command's next request and says so (restart_required false, CaptureRoutes.kt). A restart answer
+ *  would be a daemon bug, not a state (fin): the row stays "Not saved" and the answer goes to the log. */
 async function startSaving(head) {
   state.saving[head] = { word: "Saving" };
   render();
   const res = await API.put(`/api/heads/${encodeURIComponent(head)}/capture`, { enabled: true });
   if (!res.ok) { state.saving[head] = { word: refusalOf(res, "Saving could not be started"), failed: true }; render(); return; }
   state.capture[head] = { ...state.capture[head], on: true };
+  if (res.body?.restart_required) { delete state.saving[head]; console.warn("capture switch answered restart_required", head, res.body); render(); return; }
   // Settings' word for a change the daemon took live (knobs.js), so the same fact reads the same on both pages
-  state.saving[head] = { word: res.body?.restart_required ? "Saves after splice restarts" : "Applied" };
+  state.saving[head] = { word: "Applied" };
   render();
 }
 

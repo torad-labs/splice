@@ -38,7 +38,7 @@ const colorOf = (provider) => `var(${COLORS[provider] || "--text-mute"})`;
 // ---------- fin's words for how a request ended (OutcomeTag.kt's tags) ----------
 // A clean request and a spent window have no word: the window shows its own lock and reset time. A stop is not
 // a failure (isStopped, OutcomeTag.kt:75-76).
-const OUTCOME_WORD = { client_abort: "Stopped", "error:stopped": "Stopped", "error:cancelled": "Cancelled", "error:restarted": "splice restarted", "error:at-capacity": "splice was full",
+const OUTCOME_WORD = { client_abort: "Stopped", "error:stopped": "Stopped", "error:cancelled": "Cancelled", "error:restarted": "splice restarted", "error:at-capacity": "Too many at once",
   "error:plan-limit": "", "error:rate-limited": "Rate limited", "error:all-accounts-exhausted": "No quota", "error:budget-blocked": "Over budget",
   "error:auth-missing": "Signed out", "error:upstream-failed": "Provider error", "failure:overloaded_error": "Overloaded",
   "error:conn-reset": "Network error", "error:upstream-frame-too-large": "Stream error", empty_model: "Empty answer", "error:unexpected": "Internal error" };
@@ -69,8 +69,7 @@ const tagWord = (tag) => {
 };
 // A COUNT of turns an outcome ended reads with "when", so "60 when splice restarted" is sixty turns cut, not
 // sixty restarts (fin, after p85 and p78); a single request keeps the outcome's own word.
-// A request turned away at splice's full gate never reached a model (builder2, row 48), so the list draws it with no model.
-const COUNT_WORD = { "error:restarted": "when splice restarted", "error:at-capacity": "when splice was full" };
+const COUNT_WORD = { "error:restarted": "when splice restarted" };
 const countWord = (o) => COUNT_WORD[o] ?? OUTCOME_WORD[o] ?? tagWord(o);
 const STOPPED = new Set(["client_abort", "error:stopped"]);
 const isClean = (o) => o === "ok" || o === "empty_message";

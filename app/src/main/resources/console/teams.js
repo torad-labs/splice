@@ -64,7 +64,10 @@ const state = {
   screens: {},
   error: null, loading: true,
 };
-const ui = { team: null, day: 0, menu: null, compose: null, pick: null, archived: false, starting: new Set(), failed: new Map() };
+const ui = { team: null, day: 0, menu: null, compose: null, pick: null, archived: false, starting: new Set(), failed: new Map(), stopping: new Set(), answered: new Map() };
+// From his press until the member moves on, an answer keeps its words with the wait ring and the rest wait disabled; a
+// Stop keeps its place reading Stopping. Same as Sessions (stopHtml, askHtml): the styles are sessions.css's.
+const ANSWER_HOLD_MS = 30_000;
 const root = document.getElementById("teams");
 const sheet = document.getElementById("sheet");
 
@@ -240,7 +243,9 @@ function memberHtml(tm, slot) {
   const model = modelLabel(slot.head, slot.model);
   if (!s) return vacantHtml(tm, slot, { key, ro, lead, chip, model });
   const L = stateOf(s);
-  const stop = liveNow(s) && !ro ? `<button class="act quiet small" data-act="stop" data-s="${esc(slot.id)}">Stop</button>` : "";
+  const stop = !liveNow(s) || ro ? ""
+    : ui.stopping.has(key) ? `<button class="act quiet small stopping" disabled>${ICON.wait}Stopping</button>`
+    : `<button class="act quiet small" data-act="stop" data-s="${esc(slot.id)}">Stop</button>`;
   const now = lastActivity(slot.id);
   const body = L.cls === "needs" ? askHtml(s, slot.id, ro, key) : now ? `<p class="now">${activityHtml(now)}</p>` : "";
   // What the member is on: the name its session carries, else the folder it is in, as the drawing reads it.
@@ -265,10 +270,17 @@ function memberHtml(tm, slot) {
 // (This whole block moves to kit.js with Sessions, which draws the same ask on its own cards.)
 function askHtml(session, slotId, readOnly, key) {
   const asked = (session.last?.asks || [])[0];
+  const held = ui.answered.get(key);
+  const going = held && Date.now() - held.at < ANSWER_HOLD_MS ? held : null;
+  const busy = going ? " disabled" : "";
+  // the pressed answer keeps its words with the ring; the rest wait disabled
+  const pick = (choice, label, i) => going?.choice === choice
+    ? `<button class="act answering" disabled>${ICON.wait}${esc(label)}</button>`
+    : `<button class="act${i ? "" : " primary"}" data-act="answer" data-s="${esc(slotId)}" data-i="${choice}"${busy}>${esc(label)}</button>`;
   const failed = ui.failed.get(key);
   const why = failed ? `<p class="why limit">${esc(failed)}</p>` : "";
   if (!asked) {
-    const offer = state.screens[slotId];
+    const offer = going?.offer ?? state.screens[slotId];
     const what = prompted(session.last, offer);
     // The choices the client itself drew, each pressing the digit beside it on the screen. When splice could
     // not read one, the card says where the answer is given rather than offering an act it cannot carry —
@@ -276,13 +288,11 @@ function askHtml(session, slotId, readOnly, key) {
     if (!offer || readOnly) {
       return `<div class="ask">${what}<p class="why">Answer it in the terminal it runs in.</p>${why}</div>`;
     }
-    const acts = offer.choices.map((c, i) =>
-      `<button class="act${i ? "" : " primary"}" data-act="answer" data-s="${esc(slotId)}" data-i="${c.choice}">${esc(c.label)}</button>`).join("");
+    const acts = offer.choices.map((c, i) => pick(c.choice, c.label, i)).join("");
     return `<div class="ask">${what}<div class="answers">${acts}</div>${why}</div>`;
   }
   const buttons = readOnly || asked.multi ? "" :
-    `<div class="answers">${asked.options.map((o, i) =>
-      `<button class="act${i ? "" : " primary"}" data-act="answer" data-s="${esc(slotId)}" data-i="${i + 1}">${esc(o)}</button>`).join("")}</div>`;
+    `<div class="answers">${asked.options.map((o, i) => pick(i + 1, o, i)).join("")}</div>`;
   const chips = asked.multi
     ? `<div class="answers">${asked.options.map((o) => `<span class="scope">${esc(o)}</span>`).join("")}</div>`
     : "";
@@ -595,8 +605,13 @@ async function startSlot(tm, slot) {
 async function answerSlot(tm, slot, choice) {
   const key = `${tm.id}/${slot.id}`;
   ui.failed.delete(key);
+  ui.answered.set(key, { at: Date.now(), choice, offer: state.screens[slot.id] });
+  render();
   const answered = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/answer`, { choice });
-  if (!answered.ok) ui.failed.set(key, refusalOf(answered, "The answer did not reach the member"));
+  if (!answered.ok) {
+    ui.answered.delete(key);
+    ui.failed.set(key, refusalOf(answered, "The answer did not reach the member"));
+  }
   await read();
 }
 
@@ -660,7 +675,10 @@ document.addEventListener("click", async (e) => {
       await act(await API.put(`/api/teams/${tm.id}/sessions`, { bindings: { [slot.id]: b.dataset.to } }), "The session was not bound");
       break;
     case "stop": { // the refusal is a word by its reason key; its cause goes to the log (fin, kit stopRefusal)
+      const key = `${tm.id}/${slot.id}`;
+      ui.stopping.add(key); render();
       const res = await API.post(`/api/teams/${tm.id}/slots/${slot.id}/stop`);
+      ui.stopping.delete(key);
       const refused = stopRefusal(res);
       if (refused) { state.error = refused; render(); } else await read();
       break;

@@ -5,6 +5,7 @@ package splice.control.mcp
 
 import java.util.concurrent.TimeUnit
 
+// why: stdout closes a beat before the kernel reaps the child, and a second is far longer than that beat.
 private const val EXIT_WAIT_MS = 1_000L
 
 internal fun interface ChildReaped {

@@ -950,6 +950,11 @@ command = "claude-splice"
 #   GROK_OAUTH_AUTHORIZE_URL / GROK_OAUTH_TOKEN_URL / GROK_OAUTH_CLIENT_ID / GROK_OAUTH_ISSUER
 #                           do the same for the Grok device login
 #   KIMI_OAUTH_HOST         points the Kimi device flow at a different auth host
+#   CLAUDE_OAUTH_USAGE_URL  a TEST SEAM, not an operator setting: points the Claude plan usage probe at a stand-in
+#                           so a test home never sends its made-up token to Anthropic
+#                           Every URL and host above carries a token, so each is honoured only when it names this
+#                           machine (localhost, 127.0.0.1 or ::1); any other host is ignored with one log line and
+#                           the vendor's own endpoint is used
 #   CODEX_PROXY_TEST        a TEST HOOK, not an operator setting: it exists so tests can name a
 #                           scenario without touching the topology, and it does nothing in normal use
 #   INVOCATION_ID           SET BY SYSTEMD, never by an operator. Its presence tells the daemon to

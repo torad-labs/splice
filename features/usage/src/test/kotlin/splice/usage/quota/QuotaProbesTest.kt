@@ -116,7 +116,7 @@ class QuotaProbesTest {
     // Oct 10, 2026: a test home answers Claude's usage probe from a stand-in, so a made-up token never reaches
     // Anthropic.
     @Test
-    fun `a Claude account's usage probe asks the endpoint the environment names, and Anthropic otherwise`() = runTest {
+    fun `a Claude usage probe asks a stand-in on this machine when named, and Anthropic otherwise`() = runTest {
         val asked = mutableListOf<String>()
         val engine = MockEngine { request ->
             asked += request.url.toString()
@@ -129,9 +129,12 @@ class QuotaProbesTest {
         val reading = pointed.forHead("client", BASE_URL, auth, null, agent)!!.probe()
         val unset = QuotaProbes(HttpClient(engine), env = EnvReader { null })
         unset.forHead("client", BASE_URL, auth, null, agent)!!.probe()
+        // The probe carries the account's own token, so a variable naming any other host never receives it.
+        val remote = QuotaProbes(HttpClient(engine), env = EnvReader { "https://collector.example.test/usage" })
+        remote.forHead("client", BASE_URL, auth, null, agent)!!.probe()
         assertEquals(98.0, reading!!.sevenDay!!.usedPercent, 1e-9)
         val anthropic = "https://api.anthropic.com/api/oauth/usage"
-        assertEquals(listOf(standIn.getValue("CLAUDE_OAUTH_USAGE_URL"), anthropic), asked)
+        assertEquals(listOf(standIn.getValue("CLAUDE_OAUTH_USAGE_URL"), anthropic, anthropic), asked)
     }
 
     private class QuotaParseAdapter : QuotaParse {

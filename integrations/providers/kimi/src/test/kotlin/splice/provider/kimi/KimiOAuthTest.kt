@@ -19,11 +19,15 @@ class KimiOAuthTest {
     private val oauth = KimiOAuth()
     private val cid = "17e5f671-d194-4dfb-9706-5516cb48c098"
 
+    // Oct 10, 2026: the override carries the refresh token, so it may name a stand-in on this machine and no other
+    // host.
     @Test
-    fun `host is env-overridable and trimmed`() {
-        val env: (String) -> String? = { if (it == "KIMI_OAUTH_HOST") "https://auth.example.test/" else null }
-        assertEquals("https://auth.example.test", KimiOAuthEndpoints.host(env))
-        assertEquals("https://auth.example.test/api/oauth/token", KimiOAuthEndpoints.tokenUrl(env))
+    fun `host is overridable to this machine, trimmed, and kept on Kimi for any other host`() {
+        val local: (String) -> String? = { if (it == "KIMI_OAUTH_HOST") "http://127.0.0.1:31990/" else null }
+        assertEquals("http://127.0.0.1:31990", KimiOAuthEndpoints.host(local))
+        assertEquals("http://127.0.0.1:31990/api/oauth/token", KimiOAuthEndpoints.tokenUrl(local))
+        val remote: (String) -> String? = { if (it == "KIMI_OAUTH_HOST") "https://auth.example.test/" else null }
+        assertEquals("https://auth.kimi.com/api/oauth/token", KimiOAuthEndpoints.tokenUrl(remote))
     }
 
     @Test

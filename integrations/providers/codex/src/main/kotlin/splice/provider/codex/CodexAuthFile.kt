@@ -8,6 +8,7 @@ import splice.core.auth.CredentialFileIdentity
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.core.util.LoopbackOverride
 import splice.core.util.SafeFailureText
 import splice.core.util.StateMemory
 import java.nio.file.Files
@@ -21,13 +22,13 @@ public object CodexOAuthEndpoints {
         "openid profile email offline_access api.connectors.read api.connectors.invoke"
 
     public fun issuer(env: EnvReader): String =
-        (env("CODEX_OAUTH_ISSUER") ?: "https://auth.openai.com").trimEnd('/')
+        LoopbackOverride.url(env, "CODEX_OAUTH_ISSUER", "https://auth.openai.com").trimEnd('/')
 
     public fun tokenUrl(env: EnvReader): String =
-        env("CODEX_OAUTH_TOKEN_URL") ?: "${issuer(env)}/oauth/token"
+        LoopbackOverride.url(env, "CODEX_OAUTH_TOKEN_URL", "${issuer(env)}/oauth/token")
 
     public fun authorizeUrl(env: EnvReader): String =
-        env("CODEX_OAUTH_AUTHORIZE_URL") ?: "${issuer(env)}/oauth/authorize"
+        LoopbackOverride.url(env, "CODEX_OAUTH_AUTHORIZE_URL", "${issuer(env)}/oauth/authorize")
 
     public fun clientId(env: EnvReader): String =
         env("CODEX_OAUTH_CLIENT_ID") ?: DEFAULT_CLIENT_ID

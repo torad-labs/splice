@@ -22,6 +22,7 @@ import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
 import splice.core.usage.QuotaSnapshot
 import splice.core.util.EnvReader
+import splice.core.util.LoopbackOverride
 import splice.core.util.WallClock
 import java.io.IOException
 
@@ -36,7 +37,7 @@ public class QuotaProbes(
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     env: EnvReader = EnvReader(System::getenv),
 ) {
-    private val claudeUsageUrl = env(CLAUDE_USAGE_URL_ENV) ?: CLAUDE_USAGE_URL
+    private val claudeUsageUrl = LoopbackOverride.url(env, CLAUDE_USAGE_URL_ENV, CLAUDE_USAGE_URL)
 
     public fun forHead(
         authKind: String,

@@ -22,6 +22,7 @@ import splice.core.util.EnvReader
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.util.LoopbackOverride
 import splice.core.util.SafeFailureText
 import splice.core.util.StateMemory
 import java.nio.file.Files
@@ -40,7 +41,7 @@ public object KimiOAuthEndpoints {
     public const val MIN_INTERVAL_S: Long = 1
 
     public fun host(env: EnvReader): String =
-        (env("KIMI_OAUTH_HOST") ?: "https://auth.kimi.com").trimEnd('/')
+        LoopbackOverride.url(env, "KIMI_OAUTH_HOST", "https://auth.kimi.com").trimEnd('/')
 
     public fun deviceAuthorizationUrl(env: EnvReader): String =
         "${host(env)}/api/oauth/device_authorization"

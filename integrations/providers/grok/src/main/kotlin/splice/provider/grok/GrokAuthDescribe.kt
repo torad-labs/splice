@@ -21,6 +21,7 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.util.LoopbackOverride
 import splice.core.util.SafeFailureText
 import splice.core.util.StateMemory
 import java.nio.file.Files
@@ -35,14 +36,14 @@ public object GrokOAuthEndpoints {
     public const val SCOPE: String = "openid profile email offline_access grok-cli:access api:access"
 
     public fun issuer(env: EnvReader): String =
-        (env("GROK_OAUTH_ISSUER") ?: "https://auth.x.ai").trimEnd('/')
+        LoopbackOverride.url(env, "GROK_OAUTH_ISSUER", "https://auth.x.ai").trimEnd('/')
 
     public fun authorizeUrl(env: EnvReader): String =
-        env("GROK_OAUTH_AUTHORIZE_URL") ?: "${issuer(env)}/oauth2/authorize"
+        LoopbackOverride.url(env, "GROK_OAUTH_AUTHORIZE_URL", "${issuer(env)}/oauth2/authorize")
 
     // discovery would resolve this, but the CLI's endpoint is stable; env-overridable for safety.
     public fun tokenUrl(env: EnvReader): String =
-        env("GROK_OAUTH_TOKEN_URL") ?: "${issuer(env)}/oauth2/token"
+        LoopbackOverride.url(env, "GROK_OAUTH_TOKEN_URL", "${issuer(env)}/oauth2/token")
 
     public fun clientId(env: EnvReader): String =
         env("GROK_OAUTH_CLIENT_ID") ?: DEFAULT_CLIENT_ID

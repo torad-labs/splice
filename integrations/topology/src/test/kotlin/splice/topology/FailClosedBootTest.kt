@@ -94,4 +94,27 @@ class FailClosedBootTest {
 
         assertEquals(setOf("one"), loaded.topology.heads.keys)
     }
+
+    @Test
+    fun `every wrong type and unknown key is listed at once with its line and no value`(@TempDir root: Path) {
+        val path = config(
+            root,
+            provider.replace("x_probe = \"$SECRET\"", "x_probe = { nested = \"$SECRET\" }") + """
+            [heads.one]
+            provider = "demo"
+            port = true
+            discovery_prefix = "claude-one--"
+            pinned_model = "m"
+            bogus_key = 1
+            """,
+        )
+
+        val refusal = assertThrows(TopologyRefusal::class.java) { TopologyLoader.loadForBoot(path) }
+
+        val said = refusal.message.orEmpty()
+        assertTrue(said.contains("providers.demo.extra_headers.x_probe (line 6)"), said)
+        assertTrue(said.contains("heads.one.port (line 10)"), said)
+        assertTrue(said.contains("heads.one.bogus_key (line 13): is not a splice.toml setting"), said)
+        assertFalse(said.contains(SECRET), "no value reaches the refusal")
+    }
 }

@@ -39,14 +39,18 @@ public object ConfigFindings {
         val decoded = try {
             TopologyLoader.decode(text)
         } catch (broken: IllegalArgumentException) {
-            return refused(structural + finding(broken))
+            return refused(structural + undecodable(text, broken))
         } catch (broken: SerializationException) {
-            return refused(structural + finding(broken))
+            return refused(structural + undecodable(text, broken))
         }
         val checks = TopologyFindings.of(decoded, HeadDiscoveredModels { emptyList() }, stateBase, rosters = false)
             .map { it.copy(line = lineOf(text, it.path)) }
         return refused(structural + checks, decoded)
     }
+
+    /** A file the decode refused: every wrong type and unknown key the schema proves, else the decode's own safe sentence. */
+    private fun undecodable(text: String, broken: Throwable): List<TopologyFinding> =
+        TopologyTypeMismatch.all(text).ifEmpty { listOf(finding(broken)) }
 
     private fun refused(findings: List<TopologyFinding>, topology: Topology? = null): ConfigRead = when {
         findings.isNotEmpty() -> ConfigRead.Refused(findings)

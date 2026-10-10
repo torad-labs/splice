@@ -37,12 +37,18 @@ internal class ConfigFixSession(
     private val backup: ConfigBackup,
 ) {
     private var backedUp = false
+    private val skipped = mutableSetOf<String>()
 
     /** True when the file ends with no finding. */
     fun run(): Boolean {
         var findings = check(Files.readString(file))
         while (findings.isNotEmpty()) {
-            val finding = findings.first()
+            val finding = findings.firstOrNull { it.text() !in skipped }
+            if (finding == null) {
+                output.line("")
+                output.line("${findings.size} finding(s) left as they are; splice does not start until fixed.")
+                return false
+            }
             output.line("")
             output.line("${findings.size} finding(s) left. Fixing: ${finding.text()}")
             val changed = fix(finding) ?: return false
@@ -60,14 +66,21 @@ internal class ConfigFixSession(
             "d" -> editable?.let(::removeLine) ?: false
             "v" -> editable?.let(::setValue) ?: false
             "e" -> edit(line)
+            "s" -> skip(finding)
             "q", null -> null
             else -> false
         }
     }
 
+    private fun skip(finding: TopologyFinding): Boolean {
+        skipped.add(finding.text())
+        return false
+    }
+
     private fun showMenu(line: Int?, editable: Boolean) {
         if (editable) output.line("  [d] remove the line  [v] set a new value")
         output.line("  [e] open your editor${line?.let { " at line $it" }.orEmpty()}")
+        output.line("  [s] skip this one for now")
         output.line("  [q] quit; splice does not start")
     }
 
@@ -78,6 +91,7 @@ internal class ConfigFixSession(
 
     private fun removeLine(line: Int): Boolean {
         val lines = Files.readAllLines(file)
+        backupOnce()
         output.line("removing line $line (${assignmentAt(line)})")
         write(lines.filterIndexed { index, _ -> index != line - 1 })
         return true
@@ -89,6 +103,7 @@ internal class ConfigFixSession(
         if (typed.isEmpty()) return false
         val literal = typed.first() in "\"[{-0123456789" || typed == "true" || typed == "false"
         output.line("setting $key on line $line to your value")
+        backupOnce()
         val written = if (literal) typed else "\"$typed\""
         val lines = Files.readAllLines(file)
         write(lines.mapIndexed { index, text -> if (index == line - 1) "$key = $written" else text })

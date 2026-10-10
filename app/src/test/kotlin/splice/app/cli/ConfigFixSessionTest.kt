@@ -62,6 +62,19 @@ class ConfigFixSessionTest {
     }
 
     @Test
+    fun `skipping every finding ends the session without changing the file`(@TempDir root: Path) {
+        val file = broken(root)
+        val before = Files.readString(file)
+        val said = mutableListOf<String>()
+
+        val fixed = session(file, root, ArrayDeque(listOf("s")), said).run()
+
+        assertFalse(fixed)
+        assertEquals(before, Files.readString(file))
+        assertTrue(said.any { it.contains("left as they are") }, said.toString())
+    }
+
+    @Test
     fun `quitting leaves the file untouched and the session reports it did not fix`(@TempDir root: Path) {
         val file = broken(root)
         val before = Files.readString(file)

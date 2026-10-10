@@ -17,6 +17,7 @@ import splice.core.SHIM_VERSION
 import splice.core.config.UserHome
 import splice.core.perf.HISTORY_DEFAULT_DAYS
 import splice.core.topology.Topology
+import splice.core.topology.TopologyFinding
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.SecureFile
@@ -44,12 +45,12 @@ internal object ExclusiveStarterWrite : StarterWrite {
     }
 }
 
-private data class WrongTopologyType(val key: String, val line: Int, val expected: TopologyTypeFailure.Expected)
+internal data class WrongTopologyType(val key: String, val line: Int, val expected: TopologyTypeFailure.Expected)
 
 /** Diagnose only a type mismatch the schema and masked source BOTH prove. The mask hides values and
  *  comments but preserves line numbers; parser exception text is never used, since it may quote a
  *  header credential. Called only after ktoml refuses the input, so valid TOML is never regraded. */
-private object TopologyTypeMismatch {
+internal object TopologyTypeMismatch {
     private val table = Regex("^[ \\t]*\\[{1,2}(.+?)\\]{1,2}[ \\t]*$")
     private val segments = Regex("\\\"[^\\\"]+\\\"|'[^']+'|[A-Za-z0-9_-]+")
     private val assignment = Regex("^[ \\t]*([A-Za-z0-9_.-]+|\\?[ \\t]*)[ \\t]*=[ \\t]*(\\S)")
@@ -69,6 +70,48 @@ private object TopologyTypeMismatch {
         }
         return null
     }
+
+    /** EVERY finding the schema and the masked source prove: each wrong type and each key the schema does not
+     *  declare, with its line. The decode stops at its first failure; a person fixing a file needs the rest. */
+    fun all(text: String): List<TopologyFinding> {
+        val found = mutableListOf<TopologyFinding>()
+        var section = ""
+        val sourceLines = text.lineSequence().iterator()
+        TomlStructureMasker(text).mask().lineSequence().forEachIndexed { at, line ->
+            val source = sourceLines.next()
+            val header = table.matchEntire(line)
+            if (header != null) {
+                section = source.substring(checkNotNull(header.groups[1]).range)
+            } else {
+                val wrong = diagnoseLine(section, line, source, at + 1)?.let { typeFinding(it) }
+                (unknownKey(section, line, source, at + 1) ?: wrong)?.let { found += it }
+            }
+        }
+        return found
+    }
+
+    private fun typeFinding(wrong: WrongTopologyType): TopologyFinding {
+        val failure = TopologyTypeFailure(wrong.key, wrong.line, wrong.expected)
+        return TopologyFinding(wrong.key, "expects ${wrong.expected.label}: ${failure.fix()}", wrong.line)
+    }
+
+    private fun unknownKey(section: String, line: String, source: String, lineNumber: Int): TopologyFinding? {
+        val found = assignment.find(line) ?: return null
+        val member = source.substring(checkNotNull(found.groups[1]).range).trim()
+        var parent = fieldDescriptor(section) ?: return null
+        while (parent.kind == StructureKind.LIST) parent = parent.getElementDescriptor(0)
+        val name = member.substringBefore('.').replace("\"", "").replace("'", "")
+        val known = (0 until parent.elementsCount).any { parent.getElementName(it) == name }
+        return if (known || !declaresKeys(parent, member)) {
+            null
+        } else {
+            val key = listOf(section, member).filter(String::isNotEmpty).joinToString(".")
+            TopologyFinding(key, "is not a splice.toml setting; remove the line", lineNumber)
+        }
+    }
+
+    private fun declaresKeys(parent: SerialDescriptor, member: String): Boolean =
+        parent.kind == StructureKind.CLASS && !member.startsWith("?")
 
     private fun diagnoseLine(section: String, line: String, source: String, lineNumber: Int): WrongTopologyType? {
         val found = assignment.find(line)

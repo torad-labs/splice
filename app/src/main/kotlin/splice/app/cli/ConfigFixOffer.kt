@@ -40,7 +40,7 @@ internal class ConfigFixOffer(
     fun offer(): Boolean {
         if (!interactive) return false
         val file = TopologyLoader.configPath(env)
-        System.err.println("splice: a fix session can repair this now; your file is backed up first.")
+        System.err.println("splice: a fix session can repair this now; your file is backed up before its first change.")
         val session = ConfigFixSession(
             file,
             TerminalOutput(System.err::println),

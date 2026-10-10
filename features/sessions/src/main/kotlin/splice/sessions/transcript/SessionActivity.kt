@@ -35,8 +35,22 @@ internal object SessionActivity {
         viewEnabled: SessionTranscriptViewEnabled,
     ): JsonElement {
         if (!viewEnabled()) return JsonNull
-        val model = sessionId?.let { source.model(it, roots, cwd) } ?: return JsonNull
+        val model = sessionId?.let { source.tail(it, roots, cwd)?.model } ?: return JsonNull
         return JsonPrimitive(model)
+    }
+
+    /** What an idle session last said: its newest message that is not the person's, so a message of his that was taken
+     *  back, or never answered, does not stand in for the reply before it. Falls back to [last] when there is none. */
+    fun answered(
+        sessionId: String?,
+        cwd: String?,
+        roots: List<Path>,
+        source: SessionTranscripts,
+        viewEnabled: SessionTranscriptViewEnabled,
+    ): JsonElement {
+        if (!viewEnabled()) return JsonNull
+        val reply = sessionId?.let { source.tail(it, roots, cwd)?.answered ?: source.last(it, roots, cwd) }
+        return json(reply)
     }
 
     /** A call is shown as what it was for, read from its whole input before any clip, so a long command in front of its

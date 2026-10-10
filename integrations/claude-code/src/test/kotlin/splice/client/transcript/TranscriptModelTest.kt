@@ -25,16 +25,16 @@ class TranscriptModelTest {
                 """{"type":"user","message":{"content":"still there?"}}""",
             ),
         )
-        assertEquals("gpt-6.1", fixture.reader.model(ACTIVITY_ID, listOf(tmp)))
+        assertEquals("gpt-6.1", fixture.reader.tail(ACTIVITY_ID, listOf(tmp))?.model)
     }
 
     @Test
     fun `a placeholder is not a model and a session with no assistant message has none`(@TempDir tmp: Path) {
         val fixture = ActivityTranscript(tmp)
         fixture.write(listOf(ACTIVITY_USER, reply("m1", "claude-opus-5", "real"), reply("m2", "<synthetic>", "stub")))
-        assertEquals("claude-opus-5", fixture.reader.model(ACTIVITY_ID, listOf(tmp)))
+        assertEquals("claude-opus-5", fixture.reader.tail(ACTIVITY_ID, listOf(tmp))?.model)
         fixture.write(listOf(ACTIVITY_USER))
-        assertNull(fixture.reader.model(ACTIVITY_ID, listOf(tmp)))
+        assertNull(fixture.reader.tail(ACTIVITY_ID, listOf(tmp))?.model)
     }
 
     @Test
@@ -43,5 +43,23 @@ class TranscriptModelTest {
         fixture.write(listOf(ACTIVITY_USER, reply("m1", "claude-opus-5", "a"), reply("m2", "gpt-6.1", "b")))
         val page = fixture.reader.page(ACTIVITY_ID, listOf(tmp), null, 100) as TranscriptLookup.Found
         assertEquals(listOf(null, "claude-opus-5", "gpt-6.1"), page.page.messages.map { it.source.model })
+    }
+
+    @Test
+    fun `the answered message skips the person's trailing messages and falls back to the last when there is no reply`(
+        @TempDir tmp: Path,
+    ) {
+        val fixture = ActivityTranscript(tmp)
+        fixture.write(
+            listOf(
+                ACTIVITY_USER,
+                reply("m1", "claude-opus-5", "the previous reply"),
+                """{"type":"user","message":{"content":"stopped"}}""",
+            ),
+        )
+        assertEquals("stopped", fixture.reader.last(ACTIVITY_ID, listOf(tmp))?.text)
+        assertEquals("the previous reply", fixture.reader.tail(ACTIVITY_ID, listOf(tmp))?.answered?.text)
+        fixture.write(listOf(ACTIVITY_USER))
+        assertEquals("synthetic start", fixture.reader.tail(ACTIVITY_ID, listOf(tmp))?.answered?.text)
     }
 }

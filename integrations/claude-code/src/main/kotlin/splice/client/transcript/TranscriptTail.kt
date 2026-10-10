@@ -22,7 +22,11 @@ private const val TAIL_MAX_BYTES = 16 shl 20
 private const val TAIL_HELD_FILES = 128
 
 /** What a tail read found: the newest activity message, and the model of the newest assistant message in the window. */
-internal data class TailReading(val message: TranscriptMessage?, val model: String?)
+internal data class TailReading(
+    val message: TranscriptMessage?,
+    val model: String?,
+    val answered: TranscriptMessage? = message,
+)
 
 /** Cache publication is synchronized; every filesystem operation runs outside that monitor. */
 internal class TranscriptTail(
@@ -68,7 +72,7 @@ internal class TranscriptTail(
             if (offset == 0L || read >= nextAssembly) {
                 val selected = assembly.select(join(chunks, read), offset == 0L)
                 // A window that settles the last message may not reach an assistant message yet: read on for its model.
-                if (final(selected, offset, read)) return TailReading(selected.message, selected.model)
+                if (final(selected, offset, read)) return reading(selected)
                 last = selected
                 nextAssembly *= 2
             }
@@ -83,9 +87,12 @@ internal class TranscriptTail(
     private fun final(selected: TailSelection, offset: Long, read: Int): Boolean =
         selected.complete && (selected.model != null || offset == 0L || read >= TAIL_MODEL_BYTES)
 
+    private fun reading(selected: TailSelection) =
+        TailReading(selected.message, selected.model, selected.answered)
+
     private fun unsettled(last: TailSelection?): TailReading {
         val settled = last?.takeIf { it.complete }
-        return settled?.let { TailReading(it.message, it.model) }
+        return settled?.let(::reading)
             ?: TailReading(last?.message?.takeIf { it.role == TranscriptRole.USER }, last?.model)
     }
 

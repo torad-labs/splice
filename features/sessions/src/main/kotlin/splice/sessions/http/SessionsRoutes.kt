@@ -202,7 +202,10 @@ public class SessionsRoutes(
         put("session_id", s.sessionId)
         put("name", if (viewEnabled()) s.name else null)
         val trees = roots.treesFor(s.head)
-        put("last", SessionActivity.last(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
+        // A session that is not running shows the reply before a message of his that was taken back or never answered.
+        val running = s.status.state == "working" || s.status.state == "busy"
+        val said = if (running) SessionActivity::last else SessionActivity::answered
+        put("last", said(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
         put("model", SessionActivity.model(s.sessionId, s.process.cwd, trees, transcripts, viewEnabled))
         put("kind", s.client.kind)
         put("version", s.client.version)

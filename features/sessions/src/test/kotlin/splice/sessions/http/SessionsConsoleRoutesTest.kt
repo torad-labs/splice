@@ -24,6 +24,7 @@ import splice.sessions.registry.SessionRegistry
 import splice.sessions.registry.SessionRoute
 import splice.sessions.transcript.ModelMove
 import splice.sessions.transcript.SentTexts
+import splice.sessions.transcript.SessionTail
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
@@ -333,6 +334,32 @@ class SessionsConsoleRoutesTest {
             listOf("first", "second", "first", "second"),
             rows.map { it.getValue("tool_use_id").jsonPrimitive.content },
         )
+    }
+
+    @Test
+    fun `an idle card shows the reply before the person's last message, a running one shows its newest`() {
+        val person = TranscriptMessage(5, TranscriptRole.USER, null, "take your time with it")
+        val reply = TranscriptMessage(4, TranscriptRole.ASSISTANT, null, "the previous reply")
+        val transcripts = object : SessionTranscripts {
+            override fun last(sessionId: String, roots: List<Path>, cwd: String?) = person
+
+            override fun tail(sessionId: String, roots: List<Path>, cwd: String?) = SessionTail("gpt-6.1", reply)
+
+            override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
+                error("a card never pages")
+
+            override fun sentTexts(sessionId: String, roots: List<Path>, ids: Set<String>): SentTexts =
+                SentTexts(null, emptyMap(), ids)
+        }
+        val dir = Files.createDirectories(tmp.resolve("sessions"))
+        Files.writeString(dir.resolve("11.json"), """{"pid":11,"sessionId":"$ALPHA","updatedAt":$NOW}""")
+        Files.writeString(dir.resolve("12.json"), """{"pid":12,"sessionId":"$BETA","status":"busy","updatedAt":$NOW}""")
+        val registry = SessionRegistry(dir, routeOf = { SessionRoute.Unknown }, pidAlive = { true }, clock = { NOW })
+        val roots = TranscriptRoots(vanilla = tmp.resolve(".claude"))
+        val rows = rowsOf(SessionsRoutes(registry, transcripts, roots = roots))
+        fun said(id: String) = rows.getValue(id)["last"]!!.jsonObject["text"]!!.jsonPrimitive.content
+        assertEquals("the previous reply", said(ALPHA))
+        assertEquals("take your time with it", said(BETA))
     }
 
     @Test

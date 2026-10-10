@@ -11,7 +11,13 @@ internal fun interface TranscriptLineParser {
     fun parse(bytes: ByteArray): JsonObject?
 }
 
-internal data class TailSelection(val message: TranscriptMessage?, val complete: Boolean, val model: String? = null)
+internal data class TailSelection(
+    val message: TranscriptMessage?,
+    val complete: Boolean,
+    val model: String? = null,
+    /** The newest message that is not the person's, when the window holds it whole; else the last message. */
+    val answered: TranscriptMessage? = message,
+)
 
 /** The first line of a non-origin window is incomplete and cannot contribute a partial message. */
 internal class TranscriptTailAssembly(
@@ -34,7 +40,13 @@ internal class TranscriptTailAssembly(
         val complete = origin || ready
         val written = messages.lastOrNull { it.role == TranscriptRole.ASSISTANT && it.source.model != null }
         val model = written?.source?.model
-        return TailSelection(last, complete, model)
+        return TailSelection(last, complete, model, answered(messages, origin) ?: last)
+    }
+
+    /** The newest message that is not the person's, when the window holds it whole. */
+    private fun answered(messages: List<TranscriptMessage>, origin: Boolean): TranscriptMessage? {
+        val reply = messages.indexOfLast { activity(it) && it.role != TranscriptRole.USER }
+        return messages.getOrNull(reply)?.takeIf { origin || ready(messages.take(reply), it) }
     }
 
     /** What the session said, was told or called: a tool result and a system note are neither. A teammate's message is

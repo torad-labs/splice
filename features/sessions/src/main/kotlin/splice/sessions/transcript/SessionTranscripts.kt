@@ -43,6 +43,9 @@ public data class TranscriptMessage(
     val source: TranscriptSource = TranscriptSource(),
 )
 
+/** [model] is null when none is recorded; [answered] is the newest message that is not the person's, null when there is none. */
+public data class SessionTail(val model: String?, val answered: TranscriptMessage?)
+
 /** A session's move onto another model: the message it moved at (the first moved assistant message), the model its rows
  *  moved to, the command (the head's key) that moved them when known, and when, in epoch milliseconds. */
 public data class ModelMove(val messageId: String, val model: String, val command: String?, val movedAt: Long)
@@ -135,9 +138,11 @@ public interface SessionTranscripts {
      *  the transcript: an implementation may look there first and judge a miss against it (V4-444). */
     public fun last(sessionId: String, roots: List<Path>, cwd: String? = null): TranscriptMessage? = null
 
-    /** The model that wrote the newest assistant message in the same bounded tail, whatever the last message is: a
-     *  session waiting on its person ends on a user message and still has one. Null when none is recorded there. */
-    public fun model(sessionId: String, roots: List<Path>, cwd: String? = null): String? = null
+    /** What the same bounded tail says besides its last message: the model of the newest assistant message, whatever the
+     *  last message is (a session waiting on its person ends on a user message and still has one), and the last message
+     *  that is not the person's, for a session that is not running, whose newest message of his was taken back or never
+     *  answered. Null when the transcript is not available. */
+    public fun tail(sessionId: String, roots: List<Path>, cwd: String? = null): SessionTail? = null
 
     /** Where [sessionId] changed model, oldest first; none for a session that was never moved. */
     public fun moves(sessionId: String): List<ModelMove> = emptyList()

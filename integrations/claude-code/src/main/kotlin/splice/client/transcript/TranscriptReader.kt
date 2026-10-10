@@ -78,6 +78,7 @@ import splice.sessions.transcript.CONVERSATION_READ_UNAVAILABLE
 import splice.sessions.transcript.MAX_TRANSCRIPT_PAGE
 import splice.sessions.transcript.MessageConversation
 import splice.sessions.transcript.SentTexts
+import splice.sessions.transcript.SessionTail
 import splice.sessions.transcript.SessionTranscripts
 import splice.sessions.transcript.TranscriptLookup
 import splice.sessions.transcript.TranscriptMessage
@@ -119,8 +120,8 @@ public class TranscriptReader(
     override fun last(sessionId: String, roots: List<Path>, cwd: String?): TranscriptMessage? =
         tailOf(sessionId, roots, cwd)?.message
 
-    override fun model(sessionId: String, roots: List<Path>, cwd: String?): String? =
-        tailOf(sessionId, roots, cwd)?.model
+    override fun tail(sessionId: String, roots: List<Path>, cwd: String?): SessionTail? =
+        tailOf(sessionId, roots, cwd)?.let { SessionTail(it.model, it.answered) }
 
     private fun tailOf(sessionId: String, roots: List<Path>, cwd: String?): TailReading? {
         val file = if (validSessionId.matches(sessionId)) locate(roots, sessionId, cwd) else null

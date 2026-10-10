@@ -22,13 +22,21 @@ import type { Layout } from "./repo.ts";
 import { exitForSignal, exitStatusOf } from "./status.ts";
 
 export const SLOT_TIMEOUT_EXIT = 75;
+/** The pre-push tree builds beside the checkout's own slot, so two builds run at once and need two daemons. Gradle stops an idle
+ *  daemon when another idle one is compatible with it, so a pair with equal JVM args kept culling each other and the next push started
+ *  a cold one. A marker in the pre-push tree's JVM args makes its daemon incompatible with the checkout's: each stays warm. */
+const PRE_PUSH_LABEL = "pre-push";
+const HEAP_CAPS = "-Xmx1536m -XX:MaxMetaspaceSize=512m";
 /** The warm daemon's own caps, on the command line because ~/.gradle/gradle.properties (hostshield's 2 GB heap and 5 minute idle
  *  timeout) outranks the project's gradle.properties and only the command line outranks both. The worker cap stays hostshield's. */
-const localDaemon = [
-  "-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=512m",
-  "-Dorg.gradle.daemon.idletimeout=1800000",
-  "-Pkotlin.daemon.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=512m",
-];
+function localDaemon(label: string): string[] {
+  const marker = label === PRE_PUSH_LABEL ? " -Dsplice.daemon=pre-push" : "";
+  return [
+    `-Dorg.gradle.jvmargs=${HEAP_CAPS}${marker}`,
+    "-Dorg.gradle.daemon.idletimeout=1800000",
+    `-Pkotlin.daemon.jvmargs=${HEAP_CAPS}`,
+  ];
+}
 export const NO_TASKS_EXIT = 2;
 const FAST_PATH_MS = 1000;
 /** The three the shell script traps. A forwarded signal is the only way the JVM ever hears one. */
@@ -186,7 +194,7 @@ export async function runUnderSlot(options: SlotOptions): Promise<number> {
   try {
     if (joint) console.error(`gradle-slot: ${label} waits for buildgate admission`);
     else console.error(`gradle-slot: ${label} holds the slot — gradle busy`);
-    child = spawnGradle(options.layout.buildRoot, args, env, buildgate, joint ? { lock, label } : undefined);
+    child = spawnGradle(options.layout.buildRoot, args, env, buildgate, label, joint ? { lock, label } : undefined);
     if (received) child.kill(received);
     await child.exited;
     const rc = received ? exitForSignal(received) : exitStatusOf(child);
@@ -205,6 +213,7 @@ function spawnGradle(
   args: readonly string[],
   env: Record<string, string | undefined>,
   buildgate: string | null,
+  label: string,
   admission?: { readonly lock: string; readonly label: string },
 ): Bun.Subprocess {
   // The child inherits the caller's environment, as it does under bash — gradle needs JAVA_HOME,
@@ -224,7 +233,7 @@ function spawnGradle(
   const gradlew = `${buildRoot}/gradlew`;
   if (!existsSync(gradlew)) throw new Error(`gate: no gradle wrapper at ${gradlew}`);
   // Locally the daemon stays warm inside the gate (heap, metaspace and Kotlin-daemon caps live in gradle.properties); CI is one build per runner.
-  const daemon = childEnv.CI ? ["--no-daemon"] : localDaemon;
+  const daemon = childEnv.CI ? ["--no-daemon"] : localDaemon(label);
   const gradleArgs = [...offline, ...parallel, ...daemon, ...args];
   let argv = buildgate ? [buildgate, gradlew, ...gradleArgs] : [gradlew, ...gradleArgs];
   if (buildgate && admission) {

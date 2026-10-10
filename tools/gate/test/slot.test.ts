@@ -143,6 +143,15 @@ describe("the gradle slot", () => {
     expect(receipt).toContain("-Dorg.gradle.daemon.idletimeout=1800000");
   });
 
+  test("the pre-push tree's daemon carries a marker the checkout's lacks, so the two never cull each other", async () => {
+    const checkout = fakeBuildRoot();
+    await runUnderSlot({ layout: checkout.layout, label: "local", args: ["help"], env: { CI: "", PATH: checkout.path } });
+    const pushTree = fakeBuildRoot();
+    await runUnderSlot({ layout: pushTree.layout, label: "pre-push", args: ["help"], env: { CI: "", PATH: pushTree.path } });
+    expect(readFileSync(checkout.receipt, "utf8")).not.toContain("splice.daemon");
+    expect(readFileSync(pushTree.receipt, "utf8")).toContain("-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=512m -Dsplice.daemon=pre-push");
+  });
+
   test("--parallel is CI's alone: on this box one project builds at a time", async () => {
     const local = fakeBuildRoot();
     await runUnderSlot({ layout: local.layout, label: "local", args: ["help"], env: { CI: "", PATH: local.path } });

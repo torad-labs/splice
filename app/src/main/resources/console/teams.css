@@ -62,13 +62,16 @@
   .room { grid-template-columns: minmax(0, 1fr) 24rem; grid-template-areas: "members members" "talk feed"; }
   .feed { height: 40rem; max-height: none; }
 }
-/* from 88rem (1440 is 97) the members column beside the talk is 3828's own 46rem, so its card is the same card */
+/* from 88rem (1440 is 97) the members column is 3828's own 46rem, so its card is the same card, and the day reads down the
+   second column, the talk and under it the activity: a sticky talk there left a 574 x 665 px hole under itself beside a
+   feed cut off at its own edge in the first column (builder3's full day, console-lead, Oct 10) */
 @container (min-width: 88rem) {
-  .room { grid-template-columns: 46rem minmax(0, 1fr); grid-template-areas: "members talk" "feed talk"; }
-  .talk { position: sticky; top: 1.6rem; height: calc(100vh - 31rem); min-height: 40rem; }
+  .room { grid-template-columns: 46rem minmax(0, 1fr); grid-template-areas: "members talk" "members feed"; }
+  .talk { height: calc(100vh - 31rem); min-height: 40rem; }
 }
 @container (min-width: 128rem) {
   .room { grid-template-columns: 46rem minmax(0, 1fr) 30rem; grid-template-areas: "members talk feed"; }
+  .talk { position: sticky; top: 1.6rem; }
   .feed { position: sticky; top: 1.6rem; height: calc(100vh - 31rem); min-height: 40rem; }
 }
 

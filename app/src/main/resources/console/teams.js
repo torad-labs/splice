@@ -71,6 +71,12 @@ const sheet = document.getElementById("sheet");
 const team = () => state.teams.find((t) => t.id === ui.team) || null;
 const slotOf = (tm, id) => tm.slots.find((s) => s.id === id) || null;
 const sessOf = (slot) => (slot.session ? state.sessions[slot.session] : null);
+// ONE ACTIVE TEAM PER SESSION is what PUT refuses (Marlin), but older data may hold a session on two. Never pick one
+// silently: a session that looks single-homed when it is not is the worse failure, so each team that holds it names
+// the other. Archived teams do not count, they have let go.
+const alsoOn = (tm, session) => state.teams
+  .filter((t) => t.id !== tm.id && !t.archived && t.slots.some((y) => y.session === session))
+  .map((t) => t.name);
 
 // The day the panels are asked for, as the VIEWER's own: midnight to midnight here, [from, to).
 function dayWindow(back) {
@@ -241,11 +247,12 @@ function memberHtml(tm, slot) {
   const folder = s.repo?.root || s.cwd || "";
   const where = s.name || folder.split("/").pop();
   const heard = s.updated_at || s.status_updated_at;
+  const also = alsoOn(tm, slot.session).join(", ");
   return `<article class="card m ${L.cls}" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
     `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>` +
     `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${chip}${stop}</div>` +
     `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail}<span>${esc(model)}</span>` +
-    `${where ? `<span>${esc(where)}</span>` : ""}${heard ? `<span class="when">${hhmm(heard)}</span>` : ""}</div>` +
+    `${where ? `<span>${esc(where)}</span>` : ""}${also ? `<span class="also">Also on ${esc(also)}</span>` : ""}${heard ? `<span class="when">${hhmm(heard)}</span>` : ""}</div>` +
     `${body}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
 }
 
@@ -294,6 +301,13 @@ function prompted(call, offer) {
   return `<p class="cmd">${esc(said[0])}</p>${why ? `<p class="why">${esc(why)}</p>` : ""}`;
 }
 
+/** How many turns a session has run, beside its name in the "Add existing" menu: a name does not say which of two quiet
+ *  sessions is the one meant, the count does (fin). The row carries `turns` only when it was measured, so an absent key
+ *  draws nothing, never a zero or a dash: a count nobody watched must not read as "ran nothing". A real 0 is drawn,
+ *  because "0 turns" is what tells a reader this is not the session they meant. */
+const turnsOf = (session) => (Number.isInteger(session.turns)
+  ? ` · ${session.turns} ${session.turns === 1 ? "turn" : "turns"}` : "");
+
 /** A slot with no session: start one on its command, or hand it one of its command's that already runs. */
 function vacantHtml(tm, slot, { key, ro, lead, chip, model }) {
   const failed = ui.failed.get(key);
@@ -308,13 +322,13 @@ function vacantHtml(tm, slot, { key, ro, lead, chip, model }) {
     acts = ro ? "" : `<button class="act" data-act="start" data-s="${esc(slot.id)}">Try again</button>`;
   } else if (!ro) {
     const free = Object.values(state.sessions).filter((x) =>
-      x.head === slot.head && x.availability !== "gone" && !state.teams.some((t) => t.slots.some((y) => y.session === x.session_id)));
-    acts = `<button class="act primary" data-act="start" data-s="${esc(slot.id)}">Start</button>` +
-      (free.length ? `<button class="act" data-act="use" data-s="${esc(slot.id)}" aria-expanded="${ui.menu === key}">Use session</button>` : "");
+      x.head === slot.head && x.availability !== "gone" && !state.teams.some((t) => !t.archived && t.slots.some((y) => y.session === x.session_id)));
+    acts = `<button class="act primary" data-act="start" data-s="${esc(slot.id)}">Start new</button>` +
+      (free.length ? `<button class="act" data-act="use" data-s="${esc(slot.id)}" aria-expanded="${ui.menu === key}">Add existing</button>` : "");
     if (ui.menu === key) {
       acts += `<div class="menu use">${free.map((x) =>
         `<button data-act="bind" data-s="${esc(slot.id)}" data-to="${esc(x.session_id)}"><span>${esc(x.name || x.repo?.root?.split("/").pop() || x.session_id.slice(0, 8))}</span>` +
-        `<span class="mmeta">${esc(modelLabel(x.head, null) || x.head)}</span></button>`).join("")}</div>`;
+        `<span class="mmeta">${esc(modelLabel(x.head, null) || x.head)}${turnsOf(x)}</span></button>`).join("")}</div>`;
     }
   }
   return `<article class="card m vacant" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +

@@ -156,7 +156,7 @@ internal class ManagedHeadFactory(
         return ManagedHead(
             head = server,
             auth = wired.auth,
-            sources = sourcesFor(key, stores, quotaPollers),
+            sources = sourcesFor(key, stores, quotaPollers, TurnPrice(ctx.catalog)),
             usageWarning = UsageWarning(warnPct = cfg.usageWarnPct, warnTokens5h = cfg.usageWarnTokens5h),
             authSurface = HeadAuthSurface(
                 authKind = ctx.providerCfg.auth.kind,
@@ -173,7 +173,12 @@ internal class ManagedHeadFactory(
         )
     }
 
-    private fun sourcesFor(key: String, stores: HeadStores, quotaPollers: List<QuotaPoller>): HeadSources {
+    private fun sourcesFor(
+        key: String,
+        stores: HeadStores,
+        quotaPollers: List<QuotaPoller>,
+        price: TurnPrice,
+    ): HeadSources {
         val perfRows = perfSources.rowsFor(key)
         return HeadSources(
             usage = UsageStoreSource(stores.usageStore, stores.quota, quotaPollers),
@@ -181,7 +186,7 @@ internal class ManagedHeadFactory(
             logs = LogFileSource(statePaths.logsDir.resolve("daemon.log"), "[$key]"),
             perf = PerfStatsSource(stores.telemetry.perfStats),
             perfRows = perfRows,
-            economics = EconomicsStoreSource(stores.telemetry.economics, perfRows),
+            economics = EconomicsStoreSource(stores.telemetry.economics, perfRows, price),
         )
     }
 

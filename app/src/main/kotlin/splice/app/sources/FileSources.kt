@@ -6,6 +6,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.model.TurnPrice
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTotal
 import splice.core.usage.QuotaSnapshot
@@ -95,8 +96,11 @@ public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSo
 public class EconomicsStoreSource(
     private val store: EconomicsStore,
     perfRows: PerfRowsFileSource? = null,
+    /** The cards splice holds NOW, which price again the hours whose turns had none when they ran. */
+    price: TurnPrice? = null,
 ) : HeadEconomicsSource {
     private val probes = perfRows?.let(::ProbeEconomics)
+    private val reprice = perfRows?.let { rows -> price?.let { EconomicsReprice(rows, it) } }
 
     override fun read(): EconomicsRead {
         val held = store.read()
@@ -104,7 +108,8 @@ public class EconomicsStoreSource(
             is ProbeDeduction.Unavailable -> return EconomicsRead.Unavailable(deduction.gap.sentence)
             is ProbeDeduction.Done -> deduction.buckets
         }
-        return EconomicsRead.Rows(kept.map { row(it) })
+        val current = reprice?.priced(kept) ?: kept
+        return EconomicsRead.Rows(current.map { row(it) })
     }
 
     private fun row(it: EconomicsBucket): EconomicsRow =

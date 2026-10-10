@@ -64,8 +64,13 @@ internal class TurnPriceGap(private val price: TurnPrice?, private val plans: Ac
     fun usd(row: PerfRow): Double? =
         price?.takeIf { declares(row) && counted(row) }?.usd(row.facts.model, row.fields, row.ts)
 
-    /** Null exactly when [usd] has a figure. */
+    /** Null when [usd] has a figure, and for a code-mode step, which has neither: a reply splice wrote itself
+     *  asked no provider, so it has no price AND no reason for the absence. Before V4-444 a step fell through to
+     *  "uncounted" on a command that prices its model, or to "plan" on a plan, which read on the Requests list as
+     *  a request splice could not price rather than one it never sent. The totals count steps apart
+     *  (TurnUsage.Counters.add), so no figure on the page loses its explanation. */
     fun of(row: PerfRow): PriceGap? = when {
+        row.fields[PerfKeys.LOCAL_STEP] == 1L -> null
         unanswered(row) -> PriceGap.UNANSWERED
         usd(row) != null -> null
         HeadPriceGap.of(plans.kind) != null -> HeadPriceGap.of(plans.kind)

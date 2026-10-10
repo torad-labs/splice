@@ -145,14 +145,15 @@ internal class HeadAdmission(
         prepared: Preparation.Ready,
         admitted: AdmittedTurn,
         trace: TurnTrace?,
-        keyAccount: String?,
+        keyAccount: KeyNaming,
     ): Boolean {
         val block = deps.quotaBundle.budget.admit() ?: return false
+        val named = (keyAccount as? KeyNaming.Named)?.label
         driver.recordLocalRefusal(
             prepared.built.meta,
             admitted.perf,
             admitted.t0,
-            LocalRefusal(OutcomeTag.BUDGET_BLOCKED.wire, block.detail, trace, keyAccount),
+            LocalRefusal(OutcomeTag.BUDGET_BLOCKED.wire, block.detail, trace, named),
         )
         admitted.close()
         responses.respondBudgetBlocked(call, block.message)
@@ -170,8 +171,8 @@ internal class HeadAdmission(
         // retrying for no visible reason. Null for every head whose trace is off.
         val trace = prepared.takeInbound()?.let { deps.stores.captures.trace?.begin(prepared.built.meta, it) }
         // The key is the account: a head with no login pool records WHICH key sent the request, and a pooled one
-        // answers null without a resolve.
-        val keyAccount = keyAccounts.label()
+        // answers None without a resolve.
+        val keyAccount = keyAccounts.naming()
         if (refuseIfOverBudget(call, prepared, admitted, trace, keyAccount)) return
         val callerKey = prepared.built.extraHeaders.takeIf { deps.policy.forwardClientAuth }
             ?.let(CredentialKey::fromHeaders)
@@ -206,11 +207,11 @@ internal class HeadAdmission(
     private fun running(
         prepared: Preparation.Ready,
         account: splice.upstream.credentials.AccountSelection?,
-        keyAccount: String?,
+        keyAccount: KeyNaming,
     ) = TurnAccountQuota(
         account = account,
         quota = deps.turnQuota.forSession(prepared.built.meta.scope.sessionId, account),
-        keyLabel = keyAccount,
+        keyNaming = keyAccount,
     )
 
     private suspend fun driveReady(

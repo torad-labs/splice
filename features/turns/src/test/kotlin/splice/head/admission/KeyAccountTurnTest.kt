@@ -148,6 +148,8 @@ class KeyAccountTurnTest {
         )
     }
 
+    /** A key head whose key is gone records NO account. "primary" there was a label with nothing behind it, which
+     *  is the thing row 32 set out to remove, and the turn ends auth-missing anyway. */
     @Test
     fun `a head whose key is missing records no account, rather than a made-up one`(
         @TempDir tmp: Path,

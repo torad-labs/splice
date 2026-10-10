@@ -11,6 +11,7 @@ import splice.core.auth.ClientAuthProvider
 import splice.core.perf.PerfKeys
 import splice.head.HeadDeps
 import splice.head.HeadHealthCounters
+import splice.head.admission.KeyNaming
 import splice.head.transport.TurnAccountHandoff
 import splice.head.wire.ClientChannel
 import splice.head.wire.TurnTerminal
@@ -25,6 +26,16 @@ internal class TurnDriveFactory(
 ) {
     private val driveSignals = DriveSignals(provider, deps.log, health)
     private val drivePipeline = DrivePipeline(provider, deps)
+
+    /** What a row records as its account when no login is proved for the turn. A key head names the key that
+     *  sent the request, and a key head with no key names nothing: "primary" is left for a head holding a login
+     *  splice cannot name, so a row never reads as a bare word while a key sat behind it, and never invents one
+     *  where no key is there at all. */
+    private fun accountLabel(naming: KeyNaming): String? = when (naming) {
+        is KeyNaming.Named -> naming.label
+        KeyNaming.Missing -> null
+        KeyNaming.None -> if (provider.auth is ClientAuthProvider) "claude-code" else "primary"
+    }
 
     /** Assemble the per-turn drive around a terminal (SseEmitter for stream, CollectingTerminal for
      *  collect) and its channel — everything else (watchdog, pipeline, headers) is shape-neutral. */
@@ -58,10 +69,7 @@ internal class TurnDriveFactory(
             channel = channel,
             remainingTurnWait = remainingTurnWait,
         ).also { drive ->
-            // A key head names the key that sent the request; "primary" is left for a head that holds a login
-            // splice cannot name, so a row never reads as a bare word while a key sat behind it.
-            drive.fallbackAccountLabel = inputs.accountQuota.keyLabel
-                ?: if (provider.auth is ClientAuthProvider) "claude-code" else "primary"
+            drive.fallbackAccountLabel = accountLabel(inputs.accountQuota.keyNaming)
             drive.credentialAccountNames = deps.quotaBundle.credentialAccountNames
             drive.accountHandoff = deps.quotaBundle.activePool?.let { TurnAccountHandoff(it, deps.turnQuota) }
             drive.sourceRoundStarted =

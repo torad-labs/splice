@@ -153,7 +153,9 @@ internal data class TurnDrive(
     var rateLimitRelay: RateLimitRelay? = null
     var upstreamAccepted: splice.upstream.StreamStart? = null
     var accountHandoff: TurnAccountHandoff? = null
-    var fallbackAccountLabel: String = "primary"
+
+    /** Null is a state: a head whose key is gone records no account rather than a label with nothing behind it. */
+    var fallbackAccountLabel: String? = "primary"
     var credentialAccountNames: HeadDeps.CredentialAccountNames? = null
     var observedAccountLabel: String? = null
         private set

@@ -4,6 +4,7 @@
 package splice.head.turn
 
 import splice.core.perf.TurnPerf
+import splice.head.admission.KeyNaming
 import splice.head.usage.QuotaTracker
 import splice.head.wire.TurnTrace
 import splice.upstream.BuiltTurn
@@ -62,7 +63,7 @@ internal data class TurnInputs(
 internal data class TurnAccountQuota(
     val account: AccountSelection? = null,
     val quota: QuotaTracker? = null,
-    /** The key this head reads, as the account a row records when no login was proved (KeyAccount). Null when
-     *  there is no key to name, and then the row falls back to the head's own kind of login. */
-    val keyLabel: String? = null,
+    /** The key this head reads, for the account a row records when no login was proved (KeyAccount): its name,
+     *  no account at all when the key is gone, or None to leave the head's own fallback label standing. */
+    val keyNaming: KeyNaming = KeyNaming.None,
 )

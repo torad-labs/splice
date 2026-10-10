@@ -94,7 +94,19 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
         // Source rounds these requests cut while they streamed: billed upstream, their tokens never reported.
         private var cutRounds = 0L
 
+        // The code-mode steps in this group: replies splice wrote itself, never requests.
+        private var localSteps = 0L
+
+        /** V4-444: a code-mode step is a reply splice wrote itself, with nothing sent to a provider, so it is
+         *  COUNTED APART from the requests, as the summary already counts it (PerfSummary.local_steps). Counting it
+         *  as a request made every window with steps report requests that never reached a provider, each one also
+         *  missing its input and output because a step has no token counts, and each one unpriced for a reason no
+         *  case covers. It takes no token count, no price, no reason and no cut round: it has none of those. */
         fun add(row: PerfRow, usd: Double?, gap: PriceGap?) {
+            if (row.fields[PerfKeys.LOCAL_STEP] == 1L) {
+                localSteps++
+                return
+            }
             requests++
             addTokens(row)
             cutRounds += row.fields[PerfKeys.CUT_SOURCE_ROUNDS] ?: 0L
@@ -119,6 +131,7 @@ internal class TurnUsage(rows: List<PerfRow>, price: TurnPrice?, plans: AccountP
 
         fun json(): JsonObject = buildJsonObject {
             put("requests", requests)
+            put("local_steps", localSteps)
             put("input_tokens", input)
             put("cached_tokens", cached)
             put("output_tokens", output)

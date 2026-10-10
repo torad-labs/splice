@@ -63,13 +63,13 @@ private object WrapBackups {
 
 /** The pre-flight read [WrappedHead.wrap] needs before it writes anything — split out so neither
  *  function's return count trips the wall (Kotlin style law: ReturnCount <= 3). */
-private sealed class WrapPreflight {
+internal sealed class WrapPreflight {
     data class Ready(val shadowedTarget: String, val realBinaryPath: String) : WrapPreflight()
     data class Refused(val reason: String) : WrapPreflight()
 }
 
 /** What wrapping `claude` would preserve, read from the symlink at the command path. */
-private object SymlinkPreflight {
+internal object SymlinkPreflight {
     fun ready(cmd: Path): WrapPreflight {
         val shadowedTarget = Files.readSymbolicLink(cmd).toString()
         // The null becomes the dangling-link Refused below.
@@ -95,6 +95,7 @@ public class WrappedHead(
     private val symlink: SymlinkOp = SymlinkOp { link, target -> Files.createSymbolicLink(link, target) },
     private val now: WallClock = WallClock(System::currentTimeMillis),
 ) : WrapStateRead {
+    private val links = WrapLinks(symlink, now)
     private val commandPath: Path get() = installPaths.binDir.resolve(CLAUDE_COMMAND)
     private val shimPath: Path get() = installPaths.shareDir.resolve(SHIM_NAME)
     private val vanillaDir: Path get() = home.resolve(Keys.VANILLA_DIR)
@@ -118,7 +119,7 @@ public class WrappedHead(
         val binary = realBinaryPath()
         return when {
             binary != null -> ClaudeToRun.Wrapped(binary)
-            !isWrapShim(commandPath, shimPath) -> ClaudeToRun.ThroughPath
+            !links.isWrapShim(commandPath, shimPath) -> ClaudeToRun.ThroughPath
             else -> {
                 val why = stateStore.read().problem() ?: "recorded claude binary is gone and none sits beside it"
                 ClaudeToRun.Refused(
@@ -143,7 +144,7 @@ public class WrappedHead(
     public fun status(): ClaudeHeadStatus {
         val cmd = commandPath
         val shim = shimPath
-        val wrapped = isWrapShim(cmd, shim)
+        val wrapped = links.isWrapShim(cmd, shim)
         // An unresolvable command reports no resolvesTo.
         val resolvesTo = PathProbe.resolved(cmd)?.toString()
         return ClaudeHeadStatus(
@@ -159,7 +160,7 @@ public class WrappedHead(
     public fun wrap(): WrapResult = synchronized(WRAP_LOCK) {
         val cmd = commandPath
         val shim = shimPath
-        when (val preflight = wrapPreflight(cmd, shim)) {
+        when (val preflight = links.preflight(cmd, shim, CLAUDE_COMMAND)) {
             is WrapPreflight.Refused -> WrapResult.Refused(preflight.reason)
             is WrapPreflight.Ready -> performWrap(cmd, shim, preflight)
         }
@@ -173,7 +174,7 @@ public class WrappedHead(
         val stored = stateStore.read()
         val state = stored.state
         when {
-            !isWrapShim(cmd, shim) -> UnwrapResult.Refused("claude is not currently wrapped")
+            !links.isWrapShim(cmd, shim) -> UnwrapResult.Refused("claude is not currently wrapped")
             state == null -> UnwrapResult.Refused(
                 "the ${stored.problem()}, so splice cannot recover the previous '$cmd' target or " +
                     "the backed-up config; point $cmd at your real claude install by hand",
@@ -203,7 +204,7 @@ public class WrappedHead(
         val shim = shimPath
         return when {
             !Files.exists(shim, NOFOLLOW_LINKS) -> ReconcileResult.Waiting("launch shim not found at $shim")
-            isWrapShim(cmd, shim) -> {
+            links.isWrapShim(cmd, shim) -> {
                 stateStore.recordLauncherOwner(home, shim, installPaths.launcherProfile)
                 refreshBinary(state)
             }
@@ -211,20 +212,6 @@ public class WrappedHead(
             !cmd.isSymbolicLink() -> ReconcileResult.Waiting("$cmd is not a symlink, so it is left alone")
             else -> rewrap(cmd, shim, state)
         }
-    }
-
-    private fun wrapPreflight(cmd: Path, shim: Path): WrapPreflight = when {
-        !Files.exists(shim, NOFOLLOW_LINKS) ->
-            WrapPreflight.Refused("launch shim not found at $shim (run: splice install)")
-        isWrapShim(cmd, shim) ->
-            WrapPreflight.Refused("claude is already wrapped ($cmd -> $shim)")
-        !Files.exists(cmd, NOFOLLOW_LINKS) ->
-            WrapPreflight.Refused(
-                "no existing '$CLAUDE_COMMAND' command found at $cmd; nothing to preserve, refusing to wrap blind",
-            )
-        !cmd.isSymbolicLink() ->
-            WrapPreflight.Refused("$cmd exists and is not a symlink; refusing to overwrite a real file")
-        else -> SymlinkPreflight.ready(cmd)
     }
 
     private fun performWrap(cmd: Path, shim: Path, ready: WrapPreflight.Ready): WrapResult {
@@ -240,7 +227,7 @@ public class WrappedHead(
             ),
         )
         stateStore.recordLauncherOwner(home, shim, installPaths.launcherProfile)
-        atomicSymlink(cmd, shim)
+        links.atomicSymlink(cmd, shim)
         return WrapResult.Ok(status())
     }
 
@@ -250,7 +237,7 @@ public class WrappedHead(
                 "the claude that was wrapped (${state.shadowedSymlinkTarget}) is gone and no other version sits " +
                     "beside it; point $cmd at your real claude install by hand",
             )
-        atomicSymlink(cmd, target)
+        links.atomicSymlink(cmd, target)
         // A wrap made before V4-445 copied the operator's settings.json and .claude.json aside and rewrote
         // both; its backups go back. A wrap now records none.
         if (state.settingsBackupPath.isNotBlank()) {
@@ -293,15 +280,31 @@ public class WrappedHead(
             ),
         )
         stateStore.recordLauncherOwner(home, shim, installPaths.launcherProfile)
-        atomicSymlink(cmd, shim)
+        links.atomicSymlink(cmd, shim)
         return ReconcileResult.Rewrapped(real.toString())
+    }
+}
+
+internal class WrapLinks(private val symlink: SymlinkOp, private val now: WallClock) {
+    fun preflight(cmd: Path, shim: Path, commandName: String): WrapPreflight = when {
+        !Files.exists(shim, NOFOLLOW_LINKS) ->
+            WrapPreflight.Refused("launch shim not found at $shim (run: splice install)")
+        isWrapShim(cmd, shim) ->
+            WrapPreflight.Refused("claude is already wrapped ($cmd -> $shim)")
+        !Files.exists(cmd, NOFOLLOW_LINKS) ->
+            WrapPreflight.Refused(
+                "no existing '$commandName' command found at $cmd; nothing to preserve, refusing to wrap blind",
+            )
+        !cmd.isSymbolicLink() ->
+            WrapPreflight.Refused("$cmd exists and is not a symlink; refusing to overwrite a real file")
+        else -> SymlinkPreflight.ready(cmd)
     }
 
     /** Is [cmd] currently a link to [shim]? Compared by real path so a relative or differently
      *  spelled link to the same file still reads as wrapped. Absence or an unreadable entry reads as
      *  NOT wrapped — the honest default when the fact cannot be established (only proven state is
      *  asserted, matching every other absence read in this package). */
-    private fun isWrapShim(cmd: Path, shim: Path): Boolean {
+    fun isWrapShim(cmd: Path, shim: Path): Boolean {
         // Unresolvable reads as NOT wrapped by contract (KDoc above).
         val cmdReal = PathProbe.resolved(cmd) ?: return false
         val shimReal = PathProbe.resolved(shim) ?: return false
@@ -312,7 +315,7 @@ public class WrappedHead(
      *  reusable from here — it is a private member of that class): a failure at any point before the
      *  move leaves [link] untouched, and the move itself is one atomic step with no missing-entry
      *  window either direction. */
-    private fun atomicSymlink(link: Path, target: Path) {
+    fun atomicSymlink(link: Path, target: Path) {
         val staged = link.resolveSibling(".${link.fileName}.splice-wrap-${now()}")
         symlink(staged, target)
         try {

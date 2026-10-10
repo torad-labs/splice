@@ -616,8 +616,10 @@ kimi_reads() {
   bun "$LIB_TS" subs-seen "$SUBS_LOG" "$skip" /kimi/v1/messages x_api_key current || return 1
   bun "$LIB_TS" subs-seen "$SUBS_LOG" "$skip" /kimi/v1/messages identity complete || return 1
   # The candidate's own turn observed the vendor's new utilization, which is the other half of the
-  # retention claim: the 42% above was the kept reading, not whatever the vendor says now.
-  curl_mgmt -f "http://127.0.0.1:$CONTROL_PORT/api/usage" | bun "$LIB_TS" usage-head claude-kimi 2 77
+  # retention claim: the 42% above was the kept reading, not whatever the vendor says now. One entry is
+  # the floor, not two: entries are one-minute buckets (UsageRing), and v0.3.2's turn and the candidate's
+  # land in the same minute on a fast run, so a floor of two passed only when the run crossed a minute.
+  curl_mgmt -f "http://127.0.0.1:$CONTROL_PORT/api/usage" | bun "$LIB_TS" usage-head claude-kimi 1 77
 }
 step "the 0.3.2 Kimi credential still signs in: x-api-key from its file, with the five X-Msh-* headers" \
   in_dir "$WORK" kimi_reads

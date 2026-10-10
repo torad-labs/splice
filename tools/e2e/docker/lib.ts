@@ -252,7 +252,8 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
   },
 
   /** usage-head < /api/usage <head> <min-entries> <five-hour-used-pct> — the daemon reports <head>
-   *  with at least <min-entries> recorded turns and a five-hour window at <five-hour-used-pct>. WHICH
+   *  with at least <min-entries> usage entries (one-minute buckets, so two turns in one minute are one
+   *  entry) and a five-hour window at <five-hour-used-pct>. WHICH
    *  reading that is, is decided by WHEN the step runs: the upgrade rehearsal asks before its first
    *  post-upgrade turn on the head, when the only reading in existence is the one the old release's
    *  turns left on disk, and then moves the vendor's utilization before asking again. */

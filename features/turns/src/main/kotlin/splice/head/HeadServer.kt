@@ -121,7 +121,7 @@ public class HeadServer(
         countTokens,
         HeapIngress(
             deps.seams.requestMaterializationGate.heap,
-            deps.policy.maxRequestBytes.toLong(),
+            deps.policy.maxRequestBytes,
             AdmissionErrorBody,
             deps.seams.requestMaterializationGate.limitBytes,
         ),

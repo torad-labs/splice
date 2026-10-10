@@ -147,7 +147,7 @@ class TraceHeapShareTest {
         val pending = if (retainedOutput) retainOutput(route) else null
         val ingress = HeapIngress(
             heap,
-            4096,
+            { 4096 },
             IngressErrorBody { type, message ->
                 JsonWire.string(
                     buildJsonObject {

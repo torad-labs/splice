@@ -78,7 +78,6 @@ internal class HeadServerFactory(
     ): HeadServer {
         val key = ctx.key
         val cfg = ctx.cfg
-        val knobs = cfg.asMap()
         return HeadServer(
             provider = provider,
             listenPort = ctx.head.port,
@@ -114,9 +113,9 @@ internal class HeadServerFactory(
                     forwardClientAuth = forwardClientAuth,
                     mirrorReasoning = cfg.mirrorReasoning,
                     progressLine = cfg.progressLine,
-                    maxRequestBytes = (knobs[Knob.MAX_REQUEST_BYTES.key] as Long).toInt(),
-                    // Re-read per head at EVERY client body read, the way the inflight ceiling is: the knob belongs
-                    // to the operator, who may widen it for a slow client mid-session without restarting the daemon.
+                    // Both re-read per head at EVERY request, the way the inflight ceiling is: these knobs belong to
+                    // the operator, who may widen one for a big or slow request mid-session without a restart.
+                    maxRequestBytes = { config.getConfig(key).maxRequestBytes },
                     requestReadTimeoutMs = { config.getConfig(key).requestReadTimeoutMs },
                 ),
                 traffic = HeadDeps.HeadTraffic(

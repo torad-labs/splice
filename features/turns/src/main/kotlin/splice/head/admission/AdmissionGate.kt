@@ -100,7 +100,7 @@ internal class AdmissionGate(
         block: MaterializedRequest<Materialized<T>>,
     ): T? = try {
         val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeIf { it >= 0L }
-        val cap = deps.policy.maxRequestBytes
+        val cap = deps.policy.maxRequestBytes()
         // An oversized DECLARATION keeps its 413 before any admission wait; an unknown length
         // reserves the full head cap.
         if (declared != null && declared > cap) {

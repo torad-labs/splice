@@ -110,7 +110,7 @@ internal class TurnPreparation(
     suspend fun prepareTurn(call: ApplicationCall, perf: TurnPerf): Materialized<Preparation> {
         val sessionId = call.request.headers[SESSION_HEADER]?.takeIf(String::isNotBlank)
         deps.seams.clientVersions.observe(sessionId, call.request.headers[HttpHeaders.UserAgent])
-        val body = when (val read = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes)) {
+        val body = when (val read = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes())) {
             is BodyRead.TooLarge -> return Materialized.TooLarge(read.limit)
             is BodyRead.Received -> read.body
         }

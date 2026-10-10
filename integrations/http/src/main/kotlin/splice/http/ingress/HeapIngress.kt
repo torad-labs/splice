@@ -13,6 +13,7 @@ import io.ktor.util.AttributeKey
 import io.netty.channel.ChannelPipeline
 import io.netty.channel.group.DefaultChannelGroup
 import io.netty.util.concurrent.GlobalEventExecutor
+import splice.core.config.RequestByteCap
 import splice.core.memory.HeapCapacityException
 import splice.core.memory.HeapLease
 import splice.core.memory.HeapReservations
@@ -35,7 +36,8 @@ public fun interface IngressErrorBody {
  */
 public class HeapIngress(
     private val heap: HeapReservations,
-    private val maxBodyBytes: Long,
+    /** The listener's body cap, asked for at every request: a raised cap admits the next one (RequestByteCap). */
+    private val maxBodyBytes: RequestByteCap,
     private val errorBody: IngressErrorBody,
     private val requestLimit: Long = heap.limitBytes,
 ) {
@@ -107,7 +109,7 @@ public class HeapIngress(
 
     private suspend fun refuse(call: ApplicationCall, status: Int, detail: String? = null) {
         val large = status == HttpStatus.CONTENT_TOO_LARGE
-        val message = detail ?: if (large) "request body exceeds $maxBodyBytes bytes" else "gateway busy; retry"
+        val message = detail ?: if (large) "request body exceeds ${maxBodyBytes()} bytes" else "gateway busy; retry"
         val type = if (large) "invalid_request_error" else "overloaded_error"
         call.respondText(
             errorBody.render(type, message),

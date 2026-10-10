@@ -13,6 +13,7 @@ import io.netty.handler.codec.http.HttpRequest
 import io.netty.handler.codec.http.HttpUtil
 import io.netty.handler.codec.http.LastHttpContent
 import io.netty.util.ReferenceCountUtil
+import splice.core.config.RequestByteCap
 import splice.core.memory.HeapReservations
 import splice.core.memory.HeapWeights
 import splice.core.wire.HttpStatus
@@ -25,7 +26,8 @@ internal class IngressReadGuard(private val ownership: IngressOwnership) : Chann
 
 internal class IngressHandler(
     private val heap: HeapReservations,
-    private val cap: Long,
+    /** Read once per admitted request, not once per connection: this handler outlives a cap change. */
+    private val cap: RequestByteCap,
     private val requestLimit: Long,
     private val ownership: IngressOwnership,
 ) : SimpleChannelInboundHandler<HttpObject>(false) {
@@ -48,12 +50,15 @@ internal class IngressHandler(
     }
 
     private fun admit(request: HttpRequest): IngressRequest {
-        val bytes = bodyBytes(request)
+        // ONE reading for this request, so the cap that sizes an unknown-length body is the same cap it is then
+        // judged against even if an operator changes the knob between the two.
+        val capBytes = cap().toLong()
+        val bytes = bodyBytes(request, capBytes)
         val bodyWeight = HeapWeights.request(bytes)
         val weight = HeapWeights.ingress(bytes)
         val capacity = (heap.limitBytes - HeapWeights.CONNECTION_BYTES).coerceAtLeast(0L)
         return when {
-            bytes > cap -> IngressRequest(null, HttpStatus.CONTENT_TOO_LARGE)
+            bytes > capBytes -> IngressRequest(null, HttpStatus.CONTENT_TOO_LARGE)
             bodyWeight > requestLimit -> IngressRequest(
                 null,
                 HttpStatus.CONTENT_TOO_LARGE,
@@ -72,10 +77,10 @@ internal class IngressHandler(
         }
     }
 
-    private fun bodyBytes(request: HttpRequest): Long {
+    private fun bodyBytes(request: HttpRequest, capBytes: Long): Long {
         val declared = HttpUtil.getContentLength(request, -1L)
         if (declared >= 0L) return declared
-        return if (HttpUtil.isTransferEncodingChunked(request)) cap else 0L
+        return if (HttpUtil.isTransferEncodingChunked(request)) capBytes else 0L
     }
 
     private fun refuse(ctx: ChannelHandlerContext, request: HttpRequest, entry: IngressRequest) {

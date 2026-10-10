@@ -9,6 +9,7 @@ package splice.head
 
 import splice.core.budget.HeadBudget
 import splice.core.config.Knob
+import splice.core.config.RequestByteCap
 import splice.core.model.ClientWindows
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptLayers
@@ -217,7 +218,7 @@ public data class HeadDeps(
      *  who changes that knob while the daemon runs is obeyed by the next request rather than at the next restart;
      *  either way no turn can change it, and two turns asking at the same moment get the same answer. */
     public data class HeadPolicy(
-        val maxRequestBytes: Int = defaultMaxRequestBytes,
+        val maxRequestBytes: RequestByteCap = RequestByteCap { defaultMaxRequestBytes },
         val requestReadTimeoutMs: RequestReadBudgetMs = RequestReadBudgetMs { defaultRequestReadTimeoutMs },
         val stopDrainMs: Long = DEFAULT_STOP_DRAIN_MS,
         val mirrorReasoning: Boolean = false,

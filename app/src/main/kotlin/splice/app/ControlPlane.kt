@@ -270,12 +270,13 @@ internal class ControlPlane(
         )
         val mcpHost = mcpHost(home, sharing, heads.values.mapNotNull { it.launchSpec })
         val signals = HeadSignals(heads, RuntimeNotAnswering { probes.runtimeNotAnswering() })
-        // The request cap is resolved here, once, and handed to the guard as a value.
+        // The request cap is asked for at every request, not resolved here once: the console's own PATCH of
+        // maxRequestBytes reaches the control listener's guard without a restart, the same way it reaches a head.
         val guard = ControlGuard(
             mgmtKey,
             ControlAudit(log),
             log,
-            HeapIngress(JvmHeap.budget, Knob.MAX_REQUEST_BYTES.count(), AdmissionErrorBody),
+            HeapIngress(JvmHeap.budget, { config.getConfig().maxRequestBytes }, AdmissionErrorBody),
         )
         val srv = ControlServer(
             adopted.control(controlPort),

@@ -33,7 +33,7 @@ internal class CountTokens(
         // materialization gate (fastFail: contention 529s instead of queueing, so a count_tokens
         // flood cannot camp the shared heap budget) plus the maxRequestBytes cap.
         val prepared = admission.materializeBodyOrRespond(call, Materializing(fastFail = true)) {
-            when (val read = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes)) {
+            when (val read = bodyReader.receiveBodyBounded(call, deps.policy.maxRequestBytes())) {
                 // The 413 is the gate's to write, so the cap travels back as the case it is.
                 is BodyRead.TooLarge -> Materialized.TooLarge(read.limit)
                 is BodyRead.Received -> Materialized.Done(

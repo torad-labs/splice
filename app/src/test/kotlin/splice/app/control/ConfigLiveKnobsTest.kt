@@ -141,6 +141,19 @@ class ConfigLiveKnobsTest {
     }
 
     @Test
+    fun `the request body cap is live, so no restart is named and a head reads it`() = runBlocking<Unit> {
+        val answer = json.parseToJsonElement(patch("""{"maxRequestBytes":8388608}""")).jsonObject
+
+        assertEquals(0, answer.getValue("restart_required").jsonArray.size, answer.toString())
+        val view = json.parseToJsonElement(read()).jsonObject
+        val restartOnly = view.getValue("restart_required_keys").jsonArray.map { it.jsonPrimitive.content }
+        assertFalse("maxRequestBytes" in restartOnly, "a live knob is not listed as restart-only")
+        // What both enforcement layers ask for per request: the head's materialization gate and, in front of it,
+        // the listener's ingress guard (RequestByteCap).
+        assertEquals(8 * 1024 * 1024, config.getConfig("h").maxRequestBytes)
+    }
+
+    @Test
     fun `every knob in the schema is in the config answer with its value, scope and disposition`() = runBlocking<Unit> {
         patch("""{"maxInflight":9,"effort":"low"}""")
 

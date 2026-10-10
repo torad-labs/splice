@@ -106,7 +106,7 @@ class HeadServerIntegrationTest {
                 upstream = UpstreamClient(totalTimeoutMs = 30_000, maxRetries = 2),
                 log = { synchronized(logs) { logs.add(it) } },
             ).copy(
-                policy = HeadDeps.HeadPolicy(maxRequestBytes = 1_024),
+                policy = HeadDeps.HeadPolicy(maxRequestBytes = { 1_024 }),
             ).copy(
                 // The shadow classifier's own log rides the SAME sink the assertions read, so it
                 // cannot come from the fixture's silent default.

@@ -120,7 +120,7 @@ class MaterializationRefusalTest {
     ) = testApplication {
         val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 13))
         val deps = headDeps(tmp).copy(
-            policy = HeadDeps.HeadPolicy(maxRequestBytes = 4),
+            policy = HeadDeps.HeadPolicy(maxRequestBytes = { 4 }),
             seams = HeadDeps.HeadSeams(requestMaterializationGate = heap),
         )
         val admission = AdmissionGate(testProvider, deps, AdmissionWindow(), AdmissionResponses())
@@ -276,7 +276,7 @@ class AdmissionGateTest {
             routing {
                 post("/probe") {
                     admission.materializeOrRespond(call) {
-                        reader.receiveBodyBounded(call, deps.policy.maxRequestBytes)
+                        reader.receiveBodyBounded(call, deps.policy.maxRequestBytes())
                     }
                 }
             }
@@ -297,7 +297,7 @@ class AdmissionGateTest {
     ) = testApplication {
         val materialization = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 26))
         val deps = headDeps(tmp).copy(
-            policy = HeadDeps.HeadPolicy(maxRequestBytes = 4),
+            policy = HeadDeps.HeadPolicy(maxRequestBytes = { 4 }),
             seams = HeadDeps.HeadSeams(requestMaterializationGate = materialization),
         )
         val admission = AdmissionGate(testProvider, deps, AdmissionWindow(), AdmissionResponses())
@@ -484,7 +484,7 @@ class AdmissionGateTest {
     ) = testApplication {
         val heap = RequestMaterializationGate(heap = HeapBudget(JvmHeap.limitBytes, 7))
         val deps = headDeps(tmp).copy(
-            policy = HeadDeps.HeadPolicy(maxRequestBytes = 4),
+            policy = HeadDeps.HeadPolicy(maxRequestBytes = { 4 }),
             seams = HeadDeps.HeadSeams(requestMaterializationGate = heap),
         )
         val initial = (deps.traffic.gate.acquire() as InflightGate.Admission.Acquired).slot
@@ -769,7 +769,7 @@ class AdmissionTimingTest {
 class RequestBodyCapRefusalTest {
     @Test
     fun `both cap arms answer the client one 413 with the same bytes`(@TempDir tmp: Path) = testApplication {
-        val deps = headDeps(tmp).copy(policy = HeadDeps.HeadPolicy(maxRequestBytes = 4))
+        val deps = headDeps(tmp).copy(policy = HeadDeps.HeadPolicy(maxRequestBytes = { 4 }))
         var next = 0
         val reader = RequestBodyReader(
             RequestReadBudgetMs { 1_000 },

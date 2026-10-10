@@ -54,7 +54,7 @@ class CountTokensLeaseTest {
                 ),
             ),
         ).copy(
-            policy = HeadDeps.HeadPolicy(maxRequestBytes = BODY_BYTES),
+            policy = HeadDeps.HeadPolicy(maxRequestBytes = { BODY_BYTES }),
         )
         val handler = handler(deps)
         val publicationProbes = mutableListOf<Int>()

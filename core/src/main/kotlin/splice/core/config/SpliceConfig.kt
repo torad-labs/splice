@@ -17,6 +17,14 @@ import splice.core.perf.HistoryWindowWords
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.ReasoningDisplayParser
 
+/** The largest request body the gateway will decode, in bytes (knob `maxRequestBytes`), ASKED FOR AT EVERY REQUEST
+ *  and never captured at construction: an operator who raises the cap while the daemon runs is obeyed by the next
+ *  request. It lives in core because TWO layers enforce the one knob — the head path and the ingress guard in front
+ *  of it — and a cap that is live in one of them and stale in the other is worse than one that needs a restart. */
+public fun interface RequestByteCap {
+    public operator fun invoke(): Int
+}
+
 /** Typed view over the merged+normalized map. */
 public class SpliceConfig internal constructor(
     private val m: Map<String, Any?>,
@@ -50,6 +58,11 @@ public class SpliceConfig internal constructor(
     /** How long one client request body read may take. Read LIVE, per read, through the head's RequestReadBudgetMs,
      *  so a PATCH moves the ceiling of the next read and no restart is named for it. */
     public val requestReadTimeoutMs: Long get() = long(Knob.REQUEST_READ_TIMEOUT_MS)
+
+    /** The largest request body this gateway will decode; past it the client is answered 413. Read LIVE, per
+     *  request, through a [RequestByteCap] — by the head path and by the ingress guard in front of it, which is why
+     *  the reader's type lives here in core rather than beside either of them. */
+    public val maxRequestBytes: Int get() = long(Knob.MAX_REQUEST_BYTES).toInt()
 
     /** Live console switch for reading Claude Code's already-written redacted transcript (V4-354). */
     public val transcriptView: Boolean get() = bool(Knob.TRANSCRIPT_VIEW)

@@ -205,6 +205,45 @@ class BudgetSpendTest {
         assertTrue(route.read().body.contains("\"day_resets_at_epoch_ms\":null"), "nothing wired names no boundary")
     }
 
+    // Re-review, Oct 10: the page derived today's start as tomorrow's midnight minus 24 hours, which is wrong on the
+    // two days a year the clock changes. The daemon names the start itself, from the calendar day.
+    @Test
+    fun `the day starts at the calendar day's own midnight, on the 25-hour and the 23-hour days too`() {
+        val store = BudgetStore(directory.resolve("budgets.json"))
+        val history = HeadPerfHistory { PerfRowsSource { PerfRowsWindow(emptyList()) } }
+        val chicago = ZoneId.of("America/Chicago")
+
+        fun startIn(zone: ZoneId, at: java.time.ZonedDateTime) =
+            owner(store, history, at.toInstant().toEpochMilli(), zone).dayStartedAtMs()
+
+        fun ms(zone: ZoneId, y: Int, m: Int, d: Int) =
+            java.time.ZonedDateTime.of(y, m, d, 0, 0, 0, 0, zone).toInstant().toEpochMilli()
+
+        // Nov 1, 2026 is 25 hours long in Chicago; 00:10 CT that day is inside it, and 24 hours before the next
+        // midnight (Nov 2 00:00 CST) would be Nov 1 01:00 CDT-equivalent, an hour too late.
+        val nov = java.time.ZonedDateTime.of(2026, 11, 1, 0, 10, 0, 0, chicago)
+        assertEquals(ms(chicago, 2026, 11, 1), startIn(chicago, nov))
+
+        // Mar 8, 2026 is 23 hours long: the start is still that day's midnight, not an hour of the day before.
+        val mar = java.time.ZonedDateTime.of(2026, 3, 8, 12, 0, 0, 0, chicago)
+        assertEquals(ms(chicago, 2026, 3, 8), startIn(chicago, mar))
+
+        // A half-hour zone: the start sits inside a UTC hour, which is why the page counts whole hours only.
+        val kolkata = ZoneId.of("Asia/Kolkata")
+        val start = startIn(kolkata, java.time.ZonedDateTime.of(2026, 10, 10, 9, 0, 0, 0, kolkata))
+        assertEquals(30 * 60_000L, start % 3_600_000L, "midnight in Kolkata is :30 past a UTC hour")
+    }
+
+    @Test
+    fun `the budget reply names the day's start beside its reset`() {
+        val store = BudgetStore(directory.resolve("budgets.json"))
+        val history = HeadPerfHistory { PerfRowsSource { PerfRowsWindow(emptyList()) } }
+        val config = ConfigService(StatePaths(baseOverride = directory.resolve("state")))
+        val route = BudgetRoutes(BudgetSource { store }, config)
+        val body = route.read(owner(store, history, SPEND_BOOT_MS, ZoneOffset.UTC)).body
+        assertTrue(body.contains("\"day_started_at_epoch_ms\":${20_000L * SPEND_DAY_MS}"), body)
+    }
+
     private fun owner(store: BudgetStore, history: HeadPerfHistory, at: Long, zone: ZoneId) = BudgetEnforcement(
         store,
         BudgetAlert { _, _ -> },

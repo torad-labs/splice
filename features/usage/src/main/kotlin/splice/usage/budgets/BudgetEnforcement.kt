@@ -59,6 +59,11 @@ public class BudgetEnforcement(
      *  (re-review, Oct 10). */
     public fun dayResetsAtMs(): Long = context.dayStart(context.localDay(context.clock()) + 1)
 
+    /** The instant the budget day now running began, in the daemon's zone: the calendar day's own midnight, never
+     *  tomorrow's minus 24 hours, which is wrong on the two days a year the clock changes (a 25-hour November day,
+     *  a 23-hour March one). */
+    public fun dayStartedAtMs(): Long = context.dayStart(context.localDay(context.clock()))
+
     /** Unknown when no live head ledger exists; otherwise the same daily tally admission weighs. */
     internal fun spending(head: String): BudgetSpend? = ledgers[head]?.snapshot()
 }

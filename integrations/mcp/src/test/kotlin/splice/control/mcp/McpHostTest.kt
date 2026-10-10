@@ -190,7 +190,7 @@ class McpHostTest : McpHostFixture() {
         val initialized = """{"jsonrpc":"2.0","method":"notifications/initialized"}"""
         listOf(a, b).forEach { assertEquals(202, host.post("fake", it, initialized).status) }
         suspend fun listing(session: String, id: Int): String {
-            val body = """{"jsonrpc":"2.0","id":${id},"method":"tools/list"}"""
+            val body = """{"jsonrpc":"2.0","id":$id,"method":"tools/list"}"""
             val reply = json.parseToJsonElement(host.post("fake", session, body).body!!).jsonObject
             assertEquals(id.toString(), reply["id"]!!.jsonPrimitive.content, "the answer carries the asker's own id")
             return reply["result"]!!.jsonObject["listing"]!!.jsonPrimitive.content

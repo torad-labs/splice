@@ -68,7 +68,7 @@ public class HeadServer(
     private val gate get() = deps.traffic.gate
     private val log get() = deps.log
 
-    private val compactionReplay = CompactionReplay(
+    internal val compactionReplay = CompactionReplay(
         deps.stores.compaction.compactionRecordings,
         heap = deps.seams.requestMaterializationGate.heap,
     )

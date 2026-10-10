@@ -505,7 +505,7 @@ class EconomicsStoreTest {
         store.flushNow()
         Files.delete(file)
 
-        EconomicsStore::class.java.getDeclaredMethod("flushScheduled").apply { isAccessible = true }.invoke(store)
+        store.flushScheduled()
         assertFalse(Files.exists(file), "the pending write found nothing newer than flushNow's and wrote nothing")
     }
 }

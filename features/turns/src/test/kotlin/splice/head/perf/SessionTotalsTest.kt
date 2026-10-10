@@ -240,7 +240,7 @@ class SessionTotalsTest {
         totals.flushNow()
         val stopped = Files.readAllBytes(file)
 
-        SessionTotals::class.java.getDeclaredMethod("flushScheduled").apply { isAccessible = true }.invoke(totals)
+        totals.flushScheduled()
         assertArrayEquals(stopped, Files.readAllBytes(file), "the pending write found nothing newer and wrote nothing")
         assertTrue("\"clean\":true" in Files.readString(file))
     }

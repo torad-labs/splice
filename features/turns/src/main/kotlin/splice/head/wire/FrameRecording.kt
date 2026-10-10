@@ -28,6 +28,8 @@ private const val FRAME_ENTRY_BYTES = 64L
 internal class FrameRecording(
     private val heap: HeapReservations = JvmHeap.budget,
     val generation: String = UUID.randomUUID().toString(),
+    /** Runs as completion begins, inside the torn-on-failure guard: the seam a test fails completion through. */
+    private val beforeComplete: Runnable = Runnable {},
 ) {
 
     private data class Progress(val frames: Int, val complete: Boolean, val whole: Boolean = false)
@@ -81,6 +83,7 @@ internal class FrameRecording(
     fun complete(whole: Boolean) {
         var completed = false
         Cancellables.withCleanup({ if (!completed) progress.value = torn }) {
+            beforeComplete.run()
             progress.update { it.copy(complete = true, whole = whole) }
             completed = true
         }

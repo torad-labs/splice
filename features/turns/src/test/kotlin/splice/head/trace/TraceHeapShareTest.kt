@@ -201,9 +201,8 @@ class TraceHeapShareTest {
     }
 
     private fun retainOutput(route: TraceRoute): Pair<String, HeapLease> {
-        val rows = route.javaClass.getDeclaredField("rows").apply { isAccessible = true }.get(route) as TraceRows
         val owner = String("synthetic pending output".toCharArray())
-        return rows.withRead { share -> owner to HeapOwners.charge(owner, share, share.limitBytes) }
+        return route.rows.withRead { share -> owner to HeapOwners.charge(owner, share, share.limitBytes) }
     }
 
     private fun route(dir: Path, heap: HeapBudget): TraceRoute {
@@ -211,10 +210,7 @@ class TraceHeapShareTest {
             override fun summary(tailN: Int) = CompactView(0, emptyMap(), emptyList())
         }
         val heads = TurnsHeadLookup { listOf(TurnsHead("synthetic", compact)) }
-        return TraceRoute(heads, { dir }, Dispatchers.Unconfined).also { route ->
-            // Use the existing route and injected row reader on both parent and fixed source.
-            route.javaClass.getDeclaredField("rows").apply { isAccessible = true }.set(route, TraceRows(heap = heap))
-        }
+        return TraceRoute(heads, { dir }, Dispatchers.Unconfined, heap = heap)
     }
 
     private fun write(dir: Path, oneTurn: Boolean) {

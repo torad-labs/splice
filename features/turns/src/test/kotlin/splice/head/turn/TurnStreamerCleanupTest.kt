@@ -10,7 +10,6 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeout
@@ -66,13 +65,9 @@ import splice.upstream.TurnEnd
 import splice.upstream.codemode.ProcessDispatchers
 import splice.upstream.retry.InflightGate
 import splice.upstream.transport.UpstreamClient
-import java.lang.reflect.InvocationTargetException
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
-import kotlin.coroutines.intrinsics.suspendCoroutineUninterceptedOrReturn
 import kotlin.time.Duration.Companion.seconds
 
 class TurnStreamerCleanupTest {
@@ -80,9 +75,8 @@ class TurnStreamerCleanupTest {
     @Timeout(20)
     fun `a recording OOM releases the slot and removes the dead replay`(@TempDir tmp: Path) = runBlocking {
         rig(tmp).use { rig ->
-            val recording = FrameRecording()
             val failure = OutOfMemoryError("synthetic recording completion failure")
-            failCompletion(recording, failure)
+            val recording = FrameRecording(beforeComplete = { throw failure })
             rig.run(recording)
             assertSame(failure, withTimeout(5_000) { rig.failure.await() })
             assertTrue(rig.drive.emitter.endedCleanly, "the replay would otherwise have been kept")
@@ -100,10 +94,9 @@ class TurnStreamerCleanupTest {
     fun `recording failure preserves the first error and suppresses slot release failure`(@TempDir tmp: Path) =
         runBlocking {
             rig(tmp).use { rig ->
-                val recording = FrameRecording()
                 val first = OutOfMemoryError("synthetic recording completion failure")
                 val later = IllegalStateException("synthetic slot release failure")
-                failCompletion(recording, first)
+                val recording = FrameRecording(beforeComplete = { throw first })
                 rig.failRelease(later)
                 rig.run(recording)
                 val actual = withTimeout(5_000) { rig.failure.await() }
@@ -120,10 +113,9 @@ class TurnStreamerCleanupTest {
         runBlocking {
             val first = OutOfMemoryError("synthetic drive failure")
             rig(tmp, first).use { rig ->
-                val recording = FrameRecording()
                 val completing = OutOfMemoryError("synthetic recording completion failure")
                 val releasing = IllegalStateException("synthetic slot release failure")
-                failCompletion(recording, completing)
+                val recording = FrameRecording(beforeComplete = { throw completing })
                 rig.failRelease(releasing)
                 rig.run(recording)
                 val actual = withTimeout(5_000) { rig.failure.await() }
@@ -186,9 +178,8 @@ class TurnStreamerCleanupTest {
     fun `an attached follower drains frames and ends torn when completion fails`(@TempDir tmp: Path) =
         runBlocking {
             rig(tmp).use { rig ->
-                val recording = FrameRecording()
                 val first = OutOfMemoryError("synthetic follower completion failure")
-                failCompletion(recording, first)
+                val recording = FrameRecording(beforeComplete = { throw first })
                 val frames = ArrayList<String>()
                 val follower = async(start = CoroutineStart.UNDISPATCHED) { recording.follow { frames.add(it) } }
                 try {
@@ -207,9 +198,8 @@ class TurnStreamerCleanupTest {
     fun `head stop remains cancellation and logs its fatal cleanup and finish`(@TempDir tmp: Path) =
         runBlocking {
             rig(tmp, awaitStop = true).use { rig ->
-                val recording = FrameRecording()
                 val fatal = OutOfMemoryError("synthetic cancelled cleanup failure")
-                failCompletion(recording, fatal)
+                val recording = FrameRecording(beforeComplete = { throw fatal })
                 val running = async { rig.run(recording) }
                 rig.stop()
                 running.await()
@@ -238,8 +228,7 @@ class TurnStreamerCleanupTest {
         runBlocking {
             val shared = SharedOom()
             rig(tmp, shared).use { rig ->
-                val recording = FrameRecording()
-                failCompletion(recording, shared)
+                val recording = FrameRecording(beforeComplete = { throw shared })
                 rig.failRelease(shared)
                 rig.run(recording)
                 val actual = withTimeout(5_000) { rig.failure.await() }
@@ -289,26 +278,6 @@ class TurnStreamerCleanupTest {
         val gate = InflightGate({ 1 })
         val slot = (gate.acquire() as InflightGate.Admission.Acquired).slot
         return Rig(tmp, gate, slot, driveFailure, recordings, awaitStop)
-    }
-
-    /** Replace only the recording's completion CAS, without consuming or exhausting real heap. */
-    private fun failCompletion(recording: FrameRecording, failure: Throwable) {
-        val field = FrameRecording::class.java.getDeclaredField("progress").apply { isAccessible = true }
-        field.set(recording, failingCompletion(field.get(recording) as MutableStateFlow<*>, failure))
-    }
-
-    /** The progress flow's own state type, kept generic: the test reads it reflectively and never names it. */
-    @OptIn(kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi::class)
-    private fun <S> failingCompletion(progress: MutableStateFlow<S>, failure: Throwable): MutableStateFlow<S> {
-        val initial = checkNotNull(progress.value)
-        val state = MutableStateFlow(progress.value)
-        val completing = initial.javaClass.getDeclaredField("complete").apply { isAccessible = true }
-        return object : MutableStateFlow<S> by state {
-            override fun compareAndSet(expect: S, update: S): Boolean {
-                if (completing.getBoolean(update)) throw failure
-                return state.compareAndSet(expect, update)
-            }
-        }
     }
 
     private class Rig(
@@ -420,27 +389,26 @@ class TurnStreamerCleanupTest {
             ),
             channel,
         )
-        private val streamer = TurnStreamer(
+
+        private fun streamerOn(detached: CoroutineScope) = TurnStreamer(
             provider,
             deps,
             factory,
             TurnDriver(provider, deps, replay).sealedDrive,
             replay,
-            scope,
-        ).also { streamer ->
+            detached,
             // Observe the actual detached job's rethrown error instead of replacing its drive.
-            TurnStreamer::class.java.getDeclaredField("detachedContext").apply { isAccessible = true }
-                .set(streamer, CoroutineExceptionHandler { _, error -> failure.complete(error) })
-        }
+            CoroutineExceptionHandler { _, error -> failure.complete(error) },
+        )
+
+        private var streamer = streamerOn(scope)
 
         fun failLaunch(failure: Throwable) {
-            TurnStreamer::class.java.getDeclaredField("detachedScope").apply { isAccessible = true }
-                .set(
-                    streamer,
-                    object : CoroutineScope {
-                        override val coroutineContext: kotlin.coroutines.CoroutineContext get() = throw failure
-                    },
-                )
+            streamer = streamerOn(
+                object : CoroutineScope {
+                    override val coroutineContext: kotlin.coroutines.CoroutineContext get() = throw failure
+                },
+            )
         }
 
         fun queueThenFail(failure: Throwable): Runnable {
@@ -455,13 +423,11 @@ class TurnStreamerCleanupTest {
                     block.run()
                 }
             }
-            TurnStreamer::class.java.getDeclaredField("detachedScope").apply { isAccessible = true }
-                .set(
-                    streamer,
-                    object : CoroutineScope {
-                        override val coroutineContext = scope.coroutineContext + dispatcher
-                    },
-                )
+            streamer = streamerOn(
+                object : CoroutineScope {
+                    override val coroutineContext = scope.coroutineContext + dispatcher
+                },
+            )
             return Runnable { checkNotNull(queued).run() }
         }
 
@@ -479,23 +445,7 @@ class TurnStreamerCleanupTest {
         suspend fun run(recording: FrameRecording) {
             activeRecording = recording
             val pending = PendingSse(perf, clock, null, recording)
-            suspendCoroutineUninterceptedOrReturn<Unit> { continuation ->
-                val method = TurnStreamer::class.java.getDeclaredMethod(
-                    "driveDetachable",
-                    TurnDrive::class.java,
-                    TurnInputs::class.java,
-                    String::class.java,
-                    FrameRecording::class.java,
-                    PendingSse::class.java,
-                    Continuation::class.java,
-                ).apply { isAccessible = true }
-                val result = try {
-                    method.invoke(streamer, drive, inputs, key, recording, pending, continuation)
-                } catch (error: InvocationTargetException) {
-                    throw error.targetException
-                }
-                if (result === COROUTINE_SUSPENDED) COROUTINE_SUSPENDED else Unit
-            }
+            streamer.driveDetachable(drive, inputs, key, recording, pending)
         }
 
         /** A finished drive writes its perf and compact rows under the temp dir through AsyncFileIo's

@@ -203,15 +203,7 @@ class HeadServerCompactionReplayTest(@param:TempDir private val tmp: Path) {
         assertTrue(waitFor(5_000) { logged("the retry cost no upstream turn", mark) }, lines.drop(mark).joinToString())
     }
 
-    private fun runningRecording(): FrameRecording {
-        val replay = HeadServer::class.java.getDeclaredField("compactionReplay")
-            .also { it.isAccessible = true }.get(head)
-        val entries = replay.javaClass.getDeclaredField("entries").also { it.isAccessible = true }
-            .get(replay) as Map<*, *>
-        val entry = checkNotNull(entries.values.single())
-        return entry.javaClass.getDeclaredField("recording").also { it.isAccessible = true }
-            .get(entry) as FrameRecording
-    }
+    private fun runningRecording(): FrameRecording = head.compactionReplay.held().single()
 
     private suspend fun post(json: String): String =
         client.post("http://127.0.0.1:$port/v1/messages") {

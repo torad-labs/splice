@@ -58,7 +58,7 @@ public class TraceRoute(
     private val cause: TraceFailureCause = TraceFailureCause { _, _, _ -> null },
     heap: HeapBudget = JvmHeap.budget,
 ) {
-    private val rows = TraceRows(heap = heap)
+    internal val rows = TraceRows(heap = heap)
 
     public suspend fun read(head: String, query: TraceQuery): JsonReply {
         val found = heads.byName(head).firstOrNull()

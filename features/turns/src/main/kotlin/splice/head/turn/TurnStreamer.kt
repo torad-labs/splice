@@ -61,6 +61,10 @@ internal class TurnStreamer(
      *  it, on the background lane of the runtime seam (HD-19). Injectable for the same reason the
      *  auth providers' prefetch scope is: a test can drain it before teardown. */
     private val detachedScope: CoroutineScope = LifecycleScope(ProcessDispatchers().background()),
+    /** What a detached compaction's uncaught crash is handed to; a test observes it here. */
+    detachedHandler: CoroutineExceptionHandler = CoroutineExceptionHandler { _, e ->
+        deps.log("[${provider.key}] detached compaction crashed (${e::class.simpleName})\n")
+    },
 ) {
     private val emitters = SseEmitterFactory()
     private val wiring = TurnWiring()
@@ -69,10 +73,7 @@ internal class TurnStreamer(
 
     // The drive handles every turn failure itself; anything that still escapes a detached
     // compaction is a bug, logged by class (safe-failure-render) rather than lost to stderr.
-    private val detachedContext = CoroutineName("compaction-detached") +
-        CoroutineExceptionHandler { _, e ->
-            deps.log("[${provider.key}] detached compaction crashed (${e::class.simpleName})\n")
-        }
+    private val detachedContext = CoroutineName("compaction-detached") + detachedHandler
 
     /** The emitter whose pinger frames go through the pending response's progress port and whose
      *  content-reached answer reads what this turn has actually written to the client. */
@@ -221,7 +222,7 @@ internal class TurnStreamer(
      *  up mid-lull, no write having failed) detaches the channel and returns; the drive runs on.
      *  The slot goes with the drive (TurnInputs.slotHandedOff): released when the upstream turn
      *  ends, whichever way, not when this call does. */
-    private suspend fun driveDetachable(
+    internal suspend fun driveDetachable(
         drive: TurnDrive,
         inputs: TurnInputs,
         key: String,

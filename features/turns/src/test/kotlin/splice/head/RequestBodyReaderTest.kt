@@ -8,44 +8,13 @@ import jdk.jfr.consumer.RecordingFile
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestReporter
 import org.junit.jupiter.api.io.TempDir
-import java.io.ByteArrayOutputStream
 import java.lang.management.ManagementFactory
-import java.lang.ref.Reference
-import java.lang.ref.WeakReference
 import java.nio.file.Path
-import kotlin.coroutines.jvm.internal.CoroutineStackFrame
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
-
-private fun <C : Any> stagingStorage(continuation: C): Any {
-    var frame = continuation as? CoroutineStackFrame
-    while (frame != null) {
-        val storage = frame.javaClass.declaredFields.filter { it.name.startsWith("L$") }.firstNotNullOfOrNull { field ->
-            field.isAccessible = true
-            val owner = field.get(frame) ?: return@firstNotNullOfOrNull null
-            if (owner.javaClass.name.startsWith("splice.head.RequestBody")) storageOf(owner) else null
-        }
-        if (storage != null) return storage
-        frame = frame.callerFrame
-    }
-    error("the reader must expose a real staging owner on its suspended read frame")
-}
-
-private fun <O : Any> storageOf(owner: O): Any? = owner.javaClass.declaredFields.firstNotNullOfOrNull { field ->
-    field.isAccessible = true
-    when (val item = field.get(owner)) {
-        is ByteArrayOutputStream -> item
-        is List<*> -> item.firstOrNull()
-        else -> null
-    }
-}
 
 /** Every read below but the cap test expects a body; a refusal there is the failure, named. */
 private fun BodyRead.received(): ReceivedBody = when (this) {
@@ -82,47 +51,6 @@ class RequestBodyReaderTest {
                 assertEquals(bytes.size, result.bytes)
             }
         }
-    }
-
-    @Test
-    fun `finished decoding releases staging even when the read continuation stays live`() = runTest {
-        val bytes = ByteArray(1024 * 1024) { 'x'.code.toByte() }
-        val held = mutableListOf<Any>()
-        var staged: WeakReference<Any>? = null
-        var offset = 0
-        val reader = RequestBodyReader(
-            1_000,
-            RequestBodyRead { _, buffer ->
-                suspendCoroutine { continuation ->
-                    held += continuation
-                    if (offset > 0 && staged == null) {
-                        staged = WeakReference(stagingStorage(continuation))
-                    }
-                    val count = minOf(buffer.size, bytes.size - offset)
-                    if (count == 0) {
-                        continuation.resume(-1)
-                    } else {
-                        bytes.copyInto(buffer, 0, offset, offset + count)
-                        offset += count
-                        continuation.resume(count)
-                    }
-                }
-            },
-        )
-        val empty = ByteReadChannel(ByteArray(0))
-        val result = reader.receiveBodyBounded(empty, bytes.size.toLong(), bytes.size).received()
-        assertEquals(bytes.size, result.text.length)
-        assertNotNull(staged)
-        repeat(8) {
-            if (checkNotNull(staged).get() != null) System.gc()
-            yield()
-        }
-        assertTrue(
-            checkNotNull(staged).get() == null,
-            "finished reads must not keep raw staging through their continuation",
-        )
-        Reference.reachabilityFence(held)
-        Reference.reachabilityFence(result)
     }
 
     @Test

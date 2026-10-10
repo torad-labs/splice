@@ -91,6 +91,9 @@ internal class CompactionReplay(
         }
     }
 
+    /** The recordings held now, in begin order: the seam for a test that needs the one in flight. */
+    internal fun held(): List<FrameRecording> = synchronized(lock) { entries.values.map { it.recording } }
+
     fun lookup(key: String): FrameRecording? = synchronized(lock) {
         sweep()
         entries[key]?.recording ?: restored(key)

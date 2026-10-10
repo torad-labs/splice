@@ -230,7 +230,7 @@ public class EconomicsStore(
         emptyList()
     }
 
-    private fun flushScheduled() {
+    internal fun flushScheduled() {
         val (snapshot, v) = synchronized(lock) { buckets.values.sortedBy { it.hour } to version }
         persist(snapshot, v)
         writeScheduled.set(false)

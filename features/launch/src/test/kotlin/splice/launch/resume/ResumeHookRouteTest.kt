@@ -34,7 +34,8 @@ private const val SESSION = "0f6b1c2e-7d3a-4b8e-9c1d-2a5f6e7b8c9d"
 private const val OTHER = "1a2b3c4d-0000-4000-8000-000000000000"
 private const val PINNED = "gpt-5.6-sol"
 private const val SERVED = "gpt-6-astra"
-private const val FOREIGN_ROW = """{"type":"assistant","sessionId":"$SESSION","message":{"model":"k3-256k","content":[]}}"""
+private const val FOREIGN_ROW =
+    """{"type":"assistant","sessionId":"$SESSION","message":{"model":"k3-256k","content":[]}}"""
 
 class ResumeHookRouteTest {
 

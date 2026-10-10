@@ -98,9 +98,12 @@ class TranscriptResponseIndexTest {
         file(
             root,
             listOf(
-                """{"type":"assistant","isSidechain":true,"message":{"id":"$INDEX_REPLY","content":[{"type":"text","text":"hidden"}]}}""",
-                """{"type":"assistant","message":{"id":"msg_other","content":[{"type":"tool_use","name":"synthetic","input":{"id":"$INDEX_REPLY"}}]}}""",
-                """{"type":"assistant","message":{"id":"$INDEX_REPLY","content":[{"type":"text","text":"real reply"}]}}""",
+                """{"type":"assistant","isSidechain":true,"message":{"id":"$INDEX_REPLY","content":[""" +
+                    """{"type":"text","text":"hidden"}]}}""",
+                """{"type":"assistant","message":{"id":"msg_other","content":[""" +
+                    """{"type":"tool_use","name":"synthetic","input":{"id":"$INDEX_REPLY"}}]}}""",
+                """{"type":"assistant","message":{"id":"$INDEX_REPLY","content":[""" +
+                    """{"type":"text","text":"real reply"}]}}""",
                 """{"type":"user","message":{"content":"later prompt"}}""",
             ),
         )
@@ -115,7 +118,8 @@ class TranscriptResponseIndexTest {
             root,
             listOf(
                 """{"type":"assistant","message": """,
-                """{"type":"assistant","message":{"id":"$INDEX_REPLY","id":null,"content":[{"type":"text","text":"not selected"}]}}""",
+                """{"type":"assistant","message":{"id":"$INDEX_REPLY","id":null,"content":[""" +
+                    """{"type":"text","text":"not selected"}]}}""",
                 reply("real reply"),
             ),
         )
@@ -168,11 +172,13 @@ class TranscriptResponseIndexTest {
     fun `metadata counts and context match forward pages across record shapes`(@TempDir root: Path) {
         val shapes = listOf(
             """{"type":"user","message":{"content":"prompt"}}""",
-            """{"type":"user","message":{"content":[{"type":"text","text":"text"},{"type":"tool_result","content":"result"}]}}""",
+            """{"type":"user","message":{"content":[""" +
+                """{"type":"text","text":"text"},{"type":"tool_result","content":"result"}]}}""",
             """{"type":"system","content":"notice"}""",
             """{"type":"system","content":" "}""",
             """{"type":"assistant","message":{"id":"msg_hist","content":[{"type":"thinking","thinking":"private"}]}}""",
-            """{"type":"assistant","message":{"id":"msg_hist","content":[{"type":"text","text":42},{"type":"tool_use","name":"synthetic","input":{}}]}}""",
+            """{"type":"assistant","message":{"id":"msg_hist","content":[""" +
+                """{"type":"text","text":42},{"type":"tool_use","name":"synthetic","input":{}}]}}""",
             """{"type":"assistant","isApiErrorMessage":true,"message":{"content":[{"type":"text","text":"failed"}]}}""",
             """{"type":"assistant","isSidechain":true,"message":{"content":[{"type":"text","text":"excluded"}]}}""",
             """{"type":"bookkeeping","message":{"id":"$INDEX_REPLY","content":"not a reply"}}""",
@@ -181,13 +187,14 @@ class TranscriptResponseIndexTest {
         file(root, List(200) { shapes[it % shapes.size] } + reply("selected"))
         val reader = TranscriptReader()
         val forward = object : SessionTranscripts by reader {
+            // Deliberately exercise the existing forward-only port contract as the oracle.
             override fun response(
                 sessionId: String,
                 roots: List<Path>,
                 responseId: String,
                 context: Int,
                 budget: TranscriptReadBudget,
-            ): MessageConversation? = null // Deliberately exercise the existing forward-only port contract as the oracle.
+            ): MessageConversation? = null
         }
         val expected = found(TranscriptMessageLookup(forward), root)
         val actual = found(TranscriptMessageLookup(reader), root)

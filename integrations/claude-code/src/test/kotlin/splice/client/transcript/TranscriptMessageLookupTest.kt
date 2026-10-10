@@ -36,10 +36,13 @@ class TranscriptMessageLookupTest {
             file,
             listOf(
                 """{"type":"user","message":{"role":"user","content":"earlier prompt"}}""",
-                """{"type":"assistant","message":{"id":"msg_earlier","content":[{"type":"text","text":"earlier reply"}]}}""",
+                """{"type":"assistant","message":{"id":"msg_earlier","content":[""" +
+                    """{"type":"text","text":"earlier reply"}]}}""",
                 """{"type":"user","message":{"role":"user","content":"why is the build red"}}""",
-                """{"type":"assistant","message":{"id":"$RESPONSE","content":[{"type":"text","text":"first answer"}]}}""",
-                """{"type":"assistant","message":{"id":"$RESPONSE","content":[{"type":"text","text":"second answer"}]}}""",
+                """{"type":"assistant","message":{"id":"$RESPONSE","content":[""" +
+                    """{"type":"text","text":"first answer"}]}}""",
+                """{"type":"assistant","message":{"id":"$RESPONSE","content":[""" +
+                    """{"type":"text","text":"second answer"}]}}""",
                 """{"type":"user","message":{"role":"user","content":"Authorization: Bearer $PLANTED_CREDENTIAL"}}""",
             ).joinToString("\n", postfix = "\n"),
         )
@@ -70,8 +73,10 @@ class TranscriptMessageLookupTest {
         val file = root.resolve("projects/project/$LOOKUP_SESSION.jsonl")
         Files.createDirectories(file.parent)
         val prompt = """{"type":"user","message":{"role":"user","content":"synthetic prompt"}}""" + "\n"
-        val torn = """{"type":"assistant","message":{"id":"torn","content":[{"type":"text","text":"torn text"}]}}""" + "\n"
-        val reply = """{"type":"assistant","message":{"id":"$RESPONSE","content":[{"type":"text","text":"answer"}]}}""" + "\n"
+        val torn = """{"type":"assistant","message":{"id":"torn","content":[""" +
+            """{"type":"text","text":"torn text"}]}}""" + "\n"
+        val reply = """{"type":"assistant","message":{"id":"$RESPONSE","content":[""" +
+            """{"type":"text","text":"answer"}]}}""" + "\n"
         Files.write(file, prompt.toByteArray() + ByteArray(4) + torn.toByteArray() + reply.toByteArray())
 
         val lookup = TranscriptMessageLookup()
@@ -243,7 +248,8 @@ class TranscriptLookupScaleTest {
                 val message = if (index % 2 == 0) {
                     """{"type":"user","message":{"content":"$payload"}}"""
                 } else {
-                    """{"type":"assistant","message":{"id":"msg_synthetic_$index","content":[{"type":"text","text":"$payload"}]}}"""
+                    """{"type":"assistant","message":{"id":"msg_synthetic_$index","content":[""" +
+                        """{"type":"text","text":"$payload"}]}}"""
                 }
                 out.appendLine(message)
             }

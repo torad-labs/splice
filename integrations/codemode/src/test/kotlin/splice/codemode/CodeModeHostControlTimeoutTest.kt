@@ -51,35 +51,36 @@ class CodeModeHostControlTimeoutTest {
     }
 
     @Test
-    fun `an engine control deadline quarantines an unanswered open before its retry can reuse the host`() = runBlocking {
-        val processes = ConcurrentLinkedQueue<SilentHostCloseProcess>()
-        val messages = ConcurrentLinkedQueue<String>()
-        JvmCodeModeRuntime(
-            limits = PoolLimits(maxWorkers = 1),
-            launch = HostLaunch(
-                startTimeoutMs = 300,
-                spawn = WorkerSpawn {
-                    SilentHostCloseProcess().also { process ->
-                        process.holdEngineOpen = processes.isEmpty()
-                        processes.add(process)
-                    }
-                },
-            ),
-        ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
-            assertThrows(CodeModeStartException::class.java) {
-                runBlocking { runtime.startSession("hung", "return 'never';", emptySet()) }
+    fun `an engine control deadline quarantines an unanswered open before its retry can reuse the host`() =
+        runBlocking {
+            val processes = ConcurrentLinkedQueue<SilentHostCloseProcess>()
+            val messages = ConcurrentLinkedQueue<String>()
+            JvmCodeModeRuntime(
+                limits = PoolLimits(maxWorkers = 1),
+                launch = HostLaunch(
+                    startTimeoutMs = 300,
+                    spawn = WorkerSpawn {
+                        SilentHostCloseProcess().also { process ->
+                            process.holdEngineOpen = processes.isEmpty()
+                            processes.add(process)
+                        }
+                    },
+                ),
+            ).also { it.observeHostLifecycle(LogSink(messages::add)) }.use { runtime ->
+                assertThrows(CodeModeStartException::class.java) {
+                    runBlocking { runtime.startSession("hung", "return 'never';", emptySet()) }
+                }
+                withTimeout(5_000) { while (messages.none { it.contains("marked for replacement") }) yield() }
+                HostLifecycleAwait.ended(messages)
+                val retry = runtime.startSession("hung", "return 'fixture';", emptySet())
+                assertEquals("fixture", (retry.advance() as CodeModeStep.Completed).output)
+                assertEquals(
+                    2,
+                    processes.size,
+                    "The retry must boot a replacement instead of rejoining the unanswered open",
+                )
             }
-            withTimeout(5_000) { while (messages.none { it.contains("marked for replacement") }) yield() }
-            HostLifecycleAwait.ended(messages)
-            val retry = runtime.startSession("hung", "return 'fixture';", emptySet())
-            assertEquals("fixture", (retry.advance() as CodeModeStep.Completed).output)
-            assertEquals(
-                2,
-                processes.size,
-                "The retry must boot a replacement instead of rejoining the unanswered open",
-            )
         }
-    }
 
     @Test
     fun `a stale control failure cannot quarantine a cleared or replacement generation`() = runBlocking<Unit> {

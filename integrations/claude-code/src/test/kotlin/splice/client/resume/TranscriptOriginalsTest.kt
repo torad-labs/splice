@@ -235,4 +235,5 @@ internal class TranscriptOriginalsTest {
     }
 }
 
-private const val ROW = """{"type":"assistant","message":{"model":"synthetic-old","content":[{"type":"text","text":"original"}]}}"""
+private const val ROW =
+    """{"type":"assistant","message":{"model":"synthetic-old","content":[{"type":"text","text":"original"}]}}"""

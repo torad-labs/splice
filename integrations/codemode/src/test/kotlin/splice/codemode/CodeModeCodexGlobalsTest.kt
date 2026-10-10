@@ -85,7 +85,8 @@ class CodeModeCodexGlobalsTest {
             // \u0001 escapes to six bytes: five of these raw-fit any 512 KiB budget but encode to 1.8 MB.
             val descriptions = (0..4).associate { "t$it" to "\u0001".repeat(60_000) }
             val source = "const omitted = t => t.description.startsWith(\"(description omitted\");\n" +
-                "text(ALL_TOOLS.map(t => t.name + \":\" + (omitted(t) ? \"omitted\" : t.description.length)).join(\",\"));"
+                "text(ALL_TOOLS.map(t => t.name + \":\" + (omitted(t) ? \"omitted\" : t.description.length))" +
+                ".join(\",\"));"
             val completed = runtime.start(source, descriptions.keys, descriptions).advance() as CodeModeStep.Completed
             assertNull(completed.error)
             assertEquals("t0:60000,t1:60000,t2:omitted,t3:omitted,t4:omitted", completed.output)

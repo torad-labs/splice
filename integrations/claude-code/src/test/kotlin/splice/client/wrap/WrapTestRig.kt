@@ -60,7 +60,8 @@ internal class VanillaState(private val home: Path) {
     private val claudeJson = home.resolve(".claude.json").also {
         it.writeText(
             """{"mcpServers":{"ast-grep":{"command":"ast-grep"},"exa":{"command":"exa"}},""" +
-                """"projects":{"/work/app":{"hasTrustDialogAccepted":true}},"oauthAccount":{"emailAddress":"op@example.test"}}""",
+                """"projects":{"/work/app":{"hasTrustDialogAccepted":true}},""" +
+                """"oauthAccount":{"emailAddress":"op@example.test"}}""",
         )
     }
     private val dir = home.resolve(".claude").createDirectories()

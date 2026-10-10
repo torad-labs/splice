@@ -736,7 +736,8 @@ class CodeModeNativeSourceTest {
             assertArrayEquals(
                 nativeSource(tmp.resolve("baseline"), completed = true, reminder),
                 actual,
-                "the next upstream request must be byte-identical whether the source terminal was held or known",
+                "the next upstream request must be byte-identical whether the source terminal was held " +
+                    "or already known",
             )
         }
     }

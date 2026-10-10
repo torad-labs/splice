@@ -32,7 +32,8 @@ internal object ArchiveBootProbe {
             println("ran original archive")
         } catch (error: IOException) {
             val mismatch = error.message?.contains("was replaced before code mode pinned it; restart splice") == true
-            val reply = if (spawned.get() == 0 && mismatch) "refused before spawn" else "unexpected failure: ${error.message}"
+            val reply =
+                if (spawned.get() == 0 && mismatch) "refused before spawn" else "unexpected failure: ${error.message}"
             println(reply)
         }
     }

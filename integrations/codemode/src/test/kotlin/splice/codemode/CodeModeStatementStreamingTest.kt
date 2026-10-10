@@ -245,7 +245,9 @@ class CodeModeStatementStreamingTest {
         }
     }
 
-    private suspend fun execute(cell: splice.upstream.codemode.CodeModeCell): Pair<List<String>, CodeModeStep.Completed> {
+    private suspend fun execute(
+        cell: splice.upstream.codemode.CodeModeCell,
+    ): Pair<List<String>, CodeModeStep.Completed> {
         cell.use {
             val order = mutableListOf<String>()
             var step = cell.advance()

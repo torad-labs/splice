@@ -85,7 +85,8 @@ class WireCommandTest {
         @TempDir tmp: Path,
     ) {
         val payload = """{"key":"openrouter","keep":4,"records":[""" +
-            """{"ts":1700000000000,"session":"abc12345","model":"m1","compact":false,"body":"{\"system\":\"house rules\"}"},""" +
+            """{"ts":1700000000000,"session":"abc12345","model":"m1","compact":false,""" +
+            """"body":"{\"system\":\"house rules\"}"},""" +
             """{"ts":1700000001000,"model":"m1","compact":true,"body":"{\"n\":2}"}]}"""
         val http = RecordingHttp(ControlReply(200, payload))
 

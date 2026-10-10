@@ -184,14 +184,16 @@ class SessionsConsoleRoutesTest {
         assertEquals(
             json(
                 """{"from":"$BETA","to":"uds:/run/a.sock","at":${NOW - 20},"direction":"in",""" +
-                    """"text":null,"text_source":null,"missing_reason":"The sender transcript is no longer on this machine."}""",
+                    """"text":null,"text_source":null,""" +
+                    """"missing_reason":"The sender transcript is no longer on this machine."}""",
             ),
             edges[1],
         )
         assertEquals(
             json(
                 """{"from":"$ALPHA","to":"uds:/run/b.sock","at":${NOW - 5},"direction":"out",""" +
-                    """"text":null,"text_source":null,"missing_reason":"The message is not in the sender transcript."}""",
+                    """"text":null,"text_source":null,""" +
+                    """"missing_reason":"The message is not in the sender transcript."}""",
             ),
             edges[2],
         )
@@ -339,7 +341,12 @@ class SessionsConsoleRoutesTest {
             override fun page(sessionId: String, roots: List<Path>, cursor: String?, limit: Int): TranscriptLookup =
                 error("a read from the end never pages forward")
 
-            override fun pageBefore(sessionId: String, roots: List<Path>, before: String?, limit: Int): TranscriptLookup {
+            override fun pageBefore(
+                sessionId: String,
+                roots: List<Path>,
+                before: String?,
+                limit: Int,
+            ): TranscriptLookup {
                 asked += before
                 val newest = TranscriptMessage(7168, TranscriptRole.USER, null, "newest")
                 return TranscriptLookup.Found(

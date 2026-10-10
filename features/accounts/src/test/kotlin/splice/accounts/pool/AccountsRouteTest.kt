@@ -190,7 +190,11 @@ class AccountsRouteTest {
             pool = HeadAccountPoolSource { pool },
             accountAuth = HeadAccountAuthSource {
                 mapOf(
-                    pool.accounts.single().label to AuthDescription(true, "chatgpt-oauth", mapOf("auth_path" to authPath)),
+                    pool.accounts.single().label to AuthDescription(
+                        true,
+                        "chatgpt-oauth",
+                        mapOf("auth_path" to authPath),
+                    ),
                 )
             },
         )

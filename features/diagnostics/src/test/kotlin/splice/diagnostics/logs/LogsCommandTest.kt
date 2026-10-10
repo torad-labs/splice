@@ -270,7 +270,8 @@ class LogsFollowDeltaTest {
         assertEquals(
             listOf("torn-head-done"),
             completed.trim().lines(),
-            "the finished line arrives WHOLE — pre-fix the start baseline had eaten its head and printed a bare '-done'",
+            "the finished line arrives WHOLE — pre-fix the start baseline had eaten its head and " +
+                "printed a bare '-done'",
         )
     }
 }

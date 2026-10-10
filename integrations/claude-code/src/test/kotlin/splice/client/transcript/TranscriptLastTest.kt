@@ -11,8 +11,10 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 internal const val ACTIVITY_USER = """{"type":"user","message":{"content":"synthetic start"}}"""
-internal const val ACTIVITY_FIRST = """{"type":"assistant","timestamp":"1970-01-01T00:00:00.007Z","message":{"id":"synthetic-reply","content":[{"type":"text","text":"First token=abcdefgh123456"}]}}"""
-internal const val ACTIVITY_LAST = """{"type":"assistant","message":{"id":"synthetic-reply","content":[{"type":"text","text":"Last"}]}}"""
+internal const val ACTIVITY_FIRST = """{"type":"assistant","timestamp":"1970-01-01T00:00:00.007Z",""" +
+    """"message":{"id":"synthetic-reply","content":[{"type":"text","text":"First token=abcdefgh123456"}]}}"""
+internal const val ACTIVITY_LAST =
+    """{"type":"assistant","message":{"id":"synthetic-reply","content":[{"type":"text","text":"Last"}]}}"""
 
 class TranscriptLastTest {
     @Test
@@ -23,7 +25,8 @@ class TranscriptLastTest {
                 ACTIVITY_USER,
                 ACTIVITY_FIRST,
                 ACTIVITY_LAST,
-                """{"type":"assistant","isSidechain":true,"message":{"id":"synthetic-side","content":[{"type":"text","text":"hidden"}]}}""",
+                """{"type":"assistant","isSidechain":true,"message":{"id":"synthetic-side",""" +
+                    """"content":[{"type":"text","text":"hidden"}]}}""",
                 """{"type":"attachment","attachment":{"text":"not a message"}}""",
                 """{"type":"system","subtype":"turn_duration"}""",
                 "{not-json",
@@ -42,7 +45,8 @@ class TranscriptLastTest {
         fixture.write(
             listOf(
                 ACTIVITY_USER,
-                """{"type":"assistant","message":{"id":"synthetic-call","content":[{"type":"tool_use","id":"synthetic-tool-id","name":"SyntheticTool","input":{"text":"ok"}}]}}""",
+                """{"type":"assistant","message":{"id":"synthetic-call","content":[{"type":"tool_use",""" +
+                    """"id":"synthetic-tool-id","name":"SyntheticTool","input":{"text":"ok"}}]}}""",
             ),
         )
         val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))

@@ -30,15 +30,21 @@ private const val TS_MS = 1_789_725_600_000L
 private val FIXTURE = listOf(
     """{"type":"user","timestamp":"$TS","message":{"role":"user","content":"read the config"}}""",
     """{"type":"attachment","attachment":{"type":"file"}}""",
-    """{"type":"assistant","timestamp":"$TS","message":{"id":"msg_1","role":"assistant","content":[{"type":"thinking","thinking":"private"}]}}""",
-    """{"type":"assistant","timestamp":"$TS","message":{"id":"msg_1","role":"assistant","content":[{"type":"text","text":"Reading it now."}]}}""",
-    """{"type":"assistant","timestamp":"$TS","message":{"id":"msg_1","role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"/w/splice.toml"}}]}}""",
-    """{"type":"user","timestamp":"$TS","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"api_key = sk-abcdefghijklmnopqrstuvwxyz"}]}}""",
+    """{"type":"assistant","timestamp":"$TS","message":{"id":"msg_1","role":"assistant","content":[""" +
+        """{"type":"thinking","thinking":"private"}]}}""",
+    """{"type":"assistant","timestamp":"$TS","message":{"id":"msg_1","role":"assistant","content":[""" +
+        """{"type":"text","text":"Reading it now."}]}}""",
+    """{"type":"assistant","timestamp":"$TS","message":{"id":"msg_1","role":"assistant","content":[""" +
+        """{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"/w/splice.toml"}}]}}""",
+    """{"type":"user","timestamp":"$TS","message":{"role":"user","content":[""" +
+        """{"type":"tool_result","tool_use_id":"toolu_1","content":"api_key = sk-abcdefghijklmnopqrstuvwxyz"}]}}""",
     """{this line is not json""",
-    """{"type":"assistant","isSidechain":true,"message":{"id":"msg_side","role":"assistant","content":[{"type":"text","text":"subagent"}]}}""",
+    """{"type":"assistant","isSidechain":true,"message":{"id":"msg_side","role":"assistant","content":[""" +
+        """{"type":"text","text":"subagent"}]}}""",
     """{"type":"system","subtype":"turn_duration","durationMs":12}""",
     """{"type":"user","isMeta":true,"message":{"role":"user","content":"<command-name>/model</command-name>"}}""",
-    """{"type":"assistant","isApiErrorMessage":true,"message":{"id":"msg_err","role":"assistant","content":[{"type":"text","text":"overloaded_error"}]}}""",
+    """{"type":"assistant","isApiErrorMessage":true,"message":{"id":"msg_err","role":"assistant","content":[""" +
+        """{"type":"text","text":"overloaded_error"}]}}""",
     """{"type":"assistant","message":{"id":"msg_2","role":"assistant","content":[{"type":"text","text":"Done."}]}}""",
 )
 
@@ -116,8 +122,12 @@ class TranscriptReaderTest {
     fun `tool ids survive forward pages newest pages and indexed response context`() {
         val root = home.resolve(".claude")
         val lines = listOf(
-            """{"type":"assistant","message":{"id":"calls","content":[{"type":"tool_use","id":"first","name":"Read","input":{"file_path":"/synthetic/first"}},{"type":"tool_use","id":"second","name":"Read","input":{"file_path":"/synthetic/second"}}]}}""",
-            """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"first","content":"first body"},{"type":"tool_result","tool_use_id":"second","content":"second body"}]}}""",
+            """{"type":"assistant","message":{"id":"calls","content":[""" +
+                """{"type":"tool_use","id":"first","name":"Read","input":{"file_path":"/synthetic/first"}},""" +
+                """{"type":"tool_use","id":"second","name":"Read","input":{"file_path":"/synthetic/second"}}]}}""",
+            """{"type":"user","message":{"content":[""" +
+                """{"type":"tool_result","tool_use_id":"first","content":"first body"},""" +
+                """{"type":"tool_result","tool_use_id":"second","content":"second body"}]}}""",
             """{"type":"assistant","message":{"id":"answer","content":[{"type":"text","text":"done"}]}}""",
         )
         transcript(root, lines)

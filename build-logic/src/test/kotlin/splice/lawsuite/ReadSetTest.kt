@@ -114,7 +114,7 @@ class ReadSetTest {
     }
 
     @Test
-    fun `RED a glob row is expanded by git, so an ignored dangling link under its directory neither throws nor enters the set`() {
+    fun `RED a glob row expanded by git skips an ignored dangling link under it, without throwing`() {
         repo()
         file(".gitignore", "tools/e2e/receipts/\n")
         file("tools/e2e/tracked.ts")

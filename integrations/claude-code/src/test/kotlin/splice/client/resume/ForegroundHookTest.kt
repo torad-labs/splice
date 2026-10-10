@@ -47,7 +47,8 @@ class ForegroundHookTest {
         val curl = bin.resolve("curl")
         Files.writeString(
             curl,
-            "#!/usr/bin/env bash\ncat > \"${'$'}FOREGROUND_BODY\"\nprintf '%s\\n' \"${'$'}@\" > \"${'$'}FOREGROUND_ARGV\"\nexit 23\n",
+            "#!/usr/bin/env bash\ncat > \"${'$'}FOREGROUND_BODY\"\n" +
+                "printf '%s\\n' \"${'$'}@\" > \"${'$'}FOREGROUND_ARGV\"\nexit 23\n",
         )
         Files.setPosixFilePermissions(curl, PosixFilePermissions.fromString("rwx------"))
         val header = dir.resolve("synthetic 'header")
@@ -297,7 +298,8 @@ class ForegroundHookTest {
         val global = Files.createDirectories(home.resolve(".claude"))
         val head = Files.createDirectories(home.resolve(".claude-synthetic"))
         val first = """{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"shared-user"}]}]}}"""
-        val inherited = """{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"shared-user"}]},{"hooks":[{"type":"command","command":"global-old"}]}]}}"""
+        val inherited = """{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"shared-user"}]},""" +
+            """{"hooks":[{"type":"command","command":"global-old"}]}]}}"""
         val next = """{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"global-new"}]}]}}"""
         Files.writeString(global.resolve("settings.json"), inherited)
         Files.writeString(head.resolve("settings.json"), first)
@@ -328,8 +330,13 @@ class ForegroundHookTest {
     ) {
         val global = Files.createDirectories(home.resolve(".claude"))
         val head = Files.createDirectories(home.resolve(".claude-synthetic"))
-        val globalHooks = """{"hooks":{"PreToolUse":[{"matcher":"Read","hooks":[{"type":"command","command":"user-global-one"},{"type":"command","command":"user-global-two"}]}]}}"""
-        val localHooks = """{"hooks":{"PreToolUse":[{"matcher":"Write","hooks":[{"type":"command","command":"user-local-one"},{"type":"command","command":"user-local-two"}]}],"PostToolUse":[{"hooks":[{"type":"command","command":"splice-foreground-hook.sh.user"}]}]}}"""
+        val globalHooks = """{"hooks":{"PreToolUse":[{"matcher":"Read","hooks":[""" +
+            """{"type":"command","command":"user-global-one"},""" +
+            """{"type":"command","command":"user-global-two"}]}]}}"""
+        val localHooks = """{"hooks":{"PreToolUse":[{"matcher":"Write","hooks":[""" +
+            """{"type":"command","command":"user-local-one"},""" +
+            """{"type":"command","command":"user-local-two"}]}],""" +
+            """"PostToolUse":[{"hooks":[{"type":"command","command":"splice-foreground-hook.sh.user"}]}]}}"""
         Files.writeString(global.resolve("settings.json"), globalHooks)
         Files.writeString(head.resolve("settings.json"), localHooks)
         val materializer =

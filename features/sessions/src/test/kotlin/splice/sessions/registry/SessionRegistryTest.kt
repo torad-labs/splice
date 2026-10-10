@@ -214,7 +214,8 @@ class SessionRegistryTest {
     fun `what a waiting session waits for and how it was started are read as Claude Code wrote them`(
         @TempDir dir: Path,
     ) {
-        val waiting = """{"pid":11,"updatedAt":$now,"status":"waiting","waitingFor":"input needed","entrypoint":"cli"}"""
+        val waiting =
+            """{"pid":11,"updatedAt":$now,"status":"waiting","waitingFor":"input needed","entrypoint":"cli"}"""
         write(dir, 11, waiting)
         write(dir, 12, """{"pid":12,"updatedAt":$now,"status":"busy"}""")
         val rows = registry(dir, alive = setOf(11L, 12L)).read().associateBy { it.process.pid }

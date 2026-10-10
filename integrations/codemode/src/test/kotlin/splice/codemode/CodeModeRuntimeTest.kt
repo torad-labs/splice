@@ -285,7 +285,8 @@ class CodeModeRuntimeTest {
     fun `a long resumed step survives the former advance deadline`() = runBlocking {
         JvmCodeModeRuntime(launch = HostLaunch(classpath = testClasspath), advanceTimeoutMs = 1).use { runtime ->
             val cell = runtime.start(
-                "await tools.call('Read', {}); const until = Date.now() + 100; while (Date.now() < until) {} return 'done';",
+                "await tools.call('Read', {}); const until = Date.now() + 100; " +
+                    "while (Date.now() < until) {} return 'done';",
                 setOf("Read"),
             )
             calls(cell.advance())

@@ -70,9 +70,11 @@ class DoctorReportTest {
         Files.writeString(state.resolve("mgmt-key"), "mgmt-secret-key-value-abcdef\n")
         Files.writeString(
             state.resolve("codex-perf.jsonl"),
-            """{"ts":1,"model":"gpt-6-astra","outcome":"ok","compact":false,"cache_cold":"true","account":"ops team PLANTEXT","session":"sess-identifier-1234","prompt":"PLANTEXT the user's secret plan","total":42,"out_tokens":7}""" +
-                "\n" + """{"ts":2,"model":"gpt-6-astra","outcome":"client_abort","compact":true,"cache_cold":false,"account":"work","cwd":"/home/operator/projects/private-repo","total":9}""" +
-                "\n" + """{"ts":3,"model":"gpt-6-astra","outcome":"PLANTEXT the user's secret plan as an outcome","total":9}""" + "\n",
+            """
+            {"ts":1,"model":"gpt-6-astra","outcome":"ok","compact":false,"cache_cold":"true","account":"ops team PLANTEXT","session":"sess-identifier-1234","prompt":"PLANTEXT the user's secret plan","total":42,"out_tokens":7}
+            {"ts":2,"model":"gpt-6-astra","outcome":"client_abort","compact":true,"cache_cold":false,"account":"work","cwd":"/home/operator/projects/private-repo","total":9}
+            {"ts":3,"model":"gpt-6-astra","outcome":"PLANTEXT the user's secret plan as an outcome","total":9}
+            """.trimIndent() + "\n",
         )
         val logs = Files.createDirectories(tmp.resolve("logs"))
         Files.writeString(

@@ -86,7 +86,8 @@ class TranscriptHistoryIndexTest {
             listOf(
                 """{"sessionId":"$BOTH","display":"First prompt","project":"/work/atlas","timestamp":1000}""",
                 """{"sessionId":"$BOTH","display":"Later prompt","project":"/work/atlas","timestamp":3000}""",
-                """{"sessionId":"$HISTORY_ONLY","display":"No transcript yet","project":"/work/other","timestamp":2000}""",
+                """{"sessionId":"$HISTORY_ONLY","display":"No transcript yet",""" +
+                    """"project":"/work/other","timestamp":2000}""",
                 """{not json""",
                 """{"display":"orphan without a session id"}""",
             ).joinToString("\n", postfix = "\n"),

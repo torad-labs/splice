@@ -242,7 +242,7 @@ class WrappedHeadTest {
     }
 
     @Test
-    fun `a state file that cannot be used while the shim stands in refuses the launch and unwrap, and never reads as unwrapped`(
+    fun `an unusable state file under the shim refuses launch and unwrap, and never reads as unwrapped`(
         @TempDir home: Path,
     ) {
         val rig = WrapRig(home)

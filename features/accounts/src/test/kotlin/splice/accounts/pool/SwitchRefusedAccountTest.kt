@@ -45,7 +45,11 @@ private class RecordingPool(private val accounts: List<HeadAccountView>) : HeadA
 class SwitchRefusedAccountTest {
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun account(label: String, credentialPresent: Boolean = true, excludedUntil: Long? = null) = HeadAccountView(
+    private fun account(
+        label: String,
+        credentialPresent: Boolean = true,
+        excludedUntil: Long? = null,
+    ) = HeadAccountView(
         label = label,
         primary = label == "primary",
         selected = label == "primary",

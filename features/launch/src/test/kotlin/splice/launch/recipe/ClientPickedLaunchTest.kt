@@ -102,7 +102,8 @@ class ClientPickedLaunchTest(@param:TempDir private val tmp: Path) {
         val project = configDir.resolve("projects/synthetic-project")
         Files.createDirectories(project)
         val transcript = project.resolve("synthetic-session.jsonl")
-        val nativeRow = """{"type":"assistant","message":{"model":"claude-synthetic-next","content":[{"type":"text","text":"kept"}]}}"""
+        val nativeRow = """{"type":"assistant","message":{"model":"claude-synthetic-next",""" +
+            """"content":[{"type":"text","text":"kept"}]}}"""
         val foreignRow = nativeRow.replace(
             "claude-synthetic-next",
             "claude-synthetic-provider--foreign-row",

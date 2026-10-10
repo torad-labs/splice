@@ -18,8 +18,10 @@ class TranscriptTailEdgeTest {
         fixture.write(
             listOf(
                 ACTIVITY_USER,
-                """{"type":"assistant","message":{"id":"synthetic-call","content":[{"type":"tool_use","id":"synthetic-result","name":"SyntheticTool","input":{}}]}}""",
-                """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"synthetic-result","content":"synthetic result"}]}}""",
+                """{"type":"assistant","message":{"id":"synthetic-call","content":[{"type":"tool_use",""" +
+                    """"id":"synthetic-result","name":"SyntheticTool","input":{}}]}}""",
+                """{"type":"user","message":{"content":[{"type":"tool_result",""" +
+                    """"tool_use_id":"synthetic-result","content":"synthetic result"}]}}""",
             ),
         )
         val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))
@@ -34,8 +36,10 @@ class TranscriptTailEdgeTest {
         fixture.write(
             listOf(
                 ACTIVITY_USER,
-                """{"type":"assistant","message":{"id":"synthetic-said","content":[{"type":"text","text":"Checking the build."}]}}""",
-                """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"synthetic-absent","content":"synthetic result"}]}}""",
+                """{"type":"assistant","message":{"id":"synthetic-said","content":[""" +
+                    """{"type":"text","text":"Checking the build."}]}}""",
+                """{"type":"user","message":{"content":[{"type":"tool_result",""" +
+                    """"tool_use_id":"synthetic-absent","content":"synthetic result"}]}}""",
                 """{"type":"system","subtype":"note","content":"a system note"}""",
             ),
         )
@@ -51,10 +55,14 @@ class TranscriptTailEdgeTest {
         fixture.write(
             listOf(
                 ACTIVITY_USER,
-                """{"type":"assistant","message":{"id":"synthetic-call","content":[{"type":"tool_use","id":"synthetic-result","name":"SyntheticTool","input":{}}]}}""",
-                """{"type":"assistant","message":{"id":"synthetic-call","content":[{"type":"thinking","thinking":"$thinking"}]}}""",
-                """{"type":"assistant","message":{"id":"synthetic-call","content":[{"type":"text","text":"calling"}]}}""",
-                """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"synthetic-result","content":"synthetic result"}]}}""",
+                """{"type":"assistant","message":{"id":"synthetic-call","content":[{"type":"tool_use",""" +
+                    """"id":"synthetic-result","name":"SyntheticTool","input":{}}]}}""",
+                """{"type":"assistant","message":{"id":"synthetic-call","content":[""" +
+                    """{"type":"thinking","thinking":"$thinking"}]}}""",
+                """{"type":"assistant","message":{"id":"synthetic-call","content":[""" +
+                    """{"type":"text","text":"calling"}]}}""",
+                """{"type":"user","message":{"content":[{"type":"tool_result",""" +
+                    """"tool_use_id":"synthetic-result","content":"synthetic result"}]}}""",
             ),
         )
         val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))
@@ -72,7 +80,8 @@ class TranscriptTailEdgeTest {
             repeat(17 * 1024) { out.write(filler) }
             out.write("\n")
             out.write(
-                """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"synthetic-absent","content":"synthetic result"}]}}""" + "\n",
+                """{"type":"user","message":{"content":[{"type":"tool_result",""" +
+                    """"tool_use_id":"synthetic-absent","content":"synthetic result"}]}}""" + "\n",
             )
         }
         val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))
@@ -114,8 +123,11 @@ class TranscriptTailEdgeTest {
         fixture.write(
             listOf(
                 ACTIVITY_USER,
-                """{"type":"assistant","message":{"id":"synthetic-image-call","content":[{"type":"tool_use","id":"synthetic-image","name":"SyntheticScreenshot","input":{}}]}}""",
-                """{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"synthetic-image","content":[{"type":"image","source":{"type":"base64","data":"$image"}}]}]}}""",
+                """{"type":"assistant","message":{"id":"synthetic-image-call","content":[""" +
+                    """{"type":"tool_use","id":"synthetic-image","name":"SyntheticScreenshot","input":{}}]}}""",
+                """{"type":"user","message":{"content":[{"type":"tool_result",""" +
+                    """"tool_use_id":"synthetic-image","content":[""" +
+                    """{"type":"image","source":{"type":"base64","data":"$image"}}]}]}}""",
             ),
         )
         val last = fixture.reader.last(ACTIVITY_ID, listOf(tmp))

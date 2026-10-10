@@ -18,7 +18,8 @@ class TranscriptTailBudgetTest {
             repeat(51_200) { out.write(filler) }
             out.write(ACTIVITY_USER + "\n" + ACTIVITY_FIRST + "\n")
             out.write(
-                """{"type":"assistant","message":{"id":"synthetic-reply","content":[{"type":"thinking","thinking":"${"x".repeat(70_000)}"}]}}""" + "\n",
+                """{"type":"assistant","message":{"id":"synthetic-reply","content":[""" +
+                    """{"type":"thinking","thinking":"${"x".repeat(70_000)}"}]}}""" + "\n",
             )
             out.write(ACTIVITY_LAST + "\n")
         }

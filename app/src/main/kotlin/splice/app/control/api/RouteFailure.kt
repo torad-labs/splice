@@ -26,7 +26,11 @@ internal class RouteFailure(private val audit: ControlAudit) {
         // closed), not a route failure: measured, the console e2e logged one per page before this.
         if (committed && failure is IOException) return
         val why = "${kind(failure)}: ${SafeFailureText.render(failure)}"
-        audit.routeFailed(call.request.httpMethod.value, call.request.path(), why)
+        // The LOG also gets the splice line it came from. A withheld message and a kind alone leave
+        // nothing to diagnose from: GET /api/sessions failed 27 times on Oct 10 as the same identical
+        // line, and the cause could only be found by attaching a recorder to the running daemon. The
+        // site never quotes file bytes. The client's body stays the kind and the message, as before.
+        audit.routeFailed(call.request.httpMethod.value, call.request.path(), why + SafeFailureText.site(failure))
         // A body already on the wire (a stream that failed part-way) cannot take a status line.
         if (committed) return
         call.respondText(

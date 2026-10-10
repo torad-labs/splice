@@ -104,11 +104,14 @@ public class SessionsRoutes(
     public fun sessionsJson(): String = buildJsonObject {
         val listing = registry.list()
         val accounts = accountOf.forRecords(listing.sessions)
-        val edges = edgeRoutes.index(listing.sessions)
+        // A read that refused leaves the rows without their edges summary and says so once, beside the
+        // store's own state: the edges are a hint ON a row and the listing is the page.
+        val edgeRead = edgeRoutes.read(listing.sessions)
+        val edges = edgeRead.index
         // The transcript-view switch is consulted before any reader opens a file, so off means no claim.
         val ids = listing.sessions.mapNotNull { it.sessionId }.toSet()
         val resumable = if (viewEnabled()) resumableSessions.among(ids) else Resumability(null)
-        addEdgeState(this)
+        addEdgeState(this, edgeRead.reason)
         put("note", HEADLESS_NOTE)
         val noteVersions = PeerNoteAbi.AUDITED_VERSIONS.sorted()
         put("note_versions", buildJsonArray { noteVersions.forEach { add(JsonPrimitive(it)) } })
@@ -158,10 +161,13 @@ public class SessionsRoutes(
         }
     }
 
-    private fun addEdgeState(body: JsonObjectBuilder) {
+    /** The edge store's own state, and why a row carries no edges. [unread] is the refusal of THIS
+     *  read, which is a different fact from the store being off or deleted and does not replace it:
+     *  a store that is on and could not be read reports both, so neither reading is a lie. */
+    private fun addEdgeState(body: JsonObjectBuilder, unread: String? = null) {
         val state = edgeRoutes.state() ?: return
         body.put("edges_state", state.wire)
-        state.reason("edges")?.let { body.put("edges_reason", it) }
+        (unread ?: state.reason("edges"))?.let { body.put("edges_reason", it) }
     }
 
     private fun row(

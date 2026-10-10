@@ -305,8 +305,14 @@ function prompted(call, offer) {
  *  sessions is the one meant, the count does (fin). The row carries `turns` only when it was measured, so an absent key
  *  draws nothing, never a zero or a dash: a count nobody watched must not read as "ran nothing". A real 0 is drawn,
  *  because "0 turns" is what tells a reader this is not the session they meant. */
-const turnsOf = (session) => (Number.isInteger(session.turns)
-  ? ` · ${session.turns} ${session.turns === 1 ? "turn" : "turns"}` : "");
+const turnsOf = (session) => {
+  if (!Number.isInteger(session.turns)) return "";
+  // `turns_partial` is the server's own comparison of where counting began against where the session began: true
+  // means the count is a floor (and an unknown session start reads true), so it is drawn "12+". The client never
+  // compares the two timestamps itself, because `started_at` carries no unit on the wire.
+  const floor = session.turns_partial === true ? "+" : "";
+  return ` · ${session.turns}${floor} ${session.turns === 1 && !floor ? "turn" : "turns"}`;
+};
 
 /** A slot with no session: start one on its command, or hand it one of its command's that already runs. */
 function vacantHtml(tm, slot, { key, ro, lead, chip, model }) {

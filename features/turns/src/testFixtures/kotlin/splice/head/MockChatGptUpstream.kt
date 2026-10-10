@@ -164,7 +164,8 @@ class MockChatGptUpstream(
         }
 
         capacityStatus(scenario)?.let { status ->
-            val err = """{"error":{"code":"server_is_overloaded","message":"The engine is currently overloaded, please try again later"}}"""
+            val err = """{"error":{"code":"server_is_overloaded",""" +
+                """"message":"The engine is currently overloaded, please try again later"}}"""
             ex.sendResponseHeaders(status, err.length.toLong())
             ex.responseBody.use { it.write(err.toByteArray()) }
             return
@@ -181,7 +182,8 @@ class MockChatGptUpstream(
         }
 
         if (scenario == "overflow_http") {
-            val err = """{"error":{"code":"context_length_exceeded","message":"prompt is too long: 210000 tokens > 200000 maximum"}}"""
+            val err = """{"error":{"code":"context_length_exceeded",""" +
+                """"message":"prompt is too long: 210000 tokens > 200000 maximum"}}"""
             ex.sendResponseHeaders(400, err.length.toLong())
             ex.responseBody.use { it.write(err.toByteArray()) }
             return
@@ -257,7 +259,10 @@ class MockChatGptUpstream(
     // item's id. Cutoff-mode heads render ONLY the done events, so every reasoning scenario here
     // sends both — which also pins that dropping the deltas loses no text.
     private fun foldTruncatedRound(ex: HttpExchange) {
-        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_trunc"}}""")
+        sse(
+            ex,
+            """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_trunc"}}""",
+        )
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round one."}""")
         sse(
             ex,
@@ -275,7 +280,8 @@ class MockChatGptUpstream(
         sse(
             ex,
             """{"type":"response.completed","response":{"id":"rt","status":"completed","output":[],""" +
-                """"usage":{"input_tokens":100,"output_tokens":600,"output_tokens_details":{"reasoning_tokens":516}}}}""",
+                """"usage":{"input_tokens":100,"output_tokens":600,""" +
+                """"output_tokens_details":{"reasoning_tokens":516}}}}""",
         )
     }
 
@@ -286,7 +292,10 @@ class MockChatGptUpstream(
     // watchdogFired. The sleep outlives the head's idle cap; the write that follows it lands on a
     // socket the head has already hung up, which is the expected IOException above.
     private fun foldStalledRound(ex: HttpExchange) {
-        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_stall"}}""")
+        sse(
+            ex,
+            """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_stall"}}""",
+        )
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round one."}""")
         sse(
             ex,
@@ -303,7 +312,10 @@ class MockChatGptUpstream(
     }
 
     private fun foldCleanRound(ex: HttpExchange) {
-        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_clean"}}""")
+        sse(
+            ex,
+            """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_clean"}}""",
+        )
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round two."}""")
         sse(
             ex,
@@ -317,7 +329,8 @@ class MockChatGptUpstream(
         sse(
             ex,
             """{"type":"response.completed","response":{"id":"rf","status":"completed","output":[],""" +
-                """"usage":{"input_tokens":150,"output_tokens":800,"output_tokens_details":{"reasoning_tokens":800}}}}""",
+                """"usage":{"input_tokens":150,"output_tokens":800,""" +
+                """"output_tokens_details":{"reasoning_tokens":800}}}}""",
         )
     }
 
@@ -325,7 +338,10 @@ class MockChatGptUpstream(
     // round-1 summary section verbatim before adding a new one — exactly what sequential_cutoff does
     // when a continuation re-requests the detailed summary over already-summarized reasoning.
     private fun foldSummaryTruncatedRound(ex: HttpExchange) {
-        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_trunc"}}""")
+        sse(
+            ex,
+            """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_trunc"}}""",
+        )
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_A"}""")
         sse(
             ex,
@@ -343,13 +359,17 @@ class MockChatGptUpstream(
         sse(
             ex,
             """{"type":"response.completed","response":{"id":"rt","status":"completed","output":[],""" +
-                """"usage":{"input_tokens":100,"output_tokens":600,"output_tokens_details":{"reasoning_tokens":516}}}}""",
+                """"usage":{"input_tokens":100,"output_tokens":600,""" +
+                """"output_tokens_details":{"reasoning_tokens":516}}}}""",
         )
     }
 
     private fun foldSummaryCleanRound(ex: HttpExchange) {
         // output_index restarts at 0 for the continuation round, as the real backend does.
-        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_clean2"}}""")
+        sse(
+            ex,
+            """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_clean2"}}""",
+        )
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_A"}""")
         sse(
             ex,
@@ -369,7 +389,8 @@ class MockChatGptUpstream(
         sse(
             ex,
             """{"type":"response.completed","response":{"id":"rf","status":"completed","output":[],""" +
-                """"usage":{"input_tokens":150,"output_tokens":800,"output_tokens_details":{"reasoning_tokens":800}}}}""",
+                """"usage":{"input_tokens":150,"output_tokens":800,""" +
+                """"output_tokens_details":{"reasoning_tokens":800}}}}""",
         )
     }
 
@@ -398,7 +419,11 @@ class MockChatGptUpstream(
                 pacer(STALL_SLEEP_MS)
             }
             "multipart" -> {
-                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_mp"}}""")
+                sse(
+                    ex,
+                    """{"type":"response.output_item.added","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_mp"}}""",
+                )
                 sse(ex, """{"type":"response.reasoning_summary_part.added","output_index":0}""")
                 sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Part one."}""")
                 sse(
@@ -556,7 +581,8 @@ class MockChatGptUpstream(
             }
             "nonstream_tool" -> {
                 val evt = """{"type":"response.completed","response":{"id":"r3","status":"completed","output":[""" +
-                    """{"type":"reasoning","summary":[{"type":"summary_text","text":"Because reasons that are long enough to mirror."}]},""" +
+                    """{"type":"reasoning","summary":[{"type":"summary_text",""" +
+                    """"text":"Because reasons that are long enough to mirror."}]},""" +
                     """{"type":"message","content":[{"type":"output_text","text":"héllo — ✓ done"}]},""" +
                     """{"type":"function_call","call_id":"call_xyz","name":"fn_x","arguments":"{\"q\":\"z\"}"}""" +
                     """],"usage":{"input_tokens":3,"output_tokens":2}}}"""
@@ -571,7 +597,11 @@ class MockChatGptUpstream(
                 ex.responseBody.write(buf.copyOfRange(at, buf.size))
             }
             "compactish" -> {
-                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_cp"}}""")
+                sse(
+                    ex,
+                    """{"type":"response.output_item.added","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_cp"}}""",
+                )
                 sse(
                     ex,
                     """{"type":"response.reasoning_summary_text.delta","output_index":0,""" +

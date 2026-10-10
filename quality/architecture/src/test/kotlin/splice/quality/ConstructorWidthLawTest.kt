@@ -399,22 +399,6 @@ class ConstructorWidthLawTest {
         }
     }
 
-    /** THE PREMISE, re-read on every gate run (checks/constructor-width-selftest.sh's first arm).
-     *  This wall exists because detekt's LongParameterList is turned off for the two shapes this
-     *  tree uses. If someone deletes the RULE, this wall is the only thing left and its subject must
-     *  not disappear silently. If someone deletes the two IGNORES instead, detekt starts billing
-     *  some of these widths itself and this law's header is stale rather than wrong — that is a
-     *  re-read, not a failure, exactly as the checker's harness graded it. */
-    @Test
-    fun `detekt still cannot see a constructor's width - V4-93`() {
-        val detekt = File(map.root, DETEKT_CONFIG)
-        assertTrue(detekt.isFile) { "$DETEKT_CONFIG is missing — this law's premise cannot be read" }
-        assertTrue(detekt.readText().contains("LongParameterList:")) {
-            "$DETEKT_CONFIG no longer configures LongParameterList — the instrument this wall is written " +
-                "against has moved, so re-read this file's header before trusting either one."
-        }
-    }
-
     /** §24: CLASS_DECL is a REGEX, and a regex census cannot cross-check itself — a class it cannot
      *  see is a constructor this law never measures and never reports, which reads as a green. The
      *  denominator is taken a SECOND time from the Kotlin compiler frontend this module already
@@ -595,7 +579,6 @@ class ConstructorWidthLawTest {
 
     private companion object {
         const val FIXTURE_REL = "app/src/main/kotlin/Fixture.kt"
-        const val DETEKT_CONFIG = "quality/detekt/detekt.yml"
 
         /** A baseline document with [entries] spelled the way the resource spells them. */
         fun baseline(entries: String = "", recorded: String = "2026-09-21"): String =

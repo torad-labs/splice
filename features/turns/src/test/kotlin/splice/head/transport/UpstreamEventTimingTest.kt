@@ -155,7 +155,8 @@ class UpstreamEventTimingTest {
             """{"choices":[{"delta":{"reasoning_content":"","content":"synthetic"}}]}""" to UpstreamGapEnd.TEXT_DELTA,
             """{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":""}}],"content":"synthetic"}}]}""" to
                 UpstreamGapEnd.TEXT_DELTA,
-            """{"choices":[{"delta":{"role":"assistant"}},{"delta":{"content":"synthetic"}}]}""" to UpstreamGapEnd.TEXT_DELTA,
+            """{"choices":[{"delta":{"role":"assistant"}},{"delta":{"content":"synthetic"}}]}""" to
+                UpstreamGapEnd.TEXT_DELTA,
             """{"choices":[{"delta":{"reasoning_content":null,"tool_calls":[{"function":{"name":"synthetic"}}]}}]}""" to
                 UpstreamGapEnd.CONTENT_BLOCK_START,
         )) {
@@ -178,7 +179,8 @@ class UpstreamEventTimingTest {
             """{"type":"response.done","response":{"output":[{"type":"message","content":[{"text":"synthetic"}]}]}}""",
             """{"type":"response.function_call_arguments.done","output_index":0,"arguments":"{}"}""",
             """{"type":"response.output_item.done","item":{"type":"reasoning","summary":[{"text":"synthetic"}]}}""",
-            """{"type":"response.completed","response":{"output":[{"type":"message","content":[{"text":"synthetic"}]}]}}""",
+            """{"type":"response.completed","response":{"output":[{"type":"message",""" +
+                """"content":[{"text":"synthetic"}]}]}}""",
         )) {
             val perf = TurnPerf { testScheduler.currentTime }
             val events = flow {
@@ -215,18 +217,22 @@ class UpstreamEventTimingTest {
     @Test
     fun `served Responses and chat events carry semantic kinds`() = runTest {
         for ((raw, expected) in listOf(
-            """{"type":"response.done","response":{"output":[{"type":"message","content":[{"text":"synthetic"}]}]}}""" to
+            """{"type":"response.done","response":{"output":[{"type":"message",""" +
+                """"content":[{"text":"synthetic"}]}]}}""" to
                 UpstreamGapEnd.COMPLETED,
             """{"type":"response.reasoning_summary_text.delta","delta":"synthetic"}""" to UpstreamGapEnd.THINKING_DELTA,
             """{"type":"response.reasoning_text.delta","delta":"synthetic"}""" to UpstreamGapEnd.THINKING_DELTA,
             """{"type":"response.output_text.delta","delta":"synthetic"}""" to UpstreamGapEnd.TEXT_DELTA,
             """{"type":"response.function_call_arguments.delta","delta":"{}"}""" to UpstreamGapEnd.INPUT_JSON_DELTA,
-            """{"type":"response.output_item.added","item":{"type":"function_call"}}""" to UpstreamGapEnd.CONTENT_BLOCK_START,
+            """{"type":"response.output_item.added","item":{"type":"function_call"}}""" to
+                UpstreamGapEnd.CONTENT_BLOCK_START,
             """{"choices":[{"delta":{"reasoning_content":"synthetic"}}]}""" to UpstreamGapEnd.THINKING_DELTA,
             """{"choices":[{"delta":{"reasoning":"synthetic"}}]}""" to UpstreamGapEnd.THINKING_DELTA,
             """{"choices":[{"delta":{"content":"synthetic"}}]}""" to UpstreamGapEnd.TEXT_DELTA,
-            """{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{}"}}]}}]}""" to UpstreamGapEnd.INPUT_JSON_DELTA,
-            """{"choices":[{"delta":{"tool_calls":[{"function":{"name":"synthetic"}}]}}]}""" to UpstreamGapEnd.CONTENT_BLOCK_START,
+            """{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{}"}}]}}]}""" to
+                UpstreamGapEnd.INPUT_JSON_DELTA,
+            """{"choices":[{"delta":{"tool_calls":[{"function":{"name":"synthetic"}}]}}]}""" to
+                UpstreamGapEnd.CONTENT_BLOCK_START,
             """{"type":"response.created"}""" to UpstreamGapEnd.MESSAGE_START,
             """{"type":"unrecognized","delta":"synthetic"}""" to UpstreamGapEnd.UNKNOWN,
         )) {

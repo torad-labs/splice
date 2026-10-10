@@ -93,14 +93,16 @@ style:
     ignoreEnums: true
     ignoreCompanionObjectPropertyDeclaration: true
     ignoreAnnotation: true
+  # NO TEST EXEMPTION (2026-10-09). Both line-length rules used to carry `excludes: ["**/test/**"]`,
+  # which made the 120-column limit a property of which source set a file sat in: a test could run a
+  # setup call off the right edge of the screen and no gate noticed. A test is read more often than
+  # the code it covers, by whoever is diagnosing a red, so it earns the same width.
   MaxLineLength:
     active: true
     maxLineLength: 120
     excludePackageStatements: true
     excludeImportStatements: true
     excludeCommentStatements: true
-    excludes:
-      - "**/test/**"
   ReturnCount:
     active: true
     max: 3
@@ -144,8 +146,6 @@ formatting:
   MaximumLineLength:
     active: true
     maxLineLength: 120
-    excludes:
-      - "**/test/**"
   NoWildcardImports:
     active: true
   TrailingCommaOnCallSite:

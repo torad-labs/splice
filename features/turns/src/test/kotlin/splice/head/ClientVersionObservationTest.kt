@@ -102,4 +102,5 @@ class ClientVersionObservationTest {
 }
 
 private const val REQUEST =
-    """{"model":"claude-codex--gpt-5.6-sol","stream":false,"max_tokens":16,"messages":[{"role":"user","content":"hello"}]}"""
+    """{"model":"claude-codex--gpt-5.6-sol","stream":false,"max_tokens":16,""" +
+        """"messages":[{"role":"user","content":"hello"}]}"""

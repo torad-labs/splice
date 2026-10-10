@@ -227,8 +227,10 @@ class CodexTurnStateSseTest {
         val prefix = if (first) {
             listOf(
                 """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs-test"}}""",
-                """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Synthetic reasoning for the continuation."}""",
-                """{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs-test","encrypted_content":"test-cipher"}}""",
+                """{"type":"response.reasoning_summary_text.delta","output_index":0,""" +
+                    """"delta":"Synthetic reasoning for the continuation."}""",
+                """{"type":"response.output_item.done","output_index":0,""" +
+                    """"item":{"type":"reasoning","id":"rs-test","encrypted_content":"test-cipher"}}""",
             )
         } else {
             emptyList()
@@ -240,7 +242,8 @@ class CodexTurnStateSseTest {
             """{"type":"response.output_text.delta","output_index":1,"delta":"$text"}""",
             """{"type":"response.output_item.done","output_index":1}""",
             """{"type":"response.completed","response":{"id":"test-response","status":"completed","output":[],
-                "usage":{"input_tokens":100,"output_tokens":800,"output_tokens_details":{"reasoning_tokens":$reasoning}}}}""",
+                "usage":{"input_tokens":100,"output_tokens":800,""" +
+                """"output_tokens_details":{"reasoning_tokens":$reasoning}}}}""",
         )
         return (prefix + messages).joinToString("") { "data: ${Json.parseToJsonElement(it)}\n\n" }
     }

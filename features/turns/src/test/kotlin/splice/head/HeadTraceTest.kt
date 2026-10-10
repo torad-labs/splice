@@ -248,7 +248,9 @@ class HeadTraceTest {
             },
         )
         assertTrue(held.await(5, TimeUnit.SECONDS))
-        val posted = """{"model":"claude-splice--claude-fable-5","max_tokens":16,"messages":[{"role":"user","content":"synthetic held writer"}],"stream":true}"""
+        val posted =
+            """{"model":"claude-splice--claude-fable-5","max_tokens":16,""" +
+                """"messages":[{"role":"user","content":"synthetic held writer"}],"stream":true}"""
         val before = upstream.bodies.size
         try {
             assertTimeoutPreemptively(Duration.ofSeconds(2)) {

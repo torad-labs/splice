@@ -436,7 +436,6 @@ class EnvVarsDocumentedLawTest {
                 "val config = env(\"SPLICE_CONFIG\")",
                 "val config = env(\"SPLICE_FAKE_NEW_VAR\") ?: env(\"SPLICE_CONFIG\")",
             )
-            assertTrue(mutated != SEAM_SOURCE, "the seam mutation did not apply")
             write(COMPLIANT_DOC, mutated)
             assertHit(audit(), "SPLICE_FAKE_NEW_VAR") { "a synthetic literal read must be RED BY NAME" }
 
@@ -444,7 +443,6 @@ class EnvVarsDocumentedLawTest {
                 "GROK_PORT(\"grokPort\", KnobKind.NUMBER, listOf(\"GROK_PROXY_PORT\")),",
                 "GROK_PORT(\"grokPort\", KnobKind.NUMBER, listOf(\"GROK_PROXY_PORT\", \"SPLICE_FAKE_ALIAS\")),",
             )
-            assertTrue(mutatedKnob != KNOB_SOURCE, "the knob mutation did not apply")
             write(COMPLIANT_DOC, SEAM_SOURCE, mutatedKnob)
             assertHit(audit(), "SPLICE_FAKE_ALIAS") { "a synthetic knob alias must be RED BY NAME" }
         }

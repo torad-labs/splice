@@ -40,16 +40,20 @@ class PassthroughNativeCollectTest {
         val events = listOf(
             event("""{"type":"message_start"}"""),
             event(
-                """{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"thought","signature":"native-signature","opaque":false}}""",
+                """{"type":"content_block_start","index":0,"content_block":{""" +
+                    """"type":"thinking","thinking":"thought","signature":"native-signature","opaque":false}}""",
             ),
             event("""{"type":"content_block_stop","index":0}"""),
             event(
-                """{"type":"content_block_start","index":1,"content_block":{"type":"text","text":"initial answer","opaque":null}}""",
+                """{"type":"content_block_start","index":1,"content_block":{""" +
+                    """"type":"text","text":"initial answer","opaque":null}}""",
             ),
             event("""{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" and delta"}}"""),
             event("""{"type":"content_block_stop","index":1}"""),
             event(
-                """{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"native-tool-id","name":"Read","input":{"path":"synthetic"},"opaque":[null,false]}}""",
+                """{"type":"content_block_start","index":2,"content_block":{""" +
+                    """"type":"tool_use","id":"native-tool-id","name":"Read",""" +
+                    """"input":{"path":"synthetic"},"opaque":[null,false]}}""",
             ),
             event("""{"type":"content_block_stop","index":2}"""),
             event("""{"type":"message_stop"}"""),

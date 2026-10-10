@@ -61,7 +61,9 @@ class PassthroughOpenFieldsTest {
                 { assertTrue(frames.any { it["type"]?.jsonPrimitive?.content == "future_review" }) },
                 {
                     assertTrue(
-                        frames.any { it["content_block"]?.jsonObject?.get("type")?.jsonPrimitive?.content == "future_block" },
+                        frames.any {
+                            it["content_block"]?.jsonObject?.get("type")?.jsonPrimitive?.content == "future_block"
+                        },
                     )
                 },
             )
@@ -98,7 +100,8 @@ class PassthroughOpenFieldsTest {
             delta["usage"]!!.jsonObject["future_usage"],
         )
         assertTrue(frames.first { it["type"]?.jsonPrimitive?.content == "message_stop" }.containsKey("future_end"))
-        val raw = frames.first { it["content_block"]?.jsonObject?.get("type")?.jsonPrimitive?.content == "future_block" }
+        val raw =
+            frames.first { it["content_block"]?.jsonObject?.get("type")?.jsonPrimitive?.content == "future_block" }
         assertEquals(
             Json.parseToJsonElement("1"),
             raw["index"],
@@ -190,7 +193,9 @@ private class OpenFieldsRig(directory: Path) {
             header("Authorization", "Bearer synthetic-open-list")
             header("Content-Type", "application/json")
             setBody(
-                """{"model":"open--native","stream":$stream,"max_tokens":16,"messages":[{"role":"user","content":"synthetic"}],"safeguards":[{"type":"dangerous_tool_use"}]}""",
+                """{"model":"open--native","stream":$stream,"max_tokens":16,""" +
+                    """"messages":[{"role":"user","content":"synthetic"}],""" +
+                    """"safeguards":[{"type":"dangerous_tool_use"}]}""",
             )
         }
         return response.status to response.bodyAsText()
@@ -204,14 +209,23 @@ private class OpenFieldsRig(directory: Path) {
 }
 
 private val OPEN_EVENTS = listOf(
-    """{"type":"message_start","future_start":null,"message":{"id":"native-open","type":"message","role":"assistant","model":"native","content":[],"usage":{"input_tokens":1,"output_tokens":0},"safeguard_results":[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{}}}],"future_message":{"opaque":[false,null,3]}}}""",
-    """{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"","safeguard_results":[{"source":"block"}],"future_block_field":null}}""",
-    """{"type":"content_block_delta","index":0,"future_delta":"opaque","delta":{"type":"text_delta","text":"hello","future_text":{"kept":true}}}""",
+    """{"type":"message_start","future_start":null,"message":{""" +
+        """"id":"native-open","type":"message","role":"assistant","model":"native","content":[],""" +
+        """"usage":{"input_tokens":1,"output_tokens":0},""" +
+        """"safeguard_results":[{"type":"dangerous_tool_use","status":{"type":"available","tool_uses":{}}}],""" +
+        """"future_message":{"opaque":[false,null,3]}}}""",
+    """{"type":"content_block_start","index":0,"content_block":{""" +
+        """"type":"text","text":"","safeguard_results":[{"source":"block"}],"future_block_field":null}}""",
+    """{"type":"content_block_delta","index":0,"future_delta":"opaque",""" +
+        """"delta":{"type":"text_delta","text":"hello","future_text":{"kept":true}}}""",
     """{"type":"future_review","index":0,"safeguard_results":[{"source":"future"}],"opaque":{"index":77}}""",
     """{"type":"content_block_stop","index":0,"future_stop":false}""",
-    """{"type":"content_block_start","index":3,"content_block":{"type":"future_block","payload":{"kept":[null,false]}}}""",
+    """{"type":"content_block_start","index":3,"content_block":{""" +
+        """"type":"future_block","payload":{"kept":[null,false]}}}""",
     """{"type":"content_block_delta","index":3,"delta":{"type":"future_payload","payload":{"kept":true}}}""",
     """{"type":"content_block_stop","index":3}""",
-    """{"type":"message_delta","delta":{"stop_reason":"end_turn","future_stop_data":{"kept":true}},"usage":{"output_tokens":1,"future_usage":{"kept":true}},"safeguard_results":[{"source":"delta"}]}""",
+    """{"type":"message_delta","delta":{"stop_reason":"end_turn",""" +
+        """"future_stop_data":{"kept":true}},"usage":{"output_tokens":1,"future_usage":{"kept":true}},""" +
+        """"safeguard_results":[{"source":"delta"}]}""",
     """{"type":"message_stop","future_end":null}""",
 )

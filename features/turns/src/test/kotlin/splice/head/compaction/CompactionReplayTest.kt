@@ -112,7 +112,7 @@ class CompactionReplayTest {
     }
 
     @Test
-    fun `a late consumption of an older delivery leaves the newer kept answer's file after capacity evicted its memory entry`() {
+    fun `a late consumption of an older delivery leaves the newer answer's file after eviction`() {
         val store = MapRecordings()
         val withStore = CompactionReplay(store, clock = ElapsedClock { now }, ttlMs = 1_000, capacity = 2)
         val key = checkNotNull(withStore.key("s", "{}"))

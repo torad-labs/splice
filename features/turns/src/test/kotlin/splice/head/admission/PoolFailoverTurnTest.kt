@@ -291,7 +291,8 @@ private class FailoverRig(
             header("Content-Type", "application/json")
             header("x-claude-code-session-id", SESSION)
             setBody(
-                """{"model":"synthetic--model","stream":$stream,"max_tokens":16,"messages":[{"role":"user","content":"go"}]}""",
+                """{"model":"synthetic--model","stream":$stream,"max_tokens":16,""" +
+                    """"messages":[{"role":"user","content":"go"}]}""",
             )
         }
         return response.status to response.bodyAsText()
@@ -316,7 +317,8 @@ private class FailoverRig(
 }
 
 private val SUCCESS_WIRE = listOf(
-    """{"type":"message_start","message":{"id":"msg_synthetic","type":"message","role":"assistant","model":"model","usage":{"input_tokens":1,"output_tokens":0}}}""",
+    """{"type":"message_start","message":{"id":"msg_synthetic","type":"message",""" +
+        """"role":"assistant","model":"model","usage":{"input_tokens":1,"output_tokens":0}}}""",
     """{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}""",
     """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"synthetic success"}}""",
     """{"type":"content_block_stop","index":0}""",

@@ -147,7 +147,8 @@ class HeapIngressTest {
             Socket("127.0.0.1", port).use { socket ->
                 socket.soTimeout = 5000
                 socket.getOutputStream().write(
-                    "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(),
+                    "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        .toByteArray(),
                 )
                 val reply = socket.getInputStream().readBytes().toString(Charsets.UTF_8)
                 assertTrue(reply.startsWith("HTTP/1.1 413"), reply)

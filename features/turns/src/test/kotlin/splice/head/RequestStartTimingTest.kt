@@ -290,7 +290,8 @@ private suspend fun awaitTiming(what: String, condition: () -> Boolean) {
 }
 
 private fun timingBody(label: String, stream: Boolean = true): String =
-    """{"model":"synthetic-synthetic","stream":$stream,"max_tokens":64,"system":"$label","messages":[{"role":"user","content":"synthetic timing"}]}"""
+    """{"model":"synthetic-synthetic","stream":$stream,"max_tokens":64,"system":"$label",""" +
+        """"messages":[{"role":"user","content":"synthetic timing"}]}"""
 
 private fun timingPost(port: Int, label: String, stream: Boolean = true): String {
     val body = timingBody(label, stream)
@@ -298,7 +299,8 @@ private fun timingPost(port: Int, label: String, stream: Boolean = true): String
         socket.soTimeout = TIMING_TIMEOUT_MS.toInt()
         val request = "POST /v1/messages HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
             "Authorization: Bearer test-inference-token\r\nx-claude-code-session-id: $label\r\n" +
-            "Content-Type: application/json\r\nContent-Length: ${body.toByteArray().size}\r\nConnection: close\r\n\r\n$body"
+            "Content-Type: application/json\r\nContent-Length: ${body.toByteArray().size}\r\n" +
+            "Connection: close\r\n\r\n$body"
         socket.getOutputStream().write(request.toByteArray())
         socket.getOutputStream().flush()
         socket.getInputStream().bufferedReader().readText()

@@ -88,14 +88,17 @@ class PassthroughNativeWireTest {
         val outcome = drive(
             sink,
             """{"type":"message_start","future_start":null,"message":{"future_message":[null,false]}}""",
-            """{"type":"content_block_start","index":5,"block_outer":false,"content_block":{"type":"future","payload":{"old":1},"null_field":null}}""",
-            """{"type":"content_block_delta","index":5,"delta_outer":[false],"delta":{"type":"future_delta","payload":{"new":2}}}""",
+            """{"type":"content_block_start","index":5,"block_outer":false,"content_block":{""" +
+                """"type":"future","payload":{"old":1},"null_field":null}}""",
+            """{"type":"content_block_delta","index":5,"delta_outer":[false],""" +
+                """"delta":{"type":"future_delta","payload":{"new":2}}}""",
             """{"type":"content_block_stop","index":5,"stop_outer":null}""",
             """{"type":"content_block_start","index":6,"content_block":{"type":"text","text":""}}""",
             """{"type":"content_block_delta","index":6,"delta":{"type":"text_delta","text":"answer"}}""",
             """{"type":"content_block_stop","index":6}""",
             """{"type":"future_event","future_event_field":[false,null]}""",
-            """{"type":"message_delta","delta":{"stop_reason":"end_turn","future_terminal":false},"usage":{"future_usage":null}}""",
+            """{"type":"message_delta","delta":{"stop_reason":"end_turn",""" +
+                """"future_terminal":false},"usage":{"future_usage":null}}""",
             """{"type":"message_stop","future_stop":null}""",
         )
         assertTrue(outcome is TurnOutcome.Success)
@@ -121,9 +124,11 @@ class PassthroughNativeWireTest {
         val outcome = drive(
             sink,
             """{"type":"message_start"}""",
-            """{"type":"content_block_start","index":2,"content_block":{"type":"thinking","thinking":"initial thought","signature":"native-signature","opaque":null}}""",
+            """{"type":"content_block_start","index":2,"content_block":{""" +
+                """"type":"thinking","thinking":"initial thought","signature":"native-signature","opaque":null}}""",
             """{"type":"content_block_stop","index":2}""",
-            """{"type":"content_block_start","index":3,"content_block":{"type":"text","text":"initial answer","opaque":[false]}}""",
+            """{"type":"content_block_start","index":3,"content_block":{""" +
+                """"type":"text","text":"initial answer","opaque":[false]}}""",
             """{"type":"content_block_stop","index":3}""",
             """{"type":"message_stop"}""",
         )
@@ -154,7 +159,8 @@ class PassthroughNativeWireTest {
                 """{"type":"content_block_delta","index":0,"leak":true,"delta":{"type":"text_delta","text":"bad"}}""",
             ),
             event(
-                """{"type":"content_block_delta","index":0,"kept":null,"delta":{"type":"thinking_delta","thinking":"thought","opaque":[false]}}""",
+                """{"type":"content_block_delta","index":0,"kept":null,""" +
+                    """"delta":{"type":"thinking_delta","thinking":"thought","opaque":[false]}}""",
             ),
             event("""{"type":"content_block_stop","index":0,"stop_only":false}"""),
             event("""{"type":"message_stop"}"""),
@@ -163,7 +169,8 @@ class PassthroughNativeWireTest {
         assertTrue(outcome is TurnOutcome.Success)
         val frames = decoded(writes)
         assertFalse(frames.any { it.containsKey("leak") })
-        val signatures = frames.filter { it["delta"]?.jsonObject?.get("type")?.jsonPrimitive?.content == "signature_delta" }
+        val signatures =
+            frames.filter { it["delta"]?.jsonObject?.get("type")?.jsonPrimitive?.content == "signature_delta" }
         assertEquals(1, signatures.size)
         assertFalse(signatures.single().containsKey("stop_only"))
         assertFalse(signatures.single().containsKey("kept"))

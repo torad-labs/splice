@@ -241,18 +241,24 @@ class IndependentSourceRoundTest {
                 flow {
                     emit(
                         Json.parseToJsonElement(
-                            """{"type":"response.output_item.added","output_index":0,"item":{"type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec","input":""}}""",
+                            """{"type":"response.output_item.added","output_index":0,"item":{""" +
+                                """"type":"custom_tool_call","id":"source-item","call_id":"source-call",""" +
+                                """"name":"exec","input":""}}""",
                         ).jsonObject,
                     )
                     emit(
                         Json.parseToJsonElement(
-                            """{"type":"response.custom_tool_call_input.delta","output_index":0,"delta":"await tools.Read({});"}""",
+                            """{"type":"response.custom_tool_call_input.delta","output_index":0,""" +
+                                """"delta":"await tools.Read({});"}""",
                         ).jsonObject,
                     )
                     release.await()
                     emit(
                         Json.parseToJsonElement(
-                            """{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":100,"output_tokens":7},"output":[{"type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec","input":"await tools.Read({});"}]}}""",
+                            """{"type":"response.completed","response":{"status":"completed",""" +
+                                """"usage":{"input_tokens":100,"output_tokens":7},"output":[{""" +
+                                """"type":"custom_tool_call","id":"source-item","call_id":"source-call",""" +
+                                """"name":"exec","input":"await tools.Read({});"}]}}""",
                         ).jsonObject,
                     )
                     if (ending == SourceEnding.CANCEL_AFTER_TERMINAL) currentCoroutineContext().cancel()
@@ -414,7 +420,8 @@ class IndependentSourceRoundTest {
         val ended = AtomicInteger()
         override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn =
             base.buildTurn(body, compact, sessionId).copy(
-                roundInterceptor = interceptor ?: readers.computeIfAbsent(checkNotNull(sessionId)) { SourceInterceptor() },
+                roundInterceptor = interceptor
+                    ?: readers.computeIfAbsent(checkNotNull(sessionId)) { SourceInterceptor() },
                 onEnd = { ended.incrementAndGet() },
             )
         override fun onHeadStop() {
@@ -499,11 +506,13 @@ class IndependentSourceRoundTest {
                 event(
                     output,
                     """{"type":"response.output_item.added","output_index":0,"item":{
-                        "type":"custom_tool_call","id":"source-item","call_id":"source-call","name":"exec","input":""}}""",
+                        "type":"custom_tool_call","id":"source-item","call_id":"source-call",""" +
+                        """"name":"exec","input":""}}""",
                 )
                 event(
                     output,
-                    """{"type":"response.custom_tool_call_input.delta","output_index":0,"delta":"await tools.Read({});"}""",
+                    """{"type":"response.custom_tool_call_input.delta","output_index":0,""" +
+                        """"delta":"await tools.Read({});"}""",
                 )
                 release.await()
                 event(

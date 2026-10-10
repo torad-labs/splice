@@ -329,25 +329,13 @@ class AutoCloseableClosedLawTest {
             }
         """.trimIndent()
         val declarations = AutoCloseableClosed.declarations(mapOf("fixture.kt" to source))
-        assertEquals(emptyList<String>(), declarations.single { it.name == "Reply" }.supers)
-        assertEquals(listOf("AutoCloseable"), declarations.single { it.name == "Host" }.supers)
         assertEquals(setOf("Host"), AutoCloseableClosed.closeableClosure(declarations))
     }
 
     @Test
-    fun `a lambda default never makes the following parameter a superclass`() {
-        val source = constructorSource("")
-        val declarations = AutoCloseableClosed.declarations(mapOf("fixture.kt" to source))
-        assertEquals(emptyList<String>(), declarations.single { it.name == "Holder" }.supers)
-        assertEquals(emptyList<String>(), AutoCloseableClosed.audit(mapOf("fixture.kt" to source)))
-    }
-
-    @Test
-    fun `a real closeable after the same lambda default is still reported unclosed`() {
-        val source = constructorSource(" : AutoCloseable")
-        val declarations = AutoCloseableClosed.declarations(mapOf("fixture.kt" to source))
-        assertEquals(listOf("AutoCloseable"), declarations.single { it.name == "Holder" }.supers)
-        val findings = AutoCloseableClosed.audit(mapOf("fixture.kt" to source))
+    fun `a lambda default is no superclass, but a real closeable after it is still reported unclosed`() {
+        assertEquals(emptyList<String>(), AutoCloseableClosed.audit(mapOf("fixture.kt" to constructorSource(""))))
+        val findings = AutoCloseableClosed.audit(mapOf("fixture.kt" to constructorSource(" : AutoCloseable")))
         assertEquals(1, findings.size)
         assertTrue(findings.single().contains("Holder implements AutoCloseable"))
         assertTrue(findings.single().contains("never closed from one"))

@@ -133,7 +133,9 @@ class TraceChunkStorageTest {
 
     @Test
     fun `legacy and chunked records mix and truncation preserves exact non ASCII code units`(@TempDir dir: Path) {
-        val legacy = """{"kind":"turn","turn":"legacy","ts":$NOW,"head":"synthetic","model":"m","clientModel":"m","compact":false,"client":{"body":"old café"},"answer":{"body":"old λ"}}"""
+        val legacy =
+            """{"kind":"turn","turn":"legacy","ts":$NOW,"head":"synthetic","model":"m",""" +
+                """"clientModel":"m","compact":false,"client":{"body":"old café"},"answer":{"body":"old λ"}}"""
         Files.writeString(dir.resolve(DAY), legacy + "\n")
         val text = "a😀🚀東京"
         write(store(dir, 4), text, text)

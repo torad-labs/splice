@@ -471,7 +471,9 @@ private fun writePost(
     stream: Boolean = true,
     path: String = "/v1/messages",
 ) {
-    val body = """{"model":"synthetic-synthetic","stream":$stream,"max_tokens":512,"system":"$system","messages":[{"role":"user","content":"synthetic"}]}"""
+    val body =
+        """{"model":"synthetic-synthetic","stream":$stream,"max_tokens":512,"system":"$system",""" +
+            """"messages":[{"role":"user","content":"synthetic"}]}"""
     val bytes = body.toByteArray(Charsets.UTF_8)
     val headers = "POST $path HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
         "Authorization: Bearer test-inference-token\r\nContent-Type: application/json\r\n" +
@@ -508,7 +510,8 @@ private class DispatchUpstream : AutoCloseable {
                 }
                 event("""{"type":"response.output_item.done","output_index":0}""")
                 event(
-                    """{"type":"response.completed","response":{"id":"synthetic","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":350}}}""",
+                    """{"type":"response.completed","response":{"id":"synthetic",""" +
+                        """"status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":350}}}""",
                 )
             }
             exchange.close()

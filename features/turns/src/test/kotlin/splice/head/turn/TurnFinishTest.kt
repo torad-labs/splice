@@ -187,7 +187,8 @@ class TurnPerfRowTest {
             drive.channel.writeMutex.withLock {
                 repeat(190) {
                     drive.channel.timedClientWrite(
-                        "event: content_block_delta\ndata: {\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"synthetic\"}}\n\n",
+                        "event: content_block_delta\ndata: " +
+                            "{\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"synthetic\"}}\n\n",
                         drive.perf,
                         clock,
                     )
@@ -401,7 +402,8 @@ class TurnPerfRowTest {
             channel.writeMutex.withLock {
                 repeat(2) {
                     channel.timedClientWrite(
-                        "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"synthetic\"}}\n\n",
+                        "event: content_block_delta\ndata: " +
+                            "{\"delta\":{\"type\":\"text_delta\",\"text\":\"synthetic\"}}\n\n",
                         drive.perf,
                         ElapsedClock { 5L },
                     )

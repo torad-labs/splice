@@ -40,7 +40,9 @@ import kotlin.time.Duration.Companion.seconds
 
 private const val PROBE_HEADER = "x-splice-liveness-probe"
 private const val PROBE_BODY = """{"splice_liveness_probe":true}"""
-private const val REAL_BODY = """{"model":"synthetic-model","stream":true,"max_tokens":1,"messages":[{"role":"user","content":"synthetic"}]}"""
+private const val REAL_BODY =
+    """{"model":"synthetic-model","stream":true,"max_tokens":1,""" +
+        """"messages":[{"role":"user","content":"synthetic"}]}"""
 
 class HeadServerLivenessProbeTest {
     @Test

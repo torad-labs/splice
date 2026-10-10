@@ -240,7 +240,8 @@ private class SubstitutingSerializationProvider(
 }
 
 private fun nestedRequest(depth: Int): String =
-    """{"model":"synthetic-synthetic","stream":false,"max_tokens":64,"messages":[{"role":"user","content":"hello"}],"extra":""" +
+    """{"model":"synthetic-synthetic","stream":false,"max_tokens":64,""" +
+        """"messages":[{"role":"user","content":"hello"}],"extra":""" +
         "[".repeat(depth - 1) + "0" + "]".repeat(depth - 1) + "}"
 
 private fun serializationRequest(): JsonObject = buildJsonObject {

@@ -212,8 +212,9 @@ class OutcomeSentenceTest {
     ) = runBlocking {
         val localSentence = "splice could not complete this session's code-mode step; " +
             "start a new session, and if it repeats read the daemon log"
-        val providerSentence = "the provider rejected the request as invalid, so resending it unchanged fails the same way; " +
-            "change the request before retrying"
+        val providerSentence =
+            "the provider rejected the request as invalid, so resending it unchanged fails the same way; " +
+                "change the request before retrying"
         for (reported in listOf(false, true)) {
             val rig = Rig("origin-$reported", tmp)
             val deps = headDeps(tmp.resolve("stores-$reported"))
@@ -257,7 +258,8 @@ class OutcomeSentenceTest {
     fun `a translator parsed provider invalid request retains provider origin`(@TempDir tmp: Path) = runBlocking {
         val rig = Rig("parsed-provider", tmp)
         val event = Json.parseToJsonElement(
-            """{"type":"response.failed","response":{"error":{"code":"request_too_large","message":"prompt is too long"}}}""",
+            """{"type":"response.failed","response":{"error":{"code":"request_too_large",""" +
+                """"message":"prompt is too long"}}}""",
         ).jsonObject
         val outcome = provider().streamTranslator(
             rig.meta,

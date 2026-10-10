@@ -212,40 +212,41 @@ class ForwardedRateLimitTest {
     }
 
     @Test
-    fun `restart retains the scoped native refusal without an upstream attempt or holding another login`() = runBlocking {
-        val first = LimitRig(directory)
-        first.head.start()
-        try {
-            first.turn("synthetic-refused")
-        } finally {
-            first.close()
-        }
-        var elapsed = 0L
-        val restarted = LimitRig(directory, clock = ElapsedClock { elapsed })
-        restarted.head.start()
-        try {
-            assertEquals("seven_day", restarted.upstream.planHold?.claim)
-            assertTrue(restarted.upstream.providerResetForMs > 0L)
-            assertEquals(
-                MAX_RATE_LIMIT_COOLDOWN_MS,
-                restarted.upstream.rateLimitedForMs,
-                "startup retains the native credential's refusal, bounded by the existing re-probe ceiling",
-            )
-            val (status, body, headers) = restarted.turn("synthetic-refused")
-            assertEquals(HttpStatusCode.TooManyRequests, status)
-            assertEquals(LIMIT_BODY, body)
-            first.limitHeaders.forEach { (name, value) -> assertEquals(value, headers[name], name) }
-            assertEquals(0, restarted.requests.size, "the persisted native refusal makes zero upstream attempts")
-            assertEquals(HttpStatusCode.OK, restarted.turn("synthetic-new-login").first)
-            assertEquals(listOf("synthetic-new-login"), restarted.requests)
+    fun `restart retains the scoped native refusal without an upstream attempt or holding another login`() =
+        runBlocking {
+            val first = LimitRig(directory)
+            first.head.start()
+            try {
+                first.turn("synthetic-refused")
+            } finally {
+                first.close()
+            }
+            var elapsed = 0L
+            val restarted = LimitRig(directory, clock = ElapsedClock { elapsed })
+            restarted.head.start()
+            try {
+                assertEquals("seven_day", restarted.upstream.planHold?.claim)
+                assertTrue(restarted.upstream.providerResetForMs > 0L)
+                assertEquals(
+                    MAX_RATE_LIMIT_COOLDOWN_MS,
+                    restarted.upstream.rateLimitedForMs,
+                    "startup retains the native credential's refusal, bounded by the existing re-probe ceiling",
+                )
+                val (status, body, headers) = restarted.turn("synthetic-refused")
+                assertEquals(HttpStatusCode.TooManyRequests, status)
+                assertEquals(LIMIT_BODY, body)
+                first.limitHeaders.forEach { (name, value) -> assertEquals(value, headers[name], name) }
+                assertEquals(0, restarted.requests.size, "the persisted native refusal makes zero upstream attempts")
+                assertEquals(HttpStatusCode.OK, restarted.turn("synthetic-new-login").first)
+                assertEquals(listOf("synthetic-new-login"), restarted.requests)
 
-            elapsed = MAX_RATE_LIMIT_COOLDOWN_MS + 1
-            assertEquals(HttpStatusCode.TooManyRequests, restarted.turn("synthetic-refused").first)
-            assertEquals(listOf("synthetic-new-login", "synthetic-refused"), restarted.requests)
-        } finally {
-            restarted.close()
+                elapsed = MAX_RATE_LIMIT_COOLDOWN_MS + 1
+                assertEquals(HttpStatusCode.TooManyRequests, restarted.turn("synthetic-refused").first)
+                assertEquals(listOf("synthetic-new-login", "synthetic-refused"), restarted.requests)
+            } finally {
+                restarted.close()
+            }
         }
-    }
 
     @Test
     fun `the persisted provider reset belongs to the refused credential not the head`() = runBlocking {
@@ -374,7 +375,8 @@ private class LimitRig(
             if (session != null) header(SESSION_HEADER, session)
             header("Content-Type", "application/json")
             setBody(
-                """{"model":"synthetic--model","stream":$stream,"max_tokens":16,"messages":[{"role":"user","content":"synthetic"}]}""",
+                """{"model":"synthetic--model","stream":$stream,"max_tokens":16,""" +
+                    """"messages":[{"role":"user","content":"synthetic"}]}""",
             )
         }
         return Triple(response.status, response.bodyAsText(), response.headers)
@@ -409,10 +411,12 @@ private suspend fun awaitAccounts(
     accounts
 }
 
-private const val LIMIT_BODY = """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic weekly window rejected"}}"""
+private const val LIMIT_BODY =
+    """{"type":"error","error":{"type":"rate_limit_error","message":"synthetic weekly window rejected"}}"""
 private const val HEADERLESS_LIMIT_BODY = """{"type":"error","error":{"type":"rate_limit_error","message":"Error"}}"""
 private val SUCCESS_WIRE = listOf(
-    """{"type":"message_start","message":{"id":"msg_synthetic","type":"message","role":"assistant","model":"model","usage":{"input_tokens":1,"output_tokens":0}}}""",
+    """{"type":"message_start","message":{"id":"msg_synthetic","type":"message",""" +
+        """"role":"assistant","model":"model","usage":{"input_tokens":1,"output_tokens":0}}}""",
     """{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}""",
     """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"synthetic success"}}""",
     """{"type":"content_block_stop","index":0}""",

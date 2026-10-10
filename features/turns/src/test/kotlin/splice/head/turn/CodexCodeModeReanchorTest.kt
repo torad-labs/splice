@@ -121,7 +121,11 @@ class CodexCodeModeReanchorTest {
             if (posts++ == 0) {
                 TurnOutcome.Failure(
                     "synthetic prose transport tear",
-                    cause = if (mode == "first-byte") FailureCause.UPSTREAM_CONN_RESET else FailureCause.UPSTREAM_TRUNCATED,
+                    cause = if (mode == "first-byte") {
+                        FailureCause.UPSTREAM_CONN_RESET
+                    } else {
+                        FailureCause.UPSTREAM_TRUNCATED
+                    },
                     phase = if (mode == "first-byte") FailurePhase.FIRST_BYTE else FailurePhase.MID_OUTPUT,
                     partial = TurnOutcome.PartialRound(
                         text = RoundText(
@@ -365,7 +369,8 @@ class CodexCodeModeReanchorTest {
         val frames = if (events == 0) {
             listOf(
                 event(
-                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"synthetic","encrypted_content":"synthetic"}}""",
+                    """{"type":"response.output_item.done","output_index":0,"item":{""" +
+                        """"type":"reasoning","id":"synthetic","encrypted_content":"synthetic"}}""",
                 ),
             )
         } else {

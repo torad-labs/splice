@@ -134,7 +134,8 @@ class HeadEventsTest(@param:TempDir private val root: Path) {
                 assertEquals(
                     listOf("start $SESSION", "end ${row.first} ${row.second} $SESSION"),
                     rig.events.turnCalls(),
-                    "turn.start must carry the client's session, and turn.end the row the head wrote and the same session",
+                    "turn.start must carry the client's session, and turn.end the row the head wrote and " +
+                        "the same session",
                 )
             } finally {
                 rig.close()
@@ -208,8 +209,8 @@ class HeadEventsTest(@param:TempDir private val root: Path) {
                         "end ${rows[2].first} ${rows[2].second} $SESSION",
                     ),
                     rig.events.turnCalls(),
-                    "each call reported once; the exact query answered locally with no turn; the near miss served AND " +
-                        "counted; one turn sample in the interval",
+                    "each call reported once; the exact query answered locally with no turn; the near miss " +
+                        "served AND counted; one turn sample in the interval",
                 )
             } finally {
                 rig.close()

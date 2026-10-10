@@ -244,7 +244,8 @@ private class IdentityRig(
             header("x-unrelated-client-header", "not-forwardable")
             header("Content-Type", "application/json")
             setBody(
-                """{"model":"claude-splice--$MODEL","max_tokens":16,"messages":[{"role":"user","content":"hi"}],"stream":true}""",
+                """{"model":"claude-splice--$MODEL","max_tokens":16,""" +
+                    """"messages":[{"role":"user","content":"hi"}],"stream":true}""",
             )
         }
         response.status to response.bodyAsText()

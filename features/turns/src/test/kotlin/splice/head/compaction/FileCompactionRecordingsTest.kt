@@ -81,7 +81,7 @@ class FileCompactionRecordingsTest(@TempDir tempDir: Path) {
     }
 
     @Test
-    fun `an owner evicted from both caches while it is delivered spends its file, and a stale generation never spends a newer one`() {
+    fun `an owner evicted from both caches spends its file, and a stale generation never spends a newer one`() {
         val replay = CompactionReplay(store(), capacity = 2)
         val key = checkNotNull(replay.key("sess-1", "{}"))
         val owner = wholeAnswer()
@@ -122,20 +122,21 @@ class FileCompactionRecordingsTest(@TempDir tempDir: Path) {
     }
 
     @Test
-    fun `an answer kept by the build before generations is still served after an upgrade, and spent by its delivery`() = runTest {
-        val key = checkNotNull(CompactionReplay().key("sess-1", "{}"))
-        val legacy = writeLegacy(key, frames)
+    fun `an answer kept by the build before generations is still served after an upgrade, and spent by its delivery`() =
+        runTest {
+            val key = checkNotNull(CompactionReplay().key("sess-1", "{}"))
+            val legacy = writeLegacy(key, frames)
 
-        val replay = CompactionReplay(store())
-        val restored = checkNotNull(replay.lookup(key)) { "the retry finds the answer the old build kept" }
-        val served = mutableListOf<String>()
-        assertTrue(restored.follow { served += it })
-        assertEquals(frames, served)
+            val replay = CompactionReplay(store())
+            val restored = checkNotNull(replay.lookup(key)) { "the retry finds the answer the old build kept" }
+            val served = mutableListOf<String>()
+            assertTrue(restored.follow { served += it })
+            assertEquals(frames, served)
 
-        replay.consumed(key, restored)
-        assertTrue(!Files.exists(legacy), "the delivery spends the legacy file")
-        assertNull(CompactionReplay(store()).lookup(key))
-    }
+            replay.consumed(key, restored)
+            assertTrue(!Files.exists(legacy), "the delivery spends the legacy file")
+            assertNull(CompactionReplay(store()).lookup(key))
+        }
 
     @Test
     fun `a newer answer kept over a legacy file replaces it, and the legacy delivery leaves the newer one`() {

@@ -571,7 +571,9 @@ class WatchdogProgressRoundTest {
         "reasoning" -> {
             val stage = if (index % 2 == 0) "added" else "done"
             ev(
-                """{"type":"response.output_item.$stage","output_index":${index / 2},"item":{"type":"reasoning","id":"synthetic-${index / 2}","summary":[],"encrypted_content":"synthetic-opaque"}}""",
+                """{"type":"response.output_item.$stage","output_index":${index / 2},"item":{""" +
+                    """"type":"reasoning","id":"synthetic-${index / 2}","summary":[],""" +
+                    """"encrypted_content":"synthetic-opaque"}}""",
             )
         }
         "empty" -> ev("""{"type":"response.output_text.delta","delta":""}""")
@@ -612,14 +614,17 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
         val part = if (kind == "text") "content_part" else "reasoning_summary_part"
         val partType = if (kind == "text") "output_text" else "summary_text"
         add(
-            """{"type":"response.output_item.added","output_index":0,"item":{"id":"synthetic-item","type":"$item","role":"assistant","content":[],"summary":[]}}""",
+            """{"type":"response.output_item.added","output_index":0,"item":{"id":"synthetic-item",""" +
+                """"type":"$item","role":"assistant","content":[],"summary":[]}}""",
         )
         add(
-            """{"type":"response.$part.added","item_id":"synthetic-item","output_index":0,"content_index":0,"summary_index":0,"part":{"type":"$partType","text":""}}""",
+            """{"type":"response.$part.added","item_id":"synthetic-item","output_index":0,""" +
+                """"content_index":0,"summary_index":0,"part":{"type":"$partType","text":""}}""",
         )
         repeat(300) {
             add(
-                """{"type":"$type","item_id":"synthetic-item","output_index":0,"content_index":0,"summary_index":$it,"$payload":"synthetic part $it "}""",
+                """{"type":"$type","item_id":"synthetic-item","output_index":0,"content_index":0,""" +
+                    """"summary_index":$it,"$payload":"synthetic part $it "}""",
             )
         }
     }
@@ -629,7 +634,8 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
         println(
             "ws-burst kind=$kind attempts=${runner.attempts} ok=${runner.endedOk} failed=${runner.endedNotOk} " +
                 "stream_end=${snapshot?.marks?.get(PerfKeys.STREAM_END)} " +
-                "finish=${snapshot?.marks?.get(PerfKeys.FINISH)} frames=${snapshot?.counters?.get(PerfKeys.FRAMES_OUT)} " +
+                "finish=${snapshot?.marks?.get(PerfKeys.FINISH)} " +
+                "frames=${snapshot?.counters?.get(PerfKeys.FRAMES_OUT)} " +
                 "start_rejected=${snapshot?.counters?.get(PerfKeys.CODE_MODE_START_REJECTED)}",
         )
     }
@@ -646,8 +652,9 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
     @ParameterizedTest
     @ValueSource(strings = ["text", "thinking"])
     fun `a completed WS burst delivers its terminal without waiting for the watchdog`(kind: String) = runBlocking {
-        val events = responseBurst(kind) +
-            """{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":10,"output_tokens":300}}}"""
+        val completed = """{"type":"response.completed","response":{"status":"completed",""" +
+            """"usage":{"input_tokens":10,"output_tokens":300}}}"""
+        val events = responseBurst(kind) + completed
         val runner = ScriptedRunner(events)
         val h = head(runner)
         h.start()
@@ -672,7 +679,8 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
             responseBurst(kind),
             continuationEvents = listOf(
                 """{"type":"response.output_text.delta","delta":"synthetic recovered answer"}""",
-                """{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":10,"output_tokens":3}}}""",
+                """{"type":"response.completed","response":{"status":"completed",""" +
+                    """"usage":{"input_tokens":10,"output_tokens":3}}}""",
             ),
         )
         val h = head(runner)
@@ -733,13 +741,15 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
     }
 
     private fun customSource(ending: String): List<String> = buildList {
-        val prefix = """{"id":"synthetic-exec","type":"custom_tool_call","call_id":"synthetic-call","name":"exec","input":"""
+        val prefix =
+            """{"id":"synthetic-exec","type":"custom_tool_call","call_id":"synthetic-call","name":"exec","input":"""
         val source = "synthetic source;".repeat(300)
         add("""{"type":"response.created","response":{"id":"synthetic-custom-response"}}""")
         add("""{"type":"response.output_item.added","output_index":0,"item":$prefix""}}""")
         repeat(300) {
             add(
-                """{"type":"response.custom_tool_call_input.delta","item_id":"synthetic-exec","output_index":0,"delta":"synthetic source;"}""",
+                """{"type":"response.custom_tool_call_input.delta","item_id":"synthetic-exec",""" +
+                    """"output_index":0,"delta":"synthetic source;"}""",
             )
         }
         if (ending != "worker-wait") {
@@ -747,7 +757,8 @@ class WsCompletionTest(@param:TempDir private val tmp: Path) {
         }
         if (ending == "completed") {
             add(
-                """{"type":"response.completed","response":{"status":"completed","output":[$prefix"$source"}],"usage":{"input_tokens":10,"output_tokens":300}}}""",
+                """{"type":"response.completed","response":{"status":"completed","output":[""" +
+                    """$prefix"$source"}],"usage":{"input_tokens":10,"output_tokens":300}}}""",
             )
         }
     }
@@ -1179,11 +1190,13 @@ class WsRoundDriverTest {
         val runner = ScriptedRunner(
             listOf(
                 """{"type":"response.created","response":{"id":"r1"}}""",
-                """{"type":"response.output_item.added","output_index":0,"item":{"type":"message","role":"assistant"}}""",
+                """{"type":"response.output_item.added","output_index":0,"item":{""" +
+                    """"type":"message","role":"assistant"}}""",
                 """{"type":"response.content_part.added","output_index":0,"content_index":0,""" +
                     """"part":{"type":"output_text","text":""}}""",
                 """{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"draft"}""",
-                """{"type":"response.failed","response":{"id":"r1","error":{"code":"server_error","message":"boom"}}}""",
+                """{"type":"response.failed","response":{"id":"r1",""" +
+                    """"error":{"code":"server_error","message":"boom"}}}""",
             ),
         )
         val client = RecordingSink2()

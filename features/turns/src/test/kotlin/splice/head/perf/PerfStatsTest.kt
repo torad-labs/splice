@@ -168,7 +168,8 @@ class PerfStatsTest {
         assertNull(stats.measuredInputs.estimate("session", "fork", "m", appended))
         val image = body(
             """{"model":"m","input":[{"role":"user","content":"a"},""" +
-                """{"role":"user","content":[{"type":"image","source":{"type":"base64","data":"${"x".repeat(500_000)}"}}]}]}""",
+                """{"role":"user","content":[{"type":"image",""" +
+                """"source":{"type":"base64","data":"${"x".repeat(500_000)}"}}]}]}""",
         )
         assertNull(
             stats.measuredInputs.estimate("session", "first", "m", image),

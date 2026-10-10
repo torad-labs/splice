@@ -52,7 +52,11 @@ class RoundSerializationTest {
 
     @Test
     fun `round wire keeps non ASCII escaping and nested tool blocks byte identical`() = runTest {
-        val golden = """{"model":"synthetic","messages":[{"role":"assistant","content":[{"type":"text","text":"café 🐉\nquote \" and slash \\"},{"type":"tool_use","id":"synthetic-id","name":"synthetic_tool","input":{"nested":[{"text":"🧪","tab":"\t"}],"number":1.0,"null":null}}]}]}"""
+        val golden =
+            """{"model":"synthetic","messages":[{"role":"assistant","content":[{"type":"text",""" +
+                """"text":"café 🐉\nquote \" and slash \\"}""" +
+                """,{"type":"tool_use","id":"synthetic-id","name":"synthetic_tool",""" +
+                """"input":{"nested":[{"text":"🧪","tab":"\t"}],"number":1.0,"null":null}}]}]}"""
         val actual = SerializationRig(tmp).turn(Json.parseToJsonElement(golden).jsonObject)
         assertArrayEquals(golden.toByteArray(Charsets.UTF_8), actual.toByteArray(Charsets.UTF_8))
     }

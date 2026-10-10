@@ -19,9 +19,11 @@ import splice.core.wire.ThinkingBlock
 
 // node -e "import('./server/src/reasoning/replay.mjs').then(m => console.log(m.encodeReasoningEnvelope(...)))"
 private const val NODE_WITH_SUMMARY =
-    "eyJ0YWciOiJzcGxpY2UtcmVhc29uaW5nIiwidiI6MSwiaXRlbSI6eyJpZCI6InJzX2ZpeCIsImVuY3J5cHRlZF9jb250ZW50IjoiRU5DMTIzIiwic3VtbWFyeSI6W3sidHlwZSI6InN1bW1hcnlfdGV4dCIsInRleHQiOiJzdW0ifV19fQ=="
+    "eyJ0YWciOiJzcGxpY2UtcmVhc29uaW5nIiwidiI6MSwiaXRlbSI6eyJpZCI6InJzX2ZpeCIsImVuY3J5cHRlZF9jb250ZW50Ijoi" +
+        "RU5DMTIzIiwic3VtbWFyeSI6W3sidHlwZSI6InN1bW1hcnlfdGV4dCIsInRleHQiOiJzdW0ifV19fQ=="
 private const val NODE_NO_SUMMARY =
-    "eyJ0YWciOiJzcGxpY2UtcmVhc29uaW5nIiwidiI6MSwiaXRlbSI6eyJpZCI6InJzX2ZpeDIiLCJlbmNyeXB0ZWRfY29udGVudCI6IkVOQzQ1NiJ9fQ=="
+    "eyJ0YWciOiJzcGxpY2UtcmVhc29uaW5nIiwidiI6MSwiaXRlbSI6eyJpZCI6InJzX2ZpeDIiLCJlbmNy" +
+        "eXB0ZWRfY29udGVudCI6IkVOQzQ1NiJ9fQ=="
 
 private fun obj(json: String) = Json.parseToJsonElement(json).jsonObject
 
@@ -99,18 +101,19 @@ class ReplayMirrorTest {
     }
 }
 
-private fun sinkCapturing(texts: MutableList<String>): splice.upstream.sse.WireSink = object : splice.upstream.sse.WireSink {
-    private var next = 0
-    override suspend fun openText() = splice.core.index.WireBlockIndex(next++)
-    override suspend fun openThinking() = splice.core.index.WireBlockIndex(next++)
-    override suspend fun openTool(id: String, name: String) = splice.core.index.WireBlockIndex(next++)
-    override suspend fun textDelta(index: splice.core.index.WireBlockIndex, text: String) = Unit
-    override suspend fun thinkingDelta(index: splice.core.index.WireBlockIndex, thinking: String) = Unit
-    override suspend fun inputJsonDelta(index: splice.core.index.WireBlockIndex, partialJson: String) = Unit
-    override suspend fun closeBlock(index: splice.core.index.WireBlockIndex) = Unit
-    override suspend fun closeAll() = Unit
-    override suspend fun addTextBlock(text: String) {
-        texts.add(text)
+private fun sinkCapturing(texts: MutableList<String>): splice.upstream.sse.WireSink =
+    object : splice.upstream.sse.WireSink {
+        private var next = 0
+        override suspend fun openText() = splice.core.index.WireBlockIndex(next++)
+        override suspend fun openThinking() = splice.core.index.WireBlockIndex(next++)
+        override suspend fun openTool(id: String, name: String) = splice.core.index.WireBlockIndex(next++)
+        override suspend fun textDelta(index: splice.core.index.WireBlockIndex, text: String) = Unit
+        override suspend fun thinkingDelta(index: splice.core.index.WireBlockIndex, thinking: String) = Unit
+        override suspend fun inputJsonDelta(index: splice.core.index.WireBlockIndex, partialJson: String) = Unit
+        override suspend fun closeBlock(index: splice.core.index.WireBlockIndex) = Unit
+        override suspend fun closeAll() = Unit
+        override suspend fun addTextBlock(text: String) {
+            texts.add(text)
+        }
+        override suspend fun addRedactedThinking(data: String) = Unit
     }
-    override suspend fun addRedactedThinking(data: String) = Unit
-}

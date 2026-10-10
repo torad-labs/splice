@@ -102,7 +102,8 @@ private class HoldingSseUpstream {
         val now = System.nanoTime()
         return parked.values.sortedBy { it.remotePort }.joinToString("; ") {
             "marker=${it.marker} cancelled=${it.marker != null && it.marker in cancelledMarkers} " +
-                "remote_port=${it.remotePort} accepted_age_ms=${TimeUnit.NANOSECONDS.toMillis(now - it.acceptedAtNanos)} " +
+                "remote_port=${it.remotePort} " +
+                "accepted_age_ms=${TimeUnit.NANOSECONDS.toMillis(now - it.acceptedAtNanos)} " +
                 "after_cancel_ms=${TimeUnit.NANOSECONDS.toMillis(now - maxOf(cancelledAtNanos, it.acceptedAtNanos))}"
         }
     }

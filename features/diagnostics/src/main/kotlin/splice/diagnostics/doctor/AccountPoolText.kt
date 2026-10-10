@@ -57,7 +57,7 @@ public class AccountPoolText(private val now: WallClock = WallClock { System.cur
             CheckStatus.WARN,
             "every account is out ($at): $detail",
             if (safe.accounts.all { it.label.startsWith("native:") }) {
-                "Wait for the earliest reset above, or add an account: splice login $headKey --label <name>"
+                "Wait for the earliest reset above, or run another of the native login places and use /login."
             } else {
                 "splice login $headKey --label <name>"
             },

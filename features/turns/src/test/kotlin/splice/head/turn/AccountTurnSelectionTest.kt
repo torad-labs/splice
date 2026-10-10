@@ -3,15 +3,20 @@ package splice.head.turn
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
+import io.ktor.utils.io.readLine
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
@@ -364,7 +369,7 @@ class AccountTurnSelectionTest(@param:TempDir private val root: Path) {
     }
 }
 
-private class AccountTurnRig(root: Path, private val credentialPresent: Boolean = true) {
+internal class AccountTurnRig(root: Path, private val credentialPresent: Boolean = true) {
     private val tmp = Files.createDirectory(root.resolve(UUID.randomUUID().toString()))
     private val mock = MockChatGptUpstream()
 
@@ -421,18 +426,44 @@ private class AccountTurnRig(root: Path, private val credentialPresent: Boolean 
     }
 
     suspend fun messages(sessionId: String = SESSION, scenario: String = "basic"): HttpResponse =
-        client.post("http://127.0.0.1:$port/v1/messages") {
-            header("Content-Type", "application/json")
-            header("x-claude-code-session-id", sessionId)
-            setBody(
-                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
-                    "system":"You are a test. SCENARIO:$scenario",
-                    "messages":[{"role":"user","content":"go"}]}""",
-            )
+        client.post("http://127.0.0.1:$port/v1/messages", turnRequest(sessionId, scenario))
+
+    /** One turn read line by line, each line handed to [onLine] as it arrives, so a test can act while the turn is
+     *  still in flight. Returns the whole stream. */
+    suspend fun streamed(sessionId: String = SESSION, scenario: String = "basic", onLine: (String) -> Unit): String {
+        val text = StringBuilder()
+        client.preparePost("http://127.0.0.1:$port/v1/messages", turnRequest(sessionId, scenario)).execute { reply ->
+            val channel = reply.bodyAsChannel()
+            while (true) {
+                val line = channel.readLine() ?: break
+                text.append(line).append('\n')
+                onLine(line)
+            }
         }
+        return text.toString()
+    }
+
+    private fun turnRequest(sessionId: String, scenario: String): HttpRequestBuilder.() -> Unit = {
+        header("Content-Type", "application/json")
+        header("x-claude-code-session-id", sessionId)
+        setBody(
+            """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
+                "system":"You are a test. SCENARIO:$scenario",
+                "messages":[{"role":"user","content":"go"}]}""",
+        )
+    }
+
+    /** The upstream's "hold" scenario blocks after its first delta until [releaseHold]. */
+    fun holdUpstream() = mock.resetHold()
+
+    fun releaseHold() = mock.releaseHold()
 
     fun exhaustPrimary() {
         primaryQuota.record(quota(100.0))
+    }
+
+    fun recoverPrimary() {
+        primaryQuota.record(quota(10.0))
     }
 
     fun exhaustAll(resetEpochSeconds: Long): Long {
@@ -485,13 +516,20 @@ private class AccountTurnRig(root: Path, private val credentialPresent: Boolean 
 
     fun accountHeaders(): List<String?> = mock.upstreamAccountIds.map { it.second }
 
-    fun poolView() = pool.view(SESSION)
+    fun poolView(sessionId: String = SESSION) = pool.view(sessionId)
+
+    /** The session and thread ids each upstream request carried, in arrival order. */
+    fun routingHeaders(): List<Pair<String?, String?>> = mock.upstreamRouting.toList()
 
     fun logs(): List<String> = logs.toList()
 
     fun localErrors(): Long = head.healthSnapshot().localOriginErrors
 
     fun providerErrors(): Long = head.healthSnapshot().providerErrors
+
+    /** Every perf row written so far, one JSON object per turn. */
+    fun perfRows(): List<JsonObject> =
+        perfText().lineSequence().filter { it.isNotBlank() }.map { Json.parseToJsonElement(it).jsonObject }.toList()
 
     fun perfText(): String {
         assertTrue(AsyncFileIo.drain())

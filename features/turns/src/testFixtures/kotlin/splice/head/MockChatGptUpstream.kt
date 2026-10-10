@@ -45,6 +45,9 @@ class MockChatGptUpstream(
 ) {
     val upstreamAuths = CopyOnWriteArrayList<Pair<String, String?>>()
     val upstreamAccountIds = CopyOnWriteArrayList<Pair<String, String?>>()
+
+    /** The `session-id` and `thread-id` headers of each request, in arrival order. */
+    val upstreamRouting = CopyOnWriteArrayList<Pair<String?, String?>>()
     val upstreamBodies = CopyOnWriteArrayList<Pair<String, String>>()
     val abortedScenarios = CopyOnWriteArrayList<String>()
     val refreshCalls = AtomicInteger(0)
@@ -141,6 +144,7 @@ class MockChatGptUpstream(
         val auth = ex.requestHeaders.getFirst("Authorization")
         upstreamAuths.add(scenario to auth)
         upstreamAccountIds.add(scenario to ex.requestHeaders.getFirst("ChatGPT-Account-ID"))
+        upstreamRouting.add(ex.requestHeaders.getFirst("session-id") to ex.requestHeaders.getFirst("thread-id"))
         upstreamBodies.add(scenario to raw)
 
         if (scenario == "refresh" && auth == "Bearer tok-old") {

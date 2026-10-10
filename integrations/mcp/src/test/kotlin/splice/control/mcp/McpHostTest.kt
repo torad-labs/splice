@@ -183,6 +183,29 @@ class McpHostTest : McpHostFixture() {
     }
 
     @Test
+    fun `tools list is asked of the child once for every session until the child says it changed`() = runBlocking {
+        boot()
+        val a = init()
+        val b = init()
+        val initialized = """{"jsonrpc":"2.0","method":"notifications/initialized"}"""
+        listOf(a, b).forEach { assertEquals(202, host.post("fake", it, initialized).status) }
+        suspend fun listing(session: String, id: Int): String {
+            val body = """{"jsonrpc":"2.0","id":${id},"method":"tools/list"}"""
+            val reply = json.parseToJsonElement(host.post("fake", session, body).body!!).jsonObject
+            assertEquals(id.toString(), reply["id"]!!.jsonPrimitive.content, "the answer carries the asker's own id")
+            return reply["result"]!!.jsonObject["listing"]!!.jsonPrimitive.content
+        }
+
+        assertEquals("1", listing(a, 11))
+        assertEquals("1", listing(b, 12), "the second session is served the cached list")
+        assertEquals("1", listing(a, 13))
+        val stream = checkNotNull(host.openStream("fake", a))
+        call(a, 14, "notify")
+        withTimeout(MCP_HOST_STREAM_WAIT_MS) { stream.receive() }
+        assertEquals("2", listing(b, 15), "a list_changed from the child drops the cache")
+    }
+
+    @Test
     fun `a progress notification reaches only the session whose request carries its token`() =
         runBlocking {
             boot()

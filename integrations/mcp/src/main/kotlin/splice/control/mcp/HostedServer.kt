@@ -63,6 +63,8 @@ internal class HostedServer(
 
     @Volatile private var initResult: JsonObject? = null
 
+    private val tools = ToolsListCache(codec)
+
     @Volatile var lastError: String? = null
         private set
 
@@ -93,6 +95,10 @@ internal class HostedServer(
             is McpResult.Refused -> return codec.error(clientId, RPC_SERVER_ERROR, up.reason)
             is McpResult.Served -> Unit
         }
+        return tools.answer(request, clientId, ListingAsk { forward(sessionId, clientId, request) })
+    }
+
+    private suspend fun forward(sessionId: String, clientId: JsonElement, request: JsonObject): JsonObject {
         val hostId = ids.getAndIncrement()
         val (out, token) = progress.outbound(request, hostId)
         val slot = Pending(sessionId, clientId, token)
@@ -142,6 +148,7 @@ internal class HostedServer(
                 process = null
                 writer = null
                 initResult = null
+                tools.drop()
             }
         }
         failPending("hosted MCP server '${spec.name}' closed: $reason")
@@ -263,6 +270,7 @@ internal class HostedServer(
                 if (it) {
                     process = null
                     initResult = null
+                    tools.drop()
                 }
             }
         }
@@ -285,6 +293,7 @@ internal class HostedServer(
                 // A missing owner is late or unknown progress, never a global notification.
                 progress.owner(msg, pending)?.let { (slot, routed) -> sink.onProgress(slot.sessionId, routed) }
             } else {
+                if (codec.method(msg) == "notifications/tools/list_changed") tools.drop()
                 sink.onNotification(msg)
             }
             RpcKind.INVALID -> Unit

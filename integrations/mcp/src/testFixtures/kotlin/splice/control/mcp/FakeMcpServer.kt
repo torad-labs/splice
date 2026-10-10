@@ -43,6 +43,7 @@ public object FakeMcpServer {
 
     private val queued = ArrayDeque<String>()
     private var releases = 0
+    private var listings = 0
     private val input: BufferedReader by lazy { System.`in`.bufferedReader() }
 
     /** The launcher-config entry that starts this server in a child JVM; [env] rides along as the
@@ -99,7 +100,16 @@ public object FakeMcpServer {
                     },
                 ),
             )
-            "tools/list" -> send(reply(id, buildJsonObject { put("tools", JsonArray(listOf(echoTool()))) }))
+            "tools/list" -> send(
+                reply(
+                    id,
+                    buildJsonObject {
+                        put("tools", JsonArray(listOf(echoTool())))
+                        // How many times THIS process was asked: a host that caches shows the same number twice.
+                        put("listing", ++listings)
+                    },
+                ),
+            )
             "tools/call" -> call(id, checkNotNull(params))
         }
     }

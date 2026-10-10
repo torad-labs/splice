@@ -587,7 +587,7 @@ step "wrapper turn after the upgrade: claude-mockchat -p through its head" in_di
 # the one the 0.3.2 turns left on disk, so the candidate serving it is retention and nothing else.
 # `entries` is the usage file's own turn count, which only a turn writes.
 quota_survives() {
-  curl_mgmt -f "http://127.0.0.1:$CONTROL_PORT/api/usage" | bun "$LIB_TS" usage-head claude-kimi 1 42
+  curl_mgmt -f "http://127.0.0.1:$CONTROL_PORT/api/usage" | bun "$LIB_TS" usage-head claude-kimi 1 42 "record:$PRIVATE/kimi-tokens.pre"
 }
 step "quota: the candidate serves the reading $FROM_TAG's turns left, before a turn of its own" quota_survives
 
@@ -616,10 +616,13 @@ kimi_reads() {
   bun "$LIB_TS" subs-seen "$SUBS_LOG" "$skip" /kimi/v1/messages x_api_key current || return 1
   bun "$LIB_TS" subs-seen "$SUBS_LOG" "$skip" /kimi/v1/messages identity complete || return 1
   # The candidate's own turn observed the vendor's new utilization, which is the other half of the
-  # retention claim: the 42% above was the kept reading, not whatever the vendor says now. One entry is
-  # the floor, not two: entries are one-minute buckets (UsageRing), and v0.3.2's turn and the candidate's
-  # land in the same minute on a fast run, so a floor of two passed only when the run crossed a minute.
-  curl_mgmt -f "http://127.0.0.1:$CONTROL_PORT/api/usage" | bun "$LIB_TS" usage-head claude-kimi 1 77
+  # retention claim: the 42% above was the kept reading, not whatever the vendor says now. The entry floor
+  # is one because entries are one-minute buckets (UsageRing): v0.3.2's turn and the candidate's land in the
+  # same minute on a fast run, so a floor of two passed only when the run crossed a minute. What proves the
+  # candidate wrote its OWN turn is the output tokens over the window, recorded before the turn and required
+  # to be higher after it, which no bucketing can hide.
+  curl_mgmt -f "http://127.0.0.1:$CONTROL_PORT/api/usage" |
+    bun "$LIB_TS" usage-head claude-kimi 1 77 "above:$PRIVATE/kimi-tokens.pre"
 }
 step "the 0.3.2 Kimi credential still signs in: x-api-key from its file, with the five X-Msh-* headers" \
   in_dir "$WORK" kimi_reads

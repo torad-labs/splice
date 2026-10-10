@@ -253,7 +253,7 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
 
   /** usage-head < /api/usage <head> <min-entries> <five-hour-used-pct> — the daemon reports <head>
    *  with at least <min-entries> usage entries (one-minute buckets, so two turns in one minute are one
-   *  entry) and a five-hour window at <five-hour-used-pct>. WHICH
+   *  entry) and a five-hour window at <five-hour-used-pct>, with an optional `record:`/`above:` token check. WHICH
    *  reading that is, is decided by WHEN the step runs: the upgrade rehearsal asks before its first
    *  post-upgrade turn on the head, when the only reading in existence is the one the old release's
    *  turns left on disk, and then moves the vendor's utilization before asking again. */
@@ -272,6 +272,17 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
     const fiveHour = obj(quota["five_hour"]);
     console.log(`${head}: usage=${JSON.stringify(usage["entries"])} five_hour=${JSON.stringify(fiveHour)}`);
     check(Number(usage["entries"]) >= minEntries, `${head} reports ${usage["entries"]} usage entries`);
+    // Optional 4th argument, `record:<file>` or `above:<file>`: the head's output tokens over the window. A turn
+    // adds its output tokens whatever minute bucket it lands in, so a step that records the figure before the
+    // candidate's turn and asks for more after it proves the candidate wrote its own turn, which a count of
+    // one-minute buckets cannot.
+    const tokens = Number(usage["output_tokens_5h"]);
+    const mode = argv[3] ?? "";
+    if (mode.startsWith("record:")) writeFileSync(mode.slice("record:".length), String(tokens));
+    if (mode.startsWith("above:")) {
+      const before = Number(readFileSync(mode.slice("above:".length), "utf8"));
+      check(tokens > before, `${head}'s output tokens over the window are ${tokens}, not above the ${before} read before the turn`);
+    }
     check(
       Number(fiveHour["used_pct"]) === wantPct,
       `${head}'s five-hour window reads ${fiveHour["used_pct"]}%, wanted ${wantPct}%`,

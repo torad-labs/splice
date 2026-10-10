@@ -27,12 +27,10 @@ package splice.app.sources
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.longOrNull
 import splice.core.perf.LivenessProbe
 import splice.core.perf.PerfArchiveName
 import splice.core.perf.PerfKeys
-import splice.core.perf.PerfTurnIds
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
@@ -42,52 +40,16 @@ import splice.usage.perf.PerfRow
 import splice.usage.perf.PerfRowsProjection
 import splice.usage.perf.PerfRowsSource
 import splice.usage.perf.PerfRowsWindow
-import splice.usage.perf.PerfTranscriptLink
-import splice.usage.perf.PerfTurnFacts
 import splice.usage.perf.ProjectedPerfRowsSource
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
-private const val REPLACEMENT_CHAR = '\uFFFD'
-
-/** Pre-cutoff counter samples kept; a run of more torn lines than this before the cutoff costs
- *  the baseline, not the window (JsonlSink heals a torn tail before the next append). */
-private const val BASELINE_CANDIDATES = 4
-
-/** Pre-cutoff lines skipped unparsed that are kept as the newest row's evidence, highest leading ts
- *  first; a run of more torn lines than this at the newest end costs `newestHeldTs` precision (it
- *  names an older valid row), never validity. */
-private const val NEWEST_CANDIDATES = 4
-
-/** A baseline sample: the counter already parsed, or the raw writer-shaped line still to parse. */
-private data class Baseline(val drops: Long? = null, val raw: String? = null)
-
-/** A pre-cutoff line skipped unparsed, ordered by its leading-ts [hint]; only its parse is a row. */
-private data class Skipped(val hint: Long, val raw: String? = null, val ts: Long? = null)
 private enum class PerfSelection { WORK, ECONOMICS }
 
 /** One settled scan supplies the work and probe sides of historical economics reconciliation. */
 internal data class EconomicsPerfEvidence(val work: PerfRowsWindow, val probes: List<PerfRow>)
-private const val UNATTRIBUTED = "?"
-
-// V4-127: the perf ROW HEADER keys — the writer's string-and-flag facts, spelled as PerfStats.record
-// writes them. NOT PerfKeys members, because PerfKeys is the catalogue of marks and counters and these
-// five are the row's header; the header keys are literals inside PerfStats.record, one module away.
-// NAMED HERE rather than inlined five more times so that a key renamed on the write side reads as ONE
-// place to look rather than five (the split is reported; the writer is outside this row's fence).
-private const val MODEL_KEY = "model"
-private const val SESSION_KEY = "session"
-private const val SESSION_ID_KEY = "session_id"
-private const val RESPONSE_ID_KEY = "response_message_id"
-private const val ACCOUNT_KEY = "account"
-private const val CACHE_COLD_KEY = "cache_cold"
-private const val COMPACT_KEY = "compact"
-
-// Trace lookup and request ownership stay separate, including on a head with capture off.
-private const val TURN_KEY = "turn"
-private const val REQUEST_TURN_KEY = "turn_id"
 
 public class PerfRowsFileSource internal constructor(
     private val file: Path,
@@ -274,12 +236,12 @@ public class PerfRowsFileSource internal constructor(
         /** The newest pre-cutoff counter samples, newest last: a parsed row contributes its parsed
          *  counter, a skipped writer-shaped line its raw text (parsed only if it is needed), so a
          *  torn or counter-less line never erases a sample and spacing never hides one. */
-        private val before = ArrayDeque<Baseline>(BASELINE_CANDIDATES)
 
         /** The pre-cutoff lines skipped unparsed with the highest leading-ts hints, ascending: the
          *  newest row's evidence when the window itself holds none (a head idle past the window).
          *  Parsed only then, and only the parse is a row's time — a hint never is. */
-        private val latest = ArrayList<Skipped>(NEWEST_CANDIDATES + 1)
+        private val held = PerfCandidates()
+        private val rowShape = PerfRowShape()
 
         override fun beforeCutoff(line: String): Long? =
             if (afterInWindowRow || emptyModel.containsMatchIn(line)) null else provablyBefore(line)
@@ -292,7 +254,7 @@ public class PerfRowsFileSource internal constructor(
             if (maximum < sinceMs) {
                 afterInWindowRow = false
                 newest = maxOf(newest ?: maximum, maximum)
-                latestCandidate(Skipped(maximum, ts = maximum))
+                held.skipped(Skipped(maximum, ts = maximum), rows.isNotEmpty(), newest)
             }
         }
 
@@ -301,8 +263,8 @@ public class PerfRowsFileSource internal constructor(
         override fun raw(line: String) {
             val hint = provablyBefore(line).takeUnless { afterInWindowRow }
             if (hint != null && !emptyModel.containsMatchIn(line)) {
-                if (dropsField.containsMatchIn(line)) candidate(Baseline(raw = line))
-                latestCandidate(Skipped(hint, line))
+                if (dropsField.containsMatchIn(line)) held.baseline(Baseline(raw = line), rows.isNotEmpty())
+                held.skipped(Skipped(hint, line), rows.isNotEmpty(), newest)
                 return
             }
             kept(decode(line))
@@ -337,7 +299,7 @@ public class PerfRowsFileSource internal constructor(
             if (obj == null || ts == null) return facts
             val fields = rowsCache.fields(obj)
             return facts.copy(
-                row = row(ts, obj, fields),
+                row = rowShape.row(ts, obj, fields),
                 numericBytes = fields.retainedBytes,
                 probe = LivenessProbe.legacyRow(obj),
             )
@@ -352,9 +314,9 @@ public class PerfRowsFileSource internal constructor(
             afterInWindowRow = row.ts >= sinceMs
             if (skipBefore(line)) return
             oldest = minOf(oldest ?: row.ts, row.ts)
-            if (row.ts < sinceMs) line.drops.count?.let { candidate(Baseline(drops = it)) }
+            held.cutoffSample(line.drops.count, row.ts < sinceMs, rows.isNotEmpty())
             if (line.probe) {
-                probe(row)
+                if (row.ts >= sinceMs && selection == PerfSelection.ECONOMICS) probes += row
                 return
             }
             newest = maxOf(newest ?: row.ts, row.ts)
@@ -373,13 +335,9 @@ public class PerfRowsFileSource internal constructor(
             if (known == null || hint == null) return false
             val before = hint < sinceMs && hint >= known
             if (!before || line.emptyModel) return false
-            if (line.drops.candidate) candidate(Baseline(drops = line.drops.count))
-            latestCandidate(Skipped(hint, ts = line.row?.ts))
+            if (line.drops.candidate) held.baseline(Baseline(drops = line.drops.count), rows.isNotEmpty())
+            held.skipped(Skipped(hint, ts = line.row?.ts), rows.isNotEmpty(), newest)
             return true
-        }
-
-        private fun probe(row: PerfRow) {
-            if (row.ts >= sinceMs && selection == PerfSelection.ECONOMICS) probes += row
         }
 
         /** The leading ts of a writer-shaped line that is before the cutoff and not older than the
@@ -394,29 +352,14 @@ public class PerfRowsFileSource internal constructor(
             }
         }
 
-        /** Keeps [sample] while it can still be the newest row: once the window holds a row, every
-         *  pre-cutoff line is older than it, and a hint at or under a parsed ts cannot beat that ts. */
-        private fun latestCandidate(sample: Skipped) {
-            if (rows.isNotEmpty() || sample.hint <= (newest ?: Long.MIN_VALUE)) return
-            val at = latest.indexOfFirst { it.hint > sample.hint }.takeIf { it >= 0 } ?: latest.size
-            latest.add(at, sample)
-            if (latest.size > NEWEST_CANDIDATES) latest.removeAt(0)
-        }
-
         /** The newest valid row's ts: the parsed maximum, or — when the window is empty — the highest
          *  skipped line that PARSES, whichever is later. */
         private fun newestHeld(): Long? {
             if (rows.isNotEmpty()) return newest
-            val unparsed = latest.asReversed().firstNotNullOfOrNull { it.ts ?: it.raw?.let(::parse)?.let(::timestamp) }
+            val unparsed = held.latest.asReversed().firstNotNullOfOrNull {
+                it.ts ?: it.raw?.let(::parse)?.let(::timestamp)
+            }
             return listOfNotNull(newest, unparsed).maxOrNull()
-        }
-
-        /** Only samples appended BEFORE the window's first row can be its baseline: a later line
-         *  stamped before the cutoff (a clock step) was sampled after it. */
-        private fun candidate(sample: Baseline) {
-            if (rows.isNotEmpty()) return
-            if (before.size == BASELINE_CANDIDATES) before.removeFirst()
-            before.addLast(sample)
         }
 
         /** A generation skipped unread because it ended before the cutoff: the files provably hold rows
@@ -428,7 +371,9 @@ public class PerfRowsFileSource internal constructor(
         fun window(): PerfRowsWindow = PerfRowsWindow(
             rows = rows,
             oldestHeldTs = oldest,
-            dropsBefore = before.asReversed().firstNotNullOfOrNull { it.drops ?: it.raw?.let(::parse)?.let(::drops) },
+            dropsBefore = held.before.asReversed().firstNotNullOfOrNull {
+                it.drops ?: it.raw?.let(::parse)?.let(::drops)
+            },
             readError = errors.takeIf { it.isNotEmpty() }?.joinToString("; "),
             skipped = skipped,
             newestHeldTs = newestHeld(),
@@ -441,38 +386,5 @@ public class PerfRowsFileSource internal constructor(
             // Scan.errors -> readError by readAll() above.
             return JsonScalars.objectOrNull(json, line)
         }
-
-        private fun row(ts: Long, obj: JsonObject, fields: Map<String, Long> = rowsCache.fields(obj)): PerfRow {
-            val outcome = JsonScalars.str(obj, "outcome")?.takeUnless { REPLACEMENT_CHAR in it } ?: UNATTRIBUTED
-            // V4-127: the writer's string-and-flag facts, read BY NAME off the same parsed object the
-            // numeric bag came from. Read by name, never by position, because four of the five are
-            // nullable and two of the strings are adjacent — a positional read silently swaps them.
-            return PerfRow(
-                ts = ts,
-                outcome = outcome,
-                cause = text(obj, "cause"),
-                fields = fields,
-                facts = PerfTurnFacts(
-                    model = text(obj, MODEL_KEY),
-                    session = text(obj, SESSION_KEY),
-                    account = text(obj, ACCOUNT_KEY),
-                    cacheCold = (obj[CACHE_COLD_KEY] as? JsonPrimitive)?.booleanOrNull,
-                    compact = (obj[COMPACT_KEY] as? JsonPrimitive)?.booleanOrNull,
-                ),
-                transcript = PerfTranscriptLink(
-                    sessionId = text(obj, SESSION_ID_KEY),
-                    responseMessageId = text(obj, RESPONSE_ID_KEY),
-                ),
-                turns = PerfTurnIds(trace = text(obj, TURN_KEY), request = text(obj, REQUEST_TURN_KEY)),
-            )
-        }
-
-        /** A descriptive string field, ABSENT when the row does not carry it or carries it TORN.
-         *  The replacement-char rule the outcome tag above already applies, for the same reason: a
-         *  torn multi-byte char means the decoded text is not what was written, and a payload the
-         *  operator is meant to trust never carries U+FFFD as if it were a value. Absent is the
-         *  honest reading; a null and an empty string are different facts and stay different. */
-        private fun text(obj: JsonObject, key: String): String? =
-            JsonScalars.str(obj, key)?.takeUnless { REPLACEMENT_CHAR in it }
     }
 }

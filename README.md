@@ -327,6 +327,78 @@ and names the earliest reset across the pool. The status line names the session'
 show the head's accounts and its last automatic switch; the daemon log
 records each switch once under `[<head>]`.
 
+### Sign in to a ChatGPT account from the console or the terminal
+
+In the console's Accounts page, a ChatGPT head's sign-in uses the device code. The daemon starts the
+flow and the page shows a verification address and a code. Open the address on any machine, enter
+the code, and the page finishes when you approve. The code lives 15 minutes. A refused or expired code
+says so on the page; try again. Pick a label when you sign in, or leave it to default to the plan
+name plus a short hash of the account id. "Sign in again" on a head's first account replaces it in
+place under its own label. The email and account id are never displayed whole: the account
+is described by a masked user id and a masked email.
+
+In a terminal, `splice login codex [--label <name>]` opens the browser flow, as before. Kimi and
+Muse use the device code in both places.
+
+### Pin a head or a session to an account
+
+Selection is automatic (see above), and you can override it. On the Accounts page, "Use now"
+pins the head to that account and the pin button on it releases the pin. The same two calls are on
+the control API, with the management key as the bearer:
+
+```sh
+curl -X POST   -H "Authorization: Bearer $KEY" -d '{"label":"work"}' \
+     http://127.0.0.1:<control port>/api/auth/codex/switch                    # the whole head
+curl -X POST   -H "Authorization: Bearer $KEY" -d '{"label":"work","session":"<session id>"}' \
+     http://127.0.0.1:<control port>/api/auth/codex/switch                    # one session only
+curl -X DELETE -H "Authorization: Bearer $KEY" \
+     "http://127.0.0.1:<control port>/api/auth/codex/switch?session=<session id>"
+```
+
+A session's pin outranks the head's pin for that session only. `DELETE` without `session` drops the
+head's pin and always answers `{"ok":true}`. A label the head does not hold, or an account with no
+credential file, is refused and nothing is pinned. A pin on an account that is out of quota falls
+back to the automatic rule and stays set. The pin takes effect on the next turn, and a daemon
+restart clears every pin. Without any pin, a session keeps its account until a limit, then moves to
+the account whose weekly window resets soonest.
+
+### API keys on the Accounts page
+
+An API-key head's key appears as an account: its variable name (for example `DEEPSEEK_API_KEY`), a short
+fingerprint, the day splice first saw it, and the keys it replaced, each with its own first-seen day.
+Rotating a key reads as a new account and the old one stays listed as replaced. The key itself is
+never shown or logged; `splice key set|list|unset` or `PUT`/`DELETE /api/keys/<VARIABLE>` manage
+the store. If the ledger (`key-ledger.json`) cannot be written, the list still answers, a key first
+seen at that moment shows no day, and the daemon log says so once.
+
+### Reading the configuration answer
+
+`GET /api/config` (add `?head=<key>` to fold in that head's overrides) answers one entry per knob in
+`knobs`: its `value`, the `scope` that set it (default, toml, head, file, env or runtime), its
+`disposition` (`live` takes effect on running sessions, `restart` needs a daemon restart), and
+`editable`. A knob that cannot be changed carries a `read_only_reason`. A head-only knob is set in
+`[heads.<key>.overrides]`, never by `PATCH`. `mirrorReasoning` is pinned false: it reads `restart`, is
+not editable, and any value written for it, in TOML or by `CLAUDEX_MIRROR_REASONING`, is dropped.
+
+### A second head on the same provider
+
+`splice add <profile> --name <key>` adds another provider-and-head pair for a profile you already
+use, for example a second ChatGPT or OpenRouter head with its own models. The key takes lowercase
+letters, digits and dashes and must be new. splice picks a free port, names the command
+`claude-<key>` unless you pass `--command`, and an API-key head reads its own `<KEY>_API_KEY`.
+`--model <id>` adds rows. A key, a command or a table that already exists is refused with a
+sentence naming it, and a duplicated TOML table is reported by name and line, never by value.
+
+### Test homes and loopback-only endpoint overrides
+
+The sign-in and usage endpoints can be pointed at a stand-in for tests: `CODEX_OAUTH_ISSUER`,
+`CODEX_OAUTH_TOKEN_URL`, `CODEX_OAUTH_AUTHORIZE_URL`, `GROK_OAUTH_ISSUER`, `GROK_OAUTH_AUTHORIZE_URL`,
+`GROK_OAUTH_TOKEN_URL`, `KIMI_OAUTH_HOST` and `CLAUDE_OAUTH_USAGE_URL`. Those endpoints receive your
+token, so splice accepts an override only when its host is `localhost`, `127.0.0.1` or `::1`.
+Any other host is ignored, the vendor's address is used, and the daemon log names the variable
+once. The rule is on the host, not on which home the daemon runs in, so a test home answers from a
+stand-in on its own machine.
+
 ### More than one Claude login on `claude-splice`
 
 A Claude head can hold multiple subscriptions. `POST /api/auth/<head>/login` on the control plane

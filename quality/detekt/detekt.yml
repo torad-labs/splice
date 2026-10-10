@@ -50,7 +50,7 @@ complexity:
     thresholdInObjects: 15
     thresholdInEnums: 15
     ignoreDeprecated: true
-    ignoreOverridden: true
+    ignoreOverridden: false
   NestedBlockDepth:
     active: true
     threshold: 4

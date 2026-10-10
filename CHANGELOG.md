@@ -672,6 +672,12 @@ origin.
   An install made before this setting keeps the window it already had (`perfArchiveRetentionDays`,
   90), because an upgrade never shortens your history on its own. An hourly total priced without a
   rate card is priced again later from its perf rows at the cards splice holds then.
+  Usage reaches as far back as the turns splice holds: an hour the hourly totals lack is built from the
+  request records behind it, priced at the cards splice holds now, so the month view is no longer drawn over
+  fewer days than the records on disk. An hour is built only when it can be exact: a read that was not whole
+  backfills nothing, the oldest hour the records reach is left out, and an hour the totals already have is
+  never replaced. A window of `0` still keeps today, because a daily budget reads today's records; they go
+  at the local midnight.
 - **Settings Storage lists what splice keeps and clears it.** It covers retained turn statistics and live session
   totals, separate from the trace deletion capture-off already does.
 - **Two provider quirks.** `summary_delivery` switches off the cutoff that empties gpt-6.1-sol reasoning summaries

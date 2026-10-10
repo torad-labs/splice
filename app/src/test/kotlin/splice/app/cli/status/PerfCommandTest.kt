@@ -96,6 +96,95 @@ class PerfCommandTest {
     }
 
     @Test
+    fun `the CLI names what slowed or failed the head's turns, by model and by kind, and what telemetry was lost`(
+        @TempDir tmp: Path,
+    ) {
+        val env = env(tmp)
+        writeMixedRows(StatePaths(envReader = env).perfStatsFile("openrouter"))
+
+        val (ok, text) = capture { PerfWiring.command().perf(listOf("--window", "1h"), env) }
+
+        assertTrue(ok)
+        assertTrue(text.contains("3 turn(s), 1 local step(s)"), "the activity answer is not a turn: $text")
+        assertTrue(text.contains("time before first byte") && text.contains("time streaming"), text)
+        assertTrue(text.contains("retries / refreshes     3 / 1"), text)
+        assertTrue(text.contains("cache hit ratio         30.0%"), "600 of 2000 input tokens: $text")
+        assertTrue(text.contains("peak inflight           5"), text)
+        assertTrue(text.contains("telemetry dropped       2 row(s)"), "two rows saw the counter rise: $text")
+        assertTrue(text.contains("kinds                   turn=2 compaction=1 activity_query=1"), text)
+        assertTrue(text.contains("model fast") && text.contains("1 turn(s), failure 0.0%"), text)
+        assertTrue(text.contains("model slow") && text.contains("2 turn(s), failure 50.0%"), text)
+    }
+
+    private fun row(at: Long, vararg fields: Pair<String, Any>) = (listOf("ts" to at) + fields).joinToString(
+        prefix = "{",
+        postfix = "}",
+    ) { (key, value) -> "\"$key\":" + if (value is String) "\"$value\"" else value }
+
+    /** Two models over four rows: a fast turn, a slow turn, a failed compaction, and the head's own activity answer. */
+    private fun writeMixedRows(file: Path) {
+        Files.createDirectories(file.parent)
+        val now = System.currentTimeMillis()
+        Files.writeString(file, (okTurns(now) + otherRows(now)).joinToString("\n", postfix = "\n"))
+    }
+
+    private fun okTurns(now: Long): List<String> {
+        val ok = arrayOf("outcome" to "ok", "compact" to false)
+        return listOf(
+            row(
+                now - 50_000,
+                "model" to "fast",
+                *ok,
+                "first_byte" to 100,
+                "stream_end" to 300,
+                "total" to 320,
+                "retries" to 1,
+                "refreshes" to 0,
+                "in_tokens" to 1000,
+                "cached_tokens" to 600,
+                "inflight" to 2,
+                "async_io_drops" to 0,
+            ),
+            row(
+                now - 40_000,
+                "model" to "slow",
+                *ok,
+                "first_byte" to 4000,
+                "stream_end" to 9000,
+                "total" to 9100,
+                "retries" to 2,
+                "refreshes" to 1,
+                "in_tokens" to 1000,
+                "cached_tokens" to 0,
+                "inflight" to 5,
+                "async_io_drops" to 1,
+            ),
+        )
+    }
+
+    private fun otherRows(now: Long): List<String> = listOf(
+        row(
+            now - 30_000,
+            "model" to "slow",
+            "outcome" to "error:upstream-failed",
+            "compact" to true,
+            "total" to 500,
+            "inflight" to 1,
+            "async_io_drops" to 3,
+        ),
+        row(
+            now - 20_000,
+            "model" to "slow",
+            "outcome" to "ok",
+            "compact" to false,
+            "total" to 1,
+            "local_step" to 1,
+            "activity_query" to 1,
+            "async_io_drops" to 3,
+        ),
+    )
+
+    @Test
     fun `an unknown window, a bare flag and a stray argument are refused and the default is 24h`(@TempDir tmp: Path) {
         val env = env(tmp)
         assertFalse(capture { PerfWiring.command().perf(listOf("--window", "2h"), env) }.first)

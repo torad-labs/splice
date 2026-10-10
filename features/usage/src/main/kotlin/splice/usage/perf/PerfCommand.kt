@@ -25,6 +25,7 @@ import java.nio.file.Files
 import java.util.Locale
 
 private const val PERCENT = 100.0
+private const val MODEL_PAD = 24
 private const val USAGE = "usage: splice perf [--window 1h|24h|7d]"
 
 /** One head's perf rows, by key: app hands in the day-file reader the daemon's own /api/perf route uses. */
@@ -97,12 +98,29 @@ public class PerfCommand(
             "$k=${JsonScalars.strOrEmpty(v)}" + shares[k]?.let { " (${share(it)})" }.orEmpty()
         }
         output.line("  outcomes                $outcomes  (failure share ${share(s["failure_share"])})")
+        kinds(s)?.let { output.line("  kinds                   $it") }
+        models(s).forEach { output.line("  model $it") }
         output.line("  retries / refreshes     ${num(s, "retries")} / ${num(s, "refreshes")}")
         output.line("  cache hit ratio         ${share(s["cache_hit_ratio"])}")
         output.line("  peak inflight           ${num(s, "peak_inflight")}")
-        val drops = num(s, "io_drops_in_window")
-        output.line("  file-io drops           at least $drops in this window (a dropped row is absent)")
+        val dropped = num(s, "telemetry_dropped")
+        val writes = num(s, "io_drops_in_window")
+        output.line("  telemetry dropped       $dropped row(s), at least $writes write(s) lost (absent from the file)")
     }
+
+    /** Only the kinds that occurred, so a head with no compaction does not print a zero for one. */
+    private fun kinds(s: JsonObject): String? = (s["kinds"] as? JsonObject)?.entries
+        ?.filter { (_, v) -> JsonScalars.strOrEmpty(v) != "0" }
+        ?.joinToString(" ") { (k, v) -> "$k=${JsonScalars.strOrEmpty(v)}" }
+        ?.takeIf { it.isNotEmpty() }
+
+    /** One line per model: its turns, failure share and total latency. */
+    private fun models(s: JsonObject): List<String> =
+        (s["models"] as? JsonObject).orEmpty().entries.map { (model, stats) ->
+            val m = stats as JsonObject
+            "${model.padEnd(MODEL_PAD)} ${num(m, "count")} turn(s), failure ${share(m["failure_share"])}, " +
+                "total ${pct(m["total_ms"])}"
+        }
 
     /** The clamp / no-rows note, and a read failure — a broken instrument is said, never blank. */
     private fun note(s: JsonObject): String {

@@ -5,7 +5,7 @@
 // as zero-latency traffic; a window the files cannot fill says so (clamped + covers_ms), no rows
 // at all says THAT, and a generation that could not be read is carried as read_error, never as
 // short retention, and while a generation is unread the coverage is UNKNOWN, never a clamp.
-// io_drops_in_window is a LOWER BOUND on the async file-io writes the daemon dropped during the
+// telemetry_dropped is the count of rows during which the counter rose; io_drops_in_window is a LOWER BOUND on the async file-io writes the daemon dropped during the
 // window: the per-row counter is cumulative per process and the rows carry no process identity,
 // so a restart is only visible as a decrease, and a new process whose count catches the old one
 // up hides its drops. A dropped perf row is absent from the file, so this is the evidence that
@@ -30,6 +30,9 @@ private const val DAYS_PER_WEEK = 7L
 
 /** A row whose outcome could not be parsed: shown under this tag, never counted as a failure. */
 internal const val UNATTRIBUTED_OUTCOME: String = "?"
+
+/** A row written before the model rode along: shown under this name, never dropped. */
+private const val UNATTRIBUTED_MODEL: String = "?"
 
 internal enum class PerfWindow(val label: String, val ms: Long) {
     H1("1h", MS_PER_HOUR),
@@ -63,11 +66,13 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
     fun json(read: PerfRowsWindow, window: PerfWindow, now: Long, firstBytes: MutableList<Long>? = null): JsonObject {
         val inWindow = read.rows.filter { it.ts >= now - window.ms }
         val (localSteps, turns) = inWindow.partition { it.fields[PerfKeys.LOCAL_STEP] == 1L }
+        val (activity, codeSteps) = localSteps.partition { it.fields[PerfKeys.ACTIVITY_QUERY] == 1L }
         val coverage = coverage(read, window, now)
         return buildJsonObject {
             put("window", window.label)
             put("count", turns.size)
             put("local_steps", localSteps.size)
+            put("kinds", kinds(turns, activity.size, codeSteps.size))
             put("empty", turns.isEmpty())
             put("last_ts", read.newestHeldTs ?: read.rows.maxOfOrNull { it.ts })
             put("coverage_known", coverage.known)
@@ -77,7 +82,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
             read.readError?.let { put("read_error", it) }
             if (read.skipped > 0) put("skipped_lines", read.skipped)
             if (turns.isNotEmpty()) metrics(turns, firstBytes).forEach { (k, v) -> put(k, v) }
-            if (inWindow.isNotEmpty()) put("io_drops_in_window", ioDrops(inWindow, read.dropsBefore))
+            if (inWindow.isNotEmpty()) ioDrops(inWindow, read.dropsBefore).forEach { (k, v) -> put(k, v) }
         }
     }
 
@@ -123,6 +128,7 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
         putJsonObject("failure_shares") { failures.forEach { (tag, n) -> put(tag, n.toDouble() / rows.size) } }
         put("unattributed", byOutcome[UNATTRIBUTED_OUTCOME] ?: 0)
         counters(rows).forEach { (k, v) -> put(k, v) }
+        put("models", JsonObject(byModel(rows)))
     }
 
     private fun latencies(rows: List<PerfRow>, firstBytes: MutableList<Long>?): JsonObject = buildJsonObject {
@@ -149,21 +155,46 @@ internal class PerfSummary(private val clock: WallClock = WallClock { System.cur
      *  wall clock may step), the first one measured against the last row before the cutoff when the
      *  source kept it. A decrease is a restart: the new process's count is taken whole. A restart
      *  whose new count catches the old one up is invisible, so the total is a lower bound. */
-    private fun ioDrops(rows: List<PerfRow>, dropsBefore: Long?): Long {
+    private fun ioDrops(rows: List<PerfRow>, dropsBefore: Long?): JsonObject {
         var previous: Long? = dropsBefore
-        var drops = 0L
+        var writes = 0L
+        var droppedRows = 0
         rows.forEach { row ->
             val current = row.fields[PerfKeys.ASYNC_IO_DROPS] ?: return@forEach
             val before = previous
-            drops += when {
+            val lost = when {
                 before == null -> 0L
                 current < before -> current
                 else -> current - before
             }
+            writes += lost
+            if (lost > 0L) droppedRows += 1
             previous = current
         }
-        return drops
+        return buildJsonObject {
+            put("io_drops_in_window", writes)
+            put("telemetry_dropped", droppedRows)
+        }
     }
+
+    /** What each row in the window was: an ordinary turn, a compaction, the head's own activity answer, or a
+     *  code-mode step the head synthesized. */
+    private fun kinds(turns: List<PerfRow>, activity: Int, codeSteps: Int): JsonObject = buildJsonObject {
+        put("turn", turns.count { it.facts.compact != true })
+        put("compaction", turns.count { it.facts.compact == true })
+        put("activity_query", activity)
+        put("local_step", codeSteps)
+    }
+
+    /** Per model: its turns, its failure share, and its total latency, so a slow or failing model is named. */
+    private fun byModel(turns: List<PerfRow>): Map<String, JsonObject> =
+        turns.groupBy { it.facts.model ?: UNATTRIBUTED_MODEL }.toSortedMap().mapValues { (_, rows) ->
+            buildJsonObject {
+                put("count", rows.size)
+                put("failure_share", rows.count { OutcomeTags.isFailed(it.outcome) }.toDouble() / rows.size)
+                stats(rows.mapNotNull { it.fields[PerfKeys.TOTAL] })?.let { put("total_ms", it) }
+            }
+        }
 
     /** First byte to stream end; absent when either mark is missing (a failed turn has no stream). */
     private fun streaming(row: PerfRow): Long? {

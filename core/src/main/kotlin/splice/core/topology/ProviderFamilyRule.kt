@@ -26,9 +26,14 @@ public class ProviderFamilyRule {
             AuthKind.KimiOAuth -> "moonshot"
             AuthKind.MuseOAuth -> "meta"
             AuthKind.Client -> "anthropic"
-            null -> when {
-                provider.local == true -> LOCAL_FAMILY
-                else -> ApiKeyProviderRegistry.row(key)?.id ?: LOCAL_FAMILY.takeIf { provider.isLocal }
-            }
+            null -> keyed(key, provider)
+        }
+
+    /** A provider with no sign-in of its own: the operator's `local`, then its key in the registry, then loopback. */
+    private fun keyed(key: String, provider: ProviderConfig): String? =
+        if (provider.local == true) {
+            LOCAL_FAMILY
+        } else {
+            ApiKeyProviderRegistry.row(key)?.id ?: LOCAL_FAMILY.takeIf { provider.isLocal }
         }
 }

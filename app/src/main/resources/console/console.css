@@ -192,7 +192,7 @@ button { font: inherit; color: inherit; }
 .card .name:has(.var) { flex: none; }
 .card .plan { font: 400 1.05rem/1 var(--font-name); color: var(--text-mute); white-space: nowrap; }
 .card .email { font: 400 .95rem/1.2 var(--font-data); color: var(--text-mute); margin: .15rem 0 .1rem 1.8rem; overflow-wrap: anywhere; }  /* under the name, past the grip */
-.card .slot { margin-left: auto; display: flex; align-items: center; gap: .6rem; }
+.card .slot { margin-left: auto; display: flex; align-items: center; gap: .6rem; flex: none; }  /* its buttons keep their words on one line; a rename field gives first */
 
 /* the command that this account serves: it rides the account, and moves when the account is held */
 .chip {  /* one chip on every page: a page never resizes it (the convergence pass, Oct 9) */
@@ -359,13 +359,9 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .outbox > .code-hint { order: 1; flex: 1 0 100%; box-sizing: border-box; padding-left: calc(1.9rem + 1.2rem); font: 400 1rem/1.3 var(--font-name); color: var(--text-mute); }
 
 /* ---------- acts on an account: the pin that undoes itself, and one menu for the rest ---------- */
-.pin {
-  width: 2.3rem; height: 2.3rem; display: grid; place-items: center; border: 0; background: none; cursor: pointer;
-  color: var(--key-light); border-radius: var(--r-in);
-}
-.pin svg { width: 1.55rem; height: 1.55rem; }
-.pin svg path:first-child { fill: currentColor; }
-.pin:hover { background: var(--track); }
+.act.pin { flex: none; }  /* the small button, named for what it does; the pin keeps the warm key */
+.act.pin svg { color: var(--key-light); }
+.act.pin svg path:first-child { fill: currentColor; }
 .card .top .icon.more { width: 2.3rem; height: 2.3rem; margin-right: -.55rem; flex: none; }
 .card .top .icon.more svg { width: 1.2rem; height: 1.2rem; }
 .slot > .state.limit svg { width: 1.6rem; height: 1.6rem; }
@@ -383,7 +379,9 @@ input.field, .pickbtn { min-height: var(--ctl-h); }
 .menu .danger { color: var(--limit); margin-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); border-radius: 0 0 .35rem .35rem; }
 .menu .danger.armed, .menu .danger.armed:hover { background: var(--limit); color: #fff7ea; box-shadow: none; border-radius: .35rem; }
 .menu .menu-state { padding: .8rem .9rem; margin-top: .3rem; box-shadow: 0 -.1rem 0 var(--track-line); }  /* the refusal takes the place of the act */
-.field.rename { flex: 0 1 17rem; font: 500 1.35rem/1.15 var(--font-name); padding: .3rem .5rem; }
+.field.rename { flex: 0 1 17rem; min-width: 7rem; font: 500 1.35rem/1.15 var(--font-name); padding: .3rem .5rem; }
+.field.rename + .act { flex: none; }  /* Save keeps its width beside the name */
+.card > .rename-err { display: flex; margin: .5rem 0 0 1.8rem; }  /* under the field, so Save, Unpin and the chip keep the row */
 .keysrc { margin-top: .9rem; display: flex; align-items: center; gap: .9rem; }
 .keysrc .var { font: 500 1rem/1 var(--font-data); color: var(--text-body); letter-spacing: .01em; }
 .field[aria-invalid="true"] { border-color: var(--limit); }

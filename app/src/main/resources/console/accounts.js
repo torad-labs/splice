@@ -378,7 +378,8 @@ function howFor(p, a, c) {
 // ---------- an account ----------
 // serves: every command this account serves now, each riding it as a chip. Use now pins it on the rail's command.
 function slotHtml(p, c, a, serves) {
-  const pin = c && c.pin === a.id ? `<button class="pin" data-act="unpin" data-p="${p.id}" data-c="${c.cmd}" aria-label="Unpin" aria-pressed="true">${ICON.pin}</button>` : "";
+  // the pin says what pressing it does, at rest and on touch: both walkers clicked a bare pin on a guess (p153, p154)
+  const pin = c && c.pin === a.id ? `<button class="act quiet small pin" data-act="unpin" data-p="${p.id}" data-c="${c.cmd}">${ICON.pin}Unpin</button>` : "";
   const chips = serves.map((x) => `<span class="chip" data-key="chip:${x.cmd}"><i></i>${esc(x.cmd)}</span>`).join("");
   if (serves.length && (!c || serves.includes(c))) return `${pin}${chips}`;
   if (a.out) return `<span class="state">Signed out</span>`;
@@ -409,8 +410,9 @@ function nameHtml(p, a, spot) {
   if (p.kind === "key") return `<span class="name"><span class="var">${esc(a.env)}</span>${a.has && a.seen ? ` · ${dayWord(a.seen)}` : ""}</span>`;
   if (ui.rename !== spot) return `<span class="name">${esc(a.name)}</span>`;
   const err = ui.renameErr;
+  // one visible way to finish, as the key field's Save: both walkers had to guess Enter (p153, p154)
   return `<input class="field rename" data-a="${a.id}" data-s="${spot}" value="${esc(ui.renameDraft ?? a.name)}" aria-label="Name" spellcheck="false"${err ? ' aria-invalid="true" aria-describedby="rename-err"' : ""}>`
-    + (err ? `<span class="state limit" id="rename-err">${err}</span>` : "");
+    + `<button class="act primary small" data-act="finish-rename">Save</button>`; // a refusal reads under it (cardHtml)
 }
 // c is the command whose order the rail shows on a plan provider, and null for a key or this computer. Each account shows
 // once, so its spot is the provider and the account.
@@ -444,7 +446,8 @@ function cardHtml(p, c, a, i, serves) {
   else body = `<div class="local-model"><i></i>${esc(a.model)}</div>`;
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";
   return `<article class="${cls}" data-key="card:${spot}" data-p="${p.id}" data-a="${a.id}">${socket}<div class="top">${grip}`
-    + `${nameHtml(p, a, spot)}${sub}<div class="slot">${slotHtml(p, c, a, serves)}</div>${more}</div>${email}${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}</article>`;
+    + `${nameHtml(p, a, spot)}${sub}<div class="slot">${slotHtml(p, c, a, serves)}</div>${more}</div>`
+    + `${ui.rename === spot && ui.renameErr ? `<span class="state limit rename-err" id="rename-err">${ui.renameErr}</span>` : ""}${email}${ui.menu === spot ? menuHtml(p, a, spot) : ""}${body}</article>`;
 }
 
 // ---------- the tiles that end a rail, and the one that ends the page ----------
@@ -692,7 +695,14 @@ board.addEventListener("paste", (e) => {
   keyState(f, bad ? "Invalid key" : null);
 });
 board.addEventListener("input", (e) => { if (e.target.matches("#key-in")) keyState(e.target, null); });
-board.addEventListener("focusout", (e) => { if (!drawing && e.target.matches(".rename")) saveRename(e.target, false); });
+// Save takes the press without taking focus, so the field's blur can't save and redraw before Save's click lands. Tab
+// between the field and Save keeps the rename open; leaving both saves, as leaving the field always did.
+const inRename = (el) => !!el?.matches?.(".rename, [data-act=finish-rename]");
+board.addEventListener("mousedown", (e) => { if (e.target.closest("[data-act=finish-rename]")) e.preventDefault(); });
+board.addEventListener("focusout", (e) => {
+  const f = board.querySelector(".field.rename");
+  if (!drawing && f && inRename(e.target) && !inRename(e.relatedTarget)) saveRename(f, false);
+});
 const closeAll = () => Object.assign(ui, { menu: null, armed: null, removeErr: null, rename: null, renameErr: null, renameDraft: null, replace: null, editor: null });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || !(ui.menu || ui.rename || ui.replace || ui.editor)) return;
@@ -753,6 +763,7 @@ document.addEventListener("click", async (e) => {
     case "cancel-signin": cancelSignin(t.dataset.t); break;
     case "menu": ui.menu = ui.menu === t.dataset.s ? null : t.dataset.s; ui.armed = null; ui.removeErr = null; render(); board.querySelector(".menu button")?.focus(); break;
     case "rename": ui.menu = null; ui.rename = t.dataset.s; render(); break;
+    case "finish-rename": { const f = board.querySelector(".field.rename"); if (f) saveRename(f, true); break; } // Enter's path
     case "resign": ui.menu = null; startSignin(`re:${a.id}`, howFor(p, a, null), t.dataset.s); break;
     case "replace": ui.menu = null; ui.replace = t.dataset.s; render(); break;
     case "cancel-replace": ui.replace = null; render(); break;

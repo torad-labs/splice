@@ -57,7 +57,7 @@ const usd = (n) => `≈$${n.toFixed(2)}`;
 // ---------- what the page holds: the daemon's answers, and what he is doing to them ----------
 const state = {
   teams: [], sessions: {}, heads: [], models: {}, accounts: {}, providerOf: {},
-  economics: {}, chat: null, activity: null, today: null,
+  economics: {}, chat: null, activity: null, today: null, live: {}, stalls: {},
   // What each waiting member's screen is offering, by slot id: read only for a member whose ask is not in
   // its transcript, which is a permission prompt, since those choices belong to the client's own version.
   screens: {},
@@ -101,7 +101,13 @@ async function read() {
   state.error = teams.ok ? null : refusalOf(teams, "The teams could not be read");
   state.teams = teams.body?.teams || [];
   state.sessions = Object.fromEntries((sessions.body?.sessions || []).filter((s) => s.session_id).map((s) => [s.session_id, s]));
-  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key }));
+  state.heads = (heads.body?.heads || []).map((h) => ({ key: h.key, command: h.label || h.key, reanchorMs: h.gate?.stall_reanchor_ms ?? null }));
+  // the turns running now, by session: what a Stalled or Resumes line is read from (kit stallOf)
+  const lives = await Promise.all(state.heads.map((h) => API.get(`/api/heads/${encodeURIComponent(h.key)}/turns/live`)));
+  state.live = {};
+  state.heads.forEach((h, i) => {
+    for (const turn of lives[i].body?.turns || []) if (turn.session && !turn.stopped) state.live[turn.session] = { head: h.key, ...turn };
+  });
   state.models = {};
   state.providerOf = {};
   for (const row of models.body?.heads || []) {
@@ -175,6 +181,16 @@ function refusalOf(answer, fallback) {
 
 // ---------- a member's state, in the words its own client registered ----------
 const WAITING = { "input needed": "Needs you", "permission prompt": "Needs you" };
+/** What the member's running turn says about its silence: Stalled with the retries or the silence counter, or the resume
+ *  countdown, drawn by the kit's own look() so Teams and Sessions say it alike. Null when nothing is wrong. */
+function stallLook(slot, session) {
+  if (!session || session.waiting_for || !(session.status === "working" || session.status === "busy")) return null;
+  const turn = state.live[slot.session];
+  const stall = stallOf(turn, state.heads.find((h) => h.key === turn?.head)?.reanchorMs);
+  if (!stall) return null;
+  state.stalls[slot.id] = stall;
+  return look({ id: slot.id, state: "working", stall });
+}
 function stateOf(session) {
   if (!session) return { cls: "ended", lamp: "<i></i>", word: "Gone", detail: "" };
   if (session.availability === "gone") return { cls: "ended", lamp: "<i></i>", word: "Ended", detail: "" };
@@ -252,7 +268,8 @@ function memberHtml(tm, slot) {
   // the model its session runs, which the sessions route carries; the slot's own only until the session says
   const model = s?.model ? modelLabel(slot.head, s.model) : modelLabel(slot.head, slot.model);
   if (!s) return vacantHtml(tm, slot, { key, ro, lead, chip, model });
-  const L = stateOf(s);
+  state.stalls[slot.id] = null;
+  const L = stallLook(slot, s) ?? stateOf(s);
   const stop = !liveNow(s) || ro ? ""
     : ui.stopping.has(key) ? `<button class="act quiet small stopping" disabled>${ICON.wait}Stopping</button>`
     : `<button class="act quiet small" data-act="stop" data-s="${esc(slot.id)}">Stop</button>`;
@@ -270,7 +287,7 @@ function memberHtml(tm, slot) {
   return `<article class="card m ${L.cls}${opens}" style="--c:${headColor(slot.head)}" data-key="m:${esc(slot.id)}" aria-label="${esc(slot.role)}">` +
     `<span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>` +
     `<div class="top"><span class="role">${esc(slot.role)}</span>${lead}${refusal}${chip}${stop}</div>` +
-    `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail}<span>${esc(model)}</span>` +
+    `<div class="meta"><span class="word ${L.cls}">${L.word}</span>${L.detail ?? L.paneDetail ?? ""}<span>${esc(model)}</span>` +
     `${where ? `<span>${esc(where)}</span>` : ""}${also ? `<span class="also">Also on ${esc(also)}</span>` : ""}${heard ? `<span class="when">${hhmm(heard)}</span>` : ""}</div>` +
     `${body}<div class="use">${figures(useOf(tm, slot.id))}</div></article>`;
 }
@@ -754,3 +771,14 @@ document.addEventListener("click", async (e) => {
 });
 
 read();
+
+// the silence counter and the resume countdown move each second between reads, from when the turn was read
+setInterval(() => {
+  for (const el of root.querySelectorAll("[data-silent], [data-resume]")) {
+    const st = state.stalls[el.dataset.silent || el.dataset.resume];
+    if (!st) continue;
+    const gone = Date.now() - st.at, ms = el.dataset.silent ? st.ms + gone : Math.max(0, st.resumeMs - gone);
+    el.lastElementChild.textContent = el.dataset.silent ? counter(ms) : `Resumes in ${counter(ms)}`;
+    el.querySelector(".hand")?.style.setProperty("transform", `rotate(${Math.floor(ms / 1000) * 6}deg)`);
+  }
+}, 1000);

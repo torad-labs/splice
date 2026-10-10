@@ -340,14 +340,15 @@ class PerfTurnsProjectionTest {
         since: Long = 0L,
     ): JsonObject {
         val filterType = Class.forName("splice.usage.perf.TurnsFilter")
-        val filter = filterType.declaredConstructors.single { it.parameterCount == 8 }.apply { isAccessible = true }
+        val attributionType = Class.forName("splice.usage.perf.TurnsAttribution")
+        val attribution = attributionType.declaredConstructors.single { it.parameterCount == 4 }
+            .apply { isAccessible = true }
+            .newInstance(selectors["model"], selectors["account"], selectors["session"], null)
+        val filter = filterType.declaredConstructors.single { it.parameterCount == 5 }.apply { isAccessible = true }
             .newInstance(
                 selectors["until"],
                 selectors["outcome"],
-                selectors["model"],
-                selectors["account"],
-                selectors["session"],
-                null,
+                attribution,
                 selectors["local"] ?: false,
                 selectors["compact"],
             )

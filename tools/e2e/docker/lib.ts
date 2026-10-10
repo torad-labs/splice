@@ -251,10 +251,11 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
     );
   },
 
-  /** usage-head < /api/usage <head> <min-entries> <observed-before> — the daemon reports <head> with
-   *  usage it did not write itself: at least <min-entries> recorded turns, and a quota window whose
-   *  reading was observed at or before <observed-before> (the epoch second the upgrade install ran),
-   *  which only the old release's turns can have left. */
+  /** usage-head < /api/usage <head> <min-entries> <five-hour-used-pct> — the daemon reports <head>
+   *  with at least <min-entries> recorded turns and a five-hour window at <five-hour-used-pct>. WHICH
+   *  reading that is, is decided by WHEN the step runs: the upgrade rehearsal asks before its first
+   *  post-upgrade turn on the head, when the only reading in existence is the one the old release's
+   *  turns left on disk, and then moves the vendor's utilization before asking again. */
   "usage-head"(argv) {
     // ONE read of stdin: a pipe cannot be read twice, and the second read would see an empty document.
     const payload = readJson("-");
@@ -262,7 +263,7 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
     console.log("usage rows:", JSON.stringify(rows.map((r) => obj(r)["key"])));
     const head = arg(argv, 0, "head");
     const minEntries = Number(arg(argv, 1, "min-entries"));
-    const observedBefore = Number(arg(argv, 2, "observed-before"));
+    const wantPct = Number(arg(argv, 2, "five-hour-used-pct"));
     const row = rows.map(obj).find((r) => str(r["key"]) === head);
     check(row !== undefined, `/api/usage does not list ${head}`);
     const usage = obj(row["usage"]);
@@ -270,10 +271,9 @@ const verbs: Record<string, (argv: readonly string[]) => void> = {
     const fiveHour = obj(quota["five_hour"]);
     console.log(`${head}: usage=${JSON.stringify(usage["entries"])} five_hour=${JSON.stringify(fiveHour)}`);
     check(Number(usage["entries"]) >= minEntries, `${head} reports ${usage["entries"]} usage entries`);
-    check(Number(fiveHour["used_pct"]) > 0, `${head}'s five-hour window reports no usage`);
     check(
-      Number(fiveHour["observed_at"]) <= observedBefore,
-      `${head}'s reading was observed at ${fiveHour["observed_at"]}, after the upgrade ran at ${observedBefore}`,
+      Number(fiveHour["used_pct"]) === wantPct,
+      `${head}'s five-hour window reads ${fiveHour["used_pct"]}%, wanted ${wantPct}%`,
     );
   },
 

@@ -424,8 +424,9 @@ snapshot_before_upgrade() {
   daemon_pid > "$PRIVATE/daemon.pid"
   [ -s "$PRIVATE/daemon.pid" ] || { echo "no $FROM_TAG daemon process"; return 1; }
   echo "the $FROM_TAG daemon is pid $(cat "$PRIVATE/daemon.pid")"
-  # The line the vendor mock's log has reached, and the second the install runs at: what makes each
-  # credential and quota claim below a claim about the CANDIDATE and not about the 0.3.2 phase.
+  # The line the vendor mock's log has reached, which is what makes each credential claim below a
+  # claim about the CANDIDATE and not about the 0.3.2 phase, and the second the install runs at,
+  # which the receipt carries beside every reading it reports.
   wc -l < "$SUBS_LOG" | tr -d ' ' > "$PRIVATE/subs-lines.pre"
   date +%s > "$PRIVATE/upgrade-at.s"
   echo "the vendor mock has served $(cat "$PRIVATE/subs-lines.pre") request(s); the install runs at $(cat "$PRIVATE/upgrade-at.s")"
@@ -552,6 +553,24 @@ transcript_intact() {
 }
 step "the pre-upgrade transcript is byte-identical where the head reads it" transcript_intact
 
+# CHANGELOG, Upgrading from 0.3.x: a session 0.3.x began is not in the head's splice-sessions.json,
+# so a bare -c starts a NEW session and leaves that session's transcript alone, while `-r <id>` is
+# what resumes it. BEFORE the resume below, which is what puts the session in that registry and
+# makes a later -c continue it correctly.
+bare_continue_starts_new() {
+  local before after
+  before="$(find "$HOME/.claude/projects" -name '*.jsonl' | wc -l)"
+  wrapper_turn claudex "ok after auth" -c || return 1
+  cmp -s "$PRIVATE/transcript.pre" "$TRANSCRIPT" ||
+    { echo "a bare -c continued the 0.3.2 session instead of starting one of its own"; return 1; }
+  after="$(find "$HOME/.claude/projects" -name '*.jsonl' | wc -l)"
+  echo "transcripts in the shared tree: $before before the bare -c, $after after"
+  [ "$after" -gt "$before" ] || { echo "a bare -c started no new session"; return 1; }
+  echo "the 0.3.2 session's transcript is untouched: a bare -c began a session of its own"
+}
+step "a bare -c starts a new session and leaves the 0.3.2 session's transcript alone" \
+  in_dir "$WORK" bare_continue_starts_new
+
 resume_pre_session() {
   wrapper_turn claudex "ok after auth" --resume "$SID" || return 1
   bun "$LIB_TS" appended "$PRIVATE/transcript.pre" "$TRANSCRIPT"
@@ -563,6 +582,23 @@ step "wrapper turn after the upgrade: claude-mockchat -p through its head" in_di
 # ── 2b. everything else the 0.3.2 home held, read by the candidate ────────────────────────────
 # A file that survives an install and is then read by nothing is not an upgrade, so each of these
 # drives the candidate and asserts what the CANDIDATE did with the old release's file.
+
+# FIRST, before any post-upgrade turn on the Kimi head: the only five-hour reading in existence is
+# the one the 0.3.2 turns left on disk, so the candidate serving it is retention and nothing else.
+# `entries` is the usage file's own turn count, which only a turn writes.
+quota_survives() {
+  curl_mgmt -f "http://127.0.0.1:$CONTROL_PORT/api/usage" | bun "$LIB_TS" usage-head claude-kimi 1 42
+}
+step "quota: the candidate serves the reading $FROM_TAG's turns left, before a turn of its own" quota_survives
+
+# And from here the vendor reports a different utilization, so the reading above cannot be confused
+# with one the candidate's own turn observes below.
+move_vendor_utilization() {
+  curl -sS -f -m 10 -X POST "http://127.0.0.1:$SUBS_PORT/control/kimi-utilization?utilization=0.77" ||
+    { echo "the vendor mock refused the utilization change"; return 1; }
+  echo
+}
+step "the Kimi upstream starts reporting a different five-hour utilization" move_vendor_utilization
 
 # The vendor mock answers any bearer but the one it issued with a 401, so a turn that completes is
 # the credential being read. The log is skipped past the 0.3.2 phase's own lines, so `current` here
@@ -578,7 +614,10 @@ kimi_reads() {
   wrapper_turn claude-kimi "KIMI OK" || return 1
   local skip; skip="$(cat "$PRIVATE/subs-lines.pre")"
   bun "$LIB_TS" subs-seen "$SUBS_LOG" "$skip" /kimi/v1/messages x_api_key current || return 1
-  bun "$LIB_TS" subs-seen "$SUBS_LOG" "$skip" /kimi/v1/messages identity complete
+  bun "$LIB_TS" subs-seen "$SUBS_LOG" "$skip" /kimi/v1/messages identity complete || return 1
+  # The candidate's own turn observed the vendor's new utilization, which is the other half of the
+  # retention claim: the 42% above was the kept reading, not whatever the vendor says now.
+  curl_mgmt -f "http://127.0.0.1:$CONTROL_PORT/api/usage" | bun "$LIB_TS" usage-head claude-kimi 2 77
 }
 step "the 0.3.2 Kimi credential still signs in: x-api-key from its file, with the five X-Msh-* headers" \
   in_dir "$WORK" kimi_reads
@@ -596,13 +635,6 @@ credentials_identical() {
   ls -l "$AUTH/device_id" "$state/claude-kimi-device_id"
 }
 step "the 0.3.2 credentials and the Kimi device identity are byte-identical after the upgrade" credentials_identical
-
-# The reading is the old release's: its observed_at is before the install ran.
-quota_survives() {
-  curl_mgmt -f "http://127.0.0.1:$CONTROL_PORT/api/usage" |
-    bun "$LIB_TS" usage-head claude-kimi 1 "$(cat "$PRIVATE/upgrade-at.s")"
-}
-step "quota: the candidate serves the reading $FROM_TAG's turns left, observed before the install" quota_survives
 
 # `splice perf` is the candidate reading the JSONL the old release wrote (PerfRowsFileSource).
 perf_survives() {
@@ -657,23 +689,6 @@ projects_merged() {
 }
 step "projects: the 0.3.2 transcript is merged into ~/.claude/projects, and the head's path is the link" projects_merged
 
-# CHANGELOG, Upgrading from 0.3.x: a session 0.3.x began is not in the head's splice-sessions.json,
-# so a bare -c starts a NEW session and leaves that session's transcript alone, while `-r <id>`
-# resumes it (the resume step above). The transcript is compared against its bytes AS THEY ARE RIGHT
-# BEFORE the bare -c, which is the claim whatever else has appended to it by now.
-bare_continue_starts_new() {
-  local before after
-  cp "$TRANSCRIPT" "$PRIVATE/transcript.before-c" || return 1
-  before="$(find "$HOME/.claude/projects" -name '*.jsonl' | wc -l)"
-  wrapper_turn claudex "ok after auth" -c || return 1
-  cmp -s "$PRIVATE/transcript.before-c" "$TRANSCRIPT" ||
-    { echo "a bare -c continued the 0.3.2 session instead of starting a new one"; return 1; }
-  after="$(find "$HOME/.claude/projects" -name '*.jsonl' | wc -l)"
-  echo "transcripts in the shared tree: $before before the bare -c, $after after"
-  [ "$after" -gt "$before" ] || { echo "a bare -c started no new session"; return 1; }
-  echo "the 0.3.2 session's transcript is untouched: a bare -c began a session of its own"
-}
-step "a bare -c starts a new session and leaves the 0.3.2 session's transcript alone" in_dir "$WORK" bare_continue_starts_new
 
 # ── 3. rotating the management key ────────────────────────────────────────────────────────────
 # `splice restart` stops a running daemon through its key-authenticated shutdown route

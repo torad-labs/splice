@@ -47,6 +47,11 @@ const EXPIRES_IN_S = 3600;
  *  reset is always in the future, so the reading stays CURRENT for the whole run. */
 const KIMI_5H_UTILIZATION = "0.42";
 const KIMI_7D_UTILIZATION = "0.15";
+/** The five-hour utilization the Kimi upstream reports, which `POST /control/kimi-utilization
+ *  ?utilization=0.NN` changes. The rehearsal moves it at the upgrade boundary, so the reading the
+ *  candidate serves BEFORE its first post-upgrade turn (the one the 0.3.2 turns left on disk) can be
+ *  told apart from one its own turn observed, with no reliance on a timestamp. */
+let kimiUtilization: string = KIMI_5H_UTILIZATION;
 const RESET_AHEAD_S = 3 * 3_600;
 
 const KIMI_TEXT = "KIMI OK";
@@ -187,7 +192,7 @@ function quotaHeaders(contentType: string): Record<string, string> {
     "request-id": "req_011CMockKimi",
     "anthropic-ratelimit-unified-status": "allowed",
     "anthropic-ratelimit-unified-representative-claim": "five_hour",
-    "anthropic-ratelimit-unified-5h-utilization": KIMI_5H_UTILIZATION,
+    "anthropic-ratelimit-unified-5h-utilization": kimiUtilization,
     "anthropic-ratelimit-unified-5h-reset": String(resetAtS),
     "anthropic-ratelimit-unified-7d-utilization": KIMI_7D_UTILIZATION,
     "anthropic-ratelimit-unified-7d-reset": String(resetAtS + 5 * 86_400),
@@ -274,6 +279,16 @@ const server = Bun.serve({
   async fetch(req) {
     const url = new URL(req.url);
     const path = url.pathname;
+    if (req.method === "POST" && path === "/control/kimi-utilization") {
+      const want = url.searchParams.get("utilization") ?? "";
+      if (!/^0\.[0-9]{1,2}$/.test(want)) {
+        record({ path, status: 400, utilization: want });
+        return Response.json({ error: `utilization must read 0.NN, got '${want}'` }, { status: 400 });
+      }
+      kimiUtilization = want;
+      record({ path, status: 200, utilization: want });
+      return Response.json({ utilization: want });
+    }
     if (req.method === "POST" && path === "/grok/oauth2/token") return grokToken(path, await req.text());
     if (req.method === "POST" && path === "/kimi/api/oauth/device_authorization") {
       // The verification URI is built from the request's own origin, which is where a vendor builds

@@ -19,13 +19,10 @@ import splice.core.model.ModelRates
 import splice.core.perf.PerfArchiveName
 import splice.core.perf.PerfKeys
 import splice.core.util.JsonlSink
-import splice.core.util.WallClock
 import splice.usage.UsageHead
-import splice.usage.UsageHeadLookup
 import splice.usage.UsageHeadSinks
 import splice.usage.UsageHeadStatusline
 import splice.usage.UsageHeadWarn
-import splice.usage.perf.PerfRoutes
 import splice.usage.perf.PerfRowsSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
@@ -339,32 +336,10 @@ class PerfTurnsProjectionTest {
         selectors: Map<String, Any> = emptyMap(),
         since: Long = 0L,
     ): JsonObject {
-        val filterType = Class.forName("splice.usage.perf.TurnsFilter")
-        val attributionType = Class.forName("splice.usage.perf.TurnsAttribution")
-        val attribution = attributionType.declaredConstructors.single { it.parameterCount == 4 }
-            .apply { isAccessible = true }
-            .newInstance(selectors["model"], selectors["account"], selectors["session"], null)
-        val filter = filterType.declaredConstructors.single { it.parameterCount == 5 }.apply { isAccessible = true }
-            .newInstance(
-                selectors["until"],
-                selectors["outcome"],
-                attribution,
-                selectors["local"] ?: false,
-                selectors["compact"],
-            )
-        val windowType = Class.forName("splice.usage.perf.AskedWindow")
-        val asked = windowType.getDeclaredConstructor(
-            Long::class.javaPrimitiveType,
-            Int::class.javaPrimitiveType,
-            filterType,
-            java.time.ZoneId::class.java,
-        ).apply { isAccessible = true }.newInstance(since, 1, filter, java.time.ZoneId.of("America/Chicago"))
-        val routes = PerfRoutes(UsageHeadLookup { listOf(head) }, WallClock { 200_000 })
-        return PerfRoutes::class.java.getDeclaredMethod(
-            "turnsFor",
-            UsageHead::class.java,
-            PerfRowsSource::class.java,
-            windowType,
-        ).apply { isAccessible = true }.invoke(routes, head, source, asked) as JsonObject
+        val filters = selectors.entries.associate { (key, value) ->
+            key to if (value is Boolean) (if (value) "1" else "0") else value.toString()
+        }
+        val served = head.copy(sinks = head.sinks.copy(perfRows = source))
+        return PerfTurnsRoute(served).turns(since, filters = mapOf("local" to "0") + filters)
     }
 }

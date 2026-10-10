@@ -5,14 +5,19 @@ import com.sun.management.ThreadMXBean
 import jdk.jfr.Recording
 import jdk.jfr.consumer.RecordedEvent
 import jdk.jfr.consumer.RecordingFile
-import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonWire
+import splice.usage.UsageHead
+import splice.usage.UsageHeadSinks
+import splice.usage.UsageHeadWarn
 import splice.usage.perf.PerfRow
+import splice.usage.perf.PerfRowsSource
+import splice.usage.perf.PerfRowsWindow
+import splice.usage.quota.HeadUsageSource
+import splice.usage.quota.UsageView
 import java.lang.management.ManagementFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
-import java.time.ZoneId
 
 internal class PerfHistoryProfile {
     private val allocations = ManagementFactory.getThreadMXBean() as ThreadMXBean
@@ -56,24 +61,14 @@ internal class PerfHistoryProfile {
     }
 
     internal fun payload(rows: List<PerfRow>): Int {
-        // Invoke the actual internal usage fold, not a benchmark copy of its implementation.
-        val type = Class.forName("splice.usage.perf.TurnUsage")
-        val constructor = type.declaredConstructors.single()
-        val method = type.getDeclaredMethod("json")
-        val payload = phase("aggregation") {
-            val head = splice.usage.UsageHead(
-                "synthetic",
-                "synthetic",
-                splice.usage.quota.HeadUsageSource {
-                    splice.usage.quota.UsageView(0, 0, null)
-                },
-                splice.usage.UsageHeadWarn(80, 0),
-            )
-            val plans = Class.forName("splice.usage.perf.AccountPlans")
-                .getDeclaredConstructor(splice.usage.UsageHead::class.java, splice.usage.UsageBilling::class.java)
-                .newInstance(head, null)
-            method.invoke(constructor.newInstance(rows, null, plans, ZoneId.of("America/Chicago"))) as JsonObject
-        }
+        val head = UsageHead(
+            "synthetic",
+            "synthetic",
+            HeadUsageSource { UsageView(0, 0, null) },
+            UsageHeadWarn(80, 0),
+            sinks = UsageHeadSinks(perfRows = PerfRowsSource { PerfRowsWindow(rows) }),
+        )
+        val payload = phase("aggregation") { PerfTurnsRoute(head).turns(0L).getValue("usage") }
         return phase("serialization") { JsonWire.string(payload).toByteArray(Charsets.UTF_8).size }
     }
 

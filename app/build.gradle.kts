@@ -84,6 +84,9 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.cio)
     testImplementation(libs.ktor.client.mock)
+    testImplementation(libs.ktor.server.test.host) {
+        exclude(group = "io.ktor", module = "ktor-client-apache5")
+    }
     testImplementation(testFixtures(project(":features-turns")))
     // TestPorts: a port a test must know before anything binds it, reserved below the ephemeral range.
     testImplementation(testFixtures(project(":core")))

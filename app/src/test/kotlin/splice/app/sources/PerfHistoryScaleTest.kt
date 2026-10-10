@@ -8,11 +8,8 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.perf.PerfKeys
 import splice.core.util.WallClock
 import splice.usage.UsageHead
-import splice.usage.UsageHeadLookup
 import splice.usage.UsageHeadSinks
 import splice.usage.UsageHeadWarn
-import splice.usage.perf.PerfRoutes
-import splice.usage.perf.PerfRowsSource
 import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.UsageView
 import java.nio.channels.FileChannel
@@ -34,29 +31,13 @@ class PerfHistoryScaleTest {
             warn = UsageHeadWarn(warnPct = 80, warnTokens5h = 0),
             sinks = UsageHeadSinks(perfRows = source),
         )
-        val routes = PerfRoutes(UsageHeadLookup { listOf(head) }, WallClock { SCALE_SINCE + 604_800_000L })
+        val route = PerfTurnsRoute(head, WallClock { SCALE_SINCE + 604_800_000L })
         val paths = setOf(history.file, history.file.resolveSibling("${history.file.fileName}.1"))
-        val filterType = Class.forName("splice.usage.perf.TurnsFilter")
-        val filter = filterType.getDeclaredConstructor().newInstance()
-        val windowType = Class.forName("splice.usage.perf.AskedWindow")
-        val asked = windowType.getDeclaredConstructor(
-            Long::class.javaPrimitiveType,
-            Int::class.javaPrimitiveType,
-            filterType,
-            java.time.ZoneId::class.java,
-        ).apply { isAccessible = true }.newInstance(SCALE_SINCE, 1, filter, java.time.ZoneId.of("America/Chicago"))
-        val render = PerfRoutes::class.java.getDeclaredMethod(
-            "turnsFor",
-            UsageHead::class.java,
-            PerfRowsSource::class.java,
-            windowType,
-        ).apply { isAccessible = true }
-        // Invoke the actual private payload fold; app has no Ktor test-host dependency.
-        val first = render.invoke(routes, head, source, asked).toString()
+        val first = route.turns(SCALE_SINCE).toString()
         val decoded = source.parsedLines
         val profiler = PerfHistoryProfile()
         val second = profiler.diskPhase("seven_day_turns_repeat", dir.resolve("turns-repeat.jfr"), paths) {
-            render.invoke(routes, head, source, asked).toString()
+            route.turns(SCALE_SINCE).toString()
         }
         assertEquals(first, second, "the complete turns payload stays byte-identical")
         val decodedAgain = source.parsedLines - decoded

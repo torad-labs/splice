@@ -1,14 +1,13 @@
-// Production quota stores and parser over synthetic state, with no credentials or provider traffic.
+// Production quota stores over synthetic state, with no credentials or provider traffic.
 package splice.app.sources
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.usage.QuotaSlots
 import splice.core.usage.QuotaSnapshot
+import splice.core.usage.QuotaWindow
 import splice.core.util.ElapsedClock
 import splice.core.util.WallClock
 import splice.head.usage.QuotaTracker
@@ -41,9 +40,6 @@ internal class UsageOpenFixture(dir: Path, scope: CoroutineScope) {
     )
     private val store = createStore()
     private val tracker = QuotaTracker(trackerFile, clock = { now })
-    private val type = Class.forName("splice.usage.quota.CodexQuotaParser")
-    private val parser = type.getDeclaredConstructor().newInstance()
-    private val parse = type.getDeclaredMethod("parse", JsonObject::class.java, Long::class.javaPrimitiveType)
     private val thread = Thread.currentThread().threadId()
     internal var probes = 0
         private set
@@ -80,9 +76,8 @@ internal class UsageOpenFixture(dir: Path, scope: CoroutineScope) {
     private fun probe(): QuotaSnapshot {
         assertEquals(thread, Thread.currentThread().threadId(), "all probe work stays on the measured thread")
         probes++
-        val body = """{"plan_type":"synthetic","rate_limit":{"primary_window":{"used_percent":25,""" +
-            """"limit_window_seconds":18000,"reset_after_seconds":3600}}}"""
-        return requireNotNull(parse.invoke(parser, Json.parseToJsonElement(body).jsonObject, now) as? QuotaSnapshot)
+        val window = QuotaWindow(usedPercent = 25.0, resetsAt = now / 1_000 + 3_600, windowSeconds = 18_000)
+        return QuotaSlots().snapshot(listOf(window), "synthetic", now)
     }
 
     private fun createStore(): UsageStore {

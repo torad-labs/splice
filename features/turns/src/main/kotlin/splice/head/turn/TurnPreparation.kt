@@ -37,6 +37,7 @@ import io.ktor.server.request.uri
 import splice.core.parse.AnthropicTurnBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.session.ActivityAction
 import splice.core.wire.AnthropicRequest
 import splice.head.ActivityLabel
 import splice.head.ActivitySamples
@@ -129,10 +130,10 @@ internal class TurnPreparation(
         val inbound = deps.stores.captures.trace?.let { inbound(call, body.text) }
         refusalOf(parsed, sessionId)?.let { return it }
         messageEdges.observe(sessionId, parsed.typed)
-        val label = activityLabel.labelFor(parsed.typed)
-        if (label == null) nearMissLabelQuery(parsed.typed, sessionId)
-        return if (label != null) {
-            local(label, parsed.typed, sessionId, perf)
+        val action = activityLabel.labelFor(parsed.typed)
+        if (action == null) nearMissLabelQuery(parsed.typed, sessionId)
+        return if (action != null) {
+            local(action, parsed.typed, sessionId, perf)
         } else {
             sampleActivity(parsed.typed, sessionId)
             build(call, parsed, Arrival(sessionId, inbound), perf)
@@ -157,8 +158,8 @@ internal class TurnPreparation(
      *  ActivityLabel for why the client's query alone left a team's Activity empty. */
     private fun sampleActivity(request: AnthropicRequest, sessionId: String?) {
         if (sessionId == null) return
-        val label = activityLabel.sampleOf(request) ?: return
-        if (activitySamples.due(sessionId)) deps.seams.events.activityLabel(sessionId, label)
+        val action = activityLabel.sampleOf(request) ?: return
+        if (activitySamples.due(sessionId)) deps.seams.events.activityLabel(sessionId, action)
     }
 
     /** What the request arrived with, beyond its parsed body: the client's session, and the request
@@ -182,16 +183,17 @@ internal class TurnPreparation(
 
     // The activity side query never reaches a model: see ActivityLabel for the measurement.
     private fun local(
-        label: String,
+        action: ActivityAction,
         request: AnthropicRequest,
         sessionId: String?,
         perf: TurnPerf,
     ): Preparation.Local {
         perf.mark(PerfKeys.PARSE)
-        deps.log("[${provider.key}] activity label answered locally: \"$label\" (${who(sessionId)}no upstream turn)\n")
+        val said = "activity label answered locally: \"${action.label}\" (${who(sessionId)}no upstream turn)"
+        deps.log("[${provider.key}] $said\n")
         sessionId?.let(activitySamples::sampled)
-        deps.seams.events.activityLabel(sessionId, label)
-        return Preparation.Local(label, request.model, sessionId, request.stream)
+        deps.seams.events.activityLabel(sessionId, action)
+        return Preparation.Local(action.label, request.model, sessionId, request.stream)
     }
 
     private fun build(

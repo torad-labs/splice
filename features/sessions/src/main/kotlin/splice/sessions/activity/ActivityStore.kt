@@ -27,6 +27,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.session.ActivityAction
 import splice.core.storage.ActivityDays
 import splice.core.storage.DayFiles
 import splice.core.storage.DayInventory
@@ -46,6 +47,8 @@ public data class ActivityRow(
     val head: String,
     val label: String?,
     val upstream: Boolean,
+    val tool: String? = null,
+    val subject: String? = null,
 )
 
 /** Which heads store activity, parsed once from the activityStoreHeads knob value. */
@@ -85,26 +88,33 @@ public class ActivityStore(
     public fun storing(): Boolean = heads.storesAny()
     private val json = Json { ignoreUnknownKeys = true }
 
-    public fun label(session: String, head: String, label: String, at: Long) {
-        if (heads.stores(head)) days.append(row(at, session, head, "label", JsonPrimitive(label)))
+    public fun label(session: String, head: String, action: ActivityAction, at: Long) {
+        if (heads.stores(head)) days.append(row(at, session, head, labelFields(action)))
     }
 
     public fun upstream(session: String, head: String, at: Long) {
-        if (heads.stores(head)) days.append(row(at, session, head, "upstream", JsonPrimitive(true)))
+        if (heads.stores(head)) days.append(row(at, session, head, mapOf("upstream" to JsonPrimitive(true))))
     }
 
     /** Every retained row for [session], oldest first. */
     public fun rows(session: String): List<ActivityRow> =
         days.lines().mapNotNull(::parse).filter { it.session == session }.toList()
 
-    /** One row: the three keys every row has, and the one [key] that says what kind of row it is. */
-    private fun row(at: Long, session: String, head: String, key: String, value: JsonPrimitive): String =
+    /** One row: the three keys every row has, then [fields], which say what kind of row it is. */
+    private fun row(at: Long, session: String, head: String, fields: Map<String, JsonPrimitive>): String =
         buildJsonObject {
             put("at", at)
             put("session", session)
             put("head", head)
-            put(key, value)
+            fields.forEach { (key, value) -> put(key, value) }
         }.toString()
+
+    /** A label row: the sentence, and the tool and object it came from when it had a call behind it. */
+    private fun labelFields(action: ActivityAction): Map<String, JsonPrimitive> = buildMap {
+        put("label", JsonPrimitive(action.label))
+        action.tool?.let { put("tool", JsonPrimitive(it)) }
+        action.subject?.let { put("subject", JsonPrimitive(it)) }
+    }
 
     private fun parse(line: String): ActivityRow? {
         // A torn or foreign line in a day file is not a row; it is left out of the view.
@@ -117,7 +127,15 @@ public class ActivityStore(
         val session = JsonScalars.str(row, "session")
         if (at == null || session == null) return null
         return JsonScalars.str(row, "head")?.let { head ->
-            ActivityRow(at, session, head, JsonScalars.str(row, "label"), row["upstream"] == JsonPrimitive(true))
+            ActivityRow(
+                at,
+                session,
+                head,
+                JsonScalars.str(row, "label"),
+                row["upstream"] == JsonPrimitive(true),
+                JsonScalars.str(row, "tool"),
+                JsonScalars.str(row, "subject"),
+            )
         }
     }
 }

@@ -44,6 +44,7 @@ import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
 import splice.core.model.HeadDiscoveredModels
+import splice.core.session.ActivityAction
 import splice.core.storage.ACTIVITY_DIRECTORY
 import splice.core.topology.TopologyParse
 import splice.core.topology.TopologyWriter
@@ -330,8 +331,8 @@ internal class ConsoleEventPublisher(
             bus.publish { seq -> ConsoleEvent.EdgeEvent(seq, session, to, at) }
         }
 
-        override fun activityLabel(session: String?, label: String) {
-            if (session != null) stores?.activity?.label(session, head, label, clock())
+        override fun activityLabel(session: String?, action: ActivityAction) {
+            if (session != null) stores?.activity?.label(session, head, action, clock())
         }
 
         override fun labelQueryUpstream(session: String?) {

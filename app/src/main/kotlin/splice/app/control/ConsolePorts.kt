@@ -23,6 +23,7 @@ import splice.lifecycle.upgrade.UpgradeStatus
 import splice.models.list.ModelsReporter
 import splice.models.roster.DeclaredHeads
 import splice.sessions.activity.ActivityStores
+import splice.sessions.http.SessionDriver
 import splice.sessions.teams.TeamStore
 import splice.usage.alerts.AlertStore
 import splice.usage.budgets.BudgetEnforcement
@@ -87,6 +88,11 @@ public class ConsolePorts {
     /** V4-131: the daemon's team store, assigned by ControlPlane after construction like [activity].
      *  Null answers every team route with a named 503 and leaves the sessions rows' `team` null. */
     public var teams: TeamStore? = null
+
+    /** Oct 10, 2026: the terminal sessions are started in, with the record of which pane carries which session
+     *  (SessionTerminal, TMUX.md). Assigned by ControlPlane after construction like [teams]; null answers a
+     *  member's start and stop with a named 503, because splice cannot drive a session it cannot open. */
+    public var sessionDriver: SessionDriver? = null
 
     /** V4-127: the console's four injected ports, each a SETTABLE PROPERTY for the same reason
      *  [compaction] is — the constructor sits at the width ratchet's ceiling and V4-105 is burning it

@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.session.ActivityAction
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.sessions.activity.MessageEdge
@@ -257,7 +258,7 @@ class TeamsRoutesTest {
         val inside = listOf(from, DAY_START + DAY - HOUR, DAY_START + DAY + HOUR)
         (inside + listOf(from - 1, to)).forEachIndexed { n, at ->
             rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", at, "toolu_$n"))
-            rig.stores.activity.label(LEAD, "claude", "label $n", at)
+            rig.stores.activity.label(LEAD, "claude", ActivityAction("label $n"), at)
         }
         AsyncFileIo.drain()
         val chat = rig.json(routes().reads.chat(id, null, from.toString(), to.toString()).body)
@@ -288,7 +289,7 @@ class TeamsRoutesTest {
     @Test
     fun `a local day read after UTC midnight keeps the labels its morning wrote`() {
         val id = rig.team().id
-        morningAndEvening(rig) { at -> rig.stores.activity.label(LEAD, "claude", "at $at", at) }
+        morningAndEvening(rig) { at -> rig.stores.activity.label(LEAD, "claude", ActivityAction("at $at"), at) }
 
         val read = routes().reads.activity(id, null, localFrom.toString(), (localFrom + DAY).toString())
         val entries = rig.column(rig.json(read.body), "entries", "at")
@@ -318,21 +319,22 @@ class TeamsRoutesTest {
     }
 
     @Test
-    fun `activity is the members' labels on the day, the detail split off, and the upstream queries counted`() {
+    fun `activity is the members labels on the day with tool and object, detail split off, upstream queries counted`() {
         val id = rig.team().id
-        rig.stores.activity.label(OLD_BUILDER, "codex", "Running tests\nrow V4-131", AT)
-        rig.stores.activity.label(LEAD, "claude", "Reviewing", AT + 1)
+        val running = ActivityAction("Running tests\nrow V4-131", "Bash", "npm test")
+        rig.stores.activity.label(OLD_BUILDER, "codex", running, AT)
+        rig.stores.activity.label(LEAD, "claude", ActivityAction("Reviewing"), AT + 1)
         rig.stores.activity.upstream(BUILDER, "codex", AT + 2)
-        rig.stores.activity.label(OUTSIDER, "codex", "Elsewhere", AT)
-        rig.stores.activity.label(LEAD, "claude", "Yesterday", AT - DAY)
+        rig.stores.activity.label(OUTSIDER, "codex", ActivityAction("Elsewhere"), AT)
+        rig.stores.activity.label(LEAD, "claude", ActivityAction("Yesterday"), AT - DAY)
         AsyncFileIo.drain()
         val note = "labels are samples: at most one per session every 30 seconds, " +
             "from its latest tool call while it works or from its client's own activity query; a gap is a session " +
             "that called no tool"
         val first = """{"at":$AT,"session":"$OLD_BUILDER","slot":"b1","head":"codex",""" +
-            """"label":"Running tests","detail":"row V4-131"}"""
+            """"label":"Running tests","detail":"row V4-131","tool":"Bash","object":"npm test"}"""
         val second = """{"at":${AT + 1},"session":"$LEAD","slot":"lead","head":"claude",""" +
-            """"label":"Reviewing","detail":null}"""
+            """"label":"Reviewing","detail":null,"tool":null,"object":null}"""
         assertEquals(
             rig.json(
                 """{"team_id":"$id","state":"on","oldest_kept_epoch_millis":${DAY_START - DAY},""" +

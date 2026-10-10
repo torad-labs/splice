@@ -25,6 +25,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.session.ActivityAction
 import splice.core.util.AsyncFileIo
 import splice.sessions.activity.MessageEdge
 import java.net.Socket
@@ -134,12 +135,12 @@ class TeamsRoutesWiringTest {
         val team = rig.team()
         rig.now = beforeUtcMidnight
         rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", beforeUtcMidnight, "toolu_a"))
-        rig.stores.activity.label(LEAD, "claude", "Evening", beforeUtcMidnight)
+        rig.stores.activity.label(LEAD, "claude", ActivityAction("Evening"), beforeUtcMidnight)
         AsyncFileIo.drain()
         rig.now = afterUtcMidnight
         rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", afterUtcMidnight, "toolu_b"))
         rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", to, "toolu_c"))
-        rig.stores.activity.label(LEAD, "claude", "Night", afterUtcMidnight)
+        rig.stores.activity.label(LEAD, "claude", ActivityAction("Night"), afterUtcMidnight)
         AsyncFileIo.drain()
         val both = listOf(beforeUtcMidnight, afterUtcMidnight).map(Long::toString)
         serve(wired = true) { call ->

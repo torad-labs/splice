@@ -25,6 +25,7 @@ package splice.head
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.session.ActivityAction
 import splice.core.util.ElapsedClock
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ContentBlock.TextBlock
@@ -59,19 +60,19 @@ internal class ActivityLabel {
 
     /** An ordinary turn's sample: its transcript's last tool call, described as the side query would
      *  be answered. Null when the last assistant message called no tool, or there is none. */
-    fun sampleOf(request: AnthropicRequest): String? =
+    fun sampleOf(request: AnthropicRequest): ActivityAction? =
         request.messages.lastOrNull { it.role == ROLE_ASSISTANT }
             ?.content?.filterIsInstance<ToolUseBlock>()?.lastOrNull()
             ?.let(::describe)
 
     /** The label to answer with, or null when the request is not the activity side query. */
-    fun labelFor(request: AnthropicRequest): String? {
+    fun labelFor(request: AnthropicRequest): ActivityAction? {
         if (!isSideQuery(request)) return null
         val lastAssistant = request.messages.lastOrNull { it.role == ROLE_ASSISTANT }
         val call = lastAssistant?.content?.filterIsInstance<ToolUseBlock>()?.lastOrNull()
         return when {
-            lastAssistant == null -> NO_TRANSCRIPT_LABEL
-            call == null -> NO_TOOL_LABEL
+            lastAssistant == null -> ActivityAction(NO_TRANSCRIPT_LABEL)
+            call == null -> ActivityAction(NO_TOOL_LABEL)
             else -> describe(call)
         }
     }
@@ -91,29 +92,43 @@ internal class ActivityLabel {
             ?.content?.filterIsInstance<TextBlock>()?.joinToString("\n") { it.text }
 
     // Present tense, 3-5 words, the file or function — Claude Code's own examples for the prompt.
-    private fun describe(call: ToolUseBlock): String {
-        FIXED_LABELS[call.name]?.let { return it }
-        FILE_TOOLS[call.name]?.let { (verb, key) -> return "$verb ${fileName(call.input, key)}" }
-        return when (call.name) {
-            "Bash" -> "Running ${commandHead(str(call.input, "command"))}"
-            "Grep" -> "Searching for ${clip(str(call.input, "pattern")) ?: "a pattern"}"
-            "Glob" -> "Finding ${clip(str(call.input, "pattern")) ?: "files"}"
-            else -> generic(call.name)
-        }
+    private fun describe(call: ToolUseBlock): ActivityAction =
+        FIXED_LABELS[call.name]?.let { ActivityAction(it, call.name, fixedSubject(call)) }
+            ?: FILE_TOOLS[call.name]?.let { (verb, key) ->
+                said(call, verb, clip(str(call.input, key)?.trimEnd('/')?.substringAfterLast('/')), "a file")
+            }
+            ?: otherAction(call)
+
+    /** The tools whose object is not a file: a command's head, a pattern, or nothing but the tool's own name. */
+    private fun otherAction(call: ToolUseBlock): ActivityAction = when (call.name) {
+        "Bash" -> said(call, "Running", commandHead(str(call.input, "command")), "a command")
+        "Grep" -> said(call, "Searching for", clip(str(call.input, "pattern")), "a pattern")
+        "Glob" -> said(call, "Finding", clip(str(call.input, "pattern")), "files")
+        else -> ActivityAction(generic(call.name), call.name)
+    }
+
+    /** One sample: [found] is the object when the call named one, and [none] stands in the sentence when it did not. */
+    private fun said(call: ToolUseBlock, verb: String, found: String?, none: String): ActivityAction =
+        ActivityAction("$verb ${found ?: none}", call.name, found)
+
+    /** The object of a call whose sentence is fixed: the subagent a delegation names, the peer a message goes to. */
+    private fun fixedSubject(call: ToolUseBlock): String? = when (call.name) {
+        "Agent", "Task" -> clip(str(call.input, "subagent_type"))
+        "SendMessage" -> clip(str(call.input, "to"))
+        else -> null
     }
 
     private fun generic(name: String): String =
         if (name.startsWith(MCP_PREFIX)) "Calling ${name.substringAfterLast("__")}" else "Using $name"
 
+    private fun isPrelude(token: String): Boolean = token == "sudo" || token == "env" || token.contains('=')
+
     private fun str(input: JsonObject, key: String): String? =
         (input[key] as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { it.isNotBlank() }
 
-    private fun fileName(input: JsonObject, key: String): String =
-        clip(str(input, key)?.trimEnd('/')?.substringAfterLast('/')) ?: "a file"
-
     /** The first real command's program and first argument — "git status", "gradlew test": past the
      *  `cd`/`export`/assignment prelude, before any `| tail` behind it. */
-    private fun commandHead(command: String?): String {
+    private fun commandHead(command: String?): String? {
         val words = command.orEmpty().split(SEGMENT_SPLIT).asSequence()
             .map { segment -> segment.trim().split(WHITESPACE).filter { it.isNotEmpty() }.dropWhile { isPrelude(it) } }
             .firstOrNull { it.isNotEmpty() && it.first() !in SHELL_PRELUDE }
@@ -121,10 +136,8 @@ internal class ActivityLabel {
             .take(2)
             .map { it.substringAfterLast('/') }
             .filter { it.any(Char::isLetterOrDigit) }
-        return clip(words.joinToString(" ")) ?: "a command"
+        return clip(words.joinToString(" "))
     }
-
-    private fun isPrelude(token: String): Boolean = token == "sudo" || token == "env" || token.contains('=')
 
     private fun clip(text: String?): String? =
         text?.takeIf { it.isNotBlank() }?.let { if (it.length > MAX_ARG_CHARS) it.take(MAX_ARG_CHARS) + "…" else it }
@@ -165,5 +178,6 @@ private val FIXED_LABELS = mapOf(
     "SendMessage" to "Messaging a peer session",
 )
 private val SHELL_PRELUDE = setOf("cd", "pushd", "popd", "export", "set", "source", ".", "echo")
+
 private val SEGMENT_SPLIT = Regex("&&|\\|\\||[;|\\n]")
 private val WHITESPACE = Regex("\\s+")

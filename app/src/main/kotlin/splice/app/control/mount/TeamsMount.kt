@@ -8,18 +8,26 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
+import kotlinx.serialization.json.Json
 import splice.app.control.ConsolePorts
+import splice.app.control.ManagedHead
+import splice.core.config.UserHome
+import splice.core.util.JsonScalars
 import splice.sessions.http.ActivitySource
 import splice.sessions.http.SentTextSource
 import splice.sessions.http.TeamSource
+import splice.sessions.http.TeamStart
 import splice.sessions.http.TeamsRoutes
+import splice.sessions.http.TerminalSource
 import splice.sessions.registry.SessionSource
+import splice.upstream.codemode.ProcessWaiter
 
 /** Registered only when a session registry is wired, as the team routes always were. [ports] is read at CALL
  *  time: ControlPlane assigns the activity and team stores after construction. */
 internal class TeamsMount(
     wiring: SessionsWiring,
     sessions: SessionSource?,
+    heads: Map<String, ManagedHead>,
     ports: ConsolePorts,
     private val guard: ControlGuard,
 ) {
@@ -32,6 +40,18 @@ internal class TeamsMount(
             SentTextSource(routes::sentTexts),
         )
     }
+
+    /** Starting and stopping a member: the terminal and the team store are read per call, so a daemon that
+     *  wires them after this mount is constructed still serves them (the [ports] rule). */
+    private val starts = TeamStart(
+        teams = TeamSource { ports.teams },
+        driver = TerminalSource { ports.sessionDriver },
+        commands = HeadStartCommands(heads),
+        pins = PoolAccountPins(heads),
+        arrival = RegistryArrival(sessions, ProcessWaiter()),
+        registry = sessions,
+        home = UserHome.dir(),
+    )
 
     /** There is deliberately no GET /api/teams/{id}; the board composes from these and /api/sessions. */
     fun register(route: Route) {
@@ -55,6 +75,17 @@ internal class TeamsMount(
             }
         }
         route.post("/api/teams/{id}/archive") { guard.guarded(call) { teams.archive(id(call)).send(call) } }
+        // The three writes that drive a member: start it, stop its turn, answer what it is waiting on. The terminal
+        // behind all three is SessionTerminal's contract, read per call.
+        route.post("/api/teams/{id}/slots/{slot}/start") {
+            guard.guarded(call) { starts.start(id(call), slot(call)).send(call) }
+        }
+        route.post("/api/teams/{id}/slots/{slot}/stop") {
+            guard.guarded(call) { starts.stop(id(call), slot(call)).send(call) }
+        }
+        route.post("/api/teams/{id}/slots/{slot}/answer") {
+            guard.guarded(call) { starts.answer(id(call), slot(call), choice(call.receiveText())).send(call) }
+        }
         route.get("/api/teams/{id}/edges") { guard.guarded(call) { teams.reads.edges(id(call)).send(call) } }
         // V4-249: ?from=&to= is the caller's own day (the console's local one), beside ?day=, a UTC date.
         route.get("/api/teams/{id}/chat") {
@@ -73,4 +104,12 @@ internal class TeamsMount(
     }
 
     private fun id(call: ApplicationCall): String = call.parameters["id"].orEmpty()
+
+    private fun slot(call: ApplicationCall): String = call.parameters["slot"].orEmpty()
+
+    /** The numbered choice a body names. A body that names none answers 0, which the route refuses in words. */
+    private fun choice(body: String): Int {
+        val asked = JsonScalars.objectOrNull(Json, body) ?: return 0
+        return JsonScalars.long(asked, "choice")?.toInt() ?: 0
+    }
 }

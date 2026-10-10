@@ -24,6 +24,7 @@ import splice.app.provider.HeadBuildInputs
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.session.ActivityAction
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.HeadConfig
 import splice.core.topology.Topology
@@ -74,9 +75,9 @@ class ConsoleActivityPublishTest {
         val publisher = ConsoleEventPublisher(stores, WallClock { NOW })
         val codex = publisher.forHead("codex")
         codex.messageSent("s-1", "uds:/run/peer.sock", "toolu_1")
-        codex.activityLabel(null, "Reading nothing")
+        codex.activityLabel(null, ActivityAction("Reading nothing"))
         codex.labelQueryUpstream(null)
-        codex.activityLabel("s-1", "Messaging a peer session")
+        codex.activityLabel("s-1", ActivityAction("Messaging a peer session", "SendMessage", "reviewer"))
         codex.labelQueryUpstream("s-1")
         assertEquals(
             listOf(MessageEdge("s-1", "uds:/run/peer.sock", NOW, "toolu_1")),
@@ -84,7 +85,15 @@ class ConsoleActivityPublishTest {
         )
         assertEquals(
             listOf(
-                ActivityRow(NOW, "s-1", "codex", "Messaging a peer session", upstream = false),
+                ActivityRow(
+                    NOW,
+                    "s-1",
+                    "codex",
+                    "Messaging a peer session",
+                    upstream = false,
+                    tool = "SendMessage",
+                    subject = "reviewer",
+                ),
                 ActivityRow(NOW, "s-1", "codex", null, upstream = true),
             ),
             await({ stores.activity.rows("s-1") }, 2),

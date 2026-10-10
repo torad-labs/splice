@@ -31,8 +31,28 @@ class ActivityLabelTest {
         """Name the file or function, not the branch. Do not use tools.\n\n""" +
         """Previous: \"Reading foo\" — say something NEW.\n\nGood: \"Reading runAgent.ts\""}]}"""
 
-    private fun labelAfter(name: String, input: String) =
+    private fun actionAfter(name: String, input: String) =
         label.labelFor(request(user, toolUse(name, input), toolResult, query))
+
+    private fun labelAfter(name: String, input: String) = actionAfter(name, input)?.label
+
+    @Test
+    fun `the tool and its object travel with the sentence, and a sentence with no call carries neither`() {
+        fun pair(name: String, input: String) = actionAfter(name, input).let { it?.tool to it?.subject }
+        assertEquals("Read" to "TurnStreamer.kt", pair("Read", """{"file_path":"/repo/g/TurnStreamer.kt"}"""))
+        assertEquals("Write" to "notes.md", pair("Write", """{"file_path":"notes.md","content":"x"}"""))
+        assertEquals("Bash" to "git status", pair("Bash", """{"command":"cd /repo && git status --short"}"""))
+        assertEquals("Grep" to "perTurnHeaders", pair("Grep", """{"pattern":"perTurnHeaders"}"""))
+        assertEquals("Agent" to "Explore", pair("Agent", """{"subagent_type":"Explore","prompt":"x"}"""))
+        assertEquals("SendMessage" to "reviewer", pair("SendMessage", """{"to":"reviewer","message":"hi"}"""))
+        assertEquals("mcp__exa__web_search_exa" to null, pair("mcp__exa__web_search_exa", """{"query":"x"}"""))
+        assertEquals(
+            "Read" to null,
+            pair("Read", """{}"""),
+            "the missing file is no object, whatever the sentence says",
+        )
+        assertEquals(null to null, label.labelFor(request(query)).let { it?.tool to it?.subject })
+    }
 
     @Test
     fun `file tools name the file`() {
@@ -86,14 +106,14 @@ class ActivityLabelTest {
         val results = """{"role":"user","content":[""" +
             """{"type":"tool_result","tool_use_id":"a","content":"1"},""" +
             """{"type":"tool_result","tool_use_id":"b","content":"2"}]}"""
-        assertEquals("Editing b.kt", label.labelFor(request(user, twoCalls, results, query)))
+        assertEquals("Editing b.kt", label.labelFor(request(user, twoCalls, results, query))?.label)
     }
 
     @Test
     fun `no tool call yet and no transcript have their own labels`() {
         val textOnly = """{"role":"assistant","content":[{"type":"text","text":"Here is the fix."}]}"""
-        assertEquals("Replying to the user", label.labelFor(request(user, textOnly, query)))
-        assertEquals("Reading the request", label.labelFor(request(query)))
+        assertEquals("Replying to the user", label.labelFor(request(user, textOnly, query))?.label)
+        assertEquals("Reading the request", label.labelFor(request(query))?.label)
     }
 
     @Test
@@ -114,7 +134,7 @@ class ActivityLabelTest {
     fun `an ordinary turn samples its last tool call and nothing else (V4-265)`() {
         assertEquals(
             "Running npm test",
-            label.sampleOf(request(user, toolUse("Bash", """{"command":"cd /s && npm test"}"""), toolResult)),
+            label.sampleOf(request(user, toolUse("Bash", """{"command":"cd /s && npm test"}"""), toolResult))?.label,
         )
         val textOnly = """{"role":"assistant","content":[{"type":"text","text":"Here is the fix."}]}"""
         assertNull(label.sampleOf(request(user, textOnly, user)), "a reply is not a sample")

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.session.ActivityAction
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import splice.sessions.activity.MessageEdge
@@ -49,7 +50,7 @@ class TeamHistoryTest {
         val cutoff = rig.stores.oldestEdgeDay()
         rig.now = cutoff + hour
         rig.stores.edges.record(MessageEdge(LEAD, "uds:/run/2.sock", rig.now, "toolu_kept"))
-        rig.stores.activity.label(LEAD, "claude", "Kept sample", rig.now)
+        rig.stores.activity.label(LEAD, "claude", ActivityAction("Kept sample"), rig.now)
         AsyncFileIo.drain()
         rig.now = AT
         val routes = TeamsRoutes(

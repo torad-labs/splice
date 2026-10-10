@@ -135,6 +135,8 @@ public class TeamReads internal constructor(
                                     put("head", row.head)
                                     put("label", label.substringBefore('\n'))
                                     put("detail", label.substringAfter('\n', "").trim().takeIf { it.isNotEmpty() })
+                                    put("tool", row.tool)
+                                    put("object", row.subject)
                                 },
                             )
                         }

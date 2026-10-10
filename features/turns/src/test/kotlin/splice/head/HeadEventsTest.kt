@@ -41,6 +41,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.session.ActivityAction
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.core.usage.QuotaSnapshot
@@ -93,8 +94,8 @@ private class RecordingEvents : HeadEvents {
         calls.add("edge $session $to $toolUseId")
     }
 
-    override fun activityLabel(session: String?, label: String) {
-        calls.add("label $session $label")
+    override fun activityLabel(session: String?, action: ActivityAction) {
+        calls.add("label $session ${action.label}")
     }
 
     override fun labelQueryUpstream(session: String?) {

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.session.ActivityAction
 import splice.core.util.AsyncFileIo
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -78,10 +79,10 @@ class ActivityStoresTest {
             storeHeads = "claudex, codex",
             clock = WallClock { DAY_ONE },
         )
-        stores.activity.label("s-1", "claudex", "Reading splice.toml", DAY_ONE)
+        stores.activity.label("s-1", "claudex", ActivityAction("Reading splice.toml"), DAY_ONE)
         stores.activity.upstream("s-1", "codex", DAY_ONE + 1)
-        stores.activity.label("s-1", "grok", "Running git status", DAY_ONE + 2)
-        stores.activity.label("s-2", "claudex", "Editing Knob.kt", DAY_ONE + 3)
+        stores.activity.label("s-1", "grok", ActivityAction("Running git status"), DAY_ONE + 2)
+        stores.activity.label("s-2", "claudex", ActivityAction("Editing Knob.kt"), DAY_ONE + 3)
         await({ stores.activity.rows("s-2") }, 1)
         assertEquals(
             listOf(
@@ -90,6 +91,25 @@ class ActivityStoresTest {
             ),
             stores.activity.rows("s-1"),
             "grok is outside the switch, so its label was never written",
+        )
+    }
+
+    @Test
+    fun `a label keeps its tool and object, and a row written before they existed reads as neither`() {
+        val stores = ActivityStores(dir, retentionDays = 90, storeHeads = "*", clock = WallClock { DAY_ONE })
+        Files.createDirectories(dir)
+        Files.writeString(
+            dir.resolve("activity-2026-09-18.jsonl"),
+            """{"at":$DAY_ONE,"session":"s-1","head":"claudex","label":"Reading splice.toml"}""" + "\n",
+        )
+        stores.activity.label("s-1", "claudex", ActivityAction("Running npm test", "Bash", "npm test"), DAY_ONE + 1)
+        assertEquals(
+            listOf(
+                ActivityRow(DAY_ONE, "s-1", "claudex", "Reading splice.toml", upstream = false),
+                ActivityRow(DAY_ONE + 1, "s-1", "claudex", "Running npm test", false, "Bash", "npm test"),
+            ),
+            await({ stores.activity.rows("s-1") }, 2),
+            "the old sentence is not parsed back into a tool",
         )
     }
 
@@ -122,7 +142,7 @@ class ActivityStoresTest {
     fun `a label is kept for today and yesterday, the UTC days a local day spans, and its edge keeps the knob's`() {
         var now = DAY_ONE
         val stores = ActivityStores(dir, retentionDays = 90, storeHeads = "*", clock = WallClock { now })
-        stores.activity.label("s-1", "codex", "Running npm test", now)
+        stores.activity.label("s-1", "codex", ActivityAction("Running npm test"), now)
         stores.edges.record(MessageEdge("s-1", "uds:/run/a.sock", now, "toolu_1"))
         await({ stores.activity.rows("s-1") }, 1)
         now = DAY_ONE + DAY_MS
@@ -130,7 +150,7 @@ class ActivityStoresTest {
         now = DAY_ONE + 2 * DAY_MS
         assertEquals(emptyList<ActivityRow>(), stores.activity.rows("s-1"), "the day before is in no local day today")
         assertEquals(1, stores.edges.edges().size, "an edge keeps the activityRetentionDays window")
-        stores.activity.label("s-1", "codex", "Reading README.md", now)
+        stores.activity.label("s-1", "codex", ActivityAction("Reading README.md"), now)
         await({ stores.activity.rows("s-1") }, 1)
         assertFalse(Files.exists(dir.resolve("activity-2026-09-18.jsonl")), "the first label two days on deletes it")
         assertFalse(Files.exists(dir.resolve("activity-2026-09-18.jsonl.lock")), "and its lock sidecar")

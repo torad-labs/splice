@@ -12,6 +12,7 @@ import splice.core.config.Knob
 import splice.core.model.ClientWindows
 import splice.core.prompt.HeadSystemPrompt
 import splice.core.prompt.SystemPromptLayers
+import splice.core.session.ActivityAction
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
@@ -283,9 +284,9 @@ public interface HeadEvents {
      *  the request that carries the assistant turn which made it (MessageEdges). */
     public fun messageSent(session: String, to: String, toolUseId: String)
 
-    /** V4-130: the head answered Claude Code's activity side query locally with [label]. [session] is
+    /** V4-130: the head answered Claude Code's activity side query locally with [action]. [session] is
      *  null for a request that carried no session header. */
-    public fun activityLabel(session: String?, label: String)
+    public fun activityLabel(session: String?, action: ActivityAction)
 
     /** V4-130: a request that looks like the activity side query but did not match its opening went
      *  upstream as an ordinary turn (ActivityLabel.looksLikeSideQuery). Counted so an empty label
@@ -306,7 +307,7 @@ public object NoHeadEvents : HeadEvents {
 
     override fun messageSent(session: String, to: String, toolUseId: String): Unit = Unit
 
-    override fun activityLabel(session: String?, label: String): Unit = Unit
+    override fun activityLabel(session: String?, action: ActivityAction): Unit = Unit
 
     override fun labelQueryUpstream(session: String?): Unit = Unit
 }

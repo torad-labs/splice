@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
+import splice.core.session.ActivityAction
 import splice.core.wire.AnthropicRequest
 
 private class Edges : HeadEvents {
@@ -26,7 +27,7 @@ private class Edges : HeadEvents {
         sent += "$session $to $toolUseId"
     }
 
-    override fun activityLabel(session: String?, label: String): Unit = Unit
+    override fun activityLabel(session: String?, action: ActivityAction): Unit = Unit
 
     override fun labelQueryUpstream(session: String?): Unit = Unit
 }

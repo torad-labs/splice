@@ -33,6 +33,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.ModelRates
 import splice.core.model.ModelTierSuffix
+import splice.core.model.PublishedRates
 import splice.core.model.WindowRule
 
 @Serializable
@@ -319,7 +320,8 @@ public data class ProviderConfig(
     /** V4-438: a row with no card of its own takes the one the provider LISTS for its model, under the bare
      *  id or any alias, so a model an operator added by id is priced like one splice.toml carries. Last in
      *  the order head, row, listing: a card somebody wrote is never replaced by one an endpoint published,
-     *  and a model the endpoint lists no price for keeps null, which every reader renders as "no rate card".
+     *  and a model the endpoint lists no price for takes the vendor's published list price splice ships
+     *  ([PublishedRates], Oct 10, 2026), else keeps null, which every reader renders as "no rate card".
      *  The listed serve ceiling is retained independently of the declared compaction window. */
     private fun withListedFacts(entries: List<ModelEntry>, discovered: List<DiscoveredModel>): List<ModelEntry> {
         val listed = HashMap<String, DiscoveredModel>()
@@ -334,7 +336,8 @@ public data class ProviderConfig(
             } else {
                 entry.contextWindow
             }
-            entry.copy(contextWindow = window, rates = entry.rates ?: model?.rates, maxContextWindow = ceiling)
+            val rates = entry.rates ?: model?.rates ?: PublishedRates.of(baseUrl, entry.id)
+            entry.copy(contextWindow = window, rates = rates, maxContextWindow = ceiling)
         }
     }
 

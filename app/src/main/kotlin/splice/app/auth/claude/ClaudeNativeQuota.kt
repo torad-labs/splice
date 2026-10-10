@@ -35,6 +35,9 @@ internal class ClaudeNativeQuota(
 
     override fun observed(key: String, snapshot: QuotaSnapshot) {
         if (snapshot.isEmpty && !snapshot.answeredEmpty) return
+        // The file first, then the view: a reader that sees this reading in memory must find it on disk too. The other
+        // order left a window where the view held the new reading and the file still held the old one.
+        files.observed(key, snapshot)
         latest.updateAndGet { previous ->
             if (previous?.key == key && previous.snapshot.updatedAt > snapshot.updatedAt) {
                 previous
@@ -42,7 +45,6 @@ internal class ClaudeNativeQuota(
                 Observation(key, snapshot)
             }
         }
-        files.observed(key, snapshot)
     }
 
     fun probe(probes: QuotaProbes, kind: String, baseUrl: String, userAgent: ClientUserAgent): QuotaProbe =

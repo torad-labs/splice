@@ -171,11 +171,35 @@ public fun interface ConsoleEventBuild {
     public operator fun invoke(seq: Long): ConsoleEvent
 }
 
-public class EventBus(private val backlog: Int = DEFAULT_BACKLOG) {
+public class EventBus(
+    private val backlog: Int = DEFAULT_BACKLOG,
+    // THE IDS DO NOT RESTART WITH THE DAEMON (2026-10-10). They were minted from 1 every boot, so a console that
+    // reconnected across a restart with `Last-Event-ID: 4312` asked a fresh bus for everything after 4312 and was
+    // given nothing, while the ring held events it had never seen — a silent hole exactly where the handover is.
+    // Seeded from wall time, every boot's ids sit above every earlier boot's, so the resume filter is honest and a
+    // client comparing ids never sees them go backwards. Not elapsed time: the reading is compared across processes.
+    firstSeq: Long = System.currentTimeMillis(),
+) {
     private val lock = Any()
     private val subscribers = mutableSetOf<EventSubscription>()
     private val ring = ArrayDeque<ConsoleEvent>(REPLAY_RING)
-    private val nextSeq = AtomicLong(1)
+    private val nextSeq = AtomicLong(firstSeq)
+
+    /** Set when the daemon has begun its stop, so an open stream can end itself on purpose instead of being cut when
+     *  the socket closes, and a stream asked for during the stop is refused rather than opened for one second. */
+    @Volatile
+    private var stopping = false
+
+    public val isStopping: Boolean get() = stopping
+
+    /** The daemon is stopping: every open stream ends cleanly, and the route tells each client why before it does. */
+    public fun stopping() {
+        synchronized(lock) {
+            stopping = true
+            subscribers.toList().forEach { it.close() }
+            subscribers.clear()
+        }
+    }
 
     /** Publishes to every subscriber. NEVER blocks: a full subscriber drops and counts.
      *

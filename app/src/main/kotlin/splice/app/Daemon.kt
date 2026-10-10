@@ -259,6 +259,11 @@ public class Daemon(
             headProbes.fenceStarts()
             controlPlane.ownership.fence()
 
+            // The console hears the stop FIRST, while the control port is still open: every open /api/events read is
+            // ended on purpose with a last frame naming the restart, instead of being cut mid-frame when the socket
+            // closes. The page then reconnects on its own after the stream's own retry delay (EventsRoute).
+            controlPlane.console.bus.stopping()
+
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an
             // exception escaping one head's stop (a type outside runCatchingDaemonBoundary's list)

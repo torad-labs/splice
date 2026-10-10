@@ -16,6 +16,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.util.concurrent.CountDownLatch
 
+/** Every bus here mints from 1, so an id in an assertion is the id the test published. Production seeds the floor
+ *  from wall time instead, so a reconnect across a restart cannot ask for ids the new daemon would mint later. */
+private const val FIRST_SEQ = 1L
+
 /** Deliberately tiny so the overflow path is reached in a handful of events, not thousands. */
 private const val TEST_BACKLOG = 4
 private const val OVERFLOW_BY = 50
@@ -37,7 +41,7 @@ class EventBusBackpressureTest {
 
     @Test
     fun `a subscriber that stops draining drops and counts, and publishing never waits`() {
-        val bus = EventBus(TEST_BACKLOG)
+        val bus = EventBus(TEST_BACKLOG, firstSeq = FIRST_SEQ)
         val slow = bus.subscribe()
         val total = TEST_BACKLOG + OVERFLOW_BY
 
@@ -51,7 +55,7 @@ class EventBusBackpressureTest {
 
     @Test
     fun `a subscriber that keeps up receives every event in order with no drops`() = runBlocking {
-        val bus = EventBus(TEST_BACKLOG)
+        val bus = EventBus(TEST_BACKLOG, firstSeq = FIRST_SEQ)
         val fast = bus.subscribe()
         val total = TEST_BACKLOG + OVERFLOW_BY
 
@@ -75,7 +79,7 @@ class EventBusBackpressureTest {
 
     @Test
     fun `a late subscriber replays only what it missed`() {
-        val bus = EventBus(TEST_BACKLOG)
+        val bus = EventBus(TEST_BACKLOG, firstSeq = FIRST_SEQ)
         val ids = (1..5).map { bus.publish { seq -> event(seq) }.seq }
         val resumed = bus.subscribe(lastEventId = ids[2])
         val replayed = generateSequence { resumed.channel.tryReceive().getOrNull() }.map { it.seq }.toList()
@@ -88,7 +92,7 @@ class EventBusBackpressureTest {
      *  a 256 backlog and a 512 ring is the review's own failing input. */
     @Test
     fun `a resume from far behind receives every event after its id, and keeps its live backlog`() {
-        val bus = EventBus(PRODUCTION_BACKLOG)
+        val bus = EventBus(PRODUCTION_BACKLOG, firstSeq = FIRST_SEQ)
         repeat(FAR_BEHIND) { bus.publish { seq -> event(seq) } }
 
         val resumed = bus.subscribe(lastEventId = 0)
@@ -106,7 +110,7 @@ class EventBusBackpressureTest {
      *  client sees is past its own + 1 — the gap is ON THE WIRE, never silent. */
     @Test
     fun `a resume older than the ring replays the whole ring and shows the gap in its first id`() {
-        val bus = EventBus(PRODUCTION_BACKLOG)
+        val bus = EventBus(PRODUCTION_BACKLOG, firstSeq = FIRST_SEQ)
         val total = REPLAY_RING_SIZE + FAR_BEHIND
         repeat(total) { bus.publish { seq -> event(seq) } }
 
@@ -126,7 +130,7 @@ class EventBusBackpressureTest {
      *  B cannot append until A has). */
     @Test
     fun `ids reach a subscriber strictly increasing even when two publishers interleave`() {
-        val bus = EventBus(PRODUCTION_BACKLOG)
+        val bus = EventBus(PRODUCTION_BACKLOG, firstSeq = FIRST_SEQ)
         val live = bus.subscribe()
         val aInBuild = CountDownLatch(1)
         val bDone = CountDownLatch(1)
@@ -162,7 +166,7 @@ class EventBusBackpressureTest {
     @Test
     @OptIn(DelicateCoroutinesApi::class) // isClosedForReceive: the closed state IS the assertion
     fun `unsubscribing stops delivery and releases the subscriber`() {
-        val bus = EventBus(TEST_BACKLOG)
+        val bus = EventBus(TEST_BACKLOG, firstSeq = FIRST_SEQ)
         val subscription = bus.subscribe()
         assertEquals(1, bus.subscriberCount)
         bus.unsubscribe(subscription)

@@ -50,6 +50,10 @@ public class EventsRoute(private val bus: EventBus) {
                         out.writeStringUtf8(frame)
                         out.flush()
                     }
+                    // The pump returns when the subscriber closed: the client went away, or the daemon began its
+                    // stop and closed every subscription (EventBus.stopping). Returning here finishes the
+                    // RESPONSE, so the end is one the console's reader sees as an END rather than a frame cut in
+                    // half when the socket closes under it, and its reconnect resumes from the id it holds.
                 },
             )
         } finally {

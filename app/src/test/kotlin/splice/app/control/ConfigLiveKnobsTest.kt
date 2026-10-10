@@ -140,6 +140,19 @@ class ConfigLiveKnobsTest {
     }
 
     @Test
+    fun `mirror_reasoning is read-only in the config answer, pinned false with its reason`() = runBlocking<Unit> {
+        val knobs = json.parseToJsonElement(read()).jsonObject.getValue("knobs").jsonObject
+        val mirror = knobs.getValue(Knob.MIRROR_REASONING.key).jsonObject
+
+        assertFalse(mirror.getValue("editable").jsonPrimitive.boolean, mirror.toString())
+        assertEquals(
+            "pinned false by project rule; ask Marcos to change",
+            mirror.getValue("read_only_reason").jsonPrimitive.content,
+        )
+        assertEquals("false", mirror.getValue("value").jsonPrimitive.content)
+    }
+
+    @Test
     fun `the management key never appears in a config answer`() = runBlocking<Unit> {
         val answers = listOf(patch("""{"maxInflight":3}"""), read())
         answers.forEach { assertFalse(key in it, "the management key leaked into: $it") }

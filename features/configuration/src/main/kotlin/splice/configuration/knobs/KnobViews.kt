@@ -16,6 +16,11 @@ private const val VALUE = "value"
 
 private val SCOPES_BY_PRECEDENCE = listOf("default", "toml", "head", "file", "env", "runtime")
 
+/** Knobs the schema carries but no layer can change: ConfigCoercion answers them with one value whatever is written. */
+private val PINNED_REASONS = mapOf(
+    Knob.MIRROR_REASONING to "pinned false by project rule; ask Marcos to change",
+)
+
 internal class KnobViews {
     /** [effective] is the merged value for [headKey] (or the global view); [layers] says which layer set each key. */
     fun of(effective: JsonObject, layers: ConfigLayers, headKey: String?): JsonObject = buildJsonObject {
@@ -32,8 +37,10 @@ internal class KnobViews {
                 put(VALUE, effective[knob.key] ?: JsonNull)
                 put("scope", SCOPES_BY_PRECEDENCE.last { scope -> knob.key in byScope.getValue(scope) })
                 put("disposition", if (knob.restartRequired) "restart" else "live")
-                put("editable", !knob.headOnly)
-                if (knob.headOnly) put("read_only_reason", "set only in [heads.<key>.overrides], never by PATCH")
+                val readOnlyReason = PINNED_REASONS[knob]
+                    ?: "set only in [heads.<key>.overrides], never by PATCH".takeIf { knob.headOnly }
+                put("editable", readOnlyReason == null)
+                if (readOnlyReason != null) put("read_only_reason", readOnlyReason)
             }
         }
     }

@@ -5,7 +5,7 @@
 // what its commit changed. One lock serialises users of the tree. Node modules are linked from the shared checkout (the
 // pinned ast-grep and the gate's own dependencies); every tracked file comes from the commit.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { takeExclusive } from "./flock.ts";
 
@@ -30,6 +30,18 @@ function must(cwd: string, args: readonly string[]): string {
   return run.stdout;
 }
 
+/** Where the ktlint Gradle plugin keeps what its lint step found: every finding named by absolute path, and read back by the
+ *  next run for the files that did not change. A tree that is kept between pushes must not carry the previous run's, because
+ *  one that was once restored from another tree's cache entry names that tree's files, and they would be reported in this
+ *  tree's verdict. Gradle project directories sit at most three deep. */
+const LINT_RESULTS = ["*/build/intermediates/ktLint", "*/*/build/intermediates/ktLint", "*/*/*/build/intermediates/ktLint"];
+
+function dropLintResults(tree: string): void {
+  for (const pattern of LINT_RESULTS) {
+    for (const found of new Bun.Glob(pattern).scanSync({ cwd: tree, onlyFiles: false })) rmSync(join(tree, found), { recursive: true, force: true });
+  }
+}
+
 /** The tree pre-push judges a pushed sha in. */
 export const PRE_PUSH_TREE = "tree";
 /** The tree a local `gate run` judges HEAD in. It is not the pre-push tree, so a half-hour gate never makes a push wait. */
@@ -50,6 +62,7 @@ export function preparePrePushTree(repoRoot: string, sha: string, waitMs: number
       must(path, ["reset", "--hard", "-q", sha]);
       // Untracked source goes; ignored build output and caches stay.
       must(path, ["clean", "-fdq"]);
+      dropLintResults(path);
     } else {
       git(repoRoot, ["worktree", "prune"]);
       must(repoRoot, ["worktree", "add", "--detach", "--force", path, sha]);

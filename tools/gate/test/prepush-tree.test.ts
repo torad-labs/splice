@@ -58,6 +58,26 @@ describe("the pre-push build tree", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  test("drops the lint step's findings from the last run, which name files by absolute path, and keeps the other build output", () => {
+    const root = repo();
+    const first = sh(root, "rev-parse", "HEAD");
+    const one = preparePrePushTree(root, first);
+    for (const module of ["app", "features/turns", "integrations/dialects/openai-responses"]) {
+      mkdirSync(join(one.path, module, "build", "intermediates", "ktLint"), { recursive: true });
+      writeFileSync(join(one.path, module, "build", "intermediates", "ktLint", "runKtlintCheckOverMainSourceSet_errors.bin"), "/tmp/b3-tree2/app/A.kt:48:1\n");
+      mkdirSync(join(one.path, module, "build", "classes"), { recursive: true });
+      writeFileSync(join(one.path, module, "build", "classes", "A.class"), "compiled\n");
+    }
+    one.release();
+    const two = preparePrePushTree(root, second(root));
+    for (const module of ["app", "features/turns", "integrations/dialects/openai-responses"]) {
+      expect(existsSync(join(two.path, module, "build", "intermediates", "ktLint"))).toBe(false);
+      expect(readFileSync(join(two.path, module, "build", "classes", "A.class"), "utf8")).toBe("compiled\n");
+    }
+    two.release();
+    rmSync(root, { recursive: true, force: true });
+  });
+
   test("one push at a time: a second user waits, then is refused when the tree stays busy", () => {
     const root = repo();
     const sha = sh(root, "rev-parse", "HEAD");

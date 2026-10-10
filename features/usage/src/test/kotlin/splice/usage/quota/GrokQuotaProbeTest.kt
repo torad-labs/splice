@@ -35,6 +35,22 @@ class GrokQuotaProbeTest {
         assertNull(parser.parse(obj("""{"error":"nope"}"""), now))
     }
 
+    // Oct 10, 2026: xAI answered a week with no use with its period and no percent, protobuf JSON's zero value.
+    @Test
+    fun `a week that names its period and omits the percent is a week at zero`() {
+        val s = parser.parse(
+            obj(
+                """{"config":{"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY",
+                   "start":"2026-10-06T09:48:15.732924+00:00","end":"2026-10-13T09:48:15.732924+00:00"},
+                   "onDemandCap":{"val":0},"isUnifiedBillingUser":true}}""",
+            ),
+            now,
+        )!!
+        assertEquals(0.0, s.sevenDay!!.usedPercent, 1e-9)
+        assertEquals(1_791_884_895L, s.sevenDay!!.resetsAt)
+        assertNull(parser.parse(obj("""{"config":{"isUnifiedBillingUser":true}}"""), now), "no period is no reading")
+    }
+
     @Test
     fun `grok used_percent is not clamped`() {
         assertEquals(

@@ -21,6 +21,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
 import splice.core.usage.QuotaSnapshot
+import splice.core.util.EnvReader
 import splice.core.util.WallClock
 import java.io.IOException
 
@@ -33,7 +34,10 @@ public fun interface QuotaProbe {
 public class QuotaProbes(
     private val client: HttpClient,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
+    env: EnvReader = EnvReader(System::getenv),
 ) {
+    private val claudeUsageUrl = env(CLAUDE_USAGE_URL_ENV) ?: CLAUDE_USAGE_URL
+
     public fun forHead(
         authKind: String,
         baseUrl: String,
@@ -49,7 +53,7 @@ public class QuotaProbes(
             // A Claude head's own accounts: Anthropic's subscription usage endpoint, one probe per account. The
             // caller's forwarded sign-in gets one too and answers null from it, because splice holds no token of
             // its own to ask with (ClaudeUsageProbe).
-            "client" -> userAgent?.let { ClaudeUsageProbe(client, auth, it, clock) }
+            "client" -> userAgent?.let { ClaudeUsageProbe(client, auth, it, clock, url = claudeUsageUrl) }
             else -> null
         }
 }

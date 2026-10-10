@@ -53,7 +53,11 @@ import java.time.OffsetDateTime
 
 /** The endpoint is Anthropic's own and takes no base URL from the head: a Claude head's baseUrl can be a proxy or a
  *  gateway, and this account's PLAN usage is only ever Anthropic's to report. */
-private const val CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+internal const val CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+
+/** The one way to point the endpoint elsewhere, the way the OAuth endpoints take theirs: a test home answers the
+ *  probe from a stand-in on its own machine, so a made-up token never reaches Anthropic (Oct 10, 2026). */
+internal const val CLAUDE_USAGE_URL_ENV = "CLAUDE_OAUTH_USAGE_URL"
 
 // why: the OAuth beta the endpoint requires, the same value every Claude turn already carries.
 private const val CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
@@ -86,6 +90,7 @@ internal class ClaudeUsageProbe(
     private val userAgent: ClientUserAgent,
     private val clock: WallClock,
     private val parse: QuotaParse = ClaudeUsageParser(),
+    private val url: String = CLAUDE_USAGE_URL,
 ) : QuotaProbe {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -94,7 +99,7 @@ internal class ClaudeUsageProbe(
         // Anthropic nothing on that account's behalf and the console keeps the last snapshot a turn reported.
         val creds = auth.credentials() ?: return null
         val authHeaders = QuotaCredentialHeaders.of(creds) ?: return null
-        val response = client.get(CLAUDE_USAGE_URL) {
+        val response = client.get(url) {
             authHeaders.forEach { (name, value) -> header(name, value) }
             header("anthropic-beta", CLAUDE_OAUTH_BETA)
             header("Accept", "application/json")

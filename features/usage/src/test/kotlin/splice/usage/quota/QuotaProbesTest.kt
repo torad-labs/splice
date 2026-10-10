@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
+import splice.core.util.EnvReader
 import splice.core.util.WallClock
 
 class QuotaProbesTest {
@@ -110,6 +111,27 @@ class QuotaProbesTest {
         probes.forHead("kimi-oauth", BASE_URL, auth, null)!!.probe()
         assertEquals(2, captured.size)
         assertTrue(captured.all { it.isEmpty() })
+    }
+
+    // Oct 10, 2026: a test home answers Claude's usage probe from a stand-in, so a made-up token never reaches
+    // Anthropic.
+    @Test
+    fun `a Claude account's usage probe asks the endpoint the environment names, and Anthropic otherwise`() = runTest {
+        val asked = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            asked += request.url.toString()
+            respond("""{"five_hour":{"utilization":71.0},"seven_day":{"utilization":98.0}}""", HttpStatusCode.OK)
+        }
+        val auth = FixedAuth(Credentials.Bearer("tok"))
+        val agent = ClientUserAgent { null }
+        val standIn = mapOf("CLAUDE_OAUTH_USAGE_URL" to "http://127.0.0.1:31990/api/oauth/usage")
+        val pointed = QuotaProbes(HttpClient(engine), env = EnvReader { standIn[it] })
+        val reading = pointed.forHead("client", BASE_URL, auth, null, agent)!!.probe()
+        val unset = QuotaProbes(HttpClient(engine), env = EnvReader { null })
+        unset.forHead("client", BASE_URL, auth, null, agent)!!.probe()
+        assertEquals(98.0, reading!!.sevenDay!!.usedPercent, 1e-9)
+        val anthropic = "https://api.anthropic.com/api/oauth/usage"
+        assertEquals(listOf(standIn.getValue("CLAUDE_OAUTH_USAGE_URL"), anthropic), asked)
     }
 
     private class QuotaParseAdapter : QuotaParse {

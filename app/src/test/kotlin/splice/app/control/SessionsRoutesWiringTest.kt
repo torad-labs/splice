@@ -45,6 +45,7 @@ private const val ONE = "d4d4d4d4-0000-4000-8000-000000000004"
 private const val TWO = "e5e5e5e5-0000-4000-8000-000000000005"
 private const val TIMEOUT_MS = 10_000L
 private const val POLL_MS = 20L
+private const val CLIENT_VERSION = "2.1.289"
 private const val UNWIRED = "the activity stores are not wired into this control plane"
 
 class SessionsRoutesWiringTest {
@@ -63,7 +64,7 @@ class SessionsRoutesWiringTest {
         val sessions = Files.createDirectories(tmp.resolve("sessions"))
         for ((pid, id) in listOf(1 to ONE, 2 to TWO)) {
             val row = """{"pid":$pid,"sessionId":"$id","updatedAt":$SESSIONS_AT,""" +
-                """"messagingSocketPath":"/run/$pid.sock"}"""
+                """"messagingSocketPath":"/run/$pid.sock","version":"$CLIENT_VERSION"}"""
             Files.writeString(sessions.resolve("$pid.json"), row)
         }
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
@@ -139,6 +140,28 @@ class SessionsRoutesWiringTest {
             val refused = get("/api/sessions/$ONE/transcript?cursor=bogus&limit=5")
             assertEquals(400, refused.status.value, refused.bodyAsText())
             assertEquals(json("""{"error":"not a cursor this daemon minted"}"""), json(refused.bodyAsText()))
+        }
+    }
+
+    @Test
+    fun `GET api sessions lists each registered session with its head, availability and client version`() {
+        serve(null) { get, bare ->
+            assertEquals(401, bare("/api/sessions").status.value, "the listing is read with the mgmt key only")
+
+            val reply = get("/api/sessions")
+
+            assertEquals(200, reply.status.value, reply.bodyAsText())
+            val body = json(reply.bodyAsText())
+            assertTrue(body.getValue("note").jsonPrimitive.content.contains("headless `claude -p`"), body.toString())
+            val rows = body.getValue("sessions").jsonArray.map { it.jsonObject }.associateBy {
+                it.getValue("session_id").jsonPrimitive.content
+            }
+            assertEquals(setOf(ONE, TWO), rows.keys)
+            rows.values.forEach { row ->
+                assertEquals(CLIENT_VERSION, row.getValue("version").jsonPrimitive.content, row.toString())
+                assertEquals("live", row.getValue("availability").jsonPrimitive.content, row.toString())
+                assertEquals("unknown head", row.getValue("head").jsonPrimitive.content, row.toString())
+            }
         }
     }
 

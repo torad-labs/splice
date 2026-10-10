@@ -185,6 +185,38 @@ class SessionsCommandTest {
         assertFalse(out.contains("no registered sessions"), out)
     }
 
+    /** The verb with nothing injected: the registry under the home's .claude/sessions and the topology are read from
+     *  where the environment points, as the installed command reads them. */
+    @Test
+    fun `with no registry handed in the verb lists the home's sessions and says when the topology is unreadable`(
+        @TempDir home: Path,
+    ) {
+        val registered = Files.createDirectories(home.resolve(".claude").resolve("sessions"))
+        val pid = ProcessHandle.current().pid()
+        Files.writeString(
+            registered.resolve("$pid.json"),
+            """{"pid":$pid,"name":"here","status":"busy","updatedAt":${System.currentTimeMillis()},""" +
+                """"messagingSocketPath":"/run/here.sock"}""",
+        )
+        val env = EnvReader { name ->
+            when (name) {
+                "HOME" -> home.toString()
+                "SPLICE_CONFIG" -> home.resolve("absent.toml").toString()
+                else -> null
+            }
+        }
+        val diagnostics = mutableListOf<String>()
+        val verb = SessionsCommand(TerminalOutput(::println), TerminalOutput { diagnostics += it })
+
+        val out = capture { verb.sessions(env) }
+
+        val row = out.lines().first { it.contains("here") }
+        assertTrue(row.contains("live"), "the registered, living session is listed as live: $row")
+        assertFalse(row.contains("claudex"), "with no readable topology no session is placed on a head: $row")
+        assertTrue(out.contains("SendMessage(to=\"here\")"), out)
+        assertTrue(diagnostics.single().contains("topology not readable"), diagnostics.toString())
+    }
+
     /** The verb as app wires it — stdout and stderr — so capture() reads what an operator sees. */
     private fun sessionsCommand() = SessionsCommand(TerminalOutput(::println), TerminalOutput(System.err::println))
 

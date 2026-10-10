@@ -109,12 +109,33 @@ export function isoSeconds(at: Date): string {
   );
 }
 
-function holderOf(holderPath: string): string {
+/** Whether the process a holder line names still exists. EPERM is a live process this user may not signal. A line that names
+ *  no pid cannot be judged, so it is kept. */
+function holderAlive(line: string): boolean {
+  const pid = /\bpid=(\d+)/.exec(line)?.[1];
+  if (!pid) return true;
   try {
-    return readFileSync(holderPath, "utf8").trim() || "unknown";
-  } catch {
-    return "unknown";
+    process.kill(Number(pid), 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
   }
+}
+
+/** The holder line while the process it names is alive; null when there is no record, or the record names a dead process.
+ *  A record outlives the build that wrote it whenever that build is killed without running its exit handler, and a dead
+ *  pid holds nothing: the flock is the lock, the line only says who to ask. */
+export function liveHolder(holderPath: string): string | null {
+  try {
+    const line = readFileSync(holderPath, "utf8").trim();
+    return line && holderAlive(line) ? line : null;
+  } catch {
+    return null;
+  }
+}
+
+function holderOf(holderPath: string): string {
+  return liveHolder(holderPath) ?? "unknown";
 }
 
 /** A no-argument usage probe takes no admission or lock. Only the advertised token enables joint acquire. */
@@ -158,10 +179,11 @@ export async function runUnderSlot(options: SlotOptions): Promise<number> {
     writeFileSync(holderPath, `${label} pid=${process.pid} since=${isoSeconds(new Date())}\n`);
   }
   const drop = () => {
-    // The host owns the joint lock. Never erase another admitted build's holder after our host releases it.
-    if (!slot) return;
     try {
-      rmSync(holderPath, { force: true });
+      // A legacy run wrote the holder under its own lock, so it removes it. A joint run did not write it: the wrapper that
+      // the host started did, then became gradle and left nothing to remove it, so the record outlived every joint build.
+      // After our child is gone it removes a record whose process is gone too, and never one a live build wrote.
+      if (slot || (existsSync(holderPath) && liveHolder(holderPath) === null)) rmSync(holderPath, { force: true });
     } catch {
       /* the trap in gradle-slot.sh is best-effort too */
     }

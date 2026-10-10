@@ -4,7 +4,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { isoSeconds, lockPath, NO_TASKS_EXIT, runUnderSlot, SLOT_TIMEOUT_EXIT } from "../src/lib/slot.ts";
+import { isoSeconds, liveHolder, lockPath, NO_TASKS_EXIT, runUnderSlot, SLOT_TIMEOUT_EXIT } from "../src/lib/slot.ts";
 import { takeExclusive } from "../src/lib/flock.ts";
 import { layout } from "../src/lib/repo.ts";
 
@@ -167,9 +167,10 @@ describe("the gradle slot", () => {
   test("the shell script's flock and this CLI's cannot both hold the slot", async () => {
     const fake = fakeBuildRoot();
     const lock = join(fake.dir, ".gradle-slot.lock");
-    writeFileSync(`${lock}.holder`, "another-seat pid=4242 since=2026-09-20T00:00:00-05:00\n");
     // held exactly the way checks/gradle-slot.sh holds it: util-linux flock(1) on fd 9
     const holder = Bun.spawn(["bash", "-c", `exec 9>"${lock}"; flock 9; sleep 30`]);
+    // a record is believed while the process it names lives, so it names the one that holds the lock
+    writeFileSync(`${lock}.holder`, `another-seat pid=${holder.pid} since=2026-09-20T00:00:00-05:00\n`);
     try {
       Bun.sleepSync(300);
       const stderr: string[] = [];
@@ -188,8 +189,8 @@ describe("the gradle slot", () => {
         console.error = original;
       }
       expect(code).toBe(SLOT_TIMEOUT_EXIT);
-      expect(stderr.join("\n")).toContain("gradle-slot: waiting (held by: another-seat pid=4242");
-      expect(stderr.join("\n")).toContain("gradle-slot: gave up after 1s (held by: another-seat pid=4242");
+      expect(stderr.join("\n")).toContain(`gradle-slot: waiting (held by: another-seat pid=${holder.pid}`);
+      expect(stderr.join("\n")).toContain(`gradle-slot: gave up after 1s (held by: another-seat pid=${holder.pid}`);
       expect(existsSync(fake.receipt)).toBe(false);
     } finally {
       holder.kill();
@@ -352,6 +353,68 @@ try {
     });
   }
 
+  /** A scratch repository with a second worktree: the slot's lock lives in the common dir both share. */
+  function secondWorktree() {
+    const main = mkdtempSync(join(tmpdir(), "gate-slot-repo-"));
+    workspaces.push(main);
+    git(main, "init", "-q");
+    git(main, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "root");
+    const second = join(main, "..", `${main.split("/").pop()}-second`);
+    git(main, "worktree", "add", "-q", "--detach", second);
+    workspaces.push(second);
+    writeFileSync(join(second, "gradlew"), "#!/usr/bin/env bash\nexit 0\n");
+    chmodSync(join(second, "gradlew"), 0o755);
+    const common = git(second, "rev-parse", "--path-format=absolute", "--git-common-dir").trim();
+    return { second, holder: join(common, "gradle-slot.lock.holder"), layout: { repoRoot: second, buildRoot: second } };
+  }
+
+  for (const mode of ["plain", "joint"] as const) {
+    test(`a ${mode} run from a second worktree leaves no holder record behind`, async () => {
+      const scratch = secondWorktree();
+      const fake = { layout: scratch.layout, dir: scratch.second, receipt: join(scratch.second, "receipt.txt"), path: "/usr/bin:/bin" };
+      const path = mode === "joint" ? admissionGate(fake, true).path : fake.path;
+      const code = await runUnderSlot({
+        layout: scratch.layout,
+        label: `from-second-${mode}`,
+        args: ["help"],
+        env: { CI: "1", PATH: path, SLOT_FAKE_RUN: "second" },
+      });
+      expect(code).toBe(0);
+      expect(existsSync(scratch.holder), "the record this run caused is gone with it").toBe(false);
+    });
+  }
+
+  test("a holder record whose process is gone reads as free, and a live one is still believed", async () => {
+    const fake = fakeBuildRoot();
+    const holder = join(fake.dir, "holder");
+    const gone = Bun.spawnSync(["true"]).pid;
+    writeFileSync(holder, `dead-seat pid=${gone} since=2026-10-10T10:35:03-05:00\n`);
+    expect(liveHolder(holder)).toBeNull();
+    writeFileSync(holder, `live-seat pid=${process.pid} since=2026-10-10T10:35:03-05:00\n`);
+    expect(liveHolder(holder)).toContain("live-seat");
+    expect(liveHolder(join(fake.dir, "no-such-file"))).toBeNull();
+
+    // and a contender that has to wait does not blame the dead one
+    const lock = join(fake.dir, ".gradle-slot.lock");
+    writeFileSync(`${lock}.holder`, `dead-seat pid=${gone} since=2026-10-10T10:35:03-05:00\n`);
+    const held = Bun.spawn(["bash", "-c", `exec 9>"${lock}"; flock 9; sleep 30`]);
+    try {
+      Bun.sleepSync(300);
+      const stderr: string[] = [];
+      const original = console.error;
+      console.error = (...parts: unknown[]) => void stderr.push(parts.join(" "));
+      try {
+        await runUnderSlot({ layout: fake.layout, label: "waits", args: ["check"], env: { CI: "1", GRADLE_SLOT_WAIT_S: "1", PATH: fake.path }, pollMs: 25 });
+      } finally {
+        console.error = original;
+      }
+      expect(stderr.join("\n")).toContain("waiting (held by: unknown)");
+      expect(stderr.join("\n")).not.toContain("dead-seat");
+    } finally {
+      held.kill();
+    }
+  });
+
   test("a cancelled joint memory waiter never writes or deletes another build's holder (V4-426)", async () => {
     const fake = fakeBuildRoot();
     const gate = admissionGate(fake, true);
@@ -359,7 +422,8 @@ try {
     const held = takeExclusive(lock, 1000, 5);
     expect(held).not.toBeNull();
     const holder = `${lock}.holder`;
-    const owner = "synthetic-running pid=4242 since=2026-10-05T12:00:00-05:00\n";
+    // this process stands for the running build: a record naming a dead pid is not a build, and is swept
+    const owner = `synthetic-running pid=${process.pid} since=2026-10-05T12:00:00-05:00\n`;
     writeFileSync(holder, owner);
     const runner = wrapperProcess(fake, "held-memory", { PATH: gate.path, SLOT_FAKE_RUN: "held" });
     try {

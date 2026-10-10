@@ -6,6 +6,11 @@ public interface HeadAccountOrderSource {
     public fun order(): List<String>
     public fun effectiveOrder(): List<String>
 
+    /** The account the next turn uses, then the one the command moves to when that one runs out, in the order the
+     *  pool selects by. Null when there is none: a head with one login has nowhere to move. */
+    public fun nextTarget(): String?
+    public fun followingTarget(): String?
+
     /** Unknown or duplicate labels are refused without changing either disk or runtime policy. */
     public fun setOrder(labels: List<String>): Boolean
 }

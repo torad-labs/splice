@@ -92,6 +92,8 @@ public class AccountOrderRoute(private val resolver: AccountHeadResolver) {
             put("head", target.head)
             putJsonArray("order") { target.source.order().forEach { add(JsonPrimitive(it)) } }
             putJsonArray("effective_order") { target.source.effectiveOrder().forEach { add(JsonPrimitive(it)) } }
+            put("next_target", target.source.nextTarget())
+            put("following_target", target.source.followingTarget())
         }.toString(),
     )
 

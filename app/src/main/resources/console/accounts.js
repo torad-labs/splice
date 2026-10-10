@@ -96,6 +96,7 @@ async function load() {
     c.order = [...ids, ...mine.map((a) => a.id).filter((id) => !ids.includes(id))];
     c.mode = o.body?.order?.length ? "mine" : "soonest";
     c.pin = mine.find((a) => a.row.pinned)?.id || null;
+    c.serving = o.body?.next_target ?? null; c.following = o.body?.following_target ?? null; // the pool's own picks
   })));
   data = [...provs.values()];
 }
@@ -136,20 +137,24 @@ function ordered(p, c) {
   const list = ruled(p, c), pinned = list.find((a) => a.id === c.pin);
   return pinned && room(pinned) ? [pinned, ...list.filter((a) => a !== pinned)] : list;
 }
-const serving = (p, c) => (p.kind === "plan" ? ordered(p, c).find(room) : p.kind === "key" ? p.accounts.find((k) => k.has) : p.accounts[0]);
-// Where the command goes when the account in use runs out: the next login with room in the same order, or, when every
-// other one is held, the one whose reset is nearest, served at that reset (AccountPool.kt:245-252, :272-274). A signed-out
-// login isn't a candidate. A command with one account has nowhere to go.
+const serving = (p, c) => (p.kind === "plan" ? (c?.serving && p.accounts.find((a) => a.id === c.serving)) || ordered(p, c).find(room) : p.kind === "key" ? p.accounts.find((k) => k.has) : p.accounts[0]);
+// Where the command goes when the account in use runs out, as splice picks it (AccountPool.followingLabel): the next
+// login with room in the same order, or, when every other one is held, the one whose reset is nearest, served at that
+// reset. A command with one account has nowhere to go.
 function nextOf(p, c) {
-  if (p.kind !== "plan" || laneAccts(p, c).length < 2) return null;
-  const now = serving(p, c), rest = ordered(p, c).filter((a) => a !== now && !a.out);
-  return rest.find(room) || rest.filter(held).sort((a, b) => backAt(a) - backAt(b))[0] || null;
+  if (p.kind !== "plan" || !c?.following) return null;
+  return p.accounts.find((a) => a.id === c.following) || null;
 }
 
 // A failed sign-in shows a state, never splice's sentence: the raw text belongs in the command's log on Models.
-// splice serves a failed sign-in as text only (LoginSessions.kt:90-96), with no kind to tell its reasons apart, so until
-// it does every failure reads Not completed, with Try again.
-const NOT_COMPLETED = { word: "Not completed", retry: true };
+// splice names each failure's kind (failure_kind, ConsoleAccounts.kt LoginFailure); a kind it doesn't name reads Not
+// completed. A file or config failure fails again until it's fixed, so it has no Try again.
+const FAILS = {
+  not_completed: { word: "Not completed", retry: true }, network: { word: "Network error", retry: true },
+  file: { word: "File error" }, config: { word: "Config error" }, expired: { word: "Expired", retry: true },
+  stopped: { word: "Stopped", retry: true }, cancelled: { word: "Cancelled", retry: true }, in_progress: { word: "In progress" },
+  already_added: { word: "Already added", pulse: true }, in_use: { word: "In use", retry: true },
+};
 // A name splice takes: letters, digits, - and _, starting with a letter or digit, up to 64 on Claude
 // (ClaudeAccountFolders.kt:34, :195) and 48 elsewhere (OAuthAccountFiles.kt:22, OAuthAccountValidation.kt:35-41),
 // and one no other account of the command has (ClaudeAccountFolders.kt:199, OAuthAccountFiles.kt:264-266).
@@ -269,7 +274,7 @@ async function waitSignin(target) {
 function seen(target, st) { // one status answer: show its step, finish, fail, or ask again in a second
   const s = ui.signin[target];
   if (!s || s.state !== "wait") return;
-  if (st.state === "failed") { failSignin(target); return; }
+  if (st.state === "failed") { failSignin(target, st); return; }
   if (st.state === "signed_in" || st.state === "live_after_restart") { finishSignin(target); return; }
   const url = st.verification_uri || st.browser_url || null, by = st.user_code ? "code" : s.how.native ? "paste" : "browser";
   const changed = url !== s.url || by !== s.by || (st.user_code || null) !== s.code;
@@ -284,10 +289,14 @@ function seen(target, st) { // one status answer: show its step, finish, fail, o
     seen(target, res.body);
   }, 1000);
 }
-function failSignin(target) {
+function failSignin(target, st = null) {
   const s = ui.signin[target];
   stopTimers(s);
-  s.state = "fail"; s.fail = NOT_COMPLETED;
+  s.state = "fail"; s.fail = FAILS[st?.failure_kind] || FAILS.not_completed;
+  if (s.fail.pulse && st?.label) { // Already added: the card already there for that account pulses once
+    const there = data.flatMap((p) => p.accounts).find((a) => a.row?.label === st.label && a.row.heads.includes(s.how.poll));
+    if (there) ui.pulse = there.id;
+  }
   render();
 }
 async function finishSignin(target) {

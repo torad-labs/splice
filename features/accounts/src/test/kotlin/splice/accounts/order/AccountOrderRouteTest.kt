@@ -127,6 +127,8 @@ class AccountOrderRouteTest {
         override fun view(sessionId: String?) = HeadAccountPoolView(null, emptyList(), null)
         override fun order(): List<String> = labels
         override fun effectiveOrder(): List<String> = (labels + listOf("primary", "backup")).distinct()
+        override fun nextTarget(): String = effectiveOrder()[0]
+        override fun followingTarget(): String = effectiveOrder()[1]
         override fun setOrder(labels: List<String>): Boolean {
             if (labels.distinct().size != labels.size || labels.any { it !in listOf("primary", "backup") }) return false
             this.labels = labels

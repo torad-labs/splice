@@ -33,6 +33,16 @@ internal object AccountAvailability {
     private fun selectable(account: PoolAccount, at: Long): Boolean =
         account.credentialStatus(at).selectable && account.cooldown.unavailableForMs() <= 0L
 
+    /** The login a turn takes from [order], then the one it moves to when that one runs out: the first free login, or
+     *  when every one is held, the one whose hold ends soonest. At most two; empty when none could serve. */
+    fun upNext(order: List<PoolAccount>, at: Long): List<PoolAccount> {
+        val pick = { from: List<PoolAccount> ->
+            preferredFree(from, at).firstOrNull() ?: nearestHeld(from, at).firstOrNull()
+        }
+        val next = pick(order) ?: return emptyList()
+        return listOfNotNull(next, pick(order.filterNot { it.label == next.label }))
+    }
+
     /** Full readings guide spending, never synthesize a refusal that the provider did not make. */
     fun preferredFree(order: List<PoolAccount>, at: Long): List<PoolAccount> {
         val free = order.filter { available(it, at) }

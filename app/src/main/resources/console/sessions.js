@@ -7,16 +7,21 @@
 //   GET  /api/heads · /api/models           the commands, the provider each runs on and its models' names
 //   GET  /api/heads/{head}/turns/live       the turns running now, by session: the one Stop ends and the model it runs
 //   GET  /api/sessions/{id}/transcript      the conversation, newest first, with the cursor to the page before it
-//   POST /api/heads/{head}/turns/{id}/stop  Stop
+//   POST /api/heads/{head}/turns/{id}/stop  Stop, for a session splice did not open
+//   GET  /api/sessions/{id}/screen          what a session splice opened is asking on its own screen, and its choices
+//   POST /api/sessions/{id}/say · answer · stop   the Message field, an answer's button, and Stop, in the pane splice
+//                                           opened for it (SessionDrive.kt); a session it did not open draws none of them
 //
-// WHAT IS NOT DRAWN YET, because splice can't do it yet (BUILD.md): writing to a session and answering what it waits
-// on (session-keyed terminal routes, building now), Continue on, the reason a turn stalled, a session's model when no
-// turn is running, a teammate's message as its sender's, and the joint where a session moved. None is explained on
-// screen: each appears with the read or the act that makes it true.
+// WHAT IS NOT DRAWN YET, because splice can't do it yet (BUILD.md): Continue on, the reason a turn stalled, a session's
+// model when no turn is running, a teammate's message as its sender's, and the joint where a session moved. None is
+// explained on screen: each appears with the read or the act that makes it true.
 "use strict";
 
-const state = { rows: [], heads: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, error: null, loading: true };
-const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set() };
+// `screens`: what a session's own prompt shows, by session id, read only for sessions splice opened (GET .../screen
+// answers 200 for those and refuses the rest). A session with a screen is one splice can drive: it gets the Message
+// field and its answers are buttons. One it can't keeps what its transcript says and draws no act it couldn't carry.
+const state = { rows: [], heads: [], providerOf: {}, modelLabel: {}, live: {}, logs: {}, screens: {}, error: null, loading: true };
+const ui = { open: null, auto: false, q: "", ended: false, results: new Set(), failed: new Map(), stopping: new Set(), drafts: {}, sending: new Set() };
 const root = document.getElementById("sessions");
 const wide = sideBySide;
 
@@ -44,7 +49,18 @@ async function read() {
   });
   state.rows = (sessions.body?.sessions || []).filter((s) => s.session_id).map(sessionOf);
   state.loading = false;
+  await readScreens();
 }
+
+/** The screens of the sessions that need him and of the open one: which splice can drive, and what each is offering. */
+async function readScreens() {
+  const ids = state.rows.filter((s) => s.state !== "ended" && (s.state === "needs" || s.id === ui.open)).map((s) => s.id);
+  const read = await Promise.all(ids.map((id) => API.get(`/api/sessions/${encodeURIComponent(id)}/screen`)));
+  const next = {};
+  ids.forEach((id, i) => { if (read[i].ok) next[id] = read[i].body; });
+  state.screens = next;
+}
+const drivable = (s) => s.state !== "ended" && Boolean(state.screens[s.id]);
 
 // an ended session's process is gone, so splice can't read which command it was on, and its row says so in words
 // ("unknown head", SessionsRoutes UNKNOWN_HEAD): that is no command, and nothing is drawn for it
@@ -98,19 +114,35 @@ function metaHtml(s, L, inPane) {
   return `<div class="meta">${chip}<span class="word ${L.cls}">${L.word}</span>${L.detail || ""}${team}${model}${repo}${inPane ? "" : when}</div>`;
 }
 
-// What a waiting session asks, as its transcript and screen say it. Answering it from here comes with the
-// session-keyed answer route; until then the card says where the answer is given.
-function askHtml(s) {
-  const a = s.ask;
-  if (a.asked) return `<div class="ask"><p class="q">${esc(a.asked.question)}</p>${a.asked.options?.length ? `<div class="answers">${a.asked.options.map((o) => `<span class="scope">${esc(o)}</span>`).join("")}</div>` : ""}</div>`;
+// What a waiting session asks, and answering it where it waits. A question's words and options come off its transcript
+// (`last.asks`); a permission's choices belong to the client's version, so they are read off its screen or not drawn.
+// Each answer is the digit the person would press (POST .../answer). A session splice did not open can't be answered
+// from here, and the card says where it is answered instead of offering an act it can't carry.
+function askHtml(s, where = "card") {
+  const a = s.ask, offer = state.screens[s.id], can = drivable(s);
+  const busy = ui.sending.has(s.id) ? " disabled" : "";
+  const pick = (choice, label, i) => `<button class="act${i ? "" : " primary"}" data-act="answer" data-s="${esc(s.id)}" data-i="${choice}"${busy}>${esc(label)}</button>`;
+  if (a.asked) {
+    const opts = a.asked.options || [];
+    const answers = !opts.length ? "" : can && !a.asked.multi ? `<div class="answers">${opts.map((o, i) => pick(i + 1, o, i)).join("")}</div>`
+      : `<div class="answers">${opts.map((o) => `<span class="scope">${esc(o)}</span>`).join("")}</div>`;
+    return `<div class="ask"><p class="q">${esc(a.asked.question)}</p>${answers}${can ? "" : `<p class="why">Answer it in the terminal it runs in.</p>`}</div>`;
+  }
+  // what it wants to do, off its transcript, then the question its screen puts
   const call = a.call?.tool ? `<p class="cmd"><span class="tname">${esc(a.call.tool)}</span>${esc(a.call.text || "")}</p>` : "";
-  return `<div class="ask">${call}<p class="why">Answer it in the terminal it runs in.</p></div>`;
+  const q = offer?.asked ? `<p class="q">${esc(offer.asked)}</p>` : "";
+  if (!offer?.choices?.length) return `<div class="ask">${call}<p class="why">Answer it in the terminal it runs in.</p></div>`;
+  // in the open session the refusal is the Message field's Deny, which also carries what to do instead
+  const deny = where === "pane" && composerHtml(s) ? denyOf(s) : null;
+  const choices = offer.choices.filter((c) => c !== deny);
+  return `<div class="ask">${call}${q}<div class="answers">${choices.map((c, i) => pick(c.choice, c.label, i)).join("")}</div></div>`;
 }
 
 const lastOf = (s) => s.row.last;
+const canStop = (s) => s.state === "working" && (s.live || drivable(s));
 function cardHtml(s) {
   const L = look(s), last = lastOf(s);
-  const stop = s.live ? `<button class="act quiet small" data-act="stop" data-s="${esc(s.id)}"${ui.stopping.has(s.id) ? " disabled" : ""}>Stop</button>` : "";
+  const stop = canStop(s) ? `<button class="act quiet small" data-act="stop" data-s="${esc(s.id)}"${ui.stopping.has(s.id) ? " disabled" : ""}>Stop</button>` : "";
   const wt = s.wt ? `<span class="wt">${ICON.branch}${esc(s.wt)}</span>` : "";
   let body = "";
   if (s.state === "needs") body = askHtml(s);
@@ -193,21 +225,40 @@ function paneHtml() {
   const s = state.rows.find((x) => x.id === ui.open);
   if (!s) return "";
   const L = look(s);
-  const stop = s.live ? `<button class="act" data-act="stop" data-s="${esc(s.id)}"${ui.stopping.has(s.id) ? " disabled" : ""}>${ICON.stop}Stop</button>` : "";
+  const stop = canStop(s) ? `<button class="act" data-act="stop" data-s="${esc(s.id)}"${ui.stopping.has(s.id) ? " disabled" : ""}>${ICON.stop}Stop</button>` : "";
   const close = `<button class="icon close" data-act="close" aria-label="Close">${ICON.close}</button>`;
   const wt = s.wt ? `<span class="wt">${ICON.branch}${esc(s.wt)}</span>` : "";
-  const ask = s.state === "needs" ? `<div class="askbox">${askHtml(s)}</div>` : "";
+  const ask = s.state === "needs" ? `<div class="askbox">${askHtml(s, "pane")}</div>` : "";
   const failed = ui.failed.get(s.id);
   return `<section class="pane" style="--c:${color(s)}" aria-label="${esc(title(s))}"><header><span class="lamp ${L.cls}" aria-hidden="true">${L.lamp}</span>`
     + `<div class="who"><div class="top"><span class="name">${esc(title(s))}</span>${wt}</div>${metaHtml(s, L, true)}</div>`
-    + `<div class="acts">${stop}${close}</div></header>${failed ? `<p class="why limit">${esc(failed)}</p>` : ""}${logHtml(s)}${ask}</section>`;
+    + `<div class="acts">${stop}${close}</div></header>${failed ? `<p class="why limit">${esc(failed)}</p>` : ""}${logHtml(s)}${ask}${composerHtml(s)}</section>`;
+}
+
+/** The choice on a permission's screen that refuses it ("No, and tell Claude what to do differently"), or null. */
+const denyOf = (s) => state.screens[s.id]?.choices?.find((c) => /^no\b/i.test(c.label)) ?? null;
+
+// The Message field, only on a session splice can type into. While a permission waits, it is Deny: the refusing choice
+// is pressed, then his words, if any, go in as what to do instead. While a question waits, its options answer it and
+// no field is drawn, since his own words would land in the question's menu rather than as an answer.
+function composerHtml(s) {
+  if (!drivable(s)) return "";
+  const dialog = s.state === "needs" && s.ask.kind === "dialog";
+  if (s.state === "needs" && (!dialog || !denyOf(s))) return "";
+  const busy = ui.sending.has(s.id) ? " disabled" : "";
+  return `<form class="composer" data-s="${esc(s.id)}"><input class="field" id="say" placeholder="${dialog ? "What to do instead" : "Message"}" aria-label="Message" autocomplete="off" value="${esc(ui.drafts[s.id] || "")}"${busy}>`
+    + (dialog ? `<button class="act deny" type="submit"${busy}>Deny</button></form>` : `<button class="send" type="submit" aria-label="Send"${busy}>${ICON.send}</button></form>`);
 }
 
 // ---------- render ----------
 function render({ stick = true } = {}) {
   const oldLog = root.querySelector(".log"), keep = oldLog && !stick ? oldLog.scrollTop : null;
+  // the five-second read redraws the page: the Message field keeps his focus and caret through it
+  const say = document.activeElement?.id === "say" ? document.activeElement : null, caret = say ? [say.selectionStart, say.selectionEnd] : null;
   root.className = `sessions${ui.open ? " open" : ""}`;
   root.innerHTML = listHtml() + paneHtml();
+  const field = root.querySelector("#say");
+  if (field && (caret || ui.focusSay)) { field.focus(); if (caret) field.setSelectionRange(...caret); ui.focusSay = false; }
   // the conversation he opened is in the address, on the door Teams and Requests use, so Back returns to it
   const addr = ui.open && !ui.auto ? `#${ui.open}` : "";
   if (location.hash !== addr) history.replaceState(history.state, "", `${location.pathname}${location.search}${addr}`);
@@ -221,18 +272,60 @@ function open(id) {
   render();
   const s = find(id);
   if (s && !state.logs[id]) readLog(s);
+  if (s && s.state !== "ended" && !state.screens[id]) readScreen(s);
+}
+/** One session's screen, read the moment it opens, so its Message field is there without waiting for the next read. */
+async function readScreen(s) {
+  const res = await API.get(sessionPath(s, "screen"));
+  if (res.ok && ui.open === s.id) { state.screens[s.id] = res.body; render({ stick: false }); }
 }
 
 // ---------- the acts ----------
-// Stop ends the running turn (LiveTurnsRoutes.kt). A 404 means the turn had already ended: the card just updates.
+const sessionPath = (s, act) => `/api/sessions/${encodeURIComponent(s.id)}/${act}`;
+
+// Stop ends the running turn. In a pane splice opened it presses stop, as the person would (SessionDrive.kt), which
+// leaves the session waiting for his next message; elsewhere it ends the turn at the head (LiveTurnsRoutes.kt). A 404
+// from the head means the turn had already ended: the card just updates.
 async function stop(s) {
-  if (!s.turn) return;
+  if (!s.turn && !drivable(s)) return;
   ui.stopping.add(s.id); ui.failed.delete(s.id); render({ stick: false });
-  const res = await API.post(`/api/heads/${encodeURIComponent(s.turn.head)}/turns/${encodeURIComponent(s.turn.id)}/stop`);
+  const res = drivable(s) ? await API.post(sessionPath(s, "stop"))
+    : await API.post(`/api/heads/${encodeURIComponent(s.turn.head)}/turns/${encodeURIComponent(s.turn.id)}/stop`);
   ui.stopping.delete(s.id);
   if (!res.ok && res.status !== 404) ui.failed.set(s.id, refusalOf(res, "The turn could not be stopped"));
   await reload();
 }
+
+/** Press the numbered choice he picked, then read the session again: the card leaves Needs you once its client moves on. */
+async function answer(s, choice) {
+  ui.sending.add(s.id); ui.failed.delete(s.id); render({ stick: false });
+  const res = await API.post(sessionPath(s, "answer"), { choice });
+  ui.sending.delete(s.id);
+  if (!res.ok) ui.failed.set(s.id, refusalOf(res, "The answer did not reach it"));
+  await reload();
+}
+
+/** His message, whole. While a permission waits, Deny first presses its refusing choice, then gives his words as what to
+ *  do instead. A draft that did not go through stays in the field. */
+async function send(s, text) {
+  ui.sending.add(s.id); ui.failed.delete(s.id); render({ stick: false });
+  const deny = s.state === "needs" ? denyOf(s) : null;
+  let res = deny ? await API.post(sessionPath(s, "answer"), { choice: deny.choice }) : { ok: true };
+  if (res.ok && text) res = await API.post(sessionPath(s, "say"), { text });
+  ui.sending.delete(s.id);
+  if (res.ok) ui.drafts[s.id] = "";
+  else ui.failed.set(s.id, refusalOf(res, deny ? "The refusal did not reach it" : "The message did not reach it"));
+  ui.focusSay = true;
+  await reload();
+}
+root.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const s = find(e.target.dataset.s), text = e.target.querySelector("#say").value.trim();
+  if (!s || ui.sending.has(s.id)) return;
+  if (!text && !(s.state === "needs" && denyOf(s))) { e.target.querySelector("#say").focus(); return; }
+  send(s, text);
+});
+root.addEventListener("input", (e) => { if (e.target.id === "say") ui.drafts[e.target.closest("form").dataset.s] = e.target.value; });
 
 document.getElementById("q").addEventListener("input", (e) => {
   ui.q = e.target.value.trim().toLowerCase();
@@ -253,6 +346,7 @@ document.addEventListener("click", (e) => {
     case "clear": { const q = document.getElementById("q"); q.value = ""; q.dispatchEvent(new Event("input")); q.focus(); break; }
     case "close": ui.open = null; ui.auto = false; render(); break;
     case "stop": if (s) stop(s); break;
+    case "answer": if (s && !ui.sending.has(s.id)) answer(s, Number(el.dataset.i)); break;
     case "result": { const k = el.dataset.k; ui.results.has(k) ? ui.results.delete(k) : ui.results.add(k); render({ stick: false }); break; }
     case "earlier": if (s && state.logs[s.id]?.earlier) readLog(s, state.logs[s.id].earlier); break;
   }
@@ -279,12 +373,14 @@ async function reload() {
   if (s && s.state !== "ended" && !state.logs[s.id]?.extended) readLog(s);
 }
 
+// the door's session is taken before the first draw, which writes the address from what is open (nothing yet)
+const door = location.hash.slice(1);
 render();
 read().then(() => {
-  ui.open = find(location.hash.slice(1))?.id ?? null; // a member card on Teams, or Open session on Requests, opens it here
+  ui.open = find(door)?.id ?? null; // a member card on Teams, or Open session on Requests, opens it here
   if (ui.open && find(ui.open).state === "ended") ui.ended = true; // a door to an ended session shows it among the ended
   render();
-  if (ui.open) readLog(find(ui.open)); else autoOpen();
+  if (ui.open) open(ui.open); else autoOpen();
 });
 // what a session is doing changes on its own clock: the list is read again while the page is open
 setInterval(() => { if (!document.hidden) reload(); }, 5000);

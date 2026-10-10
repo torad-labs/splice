@@ -295,13 +295,15 @@ function render({ stick = true, slide = false } = {}) {
   if (log) log.scrollTop = keep ?? log.scrollHeight;
   if (before) slideFrom(before);
 }
-/** The sliding move: each card starts where it stood and eases to its new place. */
+/** The sliding move: each card starts where it stood and eases to its new place, on the shared list-move tokens
+ *  (--t-move on --e-io, hitstop): a re-sort moves every card, and a list-sized move arrives on an in-out ease. */
+const tok = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 function slideFrom(before) {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   for (const el of root.querySelectorAll(".list .s")) {
     const dy = (before.get(el.dataset.key) ?? el.getBoundingClientRect().top) - el.getBoundingClientRect().top;
     if (Math.abs(dy) < 1) continue;
-    el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" });
+    el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: parseFloat(tok("--t-move")) || 420, easing: tok("--e-io") || "ease-in-out" });
   }
 }
 // the list holds still while the pointer is over it or focus is inside it; on release it redraws, sliding only if the

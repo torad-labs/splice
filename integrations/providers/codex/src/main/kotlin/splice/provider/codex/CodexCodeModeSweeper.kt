@@ -59,7 +59,8 @@ internal class CodeModeTimedSweep(
     private val interval: Duration,
 ) {
     private val lifecycle = Any()
-    private var running: ScheduledFuture<*>? = null
+    internal var running: ScheduledFuture<*>? = null
+        private set
     private var terminal: Runnable? = null
     private var released = false
 
@@ -92,7 +93,7 @@ internal class CodeModeTimedSweep(
     /** One sweep: what the sweeper changed is saved, a save that fails is logged and made again at the
      *  next sweep, and the sweeps stop once no record or expiry marker is kept. Never throws: a throw would end the
      *  periodic task in silence. */
-    private fun sweep() = synchronized(lifecycle) {
+    internal fun sweep() = synchronized(lifecycle) {
         if (released) return@synchronized
         Cancellables.runCatchingBestEffort {
             unsaved = true

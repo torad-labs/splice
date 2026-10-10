@@ -194,7 +194,7 @@ internal class CodexCodeModeTurn(
 
     /** A running script whose history moved underneath it is abandoned: cell closed, evidence kept
      *  on the LOST record, and the turn continues upstream on the client's own history. */
-    private fun abandon(owner: CodeModeRecord, error: String, rejection: CodeModeNativeRejection?) {
+    internal fun abandon(owner: CodeModeRecord, error: String, rejection: CodeModeNativeRejection?) {
         val detail = "$CODE_MODE_ABANDONED: $error; source was not rerun"
         registry.lose(owner, detail)
         // History only grows, so a record that no longer places never will again: it retires with its

@@ -106,16 +106,13 @@ abstract class CodeModeBridgeTestSupport {
 
     /** Exercise this conversation's history lookup without advancing or resolving its parked script. */
     protected fun sweepOwnHistory(manager: CodexCodeModeBridge) {
-        val field = CodexCodeModeBridge::class.java.getDeclaredField("registry").apply { isAccessible = true }
-        val registry = field.get(manager) as CodexCodeModeRegistry
         val key = stateFiles.records().first().getValue("key").jsonPrimitive.content
-        registry.recordsFor(key)
+        manager.registry.recordsFor(key)
     }
 
     /** Exercise the capacity backstop rather than killing a request's own retained cell on lookup. */
     protected fun reapIdleCell(manager: CodexCodeModeBridge) {
-        val field = CodexCodeModeBridge::class.java.getDeclaredField("registry").apply { isAccessible = true }
-        (field.get(manager) as CodexCodeModeRegistry).evictIdleCell()
+        manager.registry.evictIdleCell()
     }
 
     /** The dialect's tool_result image renderer with codex's own quirks — the one production uses. */

@@ -36,8 +36,8 @@ internal class CodeModeLiveRound(
     private val headStop: HeadStopSignal? = null,
     recovery: CodeModeRecoveryHistory? = null,
 ) {
-    /** Runs just before a parsed terminal settles. No caller passes one: billing tests set it to hold that window. */
-    private val beforeSettle: Runnable? = null
+    /** Runs just before a parsed terminal settles. Production never sets it: billing tests hold that window. */
+    internal var beforeSettle: Runnable? = null
     private val capture = CodeModeSourceCapture(config, registry, wire, admission, recovery)
     val source = capture.source
     val ready = capture.ready
@@ -47,7 +47,8 @@ internal class CodeModeLiveRound(
     val switching = CodeModeSwitchingSink(sink, CodeModeSourceObserver(::observe))
     val cut = CodeModeCutClaim()
     val key: String? get() = record?.key
-    private var finished: Deferred<TurnOutcome>? = null
+    internal var finished: Deferred<TurnOutcome>? = null
+        private set
     private val settled = CompletableDeferred<Unit>()
     private val completion = CodeModeRoundCompletion(
         config.log,
@@ -67,7 +68,8 @@ internal class CodeModeLiveRound(
     @Volatile private var headStopped = false
     private val stoppedByHead: Boolean get() = headStopped || headStop?.isStopping == true
 
-    @Volatile private var upstreamEnded = false
+    @Volatile internal var upstreamEnded = false
+        private set
 
     @Volatile private var executionLost = false
 

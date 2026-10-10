@@ -397,14 +397,8 @@ internal class CodeModeNativeAnchorTest {
             ),
         )
         try {
-            val registry = privateField(bridge, "registry") as CodexCodeModeRegistry
-            assertTrue(registry.add(owner))
-            val controller = privateField(bridge, "controller")
-            val abandon = controller.javaClass.declaredMethods.single { it.name == "abandon" }
-                .apply { isAccessible = true }
-            val rejection = restored.javaClass.methods.firstOrNull { it.name == "getNativeRejection" }?.invoke(restored)
-            val arguments = if (abandon.parameterCount == 3) arrayOf(owner, error, rejection) else arrayOf(owner, error)
-            abandon.invoke(controller, *arguments)
+            assertTrue(bridge.registry.add(owner))
+            bridge.controller.abandon(owner, error, restored.nativeRejection)
             assertEquals(
                 "[code-mode] abandoned record active (outer active): $error; " +
                     "continuing upstream on the client's history; $marker",
@@ -418,9 +412,6 @@ internal class CodeModeNativeAnchorTest {
             bridge.onHeadStop()
         }
     }
-
-    private fun <O : Any> privateField(owner: O, name: String): Any =
-        owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner)
 
     private fun record(items: List<JsonElement>, completed: List<CodeModeRecord>, id: String): CodeModeRecord {
         val baseline = checkNotNull(history.anchoredBoundary(body(items), completed))

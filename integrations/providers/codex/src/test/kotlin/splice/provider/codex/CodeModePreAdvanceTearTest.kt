@@ -42,8 +42,8 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
         try {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, initial, post)
             val first = initial.callback.await()
-            val registry = managerField(manager, "registry") as CodexCodeModeRegistry
-            val resume = managerField(manager, "resume") as CodexCodeModeResume
+            val registry = manager.registry
+            val resume = manager.resume
             val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
             val picked = CompletableDeferred<CodeModeRecord>()
             val release = CompletableDeferred<Unit>()
@@ -105,10 +105,8 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
                 descriptions: Map<String, String>,
             ): CodeModeCell {
                 val cell = runtime.startStreaming(source, tools, descriptions)
-                val registry = managerField(manager, "registry") as CodexCodeModeRegistry
-                val records = CodexCodeModeRegistry::class.java.getDeclaredField("records")
-                    .apply { isAccessible = true }.get(registry) as List<*>
-                val record = records.filterIsInstance<CodeModeRecord>().single()
+                val registry = manager.registry
+                val record = registry.records.single()
                 clock.beforeRead = {
                     assertEquals(CodeModePhase.ACTIVE, record.phase)
                     assertNotNull(registry.cell(record), "the driver attached the cell before this tear")
@@ -187,10 +185,10 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
     }
 
     private fun assertStampRemoved(manager: CodexCodeModeBridge, record: CodeModeRecord) {
-        val machine = managerField(manager, "machine") as CodexCodeModeMachine
-        val stamps = CodexCodeModeMachine::class.java.getDeclaredField("started")
-            .apply { isAccessible = true }.get(machine) as Map<*, *>
-        assertFalse(stamps.containsKey(record.id), "a torn missing cell must release its wall-time stamp")
+        assertFalse(
+            manager.machine.started.containsKey(record.id),
+            "a torn missing cell must release its wall-time stamp",
+        )
     }
 
     /** The first clock read after attach is Machine's stamp, before its cell lookup. */
@@ -215,7 +213,4 @@ class CodeModePreAdvanceTearTest : CodeModeStatementStreamSupport() {
         withTimeout(5_000) { while (record.phase != CodeModePhase.LOST) yield() }
         assertTrue(post.stopped.isCompleted)
     }
-
-    private fun managerField(manager: CodexCodeModeBridge, name: String): Any =
-        CodexCodeModeBridge::class.java.getDeclaredField(name).apply { isAccessible = true }.get(manager)
 }

@@ -131,7 +131,7 @@ public class CodexCodeModeBridge(
         ignoreUnknownKeys = true
     }
     private val run = CodeModeRuntimeRun(config.runtimes)
-    private val registry = CodexCodeModeRegistry(
+    internal val registry = CodexCodeModeRegistry(
         config,
         json,
         sweepInterval,
@@ -139,10 +139,10 @@ public class CodexCodeModeBridge(
     )
     private val wire = CodexCodeModeWire(json, config.log, CodeModeNativeRetirement(registry.changes::retireNative))
     private val validation = CodexCodeModeValidation(config)
-    private val machine = CodexCodeModeMachine(config, registry, validation)
-    private val driver = CodexCodeModeDriver(config, run, registry, wire, validation, machine)
-    private val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
-    private val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config.log)
+    internal val machine = CodexCodeModeMachine(config, registry, validation)
+    internal val driver = CodexCodeModeDriver(config, run, registry, wire, validation, machine)
+    internal val resume = CodexCodeModeResume(registry, wire, validation, machine, driver)
+    internal val controller = CodexCodeModeTurn(registry, wire, driver, resume, machine, validation, config.log)
 
     init {
         require(config.retention.perConversation?.let { it > 0 } != false) {

@@ -274,14 +274,14 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
         try {
             manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, held)
             withTimeout(1_500) { sink.callback.await() }
-            val registry = field(manager, "registry") as CodexCodeModeRegistry
+            val registry = manager.registry
             val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
             val record = registry.recordsFor(key).single()
-            val round = (field(manager, "driver") as CodexCodeModeDriver).streams.find(record)
+            val round = manager.driver.streams.find(record)
             val lease = checkNotNull(record.sourceEnd)
             lease.claimClient()
             assertFalse(checkNotNull(round).cut.take(), "declaring ownership does not cut a reader")
-            val reader = field(round, "finished") as kotlinx.coroutines.Deferred<*>
+            val reader = checkNotNull(round.finished)
             reader.cancel(CancellationException("synthetic source ended without a client cutting its reader"))
             withTimeout(1_500) { reader.join() }
             withTimeout(1_500) { source.stopped.await() }
@@ -355,8 +355,7 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
         }
         "dead", "idle" -> {
             if (mode == "dead") deadSessions += "session-a" else clock.now += 31.minutes.inWholeMilliseconds
-            val timed = (field(manager, "registry") as CodexCodeModeRegistry).timed
-            timed.javaClass.getDeclaredMethod("sweep").apply { isAccessible = true }.invoke(timed)
+            manager.registry.timed.sweep()
             0L
         }
         "expired" -> {
@@ -365,8 +364,8 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
             0L
         }
         "client" -> {
-            val driver = field(manager, "driver") as CodexCodeModeDriver
-            val registry = field(manager, "registry") as CodexCodeModeRegistry
+            val driver = manager.driver
+            val registry = manager.registry
             val streams: CodeModeStreams = driver.streams
             val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
             val record = registry.recordsFor(key).single()
@@ -379,9 +378,6 @@ internal class CodeModeAutonomousCutBillingTest : CodeModeStatementStreamSupport
         }
         else -> error("unknown synthetic retirement")
     }
-
-    private fun <O : Any> field(owner: O, name: String): Any =
-        owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner)
 
     private fun assertRetirementBill(settled: Usage?, clientCuts: Long, client: Boolean) {
         assertEquals(1L, (settled?.cutRounds ?: 0L) + clientCuts, "every unreported source has one accounting owner")
@@ -439,15 +435,15 @@ internal class CodeModeFirstClaimBillingTest : CodeModeStatementStreamSupport() 
             val settle = CountDownLatch(1)
             try {
                 manager.interceptor(turn(), disableParallel = false).intercept(BASE_REQUEST, sink, posting)
-                val registry = field(manager, "registry") as CodexCodeModeRegistry
+                val registry = manager.registry
                 val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
                 val record = registry.recordsFor(key).single()
-                val round = checkNotNull((field(manager, "driver") as CodexCodeModeDriver).streams.find(record))
+                val round = checkNotNull(manager.driver.streams.find(record))
                 val barrier = Runnable {
                     staged.countDown()
                     check(settle.await(5, TimeUnit.SECONDS)) { "synthetic terminal settlement was not released" }
                 }
-                round.javaClass.getDeclaredField("beforeSettle").apply { isAccessible = true }.set(round, barrier)
+                round.beforeSettle = barrier
                 source.gates[1].complete(Unit)
                 source.gates[2].complete(Unit)
                 source.complete.complete(Unit)
@@ -539,8 +535,8 @@ internal class CodeModeFirstClaimBillingTest : CodeModeStatementStreamSupport() 
         evicted: CompletableDeferred<Unit>,
         ending: FirstClaimEnding,
     ) {
-        val registry = field(manager, "registry") as CodexCodeModeRegistry
-        val record = (field(registry, "records") as List<*>).singleOrNull() as? CodeModeRecord
+        val registry = manager.registry
+        val record = registry.records.singleOrNull()
         if (!idle(record) || !armed.compareAndSet(true, false)) return
         // release() samples liveness only after publishing zero borrowers and idle time.
         // Do not await reader cleanup while this callback still holds the registry key.
@@ -551,7 +547,4 @@ internal class CodeModeFirstClaimBillingTest : CodeModeStatementStreamSupport() 
 
     private fun idle(record: CodeModeRecord?): Boolean =
         record?.phase == CodeModePhase.ACTIVE && record.cellBorrowers == 0 && record.cellIdleSince != null
-
-    private fun <O : Any> field(owner: O, name: String): Any =
-        owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner)
 }

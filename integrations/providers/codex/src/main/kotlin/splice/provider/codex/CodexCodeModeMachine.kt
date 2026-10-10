@@ -46,7 +46,7 @@ internal class CodexCodeModeMachine(
 ) {
     /** When each running script first advanced, for codex's "Wall time" line. In memory only: a restored
      *  ACTIVE record comes back LOST, so a script completes in the daemon that started it or not at all. */
-    private val started: MutableMap<String, Long> = ConcurrentHashMap()
+    internal val started: MutableMap<String, Long> = ConcurrentHashMap()
     private val workerRecovery = CodeModeWorkerRecovery(registry)
 
     suspend fun advance(request: CodeModeAdvanceRequest): TurnOutcome {

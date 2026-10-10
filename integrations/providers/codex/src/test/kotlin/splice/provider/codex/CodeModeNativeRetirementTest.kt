@@ -133,8 +133,8 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
         val fresh = bridge(freshRuntime)
         try {
             val key = fixture.record.key
-            val restored = registry(fresh).recordsFor(key).single()
-            assertTrue(registry(fresh).completed(key).isEmpty())
+            val restored = fresh.registry.recordsFor(key).single()
+            assertTrue(fresh.registry.completed(key).isEmpty())
             assertTrue(restored.carry.segments.isEmpty())
             assertEquals(null, restored.nativeParent)
             assertEquals(null, restored.nativeBaseId)
@@ -297,7 +297,7 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
         val readId = sink.tools.single().id
         manager.interceptor(turn(readId, "A"), null, disableParallel = false)
             .intercept(nativeRequest(nativeResult(readId)), RecordingSink()) { RoundResult.Outcome(completedOutcome()) }
-        val registry = registry(manager)
+        val registry = manager.registry
         val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
         val record = registry.recordsFor(key).single()
         assertEquals(CodeModePhase.COMPLETED, record.phase, "the control must reach completed native state")
@@ -324,11 +324,6 @@ internal class CodeModeNativeRetirementTest : CodeModeBridgeTestSupport() {
             "a proven native payload rejection, not a missing-history control, must precede retirement",
         )
         return posted
-    }
-
-    private fun registry(manager: CodexCodeModeBridge): CodexCodeModeRegistry {
-        val field = CodexCodeModeBridge::class.java.getDeclaredField("registry").apply { isAccessible = true }
-        return field.get(manager) as CodexCodeModeRegistry
     }
 
     private fun ownedCallbacks(readId: String): List<JsonElement> =

@@ -108,8 +108,8 @@ internal class CodeModeNativeAbandonBillingTest : CodeModeStatementStreamSupport
                 .intercept(body(baseline), sink, posting).turn() as TurnOutcome.Success
             val callback = withTimeout(1_500) { sink.callback.await() }
             assertEmptyStep(first, source)
-            val registry = member(manager, "registry") as CodexCodeModeRegistry
-            val driver = member(manager, "driver") as CodexCodeModeDriver
+            val registry = manager.registry
+            val driver = manager.driver
             val key = stateFiles.records().single().getValue("key").jsonPrimitive.content
             val record = registry.recordsFor(key).single()
             val round = checkNotNull(driver.streams.find(record))
@@ -156,7 +156,7 @@ internal class CodeModeNativeAbandonBillingTest : CodeModeStatementStreamSupport
                 finishSource(source)
                 runBlocking {
                     withTimeout(1_500) {
-                        while (member(round, "upstreamEnded") != true) yield()
+                        while (!round.upstreamEnded) yield()
                     }
                 }
             }
@@ -249,9 +249,6 @@ internal class CodeModeNativeAbandonBillingTest : CodeModeStatementStreamSupport
         item("""{"type":"function_call","call_id":"${call.id}","name":"${call.name}","arguments":"{}"}"""),
         item("""{"type":"function_call_output","call_id":"${call.id}","output":"result-0"}"""),
     )
-
-    private fun <O : Any> member(owner: O, name: String): Any =
-        checkNotNull(owner.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(owner))
 
     private class HeldPosting(source: RedirectableRoundPost) : RedirectableRoundPost by source {
         val released = CompletableDeferred<Usage?>()

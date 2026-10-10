@@ -19,6 +19,10 @@
 //          no id, no head tree, or the transcript view is off.
 //   last   V4-444: the last main-thread message's role, tool, one-line redacted text and epoch-ms ts;
 //          null without an available transcript message, session id, or enabled transcript view.
+//   turns  how many turns the session has run, from the daemon's per-session accumulator, with
+//          `turns_from_ms` naming the moment the count covers from (SessionTurnsOf, which says why the
+//          pair never travels apart and why an absent `turns` is not a zero). Both keys are left off
+//          together when nothing counted the session.
 // and GET /api/sessions/{id}/transcript, one page through the injected SessionTranscripts port.
 //
 // WHICH TREES THE TRANSCRIPT ROUTE SEARCHES, in order: the head's own CLAUDE_CONFIG_DIR (the registry
@@ -84,8 +88,9 @@ public class SessionsRoutes(
     private val activity: ActivitySource = ActivitySource { null },
     /** V4-131: the team store the `team` key reads, per request. */
     private val teams: TeamSource = TeamSource { null },
-    /** The session's own selected login, never the head-wide last selection. */
-    private val accountOf: SessionAccountOf = SessionAccountOf { _, _ -> null },
+    /** The daemon-supplied per-session facts each row carries, each writing its own keys: the session's
+     *  own proved login and its turn count (SessionRowFacts, which says why they travel as one). */
+    private val facts: SessionRowFacts = SessionRowFacts(),
 ) {
     /** GET /api/sessions/{id}/edges and GET /api/sessions/edges. */
     public val edgeRoutes: ActivityRoutes = ActivityRoutes(registry, activity, SentTextSource(::sentTexts))
@@ -103,7 +108,7 @@ public class SessionsRoutes(
 
     public fun sessionsJson(): String = buildJsonObject {
         val listing = registry.list()
-        val accounts = accountOf.forRecords(listing.sessions)
+        val rowFacts = facts.forRecords(listing.sessions)
         // A read that refused leaves the rows without their edges summary and says so once, beside the
         // store's own state: the edges are a hint ON a row and the listing is the page.
         val edgeRead = edgeRoutes.read()
@@ -117,7 +122,10 @@ public class SessionsRoutes(
         put("note_versions", buildJsonArray { noteVersions.forEach { add(JsonPrimitive(it)) } })
         // An unreadable directory is not an empty one: the error rides beside the (empty) list.
         listing.error?.let { put("error", it) }
-        put("sessions", buildJsonArray { listing.sessions.forEach { add(row(it, edges, resumable, accounts)) } })
+        put(
+            "sessions",
+            buildJsonArray { listing.sessions.forEach { add(row(it, edges, resumable, rowFacts)) } },
+        )
     }.toString()
 
     /** GET /api/sessions/{id}/transcript?cursor=&limit= reads forward from the start. `before=` reads the newest messages
@@ -156,8 +164,8 @@ public class SessionsRoutes(
     public val historyRows: SessionHistoryRowOf = object : SessionHistoryRowOf {
         override fun invoke(record: SessionRecord): JsonObject = historyRow(record)
         override fun forRecords(records: List<SessionRecord>): SessionHistoryRowOf {
-            val accounts = accountOf.forRecords(records)
-            return SessionHistoryRowOf { row(it, null, Resumability(null), accounts) }
+            val snapped = facts.forRecords(records)
+            return SessionHistoryRowOf { row(it, null, Resumability(null), snapped) }
         }
     }
 
@@ -174,7 +182,7 @@ public class SessionsRoutes(
         s: SessionRecord,
         edges: EdgeSummaries?,
         resumable: Resumability,
-        accounts: SessionAccountOf = accountOf,
+        rowFacts: SessionRowFacts = facts,
     ): JsonObject = buildJsonObject {
         put("pid", s.process.pid)
         put("session_id", s.sessionId)
@@ -196,7 +204,7 @@ public class SessionsRoutes(
         resumable.mark(this, s.sessionId)
         repoOf(s)?.let { put("repo", repoJson(it)) }
         put("team", s.sessionId?.let { teamOf(it) })
-        accounts.write(s, this)
+        rowFacts.write(s, this)
         val id = s.sessionId
         addEdgeState(this)
         if (edges != null && id != null) put("edges", edges.summary(id, s.address))

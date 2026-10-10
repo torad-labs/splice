@@ -80,7 +80,9 @@ class SessionsRoutesTest {
         val route = SessionsRoutes(
             registry,
             TestTranscripts(),
-            accountOf = SessionAccountOf { _, session -> if (session == "first") "work" else "spare" },
+            facts = SessionRowFacts(
+                accountOf = SessionAccountOf { _, session -> if (session == "first") "work" else "spare" },
+            ),
         )
         val rows = Json.parseToJsonElement(route.sessionsJson()).jsonObject.getValue("sessions").jsonArray
             .map { it.jsonObject }
@@ -106,11 +108,14 @@ class SessionsRoutesTest {
         val route = SessionsRoutes(
             registry,
             TestTranscripts(),
-            accountOf = object : SessionAccountOf {
-                override fun label(head: String?, sessionId: String): String? = "primary"
+            facts = SessionRowFacts(
+                accountOf = object : SessionAccountOf {
+                    override fun label(head: String?, sessionId: String): String? = "primary"
 
-                override fun pin(head: String?, sessionId: String): String? = if (sessionId == "first") "work" else null
-            },
+                    override fun pin(head: String?, sessionId: String): String? =
+                        if (sessionId == "first") "work" else null
+                },
+            ),
         )
         val rows = Json.parseToJsonElement(route.sessionsJson()).jsonObject.getValue("sessions").jsonArray
             .map { it.jsonObject }

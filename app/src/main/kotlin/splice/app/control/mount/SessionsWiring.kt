@@ -8,6 +8,7 @@ import splice.app.control.ManagedHead
 import splice.app.control.SessionHeadAdapter
 import splice.app.sources.PerfRowsFileSource
 import splice.app.sources.PerfSessionAccountIndex
+import splice.app.sources.PerfStatsSource
 import splice.client.transcript.TranscriptHistoryIndex
 import splice.client.transcript.TranscriptReader
 import splice.core.auth.CLIENT_AUTH_KIND
@@ -18,6 +19,9 @@ import splice.sessions.http.ActivitySource
 import splice.sessions.http.ConfigSessionSettings
 import splice.sessions.http.SessionAccountOf
 import splice.sessions.http.SessionAccountState
+import splice.sessions.http.SessionRowFacts
+import splice.sessions.http.SessionTurnCount
+import splice.sessions.http.SessionTurnsOf
 import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TranscriptRoots
@@ -61,6 +65,25 @@ internal class SessionsWiring(
 
         override fun pin(head: String?, sessionId: String): String? = pinOf(head, sessionId)
     }
+    /** Every head's per-session accumulator, summed, because a session that moved heads has rows on
+     *  both and one head's count would read as the whole of it. The combined start is the LATEST of
+     *  the heads that contributed (SessionTurnCount): the sum covers the session only where every one
+     *  of those counters was already running when it began, so the conservative start is the honest
+     *  one. A head with no counted row for the session contributes nothing and does not move the
+     *  start, and no total anywhere leaves the row's `turns` absent rather than zero. */
+    private val sessionTurns = SessionTurnsOf { id ->
+        val counted = heads.values
+            .mapNotNull { (it.sources.perf as? PerfStatsSource)?.sessionTotals }
+            .mapNotNull { store -> store.totalFor(id) }
+        if (counted.isEmpty()) {
+            null
+        } else {
+            SessionTurnCount(
+                turns = counted.sumOf { total -> total.models.values.sumOf { it.turns } },
+                fromMs = counted.maxOf { it.fromMs },
+            )
+        }
+    }
     val routes: SessionsRoutes? = sessions?.let {
         SessionsRoutes(
             it,
@@ -69,7 +92,7 @@ internal class SessionsWiring(
             ConfigSessionSettings(config),
             ActivitySource { ports.activity },
             teams = TeamSource { ports.teams },
-            accountOf = sessionAccounts,
+            facts = SessionRowFacts(accountOf = sessionAccounts, turnsOf = sessionTurns),
         )
     }
 

@@ -82,7 +82,7 @@ class SessionHistoryRouteTest {
             registry,
             TestTranscripts(),
             roots = TranscriptRoots(vanilla = home),
-            accountOf = account,
+            facts = SessionRowFacts(accountOf = account),
         )
         return SessionHistoryRoute(
             registry,

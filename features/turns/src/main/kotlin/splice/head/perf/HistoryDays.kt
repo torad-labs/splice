@@ -30,7 +30,6 @@ package splice.head.perf
 import splice.core.perf.PerfFiles
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
-import java.io.BufferedReader
 import java.io.Closeable
 import java.io.IOException
 import java.io.InputStreamReader
@@ -134,7 +133,7 @@ public class HistoryDays(private val zone: ZoneId = ZoneId.systemDefault()) {
 
     private fun scan(file: Path): MinuteTally {
         val minutes = MinuteBuilder()
-        RecordLines().of(file).use { lines ->
+        RecordLines(file).use { lines ->
             while (true) {
                 val line = lines.next() ?: break
                 minutes.charge(record.minuteOf(line), record.onDisk(line))
@@ -165,20 +164,19 @@ internal class RecordLine {
     fun flooredToMinute(ms: Long): Long = ms / RECORD_MINUTE_MS * RECORD_MINUTE_MS
 }
 
-/** The lines of one record file, decoded so a torn byte cannot throw mid-scan. */
-internal class RecordLines {
-    fun of(file: Path): CloseableLines {
-        val decoder = Charsets.UTF_8.newDecoder()
+/**
+ * The lines of one record file, decoded so a torn byte cannot throw mid-scan, and pulled a line at a
+ * time rather than handed a lambda so a caller that writes as it reads is not inside someone else's
+ * loop. The handle is this object's, so every caller opens it with `use`.
+ */
+internal class RecordLines(file: Path) : Closeable {
+    private val reader = InputStreamReader(
+        Files.newInputStream(file, LinkOption.NOFOLLOW_LINKS),
+        Charsets.UTF_8.newDecoder()
             .onMalformedInput(CodingErrorAction.REPLACE)
-            .onUnmappableCharacter(CodingErrorAction.REPLACE)
-        val reader = InputStreamReader(Files.newInputStream(file, LinkOption.NOFOLLOW_LINKS), decoder).buffered()
-        return CloseableLines(reader)
-    }
-}
+            .onUnmappableCharacter(CodingErrorAction.REPLACE),
+    ).buffered()
 
-/** A read in progress: pulled a line at a time rather than handed a lambda, so a caller that has to
- *  stop early, or write as it reads, is not inside someone else's loop. */
-internal class CloseableLines(private val reader: BufferedReader) : Closeable {
     /** The next line, or null once the file is read. */
     fun next(): String? = reader.readLine()
 

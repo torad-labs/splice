@@ -29,6 +29,7 @@ import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import java.io.IOException
+import java.io.Writer
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.NoSuchFileException
@@ -119,7 +120,7 @@ internal class HistoryPrune(private val log: LogSink = LogSink(DaemonLog::write)
         var turns = 0L
         var bytes = 0L
         var kept = 0L
-        RecordLines().of(file).use { lines ->
+        RecordLines(file).use { lines ->
             while (true) {
                 val line = lines.next() ?: break
                 if (keeps(line, momentMs)) {
@@ -148,16 +149,15 @@ internal class HistoryPrune(private val log: LogSink = LogSink(DaemonLog::write)
 
     /** Every row [momentMs] keeps, in the order it was written, written as it is read. */
     private fun copyKept(from: Path, to: Path, momentMs: Long) {
-        val out = Files.newBufferedWriter(to, StandardOpenOption.WRITE, StandardOpenOption.APPEND)
-        val lines = RecordLines().of(from)
-        try {
-            while (true) {
-                val line = lines.next() ?: break
-                if (keeps(line, momentMs)) out.write(line + "\n")
-            }
-        } finally {
-            lines.close()
-            out.close()
+        Files.newBufferedWriter(to, StandardOpenOption.WRITE, StandardOpenOption.APPEND).use { out ->
+            RecordLines(from).use { lines -> copyInto(lines, out, momentMs) }
+        }
+    }
+
+    private fun copyInto(lines: RecordLines, out: Writer, momentMs: Long) {
+        while (true) {
+            val line = lines.next() ?: break
+            if (keeps(line, momentMs)) out.write(line + "\n")
         }
     }
 

@@ -49,8 +49,8 @@ function windowOf(pct, resetSec, lenSec, slot, current) {
   const left = resetSec ? Math.round((resetSec * 1000 - NOW.getTime()) / 60000) : null;
   const due = left != null && left >= 0;
   return { label, used: Math.round(pct), len: LEN[label], left: due ? left : null, resetMs: due ? resetSec * 1000 : null,
-    // The reset splice last heard about, once it has gone by: the figure beside it is the ENDED window's, and the
-    // cell has to say so. Null when no reset was ever reported, which is the one case the page knows nothing about.
+    // The reset splice last heard about, once it has gone by: the figure splice holds is the ENDED window's, so the
+    // row drops it and says only this. Null when no reset was ever reported, the one case the page knows nothing of.
     rolledMs: resetSec && !due ? resetSec * 1000 : null,
     stale: current === false };
 }
@@ -186,9 +186,17 @@ function at(ms) {
 }
 
 // ---------- the rules the page shows ----------
-const held = (a) => (a.windows || []).some((w) => w.used >= 100);
+// A window whose reported reset has gone by. What the page holds for it is the ENDED window's figure, so nothing on
+// the screen counts it (Marlin, Oct 10): not the bar, not the number, and not whether the account is at its limit.
+// An account held back by a 5-hour window at 100% whose reset passed an hour ago has room, and splice is already
+// sending turns to it; the card said At limit until the next reading landed.
+const ended = (w) => w.left == null && w.rolledMs != null;
+// At its limit NOW: full, and still inside the window that filled. A window at 100% that reported no reset at all
+// stays held, because nothing on the page says it rolled — only a reset that has gone by says that.
+const atLimit = (w) => w.used >= 100 && !ended(w);
+const held = (a) => (a.windows || []).some(atLimit);
 const room = (a) => !a.out && !held(a);
-const backAt = (a) => Math.max(0, ...a.windows.filter((w) => w.used >= 100).map((w) => w.left ?? 0));
+const backAt = (a) => Math.max(0, ...a.windows.filter(atLimit).map((w) => w.left ?? 0));
 const laneAccts = (p, c) => c.order.map((id) => p.accounts.find((a) => a.id === id)).filter(Boolean);
 function ruled(p, c) { // the rule alone: his order, or the soonest reset among the accounts with room
   const list = laneAccts(p, c);
@@ -263,11 +271,15 @@ function ring(w) {
 const bar = (v, cls = "") => `<div class="bar ${cls}"><b data-v="${v}"></b></div>`;
 // A window still running says when it resets, with its ring. A window whose reported reset has already gone by says
 // "Reset" and that time, past tense, with no ring: there is nothing left to fill, and "Week 93% used" beside an empty
-// cell read as a live week at 93% when it was the ended week's figure (fin's word, Oct 10; the hollow bar is the
-// other half of the same fact). A window that reported no reset at all keeps the empty cell, because there the page
-// genuinely knows nothing to say.
+// cell read as a live week at 93% when it was the ended week's figure (fin's word, Oct 10). A window that reported no
+// reset at all keeps the empty cell, because there the page genuinely knows nothing to say.
 const resets = (w) => (w.left != null ? `<span class="when">${ring(w)}Resets ${at(w.resetMs)}</span>`
   : w.rolledMs != null ? `<span class="when rolled">Reset ${at(w.rolledMs)}</span>` : "<span></span>");
+// The bar and the figure say one thing together, so a window whose reset has passed shows NEITHER: an empty track, an
+// empty figure, and the reset it already had (Marlin, Oct 10, overruling the muted figure). Muting was not enough and
+// neither is an outline at the old width — an outline at 98% still draws 98%, the same false figure in another form
+// (hitstop, Oct 10). The row stands empty for the seconds it takes the re-read to land, and then it is the truth.
+const spent = (cls) => `${bar(0, cls)}<span class="pct"></span>`;
 // The budget day refills at the DAEMON's midnight, so its strip says that one word: a day name and "12:00 AM" read
 // as a weekly date to both walkers (fin, Oct 10). The plan windows keep their times, which really move. Read from a
 // browser in another zone the daemon's midnight is not midnight there, so the word is only used when it is one.
@@ -280,18 +292,27 @@ function refills(day) {
 function windowsHtml(a, next = null) {
   let rows = "";
   for (const w of a.windows) {
-    const full = w.used >= 100;
+    const full = atLimit(w);
     // each bar is marked from ITS OWN reading, never the account's: a current 5-hour window beside a week
     // whose own reset has passed drew that week's spent figure as today's
-    rows += `<span class="label">${w.label}</span>${bar(Math.min(w.used, 100), `${full ? "full" : ""} ${w.stale ? "stale" : ""}`)}`
-      + `<span class="pct ${full ? "limit" : ""}">${w.used}%<span class="used">used</span></span>${resets(w)}`;
+    rows += `<span class="label">${w.label}</span>`
+      + (ended(w) ? spent("")
+        : `${bar(Math.min(w.used, 100), `${full ? "full" : ""} ${w.stale ? "stale" : ""}`)}`
+          + `<span class="pct ${full ? "limit" : ""}">${w.used}%<span class="used">used</span></span>`)
+      + resets(w);
     if (w.label === "Week" && a.models) {
-      for (const m of a.models) rows += `<span class="label sub">${m.name}</span>${bar(m.used, `sub ${m.used >= 100 ? "full" : ""} ${m.stale ? "stale" : ""}`)}<span class="pct">${m.used}%<span class="used">used</span></span>${resets(m)}`;
+      // A model's figure is a slice of the account week above it, read in the same observation, so once that week has
+      // ended its slices have too — whether or not the model itself reported a reset (hitstop, Oct 10).
+      for (const m of a.models) rows += `<span class="label sub">${m.name}</span>`
+        + (ended(m) || ended(w) ? spent("sub")
+          : `${bar(m.used, `sub ${m.used >= 100 ? "full" : ""} ${m.stale ? "stale" : ""}`)}`
+            + `<span class="pct">${m.used}%<span class="used">used</span></span>`)
+        + resets(m);
     }
   }
   if (a.staleAt != null) rows += `<span class="stale-at">${ICON.eye}Read ${at(a.staleAt)}</span>`;
   if (next) { // a held next is the one serving at its reset: its lock and that reset, on the windows' own columns
-    const w = held(next) && next.windows.filter((x) => x.used >= 100).sort((x, y) => y.left - x.left)[0];
+    const w = held(next) && next.windows.filter(atLimit).sort((x, y) => y.left - x.left)[0];
     rows += `<span class="next"><span class="label">Next</span><span class="who">${esc(next.name)}</span>${w ? `${locked()}${resets(w)}` : ""}</span>`;
   }
   return `<div class="windows">${rows}</div>`;
@@ -623,6 +644,7 @@ function render({ flip = false } = {}) {
     box.insertAdjacentHTML("beforeend", `<i class="cap" style="left:calc(${Math.min(100, (c.budget.cap / Math.max(c.budget.cap, c.spent)) * 100)}% - .08rem)"></i>`);
   }
   ui.grow = null;
+  watchForRoll(); // whatever is drawn now, the page knows when the soonest of these windows rolls
   if (ui.pulse) { board.querySelectorAll(`.card[data-a="${ui.pulse}"]`).forEach((el) => el.classList.add("pulse-once")); ui.pulse = null; }
   const menu = board.querySelector(".menu"); // a menu that would cross the bottom of the window opens upward
   if (menu && menu.getBoundingClientRect().bottom > innerHeight - 12) menu.classList.add("up");
@@ -659,6 +681,23 @@ async function probe() {
   await load();
   ui.probing = false; glyph.classList.remove("turning"); ui.grow = "all"; render();
 }
+// ---------- a window that rolls while the page is open ----------
+// The row goes empty the moment its reset passes, and the page reads again right then, so the true figure takes its
+// place within seconds (Marlin, Oct 10, 2026). Without this the empty row would sit there until someone pressed the
+// refresh glyph: honest, and useless. The read is the same one the page opens with, which asks every provider at
+// once, because a reset that has passed is usually a reset several accounts on that plan share.
+let rollWatch = null;
+function watchForRoll() {
+  clearTimeout(rollWatch);
+  const reads = data.flatMap((p) => p.accounts || []).flatMap((a) => [...(a.windows || []), ...(a.models || [])]);
+  const soonest = Math.min(...reads.map((w) => w.resetMs).filter((ms) => ms != null && ms > Date.now()));
+  if (!Number.isFinite(soonest)) return; // every window here has either rolled already or reported no reset at all
+  // A second past the moment, so what the read finds is a window that HAS rolled. setTimeout cannot hold more than
+  // 24.8 days and a month window's reset is further out than that, so a wait past the cap re-arms instead of reading.
+  const wait = Math.min(soonest + 1000 - Date.now(), 0x7fffffff);
+  rollWatch = setTimeout(() => (Date.now() >= soonest ? probe() : watchForRoll()), Math.max(wait, 1000));
+}
+
 // After an act: read again, and let what changed slide into place (grow: the account or command whose bars refill).
 async function refresh(grow = null) {
   await load();

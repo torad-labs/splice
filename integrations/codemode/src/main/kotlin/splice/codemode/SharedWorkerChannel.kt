@@ -24,7 +24,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-private data class PendingHostReply(val cell: Long, val answer: CompletableDeferred<HostFrame>)
+internal data class PendingHostReply(val cell: Long, val answer: CompletableDeferred<HostFrame>)
 
 private class HostCellLifetime {
     val closing = CompletableDeferred<Unit>()
@@ -35,13 +35,13 @@ internal class SharedWorkerChannel(
     private val process: Process,
     parent: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
+    internal val pending: ConcurrentHashMap<Long, PendingHostReply> = ConcurrentHashMap(),
 ) : AutoCloseable {
     private val scope = LifecycleScope(parent.coroutineContext)
     private val transport = WorkerChannel(process)
     private val input = transport.input
     private val output = transport.output
     private val ready = CompletableDeferred<Unit>()
-    private val pending = ConcurrentHashMap<Long, PendingHostReply>()
     private val sequence = AtomicLong()
     private val addresses = HostReplyAddresses()
     private val writes = Mutex()

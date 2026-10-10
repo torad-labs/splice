@@ -282,7 +282,7 @@ describe("every Kotlin file maps to a check", () => {
   const modules = [{ path: ":app", dir: "app" }, { path: ":app:core", dir: "app/core" }];
 
   test("a module file is checked by its own compile, test compile and detekt; the longest directory wins", () => {
-    expect(checksFor(modules, "app/core/X.kt")).toEqual([":app:core:compileKotlin", ":app:core:compileTestKotlin", ":app:core:detekt"]);
+    expect(checksFor(modules, "app/core/X.kt")).toEqual([":app:core:compileKotlin", ":app:core:compileTestKotlin", ":app:core:detekt", ":app:core:ktlintCheck"]);
     expect(moduleOf(modules, "app/Y.kt")).toBe(":app");
   });
 

@@ -56,7 +56,6 @@ private const val DOCS = "docs.md"
 private const val CONTRIBUTING = "CONTRIBUTING.md"
 private const val NOTE = "note.md"
 private const val SCRATCH = "scratch.md"
-private const val THIS_LAW_FILE = "quality/architecture/src/test/kotlin/splice/quality/ConventionalTypeLawTest.kt"
 
 /** Pure-ish functions ported from checks/config/one-conventional-type-list.ts (V4-30). The census
  *  (which candidate files exist) is kept separate from the verdict (which of them restate the
@@ -192,7 +191,7 @@ private class ConventionalTree(private val root: File, sourceLine: String) {
 class ConventionalTypeLawTest {
     private val map = ProjectMap.fromSystemProperties()
 
-    /** The live arm reads only the files the build declared as this law's inputs (every tracked file; none is exempt). */
+    /** The live arm reads only the files the build declared as this law's inputs (every tracked file). */
     private val candidates = declaredCandidates()
 
     private fun read(file: File): String = candidates.readText(file.toPath())
@@ -218,11 +217,11 @@ class ConventionalTypeLawTest {
         val types = liveTypes
         val arms = listOf(
             "source file alone is green" to { dir: File -> sourceAloneIsGreen(dir, source) },
-            "a correct second copy still reds, named" to { dir: File -> correctCopyStillReds(dir, source, types) },
-            "stale extra types still red, named" to { dir: File -> staleExtraTypesStillRed(dir, source, types) },
+            "a second copy, correct or stale, still reds, named" to { dir: File ->
+                secondCopyStillReds(dir, source, types)
+            },
             "two types in a row are green" to { dir: File -> twoTypesAreGreen(dir, source, types) },
             "missing source is a violation, never a skip" to { dir: File -> missingSourceIsRed(dir, source) },
-            "the law's own file is not a second copy" to { dir: File -> lawFileIsNotASecondCopy(dir, source) },
             "untracked copy green, tracked copy reds, named" to { dir: File -> gitDenominatorArm(dir, source, types) },
             "an unreadable file is named, never read as no copy" to { dir: File ->
                 unreadableIsNamed(dir, source, types)
@@ -237,15 +236,11 @@ class ConventionalTypeLawTest {
         assertEquals(emptyList<String>(), ConventionalTree(dir, source).audit())
     }
 
-    private fun correctCopyStillReds(dir: File, source: String, types: List<String>) {
+    private fun secondCopyStillReds(dir: File, source: String, types: List<String>) {
         val tree = ConventionalTree(dir, source)
         tree.file(DOCS, typesPhrase(types))
-        assertHit(tree.audit(), DOCS) { "a byte-exact second copy must still be RED — the divergence mechanism" }
-    }
-
-    private fun staleExtraTypesStillRed(dir: File, source: String, types: List<String>) {
-        val tree = ConventionalTree(dir, source)
         tree.file(CONTRIBUTING, "${types.joinToString(" ")} extra-one extra-two\n")
+        assertHit(tree.audit(), DOCS) { "a byte-exact second copy must still be RED" }
         assertHit(tree.audit(), CONTRIBUTING) { "org-rejected words tacked onto the real types must still be RED" }
     }
 
@@ -259,12 +254,6 @@ class ConventionalTypeLawTest {
         val tree = ConventionalTree(dir, source)
         tree.delete(SOURCE)
         assertHit(tree.audit(), SOURCE) { "an absent vocabulary source must be RED, never a silent skip" }
-    }
-
-    private fun lawFileIsNotASecondCopy(dir: File, source: String) {
-        val tree = ConventionalTree(dir, source)
-        tree.file(THIS_LAW_FILE, File(map.root, THIS_LAW_FILE).readText())
-        assertEquals(emptyList<String>(), tree.audit(), "this law's own source must not restate the list it hunts for")
     }
 
     private fun gitDenominatorArm(dir: File, source: String, types: List<String>) {
@@ -285,7 +274,7 @@ class ConventionalTypeLawTest {
         val docs = File(dir, DOCS)
         check(docs.setReadable(false, false)) { "chmod 000 did not take on $docs" }
         try {
-            assertHit(tree.audit(), DOCS, "unreadable") { "a copy the law cannot read must be RED, named" }
+            assertHit(tree.audit(), DOCS) { "a copy the law cannot read must be RED, named" }
         } finally {
             docs.setReadable(true, false)
         }

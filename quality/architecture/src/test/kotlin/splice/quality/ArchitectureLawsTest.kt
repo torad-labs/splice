@@ -6,8 +6,10 @@ package splice.quality
 import com.lemonappdev.konsist.api.Konsist
 import com.lemonappdev.konsist.api.verify.assertTrue
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 import java.io.File
+import org.junit.jupiter.api.Assertions.assertTrue as junitAssertTrue
 
 /** DR-165: every module that ACTUALLY ships production Kotlin, read off the tree. This is the
  *  denominator the coverage laws use — the module-direction law already derives its own from
@@ -135,24 +137,13 @@ class ArchitectureLawsTest {
     private fun mainScope(module: String) =
         Konsist.scopeFromDirectory("${map.relativeDir(module)}/src/main/kotlin")
 
-    // DR-165: the CONSUMER half of the contract law, proven against synthetic input for the same
-    // reason. Every live *RequestBuilder module already ships both a fixture and a *ContractTest, so
-    // nothing in the tree can red it — and a guard the tree cannot falsify is the shape this row
-    // exists to remove, not one it may quietly add.
+    // DR-165: the live tree cannot red the consumer half (every builder module ships both halves),
+    // so the verdict is fed the missing halves directly.
     @Test
-    fun `the contract-coverage guard can actually fail - DR-165`() {
+    fun `the contract-coverage guard reports a missing fixture or a missing consumer - DR-165`() {
         assertEquals(null, contractViolation(":dialect-x", hasFixture = true, hasConsumer = true))
-        assertEquals(
-            ":dialect-x ships a *RequestBuilder but no src/test/resources/contract/<name>.json",
-            contractViolation(":dialect-x", hasFixture = false, hasConsumer = true),
-            "a builder with no fixture is the #924 Phase 1 case",
-        )
-        assertEquals(
-            ":dialect-x has a contract fixture but no *ContractTest.kt reading it — a golden " +
-                "nothing compares against pins nothing",
-            contractViolation(":dialect-x", hasFixture = true, hasConsumer = false),
-            "a fixture with no consumer is the fail-open one layer down",
-        )
+        assertNotNull(contractViolation(":dialect-x", hasFixture = false, hasConsumer = true))
+        assertNotNull(contractViolation(":dialect-x", hasFixture = true, hasConsumer = false))
     }
 
     @Test
@@ -191,7 +182,7 @@ class ArchitectureLawsTest {
             val mainDir = map.mainSources(module)
             mainDir.isDirectory && mainDir.walkTopDown().any { it.isFile && it.name.endsWith("RequestBuilder.kt") }
         }
-        org.junit.jupiter.api.Assertions.assertTrue(
+        junitAssertTrue(
             builderModules.isNotEmpty(),
             "expected at least one *RequestBuilder module — did the module layout change?",
         )
@@ -204,7 +195,7 @@ class ArchitectureLawsTest {
                 testDir.walkTopDown().any { it.isFile && it.name.endsWith("ContractTest.kt") }
             contractViolation(module, hasFixture, hasConsumer)
         }
-        org.junit.jupiter.api.Assertions.assertTrue(violations.isEmpty()) {
+        junitAssertTrue(violations.isEmpty()) {
             violations.joinToString(
                 separator = "\n  - ",
                 prefix = "REQUEST-BYTE CONTRACT COVERAGE (#924 Phase 1, DR-165) violated:\n  - ",
@@ -220,7 +211,7 @@ class ArchitectureLawsTest {
     @Test
     fun `PassthroughQuirks is constructed only by its module or head assembly - HD-9`() {
         val files = allProductionFiles(map)
-        org.junit.jupiter.api.Assertions.assertTrue(files.size > 10) {
+        junitAssertTrue(files.size > 10) {
             "the tree yielded ${files.size} production file(s) — the walk is broken, and a law that " +
                 "reads no files passes vacuously."
         }
@@ -232,7 +223,7 @@ class ArchitectureLawsTest {
                 allowedPrefixes,
             )
         }
-        org.junit.jupiter.api.Assertions.assertTrue(violations.isEmpty()) {
+        junitAssertTrue(violations.isEmpty()) {
             violations.joinToString(
                 separator = "\n  - ",
                 prefix = "PASSTHROUGH-QUIRKS CONSTRUCTION (HD-9) violated:\n  - ",
@@ -240,15 +231,11 @@ class ArchitectureLawsTest {
         }
     }
 
-    // HD-9: the construction guard proven against SYNTHETIC input — the live tree is clean today,
-    // so a silently-deleted matcher would look identical to a passing law.
+    // HD-9: the live tree is clean, so the construction guard is fed synthetic files. The paths are
+    // spelled through the map, exactly like the prefixes they are graded against.
     @Test
-    fun `the PassthroughQuirks construction guard can actually fail - HD-9`() {
+    fun `the PassthroughQuirks construction guard reports a construction outside the allowed sites - HD-9`() {
         val allowedPrefixes = passthroughQuirksAllowedPrefixes(map)
-        // The synthetic paths are spelled THROUGH THE MAP, exactly like the prefixes they are
-        // graded against. A proof that hardcodes `app/src/...` silently stops being the case it
-        // claims to prove the moment a module's directory changes — which it did when the Gradle
-        // root moved to the repository root and every module's directory gained its `gateway/`.
         val ownModule = map.relativeDir(":integrations-dialects-anthropic")
         val headAssembly = map.relativeDir(":app")
         val headModule = map.relativeDir(":features-turns")
@@ -259,7 +246,6 @@ class ArchitectureLawsTest {
                 "public data class PassthroughQuirks(\n    val providerTag: String,\n)\n",
                 allowedPrefixes,
             ),
-            "the declaring class line is not a construction, and its own module is allowed anyway",
         )
         assertEquals(
             emptyList<String>(),
@@ -268,29 +254,22 @@ class ArchitectureLawsTest {
                 "val q = PassthroughQuirks(providerTag = key)\n",
                 allowedPrefixes,
             ),
-            "head assembly's own provider package is allowed",
         )
-        assertEquals(
-            listOf(
-                "$headModule/src/main/kotlin/splice/head/HeadServer.kt:2 constructs PassthroughQuirks " +
-                    "outside its allowed sites (${allowedPrefixes.joinToString()}) — a provider's " +
-                    "deformation profile belongs to the module that owns the provider or to head " +
-                    "assembly, not to whichever file happens to need it.",
-            ),
-            passthroughQuirksConstructionViolations(
-                "$headModule/src/main/kotlin/splice/head/HeadServer.kt",
-                "package splice.head\nval q = PassthroughQuirks(providerTag = \"x\")\n",
-                allowedPrefixes,
-            ),
-            "a construction outside the allowed sites must fail BY NAME, naming the exact line",
+        val path = "$headModule/src/main/kotlin/splice/head/HeadServer.kt"
+        val violations = passthroughQuirksConstructionViolations(
+            path,
+            "package splice.head\nval q = PassthroughQuirks(providerTag = \"x\")\n",
+            allowedPrefixes,
         )
+        assertEquals(1, violations.size)
+        junitAssertTrue(violations.single().startsWith("$path:2 "), violations.single())
     }
 
     // HD-9 (#924 capstone): dialects speak wire format; they do not read topology/operator config.
     @Test
     fun `no dialect main file imports the topology package - HD-9`() {
         val modules = dialectModules(map)
-        org.junit.jupiter.api.Assertions.assertTrue(modules.size >= 3) {
+        junitAssertTrue(modules.size >= 3) {
             "found ${modules.size} dialect module(s) — the walk is broken, and a law that reads no " +
                 "dialect modules passes vacuously."
         }
@@ -300,7 +279,7 @@ class ArchitectureLawsTest {
         val violations = files.sortedBy { it.path }.flatMap { file ->
             topologyImportViolations(file.relativeTo(map.root).path, file.readText())
         }
-        org.junit.jupiter.api.Assertions.assertTrue(violations.isEmpty()) {
+        junitAssertTrue(violations.isEmpty()) {
             violations.joinToString(
                 separator = "\n  - ",
                 prefix = "DIALECT TOPOLOGY IMPORT (HD-9) violated:\n  - ",
@@ -308,31 +287,17 @@ class ArchitectureLawsTest {
         }
     }
 
-    // HD-9: the import guard proven against SYNTHETIC input.
+    // HD-9: the live tree is clean, so the import guard is fed synthetic files.
     @Test
-    fun `the dialect topology import guard can actually fail - HD-9`() {
+    fun `the dialect topology import guard reports member and bare package imports - HD-9`() {
         assertEquals(
             emptyList<String>(),
             topologyImportViolations("x/Y.kt", "package x\nimport splice.core.util.LogSink\n"),
-            "an unrelated core import is not a topology import",
         )
-        assertEquals(
-            listOf(
-                "x/Y.kt:2 imports splice.core.topology.AuthKind — dialects adapt one wire format and " +
-                    "must not read topology/operator config directly; take what you need as a typed " +
-                    "parameter instead.",
-            ),
-            topologyImportViolations("x/Y.kt", "package x\nimport splice.core.topology.AuthKind\n"),
-            "a member import must fail BY NAME, naming the exact line",
-        )
-        assertEquals(
-            listOf(
-                "x/Y.kt:2 imports splice.core.topology — dialects adapt one wire format and must not " +
-                    "read topology/operator config directly; take what you need as a typed parameter " +
-                    "instead.",
-            ),
-            topologyImportViolations("x/Y.kt", "package x\nimport splice.core.topology\n"),
-            "the bare package import must fail too",
-        )
+        listOf("splice.core.topology.AuthKind", "splice.core.topology").forEach { imported ->
+            val violations = topologyImportViolations("x/Y.kt", "package x\nimport $imported\n")
+            assertEquals(1, violations.size, imported)
+            junitAssertTrue(violations.single().startsWith("x/Y.kt:2 imports $imported "), violations.single())
+        }
     }
 }

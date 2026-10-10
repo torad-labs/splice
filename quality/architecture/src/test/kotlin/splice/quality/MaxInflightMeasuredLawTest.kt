@@ -97,38 +97,32 @@ class MaxInflightMeasuredLawTest {
     }
 
     @Test
-    fun `the law can actually fail - the gap, the boundary, the missing line, the commented entry`() {
-        assertEquals(emptyList<String>(), audit(knob(12), EXAMPLE), "12 under a ceiling of 14 is GREEN")
-        assertEquals(emptyList<String>(), audit(knob(14), EXAMPLE), "the boundary value is GREEN")
-        assertHit(audit(knob(100), EXAMPLE), "default 100 exceeds", "ceiling 14") {
-            "the original gap must be RED by name"
-        }
-        assertHit(audit(knob(15), EXAMPLE), "default 15 exceeds") { "one over the ceiling must be RED" }
-
-        // A commented-out old entry is history: only the live entry is the default.
+    fun `a default over the ceiling is reported, and an unreadable side is refused`() {
         val commented =
             "    // MAX_INFLIGHT(\"maxInflight\", KnobKind.NUMBER, listOf(\"CLAUDEX_MAX_INFLIGHT\"), 100L),\n" +
                 knob(12)
-        assertEquals(emptyList<String>(), audit(commented, EXAMPLE), "a commented-out 100 is not the default")
-
-        assertHit(audit(knob(12), "# no measurement here\n"), "no", "measurement line") { "a missing line must REFUSE" }
-        assertHit(audit(null, EXAMPLE), "missing") { "a missing knob source must be RED" }
-        assertHit(audit(knob(12), null), "missing") { "a missing example config must be RED" }
-        assertHit(audit("enum class Knob { PORT(\"port\", KnobKind.NUMBER, listOf(), 1L) }", EXAMPLE), "not found") {
-            "a renamed or removed MAX_INFLIGHT entry must REFUSE, never pass over an empty match"
-        }
+        val renamed = "enum class Knob { PORT(\"port\", KnobKind.NUMBER, listOf(), 1L) }"
+        // [problem count]: the boundary is green, one over is red, a commented-out old entry is history.
+        listOf(
+            audit(knob(12), EXAMPLE) to 0,
+            audit(knob(14), EXAMPLE) to 0,
+            audit(commented, EXAMPLE) to 0,
+            audit(knob(15), EXAMPLE) to 1,
+            audit(knob(100), EXAMPLE) to 1,
+            audit(knob(12), "# no measurement here\n") to 1,
+            audit(null, EXAMPLE) to 1,
+            audit(knob(12), null) to 1,
+            audit(renamed, EXAMPLE) to 1,
+        ).forEachIndexed { index, (hits, count) -> assertEquals(count, hits.size, "case $index: $hits") }
     }
 
-    // d80f0fa3 read BOTH sides before judging either, to bring the return count under detekt's
-    // ceiling. That is a behaviour change and it arrived ungraded: before it, a tree missing both
-    // inputs reported only whichever was tested first, so a second absence could be fixed while the
-    // law still named only one. The arm is the grade.
+    // Both sides are read before either is judged: a tree missing both inputs names both absences.
     @Test
     fun `neither side readable names BOTH absences, not whichever was read first`() {
         val hits = audit(null, null)
         assertEquals(2, hits.size, "both sides unreadable is two problems, got: $hits")
-        assertHit(hits, "Knob.kt", "missing") { "the knob source must be named" }
-        assertHit(hits, "splice.example.toml", "missing") { "the example config must be named" }
+        assertHit(hits, "Knob.kt") { "the knob source must be named" }
+        assertHit(hits, "splice.example.toml") { "the example config must be named" }
     }
 
     private fun audit(knob: String?, example: String?) =

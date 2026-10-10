@@ -2,8 +2,8 @@ package splice.quality
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.function.Executable
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 
@@ -24,22 +24,13 @@ class DeclaredReadsTest {
     }
 
     @Test
-    fun `a read outside every declared root throws, naming the file`(@TempDir repo: File) {
-        val outside = source(repo, "build-logic/src/main/kotlin/A.kt")
-
-        val thrown = assertThrows(IllegalStateException::class.java) {
-            declaredRead(outside, repo, listOf("app/src/main"))
-        }
-
-        assertTrue(thrown.message.orEmpty().contains("A.kt"))
-    }
-
-    @Test
-    fun `a sibling directory sharing a root's name prefix is not under it`(@TempDir repo: File) {
-        val sibling = source(repo, "app/src/main-extra/A.kt")
-
-        assertThrows(IllegalStateException::class.java) {
-            declaredRead(sibling, repo, listOf("app/src/main"))
+    fun `a read outside every declared root throws, including a sibling sharing a root's name prefix`(
+        @TempDir repo: File,
+    ) {
+        listOf("build-logic/src/main/kotlin/A.kt", "app/src/main-extra/A.kt").forEach { path ->
+            val outside = source(repo, path)
+            val read = Executable { declaredRead(outside, repo, listOf("app/src/main")) }
+            assertThrows(IllegalStateException::class.java, read, path)
         }
     }
 }

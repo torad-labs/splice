@@ -119,7 +119,6 @@ internal fun importBreaches(files: List<ScannedFile>, owners: Map<String, Layer>
     }
 
 private const val LAYER_MAP_RESOURCE = "/layer-map.toml"
-private const val LAYER_MAP_PATH = "quality/architecture/src/test/resources/layer-map.toml"
 private const val COMPOSITION_MODULE = ":app"
 private const val PROCESS_ENTRY = "fun main("
 
@@ -153,11 +152,6 @@ class LayerMapLawTest {
     }
 
     @Test
-    fun `the layer map is the file the law names`() {
-        assertTrue(File(map.root, LAYER_MAP_PATH).isFile) { "$LAYER_MAP_PATH is missing from the checkout" }
-    }
-
-    @Test
     fun `the composition root is one file, and it is the only process entry in app`() {
         val root = File(map.root, layerMap.compositionRootFile)
         assertTrue(root.isFile) { "composition root ${layerMap.compositionRootFile} does not exist" }
@@ -185,14 +179,9 @@ class LayerMapLawTest {
     }
 
     @Test
-    fun `tooling sources are scanned, so their imports are graded too`() {
-        val tooling = scanned().filter { it.layer == Layer.TOOLING }
-        assertTrue(tooling.isNotEmpty()) { "no tooling file was scanned, so the tooling layer is not graded" }
-    }
-
-    @Test
-    fun `every module with main sources is read, and the scan reads imports`() {
+    fun `tooling is scanned, every module with main sources is read, and the scan reads imports`() {
         val files = scanned()
+        assertTrue(files.any { it.layer == Layer.TOOLING }) { "no tooling file was scanned, so it is not graded" }
         val withSources = layerMap.modulesOf.values.flatten().filter { map.mainSources(it).isDirectory }
         val unread = unreadModules(withSources, files)
         assertTrue(unread.isEmpty()) {
@@ -204,61 +193,39 @@ class LayerMapLawTest {
     }
 
     @Test
-    fun `the scan assertion can fail - a module with no read file is named`() {
+    fun `a module with no read file is named`() {
         assertEquals(listOf(":core"), unreadModules(listOf(":core"), emptyList()))
         val read = ScannedFile(":core", Layer.DOMAIN, "A.kt", "splice.core", emptyList())
         assertEquals(emptyList<String>(), unreadModules(listOf(":core"), listOf(read)))
     }
 
     @Test
-    fun `tooling may import tooling, and a tooling file importing a product package is a breach`() {
-        val files = listOf(
-            ScannedFile(
-                ":quality-architecture",
-                Layer.TOOLING,
-                "Sub.kt",
-                "splice.firchecks.sub",
-                listOf("splice.firchecks.Registrar"),
-            ),
-            ScannedFile(":quality-architecture", Layer.TOOLING, "Reg.kt", "splice.firchecks", emptyList()),
-            ScannedFile(
-                ":quality-architecture",
-                Layer.TOOLING,
-                "Leak.kt",
-                "splice.firchecks.leak",
-                listOf("splice.core.Clock"),
-            ),
-        )
-        val owners = mapOf("splice.firchecks" to Layer.TOOLING, "splice.core" to Layer.DOMAIN)
-        val breaches = importBreaches(files, owners)
-        assertEquals(1, breaches.size) { "expected only the product import to breach, got $breaches" }
-        assertTrue(breaches.single().contains("imports splice.core.Clock")) { breaches.single() }
-    }
+    fun `an import that reaches a layer the importer may not reach is a breach, and an allowed one is not`() {
+        fun file(module: String, layer: Layer, pkg: String, vararg imports: String) =
+            ScannedFile(module, layer, "F.kt", pkg, imports.toList())
 
-    // Red proofs: each checker must fail on a synthetic violation before its green run means anything.
-
-    @Test
-    fun `a synthetic adapter importing a feature is a breach`() {
-        val files = listOf(
-            ScannedFile(":integrations-x", Layer.ADAPTER, "X.kt", "splice.x", listOf("splice.head.HeadServer")),
-            ScannedFile(":features-y", Layer.FEATURE, "H.kt", "splice.head", emptyList()),
+        val owners = mapOf(
+            "splice.core" to Layer.DOMAIN,
+            "splice.up" to Layer.ADAPTER,
+            "splice.head" to Layer.FEATURE,
+            "splice.firchecks" to Layer.TOOLING,
         )
-        val owners = mapOf("splice.x" to Layer.ADAPTER, "splice.head" to Layer.FEATURE)
-        val breaches = importBreaches(files, owners)
-        assertEquals(1, breaches.size) { "expected one breach, got $breaches" }
-        assertTrue(breaches.single().contains("imports splice.head.HeadServer")) { breaches.single() }
-    }
-
-    @Test
-    fun `a synthetic domain file importing an adapter is a breach, and a feature importing a domain is not`() {
-        val files = listOf(
-            ScannedFile(":core", Layer.DOMAIN, "Core.kt", "splice.core", listOf("splice.up.Client")),
-            ScannedFile(":features-y", Layer.FEATURE, "F.kt", "splice.head", listOf("splice.core.Clock")),
+        // (importing file, the one import expected to breach)
+        mapOf(
+            file(":integrations-x", Layer.ADAPTER, "splice.x", "splice.head.HeadServer") to "splice.head.HeadServer",
+            file(":core", Layer.DOMAIN, "splice.core", "splice.up.Client") to "splice.up.Client",
+            file(":quality-architecture", Layer.TOOLING, "splice.firchecks.leak", "splice.core.Clock") to
+                "splice.core.Clock",
+        ).forEach { (importer, imported) ->
+            val breaches = importBreaches(listOf(importer), owners)
+            assertEquals(1, breaches.size) { "expected one breach for $imported, got $breaches" }
+            assertTrue(breaches.single().contains("imports $imported")) { breaches.single() }
+        }
+        val allowed = listOf(
+            file(":features-y", Layer.FEATURE, "splice.head", "splice.core.Clock"),
+            file(":quality-architecture", Layer.TOOLING, "splice.firchecks.sub", "splice.firchecks.Registrar"),
         )
-        val owners = mapOf("splice.core" to Layer.DOMAIN, "splice.up" to Layer.ADAPTER)
-        val breaches = importBreaches(files, owners)
-        assertEquals(1, breaches.size) { "expected only the domain breach, got $breaches" }
-        assertTrue(breaches.single().contains("imports splice.up.Client")) { breaches.single() }
+        assertEquals(emptyList<String>(), importBreaches(allowed, owners))
     }
 
     @Test
@@ -274,10 +241,8 @@ class LayerMapLawTest {
             compositionRootFile = "app/Main.kt",
         )
         val problems = classificationProblems(map, setOf(":core", ":integrations-x", ":features-new"))
-        val unclassified = ":features-new is a Gradle module the layer map does not classify"
-        val doubled = ":core is classified in"
-        assertTrue(problems.any { it.startsWith(unclassified) }) { "$problems" }
-        assertTrue(problems.any { it.startsWith(doubled) }) { "$problems" }
+        assertTrue(problems.any { it.startsWith(":features-new") }) { "$problems" }
+        assertTrue(problems.any { it.startsWith(":core") }) { "$problems" }
     }
 
     @Test

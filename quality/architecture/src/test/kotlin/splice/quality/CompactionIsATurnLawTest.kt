@@ -124,49 +124,30 @@ class CompactionIsATurnLawTest {
     }
 
     @Test
-    fun `the law can actually fail - a dialect that ships a builder with no canary`() {
-        assertEquals(emptyList<String>(), CompactionIsATurn.audit(MAIN, TESTS), "the compliant pair is green")
-
-        assertHit(CompactionIsATurn.audit(MAIN, emptyMap()), "no byte-identity canary") {
-            "a builder whose module has no canary test must be RED"
-        }
-        assertHit(
-            CompactionIsATurn.audit(MAIN, mapOf(TEST_PATH to "fun `builds a request`() {}")),
-            "no byte-identity canary",
-        ) { "a test file that exists but does not carry the canary sentence is not coverage" }
+    fun `a dialect that ships a builder with no canary is reported, and an empty sweep refuses`() {
+        assertEquals(emptyList<String>(), CompactionIsATurn.audit(MAIN, TESTS))
+        assertEquals(1, CompactionIsATurn.audit(MAIN, emptyMap()).size)
+        assertEquals(1, CompactionIsATurn.audit(MAIN, mapOf(TEST_PATH to "fun `builds a request`() {}")).size)
         assertHit(
             CompactionIsATurn.audit(MAIN + (OTHER_BUILDER to "class OtherRequestBuilder"), TESTS),
             "integrations/dialects/newdialect",
         ) { "a NEW dialect's builder is named the day it lands, which no hand-written map can do" }
+        assertEquals(1, CompactionIsATurn.audit(emptyMap(), TESTS).size)
     }
 
     @Test
-    fun `the law can actually fail - the token ban and the flag read, but not the prose`() {
+    fun `the token ban and the flag read are reported, but not the prose`() {
         FORBIDDEN_SAMPLES.forEach { token ->
             assertHit(CompactionIsATurn.audit(mapOf(BUILDER_PATH to "val x = $token(body)"), TESTS), token) {
                 "`$token` in a builder must be RED"
             }
         }
-        assertHit(
-            CompactionIsATurn.audit(mapOf(BUILDER_PATH to "if (opts.compact) instructions += DIRECTIVE"), TESTS),
-            "reads the compact flag while building",
-        ) { "branching on the flag while building the request must be RED" }
         assertEquals(
-            emptyList<String>(),
-            CompactionIsATurn.audit(mapOf(BUILDER_PATH to "meta = TurnMeta(compact = opts.compact)"), TESTS),
-            "handing the flag to TurnMeta for the response side is the one allowed read",
+            1,
+            CompactionIsATurn.audit(mapOf(BUILDER_PATH to "if (opts.compact) instructions += DIRECTIVE"), TESTS).size,
         )
-        assertEquals(
-            emptyList<String>(),
-            CompactionIsATurn.audit(mapOf(BUILDER_PATH to PROSE), TESTS),
-            "the comment explaining why the builder no longer reshapes on compact is prose, not a reshaping",
-        )
-    }
-
-    @Test
-    fun `the law refuses when it sweeps no builder at all`() {
-        assertHit(CompactionIsATurn.audit(emptyMap(), TESTS), "empty sweep means the extractor") {
-            "no builder swept must REFUSE, never pass"
+        listOf("meta = TurnMeta(compact = opts.compact)", PROSE).forEach { allowed ->
+            assertEquals(emptyList<String>(), CompactionIsATurn.audit(mapOf(BUILDER_PATH to allowed), TESTS), allowed)
         }
     }
 

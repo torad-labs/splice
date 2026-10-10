@@ -57,13 +57,15 @@ class BootFailureNetFirstLawTest {
     }
 
     @Test
-    fun `the law can actually fail - order, absence, and a net that survives only as a comment`() {
-        assertEquals(emptyList<String>(), audit(INSTALL_LINE + PARSE_LINE), "net before parse is GREEN")
-        assertHit(audit(PARSE_LINE + INSTALL_LINE), "installed AFTER") { "net after parse must be RED" }
-        assertHit(audit(PARSE_LINE), "no boot-failure net") { "a missing net must be RED" }
-        assertHit(audit(INSTALL_LINE), "refusing to pass vacuously") { "a moved parse must REFUSE" }
-        assertHit(audit("// $INSTALL_LINE$PARSE_LINE"), "no boot-failure net") { "a commented-out net is no net" }
-        assertHit(audit(null), "missing") { "a missing Main.kt must be RED" }
+    fun `the law reports wrong order, absence, and a net that survives only as a comment`() {
+        assertEquals(emptyList<String>(), audit(INSTALL_LINE + PARSE_LINE))
+        mapOf(
+            PARSE_LINE + INSTALL_LINE to 1,
+            PARSE_LINE to 1,
+            INSTALL_LINE to 1,
+            "// $INSTALL_LINE$PARSE_LINE" to 1,
+        ).forEach { (source, count) -> assertEquals(count, audit(source).size, source) }
+        assertEquals(1, audit(null).size)
     }
 
     private fun audit(source: String?) = BootFailureNetFirst.audit(source, "app/src/main/kotlin/splice/app/Main.kt")

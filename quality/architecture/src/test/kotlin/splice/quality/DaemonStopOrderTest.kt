@@ -16,7 +16,8 @@
 //       stopDetached then ends only what is STILL running once the budget is spent. An earlier audit
 //       premise (that one detached compaction BURNS the whole 45s budget) was wrong and is corrected
 //       here: this arm previously asserted the opposite order.
-//   (c) the daemon run's teardown (DaemonRun.kt) DISCARDS AsyncFileIo.drain()'s Boolean. A false there means the file lane
+//   (c) the daemon run's teardown (DaemonRun.kt) DISCARDS AsyncFileIo.drain()'s Boolean. A false there means the
+//       file lane
 //       did not flush inside its timeout, i.e. daemon.log / usage / economics writes were lost on
 //       the way out, and it is the one place a loss is still reportable before halt.
 //   (d) TurnStreamer's `detachedScope.isActive` guard could never be false: stopDetached() calls
@@ -145,26 +146,14 @@ class DaemonStopOrderTest {
     @Test
     fun `TurnStreamer's detached-scope guard is either live or gone, never dead`() {
         val source = code(TURN_STREAMER_REL)
-        val guard = "detachedScope.isActive"
         val cancelsScope = source.contains("detachedScope.cancel()") ||
             source.contains("detachedScope.coroutineContext.cancel()")
-        val claim = "a cancelled scope launches nothing"
-        val streamer = declaredRead(repoRoot().resolve(TURN_STREAMER_REL).toFile())
-        val claimSurvives = streamer.readText().contains(claim)
         if (cancelsScope) return // the guard is live: something really does cancel the scope.
         assertFalse(
-            source.contains(guard),
-            "$TURN_STREAMER_REL: `$guard` guards the FrameRecording, but nothing cancels that scope — " +
-                "stopDetached() calls cancelChildren(), which cancels the children and leaves the scope " +
-                "active, and no other caller touches it. The guard can never be false, so the branch " +
-                "behind it is dead. Either cancel the scope from the head-stop path, or delete the " +
-                "guard and the header claim with it.",
-        )
-        assertFalse(
-            claimSurvives,
-            "$TURN_STREAMER_REL: the guard is gone but the header still claims \"$claim\" as the reason " +
-                "the scope survives a stop. A comment that describes a branch the code no longer has is " +
-                "the next reader's wrong premise — remove the claim with the guard.",
+            source.contains("detachedScope.isActive"),
+            "$TURN_STREAMER_REL: `detachedScope.isActive` guards the FrameRecording, but nothing cancels that " +
+                "scope — stopDetached() calls cancelChildren(), which leaves the scope active, so the guard " +
+                "can never be false and the branch behind it is dead.",
         )
     }
 

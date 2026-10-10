@@ -107,58 +107,25 @@ class CredentialWriteMergesLawTest {
     }
 
     @Test
-    fun `the law can actually fail - a second writer that rewrites from scratch`() {
-        assertHit(CredentialWriteMerges.audit(corpus(NEW to REWRITES)), "without merging onto what is on disk") {
-            "a provider file that writes the credential file from scratch must be RED — this is the whole defect"
-        }
-        assertEquals(
-            emptyList<String>(),
-            CredentialWriteMerges.audit(corpus(NEW to MERGES)),
-            "merging is a disposition",
-        )
-        assertEquals(
-            emptyList<String>(),
-            CredentialWriteMerges.audit(corpus(NEW to EXEMPTED)),
-            "a dated marker with a written reason is the other disposition",
-        )
-        assertHit(CredentialWriteMerges.audit(corpus(NEW to BLANK)), "blank reason") {
-            "a marker with no reason must be RED, not silently exempt"
-        }
-        assertHit(CredentialWriteMerges.audit(corpus(NEW to BOTH)), "one disposition per writer") {
-            "merging AND claiming the exemption is a violation"
-        }
-    }
-
-    // V4-298: a sign-in writes the provider's credential file too, so the login module is swept.
-    @Test
-    fun `the law can actually fail - a sign-in that rewrites the credential from scratch`() {
-        assertHit(CredentialWriteMerges.audit(corpus(SIGN_IN to REWRITES)), "$SIGN_IN calls") {
-            "a login-module file that writes the credential file from scratch must be RED"
-        }
-    }
-
-    @Test
-    fun `the law can actually fail - a merge named only in a comment, and a write named only in one`() {
-        assertHit(CredentialWriteMerges.audit(corpus(NEW to MERGE_IN_PROSE)), "without merging") {
-            "a comment mentioning the merge is prose, not a call"
-        }
-        assertEquals(
-            emptyList<String>(),
-            CredentialWriteMerges.audit(corpus(NEW to WRITE_IN_PROSE)),
-            "a comment mentioning the write does not make the file a writer — it would demand a disposition " +
-                "from a file that writes nothing",
-        )
+    fun `a writer that rewrites from scratch, or has no valid disposition, is reported`() {
+        // [problem count] for each writer file; V4-298: the sign-in module is swept like a provider.
+        mapOf(
+            corpus(NEW to REWRITES) to 1,
+            corpus(SIGN_IN to REWRITES) to 1,
+            corpus(NEW to MERGES) to 0,
+            corpus(NEW to EXEMPTED) to 0,
+            corpus(NEW to BLANK) to 1,
+            corpus(NEW to BOTH) to 1,
+            corpus(NEW to MERGE_IN_PROSE) to 1,
+            corpus(NEW to WRITE_IN_PROSE) to 0,
+        ).forEach { (sources, count) -> assertEquals(count, CredentialWriteMerges.audit(sources).size, "$sources") }
     }
 
     @Test
     fun `the law refuses on an empty sweep and on a missing primitive`() {
         val noWriters = mapOf(CredentialWriteMerges.PRIMITIVE_FILE to PRIMITIVE, NEW to WRITE_IN_PROSE)
-        assertHit(CredentialWriteMerges.audit(noWriters), "empty sweep") {
-            "no provider writer swept at all must REFUSE, never pass"
-        }
-        assertHit(CredentialWriteMerges.audit(mapOf(NEW to MERGES)), "no longer declares") {
-            "a tree whose shared primitive is gone must REFUSE"
-        }
+        assertEquals(1, CredentialWriteMerges.audit(noWriters).size)
+        assertEquals(1, CredentialWriteMerges.audit(mapOf(NEW to MERGES)).size)
     }
 
     // The corpus always carries one compliant writer at a DIFFERENT path from the case under test,

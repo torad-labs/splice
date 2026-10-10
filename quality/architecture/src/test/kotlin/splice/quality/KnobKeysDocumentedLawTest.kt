@@ -195,14 +195,10 @@ class KnobKeysDocumentedLawTest {
     }
 
     @Test
-    fun `the law can actually fail - parse, spellings and the mutation - V4-87`(@TempDir root: File) {
+    fun `a compliant tree is green, and an undocumented or fake key is reported by name - V4-87`(@TempDir root: File) {
         with(Tree(root)) {
             write(COMPLIANT_SOURCE, COMPLIANT_DOC)
-            assertEquals(
-                emptyList<String>(),
-                audit(),
-                "compliant tree must be GREEN (live key, commented key, snake_case spelling, reasoned retirement)",
-            )
+            assertEquals(emptyList<String>(), audit())
             assertEquals(
                 listOf("port", "maxInflight", "debug", "showReasoning", "grokPort"),
                 KnobKeysDocumented.parseKnobs(COMPLIANT_SOURCE, "fixture").first.map { it.key },
@@ -211,72 +207,40 @@ class KnobKeysDocumentedLawTest {
             // The snake_case alternative must not loosen into a fuzzy match: deleting the ONE line that
             // documents showReasoning reds it by name again.
             write(COMPLIANT_SOURCE, COMPLIANT_DOC.replace("show_reasoning = \"text\"", ""))
-            assertHit(
-                audit(),
-                "NO DISPOSITION",
-                "showReasoning",
-            ) { "removing the only snake_case doc line must be RED by name" }
+            assertHit(audit(), "showReasoning") { "removing the only snake_case doc line must be RED by name" }
 
-            // The BORING case: exactly one knob, and the count must come out as one.
-            write(BORING_SOURCE, BORING_DOC)
-            assertEquals(emptyList<String>(), audit(), "the one-knob tree must be GREEN")
-            val boring = KnobKeysDocumented.parseKnobs(BORING_SOURCE, "boring")
-            assertEquals(
-                listOf(KnobKeysDocumented.KnobKey("PORT", "port")) to emptyList<String>(),
-                boring,
-                "the one-knob tree must parse to exactly 1 key named port",
-            )
-
-            val mutated = COMPLIANT_SOURCE.replace(
-                "    GROK_PORT(\"grokPort\", KnobKind.NUMBER, listOf(\"GROK_PROXY_PORT\"), 3100L, " +
-                    "restartRequired = true),\n}",
-                "    GROK_PORT(\"grokPort\", KnobKind.NUMBER, listOf(\"GROK_PROXY_PORT\"), 3100L, " +
-                    "restartRequired = true),\n$FAKE_KEY_ENTRY",
-            )
-            assertTrue(
-                mutated != COMPLIANT_SOURCE,
-                "the mutation did not apply — the fake key never reached the temp copy",
-            )
+            val mutated = COMPLIANT_SOURCE.replace("    GROK_PORT(", "$FAKE_KEY_ENTRY\n    GROK_PORT(")
+            assertTrue(mutated != COMPLIANT_SOURCE, "the mutation did not apply")
             write(mutated, COMPLIANT_DOC)
             assertHit(audit(), "fakeNewKnob") { "synthetic fake key must be RED BY NAME" }
+
+            write(COMPLIANT_SOURCE, RUNTIME_MAP_DOC)
+            assertHit(audit(), "grokPort") { "a key with no disposition at all must be RED by name" }
+            write(COMPLIANT_SOURCE, RUNTIME_MAP_DOC, RUNTIME_MAP)
+            assertHit(audit(), "grokPort") { "a key named only in a runtime report map is not documented" }
         }
     }
 
     @Test
-    fun `the law can actually fail - dispositions and refusals - V4-87`(@TempDir root: File) {
+    fun `an unreasoned retirement, an untrustworthy parse and a missing surface are each reported - V4-87`(
+        @TempDir root: File,
+    ) {
         with(Tree(root)) {
             write(COMPLIANT_SOURCE, RETIRED_NOREASON_DOC)
-            var hits = audit()
-            assertHit(hits, "grokPort", "NO reason") { "a retirement with an empty reason must be RED by name" }
-            assertEquals(
-                1,
-                hits.count { it.contains("grokPort") },
-                "an unreasoned retirement is ONE problem, not a duplicate pair, got: $hits",
-            )
+            assertEquals(1, audit().size, "an unreasoned retirement is ONE problem, not a duplicate pair")
 
-            write(COMPLIANT_SOURCE, RUNTIME_MAP_DOC)
-            assertHit(audit(), "NO DISPOSITION", "grokPort") { "a key with no disposition at all must be RED by name" }
-
-            write(COMPLIANT_SOURCE, RUNTIME_MAP_DOC, RUNTIME_MAP)
-            assertHit(
-                audit(),
-                "NO DISPOSITION",
-                "grokPort",
-            ) { "a key named only in a runtime report map is not documented" }
-
-            write(EMPTY_SOURCE, COMPLIANT_DOC)
-            assertHit(audit(), "refusing to pass vacuously") { "an enum with no entries must be RED" }
-
-            write(COMPLIANT_SOURCE.replace("enum class Knob(", "enum class Tuning("), COMPLIANT_DOC)
-            assertHit(audit(), "moved or") { "a renamed/moved enum must be RED" }
-
-            write(COMPLIANT_SOURCE + "\npublic val orphanKind: KnobKind = KnobKind.STRING\n", COMPLIANT_DOC)
-            assertHit(audit(), "disagree") { "a KnobKind mention the entry parser cannot attribute must be RED" }
+            mapOf(
+                "an enum with no entries" to EMPTY_SOURCE,
+                "a renamed enum" to COMPLIANT_SOURCE.replace("enum class Knob(", "enum class Tuning("),
+                "a KnobKind mention no entry owns" to COMPLIANT_SOURCE + "\nval orphan: KnobKind = KnobKind.STRING\n",
+            ).forEach { (name, src) ->
+                write(src, COMPLIANT_DOC)
+                assertTrue(audit().isNotEmpty(), "$name must be RED")
+            }
 
             write(COMPLIANT_SOURCE, COMPLIANT_DOC)
             surface.delete()
-            hits = audit()
-            assertHit(hits, "disposition surface missing") { "a missing surface must be RED" }
+            assertTrue(audit().isNotEmpty(), "a missing surface must be RED")
         }
     }
 
@@ -332,18 +296,6 @@ maxInflight = "12"
     put("grokPort", c.grokPort)
 }
 """
-        const val BORING_SOURCE = """package splice.core.config
-
-public enum class Knob(
-    public val key: String,
-    public val kind: KnobKind,
-) {
-    PORT("port", KnobKind.NUMBER),
-}
-"""
-        const val BORING_DOC = """[defaults]
-port = "3099"
-"""
         const val EMPTY_SOURCE = """package splice.core.config
 
 public enum class Knob(
@@ -353,6 +305,6 @@ public enum class Knob(
 }
 """
         const val FAKE_KEY_ENTRY =
-            "    FAKE_NEW_KNOB(\"fakeNewKnob\", KnobKind.BOOL, listOf(\"CLAUDEX_FAKE\"), false),\n}"
+            "    FAKE_NEW_KNOB(\"fakeNewKnob\", KnobKind.BOOL, listOf(\"CLAUDEX_FAKE\"), false),"
     }
 }

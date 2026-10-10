@@ -639,11 +639,20 @@ function refTipNow(root: string, ref: string): string | undefined {
 }
 
 /** THE MOVED-TIP CHECK. A judgement takes minutes, and the seats share one checkout: a peer committing meanwhile moves
- *  the very ref this push is about. Measured on 2026-10-10: a push that started at 12:25 was judged and reported as
- *  6aa5549, a peer committed 6f66b0c in the checkout at 12:30, and origin took 6f66b0c at 12:33 — 6aa5549 never
- *  existed on the remote, which gave it no push event and no workflow run, so a commit nothing judged landed. The
- *  judgement is only worth what the push sends, so a ref that no longer points at the judged tip REFUSES here; an
- *  explicit sha refspec resolves to itself and passes. */
+ *  the very ref this push is about. Measured on 2026-10-10 (three times: 05:53, 07:33 and 10:01 CT): the hook judged
+ *  and printed one sha, a peer committed above it in the checkout during the gradle run, and origin took the peer's
+ *  commit. The judged sha never existed on the remote, which gave it no push event and no workflow run, and GitHub
+ *  reports the pair as ONE push (before from the first, head from the last), which is what hid it.
+ *
+ *  WHY. Measured: a plain `git push origin <branch>` to a local path and to a file:// URL sends the sha the hook was
+ *  handed, so those transports are not the cause. Inferred, not yet captured: over HTTPS the push is carried by
+ *  remote-curl, which runs `send-pack` as a child AFTER the hook with the refspec as text, so the local side is
+ *  resolved a second time inside that child, at the end of the judgement and not at its start. A refspec that names a
+ *  branch therefore sends whatever the branch points at then. A refspec that names a sha has nothing left to resolve.
+ *
+ *  So this guard re-reads the local ref on the green path and refuses when it moved, and every push names its sha:
+ *  `git push origin $(git rev-parse HEAD):refs/heads/<branch>`, with the sha taken as the push starts. The refusal
+ *  prints that command. A sha refspec resolves to itself and passes. */
 function movedRefs(root: string, refs: readonly PushedRef[], judged: string): string[] {
   const moved: string[] = [];
   for (const ref of refs) {

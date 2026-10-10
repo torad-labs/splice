@@ -50,3 +50,27 @@ public data class TurnEconomics(
         ),
     )
 }
+
+/** The token counters one turn reported. Each is null when the head did not report it, which stays distinct
+ *  from a real zero. NO defaults, for the reason [cacheWriteTokens] has none. */
+public data class TurnTokens(
+    val inTokens: Long?,
+    val cachedTokens: Long?,
+    /** V4-86: this turn's cache-write bucket, from PerfKeys.CACHE_WRITE_TOKENS. NO default on
+     *  purpose — a default would let a new call site drop the most expensive bucket on the turn
+     *  and still compile, which is exactly how the counter came to die at this seam. */
+    val cacheWriteTokens: Long?,
+    val outTokens: Long?,
+)
+
+/** The request sizes one turn reported: what the client sent and what the head sent upstream. */
+public data class TurnBytes(
+    val reqBytes: Long?,
+    val upstreamBytes: Long?,
+)
+
+/** The tool-surface partition one turn reported. Both are null on a head whose dialect cannot defer. */
+public data class TurnTools(
+    val toolsEager: Long?,
+    val toolsDeferred: Long?,
+)

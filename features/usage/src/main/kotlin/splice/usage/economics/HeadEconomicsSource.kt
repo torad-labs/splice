@@ -43,3 +43,36 @@ public data class EconomicsRow(
     val turns: Long get() = counts.turns
     val localSteps: Long get() = counts.localSteps
 }
+
+/** The hour's token sums: what went in, the part of it served from cache, the part written to it, and what came out. */
+public data class EconomicsTokens(
+    val inTokens: Long,
+    val cachedTokens: Long,
+    /** V4-86: the cache-WRITE half of [inTokens], disjoint from [cachedTokens]. Its own sum
+     *  because it bills at the vendor's cache_write rate and not at the input rate. */
+    val cacheWriteTokens: Long,
+    val outTokens: Long,
+)
+
+/** The hour's body sizes: what the client sent and what splice sent upstream. */
+public data class EconomicsBytes(
+    val reqBytes: Long,
+    val upstreamBytes: Long,
+)
+
+/** The hour's tool-definition sums. [deferralTurns] is the denominator for the tool averages and is 0 on a head
+ *  whose dialect cannot defer, which the UI renders as "n/a". */
+public data class EconomicsTools(
+    val toolsEager: Long,
+    val toolsDeferred: Long,
+    val deferralTurns: Long,
+)
+
+/** The hour's dollars and the turns that could not be priced. */
+public data class EconomicsCost(
+    /** V4-221: the hour's dollars, each turn at its own model's card; null for an hour recorded before
+     *  the daemon priced turns ("not priced then", never $0). */
+    val costUsd: Double?,
+    /** V4-221: turns whose model had no rate card, so their dollars are not in [costUsd]. */
+    val unpricedTurns: Long,
+)

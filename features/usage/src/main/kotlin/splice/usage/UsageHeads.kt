@@ -3,6 +3,12 @@
 // projection, so the usage feature never depends upward on the control plane.
 package splice.usage
 
+import splice.accounts.pool.HeadAccountPoolSource
+import splice.core.model.ClientWindows
+import splice.core.model.ModelCatalog
+import splice.usage.economics.HeadEconomicsSource
+import splice.usage.perf.HeadPerfSource
+import splice.usage.perf.PerfRowsSource
 import splice.usage.quota.HeadUsageSource
 
 /** One head as the usage surfaces see it. Built per request by the adapter, never cached: [label]
@@ -18,6 +24,32 @@ public data class UsageHead(
     /** V4-240: the head forwards the client's own Anthropic login (auth kind `client`), so its
      *  upstream is Anthropic and the figure Claude Code prices at Anthropic's card is this head's. */
     val anthropicUpstream: Boolean = false,
+)
+
+/** The thresholds at which a head's usage turns to a warning. */
+public data class UsageHeadWarn(
+    val warnPct: Int,
+    val warnTokens5h: Long,
+)
+
+/** The reads a head wires for the usage surfaces. Each is null when the head has no such sink wired. */
+public data class UsageHeadSinks(
+    /** Per-turn perf telemetry rows for /api/perf; null = head has no perf sink wired. */
+    val perf: HeadPerfSource? = null,
+    /** The same rows with outcome tags, for the windowed summary and the per-turn view. */
+    val perfRows: PerfRowsSource? = null,
+    /** Hourly quota rollup for /api/economics; null = head has no economics sink wired. */
+    val economics: HeadEconomicsSource? = null,
+    /** Head-local OAuth account selections and quotas, projected without credential material. */
+    val accountPool: HeadAccountPoolSource? = null,
+)
+
+/** What the statusline needs of a head to put the client's units back into the row's window. */
+public data class UsageHeadStatusline(
+    /** Turns the statusline blob's client units back into the row's declared window and label. */
+    val catalog: ModelCatalog? = null,
+    /** Where the statusline records each session's real window. Null = a head that never learns. */
+    val clientWindows: ClientWindows? = null,
 )
 
 /** Every configured head, in topology order, read at CALL time. */

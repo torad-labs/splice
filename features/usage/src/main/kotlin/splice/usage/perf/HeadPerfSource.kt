@@ -90,6 +90,33 @@ public data class PerfRow(
     public val turnId: String? get() = turns.request
 }
 
+/** The writer's five string-and-flag facts about one turn, as the row carries them (V4-127).
+ *
+ *  NULL MEANS THE ROW DOES NOT CARRY THE FIELD, deliberately distinguished from a false or empty
+ *  value. [cacheCold] is written ONLY alongside an account (PerfStats.record), so a row with no
+ *  account never had the question asked; reading that as `false` would report "the cache was warm"
+ *  about a turn where nothing looked. [compact] and [model] are unconditional in the current writer,
+ *  so null there means a LEGACY or torn row, and a payload omits the field rather than inventing one.
+ *
+ *  NAMED ARGUMENTS ARE THE CONTRACT at every construction site (the ModelRates scar, V4-127): four of
+ *  these five are nullable and two of the strings are adjacent, so a POSITIONAL call that swaps
+ *  session and account compiles, passes, and reports the wrong facts with a green suite. */
+public data class PerfTurnFacts(
+    val model: String? = null,
+    val session: String? = null,
+    val account: String? = null,
+    val cacheCold: Boolean? = null,
+    val compact: Boolean? = null,
+)
+
+/** V4-354: what joins a perf row to the client's local transcript. */
+public data class PerfTranscriptLink(
+    /** The full session id, not the truncated tag the row's session fact holds. */
+    val sessionId: String? = null,
+    /** The response id the client recorded in its local transcript. */
+    val responseMessageId: String? = null,
+)
+
 /** What one coherent read of the perf files yields for a window (v0.4.0, FEATURES.md §3). */
 public data class PerfRowsWindow(
     /** The rows recorded at or after the cutoff in FILE order (the order they were appended, which is

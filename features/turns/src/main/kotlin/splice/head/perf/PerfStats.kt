@@ -32,6 +32,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.PerfSessionTail
 import splice.core.perf.PerfSessionTurn
 import splice.core.perf.PerfSnapshot
+import splice.core.perf.PerfTurnIds
 import splice.core.perf.UpstreamMilestones
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
@@ -70,6 +71,42 @@ public data class PerfRowMeta(
         transcript.turns.request?.let { into.put("turn_id", it) }
     }
 }
+
+/** The login that carried a turn and whether its prompt cache started cold. [label] null means no account was
+ *  proved for the turn, and then the row carries neither fact. */
+public data class PerfAccount(
+    val label: String? = null,
+    val cacheCold: Boolean = false,
+)
+
+/** Why a turn failed and how hard the retry loop tried, beside the outcome tag on its perf row. */
+public data class PerfFailure(
+    /** V4-117: WHY this turn failed, as the taxonomy's cause, so a perf row can be grouped by cause
+     *  rather than by the wire type the client happened to be told (the two differ by design — see
+     *  WireType). Null for a turn that did not fail. */
+    val cause: String? = null,
+    /** V4-117: how many upstream attempts the retry loop made, as RECORDED by the loop itself.
+     *  Written only when it is non-zero, so a row without retries looks exactly as it did before
+     *  this field existed — the alternative would put layers=0 on every success in the file. */
+    val layers: Int = 0,
+)
+
+/** The ids that join a perf row to the rest of the record: the trace turn and request turn, the full client
+ *  session, the client-facing response message (V4-354), and the conversation key the in-memory preflight
+ *  measurements use. Each is optional: a head with no trace, or a turn that never reached a client, has none. */
+public data class PerfTranscriptIds(
+    /** V4-345: the id of the trace turn that recorded this turn's request and answer, on a head that
+     *  keeps a trace, so the console opens the request a person clicked by its id rather than guessing
+     *  it by time. Null on a head that keeps none, and then the row carries no `turn`. */
+    val turns: PerfTurnIds = PerfTurnIds(),
+    /** The full client session id, for joining the local transcript without guessing by timestamp or
+     *  the shortened session tag. */
+    val sessionId: String? = null,
+    /** Splice's client-facing response message id, for the same join. */
+    val responseMessageId: String? = null,
+    /** Same stable first-prompt key the provider uses, only for in-memory preflight measurements. */
+    val conversationKey: String? = null,
+)
 
 private const val DEFAULT_TAIL = 200
 

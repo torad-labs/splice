@@ -107,6 +107,44 @@ public data class EconomicsBucket(
     val unpricedTurns: Long get() = cost.unpricedTurns
 }
 
+/** One hour's token sums. Observed values only; the unreported-usage count beside them records the unknown turns. */
+public data class BucketTokens(
+    /** Every request's input the hour billed, cache buckets included: each turn's final round and the
+     *  rounds it absorbed, the same three sums for [cachedTokens] and [cacheWriteTokens]. */
+    val inTokens: Long = 0,
+    val cachedTokens: Long = 0,
+    /** V4-86: the cache-WRITE half of [inTokens], disjoint from [cachedTokens] (the read half).
+     *  Recorded BESIDE input, never out of it, for the same reason [cachedTokens] is: the plan
+     *  meters total input and a written block bills in full. It is a separate sum because it
+     *  bills at the vendor's cache_write rate, not the input rate. */
+    val cacheWriteTokens: Long = 0,
+    val outTokens: Long = 0,
+)
+
+/** One hour's request sizes: what clients sent and what the head sent upstream. */
+public data class BucketBytes(
+    val reqBytes: Long = 0,
+    val upstreamBytes: Long = 0,
+)
+
+/** One hour's tool-surface partition sums. */
+public data class BucketTools(
+    val toolsEager: Long = 0,
+    val toolsDeferred: Long = 0,
+    val deferralTurns: Long = 0,
+)
+
+/** One hour's dollars and the turns that could not be priced. */
+public data class BucketCost(
+    /** V4-221: the hour's dollars, each turn priced at its own model's card. NULL for an hour read
+     *  from a file written before the field existed — "not priced then", never $0 — and it stays null
+     *  if this daemon adds turns to that same hour, because a sum missing the earlier turns would
+     *  read as the hour's whole cost. */
+    val costUsd: Double? = 0.0,
+    /** V4-221: turns whose model had no rate card; their dollars are not in [costUsd]. */
+    val unpricedTurns: Long = 0,
+)
+
 public class EconomicsStore(
     private val file: Path,
     /** V4-221: the head's pricer. Required: a store without one would record every turn unpriced. */

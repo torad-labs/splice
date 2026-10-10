@@ -16,6 +16,8 @@ import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.head.perf.HeldStore
 import splice.head.perf.HeldStores
+import splice.sessions.registry.SEEN_SESSIONS_DIR
+import splice.sessions.registry.SEEN_SESSIONS_KEY
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -93,6 +95,8 @@ internal class KeptHistoryStores(private val paths: StatePaths) {
     private fun filed(): Map<String, List<AgedFiles>> = mapOf(
         "reasoning" to headDirs(REASONING_DIR).map { AgedFiles(it) },
         "code_mode" to headDirs(CODE_MODE_DIR).map { AgedFiles(it) },
+        // the record of sessions seen, each file dated by its session's last activity (SeenSessions)
+        SEEN_SESSIONS_KEY to listOf(AgedFiles(paths.stateDir.resolve(SEEN_SESSIONS_DIR))),
     )
 
     /** Every head's directory of one kind (`heads/<key>/<leaf>`), including a head that has left splice.toml: its

@@ -17,6 +17,7 @@ import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.config.UserHome
+import splice.core.perf.KeptHistory
 import splice.core.process.LaunchOwners
 import splice.core.topology.AuthKindRegistry
 import splice.sessions.http.ActivitySource
@@ -33,6 +34,9 @@ import splice.sessions.http.SessionsRoutes
 import splice.sessions.http.TeamSource
 import splice.sessions.http.TerminalSource
 import splice.sessions.http.TranscriptRoots
+import splice.sessions.registry.RecordedSessions
+import splice.sessions.registry.SEEN_SESSIONS_DIR
+import splice.sessions.registry.SeenSessions
 import splice.sessions.registry.SessionAvailability
 import splice.sessions.registry.SessionRecord
 import splice.sessions.registry.SessionSource
@@ -112,7 +116,14 @@ internal class SessionsWiring(
                 }
         },
     )
-    val routes: SessionsRoutes? = sessions?.let {
+
+    /** The listing Sessions and Requests read: the registry, with the sessions Claude Code already forgot kept as
+     *  ended under the one history window (SeenSessions). */
+    private val listed = sessions?.let {
+        val dir = StatePaths().stateDir.resolve(SEEN_SESSIONS_DIR)
+        RecordedSessions(it, SeenSessions(dir, KeptHistory { config.getConfig().historyWindow }))
+    }
+    val routes: SessionsRoutes? = listed?.let {
         SessionsRoutes(
             it,
             MovedTranscripts(TranscriptReader(), ModelMoves(StatePaths().modelMovesDir)),

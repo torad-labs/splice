@@ -7,6 +7,7 @@ package splice.head.usage
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.usage.QuotaHeaderRead
@@ -32,6 +33,21 @@ class QuotaTrackerTest {
         LogSink { },
         extraFamily = XCodexFamily(),
     )
+
+    // Oct 10, 2026 (Marlin's ruling): Kimi answered `{}`, and a three-week-old reading was still drawn as today's.
+    @Test
+    fun `a provider's answer that it has no usage replaces the older reading, and still reads so after a restart`() {
+        val first = tracker()
+        first.record(QuotaSnapshot(sevenDay = QuotaWindow(26.0, null, 604_800L), updatedAt = now - 86_400_000L))
+        first.record(QuotaSnapshot(updatedAt = now))
+        val gone = first.snapshot()!!
+        assertNull(gone.sevenDay, "the older week is no longer drawn")
+        assertEquals(now, gone.updatedAt, "the answer keeps its time")
+        val after = tracker().snapshot()!!
+        assertTrue(after.answeredEmpty, "a restart still reads the provider's answer")
+        first.record(QuotaSnapshot(sevenDay = QuotaWindow(4.0, null, 604_800L), updatedAt = now))
+        assertEquals(4.0, first.snapshot()!!.sevenDay!!.usedPercent, 1e-9, "a later reading draws again")
+    }
 
     @Test
     fun `a retired account retains late quota evidence without recreating its deleted file`() {

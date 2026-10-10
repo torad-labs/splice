@@ -37,6 +37,7 @@ import splice.usage.quota.HeadUsageSource
 import splice.usage.quota.QuotaPoller
 import splice.usage.quota.RateLimitView
 import splice.usage.quota.UsageView
+import java.util.concurrent.TimeUnit
 
 public class UsageStoreSource(
     private val store: UsageStore,
@@ -64,6 +65,7 @@ public class UsageStoreSource(
             fiveHour = snapshot.fiveHour?.let { windowView(it, observed) },
             sevenDay = snapshot.sevenDay?.let { windowView(it, observed) },
             plan = snapshot.plan,
+            noUsageAt = snapshot.takeIf { it.answeredEmpty }?.let { TimeUnit.MILLISECONDS.toSeconds(it.updatedAt) },
         )
     }
 }

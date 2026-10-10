@@ -98,6 +98,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
                         quota?.sevenDay?.windowSeconds,
                     ),
                     observedAtEpochSeconds = quota?.fiveHour?.observedAt ?: quota?.sevenDay?.observedAt,
+                    noUsageAt = quota?.noUsageAt,
                 ),
                 authExclusion = AuthExclusionView(null, null, identity = identityOf(description.fields)),
                 flags = AccountFlags(
@@ -238,6 +239,7 @@ public class AccountsRoute(private val heads: Map<String, AccountHead>, private 
         into.put("seven_day_current", current(row.quota.sevenDay, row.quota.observedAtEpochSeconds, nowSeconds))
         QuotaJson().putModels(into, "seven_day_models", row.quota.sevenDayModels)
         into.put("observed_at_epoch_seconds", row.quota.observedAtEpochSeconds)
+        into.put("no_usage_at_epoch_seconds", row.quota.noUsageAt)
         into.put("available", row.flags.available)
         into.put("credential_present", row.flags.credentialPresent)
         into.put("auth_excluded_until_epoch_millis", row.authExclusion.untilEpochMillis)
@@ -296,6 +298,8 @@ private data class JoinedQuota(
     val observedAtEpochSeconds: Long?,
     /** Each model's own weekly window, where the provider reports one (Claude). */
     val sevenDayModels: List<ModelQuota> = emptyList(),
+    /** Epoch SECONDS the provider last answered with no usage for this account ([QuotaView.noUsageAt]). */
+    val noUsageAt: Long? = null,
 )
 
 /** One joined row: an OAuth account (or a single-login head with none) plus every head riding it.

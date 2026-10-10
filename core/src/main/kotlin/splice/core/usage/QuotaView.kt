@@ -20,4 +20,12 @@ public data class QuotaWindowView(
         takeIf { QuotaFreshness.current(observedAt, resetsAt, nowSeconds) }
 }
 
-public data class QuotaView(val fiveHour: QuotaWindowView?, val sevenDay: QuotaWindowView?, val plan: String?)
+/** [noUsageAt]: epoch SECONDS the provider last answered its usage endpoint with no usage for this account (Kimi's
+ *  `{}`, Oct 10, 2026). Then there are no windows to draw, and the page says the provider sends none instead of
+ *  drawing an older reading as today's. Null when the provider reported windows, or was never asked. */
+public data class QuotaView(
+    val fiveHour: QuotaWindowView?,
+    val sevenDay: QuotaWindowView?,
+    val plan: String?,
+    val noUsageAt: Long? = null,
+)

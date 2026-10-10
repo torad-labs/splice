@@ -180,10 +180,11 @@ class ClaudeUsageProbeTest {
             assertTrue(refused is QuotaEndpointRefused, "a refusal is not a usage observation")
             assertEquals(status.value, (refused as QuotaEndpointRefused).status)
         }
-        assertNull(
-            probe(mutableListOf(), body = """{"error":{"utilization":100,"type":"rate_limit_error"}}""").probe(),
-            "an error-only 200 body has no quota windows",
-        )
+        // Oct 10, 2026: a 200 naming an error is a failure, so the last reading stays; only a clean answer with no
+        // usage clears it.
+        val errorOnly = probe(mutableListOf(), body = """{"error":{"utilization":100,"type":"rate_limit_error"}}""")
+        val failed = Cancellables.runCatchingCancellable { errorOnly.probe() }.exceptionOrNull()
+        assertTrue(failed is UsageAnswerError, "an error-only 200 body is a failure, never windows: $failed")
     }
 
     @Test

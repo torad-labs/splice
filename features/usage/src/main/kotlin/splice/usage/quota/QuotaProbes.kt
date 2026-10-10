@@ -17,6 +17,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsText
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.auth.AuthProvider
 import splice.core.auth.Credentials
@@ -87,7 +88,9 @@ internal class BearerGetProbe(
         // V4-296: a refusal (401, 429, a 5xx) is a failure, so QuotaPoller's log-once path names it; a null
         // here reads as "nothing to record" and froze the bars on the last snapshot with no line.
         if (resp.status.value != HTTP_OK) throw QuotaEndpointRefused(resp.status.value)
-        return parse.parse(json.parseToJsonElement(resp.bodyAsText()).jsonObject, clock())
+        val now = clock()
+        val body = json.parseToJsonElement(resp.bodyAsText()).jsonObject
+        return UsageAnswer.of(body, parse.parse(body, now), now)
     }
 }
 
@@ -101,6 +104,23 @@ internal object QuotaCredentialHeaders {
         Credentials.ClientForwarded -> null
     }
 }
+
+/** What a usage endpoint's 200 says (Marlin's ruling, Oct 10, 2026). Windows are a reading. A body naming an error is
+ *  a failure, so the last reading stays with its time. Anything else is the provider saying it has no usage for this
+ *  account (Kimi's `{}`): the tracker drops the older reading instead of drawing it as today's. */
+internal object UsageAnswer {
+    fun of(body: JsonObject, parsed: QuotaSnapshot?, now: Long): QuotaSnapshot = when {
+        parsed != null -> parsed
+        body.containsKey(ERROR_FIELD) -> throw UsageAnswerError()
+        else -> QuotaSnapshot(updatedAt = now)
+    }
+}
+
+/** A 200 whose body names an error. Its text is the vendor's and is never read, so this failure is safe to say. */
+internal class UsageAnswerError : IOException("the usage endpoint answered 200 with an error")
+
+// why: the one field every vendor here uses to say a 200 carries an error rather than usage.
+private const val ERROR_FIELD = "error"
 
 /** A usage endpoint that answered [status] rather than 200. The status is the whole report: the body is
  *  the vendor's and is never read, so this failure is safe to say where any other is withheld. */

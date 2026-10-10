@@ -78,6 +78,8 @@ async function load() {
           staleAt: !fresh && row.observed_at_epoch_seconds && windows.length ? Math.round((row.observed_at_epoch_seconds * 1000 - NOW.getTime()) / 60000) : null,
           out: !row.credential_present || row.auth_exclusion_reason === "credential_missing" || !!row.refusal,
           canRename: !!row.can_rename, canRemove: !!row.can_remove, native: !!row.carrying_request,
+          // the provider answered with no usage for this account: no bars, never an older reading drawn as today's
+          noUsage: !windows.length && !!row.no_usage_at_epoch_seconds,
           // each model's own weekly window, drawn under the week (Claude's Opus and Sonnet)
           models: (row.seven_day_models || []).map((m) => [m.model, Math.round(m.used_percent)]) });
       }
@@ -410,6 +412,9 @@ function cardHtml(p, c, a, i, serves) {
       : a.from === "replaced" ? `<div class="keysrc"><span class="state mute">Replaced</span></div>` : "";
   } else if (a.out) {
     body = signRow || `<div class="outbox"><button class="act primary" data-act="signin" data-p="${p.id}" data-a="${a.id}">Sign in</button></div>`;
+  } else if (p.kind === "plan" && a.noUsage) {
+    // the words wait on fin (Marlin, Oct 10): a short state where the bars would be
+    body = `<div class="keysrc"><span class="state">${esc(p.name)} sends no usage</span></div>${signRow}`;
   } else if (p.kind === "plan") body = windowsHtml(a, c && serving(p, c) === a ? nextOf(p, c) : null) + signRow;
   else body = `<div class="local-model"><i></i>${esc(a.model)}</div>`;
   const socket = p.kind === "plan" ? `<span class="socket">${i + 1}</span>` : "";

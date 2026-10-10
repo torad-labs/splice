@@ -86,7 +86,8 @@ internal class MuseMintProbe(
 ) : QuotaProbe {
     override suspend fun probe(): QuotaSnapshot? {
         val body = fields.invoke() ?: return null
-        return parser.parse(body, clock())
+        val now = clock()
+        return UsageAnswer.of(body, parser.parse(body, now), now)
     }
 }
 

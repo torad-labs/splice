@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Where a fresh snapshot goes: app binds it to the head's QuotaTracker (features/turns), so the poller
  *  records without reaching into another capability. */
 public fun interface QuotaSnapshotSink {
+    /** A reading, or the provider's answer that it has none ([QuotaSnapshot.answeredEmpty]). */
     public fun record(snapshot: QuotaSnapshot)
 }
 
@@ -39,6 +40,7 @@ public class QuotaPoller(
 ) {
     private val failureLogged = AtomicBoolean(false)
     private val firstLogged = AtomicBoolean(false)
+    private val emptyLogged = AtomicBoolean(false)
     private val lifecycle = Any()
 
     @Volatile private var job: Job? = null
@@ -173,6 +175,15 @@ public class QuotaPoller(
 
     private fun accept(snapshot: QuotaSnapshot) {
         sink.record(snapshot)
+        if (snapshot.answeredEmpty) {
+            lastSnapshot = snapshot
+            failureLogged.set(false)
+            if (emptyLogged.compareAndSet(false, true)) {
+                log("[${LogSafe.str(head)}][quota] the usage endpoint answered with no usage for this account\n")
+            }
+            return
+        }
+        emptyLogged.set(false)
         lastSnapshot = snapshot
         failureLogged.set(false)
         if (firstLogged.compareAndSet(false, true)) {

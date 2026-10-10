@@ -137,6 +137,18 @@ class QuotaProbesTest {
         assertEquals(listOf(standIn.getValue("CLAUDE_OAUTH_USAGE_URL"), anthropic, anthropic), asked)
     }
 
+    // Oct 10, 2026: Kimi answered `{}` for an account with no usage, and the probe returned nothing at all.
+    @Test
+    fun `an answer with no usage in it is the provider saying it has none, with the time it said so`() = runTest {
+        val engine = MockEngine { respond("{}", HttpStatusCode.OK) }
+        val probes = QuotaProbes(HttpClient(engine), WallClock { now })
+        val answer = probes.forHead("kimi-oauth", BASE_URL, FixedAuth(Credentials.Bearer("tok")), null)!!.probe()
+        assertTrue(answer!!.answeredEmpty)
+        assertEquals(now, answer.updatedAt)
+        val signedOut = probes.forHead("kimi-oauth", BASE_URL, FixedAuth(null), null)!!
+        assertNull(signedOut.probe(), "no credential asks nothing")
+    }
+
     private class QuotaParseAdapter : QuotaParse {
         private val parsers = KimiQuotaParser()
         override fun parse(body: kotlinx.serialization.json.JsonObject, now: Long) = parsers.parse(body, now)

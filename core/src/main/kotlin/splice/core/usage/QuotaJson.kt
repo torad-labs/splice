@@ -43,7 +43,7 @@ public class QuotaJson {
             plan = (root["plan"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
             updatedAt = (root["updated_at"] as? JsonPrimitive)?.longOrNull ?: 0L,
             models = (root["models"] as? JsonArray).orEmpty().mapNotNull(::model),
-        ).takeIf { !it.isEmpty }
+        ).takeIf { !it.isEmpty || it.answeredEmpty }
     }
 
     /** The per-model weekly windows as every surface writes them: `[{"model": "Opus", "used_percent": 41.0}]`. */

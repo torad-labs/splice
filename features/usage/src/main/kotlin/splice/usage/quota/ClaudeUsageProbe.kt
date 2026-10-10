@@ -108,7 +108,9 @@ internal class ClaudeUsageProbe(
         // V4-296: a refusal is a failure, so QuotaPoller's log-once path names it; a null here would read as
         // "nothing to record" and freeze the bars on the last snapshot with no line.
         if (response.status != HttpStatusCode.OK) throw QuotaEndpointRefused(response.status.value)
-        return parse.parse(json.parseToJsonElement(response.bodyAsText()).jsonObject, clock())
+        val now = clock()
+        val body = json.parseToJsonElement(response.bodyAsText()).jsonObject
+        return UsageAnswer.of(body, parse.parse(body, now), now)
     }
 }
 

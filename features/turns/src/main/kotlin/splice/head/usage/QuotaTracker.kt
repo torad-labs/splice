@@ -53,10 +53,18 @@ public class QuotaTracker(
 
     public fun snapshot(): QuotaSnapshot? = latest.get()
 
-    /** Latest wins. Persisted at once: a snapshot arrives at most once per round or per poll. */
+    /** Latest wins. Persisted at once: a snapshot arrives at most once per round or per poll. A provider's answer
+     *  that it has no usage for the account ([QuotaSnapshot.answeredEmpty]) replaces the older reading rather than
+     *  leaving it drawn as current, and keeps its time so a page can say the provider sends none (Oct 10, 2026). */
     public fun record(reading: QuotaSnapshot) {
-        if (reading.isEmpty) return
-        val snapshot = reading.keepingModelsOf(latest.get())
+        when {
+            reading.answeredEmpty -> keep(QuotaSnapshot(updatedAt = reading.updatedAt))
+            reading.isEmpty -> return
+            else -> keep(reading.keepingModelsOf(latest.get()))
+        }
+    }
+
+    private fun keep(snapshot: QuotaSnapshot) {
         latest.set(snapshot)
         writes.withLock {
             if (!retired) {

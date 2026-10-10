@@ -49,9 +49,24 @@ internal class EconomicsRows {
      *  which the rollup records like any other turn and ProbeEconomics subtracts again afterwards. */
     fun recorded(evidence: EconomicsPerfEvidence): List<PerfRow> = billed(evidence.work.rows) + evidence.probes
 
-    /** The work rows an hour holds, without the local refusals that never reached a provider. */
-    fun billed(rows: List<PerfRow>): List<PerfRow> =
-        rows.filterNot { it.outcome in LOCAL_ECONOMICS_REFUSALS && it.fields[PerfKeys.ATTEMPTS] == 0L }
+    /** The work rows an hour holds, without the rows the rollup never recorded at all. */
+    fun billed(rows: List<PerfRow>): List<PerfRow> = rows.filterNot(::outsideTheRollup)
+
+    /**
+     * Whether the rollup recorded no turn for [row], so an hour rebuilt from the rows must hold none
+     * for it either.
+     *
+     * Two kinds. A turn the budget or the plan refused before any attempt (above). And the activity
+     * side query, which [splice.head.turn.TurnTelemetry.recordActivityAnswer] answers locally: it
+     * writes a perf row marked as a local step and never calls the rollup, so the hour the rollup
+     * recorded has no step for it. Counting one made every hour that answered a side query read as a
+     * DIFFERENT hour from its own rows — live, Oct 10: claudex's 03:00 CT hour recorded 458 local
+     * steps against 714 rebuilt, so the repricing declined it and its 577 turns kept $0.00.
+     */
+    private fun outsideTheRollup(row: PerfRow): Boolean {
+        val refused = row.outcome in LOCAL_ECONOMICS_REFUSALS && row.fields[PerfKeys.ATTEMPTS] == 0L
+        return refused || row.fields[PerfKeys.ACTIVITY_QUERY] == 1L
+    }
 }
 
 /** Reads one hour of economics back from the perf rows written inside it. */

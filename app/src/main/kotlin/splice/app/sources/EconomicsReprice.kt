@@ -21,6 +21,13 @@ private val REPRICE_BUCKET_MS = 1.hours.inWholeMilliseconds
 internal class EconomicsReprice(private val perf: PerfRowsFileSource, price: TurnPrice) {
     private val rows = EconomicsFromRows(price)
 
+    // WHICH rows an hour is made of is not answered here. The reconciliation this must agree with and the
+    // backfill it grades beside both take it from EconomicsRows, which says why it cannot be two answers;
+    // answering it again inline is how it became two. It did: the inline answer counted a local step for
+    // the activity side query, which the rollup never records, so every hour that answered one read as a
+    // different hour from its own rows and kept the figure it had.
+    private val selection = EconomicsRows()
+
     /** [buckets] with every re-derivable unpriced hour priced again, or [buckets] unchanged when the rows
      *  cannot be read. The deduction has already run, so [buckets] holds no probe turns. */
     fun priced(buckets: List<EconomicsBucket>): List<EconomicsBucket> {
@@ -29,7 +36,7 @@ internal class EconomicsReprice(private val perf: PerfRowsFileSource, price: Tur
         val evidence = perf.economicsEvidence(wanted.minOf { it.hour })
         if (evidence.work.readError != null || evidence.work.skipped != 0) return buckets
         val probes = evidence.probes.toSet()
-        val byHour = evidence.work.rows.filterNot { it in probes }
+        val byHour = selection.billed(evidence.work.rows).filterNot { it in probes }
             .groupBy { it.ts / REPRICE_BUCKET_MS * REPRICE_BUCKET_MS }
         return buckets.map { bucket ->
             if (bucket.unpricedTurns == 0L) bucket else repriced(bucket, byHour[bucket.hour].orEmpty())

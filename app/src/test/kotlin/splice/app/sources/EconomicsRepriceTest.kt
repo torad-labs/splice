@@ -31,6 +31,11 @@ private const val WORK_ROW =
     """{"ts":3600123,"model":"synthetic","outcome":"ok","req_bytes":100,"upstream_req_bytes":50,"tools_eager":3,""" +
         """"tools_deferred":2,"in_tokens":5,"cached_tokens":2,"cache_write_tokens":1,"out_tokens":10}"""
 
+/** The activity side query, answered by the head with no model: a perf row marked as a local step, and no
+ *  economics turn at all — TurnTelemetry.recordActivityAnswer writes the row and never calls the rollup. */
+private const val ACTIVITY_ROW =
+    """{"ts":3600200,"model":"synthetic","outcome":"ok","local_step":1,"activity_query":1,"req_bytes":1178082}"""
+
 class EconomicsRepriceTest {
     private val card = ModelCatalog(
         discoveryPrefix = "synthetic--",
@@ -62,6 +67,20 @@ class EconomicsRepriceTest {
             Files.readString(dir.resolve("economics.json")),
             "the reading never rewrites what the hour recorded",
         )
+    }
+
+    // Live, Oct 10: claudex's 03:00 CT hour held 256 side queries beside its 577 turns and read $0.00 with
+    // every turn unpriced, because the hour rebuilt from the rows carried 714 local steps where the rollup
+    // recorded 458. A row the rollup never counted cannot be what makes an hour a different hour.
+    @Test
+    fun `an hour that answered an activity side query is still the turns it counted`(@TempDir dir: Path) {
+        val file = dir.resolve("head-perf.jsonl")
+        Files.writeString(file, WORK_ROW + "\n" + ACTIVITY_ROW + "\n")
+        val uncarded = store(dir, TurnPrice(null))
+        uncarded.record(work())
+        val repriced = EconomicsStoreSource(uncarded, PerfRowsFileSource(file), TurnPrice(card)).rows().single()
+        assertEquals(0L, repriced.cost.unpricedTurns, "the side query is no turn of the rollup's to match")
+        assertNotEquals(0.0, repriced.cost.costUsd)
     }
 
     @Test

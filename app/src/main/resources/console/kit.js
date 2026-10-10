@@ -84,7 +84,11 @@ const ICON = {
   caret: G('<path d="M9 5l7 7-7 7"/>', 'class="caret" aria-hidden="true"'),
   lock: G('<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>', 'aria-hidden="true"'),
 };
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+// AN ABSENT FIELD IS NOTHING, NOT THE WORD "undefined". The drawing's own esc was String(s), which was safe
+// there because the mock's data was always complete; a real route leaves a field out whenever splice does not
+// know it, and `String(undefined)` prints "undefined" on the screen as though splice knew that. Caught by
+// splice-builder3 reading teams.js against this file (Oct 10, 2026) before it reached a page.
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const clock = (d) => {
   const h = d.getHours() % 12 || 12, m = d.getMinutes(), ap = d.getHours() < 12 ? "AM" : "PM";
   return `${h}:${String(m).padStart(2, "0")} ${ap}`;
@@ -108,6 +112,14 @@ function md(text) { // the agent's own text, formatted as it wrote it: paragraph
 const acctPlanHtml = (acct, plan) => `<span class="acct">${esc(acct)}${plan ? `<span class="pv">${esc(plan)}</span>` : ""}</span>`;
 
 // ---------- what a page says about a session: fin's states, element first and the word small ----------
+//
+// THESE TWO READ THE DRAWING'S SESSION SHAPE, NOT THE DAEMON'S ROW, and that is a gap rather than a choice.
+// They expect `s.state`, `s.ask` and `s.stall`, which is what the mock handed them; /api/sessions answers
+// `status`, `waiting_for` and `availability`, and the stall reason is not on that route at all yet (Marlin
+// ruled on Oct 10 that it ships in 0.4.0, as a turns-side read serving Sessions and Teams both). So a page
+// that wires `look` straight to /api/sessions today gets Idle for every row. Teams reads the daemon's row
+// through its own `stateOf` for exactly this reason (splice-builder3). Sessions owns the translation and
+// lands it here with the stall read, at which point both pages draw from one function again.
 const stalled = (s) => s.state === "working" && s.stall;
 function look(s) {
   if (s.state === "needs") return { cls: "needs", lamp: ICON[s.ask.kind], word: "Needs you" };
@@ -151,6 +163,7 @@ const sideBySide = () => {
 const PAGES = [
   ["accounts.html", "Accounts"],
   ["teams.html", "Teams"],
+  ["requests.html", "Requests"],
   ["settings.html", "Settings"],
 ];
 // WITH ONE PAGE THE NAV DRAWS NOTHING (hitstop, Oct 10): a lone link repeats the page's own title, and a single
